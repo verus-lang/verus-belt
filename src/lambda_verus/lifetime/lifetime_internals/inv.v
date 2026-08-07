@@ -36,6 +36,7 @@ Definition Nmain       : namespace := NllftG .@ "main".
 Definition Nbox        : namespace := NllftG .@ "box".
 
 Definition NllftUsr    : namespace := nroot .@ "leaf_lifetime_logic" .@ "user".
+Definition NllftUsr2   : namespace := NllftG .@ "user".
 
 Definition swell (k: lt_atom) := match k with LtAtomSwell _ => true | LtAtomNotSwell _ => false end.
 Definition swell_set (ks: gset lt_atom) := ∀ k , k ∈ ks → swell k.
@@ -402,7 +403,7 @@ Section FullBorrows.
         ⌜k ∈ alive ∧ outlives_consistent (dead ∪ {[k]}) outlives⌝ -∗ ModuloDeadPers γ k -∗ (
         (⌜¬ swell k⌝ -∗ future_vs' fuel' (alive ∖ {[k]}) (dead ∪ {[k]}) outlives m mprops) ∧ (
           ▷ (full_borrows_invalidated_via alive dead k m mprops)
-        ={↑NllftUsr}=∗ ▷ (full_borrows_revalidated_via alive dead k m mprops)
+        ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ (full_borrows_revalidated_via alive dead k m mprops)
             ∗ future_vs' fuel' (alive ∖ {[k]}) (dead ∪ {[k]}) outlives m mprops)
         ))
   end.
@@ -418,7 +419,7 @@ Section FullBorrows.
       ⌜k ∈ alive ∧ outlives_consistent (dead ∪ {[k]}) outlives⌝ -∗ ModuloDeadPers γ k -∗ (
       (⌜¬ swell k⌝ -∗ future_vs (alive ∖ {[k]}) (dead ∪ {[k]}) outlives m mprops) ∧ (
         ▷ (full_borrows_invalidated_via alive dead k m mprops)
-      ={↑NllftUsr}=∗ ▷ (full_borrows_revalidated_via alive dead k m mprops)
+      ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ (full_borrows_revalidated_via alive dead k m mprops)
            ∗ future_vs (alive ∖ {[k]}) (dead ∪ {[k]}) outlives m mprops)).
   Proof.
     unfold future_vs.

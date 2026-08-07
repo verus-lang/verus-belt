@@ -62,6 +62,7 @@ Section LlftLogic.
   Definition Nllft := nroot .@ "leaf_lifetime_logic".
   Definition NllftG := nroot .@ "leaf_lifetime_logic" .@ "guarding".
   Definition NllftUsr := nroot .@ "leaf_lifetime_logic" .@ "user".
+  Definition NllftUsr2 := nroot .@ "leaf_lifetime_logic" .@ "guarding" .@ "user".
 
   (*** Lifetime logic ***)
 
@@ -543,7 +544,7 @@ Section LlftLogic.
       }
       
       iDestruct (outer_kill_lt_step2 llft_name o_name d_name sa2 sd2 blocked2 outlives1 k (sa1 ∖ {[k]}) b with "[Ou Delayed O1]") as "X"; trivial. { iFrame "Ou". iFrame "Delayed". iFrame "O1". iFrame "dead". }
-      iDestruct (step_opt_mono (↑Nbox ∪ ↑NllftUsr) (↑Nllft ∖ ↑NllftO ∖ ↑Nmain) with "X") as "X". { solve_ndisj. }
+      iDestruct (step_opt_mono (↑Nbox ∪ ↑NllftUsr ∪ ↑NllftUsr2) (↑Nllft ∖ ↑NllftO ∖ ↑Nmain) with "X") as "X". { apply union_subseteq. split; solve_ndisj. }
       iMod "X". iModIntro. iNext. iMod "X". iDestruct "X" as "[Inv [Outlives Delayed]]".
        
       iMod ("back" with "[Alive State Blo Inv]") as "X". { iExists sa2. iExists sd2. iExists blocked2.
@@ -968,7 +969,7 @@ Section LlftLogic.
   Local Lemma llftl_idx_acc_back_vs κ idx P Q :
       llft_ctx ∗ idx_bor_def' κ idx P ⊢
         OwnBorState llft_name (idx.1) (Unborrow κ (set_map LtAtomSwell idx.2) {[default_dead]}) ∗ (▷ Q)
-          ∗ ▷ (▷ Q ∗ llft_dead_def' κ ={↑NllftUsr}=∗ ▷ P)
+          ∗ ▷ (▷ Q ∗ llft_dead_def' κ ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P)
         ={↑Nllft}=∗ ∃ sn, idx_bor_def' κ (sn, idx.2) Q ∗ idx_bor_tok (sn, idx.2) ∗ llft_alive_def' κ.
   Proof.
       unseal_bor. unseal.
@@ -1031,7 +1032,7 @@ Section LlftLogic.
   Lemma llftl_bor_acc_maybe_swell' E P κ' κ :
       ↑Nllft ⊆ E →
       llft_ctx -∗ (llft_alive_def' κ' &&{↑NllftG}&&> @[κ]) -∗ &{κ} P -∗ llft_alive_def' κ' -∗ |={E}=> (▷ P) ∗
-          (∀ Q, ▷ (▷ Q ={↑NllftUsr}=∗ ▷ P) ∗ ▷ Q ={↑Nllft}=∗ (&{κ} Q) ∗ llft_alive_def' κ').
+          (∀ Q, ▷ (▷ Q ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P) ∗ ▷ Q ={↑Nllft}=∗ (&{κ} Q) ∗ llft_alive_def' κ').
   Proof.
     unseal_bor. intros Hmask.
     iIntros "#ctx #incl1 fb alive". unfold full_bor. iDestruct "fb" as (sn κ'') "[#incl [#slice OwnBor]]". iDestruct (guards_transitive with "incl1 incl") as "incl2".
@@ -1049,7 +1050,7 @@ Section LlftLogic.
   Lemma llftl_bor_acc' E P κ' κ :
       ↑Nllft ⊆ E →
       llft_ctx -∗ κ' ⊑ κ -∗ &{κ} P -∗ @[κ'] -∗ |={E}=> (▷ P) ∗
-          (∀ Q, ▷ (▷ Q ={↑NllftUsr}=∗ ▷ P) ∗ ▷ Q ={↑Nllft}=∗ (&{κ} Q) ∗ @[κ']).
+          (∀ Q, ▷ (▷ Q ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P) ∗ ▷ Q ={↑Nllft}=∗ (&{κ} Q) ∗ @[κ']).
   Proof.
     iIntros (Hmask) "ctx Incl Bor Alive".
     iMod (llftl_bor_acc_maybe_swell' E P (set_map LtAtomSwell κ') κ Hmask with "ctx [Incl] Bor [Alive]") as "[P R]".
@@ -1063,7 +1064,7 @@ Section LlftLogic.
   Lemma llftl_bor_acc E P κ :
       ↑Nllft ⊆ E →
       llft_ctx -∗ &{κ} P -∗ @[κ] -∗ |={E}=> (▷ P) ∗
-          (∀ Q, ▷ (▷ Q ∗ [†κ] ={↑NllftUsr}=∗ ▷ P) ∗ ▷ Q ={↑Nllft}=∗ (&{κ} Q) ∗ @[κ]).
+          (∀ Q, ▷ (▷ Q ∗ [†κ] ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P) ∗ ▷ Q ={↑Nllft}=∗ (&{κ} Q) ∗ @[κ]).
   Proof.
     unseal_bor. intros Hmask.
     iIntros "#ctx fb alive". unfold full_bor. iDestruct "fb" as (sn κ') "[#incl [#slice OwnBor]]".
@@ -1078,7 +1079,7 @@ Section LlftLogic.
   
   Lemma llftl_bor_acc_atomic P κ :
       llft_ctx -∗ &{κ} P -∗ |={↑Nllft, ∅}=>
-          (▷ P ∗ (∀ Q, ▷ (▷ Q ∗ [†κ] ={↑NllftUsr}=∗ ▷ P) -∗ ▷ Q ={∅, ↑Nllft}=∗ &{κ} Q))
+          (▷ P ∗ (∀ Q, ▷ (▷ Q ∗ [†κ] ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P) -∗ ▷ Q ={∅, ↑Nllft}=∗ &{κ} Q))
           ∨ ([†κ] ∗ (|={∅, ↑Nllft}=> True)).
   Proof.
       unseal_bor. unseal.
@@ -1797,7 +1798,7 @@ Section LlftLogic.
     &{κ} P -∗
     (G &&{↑NllftG}&&> @[κ]) -∗
     G ={E}=∗
-        (▷ P) ∗ (∀ Q, ▷ (▷ Q ={↑NllftUsr}=∗ ▷ P) ∗ ▷ Q ={↑Nllft}=∗ (&{κ} Q) ∗ G).
+        (▷ P) ∗ (∀ Q, ▷ (▷ Q ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P) ∗ ▷ Q ={↑Nllft}=∗ (&{κ} Q) ∗ G).
   Proof.
     intros TimelessG Hmask. iIntros "#ctx bor #Gk G".
     iMod (llftl_guarded_tok_to_tmp E G κ TimelessG Hmask with "ctx Gk G") as (κ') "(#Incl & Alive & #Kill & Back)".

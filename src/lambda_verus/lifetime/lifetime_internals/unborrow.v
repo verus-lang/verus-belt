@@ -214,7 +214,7 @@ Section FullBorrows.
     swell_set al →
   future_vs γ alive dead outlives mbs mprops
     ∗ (∀ d, ⌜d ∈ dead⌝ -∗ ModuloDeadPers γ d)
-    ∗ (▷ Q ∗ (∃ k : lt_atom, ⌜k ∈ bl⌝ ∗ Dead γ k) ={↑NllftUsr}=∗ ▷ P)
+    ∗ (▷ Q ∗ (∃ k : lt_atom, ⌜k ∈ bl⌝ ∗ Dead γ k) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P)
     ∗ (▷ (mprops !! sn ≡ Some P))
   ⊢
   future_vs γ alive dead outlives (<[sn2:=Borrow al de]> (delete sn mbs))
@@ -390,7 +390,7 @@ Section FullBorrows.
     swell_set al →
   future_vs γ alive dead outlives mbs mprops
     ∗ (∀ d, ⌜d ∈ dead⌝ -∗ ModuloDeadPers γ d)
-    ∗ (▷ Q ∗ (∃ k : lt_atom, ⌜k ∈ bl⌝ ∗ Dead γ k) ={↑NllftUsr}=∗ ▷ P)
+    ∗ (▷ Q ∗ (∃ k : lt_atom, ⌜k ∈ bl⌝ ∗ Dead γ k) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P)
     ∗ (▷ (mprops !! sn ≡ Some P))
   ⊢
   future_vs γ alive dead outlives (<[sn2:=Borrow al de]> (delete sn mbs))
@@ -492,7 +492,7 @@ Section FullBorrows.
     (▷ inner_inv γ γo alive dead blocked)
         ∗ OwnBorState γ sn (Unborrow bl al de)
         ∗ slice Nbox sn P
-        ∗ (▷ (▷ Q ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ={↑NllftUsr}=∗ ▷ P))
+        ∗ (▷ (▷ Q ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P))
         ∗ (▷ Q)
         ={↑Nbox ∪ ↑NllftUsr}=∗ ∃ sn2,
           (▷ inner_inv γ γo alive dead (blocked ∖ bl))
@@ -693,7 +693,7 @@ Section FullBorrows.
         ∗ OwnBorState γ sn (Borrow al de)
         ∗ slice Nbox sn P
         ={↑Nbox,∅}=∗ ▷ P ∗ ∀ Q, 
-        (▷ (▷ Q ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ={↑NllftUsr}=∗ ▷ P)) ∗ (▷ Q)
+        (▷ (▷ Q ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P)) ∗ (▷ Q)
           ={∅,↑Nbox}=∗ ∃ sn2,
     (▷ inner_inv γ γo alive dead blocked)
         ∗ Outlives γo outlives
@@ -817,7 +817,7 @@ Section FullBorrows.
         ∗ (▷ outer_inv γ γo γd alive dead blocked)
         ∗ OwnBorState γ sn (Unborrow bl al de)
         ∗ slice Nbox sn P
-        ∗ (▷ (▷ Q ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ={↑NllftUsr}=∗ ▷ P))
+        ∗ (▷ (▷ Q ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P))
         ∗ (▷ Q)
         ={↑Nbox ∪ ↑NllftUsr}=∗ ∃ sn2,
       Delayed γd None

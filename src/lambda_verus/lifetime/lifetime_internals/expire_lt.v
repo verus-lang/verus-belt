@@ -323,7 +323,7 @@ Section FullBorrows.
     (k ∉ blocked) →
     (∀ other , (other, k) ∈ outlives → ¬(other ## (dead ∪ {[k]}))) →
     (▷ inner_inv γ γo alive dead blocked) ∗ Outlives γo outlives ∗ Dead γ k
-      ={↑Nbox ∪ ↑NllftUsr}=∗ ▷ |={↑Nbox ∪ ↑NllftUsr}=>
+      ={↑Nbox ∪ ↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ |={↑Nbox ∪ ↑NllftUsr ∪ ↑NllftUsr2}=>
     (▷ inner_inv γ γo (alive ∖ {[k]}) (dead ∪ {[k]}) blocked) ∗ Outlives γo outlives.
   Proof.
     intros Hk_alive Hk_not_blocked Houtlives_okay.
@@ -358,7 +358,9 @@ Section FullBorrows.
         iApply "alldeadpers". iPureIntro. set_solver.
     }
     iDestruct ("vs" with "inval") as "vs".
-    iMod (fupd_mask_mono ∅ (↑Nbox ∪ ↑NllftUsr) with "vs") as "[reval vs]". { set_solver. }
+    iMod (fupd_mask_mono _ (↑Nbox ∪ ↑NllftUsr ∪ ↑NllftUsr2) with "vs") as "[reval vs]". {
+      set_solver.
+    }
    
     iDestruct (box_put_all_revalidate alive dead k mbs mprops Ptotal with "[box reval]") as "box".
       { trivial. } { iFrame.  iFrame "slices". }
@@ -439,7 +441,7 @@ Section FullBorrows.
     (k ∉ blocked) →
     (∀ other , (other, k) ∈ outlives → ¬(other ## (dead ∪ {[k]}))) →
     (▷ inner_inv γ γo alive dead blocked) ∗ Outlives γo outlives ∗ Dead γ k
-      ={↑Nbox ∪ ↑NllftUsr}=∗ ▷?b |={↑Nbox ∪ ↑NllftUsr}=>
+      ={↑Nbox ∪ ↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷?b |={↑Nbox ∪ ↑NllftUsr ∪ ↑NllftUsr2}=>
     (▷ inner_inv γ γo (alive ∖ {[k]}) (dead ∪ {[k]}) blocked) ∗ Outlives γo outlives.
   Proof.
     destruct b.
@@ -515,7 +517,7 @@ Section FullBorrows.
       ∗ Outlives γo outlives
       ∗ Dead γ k
       ∗ Delayed γd (Some (k, alive'))
-      ={↑Nbox ∪ ↑NllftUsr}=∗ ▷?b |={↑Nbox ∪ ↑NllftUsr}=>
+      ={↑Nbox ∪ ↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷?b |={↑Nbox ∪ ↑NllftUsr ∪ ↑NllftUsr2}=>
     (▷ outer_inv γ γo γd alive dead blocked)
       ∗ Outlives γo outlives
       ∗ Delayed γd None.
@@ -567,7 +569,7 @@ Section FullBorrows.
         ∗ OwnBorState γ sn (Borrow al de)
         ∗ slice Nbox sn P
         ={↑Nbox,∅}=∗ ▷ P ∗ ∀ Q, 
-        (▷ (▷ Q ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ={↑NllftUsr}=∗ ▷ P)) ∗ (▷ Q)
+        (▷ (▷ Q ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P)) ∗ (▷ Q)
           ={∅,↑Nbox}=∗ ∃ sn2,
     Delayed γd None
         ∗ (▷ outer_inv γ γo γd alive dead blocked)

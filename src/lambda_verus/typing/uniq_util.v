@@ -384,7 +384,7 @@ Section uniq_util.
       (▷ ty_gho ty x d g tid ∗ l #↦!∗ ty_phys ty x tid
         ={E}=∗ ▷ ty_gho ty' x' d g tid ∗ l' #↦!∗ ty_phys ty' x' tid ∗ 
         (∀ x'1 d1 g1 , ▷ ty_gho ty' x'1 d1 g1 tid ∗ l' #↦!∗ ty_phys ty' x'1 tid ∗ ⧖(S d1 `max` g1)
-          ={↑NllftUsr}=∗ ∃ d2 g2, ▷ ty_gho ty (f ~~$ₛ x'1) d2 g2 tid ∗ l #↦!∗ ty_phys ty (f ~~$ₛ x'1) tid ∗ ⧖(S d2 `max` g2))
+          ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ∃ d2 g2, ▷ ty_gho ty (f ~~$ₛ x'1) d2 g2 tid ∗ l #↦!∗ ty_phys ty (f ~~$ₛ x'1) tid ∗ ⧖(S d2 `max` g2))
         ) -∗
       (G &&{↑NllftG}&&> @[κ]) -∗
       G -∗
