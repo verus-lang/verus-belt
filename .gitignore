@@ -1,0 +1,15 @@
+# Rocq build artifacts
+*.vo
+*.vok
+*.vos
+*.glob
+*.aux
+.*.aux
+*.d
+.*.d
+.lia.cache
+.nia.cache
+Makefile.coq
+Makefile.coq.conf
+Makefile.using_opam.coq
+Makefile.using_opam.coq.conf
