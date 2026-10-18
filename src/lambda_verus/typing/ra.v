@@ -7,10 +7,136 @@ Set Default Proof Using "Type".
 
 Implicit Type 𝔄 𝔅: syn_type.
 
+(** * Verus-style resource algebras *)
+
+(** A [VerusRA] has exactly the capabilities of Verus's [PCM] trait
+    (verus/source/vstd/pcm.rs): validity, op, unit, and the laws
+    [closed_under_incl], [commutative], [associative], [op_unit], and [unit_valid]. *)
+Record VerusRA (A : Type) := {
+  vra_valid : A → Prop;
+  vra_op : A → A → A;
+  vra_unit : A;
+  vra_closed_under_incl a b : vra_valid (vra_op a b) → vra_valid a;
+  vra_commutative a b : vra_op a b = vra_op b a;
+  vra_associative a b c : vra_op a (vra_op b c) = vra_op (vra_op a b) c;
+  vra_op_unit a : vra_op a vra_unit = a;
+  vra_unit_valid : vra_valid vra_unit;
+}.
+Global Arguments vra_valid {_} _ _.
+Global Arguments vra_op {_} _ _ _.
+Global Arguments vra_unit {_} _.
+Global Arguments vra_closed_under_incl {_} _ _ _.
+Global Arguments vra_commutative {_} _ _ _.
+Global Arguments vra_associative {_} _ _ _ _.
+Global Arguments vra_op_unit {_} _ _.
+Global Arguments vra_unit_valid {_} _.
+
+Section VerusRADefs.
+  Context {A : Type} (P : VerusRA A).
+
+  (** These correspond to [incl], [conjunct_shared], [frame_preserving_update], and
+      [frame_preserving_update_nondeterministic] in vstd/pcm.rs. *)
+  Definition vra_incl (a b : A) := ∃ c, vra_op P a c = b.
+
+  Definition vra_conjunct_shared (a b c : A) :=
+    ∀ p, vra_valid P p → vra_incl a p → vra_incl b p → vra_incl c p.
+
+  Definition vra_frame_preserving_update (a b : A) :=
+    ∀ c, vra_valid P (vra_op P a c) → vra_valid P (vra_op P b c).
+
+  Definition vra_frame_preserving_update_nondeterministic (a : A) (bs : A → Prop) :=
+    ∀ c, vra_valid P (vra_op P a c) → ∃ b, bs b ∧ vra_valid P (vra_op P b c).
+End VerusRADefs.
+
+(** The Ucmra constructed from a [VerusRA]. The carrier is wrapped in a record so that
+    the instances below do not interfere with any existing instances on [A]. *)
+Record vra_car {A : Type} (P : VerusRA A) := VraCar { vra_val : A }.
+Global Arguments VraCar {_} _ _.
+Global Arguments vra_val {_ _} _.
+
+Section VerusRACmra.
+  Context {A : Type} (P : VerusRA A).
+  Implicit Types x y z : vra_car P.
+
+  Global Instance vra_car_op : Op (vra_car P) := λ x y, VraCar P (vra_op P (vra_val x) (vra_val y)).
+  Global Instance vra_car_pcore : PCore (vra_car P) := λ _, Some (VraCar P (vra_unit P)).
+  Global Instance vra_car_valid : Valid (vra_car P) := λ x, vra_valid P (vra_val x).
+  Global Instance vra_car_unit : Unit (vra_car P) := VraCar P (vra_unit P).
+
+  Canonical Structure vra_carO := leibnizO (vra_car P).
+
+  Local Lemma vra_car_unit_left_id x : ε ⋅ x = x.
+  Proof.
+    destruct x as [x]. rewrite /op /vra_car_op /=.
+    by rewrite vra_commutative vra_op_unit.
+  Qed.
+
+  Lemma vra_ra_mixin : RAMixin (vra_car P).
+  Proof.
+    split.
+    - intros x y z ->. done.
+    - intros x y cx -> ?. by exists cx.
+    - intros x y ->. done.
+    - intros [x] [y] [z]. rewrite /op /vra_car_op /= /equiv /ofe_equiv /=.
+      by rewrite vra_associative.
+    - intros [x] [y]. rewrite /op /vra_car_op /= /equiv /ofe_equiv /=.
+      by rewrite vra_commutative.
+    - rewrite /pcore /vra_car_pcore. intros x cx [= <-]. apply vra_car_unit_left_id.
+    - rewrite /pcore /vra_car_pcore. intros x cx [= <-]. done.
+    - rewrite /pcore /vra_car_pcore. intros x y cx _ [= <-].
+      eexists. split; first done. exists ε. by rewrite vra_car_unit_left_id.
+    - intros [x] [y]. apply vra_closed_under_incl.
+  Qed.
+  Canonical Structure vra_carR := discreteR (vra_car P) vra_ra_mixin.
+
+  Global Instance vra_car_cmra_discrete : CmraDiscrete vra_carR.
+  Proof. apply discrete_cmra_discrete. Qed.
+
+  Global Instance vra_car_cmra_total : CmraTotal vra_carR.
+  Proof. intros x. by eexists. Qed.
+
+  Lemma vra_ucmra_mixin : UcmraMixin (vra_car P).
+  Proof.
+    split.
+    - apply vra_unit_valid.
+    - intros x. apply vra_car_unit_left_id.
+    - done.
+  Qed.
+  Canonical Structure vra_carUR := Ucmra (vra_car P) vra_ucmra_mixin.
+
+  Lemma vra_car_op_eq a b : VraCar P a ⋅ VraCar P b = VraCar P (vra_op P a b).
+  Proof. done. Qed.
+
+  Lemma vra_car_included a b : VraCar P a ≼ VraCar P b ↔ vra_incl P a b.
+  Proof.
+    split.
+    - intros [[c] Hc]. exists c. by inversion Hc.
+    - intros [c Hc]. exists (VraCar P c). by rewrite vra_car_op_eq Hc.
+  Qed.
+
+  Lemma vra_car_updateP a (bs : A → Prop) :
+    vra_frame_preserving_update_nondeterministic P a bs →
+    VraCar P a ~~>: (λ y, bs (vra_val y)).
+  Proof.
+    intros Hupd. apply cmra_discrete_total_updateP. intros [c] Hvalid.
+    destruct (Hupd c Hvalid) as (b & Hb & Hvalid').
+    by exists (VraCar P b).
+  Qed.
+
+  Lemma vra_car_update a b :
+    vra_frame_preserving_update P a b → VraCar P a ~~> VraCar P b.
+  Proof.
+    intros Hupd. eapply cmra_update_updateP, cmra_updateP_weaken.
+    { apply (vra_car_updateP a (λ b', b' = b)). intros c Hc. exists b. split; last apply Hupd; done. }
+    intros [b'] Hb. simpl in Hb. by subst.
+  Qed.
+End VerusRACmra.
+
 Section Ra.
 
   Context `{!typeG Σ}.
-  Context `{G2: !inG Σ (@Ucmra' (~~𝔄) 𝔄_equiv 𝔄_dist 𝔄_pcore 𝔄_op 𝔄_valid 𝔄_validn 𝔄_unit 𝔄_mixin1 𝔄_mixin2 𝔄_mixin3)}.
+  Context {𝔄 : syn_type} (VRA : VerusRA (~~𝔄)).
+  Context `{G2: !inG Σ (vra_carUR VRA)}.
 
   Hypothesis (𝔄_const  : ∀ (x : ~~𝔄) π1 π2 , @vπ 𝔄 x π1 = @vπ 𝔄 x π2).
 
@@ -19,7 +145,7 @@ Section Ra.
     ty_of_gt ({|
           gt_gho v tid :=
             let '(z, m) := v in
-            @own _ _ G2 z m;
+            @own _ _ G2 z (VraCar VRA m);
         |}%I : ghost_type (ghostₛ (positiveₛ * 𝔄))).
   Next Obligation.
     move => v.
@@ -63,21 +189,22 @@ Notation "RA_Validate: self" := (new [ #0])%E (at level 102, self at level 1): e
 Section RA_type.
 
   Context `{!typeG Σ}.
-  Context `{G2: !inG Σ (@Ucmra' (~~𝔄) 𝔄_equiv 𝔄_dist 𝔄_pcore 𝔄_op 𝔄_valid 𝔄_validn 𝔄_unit 𝔄_mixin1 𝔄_mixin2 𝔄_mixin3) }.
+  Context {𝔄 : syn_type} (VRA : VerusRA (~~𝔄)).
+  Context `{G2: !inG Σ (vra_carUR VRA)}.
   Hypothesis (𝔄_const  : ∀ (x : ~~𝔄) π1 π2 , @vπ 𝔄 x π1 = @vπ 𝔄 x π2).
 
   Lemma typed_ra_alloc (p : path) (ty : type 𝔄) E L I :
     typed_instr E L I
     +[p ◁ own_ptr 0 (ghost_ty ty)]
     (RA_Alloc: p)
-    (λ v, +[v ◁ own_ptr 0 (ra_ty 𝔄_const)])
-    (λ post '-[(_, x)], λ mask π, valid(x) ∧ ∀ l γ, post -[(l, (γ, x))] mask π).
+    (λ v, +[v ◁ own_ptr 0 (ra_ty VRA 𝔄_const)])
+    (λ post '-[(_, x)], λ mask π, vra_valid VRA x ∧ ∀ l γ, post -[(l, (γ, x))] mask π).
   Proof.
     move => tid postπ mask iκs xl.
     iIntros "LFT TIME #PROPH UNIQ E L $ TY #Obs" => /=.
     destruct xl as [[pl m] [ ]].
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & %Hvalid & %Hpost)" => //.
-    iMod (@own_alloc _ _ G2 m Hvalid) as "(%γ & Hm)".
+    iMod (@own_alloc _ _ G2 (VraCar VRA m) Hvalid) as "(%γ & Hm)".
     iApply wp_new=>//.
     iIntros "!>" (l) "(† & ↦) ".
     iExists -[(l, (γ, m))].
@@ -97,10 +224,10 @@ Section RA_type.
 
   Lemma typed_ra_join (p1 p2 : path) E L I :
     typed_instr E L I
-    +[p1 ◁ own_ptr 0 (ra_ty 𝔄_const); p2 ◁ own_ptr 0 (ra_ty 𝔄_const)]
+    +[p1 ◁ own_ptr 0 (ra_ty VRA 𝔄_const); p2 ◁ own_ptr 0 (ra_ty VRA 𝔄_const)]
     (RA_Join: p1 p2)
-    (λ v, +[v ◁ own_ptr 0 (ra_ty 𝔄_const)])
-    (λ post '-[(_, (γ1, x1)); (_, (γ2, x2))], λ mask π, γ1 = γ2 ∧ ∀ l, post -[(l, (γ1, x1 ⋅ x2))] mask π).
+    (λ v, +[v ◁ own_ptr 0 (ra_ty VRA 𝔄_const)])
+    (λ post '-[(_, (γ1, x1)); (_, (γ2, x2))], λ mask π, γ1 = γ2 ∧ ∀ l, post -[(l, (γ1, vra_op VRA x1 x2))] mask π).
   Proof.
     move => tid postπ mask iκs vπl.
     iIntros "LFT TIME #PROPH UNIQ E L $ TY #Obs" => /=.
@@ -116,7 +243,7 @@ Section RA_type.
     iCombine "Hown1 Hown2" as "Hown".
     iApply wp_new=>//.
     iIntros "!>" (l) "(† & ↦) ".
-    iExists -[(l, (γ1, (x1 ⋅ x2)))].
+    iExists -[(l, (γ1, (vra_op VRA x1 x2)))].
     iFrame "L".
     iFrame "Hd1".
     iSplitL.
@@ -130,10 +257,10 @@ Section RA_type.
 
   Lemma typed_ra_split (self p1 p2 : path) (ty : type 𝔄) E L I :
     typed_instr E L I
-    +[self ◁ own_ptr 0 (ra_ty 𝔄_const); p1 ◁ own_ptr 0 (ghost_ty ty); p2 ◁ own_ptr 0 (ghost_ty ty)] 
+    +[self ◁ own_ptr 0 (ra_ty VRA 𝔄_const); p1 ◁ own_ptr 0 (ghost_ty ty); p2 ◁ own_ptr 0 (ghost_ty ty)] 
     (RA_Split: self p1 p2)
-    (λ v, +[v ◁ own_ptr 0 (prod_ty (ra_ty 𝔄_const) (ra_ty 𝔄_const))])
-    (λ post '-[(_, (γ, x)); (_, x1); (_, x2)], λ mask π, x = x1 ⋅ x2 ∧ ∀ l, post -[(l, ((γ, x1), (γ, x2)))] mask π).
+    (λ v, +[v ◁ own_ptr 0 (prod_ty (ra_ty VRA 𝔄_const) (ra_ty VRA 𝔄_const))])
+    (λ post '-[(_, (γ, x)); (_, x1); (_, x2)], λ mask π, x = vra_op VRA x1 x2 ∧ ∀ l, post -[(l, ((γ, x1), (γ, x2)))] mask π).
   Proof.
     move => tid postπ mask iκs vπl.
     iIntros "LFT TIME #PROPH UNIQ E L $ TY #Obs" => /=.
@@ -153,7 +280,8 @@ Section RA_type.
     iFrame "Hd'".
     iSplitL.
     - iExists _; iSplitR => //=.
-      iDestruct "Hown" as "(?&?&Hown1&Hown2)".
+      iDestruct "Hown" as "(?&?&Hown)".
+      rewrite -vra_car_op_eq. iDestruct "Hown" as "[Hown1 Hown2]".
       iFrame.
       repeat rewrite heap_mapsto_fancy_vec_nil.
       by rewrite /ty_own/=!heap_mapsto_vec_nil !freeable_util.freeable_sz_full.
@@ -166,19 +294,19 @@ Section RA_type.
     typed_instr E L I
     +[]
     (RA_Unit:)
-    (λ v, +[v ◁ own_ptr 0 (ra_ty 𝔄_const)])
-    (λ post '-[], λ mask π, ∀ l γ, post -[(l, (γ, ε))] mask π).
+    (λ v, +[v ◁ own_ptr 0 (ra_ty VRA 𝔄_const)])
+    (λ post '-[], λ mask π, ∀ l γ, post -[(l, (γ, vra_unit VRA))] mask π).
   Proof.
     move => tid postπ mask iκs vπl.
     iIntros "LFT TIME #PROPH UNIQ E L $ TY #Obs" => /=.
-    iMod (@own_alloc _ _ G2 ε) as "(%γ & Hm)".
-    { by eapply mixin_ucmra_unit_valid. }
+    iMod (@own_alloc _ _ G2 (VraCar VRA (vra_unit VRA))) as "(%γ & Hm)".
+    { apply vra_unit_valid. }
     iMod persistent_time_receipt_0 as "⧖".
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [done|].
     iIntros "? #⧖".
     iApply wp_new=>//.
     iIntros "!>" (l) "(† & ↦)".
-    iExists -[(l, (γ, ε))].
+    iExists -[(l, (γ, vra_unit VRA))].
     iFrame "L".
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
     iFrame "⧖" => /=.
@@ -192,10 +320,10 @@ Section RA_type.
 
   Lemma typed_ra_update (self p : path) (ty : type 𝔄) E L I :
     typed_instr E L I
-    +[self ◁ own_ptr 0 (ra_ty 𝔄_const); p ◁ own_ptr 0 (ghost_ty ty)]
+    +[self ◁ own_ptr 0 (ra_ty VRA 𝔄_const); p ◁ own_ptr 0 (ghost_ty ty)]
     (RA_Update: self p)
-    (λ v, +[v ◁ own_ptr 0 (ra_ty 𝔄_const)])
-    (λ post '-[(_, (γ, x)); (_, y)], λ mask π, (@cmra_update (ucmra_cmraR (Ucmra' (~~ 𝔄) 𝔄_mixin1 𝔄_mixin2 𝔄_mixin3)) x y) ∧ ∀ l, post -[(l, (γ, y))] mask π).
+    (λ v, +[v ◁ own_ptr 0 (ra_ty VRA 𝔄_const)])
+    (λ post '-[(_, (γ, x)); (_, y)], λ mask π, vra_frame_preserving_update VRA x y ∧ ∀ l, post -[(l, (γ, y))] mask π).
   Proof.
     move => tid postπ mask iκs vπl.
     iIntros "LFT TIME #PROPH UNIQ E L $ TY #Obs" => /=.
@@ -209,7 +337,8 @@ Section RA_type.
     iApply wp_fupd.
     iApply wp_new=>//.
     iIntros "!>" (l) "(† & ↦)".
-    iMod (own_update with "Hown") as "Hown" => //.
+    iMod (own_update _ _ (VraCar VRA y) with "Hown") as "Hown".
+    { by apply vra_car_update. }
     iExists -[(l, (γ, y))].
     iFrame "L".
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
@@ -225,10 +354,12 @@ Section RA_type.
 
   Lemma typed_ra_update_nondeterministic (self p : path) (n : nat) (ty : type (vecₛ 𝔄 n)) E L I :
     typed_instr E L I
-    +[self ◁ own_ptr 0 (ra_ty 𝔄_const); p ◁ own_ptr 0 (ghost_ty ty)]
+    +[self ◁ own_ptr 0 (ra_ty VRA 𝔄_const); p ◁ own_ptr 0 (ghost_ty ty)]
     (RA_Update: self p)
-    (λ v, +[v ◁ own_ptr 0 (ra_ty 𝔄_const)])
-    (λ post '-[(_, (γ, x)); (_, ys)], λ mask π, 0 < n ∧ (Vector.Forall (λ y, (@cmra_update (ucmra_cmraR (Ucmra' (~~ 𝔄) 𝔄_mixin1 𝔄_mixin2 𝔄_mixin3)) x y)) ys) ∧ ∀ l, Vector.Forall (λ y, post -[(l, (γ, y))] mask π) ys).
+    (λ v, +[v ◁ own_ptr 0 (ra_ty VRA 𝔄_const)])
+    (λ post '-[(_, (γ, x)); (_, ys)], λ mask π,
+        vra_frame_preserving_update_nondeterministic VRA x (λ y, y ∈ vec_to_list ys) ∧
+        ∀ l, Forall (λ y, post -[(l, (γ, y))] mask π) (vec_to_list ys)).
   Proof.
     move => tid postπ mask iκs vπl.
     fold indep_interp_of_syn_type.
@@ -238,16 +369,14 @@ Section RA_type.
     iDestruct "TY" as "(H & _ & _)".
     iDestruct "H" as "(%pl' & %d & % & #Hd & Hown & %Hphys)".
     destruct d => //.
-    iMod (proph_obs_sat with "PROPH Obs") as "(%π & %Hn & %Hupd & _)" => //=.
+    iMod (proph_obs_sat with "PROPH Obs") as "(%π & %Hupd & _)" => //=.
     iDestruct "Hown" as "(? & ? & Hown)".
     iApply wp_fupd.
     iApply wp_new=>//.
     iIntros "!>" (l) "(† & ↦)".
-    destruct n; first lia.
-    inv_vec ys => y ys Hupd.
-    iMod (own_update with "Hown") as "Hown".
-    { apply Vector.Forall_cons_iff in Hupd as [Hupd ?].
-      exact Hupd. }
+    iMod (own_updateP with "Hown") as ([y]) "[%Hin Hown]".
+    { by apply vra_car_updateP. }
+    simpl in Hin.
     iExists -[(l, (γ, y))].
     iFrame "L".
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
@@ -257,22 +386,19 @@ Section RA_type.
       repeat rewrite heap_mapsto_fancy_vec_nil.
       by iFrame.
     - iApply (proph_obs_impl with "Obs").
-      intros π' [_ [_ Hpost]].
+      intros π' [_ Hpost].
       specialize (Hpost l).
-      apply Vector.Forall_cons_iff in Hpost as [Hpost ?].
-      apply Hpost.
+      rewrite Forall_forall in Hpost.
+      by apply Hpost.
   Qed.
 
-  Let U := (@Ucmra' (~~𝔄) 𝔄_equiv 𝔄_dist 𝔄_pcore 𝔄_op 𝔄_valid 𝔄_validn 𝔄_unit 𝔄_mixin1 𝔄_mixin2 𝔄_mixin3).
-
-  (* We need the RA to be discrete otherwise to use `own_valid`, otherwise we can't turn own γ x into a pure predicate because it's only valid uptil step index n *)
-  Lemma typed_ra_validate `{! CmraDiscrete U } κ (self : path) E L I :
+  Lemma typed_ra_validate κ (self : path) E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I
-    +[self ◁ shr_bor κ (ra_ty 𝔄_const)]
+    +[self ◁ shr_bor κ (ra_ty VRA 𝔄_const)]
     (RA_Validate: self)
     (λ _, +[])
-    (λ post '-[(l, (γ, x))], λ mask π, (valid x → post -[] mask π)).
+    (λ post '-[(l, (γ, x))], λ mask π, (vra_valid VRA x → post -[] mask π)).
   Proof.
     move => Alv tid postπ mask iκs vπl.
     iIntros "LFT #TIME #PROPH UNIQ E L $ TY #Obs" => /=.
@@ -315,9 +441,9 @@ Section RA_type.
   Notation "RA_JoinShared: p1 p2" := (new [ #0])%E (at level 102, p1, p2 at level 1): expr_scope.
 
 (*
-  Lemma typed_ra_join_shared `{! CmraDiscrete U } κ (p1 p2 : path) E L I :
+  Lemma typed_ra_join_shared κ (p1 p2 : path) E L I :
     lctx_lft_alive E L κ →
-    typed_instr E L I +[p1 ◁ shr_bor κ (ra_ty 𝔄_const); p2 ◁ shr_bor κ (ra_ty 𝔄_const)] (RA_JoinShared: p1 p2) (λ v, +[v ◁ shr_bor κ (ra_ty 𝔄_const)]) (λ post '-[(l1, (γ1, x1)); (l2, (γ2, x2))], λ mask π, γ1 = γ2 ∧ ∀ y l, x1 ≼ y → x2 ≼ y → post -[(l, (γ1, y))] mask π).
+    typed_instr E L I +[p1 ◁ shr_bor κ (ra_ty VRA 𝔄_const); p2 ◁ shr_bor κ (ra_ty VRA 𝔄_const)] (RA_JoinShared: p1 p2) (λ v, +[v ◁ shr_bor κ (ra_ty VRA 𝔄_const)]) (λ post '-[(l1, (γ1, x1)); (l2, (γ2, x2))], λ mask π, γ1 = γ2 ∧ ∀ y l, x1 ≼ y → x2 ≼ y → post -[(l, (γ1, y))] mask π).
   Proof.
     move => Alv tid postπ mask iκs vπl.
     fold indep_interp_of_syn_type.
@@ -358,13 +484,13 @@ Section RA_type.
 
   Notation "RA_JoinSharedDet: p1 p2 p" := (new [ #0])%E (at level 102, p1, p2, p at level 1): expr_scope.
   
-  Lemma typed_ra_join_shared_to_target `{! CmraDiscrete U } κ (p1 p2 p : path) (ty : type 𝔄) E L I :
+  Lemma typed_ra_join_shared_to_target κ (p1 p2 p : path) (ty : type 𝔄) E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I
-    +[p1 ◁ shr_bor κ (ra_ty 𝔄_const); p2 ◁ shr_bor κ (ra_ty 𝔄_const); p ◁ own_ptr 0 (ghost_ty ty)] 
+    +[p1 ◁ shr_bor κ (ra_ty VRA 𝔄_const); p2 ◁ shr_bor κ (ra_ty VRA 𝔄_const); p ◁ own_ptr 0 (ghost_ty ty)] 
     (RA_JoinSharedDet: p1 p2 p)
-    (λ v, +[v ◁ shr_bor κ (ra_ty 𝔄_const)])
-    (λ post '-[(l1, (γ1, x1)); (l2, (γ2, x2)); (_, y)], λ mask π, γ1 = γ2 ∧ (∀ p, ✓ p ∧ x1 ≼ p ∧ x2 ≼ p → y ≼ p) ∧ ∀ l, post -[(l, (γ1, y))] mask π).
+    (λ v, +[v ◁ shr_bor κ (ra_ty VRA 𝔄_const)])
+    (λ post '-[(l1, (γ1, x1)); (l2, (γ2, x2)); (_, y)], λ mask π, γ1 = γ2 ∧ vra_conjunct_shared VRA x1 x2 y ∧ ∀ l, post -[(l, (γ1, y))] mask π).
   Proof.
     move => Alv tid postπ mask iκs vπl.
     fold indep_interp_of_syn_type.
@@ -385,11 +511,11 @@ Section RA_type.
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hy & _)" => //.
     destruct (decide (d1 ≤ d2)) as [Hle | Hgt].
     - iPoseProof (lguards_weaken_later _ _ _ _ (S (d2 + 1)) with "Hshr1") as "Hshr1'"; first lia.
-      iPoseProof (@guards_and_own _ _ _ _ _ _ U _ γ1 y with "Hshr1' Hshr2") as "Hshr3"; [ | | ..].
+      iPoseProof (@guards_and_own _ _ _ _ _ _ (vra_carUR VRA) _ γ1 (VraCar VRA y) with "Hshr1' Hshr2") as "Hshr3"; [ | | ..].
       { iIntros "H".
         iApply (and_own_discrete_ucmra_specific with "H").
-        move => w Hvalid Hincl1 Hincl2.
-        by apply Hy. }
+        move => [w] Hvalid Hincl1 Hincl2.
+        apply vra_car_included, Hy; [done|by apply vra_car_included..]. }
       iApply wp_new=>//.
       iIntros "!>" (l) "(† & ↦) ".
       iExists -[((l, []), (γ1, y))].
@@ -406,11 +532,11 @@ Section RA_type.
         intros π' [_ [? ?] ].
         apply H2.
     - iPoseProof (lguards_weaken_later _ _ _ _ (S (d1 + 1)) with "Hshr2") as "Hshr2'"; first lia.
-      iPoseProof (@guards_and_own _ _ _ _ _ _ U _ γ1 y with "Hshr1 Hshr2'") as "Hshr3"; [ | | ..].
+      iPoseProof (@guards_and_own _ _ _ _ _ _ (vra_carUR VRA) _ γ1 (VraCar VRA y) with "Hshr1 Hshr2'") as "Hshr3"; [ | | ..].
       { iIntros "H".
         iApply (and_own_discrete_ucmra_specific with "H").
-        move => w Hvalid Hincl1 Hincl2.
-        by apply Hy. }
+        move => [w] Hvalid Hincl1 Hincl2.
+        apply vra_car_included, Hy; [done|by apply vra_car_included..]. }
       iApply wp_new=>//.
       iIntros "!>" (l) "(† & ↦) ".
       iExists -[((l, []), (γ1, y))].
@@ -430,13 +556,13 @@ Section RA_type.
 
   Notation "RA_Weaken: p1 p2" := (new [ #0])%E (at level 102, p1, p2 at level 1): expr_scope.
 
-  Lemma typed_ra_weaken `{! CmraDiscrete U } κ (p1 p2 : path) (ty : type 𝔄) E L I :
+  Lemma typed_ra_weaken κ (p1 p2 : path) (ty : type 𝔄) E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I
-    +[p1 ◁ shr_bor κ (ra_ty 𝔄_const); p2 ◁ own_ptr 0 (ghost_ty ty)]
+    +[p1 ◁ shr_bor κ (ra_ty VRA 𝔄_const); p2 ◁ own_ptr 0 (ghost_ty ty)]
     (RA_Weaken: p1 p2)
-    (λ v, +[v ◁ shr_bor κ (ra_ty 𝔄_const)])
-    (λ post '-[(l, (γ, x)); (_, y)], λ mask π, y ≼ x ∧ ∀ l, post -[(l, (γ, y))] mask π).
+    (λ v, +[v ◁ shr_bor κ (ra_ty VRA 𝔄_const)])
+    (λ post '-[(l, (γ, x)); (_, y)], λ mask π, vra_incl VRA y x ∧ ∀ l, post -[(l, (γ, y))] mask π).
   Proof.
     move => Alv tid postπ mask iκs vπl.
     fold indep_interp_of_syn_type.
@@ -451,11 +577,11 @@ Section RA_type.
     iDestruct "Hown" as "(_ & #Hshr & _)".
     iDestruct (Alv with "L E") as "#Alv".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & %Hincl & _)" => //.
-    iPoseProof (@guards_and_own _ _ _ _ _ _ U _ γ y with "Hshr Hshr") as "Hshr'"; [ | | ..].
+    iPoseProof (@guards_and_own _ _ _ _ _ _ (vra_carUR VRA) _ γ (VraCar VRA y) with "Hshr Hshr") as "Hshr'"; [ | | ..].
     { iIntros "H".
       iApply (and_own_discrete_ucmra_specific with "H").
       move => w Hvalid Hincl1 Hincl2.
-      by etransitivity. }
+      etransitivity; last done. by apply vra_car_included. }
     iApply wp_new=>//.
     iIntros "!>" (l) "(† & ↦) ".
     iExists -[((l, []), (γ, y))].
@@ -475,13 +601,13 @@ Section RA_type.
 
   Notation "RA_UpdateWithShr: self other new_value" := (new [ #0])%E (at level 102, self,other,new_value at level 1): expr_scope.
 
-  Lemma typed_ra_update_with_shr `{! CmraDiscrete U } κ (self other new_value : path) (ty : type 𝔄) E L I :
+  Lemma typed_ra_update_with_shr κ (self other new_value : path) (ty : type 𝔄) E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I
-    +[self ◁ own_ptr 0 (ra_ty 𝔄_const); other ◁ shr_bor κ (ra_ty 𝔄_const); new_value ◁ own_ptr 0 (ghost_ty ty)]
+    +[self ◁ own_ptr 0 (ra_ty VRA 𝔄_const); other ◁ shr_bor κ (ra_ty VRA 𝔄_const); new_value ◁ own_ptr 0 (ghost_ty ty)]
     (RA_UpdateWithShr: self other new_value)
-    (λ out, +[out ◁ own_ptr 0 (ra_ty 𝔄_const)])
-    (λ post '-[(l1, (γ1, x)); (l2, (γ2, y)); (_, z)], λ mask π, γ1 = γ2 ∧ (@cmra_update (ucmra_cmraR (Ucmra' (~~ 𝔄) 𝔄_mixin1 𝔄_mixin2 𝔄_mixin3)) (x ⋅ y) (z ⋅ y))  ∧ ∀ l, post -[(l, (γ1, z))] mask π).
+    (λ out, +[out ◁ own_ptr 0 (ra_ty VRA 𝔄_const)])
+    (λ post '-[(l1, (γ1, x)); (l2, (γ2, y)); (_, z)], λ mask π, γ1 = γ2 ∧ vra_frame_preserving_update VRA (vra_op VRA x y) (vra_op VRA z y) ∧ ∀ l, post -[(l, (γ1, z))] mask π).
   Proof.
     move => Alv tid postπ mask iκs vπl.
     iIntros "LFT #TIME #PROPH UNIQ E L $ TY #Obs" => /=.
@@ -516,7 +642,8 @@ Section RA_type.
     iMod (lc_fupd_add_laterN _ _ _ (S (S d2)) with "[H£'] Hown") as "[Hown Hclose]".
     { iApply (lc_weaken with "H£'"). rewrite /advance_credits. nia. }
     iCombine "Hx Hown" as "Hxy".
-    iMod (own_update with "Hxy") as "Hxy" => //.
+    iMod (own_update _ _ (VraCar VRA z ⋅ VraCar VRA y) with "Hxy") as "Hxy".
+    { rewrite !vra_car_op_eq. by apply vra_car_update. }
     iDestruct "Hxy" as "[Hx Hown]".
     iMod ("Hclose" with "Hown") as "L".
     iFrame "L".
@@ -536,13 +663,16 @@ Section RA_type.
 
   Notation "RA_UpdateWithShrNonDet: self other new_values" := (new [ #0])%E (at level 102, self,other,new_values at level 1): expr_scope.
 
-  Lemma typed_ra_update_with_shr_non_det `{! CmraDiscrete U } κ n (self other new_values : path) (ty : type (vecₛ 𝔄 n)) E L I :
+  Lemma typed_ra_update_with_shr_non_det κ n (self other new_values : path) (ty : type (vecₛ 𝔄 n)) E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I
-    +[self ◁ own_ptr 0 (ra_ty 𝔄_const); other ◁ shr_bor κ (ra_ty 𝔄_const); new_values ◁ own_ptr 0 (ghost_ty ty)]
+    +[self ◁ own_ptr 0 (ra_ty VRA 𝔄_const); other ◁ shr_bor κ (ra_ty VRA 𝔄_const); new_values ◁ own_ptr 0 (ghost_ty ty)]
     (RA_UpdateWithShrNonDet: self other new_values)
-    (λ out, +[out ◁ own_ptr 0 (ra_ty 𝔄_const)])
-    (λ post '-[(l1, (γ1, x)); (l2, (γ2, y)); (_, zs)], λ mask π, γ1 = γ2 ∧ 0 < n ∧ (Vector.Forall (λ z, (@cmra_update (ucmra_cmraR (Ucmra' (~~ 𝔄) 𝔄_mixin1 𝔄_mixin2 𝔄_mixin3)) (x ⋅ y) (z ⋅ y))) zs)  ∧ ∀ l, Vector.Forall (λ z, post -[(l, (γ1, z))] mask π) zs ).
+    (λ out, +[out ◁ own_ptr 0 (ra_ty VRA 𝔄_const)])
+    (λ post '-[(l1, (γ1, x)); (l2, (γ2, y)); (_, zs)], λ mask π, γ1 = γ2 ∧
+        vra_frame_preserving_update_nondeterministic VRA (vra_op VRA x y)
+          (λ w, ∃ z, z ∈ vec_to_list zs ∧ w = vra_op VRA z y) ∧
+        ∀ l, Forall (λ z, post -[(l, (γ1, z))] mask π) (vec_to_list zs)).
   Proof.
     move => Alv tid postπ mask iκs vπl.
     iIntros "LFT #TIME #PROPH UNIQ E L $ TY #Obs" => /=.
@@ -560,9 +690,7 @@ Section RA_type.
     iDestruct "Hown1" as "(_ & _ & Hx)".
     iDestruct "Hown2" as "(_ & #Hy & _)".
     iDestruct (Alv with "L E") as "#Alv".
-    iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hn & %Hupd & _)" => //.
-    destruct n; first lia.
-    inv_vec zs => z zs Hupd.
+    iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hupd & _)" => //.
     iDestruct (guards_transitive_right with "Alv Hy") as "G1".
     iApply wp_fupd.
     wp_lam.
@@ -580,9 +708,11 @@ Section RA_type.
     iMod (lc_fupd_add_laterN _ _ _ (S (S d2)) with "[H£'] Hown") as "[Hown Hclose]".
     { iApply (lc_weaken with "H£'"). rewrite /advance_credits. nia. }
     iCombine "Hx Hown" as "Hxy".
-    iMod (own_update with "Hxy") as "Hxy".
-    { apply Vector.Forall_cons_iff in Hupd as [Hupd ?].
-      exact Hupd. }
+    rewrite vra_car_op_eq.
+    iMod (own_updateP with "Hxy") as ([w]) "[%Hin Hxy]".
+    { by apply vra_car_updateP. }
+    simpl in Hin. destruct Hin as (z & Hz & ->).
+    rewrite -vra_car_op_eq.
     iDestruct "Hxy" as "[Hx Hown]".
     iMod ("Hclose" with "Hown") as "L".
     iFrame "L".
@@ -596,10 +726,10 @@ Section RA_type.
       rewrite heap_mapsto_fancy_vec_nil.
       repeat iSplit => //.
     + iApply (proph_obs_impl with "Obs").
-      intros π' [_ [_ [? Hpost]]].
+      intros π' [_ [_ Hpost]].
       specialize (Hpost (42%positive, 1337%Z)).
-      apply Vector.Forall_cons_iff in Hpost as [Hpost ?].
-      apply Hpost.
+      rewrite Forall_forall in Hpost.
+      by apply Hpost.
   Qed.
 
 End RA_type.
