@@ -307,6 +307,7 @@ src/lambda_verus/typing/type_sum.v
 src/lambda_verus/typing/borrow.v
 src/lambda_verus/typing/sum.v
 src/lambda_verus/typing/ra.v
+src/lambda_verus/typing/proph_protocol.v
 src/lambda_verus/typing/protocol.v
 src/lambda_verus/typing/local_inv.v
 src/lambda_verus/typing/atomic_inv.v

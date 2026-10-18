@@ -298,7 +298,8 @@ Remarks:
 
 Remarks:
 
- * The `P: PCM` bound is represented in Rocq by the `Ucmra'` (unital camera) instance, a class defined in the Iris library. Cameras are generalizations of PCMs and have more informtion than PCMs (e.g., the "core" operator), but this information is mostly just ignored.
+ * The `P: PCM` bound is represented in Rocq by the `VerusRA` record, which mirrors the `PCM` trait, except that validity is _prophetic_ (it takes a prophecy assignment `proph_asn`). `ra.v` constructs an Iris camera from it internally: `ra_ty` owns a fragment of an authoritative resource, and an invariant (`ra_inv`) holds the authoritative element together with a prophecy observation that it is valid.
+ * Because validity is prophetic, some laws are reformulated: `vra_frame_preserving_update` holds with respect to the (actual) prophecy assignment; for nondeterministic updates, the new element is chosen from the frame alone, so the validity implication must hold for all prophecy assignments; and `vra_conjunct_shared` has no validity premise.
  * `join_shared` doesn't follow from our model; it requires more investigation. We instead prove `join_shared_to_target`, which is slightly weaker (but equivalent for many PCMs).
 
 ### Storage Protocols
@@ -323,7 +324,7 @@ Remarks:
 | `deposit`                               | `typed_sp_deposit`                            |
 | `withdraw`                              | `typed_sp_withdraw`                           |
 | `update`                                | `typed_sp_update`                             |
-| `exchange_nondeterministic`             | `typed_sp_exchange_with_shr_nondeterministic` |
+| `exchange_nondeterministic`             | `typed_sp_exchange_nondeterministic`          |
 | `guard`                                 | `typed_sp_guard`                              |
 | `join_shared`                           | -                                             |
 | -                                       | `typed_sp_join_shared_to_target`              |
@@ -333,9 +334,11 @@ Remarks:
 | `exchange_nondeterministic_with_shared` | `typed_sp_exchange_with_shr_nondeterministic` |
 
 Remarks:
+ * The `P: Protocol<K, V>` bound is represented in Rocq by the `VerusSP` class (`src/lambda_verus/typing/proph_protocol.v`), which mirrors the `Protocol` trait, except that `rel` is _prophetic_. The underlying logic is a variant of `src/guarding/storage_protocol/protocol.v` whose invariant additionally holds a prophecy observation that `rel` holds.
+ * `guards` must hold for all prophecy assignments (guards cannot consult prophecies). For nondeterministic exchanges, the outcome is chosen from the frame and the current stored map alone. The other relations (`exchanges`, `deposits`, `withdraws`, `updates`) are checked against the actual prophecy assignment.
  * The Verus version deals in collections of ghost objects (via `Map`).
-   VerusBelt doesn't have a Map-equivalent; we prove simplified specs that deal only in singleton
-   ghost objects.
+   VerusBelt doesn't have a Map-equivalent type; we prove simplified specs that deal only in singleton
+   ghost objects `{[ k := v ]}`, where the key `k` is a parameter of the typing rule.
  * Storage Protocols have the same issue with `join_shared` mentioned above.
 
 ### LocalInvariant
