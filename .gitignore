@@ -13,3 +13,4 @@ Makefile.coq
 Makefile.coq.conf
 Makefile.using_opam.coq
 Makefile.using_opam.coq.conf
+.claude/settings.local.json
