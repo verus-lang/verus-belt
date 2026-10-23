@@ -1,7 +1,7 @@
 From iris.proofmode Require Import proofmode.
 From lrust.typing Require Export type.
 From lrust.typing Require Import type_context lft_contexts product own uniq_bor freeable_util programs programs_util.
-From lrust.typing Require Import shr_bor mod_ty uninit.
+From lrust.typing Require Import shr_bor mod_ty uninit uniq_util.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
@@ -310,101 +310,97 @@ Section product_split.
       leaf_open "G3" with "H1" as "[Alive _]". { set_solver. }
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
     }
-    iDestruct "UniqBody" as "(ξVo & £2 & ξTok & ξBor)".
-    iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "ξBor".
-    iMod (llftl_bor_acc_guarded with "LFT ξBor HalfGuardsK H1") as "[P' ToBor]". { set_solver. }
-    iMod (bi.later_exist_except_0 with "P'") as (x'' d'' g'') "(#>⧖1 & ξPc & Gho1 & >Pt1)".
-    iMod (uniq_strip_later with "ξVo ξPc") as "(%agree1 & %agree2 & ξVo & ξPc)".
-    inversion agree2. subst x''. subst d''. subst g''.
-    
-    iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Pt1") as "%LenEq".
-      
+    iDestruct "UniqBody" as "(ξBor & £2)".
     destruct x0 as [x0 y0].
-    have ?: Inhabited 𝔄 := populate (vπ x0 inhabitant).
-    have ?: Inhabited 𝔅 := populate (vπ y0 inhabitant).
-    iMod (uniq_intro x0 (vπ x0) (d', g') with "PROPH UNIQ") as (ζi) "[ζVo ζPc]"; [done|].
-    iMod (uniq_intro y0 (vπ y0) (d', g') with "PROPH UNIQ") as (ζ'i) "[ζ'Vo ζ'Pc]"; [done|].
-    
-    set ξ := PrVar _ ξi.
-    set ζ := PrVar _ ζi. set ζ' := PrVar _ ζ'i.
-    iDestruct (uniq_proph_tok with "ζVo ζPc") as "(ζVo & ζ & ζPc)".
-    iDestruct (uniq_proph_tok with "ζ'Vo ζ'Pc") as "(ζ'Vo & ζ' & ζ'Pc)".
-    iMod (uniq_preresolve ξ [ζ; ζ'] (λ π, (π ζ, π ζ')) with
-      "UNIQ PROPH ξVo ξPc [$ζ $ζ']") as "(Obs' & (ζ & ζ' &_) & ToξPc)"; [done| |done|].
-    { apply (proph_dep_prod [_] [_]); apply proph_dep_one. }
-
-    iCombine "Obs Obs'" as "#Obs".
-    iSpecialize ("ζPc" with "ζ"). iSpecialize ("ζ'Pc" with "ζ'").
-    
-    
-    iDestruct ("ToBor" with "[ToξPc Pt1 Gho1 ζPc ζ'Pc]") as "X"; last first.
-     - iMod (fupd_mask_mono with "X") as "[Bor H1]". { set_solver. }
-       iDestruct ("Halfback" with "H1 H2") as "L".
-       iMod (fupd_mask_mono with "L") as "$". { set_solver. }
-       iMod (llftl_sep_split with "LFT Bor") as "[Bor Bor']"; [done|]. iModIntro.
-       iDestruct (llftl_bor_idx with "Bor") as (ζidx) "[Bor Tok]".
-       iDestruct (llftl_bor_idx with "Bor'") as (ζ'idx) "[Bor' Tok']".
-       
-       rewrite lft_intersect_list_app.
-       
-       rewrite (heap_cloc_mapsto_emp_vec_app l (ty_size ty)).
-       iDestruct (guards_weaken_rhs_sep_l with "PtBase") as "#PtBase1".
-       iDestruct (guards_weaken_rhs_sep_r with "PtBase") as "#PtBase2".
-       
-       iExists -[(cloc_take l ty.(ty_size), x0, ζi, d', g', ζidx); (cloc_skip l ty.(ty_size), y0, ζ'i, d', g', ζ'idx)].
-       inversion Phys. subst v.
-       iSplit. {
-         iSplitL "Tok Bor ζVo £2". {
-            unfold tctx_elt_interp. iExists (#l.1), d.
-            iSplit. { iPureIntro. simpl. rewrite path. rewrite shift_loc_0. trivial. }
-            iSplit. { iApply (persistent_time_receipt_mono with "⧖"). lia. }
-            iFrame "Tok". iFrame "Bor". iFrame "ζVo". iFrame "£2". iSplit; last by done.
-            iSplit. { iApply (guards_transitive with "Incl []"). iApply llftl_intersect_incl_l. }
-            iSplit. { iPureIntro. lia. }
-            iFrame "PtBase1".
-            iDestruct "Pers" as "[Pers _]". iFrame "Pers".
-         }
-         iSplitL. {
-            unfold tctx_elt_interp. iExists (#(l.1 +ₗ ty_size ty)), d.
-            iSplit. { iPureIntro. simpl. rewrite path. trivial. }
-            iSplit. { iApply (persistent_time_receipt_mono with "⧖"). lia. }
-            iFrame "Tok'". iFrame "Bor'". iFrame "ζ'Vo". iSplit; last by done.
-            iSplit. { iApply (guards_transitive with "Incl []"). iApply llftl_intersect_incl_r. }
-            iSplit. { iPureIntro. lia. }
-            iFrame "⧗ PtBase2".
-            iRight.
-            iDestruct "Pers" as "[_ Pers]". iFrame "Pers".
-         }
-         done.
-       }
-       iApply proph_obs_impl; [|done]=>/= π.
-       intros [Ha Hb]. apply Ha; trivial.
-       + unfold uniq_bor_future. simpl. rewrite Hb. trivial.
-       + unfold uniq_bor_future. simpl. rewrite Hb. trivial.
-     - iSplitL "ToξPc". {
-        iNext. iIntros "[A B]".
-        iMod (bi.later_exist_except_0 with "A") as (x1 d1 g1) "(#>⧖2 & ζPc & Gho1 & >Pt1)".
-        iMod (bi.later_exist_except_0 with "B") as (x2 d2 g2) "(#>⧖3 & ζ'Pc & Gho2 & >Pt2)".       iModIntro.  iNext. iExists (x1, x2). iExists (d1 `max` d2). iExists (g1 `max` g2).
-        iCombine "⧖2 ⧖3" as "⧖4".
+    iMod (proph_loan_intro (uniq_cell_tyi x0) ⊤ (uniq_cell x0 d' g') with "PROPH UNIQ")
+      as (ζi) "Loan1"; [solve_ndisj|].
+    iMod (proph_loan_intro (uniq_cell_tyi y0) ⊤ (uniq_cell y0 d' g') with "PROPH UNIQ")
+      as (ζ'i) "Loan2"; [solve_ndisj|].
+    set ξ := uniq_prvar (𝔄:=(𝔄 * 𝔅)%ST) (x0, y0) ξi.
+    set ζ := uniq_prvar x0 ζi. set ζ' := uniq_prvar y0 ζ'i.
+    set f := λ (a: ~~ (uniq_cellₛ 𝔄)) (b: ~~ (uniq_cellₛ 𝔅)),
+      uniq_cell (𝔄:=(𝔄 * 𝔅)%ST) (a.1, b.1)
+        (dec_depth a.2.1 `max` dec_depth b.2.1) (dec_depth a.2.2 `max` dec_depth b.2.2).
+    set fπ := λ (a: uniq_cellₛ 𝔄) (b: uniq_cellₛ 𝔅),
+      (((a.1, b.1), (enc_depth (dec_depth a.2.1 `max` dec_depth b.2.1),
+                     enc_depth (dec_depth a.2.2 `max` dec_depth b.2.2))) : uniq_cellₛ (𝔄 * 𝔅)).
+    have Hcomm: ∀ a b π, vπ (f a b) π = fπ (vπ a π) (vπ b π).
+    { intros [a [??]] [b [??]] π. done. }
+    have Hrefl: ∀ a b ζl, (λ π, fπ (vπ a π) (vπ b π)) ./ ζl → vπ a ./ ζl ∧ vπ b ./ ζl.
+    { intros [a [??]] [b [??]] ζl Dep. split; apply uniq_cell_dep_rev; simpl;
+        intros π π' Heq; have := Dep π π' Heq; rewrite /fπ /=; by intros [=]. }
+    iMod (proph_ibor_split ⊤ κ ξ (uniq_cell (𝔄:=(𝔄 * 𝔅)%ST) (x0, y0) d' g') idx
+      (uniq_payload (ty * ty') tid l)
+      ζ (uniq_cell x0 d' g') (uniq_payload ty tid (cloc_take l ty.(ty_size)))
+      ζ' (uniq_cell y0 d' g') (uniq_payload ty' tid (cloc_skip l ty.(ty_size)))
+      f fπ (fractional.half γ) ltac:(apply _) ltac:(solve_ndisj) Hcomm Hrefl
+      with "LFT PROPH UNIQ HalfGuardsK [] H1 Loan1 Loan2 ξBor")
+      as "(#Obs' & Bor & Bor' & H1)".
+    { iIntros "Payload". rewrite uniq_payload_cell.
+      iDestruct "Payload" as "(>#⧖1 & Gho1 & >Pt1)".
+      iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Pt1") as "%LenEq".
+      rewrite heap_cloc_mapsto_fancy_vec_app. rewrite ty_size_eq.
+      iDestruct "Pt1" as "[Pt1 Pt2]".
+      iDestruct "Gho1" as "[Gho1 Gho2]".
+      iModIntro. rewrite !uniq_payload_cell. iFrame "∗#".
+      iIntros ([x1 [p1 p2]] [x2 [p3 p4]]) "Q1 Q2".
+      rewrite /uniq_payload /f /=. rewrite !dec_enc_depth.
+      iDestruct "Q1" as "(>#⧖2 & Gho1 & >Pt1)".
+      iDestruct "Q2" as "(>#⧖3 & Gho2 & >Pt2)".
+      iModIntro. iNext.
+      iCombine "⧖2 ⧖3" as "⧖4".
+      iSplit. { iApply (persistent_time_receipt_mono with "⧖4"). lia. }
+      rewrite heap_cloc_mapsto_fancy_vec_app.
+      rewrite ty_size_eq. iFrame.
+      iDestruct (ty_gho_depth_mono with "Gho1") as "[Gho1 _]". 3: {
+      iDestruct (ty_gho_depth_mono with "Gho2") as "[Gho2 _]". 3: {
         iFrame.
-        iSplit. { iApply (persistent_time_receipt_mono with "⧖4"). lia. }
-        iSplitL "ToξPc ζPc ζ'Pc". {
-          iApply "ToξPc". iApply (proph_eqz_constr2 with "[ζPc] [ζ'Pc]");
-        [iApply (proph_ctrl_eqz with "PROPH ζPc")|
-         iApply (proph_ctrl_eqz with "PROPH ζ'Pc")]. }
-        rewrite heap_cloc_mapsto_fancy_vec_app.
-        rewrite ty_size_eq. iFrame.
-        iDestruct (ty_gho_depth_mono with "Gho1") as "[Gho1 _]". 3: {
-        iDestruct (ty_gho_depth_mono with "Gho2") as "[Gho2 _]". 3: {
-          iFrame.
-        } { lia. } { lia. } } { lia. } { lia. }
-     } {
-       iNext. 
-       iDestruct "Gho1" as "[Gho1 Gho2]".
-       rewrite heap_cloc_mapsto_fancy_vec_app. rewrite ty_size_eq.
-       iDestruct "Pt1" as "[Pt1 Pt2]".
-       iFrame. iFrame "⧖1".
-     }
+      } { lia. } { lia. } } { lia. } { lia. } }
+    iCombine "Obs Obs'" as "#Obs".
+    iDestruct ("Halfback" with "H1 H2") as "L".
+    iMod (fupd_mask_mono with "L") as "$". { set_solver. }
+    iDestruct "Bor" as (ζidx) "Bor".
+    iDestruct "Bor'" as (ζ'idx) "Bor'".
+    iModIntro.
+
+    rewrite lft_intersect_list_app.
+
+    rewrite (heap_cloc_mapsto_emp_vec_app l (ty_size ty)).
+    iDestruct (guards_weaken_rhs_sep_l with "PtBase") as "#PtBase1".
+    iDestruct (guards_weaken_rhs_sep_r with "PtBase") as "#PtBase2".
+
+    iExists -[(cloc_take l ty.(ty_size), x0, ζi, d', g', ζidx); (cloc_skip l ty.(ty_size), y0, ζ'i, d', g', ζ'idx)].
+    inversion Phys. subst v.
+    iSplit. {
+      iSplitL "Bor £2". {
+         unfold tctx_elt_interp. iExists (#l.1), d.
+         iSplit. { iPureIntro. simpl. rewrite path. rewrite shift_loc_0. trivial. }
+         iSplit. { iApply (persistent_time_receipt_mono with "⧖"). lia. }
+         iSplit; last by done.
+         iSplit. { iApply (guards_transitive with "Incl []"). iApply llftl_intersect_incl_l. }
+         iSplit. { iPureIntro. lia. }
+         iSplitL "Bor £2". { rewrite /uniq_body. iFrame. }
+         iFrame "PtBase1".
+         iDestruct "Pers" as "[Pers _]". iFrame "Pers".
+      }
+      iSplitL. {
+         unfold tctx_elt_interp. iExists (#(l.1 +ₗ ty_size ty)), d.
+         iSplit. { iPureIntro. simpl. rewrite path. trivial. }
+         iSplit. { iApply (persistent_time_receipt_mono with "⧖"). lia. }
+         iSplit; last by done.
+         iSplit. { iApply (guards_transitive with "Incl []"). iApply llftl_intersect_incl_r. }
+         iSplit. { iPureIntro. lia. }
+         iSplitL "Bor' ⧗". { rewrite /uniq_body. iFrame. }
+         iFrame "PtBase2".
+         iRight.
+         iDestruct "Pers" as "[_ Pers]". iFrame "Pers".
+      }
+      done.
+    }
+    iApply proph_obs_impl; [|done]=>/= π.
+    intros [Ha Hb]. apply Ha; trivial.
+    + unfold uniq_bor_future. simpl. rewrite Hb. trivial.
+    + unfold uniq_bor_future. simpl. rewrite Hb. trivial.
   Qed.
 
   (* Unfortunately we can't use these nice automation utilities because of the 

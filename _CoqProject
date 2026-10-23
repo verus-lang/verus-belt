@@ -277,6 +277,7 @@ src/lambda_verus/lang/lib/spawn.v
 
 src/lambda_verus/typing/base.v
 src/lambda_verus/typing/uniq_cmra.v
+src/lambda_verus/util/proph_bor.v
 src/lambda_verus/typing/lifetime.v
 src/lambda_verus/typing/lft_contexts.v
 src/lambda_verus/typing/inv_context.v

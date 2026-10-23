@@ -88,46 +88,28 @@ Section uniq_bor.
     iApply (bi.laterN_le (S (d' * (g' + 1)))). { nia. }
     iNext. iNext.
     iIntros "#Rk #Rg2".
-    
-    iDestruct (llftl_idx_bor_guard' κ idx _ R with "LFT IdxBor [] []") as "#Ginto_uniq".
-      { iApply (guards_transitive_left with "Rk Hincl0"). }
-      { iApply (guards_transitive_left with "Rg2 []").
-        leaf_by_sep.
-        iIntros "[A [B [[C [D [E F]]] G]]]". iFrame. iIntros. done. }
-    iDestruct (guards_weaken_rhs_sep_r with "Ginto_uniq") as "G_later_exists".
-    iDestruct (guards_later_absorb_1 with "G_later_exists") as "G_exists".
-    iDestruct (guards_exist_eq x0 d' g' _ _ _ _ _ _ (n + 1) with "Rg2 G_exists") as "G_inst".
-    {
-      intros x1 d1 g1.
-      iIntros "And".
-      iDestruct (uniq_and_agree (PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi) with "[And]") as "%Heq". iSplit.
-      { iDestruct "And" as "[(x & y & (z & w) & v) _]". iFrame "z". }
-      { iDestruct "And" as "[_ (x & y & z)]". iFrame "y". }
-      iPureIntro. destruct Heq as [Heq1 Heq2]. inversion Heq2. intuition.
-    }
-    { lia. } { lia. }
-        
+    iAssert (R &&{↑NllftG; n}&&> @[κ])%I as "#RkK".
+    { iApply (guards_transitive_left with "Rk Hincl0"). }
+    iAssert (R &&{↑NllftG; n}&&> uniq_tok x0 ξi d' g' idx)%I as "#Rtok".
+    { iApply (guards_transitive_left with "Rg2 []"). leaf_by_sep.
+      iIntros "(A & B & Body & C)". rewrite uniq_body_unfold.
+      iDestruct "Body" as "(T & ⧗ & P)". iFrame "T". iIntros "T". iFrame. }
     rewrite elem_of_cons in Hin. destruct Hin as [Hξeq|Hin].
     - subst ξ.
-        unfold uniq_body.
-        leaf_hyp "Rg2" laters to (n+1) as "Rg2np1". { lia. }
-        leaf_goal laters to (n+1). { lia. }
-        iApply (guards_and_point with "Rg2np1 G_inst").
-        + apply proph_tok_point_prop.
-        + iIntros "And". iApply proph_ctrl_and_value_obs_entails_proph_tok. iSplit.
-          * iDestruct "And" as "[_ (_ & $ & _)]".
-          * iDestruct "And" as "[(? & ? & (? & ?) & ?) _]". iFrame.
-    - leaf_goal laters to (n + 1 + d' * (g' + 1)). { nia. }
+      leaf_goal laters to (n+1). { lia. }
+      iApply (uniq_tok_guard_proph_tok with "LFT IdxBor RkK Rtok").
+    - iDestruct (uniq_tok_guard_payload with "LFT IdxBor RkK Rtok") as "#G_inst".
+      leaf_goal laters to (n + 1 + d' * (g' + 1)). { nia. }
       iApply "Hforall".
         { iPureIntro. apply Hin. }
         { leaf_goal laters to n. { lia. } iFrame "Rk". }
         { iApply (guards_transitive_left with "G_inst []").
-          leaf_by_sep. iIntros "[A [B [C D]]]". iFrame "C". iIntros. iFrame.
+          leaf_by_sep. iIntros "[A [B C]]". iFrame "B". iIntros. iFrame.
         }
   Qed.
   Next Obligation.
     destruct x as [[[[[l x0] ξi] d'] g'] idx]. fold indep_interp_of_syn_type. simpl.
-    unfold uniq_body_pers_component. typeclasses eauto.
+    typeclasses eauto.
   Qed.
   Next Obligation.
     destruct x as [[[[[l x0] ξi] d'] g'] idx]. fold indep_interp_of_syn_type. simpl.
@@ -144,12 +126,12 @@ Section uniq_bor.
         unfold ty_outlives_E. f_equiv. apply Heqv.
      - intros x d g tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. f_equiv.
         + do 2 f_equiv. apply Heqv.
-        + unfold uniq_body. do 2 f_equiv.
-          * do 13 f_equiv. { apply Heqv. } f_equiv. apply Heqv.
+        + do 2 f_equiv.
+          * apply uniq_body_ne; intros; apply Heqv.
           * do 3 f_equiv. apply Heqv.
      - intros x d g tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. do 2 f_equiv.
         + do 2 f_equiv. apply Heqv.
-        + unfold uniq_body_pers_component. do 10 f_equiv. { apply Heqv. } f_equiv. apply Heqv.
+        + apply uniq_pers_component_ne; intros; apply Heqv.
      - intros x tid. done.
   Qed.
 End uniq_bor.
@@ -166,21 +148,13 @@ Section typing.
        destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. f_equiv.
         + apply equiv_dist. iDestruct Heq1 as "#[??]".
           iSplit; iIntros "#H"; (iApply llftl_incl_trans; [iApply "H"|done]).
-        + unfold uniq_body. do 2 f_equiv.
-          * do 3 f_equiv. apply idx_bor_contractive.
-            destruct n. { split. lia. } apply dist_later_S.
-            do 9 f_equiv.
-            -- rewrite dist_later_S. done.
-            -- f_equiv. apply Heq5.
+        + do 2 f_equiv.
+          * apply uniq_body_contractive; intros; [apply Heq3|apply Heq5].
           * do 2 f_equiv. apply later_contractive. apply Heq4.
      - intros n ty ty' Heq Heq1 Heq2 Heq3 Heq4 Heq5 x d g tid.
        destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. do 2 f_equiv.
         + f_equiv. apply later_contractive. apply Heq4.
-        + unfold uniq_body_pers_component. apply idx_bor_contractive.
-            destruct n. { split. lia. } apply dist_later_S.
-            do 9 f_equiv.
-            -- rewrite dist_later_S. done.
-            -- f_equiv. apply Heq5.
+        + apply uniq_pers_component_contractive; intros; [apply Heq3|apply Heq5].
      - intros x tid. done.
   Qed.
   
@@ -195,20 +169,13 @@ Section typing.
     }
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
     intros d g G H κs d0 Hineq TG TH.
-    iIntros "#LFT #UNIQ #TIME Hg H Gg G (Incl & %Ineqs & (Vo & ⧗ & Tok & Bor) & Pt & Pers) ⧖o".
-    
-    iDestruct (llftl_bor_idx_to_full with "Bor Tok") as "Bor".
+    iIntros "#LFT #UNIQ #TIME Hg H Gg G (Incl & %Ineqs & UniqBody & Pt & Pers) ⧖o".
     destruct d; first by lia.
     simpl.
-    iMod (llftl_bor_acc with "LFT Bor []") as "[Inner Back]". { set_solver. }
+    iMod (uniq_body_acc_rebody ty x0 ξi d' g' idx static tid l _ (uniq_payload ty tid' l)
+      with "LFT UNIQ [] UniqBody") as "Acc". { set_solver. }
       { iApply llftl_tok_unit. }
-    
-    iModIntro. iNext.
-    iDestruct "Inner" as (x'' d'' g'') "(⧖ & Pc & Gho & Pt1)".
-    
-    iDestruct (uniq_agree with "Vo Pc") as "[%agree1 %agree2]". inversion agree2.
-      subst x''. subst d''. subst g''.
-      
+    iModIntro. iNext. iMod "Acc" as "((⧖ & Gho & Pt1) & ⧗ & Close)".
     iCombine "⧖o ⧖" as "⧖max".
     iDestruct (send_change_tid tid tid' x0 d' g' G H κs _ _ TG TH with "LFT UNIQ TIME Hg H Gg G Gho ⧖max") as "J". Unshelve. 2: { lia. }
     iModIntro.
@@ -216,28 +183,22 @@ Section typing.
     iApply (step_fupdN_wand with "J"). iFrame.
     iIntros "gho". iMod "gho" as (x' off) "[gho [#⧖off [%Habstract [G H]]]]".
     iDestruct (ty_gho_pers_impl with "gho") as "#ghopers".
-    
-    iMod (uniq_update with "UNIQ Vo Pc") as "[Vo Pc]"; first by solve_ndisj.
-    
-    iDestruct ("Back" $! ((∃ x' (d'0 g'0 : nat),
-        ⧖(S d'0 `max` g'0) ∗ .PC[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi] x' (vπ x') (d'0, g'0) ∗
-        ty_gho ty x' d'0 g'0 tid' ∗ l #↦!∗ ty_phys ty x' tid'))%I) as "Back".
-    iDestruct ("Back" with "[Pc Pt1 gho]") as "Back".
-      - iSplitR.
-        + iNext. iIntros "[A static]". iExFalso. iApply (llftl_end_unit with "static").
-        + rewrite (send_change_tid_phys tid tid' x0 x'). iFrame "gho". iFrame "Pc". iFrame "Pt1".
-          iApply (persistent_time_receipt_mono with "⧖off"). { lia. } symmetry. trivial.
-      - iMod(fupd_mask_mono with "Back") as "[Bor Alive]"; first solve_ndisj. iModIntro. 
-        rewrite llftl_bor_idx.
-        iDestruct "Bor" as (idx2) "[A B]". 
-        iExists (l, x', ξi, d'+off, g', idx2), off. iFrame.
-        iSplit.
-          + iSplit; first by (iPureIntro; lia).
-            rewrite (proof_irrel (prval_to_inh _) (prval_to_inh (vπ x'))).
-            iFrame "Vo". iFrame "A". iFrame "ghopers".
-          + iSplit.
-            * iApply (persistent_time_receipt_mono with "⧖off"); lia.
-            * iPureIntro. rewrite Habstract. trivial.
+    iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; first solve_ndisj.
+    iMod ("Close" $! (uniq_cell x' (d'+off) g') with "[Pt1 gho] []") as (idx2) "[Bor Alive]".
+    { rewrite uniq_payload_later_cell. iNext.
+      rewrite (send_change_tid_phys tid tid' x0 x'); [|symmetry; trivial].
+      iFrame "gho Pt1". iApply (persistent_time_receipt_mono with "⧖off"). lia. }
+    { iNext. iIntros (c2) "[_ static]". iExFalso. iApply (llftl_end_unit with "static"). }
+    iMod "Upd" as "_".
+    iDestruct (uniq_body_make ty x' x0 with "Bor ⧗") as "UBody".
+    iModIntro.
+    iExists (l, x', ξi, d'+off, g', idx2), off. iFrame.
+    iSplit.
+      + iSplit; first by (iPureIntro; lia).
+        iFrame "ghopers".
+      + iSplit.
+        * iApply (persistent_time_receipt_mono with "⧖off"); lia.
+        * iPureIntro. rewrite Habstract. trivial.
   Qed.
 
 (*
@@ -257,20 +218,19 @@ Section typing.
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
     destruct (SyncTy tid tid' x0 d g) as [Hphys [Hgho Hpers]].
     split. { done. }
+    have Hg: ∀ x d g, ty.(ty_gho) x d g tid ⊣⊢ ty.(ty_gho) x d g tid'.
+    { intros. apply SyncTy. }
+    have Hp: ∀ x, ty.(ty_phys) x tid = ty.(ty_phys) x tid'.
+    { intros x. apply (SyncTy tid tid' x 0 0). }
     split. { unfold uniq_bor, ty_gho. do 3 f_equiv.
-      { unfold uniq_body.
-        do 13 f_equiv. apply SyncTy. f_equiv. apply SyncTy. { exact 0. } { exact 0. }
-      }
+      { by apply uniq_body_proper. }
       f_equiv.
       f_equiv. unfold ty_gho_pers. f_equiv. apply SyncTy.
     }
     unfold uniq_bor, ty_gho_pers. do 2 f_equiv.
       - destruct (SyncTy tid tid' x0 d' g') as [H'phys [H'gho H'pers]].
         setoid_rewrite H'pers. done.
-      - unfold uniq_body_pers_component.
-        do 9 f_equiv. 
-        destruct (SyncTy tid tid' a a0 a1) as [H'phys [H'gho H'pers]].
-        setoid_rewrite H'phys. setoid_rewrite H'gho. done.
+      - by apply uniq_pers_component_proper.
   Qed.
 
   Global Instance uniq_just_loc {𝔄} κ (ty: type 𝔄) : JustLoc (&uniq{κ} ty).
@@ -320,8 +280,8 @@ Section typing.
       iSplit. { iApply (guards_transitive_right with "In PtBase"). }
       iIntros "[Hincl'' [Hineq'' [UniqBody Pers'']]]".
       iFrame "#".
-      unfold uniq_body.
-      iDestruct "UniqBody" as "[A [B [C D]]]". iFrame.
+      rewrite !uniq_body_unfold.
+      iDestruct "UniqBody" as "(Tok & ⧗ & _)". iFrame "Tok ⧗ Saved".
     }
     iSplit. {
       iModIntro. iIntros (x d g tid) "#Pers".
@@ -365,16 +325,14 @@ Section typing.
     intros x d v tid G Htimeless.
     iIntros "#LFT #UNIQ E #GuardsL G [Gho %Phys]".
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
-    iDestruct "Gho" as "[#Incl [%Hineq [[ξVo [⧗ [Tok #Bor]]] [#PtBase Pers]]]]".
+    iDestruct "Gho" as "[#Incl [%Hineq [UniqBody [#PtBase Pers]]]]".
     iMod (lctx_lft_alive_get_guards _ _ _ _ _ Alv with "GuardsL E G") as "[G #GuardsK]".
       { solve_ndisj. }
     iDestruct (guards_transitive with "GuardsL GuardsK") as "#G_Guards_K".
     iMod (fractional.frac_split_guard_in_half with "G G_Guards_K") as (γ2) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
-    iMod (llftl_bor_idx_acc_guarded with "LFT Bor Tok Ghalf H1") as "[P Gback]".
+    iMod (uniq_body_acc with "LFT UNIQ Ghalf UniqBody H1") as "(P & ⧗ & Gback)".
       { solve_ndisj. }
-    iMod (bi.later_exist_except_0 with "P") as (x'' d'' g'') "(#>⧖ & ξPc & gho & >pt)".
-    iMod (uniq_strip_later with "ξVo ξPc") as "(%agree1 & %agree2 & ξVo & ξPc)".
-    inversion agree2. subst x''. subst d''. subst g''.
+    iDestruct "P" as "(>#⧖ & gho & >pt)".
     destruct d as [|d]. { lia. }
     iModIntro. iExists l. iExists d. iExists (fractional.half γ2).
     assert (v = FVal #(l.1)) as Hvl. { inversion Phys. trivial. }
@@ -393,12 +351,11 @@ Section typing.
     iCombine "⧖ ⧖1" as "⧖max".
     iDestruct "pt" as (lv) "[>pt [gho #>%phys]]". subst lv.
     iDestruct (ty_gho_pers_impl with "gho") as "#ghopers".
-    iMod (uniq_update (PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi) x1 (vπ x1) (d1, S d1) with "UNIQ ξVo ξPc") as "[ξVo ξPc]". { set_solver. }
-    iDestruct ("Gback" with "[pt gho ξPc]") as "H1".
-    { iNext. iExists x1. iExists (d1). iExists (S d1). iFrame.
+    iDestruct ("Gback" $! x1 d1 (S d1) with "[pt gho] ⧗") as "H1".
+    { iNext. iFrame.
       iApply (persistent_time_receipt_mono with "⧖max"). lia.
     }
-    iMod (fupd_mask_mono with "H1") as "[tok H1]". { set_solver. }
+    iMod (fupd_mask_mono with "H1") as "[UniqBody H1]". { set_solver. }
     iIntros "H2". iSpecialize ("Halfback" with "H1 H2"). iMod (fupd_mask_mono with "Halfback") as "G". { solve_ndisj. }
     iModIntro. iFrame "G". 
     unfold ty_own.
@@ -408,9 +365,7 @@ Section typing.
     simpl.
     iSplit; first by done.
     iSplit. { iPureIntro. lia. }
-    iFrame "ghopers". unfold uniq_body. iFrame "tok".
-    rewrite (proof_irrel (prval_to_inh _) (prval_to_inh (vπ x1))). iFrame "ξVo". iFrame "Bor".
-    iFrame "⧗".
+    iFrame "ghopers UniqBody".
     leaf_goal laters to _; last by iFrame "PtBase". lia.
   Qed.
   
@@ -422,29 +377,23 @@ Section typing.
     intros x d v tid G Htimeless.
     iIntros "#LFT #E #GuardsL G [Gho %Phys] [£d £1]".
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
-    iDestruct "Gho" as "[#Incl [%Hineq [[Vo [Credits [Tok #Bor]]] [#PtBase Pers]]]]".
+    iDestruct "Gho" as "[#Incl [%Hineq [UniqBody [#PtBase Pers]]]]".
+    rewrite uniq_body_unfold. iDestruct "UniqBody" as "(Tok & Credits & #Bor)".
     
     iMod (lctx_lft_alive_get_guards _ _ _ _ _ Alv with "GuardsL E G") as "[G #GuardsK]". { solve_ndisj. }
     
     assert (v = FVal #l.1) as Hvl. { inversion Phys. trivial. }
     subst v.
     
-    iDestruct (llftl_idx_bor_guard' κ idx _ (G ∗ idx_bor_tok idx)%I 0 with "LFT Bor [] []") as "BigGuards1".
-      { iApply guards_weaken_lhs_sep_l. iApply (guards_transitive with "GuardsL GuardsK"). }
-      { iApply guards_weaken_sep_r. }
-    iDestruct (guards_weaken_rhs_sep_r with "BigGuards1") as "BigGuards2". iClear "BigGuards1".
-    iDestruct (guards_later_absorb_1 with "BigGuards2") as "BigGuards3". iClear "BigGuards2".
-    iDestruct (guards_weaken_lhs_sep_r _ _ _ (.VO[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi] x0 (d', g')) with "BigGuards3") as "BigGuards4".  iClear "BigGuards3".
-     
-    iDestruct (guards_exist_eq x0 d' g' _ (.VO[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi] x0 (d', g')) _ _ 0 1 1 with "[] BigGuards4") as "BigGuards5".
-      { intros x'' d'' g''. iIntros "And". 
-        iDestruct (uniq_and_agree (PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi) with "[And]") as "%Heq". iSplit. { iDestruct "And" as "[A _]". iFrame "A". } { iDestruct "And" as "[_ (? & Pc & ?)]". iFrame "Pc". } iPureIntro. destruct Heq as [Heq1 Heq2]. inversion Heq2. intuition. } { lia. } { lia. }
+    iDestruct (uniq_tok_guard_payload ty x0 ξi d' g' idx κ tid l
+      (uniq_tok x0 ξi d' g' idx ∗ G)%I 0 with "LFT Bor [] []") as "BigGuards5".
+      { iApply guards_weaken_lhs_sep_r. iApply (guards_transitive with "GuardsL GuardsK"). }
       { iApply guards_weaken_sep_l. }
     
     iMod (guards_extract_persistent_later _ _ (ty_gho ty x0 d' g' tid)
-        with "BigGuards5 [Vo Tok G] []") as "J".
-      { solve_ndisj. } { iFrame. } { iIntros "(? & ? & ? & ?)". iFrame. }
-    iMod (lc_fupd_elim_later with "£1 J") as "J". iMod "J" as "[[Vo [G Tok]] #InnerGho]".
+        with "BigGuards5 [Tok G] []") as "J".
+      { solve_ndisj. } { iFrame. } { iIntros "(? & ? & ?)". iFrame. }
+    iMod (lc_fupd_elim_later with "£1 J") as "J". iMod "J" as "[[Tok G] #InnerGho]".
     iDestruct (guards_transitive with "GuardsL GuardsK") as "GGuardsK".
     iDestruct (guards_transitive_right with "GGuardsK PtBase") as "GGuardsPtBase".
     
@@ -452,19 +401,19 @@ Section typing.
     
     iModIntro.
     iExists l. iExists (to_concrete (ty_phys ty x0 tid)). iExists (ty_phys ty x0 tid).
-    iExists (.VO[PrVar (𝔄 ↾ prval_to_inh (vπ x0)) ξi] x0 (d', g') ∗ G ∗ idx_bor_tok idx)%I.
+    iExists (uniq_tok x0 ξi d' g' idx ∗ G)%I.
     iSplit. { done. }
-    iFrame "G". iFrame "Tok". iFrame "Vo".
+    iFrame "G". iFrame "Tok".
     iSplit. { iPureIntro. apply length_to_concrete. }
     iSplit. {
       iApply (guard_cloc_combine _ _ _ l with "[] []").
       - leaf_goal lhs to G; last by trivial.
-        leaf_by_sep. iIntros "(? & ? & ?)". iFrame. iIntros. done.
+        leaf_by_sep. iIntros "(? & ?)". iFrame. iIntros. done.
       - leaf_goal laters to 1. { lia. }
         iApply (guards_transitive_left with "BigGuards5 []").
         rewrite <- heap_complete_mapsto_fancy_fmap_eq.
         rewrite fmap_to_concrete.
-         + leaf_by_sep. { iIntros "[A [B [C D]]]". iFrame. iIntros. iFrame. }
+         + leaf_by_sep. { iIntros "(A & B & C)". iFrame. iIntros. iFrame. }
          + inversion Cpy; trivial.
     }
     iSplitR. { iIntros.
@@ -476,9 +425,11 @@ Section typing.
       unfold ty_own. simpl. iSplit; last by done.
       iNext. iDestruct (ty_gho_depth_mono with "InnerGho") as "[InnerGho' _]"; last by iFrame "InnerGho'". { lia. } { lia. }
     }
-    iIntros "[Vo [G Tok]]". iModIntro.
+    iIntros "[Tok G]". iModIntro.
     iExists (l, x0, ξi, d', g', idx).
-    iFrame. iFrame "#". iSplit; done.
+    iSplit; [done|]. iFrame "G".
+    rewrite /ty_own /=. iSplit; [|done]. iFrame "Pers". iFrame "Incl PtBase". iSplit; [done|].
+    rewrite uniq_body_unfold. iFrame "∗#".
   Qed.
   
   Lemma tctx_uniq_mod_ty_out {𝔄 𝔅 ℭl} κ (f : 𝔄 →ₛ 𝔅) (fⁱ: 𝔅 →ₛ 𝔄) ty (T: tctx ℭl) p E L
@@ -499,6 +450,7 @@ Section typing.
     destruct x as [[[[[l x0] ξi] d'] g'] ξidx].
     iDestruct "p" as (v d) "[%Hp [#⧖ [[#Incl [%Hineq [UniqBody #Pers]]] %Hphys]]]".
     iMod (uniq_body_transform (<{f;fⁱ}> ty) ty x0 (fⁱ ~~$ₛ x0) d' g' ξi ξidx κ tid l l _ G f
+        (λ d g, (d, g))
         with "LFT PROPH UNIQ [] GguardsK G UniqBody") as (ζi ζidx) "[Obs2 [UniqBody G]]". { set_solver. }
     {
       iIntros "[gho pt]". iModIntro. iFrame "gho". iFrame "pt". iIntros (x2 d2 g2) "(? & ? & ?)".
@@ -539,14 +491,14 @@ Section typing.
     
     iDestruct (guards_transitive with "GguardsL LguardsK") as "GguardsK".
     
-    iMod (uniq_body_transform ty ty' x0 (f ~~$ₛ x0) d' g' ξi ξidx κ tid l l _ G fⁱ
+    iMod (uniq_body_transform ty ty' x0 (f ~~$ₛ x0) d' g' ξi ξidx κ tid l l _ G fⁱ (λ d g, (d, g))
       with "LFT PROPH UNIQ [] GguardsK G UniqBody") as (ζi ζidx) "[Obs2 [UniqBody G]]". { set_solver. }
     {
       iIntros "[gho pt]". iModIntro.
       iDestruct ("EqGho" with "gho") as "$".
       rewrite EqPhys. iFrame "pt".
       iIntros (x2 d2 g2) "(gho & pt & ⧖')".
-      iModIntro. iExists d2, g2.
+      iModIntro. simpl.
         rewrite EqPhys. rewrite semi_iso'. iFrame.
         iApply ("EqGho"). rewrite semi_iso'. iFrame.
     }

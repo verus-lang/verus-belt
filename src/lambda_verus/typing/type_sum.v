@@ -2,7 +2,7 @@ From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import memcpy.
 From lrust.typing Require Import int uninit uniq_bor shr_bor own sum.
 From lrust.typing Require Import lft_contexts type_context programs product programs_util.
-From lrust.typing Require Import base_type freeable_util.
+From lrust.typing Require Import base_type freeable_util uniq_util.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
 
@@ -434,90 +434,75 @@ Section type_sum.
       leaf_open "G3" with "G" as "[Alive _]". { set_solver. }
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
     }
-    iDestruct "UniqBody" as "(ξVo & £2 & ξTok & ξBor)".
-    iDestruct (llftl_bor_idx_to_full with "ξBor ξTok") as "ξBor".
-    iMod (llftl_bor_acc_guarded with "LFT ξBor HalfGuardsK G") as "[P' ToBor]". { set_solver. }
-    iMod (bi.later_exist_except_0 with "P'") as (x'' d'' g'') "(#>⧖1 & ξPc & Gho1 & >Pt1)".
-    iMod (uniq_strip_later with "ξVo ξPc") as "(%agree1 & %agree2 & ξVo & ξPc)".
-    inversion agree2. subst x''. subst d''. subst g''.
-    
-    iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Pt1") as "%LenEq".
-    
+    iDestruct "UniqBody" as "(ξBor & £2)".
     have ?: Inhabited (𝔄l !!ₗ i) := populate (vπ x1 inhabitant).
-    iMod (uniq_intro x1 (vπ x1) (d', g') with "PROPH UNIQ") as (ζi) "[ζVo ζPc]"; [done|].
-    
-    set ξ := PrVar _ ξi.
-    set ζ := PrVar _ ζi.
-    iDestruct (uniq_proph_tok with "ζVo ζPc") as "(ζVo & ζ & ζPc)".
-    iMod (uniq_preresolve ξ [ζ] (λ π, (of_xsum (xinj i (π ζ)), pad)) with
-      "UNIQ PROPH ξVo ξPc [$ζ]") as "(Obs' & (ζ & _) & ToξPc)"; [done| |done|].
-    { intros π π' Eqv. have Eqv2 := Eqv ζ. rewrite Eqv2; trivial.
-      set_solver. }
-
+    iMod (proph_loan_intro (uniq_cell_tyi x1) ⊤ (uniq_cell x1 d' g') with "PROPH UNIQ")
+      as (ζi) "Loan"; [solve_ndisj|].
+    set ξ := uniq_prvar (𝔄:=Σ! 𝔄l) (pinj i x1, pad) ξi.
+    set ζ := uniq_prvar x1 ζi.
+    set f := λ (c: ~~ (uniq_cellₛ (𝔄l !!ₗ i))),
+      ((((pinj i c.1, pad), c.2)) : ~~ (uniq_cellₛ (Σ! 𝔄l))).
+    set fπ := λ (c: uniq_cellₛ (𝔄l !!ₗ i)),
+      ((((pinj i c.1, pad), c.2)) : uniq_cellₛ (Σ! 𝔄l)).
+    have Hcomm: ∀ c π, vπ (f c) π = fπ (vπ c π).
+    { intros [c [??]] π. rewrite /f /fπ /=. by rewrite psum_map1_pinj. }
+    have Hrefl: ∀ c ζl, fπ ∘ vπ c ./ ζl → vπ c ./ ζl.
+    { intros [c [p1 p2]] ζl Dep. apply uniq_cell_dep_rev. simpl.
+      have Hi: Inj (=) (=) (λ a: (𝔄l !!ₗ i), ((pinj i a, pad), (p1, p2))).
+      { intros ?? [=Heq]. by apply pinj_Inj in Heq. }
+      by apply (proph_dep_destr (λ a: (𝔄l !!ₗ i), ((pinj i a, pad), (p1, p2)))). }
+    destruct l as [l cells].
+    iMod (proph_ibor_map ⊤ κ ξ (uniq_cell (𝔄:=Σ! 𝔄l) (pinj i x1, pad) d' g') idx
+      (uniq_payload (Σ! tyl) tid (l, cells)) ζ (uniq_cell x1 d' g')
+      (uniq_payload (tyl +!! i) tid (cloc_take (cloc_skip (l, cells) 1) (ty_size (tyl +!! i))))
+      f fπ G ltac:(apply _) ltac:(solve_ndisj) Hcomm Hrefl
+      with "LFT PROPH UNIQ HalfGuardsK [] G Loan ξBor") as "(#Obs' & Bor & G)".
+    { iIntros "Payload". rewrite uniq_payload_cell.
+      iDestruct "Payload" as "(>#⧖1 & Gho1 & >Pt1)".
+      rewrite split_pt_xsum_cells''. iDestruct "Pt1" as "(Pt1 & Pt2 & Pt3)".
+      iModIntro. rewrite uniq_payload_cell. iSplitL "Gho1 Pt2".
+      { iNext. iFrame "⧖1". unfold xsum_ty, ty_gho. rewrite to_xsum_pinj. iFrame. }
+      iIntros ([x1' [p1 p2]]) "Payload".
+      rewrite /uniq_payload /f /=.
+      iDestruct "Payload" as "(>#⧖2 & Gho1 & >Pt2)".
+      iModIntro. iNext. iFrame "⧖2".
+      iSplitL "Gho1".
+        { unfold xsum_ty, ty_gho. rewrite to_xsum_pinj. iFrame "Gho1". }
+        { rewrite split_pt_xsum_cells''. iFrame. } }
     iCombine "Obs Obs'" as "#Obs2".
-    iSpecialize ("ζPc" with "ζ").
+    iFrame "G".
+    iModIntro.
+    iDestruct "Bor" as (ζidx) "Bor".
 
-    iDestruct ("ToBor" with "[ToξPc Pt1 Gho1 ζPc]") as "X"; last first.
-     - iMod (fupd_mask_mono with "X") as "[Bor H1]". { set_solver. }
-       iFrame "H1".
-       iModIntro.
-       iDestruct (llftl_bor_idx with "Bor") as (ζidx) "[Bor Tok]".
-       
-       destruct l as [l cells].
-       iAssert (@[κ] &&{ ↑NllftG; d + 1 }&&> (_))%I as "PtBaseExp".
-       { rewrite split_pt_xsum_cells'. iFrame "PtBase". }
-       iDestruct (guards_weaken_rhs_sep_l with "PtBaseExp") as "PtBase1".
-       iDestruct (guards_weaken_rhs_sep_r with "PtBaseExp") as "PtBasex".
-       iDestruct (guards_weaken_rhs_sep_l with "PtBasex") as "PtBase2".
-       
-       iExists ((cloc_take (cloc_skip (l,cells) 1) (ty_size (tyl +!! i)), x1, ζi, d', g', ζidx) -:: xl).
-       inversion Phys. subst val.
-       iSplit. {
-         iSplitL "Tok Bor ζVo £2". {
-            unfold tctx_elt_interp. iExists (#(l +ₗ 1)), d.
-            iSplit. { iPureIntro. simpl. rewrite Ev. trivial. }
-            iSplit. { iApply (persistent_time_receipt_mono with "⧖"). lia. }
-            iFrame "Tok". iFrame "Bor". iFrame "ζVo". iFrame "£2". iSplit; last by done.
-            iSplit. { iApply (guards_transitive with "Incl []").
-              iApply lft_intersect_tyl_lfts_lookup_incl. }
-            iSplit. { iPureIntro. lia. }
-            iFrame "PtBase2". iRight. unfold xsum_ty, ty_gho_pers. 
-            rewrite to_xsum_pinj. iFrame "Pers".
-         }
-         done.
-       }
-       iApply proph_obs_impl; [|done]=>/= π.
-       intros [[x2 [Heq Ha]] Hb]. apply pinj_Inj in Heq. subst x2.
-       apply (Ha ((π ζ))); trivial.
-        + simpl. unfold uniq_bor_future. simpl. rewrite Hb. trivial.
-     -  rewrite split_pt_xsum_cells''. iDestruct "Pt1" as "(Pt1 & Pt2 & Pt3)".
-        iSplitL "ToξPc Pt1 Pt3". {
-        iNext. iIntros "A".
-        iMod (bi.later_exist_except_0 with "A") as (x1' d1 g1) "(#>⧖2 & ζPc & Gho1 & >Pt2)".
-        iModIntro.  iNext. iExists (pinj i x1', pad). iExists (d1). iExists (g1).
-        iFrame.
-        iSplit. { iApply (persistent_time_receipt_mono with "⧖2"). lia. }
-        iSplitL "ToξPc ζPc". {
-          iApply "ToξPc". 
-          iApply (proph_eqz_modify (λ π, (pinj i (π ζ), pad))).
-          { iApply proph_obs_true. intros π. trivial. }
-          iDestruct (proph_ctrl_eqz with "PROPH ζPc") as "Eqz2".
-          iDestruct (proph_eqz_constr (λ t, (pinj i t, pad)) with "Eqz2") as "Eqz3".
-          Unshelve. 2: { intros x y ha. inversion ha as [hb]. apply pinj_Inj in hb. trivial. }
-          iApply (proph_eqz_eq with "Eqz3"); trivial.
-          fun_ext. intros x. simpl. rewrite psum_map1_pinj. trivial.
-        }
-        iSplitL "Gho1".
-          { unfold xsum_ty, ty_gho. rewrite to_xsum_pinj. iFrame "Gho1". }
-          { rewrite split_pt_xsum_cells''. iFrame. }
-        }
-      {
-       iNext.
-       unfold xsum_ty, ty_gho. rewrite to_xsum_pinj.
-       iFrame. iFrame "⧖1".
+    iAssert (@[κ] &&{ ↑NllftG; d + 1 }&&> (_))%I as "PtBaseExp".
+    { rewrite split_pt_xsum_cells'. iFrame "PtBase". }
+    iDestruct (guards_weaken_rhs_sep_l with "PtBaseExp") as "PtBase1".
+    iDestruct (guards_weaken_rhs_sep_r with "PtBaseExp") as "PtBasex".
+    iDestruct (guards_weaken_rhs_sep_l with "PtBasex") as "PtBase2".
+
+    iExists ((cloc_take (cloc_skip (l,cells) 1) (ty_size (tyl +!! i)), x1, ζi, d', g', ζidx) -:: xl).
+    inversion Phys. subst val.
+    iSplit. {
+      iSplitL "Bor £2". {
+         unfold tctx_elt_interp. iExists (#(l +ₗ 1)), d.
+         iSplit. { iPureIntro. simpl. rewrite Ev. trivial. }
+         iSplit. { iApply (persistent_time_receipt_mono with "⧖"). lia. }
+         iSplit; last by done.
+         iSplit. { iApply (guards_transitive with "Incl []").
+           iApply lft_intersect_tyl_lfts_lookup_incl. }
+         iSplit. { iPureIntro. lia. }
+         iSplitL "Bor £2". { rewrite /uniq_body. iFrame. }
+         iFrame "PtBase2". iRight. unfold xsum_ty, ty_gho_pers.
+         rewrite to_xsum_pinj. iFrame "Pers".
       }
+      done.
+    }
+    iApply proph_obs_impl; [|done]=>/= π.
+    intros [[x2 [Heq Ha]] Hb]. apply pinj_Inj in Heq. subst x2.
+    apply (Ha ((π ζ).1)); trivial.
+     + simpl. unfold uniq_bor_future. simpl. rewrite Hb. trivial.
   Qed.
-  
+
   Lemma type_case_uniq_outer {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
       (T': tctx ℭl) κ p el el' trx E L I (C: cctx 𝔇) :
     IntoPlistc el el' →

@@ -385,7 +385,9 @@ Fixpoint vπ {𝔄} : ~~𝔄 → proph_asn → 𝔄 :=
   | uniq_borₛ 𝔄₀  => λ x π ,
       (match x with
         (l, x₀, ξi, d', g', idx) =>
-          (@vπ 𝔄₀ x₀ π, π (PrVar (𝔄₀ ↾ to_inh_syn_type (@vπ 𝔄₀ x₀ inhabitant)) ξi))
+          (@vπ 𝔄₀ x₀ π,
+           (π (PrVar ((𝔄₀ * (positiveₛ * positiveₛ))%ST
+                ↾ @to_inh_syn_type ((𝔄₀ * (positiveₛ * positiveₛ))%ST) (@vπ 𝔄₀ x₀ inhabitant, (1%positive, 1%positive))) ξi)).1)
       end)
   | blockedₛ 𝔄₀ => λ '(x₀, ξi, ζi) π , ()
   (*| blockedₛ 𝔄₀  => λ '(x₀, ξi) π , π (PrVar (𝔄₀ ↾ to_inh_syn_type (@vπ 𝔄₀ x₀ inhabitant)) ξi)*)
@@ -430,7 +432,8 @@ Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   | uniq_borₛ 𝔄₀  => λ x ,
       (match x with
         (l, x₀, ξi, d', g', idx) =>
-          let ξ := PrVar (𝔄₀ ↾ to_inh_syn_type (vπ x₀ inhabitant)) ξi in
+          let ξ := PrVar ((𝔄₀ * (positiveₛ * positiveₛ))%ST
+            ↾ @to_inh_syn_type ((𝔄₀ * (positiveₛ * positiveₛ))%ST) (@vπ 𝔄₀ x₀ inhabitant, (1%positive, 1%positive))) ξi in
           ξ :: @ξl 𝔄₀ x₀
       end)
   | blockedₛ 𝔄₀ => λ '(x₀, ξi, ζi) , []
@@ -555,12 +558,40 @@ Definition blockedπ {𝔄} : ~~(blockedₛ 𝔄) → proph_asn → 𝔄 :=
   match 𝔄 return ~~(blockedₛ 𝔄) → proph_asn → 𝔄 with
     | uniq_borₛ 𝔄₀ => λ '(x, ξi, ζi) π ,
       (match x with
-        (l, x₀, ξi, d', g', idx) =>
-          (π (PrVar (𝔄₀ ↾ to_inh_syn_type (@vπ 𝔄₀ x₀ inhabitant)) ξi),
-           π (PrVar (𝔄₀ ↾ to_inh_syn_type (@vπ 𝔄₀ x₀ inhabitant)) ζi))
+        (l, x₀, ξi', d', g', idx) =>
+          ((π (PrVar ((𝔄₀ * (positiveₛ * positiveₛ))%ST
+               ↾ @to_inh_syn_type ((𝔄₀ * (positiveₛ * positiveₛ))%ST) (@vπ 𝔄₀ x₀ inhabitant, (1%positive, 1%positive))) ξi')).1,
+           (π (PrVar ((𝔄₀ * (positiveₛ * positiveₛ))%ST
+               ↾ @to_inh_syn_type ((𝔄₀ * (positiveₛ * positiveₛ))%ST) (@vπ 𝔄₀ x₀ inhabitant, (1%positive, 1%positive))) ζi)).1)
       end)
     | 𝔄₀ => λ '(x, ξi, ζi) π , π (PrVar (𝔄₀ ↾ to_inh_syn_type (@vπ 𝔄₀ x inhabitant)) ξi)
   end.
+
+(** The prophecy variable backing a unique borrow. It ranges over the borrow's
+    value together with a pair of depth indices: the depth indices are tracked
+    at the type-system level by embedding [positiveₛ * positiveₛ] into the
+    variable's type (a depth [d] is encoded as [Pos.of_succ_nat d]). *)
+Definition uniq_cellₛ (𝔄: syn_type) : syn_type := (𝔄 * (positiveₛ * positiveₛ))%ST.
+Definition uniq_cell_tyi {𝔄} (x₀: ~~𝔄) : syn_typei :=
+  (𝔄 * (positiveₛ * positiveₛ))%ST
+    ↾ @to_inh_syn_type ((𝔄 * (positiveₛ * positiveₛ))%ST) (@vπ 𝔄 x₀ inhabitant, (1%positive, 1%positive)).
+Definition uniq_prvar {𝔄} (x₀: ~~𝔄) (ξi: positive) : proph_var :=
+  PrVar (uniq_cell_tyi x₀) ξi.
+
+Lemma uniq_cell_tyi_irrel {𝔄} (x₀ x₀': ~~𝔄) : uniq_cell_tyi x₀ = uniq_cell_tyi x₀'.
+Proof. rewrite /uniq_cell_tyi. f_equal. apply proof_irrel. Qed.
+
+Lemma uniq_prvar_irrel {𝔄} (x₀ x₀': ~~𝔄) ξi : uniq_prvar x₀ ξi = uniq_prvar x₀' ξi.
+Proof. rewrite /uniq_prvar. f_equal. apply uniq_cell_tyi_irrel. Qed.
+
+Lemma vπ_uniq_bor {𝔄} l (x₀: ~~𝔄) ξi d' g' idx :
+  @vπ (uniq_borₛ 𝔄) (l, x₀, ξi, d', g', idx) =
+    λ π, (vπ x₀ π, (π (uniq_prvar x₀ ξi)).1).
+Proof. done. Qed.
+
+Lemma ξl_uniq_bor {𝔄} l (x₀: ~~𝔄) ξi d' g' idx :
+  @ξl (uniq_borₛ 𝔄) (l, x₀, ξi, d', g', idx) = uniq_prvar x₀ ξi :: ξl x₀.
+Proof. done. Qed.
 
 Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   match 𝔄 return ~~𝔄 → abstracted_syn_type 𝔄 with

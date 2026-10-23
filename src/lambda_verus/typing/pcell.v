@@ -449,13 +449,12 @@ Section typing.
     }
     destruct d.
     { by wp_rec. }
-    iDestruct "UniqBody" as "(ξVo & £saved  & ξTok & #ξBor)".
-    set ξ := PrVar ((listₛ positiveₛ * 𝔄)%ST ↾ prval_to_inh (@vπ (listₛ positiveₛ * 𝔄) (γs, x))) ξi.
+    iDestruct "UniqBody" as "(ξBor & £saved)".
     destruct cl' as [l' [ | ]] eqn:?.
     2: {
-      iMod (llftl_bor_idx_acc_guarded with "LFT ξBor ξTok Alv L") as "[Hown Hclose]"; [solve_ndisj|..].
+      iMod (uniq_body_acc with "LFT UNIQ Alv [$ξBor $£saved] L") as "[Hown _]"; [solve_ndisj|..].
       wp_rec.
-      iDestruct "Hown" as "(%&%&%&?&?&?&Hfalse)".
+      iDestruct "Hown" as "(_ & _ & Hfalse)".
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hfalse") as "%Hfalse".
       by simpl in Hfalse. }
     wp_rec.
@@ -486,7 +485,7 @@ Section typing.
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
     iDestruct (guards_transitive with "Ghalf Alv") as "HguardsK".
 
-    iMod (uniq_body_transform (cell_points_to_ty ty) ty (γs, x) x (S d) g ξi ξidx κ tid cl' (cloc_flat_insert cl γs) _ _ (pair_with_cell_idsₛ (ty_size ty) γs) with "LFT PROPH UNIQ [⧗' £1'] HguardsK H1 [ξTok ξVo £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
+    iMod (uniq_body_transform (cell_points_to_ty ty) ty (γs, x) x (S d) g ξi ξidx κ tid cl' (cloc_flat_insert cl γs) _ _ (pair_with_cell_idsₛ (ty_size ty) γs) (λ d g, (S d, g)) with "LFT PROPH UNIQ [⧗' £1'] HguardsK H1 [ξBor £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
     { iIntros "[gho pt]".
       iMod (lc_fupd_elim_later with "£1' gho") as "gho".
       iDestruct "gho" as "[H↦ gho]".
@@ -506,7 +505,7 @@ Section typing.
       iFrame.
       iIntros (x2 d2 g2) "[gho [pt2 ⧖2]]".
       iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "⧖2'". { solve_ndisj. }
-      iModIntro. iExists (S d2), g2.
+      iModIntro. simpl.
       replace (length (ty_phys ty x tid)) with (length (ty_phys ty x2 tid)).
       2: { repeat rewrite ty_size_eq. done. }
       simpl.
@@ -515,10 +514,9 @@ Section typing.
       rewrite ty.(ty_size_eq) in Hlen.
       by rewrite Hlen' - Hlen.
     }
-    { iFrame. simpl.
-      rewrite Heqc.
-      setoid_rewrite (heap_complete_mapsto_fancy_empty l').
-      iFrame "ξBor". }
+    { rewrite /uniq_body. iFrame "£saved". rewrite Heqc.
+      iApply (proph_ibor_proper with "ξBor"). intros c0.
+      rewrite /uniq_payload /=. by rewrite !heap_complete_mapsto_fancy_empty. }
     iDestruct ("Halfback" with "H1 H2") as "X".
     iMod (fupd_mask_mono with "X") as "L". { set_solver. }
     iModIntro.
@@ -559,7 +557,7 @@ Section typing.
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
     iDestruct (guards_transitive with "Ghalf Alv") as "HguardsK".
 
-    iMod (uniq_body_transform (cell_points_to_ty ty) ty (γs, x) x (S d) g ξi ξidx κ tid cl' (cloc_flat_insert cl γs) _ _ (pair_with_cell_idsₛ _ γs) with "LFT PROPH UNIQ [⧗' £1'] HguardsK H1 [ξTok ξVo £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
+    iMod (uniq_body_transform (cell_points_to_ty ty) ty (γs, x) x (S d) g ξi ξidx κ tid cl' (cloc_flat_insert cl γs) _ _ (pair_with_cell_idsₛ _ γs) (λ d g, (S d, g)) with "LFT PROPH UNIQ [⧗' £1'] HguardsK H1 [ξBor £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
     { iIntros "[gho pt]".
       iMod (lc_fupd_elim_later with "£1' gho") as "gho".
       iDestruct "gho" as "[H↦ gho]".
@@ -579,7 +577,7 @@ Section typing.
       iFrame.
       iIntros (x2 d2 g2) "[gho [pt2 ⧖2]]".
       iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "⧖2'". { solve_ndisj. }
-      iModIntro. iExists (S d2), g2.
+      iModIntro. simpl.
       replace (length (ty_phys ty x tid)) with (length (ty_phys ty x2 tid)).
       2: { repeat rewrite ty_size_eq. done. }
       simpl.
@@ -588,10 +586,9 @@ Section typing.
       rewrite ty.(ty_size_eq) in Hlen.
       by rewrite Hlen' - Hlen.
     }
-    { iFrame. simpl.
-      rewrite Heqc.
-      setoid_rewrite (heap_complete_mapsto_fancy_empty l').
-      iFrame "ξBor". }
+    { rewrite /uniq_body. iFrame "£saved". rewrite Heqc.
+      iApply (proph_ibor_proper with "ξBor"). intros c0.
+      rewrite /uniq_payload /=. by rewrite !heap_complete_mapsto_fancy_empty. }
     iDestruct ("Halfback" with "H1 H2") as "X".
     iMod (fupd_mask_mono with "X") as "L". { set_solver. }
     iModIntro.
@@ -849,21 +846,17 @@ Section atomics.
     destruct di.
     { by wp_rec. }
 
-    iDestruct "UniqBody" as "(ξVo & £saved  & ξTok & #ξBor)".
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
     iDestruct (guards_transitive with "Ghalf Alv") as "HguardsK".
-    iMod (llftl_bor_idx_acc_guarded with "LFT ξBor ξTok HguardsK H1") as "[Bor Hclose]".
+    iMod (uniq_body_acc with "LFT UNIQ HguardsK UniqBody H1") as "(Bor & £saved & Hclose)".
     1: solve_ndisj.
     wp_rec.
     iDestruct "Pers" as "[%Hlen Hgho_pers]".
-    iDestruct "Bor" as "(% & %d1 & %g1 & #H⧖ & Pc & H↦ & Hcl')".
+    iDestruct "Bor" as "(#H⧖ & H↦ & Hcl')".
     destruct cl' as [l' [ | ]] eqn:?.
     2: {
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hcl'") as "%Hfalse".
       by simpl in Hfalse. }
-    destruct x' as [? ?].
-    iPoseProof (uniq_agree with "ξVo Pc") as "(<- & %)".
-    inversion H; subst d1 g1.
     iSimpl in "H↦".
     iDestruct "H↦" as "[H↦ _]".
     rewrite heap_mapsto_cells_to_complete_mapsto_fancy_vec.
@@ -926,16 +919,13 @@ Section atomics.
     }
     iNext.
     iIntros "[H↦ H2]".
-    iMod (uniq_update (PrVar ((trackedₛ ((pcellₛ 1) * Zₛ))%ST ↾ @prval_to_inh (trackedₛ ((pcellₛ 1) * Zₛ)) (λ _ : proph_asn, ([γ1], x))) ξi) ([γ1], n) (λ _ : proph_asn, ([γ1], n)) (S di, gi) with "UNIQ ξVo Pc") as "[ξVo ξPc]". { set_solver. }
 
     iMod (fupd_mask_subseteq (↑Nllft)) as "Hback"; [trivial | ..].
-    iMod ("Hclose" with "[ξPc H↦]") as "[ξTok  H1]".
+    iMod ("Hclose" $! ([γ1], n) (S di) gi with "[H↦] £saved") as "[UB H1]".
     { iNext.
-      iExists ([γ1], n), _, _.
       iFrame "H⧖".
-      iFrame.
-      iSplitL => //.
-      iSplitL => //.
+      iSplitL "H↦"; last by rewrite heap_complete_mapsto_fancy_empty.
+      rewrite /by_succ. iSplitL; last done.
       rewrite (heap_complete_mapsto_fancy_val_vec_eq'' _ cl).
       rewrite /cloc_flat_insert Hcl2 /=.
       replace [FVal #n] with (FVal <$> [LitV $ LitInt $ n]) by done.
@@ -949,14 +939,9 @@ Section atomics.
     iMod ("Halfback" with "H1 H2") as "L".
     iMod "Hback" as "_".
 
-    iMod (resolve_uniq_body (cell_points_to_ty int) ([γ1], n) with "LFT PROPH UNIQ TIME [Incl] E [] L [£saved ξVo ξTok Hcl']") as "[#Hrslv [L #HBor]]"=> //.
+    iMod (resolve_uniq_body (cell_points_to_ty int) ([γ1], n) with "LFT PROPH UNIQ TIME [Incl] E [] L UB") as "[#Hrslv [L #HBor]]"=> //.
     { iApply guards_refl. }
-    { rewrite /uniq_body.
-      instantiate (1:= tid).
-      rewrite (proof_irrel (prval_to_inh _) (prval_to_inh (@vπ (trackedₛ (pcellₛ _ * Zₛ)) ([γ1], n)))).
-      iFrame.
-      iFrame "ξBor". }
-
+    
     iModIntro.
     iExists -[].
     iFrame "L".
@@ -969,7 +954,7 @@ Section atomics.
     rewrite /uniq_bor_future.
     simpl.
 
-    rewrite (proof_irrel (prval_to_inh _) (@to_inh_syn_type (trackedₛ (pcellₛ _ * Zₛ)) ([γ1], x))) in Hresolve.
+    etrans; [apply (uniq_prvar_app_irrel (𝔄:=trackedₛ (pcellₛ _ * Zₛ)) ([γ1], x) ([γ1], n) ξi π)|].
     by rewrite Hresolve.
     rewrite Hcl2 //=.
   Qed.
@@ -1035,21 +1020,17 @@ Section atomics.
     destruct di.
     { by wp_rec. }
 
-    iDestruct "UniqBody" as "(ξVo & £saved  & ξTok & #ξBor)".
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
     iDestruct (guards_transitive with "Ghalf Alv") as "HguardsK".
-    iMod (llftl_bor_idx_acc_guarded with "LFT ξBor ξTok HguardsK H1") as "[Bor Hclose]".
+    iMod (uniq_body_acc with "LFT UNIQ HguardsK UniqBody H1") as "(Bor & £saved & Hclose)".
     1: solve_ndisj.
     wp_rec.
     iDestruct "Pers" as "[%Hlen Hgho_pers]".
-    iDestruct "Bor" as "(% & %d1 & %g1 & #H⧖ & Pc & H↦ & Hcl')".
+    iDestruct "Bor" as "(#H⧖ & H↦ & Hcl')".
     destruct cl' as [l' [ | ]] eqn:?.
     2: {
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hcl'") as "%Hfalse".
       by simpl in Hfalse. }
-    destruct x' as [? ?].
-    iPoseProof (uniq_agree with "ξVo Pc") as "(<- & %)".
-    inversion H; subst d1 g1.
     iSimpl in "H↦".
     iDestruct "H↦" as "[H↦ _]".
     rewrite heap_mapsto_cells_to_complete_mapsto_fancy_vec.
@@ -1113,16 +1094,12 @@ Section atomics.
       iNext.
       iIntros "[H2 H↦]".
 
-      iMod (uniq_update (PrVar ((trackedₛ (pcellₛ _ * Zₛ))%ST ↾ @prval_to_inh (trackedₛ (pcellₛ _ * Zₛ)) (λ _ : proph_asn, ([γ1], x))) ξi) ([γ1], n2) (λ _ : proph_asn, ([γ1], n2)) (S di, gi) with "UNIQ ξVo Pc") as "[ξVo ξPc]". { set_solver. }
-
       iMod (fupd_mask_subseteq (↑Nllft)) as "Hback"; [trivial | ..].
-      iMod ("Hclose" with "[ξPc H↦]") as "[ξTok  H1]".
+      iMod ("Hclose" $! ([γ1], n2) (S di) gi with "[H↦] £saved") as "[UB H1]".
       { iNext.
-        iExists ([γ1], n2), _, _.
         iFrame "H⧖".
-        iFrame.
-        iSplitL => //.
-        iSplitL => //.
+        iSplitL "H↦"; last by rewrite heap_complete_mapsto_fancy_empty.
+      rewrite /by_succ. iSplitL; last done.
         rewrite (heap_complete_mapsto_fancy_val_vec_eq'' _ cl).
         rewrite /cloc_flat_insert Hcl2 /=.
         replace [FVal #n2] with (FVal <$> [LitV $ LitInt $ n2]) by done.
@@ -1136,14 +1113,9 @@ Section atomics.
       iMod ("Halfback" with "H1 H2") as "L".
       iMod "Hback" as "_".
 
-      iMod (resolve_uniq_body (cell_points_to_ty int) ([γ1], n2) with "LFT PROPH UNIQ TIME [Incl] E [] L [£saved ξVo ξTok Hcl']") as "[#Hrslv [L #HBor]]"=> //.
+      iMod (resolve_uniq_body (cell_points_to_ty int) ([γ1], n2) with "LFT PROPH UNIQ TIME [Incl] E [] L UB") as "[#Hrslv [L #HBor]]"=> //.
       { iApply guards_refl. }
-      { rewrite /uniq_body.
-        instantiate (1:= tid).
-        rewrite (proof_irrel (prval_to_inh _) (prval_to_inh (@vπ (trackedₛ (pcellₛ _ * Zₛ)) ([γ1], n2)))).
-        iFrame.
-        iFrame "ξBor". }
-
+      
       iModIntro.
       iExists -[1%Z].
       iFrame "L".
@@ -1160,7 +1132,7 @@ Section atomics.
         apply Hpost.
         rewrite /uniq_bor_future.
         simpl.
-        rewrite (proof_irrel (prval_to_inh _) (@to_inh_syn_type (trackedₛ (pcellₛ _ * Zₛ)) ([γ1], x))) in Hresolve.
+        etrans; [apply (uniq_prvar_app_irrel (𝔄:=trackedₛ (pcellₛ _ * Zₛ)) ([γ1], x) ([γ1], n2) ξi π)|].
         by rewrite Hresolve.
 
     - iDestruct (cumulative_time_receipt_mono 1 with "⧗") as "⧗"; first lia.
@@ -1188,13 +1160,11 @@ Section atomics.
       (* iMod (uniq_update (PrVar ((listₛ positiveₛ * Zₛ)%ST ↾ @prval_to_inh (listₛ positiveₛ * Zₛ) (λ _ : proph_asn, ([γ1], x))) ξi) ([γ1], n2) (λ _ : proph_asn, ([γ1], n2)) (S di, gi) with "UNIQ ξVo Pc") as "[ξVo Pc]". { set_solver. } *)
 
       iMod (fupd_mask_subseteq (↑Nllft)) as "Hback"; [trivial | ..].
-      iMod ("Hclose" with "[Pc H↦]") as "[ξTok  H1]".
+      iMod ("Hclose" $! ([γ1], x) (S di) gi with "[H↦] £saved") as "[UB H1]".
       { iNext.
-        iExists ([γ1], x), _, _.
         iFrame "H⧖".
-        iFrame.
-        iSplitL => //.
-        iSplitL => //.
+        iSplitL "H↦"; last by rewrite heap_complete_mapsto_fancy_empty.
+      rewrite /by_succ. iSplitL; last done.
         rewrite (heap_complete_mapsto_fancy_val_vec_eq'' _ cl).
         rewrite /cloc_flat_insert Hcl2 /=.
         replace [FVal #x] with (FVal <$> [LitV $ LitInt $ x]) by done.
@@ -1208,14 +1178,9 @@ Section atomics.
       iMod ("Halfback" with "H1 H2") as "L".
       iMod "Hback" as "_".
 
-      iMod (resolve_uniq_body (cell_points_to_ty int) ([γ1], x) with "LFT PROPH UNIQ TIME [Incl] E [] L [£saved ξVo ξTok Hcl']") as "[#Hrslv [L #HBor]]"=> //.
+      iMod (resolve_uniq_body (cell_points_to_ty int) ([γ1], x) with "LFT PROPH UNIQ TIME [Incl] E [] L UB") as "[#Hrslv [L #HBor]]"=> //.
       { iApply guards_refl. }
-      { rewrite /uniq_body.
-        instantiate (1:= tid).
-        rewrite (proof_irrel (prval_to_inh _) (prval_to_inh (@vπ (trackedₛ (pcellₛ _ * Zₛ)) ([γ1], x)))).
-        iFrame.
-        iFrame "ξBor". }
-
+      
       iModIntro.
       iExists -[0%Z].
       iFrame "L".
@@ -1232,7 +1197,7 @@ Section atomics.
         apply Hpost.
         rewrite /uniq_bor_future.
         simpl.
-        rewrite (proof_irrel (prval_to_inh _) (@to_inh_syn_type (trackedₛ (pcellₛ _ * Zₛ)) ([γ1], x))) in Hresolve.
+        etrans; [apply (uniq_prvar_app_irrel (𝔄:=trackedₛ (pcellₛ _ * Zₛ)) ([γ1], x) ([γ1], x) ξi π)|].
         by rewrite Hresolve.
   Qed.
 

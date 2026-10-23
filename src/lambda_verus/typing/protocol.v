@@ -3,7 +3,7 @@ From iris.algebra Require Import gmap.
 From lrust.typing Require Import lft_contexts.
 From lrust.typing Require Import type programs ghost own product tracked shr_bor uniq_bor programs_util_own programs_util.
 From guarding Require Import guard tactics guard_later_pers own_and.
-From lrust.typing Require Import ra proph_protocol.
+From lrust.typing Require Import ra proph_protocol uniq_util.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
 
@@ -949,7 +949,7 @@ Section StorageProtocol.
   Proof.
     move => Alv tid postπ mask iκs vπl.
     fold indep_interp_of_syn_type.
-    iIntros "#LFT #TIME #PROPH UNIQ E L $ TY #Obs" => /=.
+    iIntros "#LFT #TIME #PROPH #UNIQ E L $ TY #Obs" => /=.
     fold indep_interp_of_syn_type.
     destruct vπl as [[[[[[pl1 [γ1 x1]] ?] ?] ?] idx] [[pl2 [ γ2 x2]] []]].
     iDestruct "TY" as "(H1 & H2 & _)".
@@ -958,7 +958,7 @@ Section StorageProtocol.
     destruct d2 => //.
     iDestruct "Hshr" as "(_ & #Hshr & _)".
     iDestruct (Alv with "L E") as "#Alv".
-    iDestruct "Huniq" as "[_ [%Hineq [[Vo [Credits [Tok #Bor]]] Pers]]]".
+    iDestruct "Huniq" as "[_ [%Hineq [[Bor Credits] Pers]]]".
 
     iMod (fractional.frac_split_guard_in_half NllftG with "L Alv") as (γ) "[F1 [F2 [#guardHalf #back]]]".
     { solve_ndisj. }
@@ -971,7 +971,7 @@ Section StorageProtocol.
     iDestruct (guards_transitive with "G1' guardHalf") as "Incl1".
     iDestruct (guards_transitive with "G2' guardHalf") as "Incl2".
 
-    iMod (llftl_bor_idx_acc_guarded with "LFT Bor Tok Incl1 A1") as "(Hgho1 & Hclose1)".
+    iMod (proph_ibor_acc with "LFT UNIQ Incl1 Bor A1") as "(Hgho1 & Hclose1)".
     1: trivial.
 
     iApply wp_fupd.
@@ -984,10 +984,9 @@ Section StorageProtocol.
     iIntros "H£' Hd2''".
     wp_if.
 
+    rewrite uniq_payload_cell.
     unfold gt_gho.
-    iDestruct "Hgho1" as "(%x' & %d' & %g' & H⧖ & Pc & Hgho1 & H↦)".
-    iPoseProof (uniq_agree with "Vo Pc") as "(<- & %Hnn)".
-    injection Hnn => ??; subst n n0.
+    iDestruct "Hgho1" as "(H⧖ & Hgho1 & H↦)".
     iDestruct "Hgho1" as "(%Hγ1 & #Hsto1 & Hown1)".
 
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & _)" => //.
@@ -1006,19 +1005,12 @@ Section StorageProtocol.
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME Credits Hd2''") as "(#? & Credits)"; [trivial |..].
     iMod (fupd_mask_subseteq (↑Nllft)) as "Hclose".
     { trivial. }
-    iMod ("Hclose1" with "[H↦ Pc Hown1]") as "Hclose1".
-    { iNext.
-      iExists _, _, _.
-      iFrame "Pc".
-      iSplitR.
-      { iApply (persistent_time_receipt_mono with "Hd1"). lia. }
-      iFrame "#".
-      iFrame "%".
-      iFrame.
+    iMod ("Hclose1" $! (uniq_cell (𝔄:=ghostₛ (positiveₛ * 𝔄)) (γ1, x1) _ _) with "[H↦ H⧖ Hown1]") as "(Htok & A1)".
+    { iNext. rewrite uniq_payload_cell.
+      iFrame "H⧖ H↦". iFrame "#". iFrame "%". iFrame.
     }
     iDestruct "Credits" as "(Credits1 & Credits2)".
     iDestruct "Credits2" as "(C1 & C2 & C3)".
-    iMod (lc_fupd_add_later  with "C1 Hclose1") as "(Htok & A1)".
     iMod ("Hclose") as "_".
 
     iMod (fupd_mask_subseteq (↑Nllft)) as "Hclose".

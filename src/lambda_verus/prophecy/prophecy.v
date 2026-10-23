@@ -131,9 +131,10 @@ Proof.
    - destruct x. apply (proph_dep_constr (λ i, (_,i))). apply (FIX 𝔄).
    - destruct x. apply (proph_dep_constr (λ i, (_,i))). apply (FIX 𝔄).
    - destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
-     set ξ := PrVar (𝔄 ↾ to_inh_syn_type (vπ x0 inhabitant)) ξi.
-     apply (proph_dep_constr2 (λ a b, (b, a)) _ _ [ξ]).
-     + apply proph_dep_one.
+     set ξ := PrVar ((𝔄 * (positiveₛ * positiveₛ))%ST
+       ↾ @to_inh_syn_type ((𝔄 * (positiveₛ * positiveₛ))%ST) (vπ x0 inhabitant, (1%positive, 1%positive))) ξi.
+     apply (proph_dep_constr2 (λ a b, (b, a)) (λ π, (π ξ).1) _ [ξ]).
+     + apply (proph_dep_constr fst (λ π, π ξ)). apply proph_dep_one.
      + apply (FIX 𝔄).
    - destruct x as [[??]?]. clear FIX; done.
    - apply (FIX 𝔄).
@@ -679,6 +680,27 @@ Lemma proph_eqz_prod {A B} (uπ vπ: proph (A * B)) :
 Proof.
   iIntros "Eqz Eqz'". iDestruct (proph_eqz_constr2 with "Eqz Eqz'") as "?".
   by rewrite -!surjective_pairing_fun.
+Qed.
+
+(** Map an equalizer through an arbitrary function, provided that the
+    dependencies of the mapped right-hand side cover those of the original. *)
+Lemma proph_eqz_constr_refl {A B} (f: A → B) (uπ vπ: proph A) :
+  (∀ ξl, f ∘ vπ ./ ξl → vπ ./ ξl) → uπ :== vπ -∗ f ∘ uπ :== f ∘ vπ.
+Proof.
+  intros Hrefl. iIntros "Eqz" (E ξl q [? Dep]) "Hξl". apply Hrefl in Dep.
+  iMod ("Eqz" with "[%//] Hξl") as "[Obs $]". iModIntro.
+  iApply proph_obs_impl; [|by iApply "Obs"]=> ??/=. by f_equal.
+Qed.
+
+(** Project out the first component of an equalizer whose right-hand side
+    has a constant second component. *)
+Lemma proph_eqz_fst_const {A B} (uπ: proph (A * B)) (wπ: proph A) (k: B) :
+  uπ :== (λ π, (wπ π, k)) -∗ fst ∘ uπ :== wπ.
+Proof.
+  iIntros "Eqz" (???[? Dep]) "ξl".
+  iMod ("Eqz" with "[%] ξl") as "[Obs $]".
+  { split; [done|]. by apply (proph_dep_constr (λ a, (a, k))). }
+  iModIntro. iApply proph_obs_impl; [|by iApply "Obs"]=> ? /= ->. done.
 Qed.
 
 Lemma proph_eqz_vinsert {A n} xπ yπ (zπl: vec (proph A) n) i :

@@ -542,8 +542,8 @@ Note though, this file only depends on a subset of the total of VerusBelt. The L
        * `type_sum.v` - More typing rules for sum types, including borrowing-related rules
        * `uninit.v` - Type representing unitialized memory
        * `uniq_bor.v` - Type rules for unique borrows
-       * `uniq_cmra.v` - Utility resources for unique borrows
-       * `uniq_util.v` - Utility lemmas for unique borrows
+       * `uniq_cmra.v` - Value-observer / prophecy-controller resources (used only by `util/proph_bor.v`)
+       * `uniq_util.v` - Utility lemmas for unique borrows, built on prophetic borrows
      * `util/`
        * `adequacy_util.v` - Fork of Iris adequacy machinery with slight enhancement
        * `atomic_lock_counter.v` - Helper resources for atomic invariants
@@ -554,5 +554,6 @@ Note though, this file only depends on a subset of the total of VerusBelt. The L
        * `discrete_fun.v` - utilities for working with discrete functions
        * `fancy_lists.v` - utilities for heterogeneous lists
        * `non_atomic_cell_map.v` - Integrating cell resources with non-atomic read and write operations
+       * `proph_bor.v` - Prophetic borrows (`&proph{κ ; ξ ➤ x} P`): full borrows paired with a prophecy variable that is resolved to the borrowed value's final value; the model of unique borrows is defined in terms of these
        * `update.v` - utilities about Iris updates
        * `vector.v` - utilities about vectors
