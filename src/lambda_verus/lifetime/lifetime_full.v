@@ -1806,6 +1806,52 @@ Section LlftLogic.
     iModIntro. iFrame "P". iIntros (Q) "[vs Q]". iMod ("Pback" $! (Q) with "[vs Q]") as "[tok alive]". { iFrame. }
     iMod ("Kill" with "alive") as "X". iMod ("Back" with "X") as "G". iModIntro. iFrame.
   Qed.
+
+  (** Freezing a full borrow into a guard *)
+
+  (** A full borrow can be given up for good in exchange for a (persistent) guard of its
+      contents by [@[κ]]: the borrow's index token is itself put under a shared borrow at
+      [κ]. Since the contents of an indexed borrow are only available under a later,
+      the guard has a step-index of [1]. *)
+  Lemma llftl_bor_guard_later E κ P :
+    ↑Nllft ⊆ E →
+    llft_ctx -∗ &{κ} P ={E}=∗ @[κ] &&{↑NllftG}&&> ▷ P.
+  Proof.
+    intros Hmask. iIntros "#ctx Bor".
+    iDestruct (llftl_bor_idx with "Bor") as (idx) "[#Idx Tok]".
+    iMod (llftl_borrow_shared _ κ (idx_bor_tok idx) with "Tok") as "[#Glat _]"; [done|].
+    iDestruct (guards_remove_later_rhs with "Glat") as "Gtok".
+    iDestruct (llftl_idx_bor_guard' κ idx _ (@[κ])%I with "ctx Idx [] Gtok") as "GBor".
+    { iApply guards_refl. }
+    iModIntro. iApply (guards_weaken_rhs_sep_r with "GBor").
+  Qed.
+
+  Lemma llftl_bor_guard E κ P :
+    ↑Nllft ⊆ E →
+    llft_ctx -∗ &{κ} P ={E}=∗ @[κ] &&{↑NllftG; 1}&&> P.
+  Proof.
+    intros Hmask. iIntros "#ctx Bor".
+    iMod (llftl_bor_guard_later with "ctx Bor") as "#G"; [done|].
+    iModIntro. iApply (guards_later_absorb_1 _ _ _ 0 with "G").
+  Qed.
+
+  (** Running a fancy update inside a full borrow, given a guard for [κ]. One later
+      credit pays for stripping the later off the borrowed contents. *)
+  Lemma llftl_bor_fupd_guarded E M G κ P :
+    Timeless G →
+    ↑Nllft ⊆ E → M ⊆ E →
+    llft_ctx -∗
+    (G &&{↑NllftG}&&> @[κ]) -∗
+    G -∗ £ 1 -∗ &{κ} (|={M}=> P) ={E}=∗ &{κ} P ∗ G.
+  Proof.
+    intros TimelessG Hmask HM. iIntros "#ctx #Gk G £ Bor".
+    iMod (llftl_bor_acc_guarded with "ctx Bor Gk G") as "[Upd Back]"; [done|].
+    iMod (lc_fupd_elim_later with "£ Upd") as "Upd".
+    iMod (fupd_mask_mono with "Upd") as "P"; [done|].
+    iDestruct ("Back" $! P with "[P]") as "Close".
+    { iSplitR; [|by iNext]. iIntros "!> P !> !>". by iModIntro. }
+    iMod (fupd_mask_mono with "Close") as "[$ $]"; done.
+  Qed.
 End LlftLogic.
 
 (** Initializing the [llft_ctx] *)
