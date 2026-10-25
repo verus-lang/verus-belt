@@ -17,7 +17,7 @@ Section shr_bor.
     
     st_gho x d g tid := [S(d') := d]
       (@[κ] &&{↑NllftG; g+1}&&> ((x.1).1 ↦[^ (x.1).2 ]!∗ ty.(ty_phys) (snd x) tid)) ∗
-      (@[κ] &&{↑NllftG; g+1}&&> ty.(ty_gho) (snd x) d' g tid) ∗
+      (@[κ] &&{↑NllftG; g+1}&&> ty.(ty_gho_own) (snd x) d' g tid) ∗
       ▷^(g+1) (ty.(ty_gho_pers) (snd x) d' g tid)
     ;
       
@@ -36,8 +36,8 @@ Section shr_bor.
     { leaf_goal laters to (g+1). { lia. } done. }
     iSplit.
     { leaf_goal laters to (g+1); first by lia.
-      leaf_goal rhs to (ty_gho ty (snd x) d g tid); last by done.
-      leaf_by_sep. iApply ty_gho_depth_mono; lia.
+      leaf_goal rhs to (ty_gho_own ty (snd x) d g tid); last by done.
+      leaf_by_sep. iApply ty_gho_own_depth_mono; lia.
     }
     iApply (bi.laterN_le (g+1) (g'+1)); first by lia. iNext.
     iApply ty_gho_pers_depth_mono; last by iFrame "Pers".
@@ -216,7 +216,7 @@ Section typing.
     iSplitR.
     {
       iNext.
-      iSplit. { iDestruct (ty_gho_depth_mono with "T") as "[S _]"; last by iFrame "S". { lia. } { lia. } }
+      iSplit. { iDestruct (ty_gho_own_depth_mono with "T") as "[S _]"; last by iFrame "S". { lia. } { lia. } }
     { done. }
   }
   iIntros "G". iModIntro. iFrame. iExists x. iSplit; first by done.

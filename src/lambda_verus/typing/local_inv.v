@@ -62,7 +62,7 @@ Section local_invariants.
     ty_lfts := [];
     ty_E := [];
     ty_gho_pers x d g tid := True%I ;
-    ty_gho x d g tid := match x with (N, (γ, γt, d1), c) =>
+    ty_gho_own x d g tid := match x with (N, (γ, γt, d1), c) =>
         cna_active γ
           ∗ (⌜d1 < d⌝ ∗ dg_tok γt d1)
           ∗ cna_inv γ tid N (∃ x' d' g' d1 ,
@@ -86,9 +86,19 @@ Section local_invariants.
             ⧖(S d' `max` g') ∗
             ⧗(d' - d1) ∗
             £(d' - d1) ∗
-            ty.(ty_gho) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
+            ty.(ty_gho_own) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
     end;
     ty_phys x tid := [];
+    ty_shr := default_shr (λ (x: ~~(local_invₛ ℭ)) d g tid, match x with (N, (γ, γt, d1), c) =>
+          cna_active γ
+            ∗ (⌜d1 < d⌝ ∗ dg_tok γt d1)
+            ∗ cna_inv γ tid N (∃ x' d' g' d1 ,
+              dg_tok γt d1 ∗
+              ⧖(S d' `max` g') ∗
+              ⧗(d' - d1) ∗
+              £(d' - d1) ∗
+              ty.(ty_gho_own) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
+      end);
   |})%I.
   Next Obligation. done. Qed. 
   Next Obligation. done. Qed. 
@@ -102,22 +112,32 @@ Section local_invariants.
   Next Obligation. iIntros. done. Qed.
   Next Obligation. set_solver. Qed.
   Next Obligation. iIntros. done. Qed.
+  Solve All Obligations with solve_default_shr.
   
   Program Definition local_closer_ty {𝔄 ℭ} (κ: lft) (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop) : type (local_invₛ ℭ) := ({|
     ty_size := 0;
     ty_lfts := [];
     ty_E := [];
     ty_gho_pers x d g tid := True%I ;
-    ty_gho x d g tid := match x with (N, (γ, γt, d1), c) =>
+    ty_gho_own x d g tid := match x with (N, (γ, γt, d1), c) =>
         dg_tok γt d1 ∗
         cna_closer κ tid N (∃ x' d' g' d1 ,
             dg_tok γt d1 ∗
             ⧖(S d' `max` g') ∗
             ⧗(d' - d1) ∗
             £(d' - d1) ∗
-            ty.(ty_gho) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
+            ty.(ty_gho_own) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
     end;
     ty_phys x tid := [];
+    ty_shr := default_shr (λ (x: ~~(local_invₛ ℭ)) d g tid, match x with (N, (γ, γt, d1), c) =>
+          dg_tok γt d1 ∗
+          cna_closer κ tid N (∃ x' d' g' d1 ,
+              dg_tok γt d1 ∗
+              ⧖(S d' `max` g') ∗
+              ⧗(d' - d1) ∗
+              £(d' - d1) ∗
+              ty.(ty_gho_own) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
+      end);
   |})%I.
   Next Obligation. done. Qed. 
   Next Obligation. done. Qed. 
@@ -126,6 +146,7 @@ Section local_invariants.
   Next Obligation. iIntros. done. Qed.
   Next Obligation. set_solver. Qed.
   Next Obligation. iIntros. done. Qed.
+  Solve All Obligations with solve_default_shr.
   
   Lemma local_inv_ty_send {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop)
       : Send ty → Send (local_inv_ty ty pred).
@@ -237,7 +258,7 @@ Section local_invariants.
     iMod (cumulative_persistent_time_receipt with "TIME ⧗ ⧖'") as "#⧖'". { set_solver. }
     iModIntro. iExists (S d' `max` g'), x''. 
     iFrame. iFrame "#".
-    iDestruct (ty_gho_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
+    iDestruct (ty_gho_own_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
     iSplit. { done. }
     iApply (proph_obs_impl with "Obs").
     intros π Ha. apply Ha. trivial.
@@ -294,7 +315,7 @@ Section local_invariants.
     iModIntro. iExists (S d' `max` g'), (x'', (ns, (γ, γt, d1), c)). iExists (mask ∖ ↑ns).
     iFrame.
     iSplit. { iApply (persistent_time_receipt_mono with "⧖'"). lia. }
-    iDestruct (ty_gho_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
+    iDestruct (ty_gho_own_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
     iSplit. { iSplit.
       { iPureIntro. split; last by set_solver. apply mask_lemma; set_solver. }
       unfold invctx_to_multiset. simpl. rewrite gmultiset_disj_union_assoc. iFrame.

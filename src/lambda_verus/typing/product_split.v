@@ -212,8 +212,8 @@ Section product_split.
     iSplit. {
       iSplit; last by done.
       iExists #lx, (S d1' `max` S d2'). iFrame "⧖". iSplit. { done. }
-      iDestruct (ty_gho_depth_mono _ _ _ (d1' `max` d2') (S d1' `max` S d2') with "gho1") as "[gho1 _]". { lia. } { lia. }
-      iDestruct (ty_gho_depth_mono _ _ _ (d1' `max` d2') (S d1' `max` S d2') with "gho2") as "[gho2 _]". { lia. } { lia. }
+      iDestruct (ty_gho_own_depth_mono _ _ _ (d1' `max` d2') (S d1' `max` S d2') with "gho1") as "[gho1 _]". { lia. } { lia. }
+      iDestruct (ty_gho_own_depth_mono _ _ _ (d1' `max` d2') (S d1' `max` S d2') with "gho2") as "[gho2 _]". { lia. } { lia. }
       iFrame.
       rewrite heap_mapsto_fancy_vec_app -freeable_sz_split. rewrite ty_size_eq. iFrame. 
       done.
@@ -352,8 +352,8 @@ Section product_split.
       iSplit. { iApply (persistent_time_receipt_mono with "⧖4"). lia. }
       rewrite heap_cloc_mapsto_fancy_vec_app.
       rewrite ty_size_eq. iFrame.
-      iDestruct (ty_gho_depth_mono with "Gho1") as "[Gho1 _]". 3: {
-      iDestruct (ty_gho_depth_mono with "Gho2") as "[Gho2 _]". 3: {
+      iDestruct (ty_gho_own_depth_mono with "Gho1") as "[Gho1 _]". 3: {
+      iDestruct (ty_gho_own_depth_mono with "Gho2") as "[Gho2 _]". 3: {
         iFrame.
       } { lia. } { lia. } } { lia. } { lia. } }
     iCombine "Obs Obs'" as "#Obs".

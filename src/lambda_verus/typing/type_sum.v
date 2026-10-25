@@ -183,7 +183,7 @@ Section type_sum.
         }
         iSplitL "pt2 free2 gho". { iExists (#(l +ₗ 1)), (S d'). iFrame "⧖".
           iSplit. { iPureIntro. simpl. rewrite path. trivial. }
-          iFrame "pt2". iFrame "free2". unfold ty_gho, xsum_ty.
+          iFrame "pt2". iFrame "free2". unfold ty_gho_own, xsum_ty.
           rewrite to_xsum_pinj. iFrame "gho". done.
         }
         { iExists (#((l +ₗ S (ty_size tyi)))), (S d'). iFrame "⧖".
@@ -296,9 +296,9 @@ Section type_sum.
       - simpl. iApply (guards_transitive_left with "pt []"). leaf_by_sep.
         destruct cloc as [q cells]. simpl. rewrite Eq. rewrite split_pt_xsum_cells.
         iIntros "(A & B & C)". iFrame. iIntros. iFrame.
-      - simpl. unfold xsum_ty, ty_gho, ty_phys, ty_gho_pers. simpl. rewrite Eq.
+      - simpl. unfold xsum_ty, ty_gho_own, ty_phys, ty_gho_pers. simpl. rewrite Eq.
         rewrite to_xsum_pinj. iFrame "gho".
-      - simpl. unfold xsum_ty, ty_gho, ty_phys, ty_gho_pers. simpl. rewrite Eq.
+      - simpl. unfold xsum_ty, ty_gho_own, ty_phys, ty_gho_pers. simpl. rewrite Eq.
         rewrite to_xsum_pinj. iFrame "ghopers".
       - iPureIntro. simpl in phys. inversion phys. trivial.
     }
@@ -461,13 +461,13 @@ Section type_sum.
       iDestruct "Payload" as "(>#⧖1 & Gho1 & >Pt1)".
       rewrite split_pt_xsum_cells''. iDestruct "Pt1" as "(Pt1 & Pt2 & Pt3)".
       iModIntro. rewrite uniq_payload_cell. iSplitL "Gho1 Pt2".
-      { iNext. iFrame "⧖1". unfold xsum_ty, ty_gho. rewrite to_xsum_pinj. iFrame. }
+      { iNext. iFrame "⧖1". unfold xsum_ty, ty_gho_own. rewrite to_xsum_pinj. iFrame. }
       iIntros ([x1' [p1 p2]]) "Payload".
       rewrite /uniq_payload /f /=.
       iDestruct "Payload" as "(>#⧖2 & Gho1 & >Pt2)".
       iModIntro. iNext. iFrame "⧖2".
       iSplitL "Gho1".
-        { unfold xsum_ty, ty_gho. rewrite to_xsum_pinj. iFrame "Gho1". }
+        { unfold xsum_ty, ty_gho_own. rewrite to_xsum_pinj. iFrame "Gho1". }
         { rewrite split_pt_xsum_cells''. iFrame. } }
     iCombine "Obs Obs'" as "#Obs2".
     iFrame "G".
@@ -705,8 +705,8 @@ Section type_sum.
     { iExists (FVal #i :: FVal vb :: fmap FVal vlconcrete). 
       rewrite heap_mapsto_cloc_fancy_vec_cons.
       rewrite heap_mapsto_cloc_fancy_vec_cons. iFrame. iNext.
-      unfold xsum_ty, ty_gho, ty_phys. simpl. rewrite to_xsum_pinj.
-      iDestruct (ty_gho_depth_mono with "tyb'_gho") as "[$ _]". { lia. } { lia. }
+      unfold xsum_ty, ty_gho_own, ty_phys. simpl. rewrite to_xsum_pinj.
+      iDestruct (ty_gho_own_depth_mono with "tyb'_gho") as "[$ _]". { lia. } { lia. }
       iPureIntro. 
       eassert (FVal #i :: _ = [FVal #i] ++ _) as ->. { done. } rewrite List.app_assoc.
       rewrite pad_app.
@@ -724,7 +724,7 @@ Section type_sum.
     
     iExists -[z]. iFrame "L I". iSplitR "Obs".
     - rewrite right_id tctx_hasty_val'; [|done]. iExists (S (S d' `max` db)). iFrame "#".
-      iFrame. iModIntro. iDestruct (ty_gho_depth_mono with "ty'") as "[$ _]". { lia. } { lia. }
+      iFrame. iModIntro. iDestruct (ty_gho_own_depth_mono with "ty'") as "[$ _]". { lia. } { lia. }
     - iApply proph_obs_impl; [|done]=>/= π [Ha Imp].
       generalize Hz. generalize z. apply Imp. apply Ha.
     }
@@ -809,7 +809,7 @@ Section type_sum.
     { iExists (FVal #i :: fmap FVal vlconcrete). 
       rewrite heap_mapsto_cloc_fancy_vec_cons.
       iFrame. iNext.
-      unfold xsum_ty, ty_gho, ty_phys. simpl. rewrite to_xsum_pinj.
+      unfold xsum_ty, ty_gho_own, ty_phys. simpl. rewrite to_xsum_pinj.
       iDestruct ("Sgho" with "[]") as "[$ _]"; first done.
       iPureIntro. 
       eassert (FVal #i :: _ = [FVal #i] ++ _) as ->. { done. } rewrite List.app_assoc.
@@ -828,7 +828,7 @@ Section type_sum.
     iModIntro. iModIntro.
     iExists -[z]. iFrame "L I". iSplitR "Obs".
     - rewrite right_id tctx_hasty_val'; [|done]. iExists (S (S d')). iFrame "#".
-      iFrame. iDestruct (ty_gho_depth_mono with "ty'") as "[$ _]". { lia. } { lia. }
+      iFrame. iDestruct (ty_gho_own_depth_mono with "ty'") as "[$ _]". { lia. } { lia. }
     - iApply proph_obs_impl; [|done]=>/= π [Ha Imp].
       generalize Hz. generalize z. apply Imp. apply Ha.
     }
@@ -975,8 +975,8 @@ Section type_sum.
       rewrite heap_cloc_mapsto_fancy_vec_app.
       rewrite length_take. eassert (length vlb `min` length vl = length vlb) as ->. { lia. }
       iFrame.
-      unfold xsum_ty, ty_gho, ty_phys. simpl. rewrite to_xsum_pinj.
-      iDestruct (ty_gho_depth_mono with "tyb'_gho") as "[$ _]". { lia. } { lia. }
+      unfold xsum_ty, ty_gho_own, ty_phys. simpl. rewrite to_xsum_pinj.
+      iDestruct (ty_gho_own_depth_mono with "tyb'_gho") as "[$ _]". { lia. } { lia. }
       iPureIntro. 
       unfold ty_phys in tyb'_phys. rewrite tyb'_phys. rewrite pad_cons. f_equal.
       rewrite pad_app.
@@ -997,9 +997,9 @@ Section type_sum.
     - rewrite right_id.
       + iSplitL "tyw'"; (rewrite tctx_hasty_val'; [|done]); iExists (S (S d' `max` db)).
         * iFrame "⧖S2". iDestruct "tyw'" as "[gho phys]". iFrame.
-          iDestruct (ty_gho_depth_mono with "gho") as "[$ _]"; lia.
+          iDestruct (ty_gho_own_depth_mono with "gho") as "[$ _]"; lia.
         * iFrame "⧖S2". iDestruct "tyr'" as "[gho phys]". iFrame.
-          iDestruct (ty_gho_depth_mono with "gho") as "[$ _]"; lia.
+          iDestruct (ty_gho_own_depth_mono with "gho") as "[$ _]"; lia.
     - iApply proph_obs_impl; [|done]=>/= ?[? Imp].
       generalize Hzr. generalize Hz. generalize zr. generalize z. apply Imp.
       trivial.

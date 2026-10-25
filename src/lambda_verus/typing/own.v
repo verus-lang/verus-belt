@@ -15,15 +15,19 @@ Section own.
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
     
-    ty_gho x d g tid := [S(d') := d]
+    ty_gho_own x d g tid := [S(d') := d]
       ((fst x) ↦!∗ ty.(ty_phys) (snd x) tid) ∗
       freeable_sz n ty.(ty_size) (fst x) ∗
-      ▷ (ty.(ty_gho) (snd x) d' g tid) ;
+      ▷ (ty.(ty_gho_own) (snd x) d' g tid) ;
       
     ty_gho_pers x d g tid := [S(d') := d]
       ▷ (ty.(ty_gho_pers) (snd x) d' g tid) ;
     
     ty_phys x tid := [FVal (LitV (fst x))];
+    ty_shr := default_shr (λ (x: ~~(at_locₛ 𝔄)) d g tid, [S(d') := d]
+        ((fst x) ↦!∗ ty.(ty_phys) (snd x) tid) ∗
+        freeable_sz n ty.(ty_size) (fst x) ∗
+        ▷ (ty.(ty_gho_own) (snd x) d' g tid));
   |}%I.
   Next Obligation. move=> ?????* //=. Qed.
   Next Obligation. done. Qed.
@@ -32,7 +36,7 @@ Section own.
     move=> 𝔄 n ty [|d] g d' g' vπ tid ??; iIntros "H" => //=.
     iDestruct "H" as "(Hown & Hfree & Hgho)".
     destruct d'; first lia => /=.
-    iDestruct (ty.(ty_gho_depth_mono) with "Hgho") as "[$ Hwand]" => //; first lia.
+    iDestruct (ty.(ty_gho_own_depth_mono) with "Hgho") as "[$ Hwand]" => //; first lia.
     iFrame. iFrame "%" => /=.
     iIntros "($ & $ & Hgho)".
     by iApply "Hwand".
@@ -59,6 +63,7 @@ Section own.
     intros 𝔄 n ty x d g tid. iIntros "A". destruct d as [|d']; first by done.
     iDestruct "A" as "[_ [_ pers]]". iApply ty_gho_pers_impl. iFrame.
   Qed.
+  Solve All Obligations with solve_default_shr.
   
   Global Instance own_ne {𝔄} n : NonExpansive (@own_ptr 𝔄 n).
   Proof. solve_ne_type. Qed.
@@ -241,7 +246,7 @@ Section typing.
       iSplitL => //. rewrite <- Phys. iFrame.
       replace (length (ty_phys ty x0 tid)) with (length (ty_phys ty' y tid)).
        + rewrite <- heap_cloc_mapsto_fancy_empty. iFrame.
-         iDestruct (ty_gho_depth_mono with "Gho") as "[$ _]"; lia.
+         iDestruct (ty_gho_own_depth_mono with "Gho") as "[$ _]"; lia.
        + do 2 rewrite ty_size_eq. done.
   Qed.
 
@@ -271,7 +276,7 @@ Section typing.
     }
     iSplit. { inversion Cpy. rewrite fmap_to_concrete; done. }
     iSplit. { iNext. iSplitL => //. 
-      iPoseProof (ty_gho_depth_mono _ d (S d) (S d) (S d) with "Hgho") as "[? _]"; [lia..|done]. }
+      iPoseProof (ty_gho_own_depth_mono _ d (S d) (S d) (S d) with "Hgho") as "[? _]"; [lia..|done]. }
     iIntros "Hown".
     iModIntro.
     simpl. iExists (l, x0). iFrame. by repeat iSplit.
@@ -299,7 +304,7 @@ Section typing.
     rewrite /ty_own.
     iSplitL "Hgho".
     { iNext. iSplitL => //. 
-      iPoseProof (ty_gho_depth_mono _ d (S d) (S d) (S d) with "Hgho") as "[? _]"; [lia..|done]. }
+      iPoseProof (ty_gho_own_depth_mono _ d (S d) (S d) (S d) with "Hgho") as "[? _]"; [lia..|done]. }
     iIntros "Hown".
     iModIntro.
     replace (ty_size ty) with (length (ty_phys ty x tid)); last by (apply ty_size_eq).

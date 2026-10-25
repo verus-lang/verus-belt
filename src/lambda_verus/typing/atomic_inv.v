@@ -36,9 +36,9 @@ Section atomic_invariants.
     ty_lfts := [];
     ty_E := [];
     ty_gho_pers x d g tid := True%I ;
-    ty_gho x d g tid := match x with (N, γ, c) =>
+    ty_gho_own x d g tid := match x with (N, γ, c) =>
         Active γ ∗ external_na_inv γ ATOMIC_POOL N
-          (∃ x' d' g' tid' , ⧖(S d' `max` g') ∗ ty.(ty_gho) x' d' g' tid'
+          (∃ x' d' g' tid' , ⧖(S d' `max` g') ∗ ty.(ty_gho_own) x' d' g' tid'
               (* casing on `Send ty` like this requires LEM. The reason we need to case is that:
                   * For the non-Send case, we can never move to any other tid.
                   * For the Send case, we specifically need it at null_tid.
@@ -49,6 +49,11 @@ Section atomic_invariants.
               ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')⌝)
     end;
     ty_phys x tid := [];
+    ty_shr := default_shr (λ (x: ~~(invₛ ℭ)) d g tid, match x with (N, γ, c) =>
+          Active γ ∗ external_na_inv γ ATOMIC_POOL N
+            (∃ x' d' g' tid' , ⧖(S d' `max` g') ∗ ty.(ty_gho_own) x' d' g' tid'
+                ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')⌝)
+      end);
   |})%I.
   Next Obligation. done. Qed. 
   Next Obligation. done. Qed. 
@@ -58,6 +63,7 @@ Section atomic_invariants.
   Next Obligation. intros 𝔄 𝔅 ty pred κ x n d g tid ξ R Hin. exfalso. simpl in Hin.
       set_solver. Qed.
   Next Obligation. iIntros. done. Qed.
+  Solve All Obligations with solve_default_shr.
   
   Definition atomic_closer γ N P : iProp Σ :=
       (∀ E, (▷ (P ∨ Active γ)) ∗ na_invariants_fork.na_own ATOMIC_POOL E ={⊤}=∗ na_invariants_fork.na_own ATOMIC_POOL (E ∪ ↑N)).
@@ -67,12 +73,17 @@ Section atomic_invariants.
     ty_lfts := [];
     ty_E := [];
     ty_gho_pers x d g tid := True%I ;
-    ty_gho x d g tid := match x with (N, γ, c) =>
+    ty_gho_own x d g tid := match x with (N, γ, c) =>
         atomic_lock_handle atomic_lock_ctr_name (↑N) ∗
-        atomic_closer γ N (∃ x' d' g' tid' , ⧖(S d' `max` g') ∗ ty.(ty_gho) x' d' g' tid'
+        atomic_closer γ N (∃ x' d' g' tid' , ⧖(S d' `max` g') ∗ ty.(ty_gho_own) x' d' g' tid'
               ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')⌝)
     end;
     ty_phys x tid := [];
+    ty_shr := default_shr (λ (x: ~~(invₛ ℭ)) d g tid, match x with (N, γ, c) =>
+          atomic_lock_handle atomic_lock_ctr_name (↑N) ∗
+          atomic_closer γ N (∃ x' d' g' tid' , ⧖(S d' `max` g') ∗ ty.(ty_gho_own) x' d' g' tid'
+                ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')⌝)
+      end);
   |})%I.
   Next Obligation. done. Qed. 
   Next Obligation. done. Qed. 
@@ -81,6 +92,7 @@ Section atomic_invariants.
   Next Obligation. iIntros. done. Qed.
   Next Obligation. set_solver. Qed.
   Next Obligation. iIntros. done. Qed.
+  Solve All Obligations with solve_default_shr.
 
   Lemma atomic_inv_ty_resolve E L {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → proph_asn → Prop)
       : resolve E L (atomic_inv_ty ty pred) (const (const True)).
@@ -88,14 +100,14 @@ Section atomic_invariants.
   
   Local Lemma gho_equiv_of_send {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → proph_asn → Prop) x d g tid tid'
       : Send ty →
-      ty_gho (atomic_inv_ty ty pred) x d g tid ⊣⊢ ty_gho (atomic_inv_ty ty pred) x d g tid'.
+      ty_gho_own (atomic_inv_ty ty pred) x d g tid ⊣⊢ ty_gho_own (atomic_inv_ty ty pred) x d g tid'.
   Proof.
-    intros Hsend. unfold ty_gho, atomic_inv_ty. destruct x as [[ns γ] c].
+    intros Hsend. unfold ty_gho_own, atomic_inv_ty. destruct x as [[ns γ] c].
     assert (
       (∃ (x' : ~~ 𝔄) (d' g' : nat) (tid'0 : thread_id), ⧖(S d' `max` g') ∗ 
-       ty_gho ty x' d' g' tid'0 ∗ ⟨ π, pred (syn_abstract x') c π ⟩  ∗ ⌜(Send ty ∧ tid'0 = null_tid) ∨ (¬(Send ty) ∧ tid = tid'0)⌝)
+       ty_gho_own ty x' d' g' tid'0 ∗ ⟨ π, pred (syn_abstract x') c π ⟩  ∗ ⌜(Send ty ∧ tid'0 = null_tid) ∨ (¬(Send ty) ∧ tid = tid'0)⌝)
       ⊣⊢ (∃ (x' : ~~ 𝔄) (d' g' : nat) (tid'0 : thread_id), ⧖(S d' `max` g') ∗ 
-       ty_gho ty x' d' g' tid'0 ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid'0 = null_tid) ∨ (¬(Send ty) ∧ tid' = tid'0)⌝) ) as X.
+       ty_gho_own ty x' d' g' tid'0 ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid'0 = null_tid) ∨ (¬(Send ty) ∧ tid' = tid'0)⌝) ) as X.
      { iSplit.
          - iDestruct 1 as (x' d' g' tid0) "(? & ? & ? & [?|%A])"; last by intuition.
            iFrame. iLeft. done.
@@ -157,12 +169,12 @@ Section atomic_invariants.
   Local Lemma change_tid_in {𝔄} (ty : type 𝔄) x d g tid κs L : 
       Timeless L →
       ⊢ llft_ctx -∗ uniq_ctx -∗ time_ctx -∗ £(d + 1) -∗ ⧖(d+1) -∗
-        ▷ ty_gho ty x d g tid -∗
+        ▷ ty_gho_own ty x d g tid -∗
         (∀ (κ: lft) , ⌜κ ∈ κs⌝ -∗ (L &&{↑NllftG}&&> @[κ])) -∗ L -∗
         cna_lifetimes tid κs
         ={⊤}=∗ ∃ tid' x' d',
           ⌜((Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid'))⌝ ∗
-          ty_gho ty x' d' g tid' ∗ ⧖(S d') ∗ ⌜syn_abstract x' = syn_abstract x⌝
+          ty_gho_own ty x' d' g tid' ∗ ⧖(S d') ∗ ⌜syn_abstract x' = syn_abstract x⌝
           ∗ L ∗ cna_lifetimes tid κs.
   Proof.
     destruct (classic (Send ty)) as [Send|NotSend].
@@ -184,8 +196,8 @@ Section atomic_invariants.
 
   Local Lemma change_tid_out {𝔄} (ty : type 𝔄) x d g tid tid' : 
       ((Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')) →
-      ⊢ llft_ctx -∗ uniq_ctx -∗ time_ctx -∗ £(d + 1) -∗ ⧖(d+1) -∗ ▷ ty_gho ty x d g tid'
-          ={⊤}=∗ ∃ x' d', ty_gho ty x' d' g tid ∗ ⧖(S d') ∗ ⌜syn_abstract x' = syn_abstract x⌝.
+      ⊢ llft_ctx -∗ uniq_ctx -∗ time_ctx -∗ £(d + 1) -∗ ⧖(d+1) -∗ ▷ ty_gho_own ty x d g tid'
+          ={⊤}=∗ ∃ x' d', ty_gho_own ty x' d' g tid ∗ ⧖(S d') ∗ ⌜syn_abstract x' = syn_abstract x⌝.
   Proof.
       intros Ha. 
       iIntros "LFT #UNIQ TIME [£s £1] #⧖ gho".
@@ -256,7 +268,7 @@ Section atomic_invariants.
       { iApply (persistent_time_receipt_mono with "⧖'"). lia. }
     iModIntro. iExists (d0 `max` g'), x', mask, at_mask. 
     iFrame. iFrame "#". iSplit; first by done.
-    iDestruct (ty_gho_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
+    iDestruct (ty_gho_own_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
     iSplit. { iCombine "⧖2 ⧖'" as "⧖max". iApply (persistent_time_receipt_mono with "⧖max"). lia. }
     iCombine "Obs Hpred" as "Obs2".
     iApply (proph_obs_impl with "Obs2").
@@ -323,7 +335,7 @@ Section atomic_invariants.
     iSplit. {
       iCombine "⧖' ⧖2" as "⧖max".
       iApply (persistent_time_receipt_mono with "⧖max"). lia. }
-    iDestruct (ty_gho_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
+    iDestruct (ty_gho_own_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
     iCombine "Obs Hpred" as "Obs2".
     iApply (proph_obs_impl with "Obs2").
     intros π [Ha Hpred]. apply Ha. rewrite Habs. trivial.

@@ -16,8 +16,9 @@ Section base.
     ty_lfts := [];
     ty_E := [];
     ty_gho_pers x d g tid := False;
-    ty_gho x d g tid := False;
+    ty_gho_own x d g tid := False;
     ty_phys x tid := @syn_phys 𝔄 x;
+    ty_shr := default_shr (λ x d g tid, False);
   |}%I.
   Next Obligation. intros. apply syn_phys_size_eq. Qed.
   Next Obligation. done. Qed.
@@ -30,6 +31,7 @@ Section base.
     leaf_by_sep. iIntros "?". iExFalso. done.
   Qed.
   Next Obligation. iIntros. done. Qed.
+  Solve All Obligations with solve_default_shr.
   
   Global Instance base_copy {𝔄} : Copy (@base 𝔄).
   Proof. split=>//.

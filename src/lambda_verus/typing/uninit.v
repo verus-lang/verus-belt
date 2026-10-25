@@ -11,9 +11,10 @@ Section uninit.
     ty_size := n;
     ty_lfts := [];
     ty_E := [];
-    ty_gho vπ _ _ _ := True;
+    ty_gho_own vπ _ _ _ := True;
     ty_gho_pers vπ _ _ _ := True;
     ty_phys x _ := fmap FVal (vec_to_list x);
+    ty_shr := default_shr (λ vπ _ _ _, True);
   |}%I.
   Next Obligation. intros. rewrite length_fmap. rewrite length_vec_to_list. trivial. Qed.
   Next Obligation. done. Qed.
@@ -22,6 +23,7 @@ Section uninit.
   Next Obligation. set_solver. Qed.
   Next Obligation. intros. set_solver. Qed.
   Next Obligation. by iIntros. Qed.
+  Solve All Obligations with solve_default_shr.
 End uninit.
 
 Notation "↯" := uninit : lrust_type_scope.

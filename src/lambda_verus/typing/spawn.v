@@ -15,24 +15,25 @@ Section spawn.
   Context `{!typeG Σ, !spawnG Σ}.
 
   Definition join_future {𝔄} (ty: type 𝔄) (Φ: pred' (~~𝔄)) v : iProp Σ :=
-  (*   ∀tid, ∃ (x : ~~𝔄) mask d g, ⟨π, Φ x mask π⟩  ∗ ⧖d ∗ ty.(ty_gho) x d g tid. *)
+  (*   ∀tid, ∃ (x : ~~𝔄) mask d g, ⟨π, Φ x mask π⟩  ∗ ⧖d ∗ ty.(ty_gho_own) x d g tid. *)
     ∀tid, |={ ⊤ }=> ∃l x x' mask d g,
      ⌜ (box ty).(ty_phys) (l, x') tid = [FVal v] ⌝
     ∗ ⌜syn_abstract x = syn_abstract x'⌝
     ∗ ⟨π, Φ x mask π⟩
-    ∗ ⧖d ∗ |={ ⊤ }=> (box ty).(ty_gho) (l, x') d g tid.
+    ∗ ⧖d ∗ |={ ⊤ }=> (box ty).(ty_gho_own) (l, x') d g tid.
 
   (* Rust's thread::JoinHandle<T> *)
   Program Definition join_handle {𝔄 ℭ} (spec: (~~ℭ) → pred' (~~𝔄)) (ty: type 𝔄) : type (at_locₛ (join_handleₛ ℭ))%ST := 
     {| ty_size := 1;
       ty_lfts := ty.(ty_lfts);
       ty_E := ty.(ty_E);
-      ty_gho (x : ~~ (at_locₛ ℭ)) d g tid :=
+      ty_gho_own (x : ~~ (at_locₛ ℭ)) d g tid :=
         join_handle spawnN x.1 (join_future ty (spec x.2));
       ty_gho_pers (x : ~~ (at_locₛ ℭ)) d g tid :=
         True;
       ty_phys (x : ~~ (at_locₛ ℭ)) tid := 
         [FVal (#x.1)];
+      ty_shr := default_shr (λ (x : ~~ (at_locₛ ℭ)) d g tid, join_handle spawnN x.1 (join_future ty (spec x.2)));
   |}%I.
   Next Obligation. iIntros (????) => //=. Qed.
   Next Obligation. done. Qed.
@@ -41,6 +42,7 @@ Section spawn.
   Next Obligation. iIntros (????????????) "$". Qed.
   Next Obligation. iIntros (??????????) => /=. set_solver. Qed.
   Next Obligation. iIntros (𝔄 ty x ) "**". done. Qed.
+  Solve All Obligations with solve_default_shr.
 
   Global Instance join_handle_ne {𝔄 ℭ} spec : NonExpansive (@join_handle 𝔄 ℭ spec).
   Proof. rewrite /join_handle /join_future. solve_ne_type. Qed.
@@ -103,7 +105,7 @@ Section spawn.
       letalloc: "r" <- "j" in
       return: ["r"].
       
-  Arguments ty_gho {_ _ _} _ _ _ _ : simpl never.
+  Arguments ty_gho_own {_ _ _} _ _ _ _ : simpl never.
   
   Lemma spawn_type {𝔄 𝔅 ℭ} (c: ~~ℭ) (Φ: (~~ℭ) → pred' (~~𝔅)) call_once_val call_once_tr (fty: type 𝔄) (retty: type 𝔅)
       call_once `{!Send fty, !Send retty} :
@@ -210,7 +212,7 @@ Section spawn.
         iSplit => //.
         iFrame "Hsd" => /=.
         rewrite /ty_own.
-        unfold ty_gho => /=.
+        unfold ty_gho_own => /=.
         repeat iSplit => //. }
 
       iIntros (?) "fin".
@@ -236,12 +238,12 @@ Section spawn.
       + rewrite/= !tctx_hasty_val.
         iExists _. iFrame "Hd". 
         iSplitL.
-        * iDestruct (ty_gho_depth_mono with "Hgho1") as "[H _]"; last iFrame.
+        * iDestruct (ty_gho_own_depth_mono with "Hgho1") as "[H _]"; last iFrame.
           all:lia.
         * iPureIntro. done.
       + rewrite/= !tctx_hasty_val. iSplit => //.
         iExists _. iFrame "⧖off". iSplitL.
-        * iDestruct (ty_gho_depth_mono with "Hgho2") as "[H _]"; last iFrame.
+        * iDestruct (ty_gho_own_depth_mono with "Hgho2") as "[H _]"; last iFrame.
           all:lia.
         * iPureIntro. rewrite (send_change_tid_phys tid' tid x' (la, a)); trivial.
       + iApply (proph_obs_impl with "Obs"). intros π Hpost. 

@@ -14,7 +14,7 @@ Section uniq_bor.
     ty_lfts := κ :: ty.(ty_lfts);  
     ty_E := ty.(ty_E) ++ ty_outlives_E ty κ;
     
-    ty_gho (x : ~~ (uniq_borₛ 𝔄)) d g tid :=
+    ty_gho_own (x : ~~ (uniq_borₛ 𝔄)) d g tid :=
       κ ⊑ ty_lft ty ∗
       match x with
         (l, x0, ξi, d', g', idx) =>
@@ -40,6 +40,13 @@ Section uniq_bor.
     (*ty_shr vπ d κ' tid l := [S(d') := d] ∃(l': loc) ξ, ⌜snd ∘ vπ ./ [ξ]⌝ ∗
       &frac{κ'} (λ q, l ↦{q} #l') ∗ &frac{κ'} (λ q, q:[ξ]) ∗
       ▷ ty.(ty_shr) (fst ∘ vπ) d' κ' tid l';*)
+    ty_shr := default_shr (λ (x : ~~ (uniq_borₛ 𝔄)) d g tid, κ ⊑ ty_lft ty ∗
+        match x with
+          (l, x0, ξi, d', g', idx) =>
+            ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ uniq_body ty x0 ξi d' g' idx κ tid l
+              ∗ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_)
+              ∗ (basically_dead κ ∨ ▷ ty.(ty_gho_pers) x0 d' g' tid)
+        end);
   |}%I.
   Next Obligation. intros ? ? ? x. destruct x as [[[[[[l ?] ?] ?] ?] ?] ?]. done. Qed.
   Next Obligation. done. Qed.
@@ -79,7 +86,7 @@ Section uniq_bor.
     }
     iAssert (▷ ▷^(d'*(g'+1)) (∀ ξ , ⌜ξ ∈ ξl x0⌝ -∗
           (R &&{↑NllftG; n+1}&&> @[κ0]) -∗
-          (R &&{↑NllftG; n+1}&&> ty.(ty_gho) x0 d' g' tid) -∗
+          (R &&{↑NllftG; n+1}&&> ty.(ty_gho_own) x0 d' g' tid) -∗
           (R &&{↑NllftG; n+1 + d'*(g'+1)}&&> 1:[ξ])
       ))%I as "Hforall".
     { iIntros (ξ') "%Hin2". iDestruct (ty_guard_proph with "LFT [] InnerPers") as "GP".
@@ -116,6 +123,7 @@ Section uniq_bor.
     intros d g tid. iIntros "[A [B [C [D E]]]]". iFrame. iApply uniq_body_pers_component_impl.
     iFrame.
   Qed.
+  Solve All Obligations with solve_default_shr.
   
   Global Instance uniq_bor_ne {𝔄} κ : NonExpansive (@uniq_bor 𝔄 κ).
   Proof. 
@@ -218,11 +226,11 @@ Section typing.
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
     destruct (SyncTy tid tid' x0 d g) as [Hphys [Hgho Hpers]].
     split. { done. }
-    have Hg: ∀ x d g, ty.(ty_gho) x d g tid ⊣⊢ ty.(ty_gho) x d g tid'.
+    have Hg: ∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty.(ty_gho_own) x d g tid'.
     { intros. apply SyncTy. }
     have Hp: ∀ x, ty.(ty_phys) x tid = ty.(ty_phys) x tid'.
     { intros x. apply (SyncTy tid tid' x 0 0). }
-    split. { unfold uniq_bor, ty_gho. do 3 f_equiv.
+    split. { unfold uniq_bor, ty_gho_own. do 3 f_equiv.
       { by apply uniq_body_proper. }
       f_equiv.
       f_equiv. unfold ty_gho_pers. f_equiv. apply SyncTy.
@@ -343,7 +351,7 @@ Section typing.
       iExists (ty_phys ty x0 tid).
       iFrame "pt". simpl. unfold ty_own.
       iSplit; last by done.
-      iNext. iDestruct (ty_gho_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
+      iNext. iDestruct (ty_gho_own_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
       { lia. } { lia. }
     }
     iFrame "H2". iSplit. { iApply (guards_transitive_right with "Ghalf PtBase"). }
@@ -390,7 +398,7 @@ Section typing.
       { iApply guards_weaken_lhs_sep_r. iApply (guards_transitive with "GuardsL GuardsK"). }
       { iApply guards_weaken_sep_l. }
     
-    iMod (guards_extract_persistent_later _ _ (ty_gho ty x0 d' g' tid)
+    iMod (guards_extract_persistent_later _ _ (ty_gho_own ty x0 d' g' tid)
         with "BigGuards5 [Tok G] []") as "J".
       { solve_ndisj. } { iFrame. } { iIntros "(? & ? & ?)". iFrame. }
     iMod (lc_fupd_elim_later with "£1 J") as "J". iMod "J" as "[[Tok G] #InnerGho]".
@@ -423,7 +431,7 @@ Section typing.
     iSplit. { rewrite fmap_to_concrete; done. }
     iSplit. {
       unfold ty_own. simpl. iSplit; last by done.
-      iNext. iDestruct (ty_gho_depth_mono with "InnerGho") as "[InnerGho' _]"; last by iFrame "InnerGho'". { lia. } { lia. }
+      iNext. iDestruct (ty_gho_own_depth_mono with "InnerGho") as "[InnerGho' _]"; last by iFrame "InnerGho'". { lia. } { lia. }
     }
     iIntros "[Tok G]". iModIntro.
     iExists (l, x0, ξi, d', g', idx).

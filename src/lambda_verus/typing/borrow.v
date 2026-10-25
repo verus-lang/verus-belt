@@ -72,7 +72,7 @@ Section borrow.
         simpl. simpl in Ha. rewrite <- Ha.  trivial.
       }
       rewrite heap_cloc_mapsto_fancy_empty. repeat rewrite ty_size_eq. iFrame.
-      iSplitL. { iDestruct (ty_gho_depth_mono with "gho") as "[gho _]"; last by iFrame "gho". { lia. } { lia. } }
+      iSplitL. { iDestruct (ty_gho_own_depth_mono with "gho") as "[gho _]"; last by iFrame "gho". { lia. } { lia. } }
       done.
     }
     iCombine "Obs Obsξζ" as "Obs1".
@@ -141,7 +141,7 @@ Section borrow.
       }
       iSplit. { leaf_goal laters to 1. { lia. } iApply (guards_transitive_left with "ShrGuard []").
         leaf_by_sep. iIntros "[G pt]".
-        iDestruct (ty_gho_depth_mono _ _ _ d (S d) with "G") as "[G back]". { lia. } { lia. }
+        iDestruct (ty_gho_own_depth_mono _ _ _ d (S d) with "G") as "[G back]". { lia. } { lia. }
         iFrame "G". iIntros "G". iFrame. iApply "back". iFrame.
       }
       iNext. iApply (ty_gho_pers_depth_mono _ _ _ d (S d)); last by iFrame "Pers".
@@ -350,7 +350,7 @@ Section borrow.
     iMod (uniq_body_transform (own_ptr n ty) ty (l1, x1) x1 d' g' ξi ξidx κ tid l (l1, repeat [] (length (ty_phys ty x1 tid))) _ _ (pair_with_locₛ l1) (λ d g, (S d, g)) with "LFT PROPH UNIQ [⧗ £1'] HguardsK H1 [ξTok £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
      { iIntros "[gho pt]".  iMod (lc_fupd_elim_later with "£1' gho") as "gho".
        destruct d'. { done. } iDestruct "gho" as "[phys [free gho]]".
-       iModIntro. iDestruct (ty_gho_depth_mono _ _ _ (S d') g' with "gho") as "[gho _]". { lia. } { lia. }
+       iModIntro. iDestruct (ty_gho_own_depth_mono _ _ _ (S d') g' with "gho") as "[gho _]". { lia. } { lia. }
        iFrame "gho".
        rewrite <- heap_cloc_mapsto_fancy_empty.
        iFrame "phys". iIntros (x2 d2 g2) "[gho [pt2 ⧖2]]".
@@ -446,7 +446,7 @@ Section borrow.
        iApply (guards_transitive_additive _ _ _ _ _ 1 with "Ggho []").
        leaf_by_sep. iIntros "g". destruct d' as [|d'']; first by done.
           iDestruct "g" as "[pt [free gho]]". iNext.
-          iDestruct (ty_gho_depth_mono with "gho") as "[gho back]"; last first.
+          iDestruct (ty_gho_own_depth_mono with "gho") as "[gho back]"; last first.
           - iSplitL "gho". { iFrame "gho". }
             iIntros "A". iSpecialize ("back" with "A"). iFrame.
           - lia. - lia.
@@ -724,7 +724,7 @@ Section borrow.
     }
     iSplit. { leaf_goal laters to (S d' + 1 + 1). { lia. }
       iApply (guards_transitive_left with "Ggho1 []").
-      leaf_by_sep. iApply ty_gho_depth_mono; lia.
+      leaf_by_sep. iApply ty_gho_own_depth_mono; lia.
     }
     iNext. iApply (ty_gho_pers_depth_mono with "InnerInnerPers"); lia.
   Qed.

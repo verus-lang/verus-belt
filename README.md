@@ -130,12 +130,14 @@ The `type` record is used to define a semantic type. Types are parameterized by 
 represents the interpreation sort.
 This record is instantiated for all the types we care about in VerusBelt
 
-The most important fields of this record are the `ty_gho` and `ty_phys` functions, which correspond
+The most important fields of this record are the `ty_gho_own` and `ty_phys` functions, which correspond
 to [[T]].own and [[T]].phys from the paper. Also of note are:
 
   * `ty_size`: the size of the type
   * `ty_lfts`: lifetimes the type is included in (e.g., `&'a T` is included in `'a`)
-  * `ty_gho_pers`: the "persistent part of" `ty_gho`.
+  * `ty_gho_pers`: the "persistent part of" `ty_gho_own`.
+  * `ty_shr`: the sharing predicate, a persistent predicate indexed by a lifetime `κ`
+    (see `ty_share` for how it is obtained from a full borrow of `ty_gho_own`).
 
 Finally, there are a bunch of well-formedness conditions.
 

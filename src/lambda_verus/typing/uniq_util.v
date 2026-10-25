@@ -63,17 +63,17 @@ Section uniq_util.
   Definition uniq_payload {𝔄} (ty: type 𝔄) (tid: thread_id) (l: cloc)
       (c: ~~ (uniq_cellₛ 𝔄)) : iProp Σ :=
     ⧖(S (dec_depth c.2.1) `max` dec_depth c.2.2) ∗
-    ty.(ty_gho) c.1 (dec_depth c.2.1) (dec_depth c.2.2) tid ∗
+    ty.(ty_gho_own) c.1 (dec_depth c.2.1) (dec_depth c.2.2) tid ∗
     l #↦!∗ ty.(ty_phys) c.1 tid.
 
   Lemma uniq_payload_cell {𝔄} (ty: type 𝔄) tid l x d g :
     uniq_payload ty tid l (uniq_cell x d g) ⊣⊢
-      ⧖(S d `max` g) ∗ ty.(ty_gho) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid.
+      ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid.
   Proof. by rewrite /uniq_payload /= !dec_enc_depth. Qed.
 
   Lemma uniq_payload_later_cell {𝔄} (ty: type 𝔄) tid l x d g :
     ▷ uniq_payload ty tid l (uniq_cell x d g) ⊣⊢
-      ▷ (⧖(S d `max` g) ∗ ty.(ty_gho) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid).
+      ▷ (⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid).
   Proof. by rewrite uniq_payload_cell. Qed.
 
   Definition uniq_body_pers_component {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx)
@@ -105,19 +105,19 @@ Section uniq_util.
   (** ** Non-expansiveness *)
 
   Lemma uniq_payload_ne {𝔄} n (ty ty': type 𝔄) tid l c :
-    (∀ x d g, ty.(ty_gho) x d g tid ≡{n}≡ ty'.(ty_gho) x d g tid) →
+    (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_payload ty tid l c ≡{n}≡ uniq_payload ty' tid l c.
   Proof. intros Hg Hp. rewrite /uniq_payload Hp. f_equiv. f_equiv. apply Hg. Qed.
 
   Lemma uniq_payload_proper {𝔄} (ty ty': type 𝔄) tid tid' l c :
-    (∀ x d g, ty.(ty_gho) x d g tid ⊣⊢ ty'.(ty_gho) x d g tid') →
+    (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
     uniq_payload ty tid l c ⊣⊢ uniq_payload ty' tid' l c.
   Proof. intros Hg Hp. rewrite /uniq_payload Hp. f_equiv. f_equiv. apply Hg. Qed.
 
   Lemma uniq_body_ne {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
-    (∀ x d g, ty.(ty_gho) x d g tid ≡{n}≡ ty'.(ty_gho) x d g tid) →
+    (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_body ty x ξi d g idx κ tid l ≡{n}≡ uniq_body ty' x ξi d g idx κ tid l.
   Proof.
@@ -126,7 +126,7 @@ Section uniq_util.
   Qed.
 
   Lemma uniq_body_contractive {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
-    (∀ x d g, dist_later n (ty.(ty_gho) x d g tid) (ty'.(ty_gho) x d g tid)) →
+    (∀ x d g, dist_later n (ty.(ty_gho_own) x d g tid) (ty'.(ty_gho_own) x d g tid)) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_body ty x ξi d g idx κ tid l ≡{n}≡ uniq_body ty' x ξi d g idx κ tid l.
   Proof.
@@ -136,7 +136,7 @@ Section uniq_util.
   Qed.
 
   Lemma uniq_body_proper {𝔄} (ty ty': type 𝔄) x ξi d g idx κ tid tid' l :
-    (∀ x d g, ty.(ty_gho) x d g tid ⊣⊢ ty'.(ty_gho) x d g tid') →
+    (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
     uniq_body ty x ξi d g idx κ tid l ⊣⊢ uniq_body ty' x ξi d g idx κ tid' l.
   Proof.
@@ -145,7 +145,7 @@ Section uniq_util.
   Qed.
 
   Lemma uniq_pers_component_ne {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
-    (∀ x d g, ty.(ty_gho) x d g tid ≡{n}≡ ty'.(ty_gho) x d g tid) →
+    (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_body_pers_component ty x ξi d g idx κ tid l ≡{n}≡
       uniq_body_pers_component ty' x ξi d g idx κ tid l.
@@ -154,7 +154,7 @@ Section uniq_util.
   Qed.
 
   Lemma uniq_pers_component_contractive {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
-    (∀ x d g, dist_later n (ty.(ty_gho) x d g tid) (ty'.(ty_gho) x d g tid)) →
+    (∀ x d g, dist_later n (ty.(ty_gho_own) x d g tid) (ty'.(ty_gho_own) x d g tid)) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_body_pers_component ty x ξi d g idx κ tid l ≡{n}≡
       uniq_body_pers_component ty' x ξi d g idx κ tid l.
@@ -165,7 +165,7 @@ Section uniq_util.
   Qed.
 
   Lemma uniq_pers_component_proper {𝔄} (ty ty': type 𝔄) x ξi d g idx κ tid tid' l :
-    (∀ x d g, ty.(ty_gho) x d g tid ⊣⊢ ty'.(ty_gho) x d g tid') →
+    (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
     uniq_body_pers_component ty x ξi d g idx κ tid l ⊣⊢
       uniq_body_pers_component ty' x ξi d g idx κ tid' l.
@@ -232,7 +232,7 @@ Section uniq_util.
     ⊢ llft_ctx -∗
       proph_ctx -∗
       uniq_ctx -∗ ⧖(S d `max` g) -∗
-      (▷ ty.(ty_gho) x d g tid) -∗
+      (▷ ty.(ty_gho_own) x d g tid) -∗
       l #↦!∗ ty.(ty_phys) x tid -∗
       ⧗1
       ={E}=∗
@@ -243,7 +243,7 @@ Section uniq_util.
         ⟨π, π ζ = (l.1, (π ξ).1)⟩ ∗
         ([†κ] ={↑Nllft}=∗
            ▷ ∃ x' (d' g' : nat), ((λ π, (π ξ).1) :== vπ x') ∗ ⧖ (S d' `max` g') ∗
-               ty_gho ty x' d' g' tid ∗ l #↦!∗ ty_phys ty x' tid).
+               ty_gho_own ty x' d' g' tid ∗ l #↦!∗ ty_phys ty x' tid).
   Proof.
     intros Hmask. iIntros "#LFT #PROPH #UNIQ #⧖ gho pt £".
     iMod (proph_loan_intro (uniq_cell_tyi x) E (uniq_cell x d g) with "PROPH UNIQ")
@@ -310,7 +310,7 @@ Section uniq_util.
     G -∗
     uniq_body ty x ξi d g idx κ tid l ={F}=∗
       ⟨π, (π (uniq_prvar x ξi)).1 = (vπ x π)⟩ ∗ G
-      ∗ (@[κ] &&{↑NllftG; 1}&&> (ty_gho ty x d g tid ∗ l #↦!∗ ty_phys ty x tid)).
+      ∗ (@[κ] &&{↑NllftG; 1}&&> (ty_gho_own ty x d g tid ∗ l #↦!∗ ty_phys ty x tid)).
   Proof.
     intro Ti.
     iIntros (Alv ?) "#LFT #PROPH #UNIQ #TIME #In E #Guard G [Bor ⧗] /=".
@@ -351,7 +351,7 @@ Section uniq_util.
 
   Lemma incl_uniq_body_pers_component {𝔄} (ty ty': type 𝔄) x ξi d g idx κ κ' tid l :
     κ' ⊑ κ -∗
-    □ (∀x d tid vl, ty.(ty_gho) x d tid vl ↔ ty'.(ty_gho) x d tid vl) -∗
+    □ (∀x d tid vl, ty.(ty_gho_own) x d tid vl ↔ ty'.(ty_gho_own) x d tid vl) -∗
     (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
     uniq_body_pers_component ty x ξi d g idx κ tid l -∗ uniq_body_pers_component ty' x ξi d g idx κ' tid l.
   Proof.
@@ -363,7 +363,7 @@ Section uniq_util.
 
   Lemma incl_uniq_body {𝔄} (ty ty': type 𝔄) x ξi d g idx κ κ' tid l :
     κ' ⊑ κ -∗
-    □ (∀x d tid vl, ty.(ty_gho) x d tid vl ↔ ty'.(ty_gho) x d tid vl) -∗
+    □ (∀x d tid vl, ty.(ty_gho_own) x d tid vl ↔ ty'.(ty_gho_own) x d tid vl) -∗
     (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
     uniq_body ty x ξi d g idx κ tid l -∗ uniq_body ty' x ξi d g idx κ' tid l.
   Proof.
@@ -381,7 +381,7 @@ Section uniq_util.
     uniq_body_pers_component ty x ξi d g idx κ tid l -∗
     (R &&{↑NllftG; n}&&> @[κ]) -∗
     (R &&{↑NllftG; n}&&> uniq_tok x ξi d g idx) -∗
-    (R &&{↑NllftG; n+1}&&> (⧖(S d `max` g) ∗ ty.(ty_gho) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid)).
+    (R &&{↑NllftG; n+1}&&> (⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid)).
   Proof.
     iIntros "#LFT #Bor #Gk #Gtok".
     iDestruct (proph_ibor_guard_payload with "LFT Bor Gk Gtok") as "G".
@@ -406,7 +406,7 @@ Section uniq_util.
       uniq_body_pers_component ty x ξi d g ξidx κ tid l -∗
       (G &&{↑NllftG; n}&&> uniq_body ty x ξi d g ξidx κ tid l) -∗
       (G &&{↑NllftG}&&> @[κ]) -∗
-      (G &&{↑NllftG; n+1}&&> ((ty.(ty_gho) x d g tid) ∗ l #↦!∗ ty.(ty_phys) x tid)).
+      (G &&{↑NllftG; n+1}&&> ((ty.(ty_gho_own) x d g tid) ∗ l #↦!∗ ty.(ty_phys) x tid)).
   Proof.
     iIntros "#LFT #Bor #Guniq #Gk".
     rewrite uniq_body_unfold.
@@ -424,8 +424,8 @@ Section uniq_util.
     Timeless G → ↑Nllft ⊆ E →
     llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
     uniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
-      ▷ (⧖(S d `max` g) ∗ ty.(ty_gho) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid) ∗ ⧗1 ∗
-      (∀ x1 d1 g1, ▷ (⧖(S d1 `max` g1) ∗ ty.(ty_gho) x1 d1 g1 tid ∗ l #↦!∗ ty.(ty_phys) x1 tid) -∗ ⧗1
+      ▷ (⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid) ∗ ⧗1 ∗
+      (∀ x1 d1 g1, ▷ (⧖(S d1 `max` g1) ∗ ty.(ty_gho_own) x1 d1 g1 tid ∗ l #↦!∗ ty.(ty_phys) x1 tid) -∗ ⧗1
         ={↑Nllft}=∗ uniq_body ty x1 ξi d1 g1 idx κ tid l ∗ G).
   Proof.
     iIntros (??) "#LFT #UNIQ #Gk [Bor ⧗] G".
@@ -456,7 +456,7 @@ Section uniq_util.
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
     iMod ("Back" with "[Inner] ⧗") as "[$ $]"; [|done].
     iNext. iDestruct "Inner" as "(_ & Gho & $)". iFrame "⧖".
-    iDestruct (ty_gho_depth_mono with "Gho") as "[$ _]"; trivial.
+    iDestruct (ty_gho_own_depth_mono with "Gho") as "[$ _]"; trivial.
   Qed.
 
   (** Open a unique borrow with a lifetime token, closing with a different
@@ -466,7 +466,7 @@ Section uniq_util.
     ↑Nllft ⊆ E →
     llft_ctx -∗ uniq_ctx -∗ @[κ] -∗
     uniq_body ty x ξi d g idx κ tid l ={E}=∗ ▷ ◇ (
-      (⧖(S d `max` g) ∗ ty.(ty_gho) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid) ∗ ⧗1 ∗
+      (⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid) ∗ ⧗1 ∗
       (∀ c1, ▷ Q c1 -∗
          ▷ (∀ c2, ▷ Q c2 ∗ [†κ] ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ uniq_payload ty tid l c2)
          ={↑Nllft}=∗
@@ -489,11 +489,11 @@ Section uniq_util.
       llft_ctx -∗
       proph_ctx -∗
       uniq_ctx -∗
-      (▷ ty_gho ty x d g tid ∗ l #↦!∗ ty_phys ty x tid
-        ={E}=∗ ▷ ty_gho ty' x' d g tid ∗ l' #↦!∗ ty_phys ty' x' tid ∗
-        (∀ x'1 d1 g1 , ▷ ty_gho ty' x'1 d1 g1 tid ∗ l' #↦!∗ ty_phys ty' x'1 tid ∗ ⧖(S d1 `max` g1)
+      (▷ ty_gho_own ty x d g tid ∗ l #↦!∗ ty_phys ty x tid
+        ={E}=∗ ▷ ty_gho_own ty' x' d g tid ∗ l' #↦!∗ ty_phys ty' x' tid ∗
+        (∀ x'1 d1 g1 , ▷ ty_gho_own ty' x'1 d1 g1 tid ∗ l' #↦!∗ ty_phys ty' x'1 tid ∗ ⧖(S d1 `max` g1)
           ={↑NllftUsr ∪ ↑NllftUsr2}=∗
-            ▷ ty_gho ty (f ~~$ₛ x'1) (h d1 g1).1 (h d1 g1).2 tid ∗
+            ▷ ty_gho_own ty (f ~~$ₛ x'1) (h d1 g1).1 (h d1 g1).2 tid ∗
             l #↦!∗ ty_phys ty (f ~~$ₛ x'1) tid ∗
             ⧖(S (h d1 g1).1 `max` (h d1 g1).2))
         ) -∗

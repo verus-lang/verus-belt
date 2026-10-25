@@ -436,14 +436,14 @@ Section typing.
     { iExists [FVal vb]. 
       rewrite <- heap_complete_mapsto_fancy_singleton.
       iFrame.
-      iDestruct (ty_gho_depth_mono with "tyb'_gho") as "[$ _]". { lia. } { lia. }
+      iDestruct (ty_gho_own_depth_mono with "tyb'_gho") as "[$ _]". { lia. } { lia. }
       trivial.
     }
     iDestruct ("Halfback" with "H1 H2") as "L". iMod (fupd_mask_mono with "L") as "L". { solve_ndisj. }
     
     iExists -[z]. iFrame "L I". iSplitR "Obs".
     - rewrite right_id tctx_hasty_val'; [|done]. iExists (S (S d' `max` db)). iFrame "#".
-      iFrame. iModIntro. iDestruct (ty_gho_depth_mono with "ty'") as "[$ _]". { lia. } { lia. }
+      iFrame. iModIntro. iDestruct (ty_gho_own_depth_mono with "ty'") as "[$ _]". { lia. } { lia. }
     - iApply proph_obs_impl; [|done]=>/= ?[? Imp].
       generalize Hz. generalize z. apply Imp.
       trivial.
@@ -579,7 +579,7 @@ Section typing.
     iMod ("back" with "prefix") as "Hw".
     
     iMod ("Totyw" with "[↦ tyb'_gho] ⧖Smax £3 Hw") as (z) "[H1 [%Hz tyw']]". { iExists vlb. iFrame. 
-      iDestruct (ty_gho_depth_mono with "tyb'_gho") as "[$ _]". { lia. } { lia. }
+      iDestruct (ty_gho_own_depth_mono with "tyb'_gho") as "[$ _]". { lia. } { lia. }
       iPureIntro. trivial. }
     iDestruct ("Totyr'" with "Hr") as "Totyr'".
     iMod (fupd_mask_mono with "Totyr'") as (zr) "(%Hzr & H3 & tyr')". { solve_ndisj. }
@@ -592,11 +592,11 @@ Section typing.
       + iSplit.
         * iApply (persistent_time_receipt_mono with "⧖Smax"). lia.
         * iDestruct "tyw'" as "[gho phys]". iFrame.
-          iDestruct (ty_gho_depth_mono with "gho") as "[$ _]"; lia.
+          iDestruct (ty_gho_own_depth_mono with "gho") as "[$ _]"; lia.
       + iSplit.
         * iApply (persistent_time_receipt_mono with "⧖Smax"). lia.
         * iDestruct "tyr'" as "[gho phys]". iFrame.
-          iDestruct (ty_gho_depth_mono with "gho") as "[$ _]"; lia.
+          iDestruct (ty_gho_own_depth_mono with "gho") as "[$ _]"; lia.
     - iApply proph_obs_impl; [|done]=>/= ?[? Imp].
       generalize Hzr. generalize Hz. generalize zr. generalize z. apply Imp.
       trivial.

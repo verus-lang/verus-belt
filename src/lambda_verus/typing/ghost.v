@@ -53,7 +53,7 @@ Section ghost.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [done|]. iIntros "_ ⧖".
     iApply wp_new=>//. iIntros "!>" (l) "(† & ↦)". iExists -[(l, c)]. iFrame. iSplitL.
     - iExists (#l). iSplit; first done. iSplit; last done.
-      unfold own_ptr, ty_gho. rewrite !freeable_util.freeable_sz_full. iFrame. done.
+      unfold own_ptr, ty_gho_own. rewrite !freeable_util.freeable_sz_full. iFrame. done.
     - iApply (proph_obs_impl with "Obs"). done.
   Qed.
   
@@ -71,7 +71,7 @@ Section ghost.
     iApply wp_new=>//. iIntros "!>" (l) "(† & ↦)". iExists -[x; (l, x)]. iFrame "T".
     iFrame. iSplitL.
     - iExists (#l). iSplit; first done. iSplit; last done.
-      unfold own_ptr, ty_gho. rewrite !freeable_util.freeable_sz_full. iFrame. done.
+      unfold own_ptr, ty_gho_own. rewrite !freeable_util.freeable_sz_full. iFrame. done.
     - iApply (proph_obs_impl with "Obs"). done.
   Qed.
   
@@ -90,7 +90,7 @@ Section ghost.
     iApply wp_new=>//. iIntros "!>" (l) "(† & ↦)". iExists -[x; y; (l, f x y)].
     iFrame "T1 T2". iFrame. iSplitL.
     - iExists (#l). iSplit; first done. iSplit; last done.
-      unfold own_ptr, ty_gho. rewrite !freeable_util.freeable_sz_full. iFrame. done.
+      unfold own_ptr, ty_gho_own. rewrite !freeable_util.freeable_sz_full. iFrame. done.
     - iApply (proph_obs_impl with "Obs"). done.
   Qed.
 End ghost.

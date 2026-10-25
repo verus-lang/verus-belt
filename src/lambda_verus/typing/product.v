@@ -16,9 +16,10 @@ Section product.
     {| ty_size := 0;
        ty_lfts := [];
        ty_E := [];
-       ty_gho x d g tid := True%I;
+       ty_gho_own x d g tid := True%I;
        ty_gho_pers x d g tid := True%I;
        ty_phys x tid := [];
+       ty_shr := default_shr (λ x d g tid, True%I);
     |}%I.
   Next Obligation. iIntros (??). trivial. Qed.
   Next Obligation. done. Qed.
@@ -27,6 +28,7 @@ Section product.
   Next Obligation. intros. iIntros. done. Qed.
   Next Obligation. intros. set_solver. Qed.
   Next Obligation. iIntros. done. Qed.
+  Solve All Obligations with solve_default_shr.
 
   Global Instance unit0_copy : Copy unit0.
   Proof.
@@ -50,16 +52,17 @@ Section product.
     ty_size := ty.(ty_size) + ty'.(ty_size);
     ty_lfts := ty.(ty_lfts) ++ ty'.(ty_lfts);
     ty_E := ty.(ty_E) ++ ty'.(ty_E);
-    ty_gho x d g tid := ty.(ty_gho) (fst x) d g tid ∗ ty'.(ty_gho) (snd x) d g tid;
+    ty_gho_own x d g tid := ty.(ty_gho_own) (fst x) d g tid ∗ ty'.(ty_gho_own) (snd x) d g tid;
     ty_gho_pers x d g tid := ty.(ty_gho_pers) (fst x) d g tid ∗ ty'.(ty_gho_pers) (snd x) d g tid;
     ty_phys x tid := ty.(ty_phys) (fst x) tid ++ ty'.(ty_phys) (snd x) tid;
+    ty_shr := default_shr (λ (x: ~~(𝔄 * 𝔅)) d g tid, ty.(ty_gho_own) (fst x) d g tid ∗ ty'.(ty_gho_own) (snd x) d g tid);
   |}%I.
   Next Obligation. intros. rewrite length_app !ty_size_eq. trivial. Qed.
   Next Obligation. intros. simpl. by do 2 (rewrite <- ty_size_eq2). Qed.
   Next Obligation. intros. destruct x. simpl. by do 2 (rewrite <- ty_phys_eq2). Qed.
   Next Obligation. intros ty ty' tty tty' d g d' g'. move=>/= *. iIntros "[A B]".
-    iDestruct ((ty_gho_depth_mono _ d g d' g') with "A") as "[A A']"; trivial.
-    iDestruct ((ty_gho_depth_mono _ d g d' g') with "B") as "[B B']"; trivial.
+    iDestruct ((ty_gho_own_depth_mono _ d g d' g') with "A") as "[A A']"; trivial.
+    iDestruct ((ty_gho_own_depth_mono _ d g d' g') with "B") as "[B B']"; trivial.
     iFrame. iIntros "[x y]".
     iDestruct ("A'" with "x") as "A'".
     iDestruct ("B'" with "y") as "B'".
@@ -92,6 +95,7 @@ Section product.
     iDestruct (ty_gho_pers_impl with "B") as "#B1".
     iFrame "#".
   Qed.
+  Solve All Obligations with solve_default_shr.
 
   Global Instance prod_ty_ne {𝔄 𝔅} : NonExpansive2 (@prod_ty 𝔄 𝔅).
   Proof. solve_ne_type. Qed.
@@ -160,7 +164,7 @@ Section typing.
   Proof.
     move=> ??. split=>/=; first apply _.
     - move=> *. f_equiv; by apply type_ne_ty_size.
-    - move=> *. f_equiv; by apply type_ne_ty_gho.
+    - move=> *. f_equiv; by apply type_ne_ty_gho_own.
     - move=> *. f_equiv; by apply type_ne_ty_gho_pers.
     - move=> *. f_equiv; by apply type_ne_ty_phys.
   Qed.
@@ -170,7 +174,7 @@ Section typing.
   Proof.
     move=> ??. split=>/=; first apply _.
     - move=> *. f_equiv; by apply type_contractive_ty_size.
-    - move=> *. f_equiv; by apply type_contractive_ty_gho.
+    - move=> *. f_equiv; by apply type_contractive_ty_gho_own.
     - move=> *. f_equiv; by apply type_contractive_ty_gho_pers.
     - move=> *. f_equiv; by apply type_contractive_ty_phys.
   Qed.
@@ -193,7 +197,7 @@ Section typing.
     Copy ty → Copy ty' → Copy (ty * ty').
   Proof.
     move=> C1 C2. split.
-    - intros. unfold ty_gho, prod_ty. typeclasses eauto.
+    - intros. unfold ty_gho_own, prod_ty. typeclasses eauto.
     - intros x d g tid. iIntros "[G1 G2]".
       iDestruct (copy_concrete with "G1") as "%Conc1".
       iDestruct (copy_concrete with "G2") as "%Conc2".
@@ -226,8 +230,8 @@ Section typing.
         iDestruct ("Hback" with "H1 H2") as "H". iMod (fupd_mask_mono with "H") as "H"; first solve_ndisj.
         iDestruct ("Gback" with "G1 G2") as "G". iMod (fupd_mask_mono with "G") as "G"; first solve_ndisj.
         iModIntro.
-        iDestruct (ty_gho_depth_mono with "gho1") as "[$ _]". { lia. } { lia. }
-        iDestruct (ty_gho_depth_mono with "gho2") as "[$ _]". { lia. } { lia. }
+        iDestruct (ty_gho_own_depth_mono with "gho1") as "[$ _]". { lia. } { lia. }
+        iDestruct (ty_gho_own_depth_mono with "gho2") as "[$ _]". { lia. } { lia. }
         iCombine "⧖1 ⧖2" as "⧖". iFrame "G H".
         iSplit.
          + iApply (persistent_time_receipt_mono with "⧖"). lia.

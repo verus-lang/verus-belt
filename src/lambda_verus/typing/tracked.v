@@ -12,17 +12,19 @@ Section tracked.
     ty_size := 0;
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
-    ty_gho x d g tid := (ty.(ty_gho) x d g tid) ;
+    ty_gho_own x d g tid := (ty.(ty_gho_own) x d g tid) ;
     ty_gho_pers x d g tid := (ty.(ty_gho_pers) x d g tid) ;
     ty_phys x tid := [];
+    ty_shr := default_shr (λ x d g tid, (ty.(ty_gho_own) x d g tid));
   |}%I.
   Next Obligation. intros; done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. intros. apply (ty_gho_depth_mono ty); trivial. Qed.
+  Next Obligation. intros. apply (ty_gho_own_depth_mono ty); trivial. Qed.
   Next Obligation. intros. apply (ty_gho_pers_depth_mono ty); trivial. Qed.
   Next Obligation. intros. iIntros. iApply (ty_guard_proph _ ty); trivial. Qed.
   Next Obligation. intros. apply (ty_gho_pers_impl); trivial. Qed.
+  Solve All Obligations with solve_default_shr.
   
   Global Instance tracked_ne {𝔄} : NonExpansive (@tracked_ty 𝔄).
   Proof. solve_ne_type. Qed.

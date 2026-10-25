@@ -19,13 +19,13 @@ Section programs_util_own.
     (∀ l1 l2 x1 x2 d tid post mask iκs, ⊢ (llft_ctx -∗ time_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
       llctx_interp L -∗
       invctx_interp tid mask iκs I -∗
-      ty_gho ty1 x1 d (S d) tid -∗
-      ty_gho ty2 x2 d (S d) tid -∗
+      ty_gho_own ty1 x1 d (S d) tid -∗
+      ty_gho_own ty2 x2 d (S d) tid -∗
       ⟨π, tr post -[(l1, x1); (l2, x2)] mask π⟩ -∗
       ⧖(S (S (S d))) -∗
       £(d+1) -∗
       |={⊤}=>
-      ∃ xret , llctx_interp L ∗ invctx_interp tid mask iκs I ∗  ▷ ty_gho tyret xret (S d) (S (S d)) tid ∗
+      ∃ xret , llctx_interp L ∗ invctx_interp tid mask iκs I ∗  ▷ ty_gho_own tyret xret (S d) (S (S d)) tid ∗
           ⟨π, post -[(l2, xret)] mask π⟩
     )%I)
     → typed_inv_instr E L I
@@ -69,12 +69,12 @@ Section programs_util_own.
     (ty_size tyret = 0) →
     (∀ l1 x1 d tid iκs post mask, ⊢ (llft_ctx -∗ time_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
       llctx_interp L -∗ invctx_interp tid mask iκs I -∗
-      ty_gho ty1 x1 d (S d) tid -∗
+      ty_gho_own ty1 x1 d (S d) tid -∗
       ⟨π, tr post -[(l1, x1)] mask π⟩ -∗
       ⧖(S (S d)) -∗
       ⧗1 -∗
       |={⊤}=>
-      ∃ d' xret , ⧖(S d') ∗ llctx_interp L ∗ invctx_interp tid mask iκs I ∗ ▷ ty_gho tyret xret (d') (S d') tid ∗
+      ∃ d' xret , ⧖(S d') ∗ llctx_interp L ∗ invctx_interp tid mask iκs I ∗ ▷ ty_gho_own tyret xret (d') (S d') tid ∗
           ⟨π, post -[(l1, xret)] mask π⟩
     )%I)
     → typed_instr E L I
@@ -110,13 +110,13 @@ Section programs_util_own.
     (ty_size tyret = 0) →
     (∀ l1 x1 d tid iκs post mask, ⊢ (llft_ctx -∗ time_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
       llctx_interp L -∗ invctx_interp tid mask iκs I -∗
-      ty_gho ty1 x1 d (S d) tid -∗
+      ty_gho_own ty1 x1 d (S d) tid -∗
       ⟨π, tr post -[(l1, x1)] mask π⟩ -∗
       ⧖(S (S d)) -∗
       ⧗1 -∗
       £(2*d + 5) -∗
       |={⊤}=>
-      ∃ d' xret mask' , ⧖(S d') ∗ llctx_interp L ∗ invctx_interp tid mask' iκs I' ∗ ▷ ty_gho tyret xret (d') (S d') tid ∗
+      ∃ d' xret mask' , ⧖(S d') ∗ llctx_interp L ∗ invctx_interp tid mask' iκs I' ∗ ▷ ty_gho_own tyret xret (d') (S d') tid ∗
           ⟨π, post -[(l1, xret)] mask' π⟩
     )%I)
     → typed_inv_instr E L I
@@ -154,8 +154,8 @@ Section programs_util_own.
     (tr: predl_trans (at_locₛ 𝔄1 :: [at_locₛ 𝔄2]) []) :
     (∀ l1 l2 x1 x2 d tid iκs post mask, ⊢ (llft_ctx -∗ time_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
       llctx_interp L -∗ invctx_interp tid mask iκs I -∗
-      ty_gho ty1 x1 d (S d) tid -∗
-      ty_gho ty2 x2 d (S d) tid -∗
+      ty_gho_own ty1 x1 d (S d) tid -∗
+      ty_gho_own ty2 x2 d (S d) tid -∗
       ⟨π, tr post -[(l1, x1); (l2, x2)] mask π⟩ -∗
       ⧖(S (S (S d))) -∗
       ⧗(S d) -∗

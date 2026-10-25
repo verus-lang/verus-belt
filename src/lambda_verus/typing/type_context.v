@@ -564,10 +564,10 @@ Section lemmas.
     
     iDestruct "ty" as "[gho phys]".
     iDestruct (ty_gho_pers_impl with "gho") as "#ghoPers".
-    iAssert (▷^(d*(d+1)) (∀ ζ , ⌜ζ ∈ ξl x'⌝ -∗ (fractional.half γ2 ∗ ty_gho ty x' d d tid &&{↑NllftG; d*(d+1)}&&> 1:[ζ])))%I as "#Hallζlater".
+    iAssert (▷^(d*(d+1)) (∀ ζ , ⌜ζ ∈ ξl x'⌝ -∗ (fractional.half γ2 ∗ ty_gho_own ty x' d d tid &&{↑NllftG; d*(d+1)}&&> 1:[ζ])))%I as "#Hallζlater".
     {
       iIntros (ζ) "%Hin".
-      iDestruct (ty_guard_proph _ ty (foldr meet static (ty_lfts ty))%I x' 0 d d tid ζ ((fractional.half γ2 ∗ ty_gho ty x' d d tid)) Hin
+      iDestruct (ty_guard_proph _ ty (foldr meet static (ty_lfts ty))%I x' 0 d d tid ζ ((fractional.half γ2 ∗ ty_gho_own ty x' d d tid)) Hin
           with "LFT [] ghoPers") as "A"; first by iApply guards_refl.
       iNext.
       iApply "A".

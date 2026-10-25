@@ -39,12 +39,12 @@
   ** Interpretation
 
   [ltype_own k lt r d g tid l] (notation [l ◁ₗ[tid, k, d, g] r @ lt]) is
-  indexed by depths [d g], exactly as [ty_gho]; blocked places ignore the
+  indexed by depths [d g], exactly as [ty_gho_own]; blocked places ignore the
   depths and give back the contents at some new depth together with a time
   receipt (like [uniq_payload] and the blocked entries of the type context).
   Borrow kinds ([bor_kind]):
   - [Owned m]: the place is owned. For [OfTy ty] this is [ty_own] at the
-    location ([l #↦!∗ ty_phys] and [ty_gho]); [m] is the number of laters
+    location ([l #↦!∗ ty_phys] and [ty_gho_own]); [m] is the number of laters
     guarding the ghost parts (one per enclosing [own_ptr], as for the
     pointee of [own_ptr]; cf. RefinedRust's [Owned wl]). Blocked
     inheritances are never put under a later, so that they can always be
@@ -329,7 +329,7 @@ Section ltype_own.
   Definition ofty_in {𝔄} (k: bor_kind) (ty: type 𝔄) (x: ~~𝔄) (d g: nat)
       (tid: thread_id) (l: cloc) : iProp Σ :=
     match k with
-    | Owned m => l #↦!∗ ty.(ty_phys) x tid ∗ ▷^m ty.(ty_gho) x d g tid
+    | Owned m => l #↦!∗ ty.(ty_phys) x tid ∗ ▷^m ty.(ty_gho_own) x d g tid
     | Uniq κ ξi _ => (∃ idx, uniq_body ty x ξi d g idx κ tid l) ∗
         (basically_dead κ ∨ ▷ ty.(ty_gho_pers) x d g tid)
     end.
@@ -554,7 +554,7 @@ Section ltype_lemmas.
     intros ??. destruct r as [lr|]; [|done].
     have Hofty: ofty_own (Owned m) ty lr d g tid l ⊢ ofty_own (Owned m) ty lr d' g' tid l.
     { iIntros "(%x & Rel & Pt & Gho)". iExists x. iFrame. iNext.
-      iDestruct (ty_gho_depth_mono _ d g d' g' with "Gho") as "[$ _]"; done. }
+      iDestruct (ty_gho_own_depth_mono _ d g d' g' with "Gho") as "[$ _]"; done. }
     destruct p; try apply Hofty. destruct c; [apply Hofty|]. rewrite /leaf_own /blocked_own.
     iIntros "$".
   Qed.
@@ -964,8 +964,8 @@ Section fold.
   Lemma cpd_fold {𝔄} (ty: type 𝔄) (Φ: ~~𝔄 → Prop) κ ξi γ p
       (node: lpat → prfn 𝔄 → nat → nat → thread_id → cloc → iProp Σ) (r: prfn 𝔄) d g tid l E G :
     Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
-    (node p r d g tid l ⊢ ∃ v, ⌜Φ v⌝ ∗ ty.(ty_gho) v d g tid ∗ l #↦!∗ ty.(ty_phys) v tid) →
-    (∀ x d' g', ty.(ty_gho) x d' g' tid ∗ l #↦!∗ ty.(ty_phys) x tid ⊢
+    (node p r d g tid l ⊢ ∃ v, ⌜Φ v⌝ ∗ ty.(ty_gho_own) v d g tid ∗ l #↦!∗ ty.(ty_phys) v tid) →
+    (∀ x d' g', ty.(ty_gho_own) x d' g' tid ∗ l #↦!∗ ty.(ty_phys) x tid ⊢
        ∃ p' r', ⌜pat_ok κ p' ∧ prfn_den r' = vπ x⌝ ∗ node p' r' d' g' tid l) →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
     cpd_own κ ξi γ p node r d g tid l ={E}=∗
@@ -983,10 +983,10 @@ Section fold.
     rewrite cpd_body_cell.
     iDestruct "Body" as (p1 r1) "(>%Hok & >%Hwπ & >Gh' & >#⧖ & Node)".
     iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%ltype_state_agree.
-    iAssert (▷ ∃ v, ⌜Φ v⌝ ∗ ty.(ty_gho) v d g tid ∗ l #↦!∗ ty.(ty_phys) v tid)%I
+    iAssert (▷ ∃ v, ⌜Φ v⌝ ∗ ty.(ty_gho_own) v d g tid ∗ l #↦!∗ ty.(ty_phys) v tid)%I
       with "[Node]" as "Node". { iNext. by iApply Hnode. }
     iDestruct "Node" as (v) "(>%Hv & Gho & Pt)".
-    iAssert (▷ (ty.(ty_gho) v d g tid ∗ ty.(ty_gho_pers) v d g tid))%I
+    iAssert (▷ (ty.(ty_gho_own) v d g tid ∗ ty.(ty_gho_pers) v d g tid))%I
       with "[Gho]" as "[Gho #Pers]".
     { iNext. iDestruct (ty_gho_pers_impl with "Gho") as "#?". by iFrame "∗#". }
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].

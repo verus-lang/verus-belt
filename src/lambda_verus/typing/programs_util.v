@@ -97,11 +97,11 @@ Section programs_util.
     wp_let.
     iMod (Hvs x1 x2 v1 v2 (d1 `max` d2) tid post with "CTX TIME PROPH UNIQ E L p1 [own1] p2 [own2] Obs S⧖ ⧗") as "J".
      { iDestruct "own1" as "[gho phys]". iFrame.
-       iDestruct (ty_gho_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
+       iDestruct (ty_gho_own_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
        { lia. } { lia. }
      }
      { iDestruct "own2" as "[gho phys]". iFrame.
-       iDestruct (ty_gho_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
+       iDestruct (ty_gho_own_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
        { lia. } { lia. }
      }
      iDestruct "J" as (xl') "(? & ? & ?)". iModIntro. iFrame.
@@ -147,11 +147,11 @@ Section programs_util.
     iDestruct "⧗big" as "[⧗big ⧗3]".
     iMod (Hvs x1 x2 v1 v2 (d1 `max` d2) tid post with "CTX TIME PROPH UNIQ E L I p1 [own1] p2 [own2] Obs S⧖ ⧗big ⧗2 £") as "J".
      { iDestruct "own1" as "[gho phys]". iFrame.
-       iDestruct (ty_gho_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
+       iDestruct (ty_gho_own_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
        { lia. } { lia. }
      }
      { iDestruct "own2" as "[gho phys]". iFrame.
-       iDestruct (ty_gho_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
+       iDestruct (ty_gho_own_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
        { lia. } { lia. }
      }
      iDestruct "J" as (xl' mask') "(? & ? & ? & ?)". iModIntro. iFrame.

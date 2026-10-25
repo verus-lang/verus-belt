@@ -45,7 +45,7 @@ Section S.
   
   Lemma Tn_cauchy n i : (n ≤ i)%nat →
     (∀x d g tid,
-      ((Tn (2 + i)).(ty_gho) x d g tid) ≡{n}≡ ((Tn (2 + n)).(ty_gho) x d g tid)) ∧
+      ((Tn (2 + i)).(ty_gho_own) x d g tid) ≡{n}≡ ((Tn (2 + n)).(ty_gho_own) x d g tid)) ∧
     (∀x d g tid,
       (Tn (2 + i)).(ty_gho_pers) x d g tid ≡{n}≡ (Tn (2 + n)).(ty_gho_pers) x d g tid).
   Proof using HT.
@@ -85,7 +85,7 @@ Section S.
   
   (*Lemma Tn_cauchy n i : (n ≤ i)%nat →
     (∀x d g tid, dist_later n
-      ((Tn (2 + i)).(ty_gho) x d g tid) ((Tn (2 + n)).(ty_gho) x d g tid)) ∧
+      ((Tn (2 + i)).(ty_gho_own) x d g tid) ((Tn (2 + n)).(ty_gho_own) x d g tid)) ∧
     (∀x d g tid,
       (Tn (2 + i)).(ty_gho_pers) x d g tid ≡{n}≡ (Tn (2 + n)).(ty_gho_pers) x d g tid).
   Proof using HT.
@@ -123,7 +123,7 @@ Section S.
   Qed.*)
   
   Program Definition gho_chain :=
-    {| chain_car n := ((Tn (3 + n)).(ty_gho), (Tn (3 + n)).(ty_gho_pers)) :
+    {| chain_car n := ((Tn (3 + n)).(ty_gho_own), (Tn (3 + n)).(ty_gho_pers)) :
         prodO ((~~𝔄) -d> nat -d> nat -d> thread_id -d> iPropO Σ)
           ((~~𝔄) -d> nat -d> nat -d> thread_id -d> iPropO Σ) |}.
   Next Obligation.
@@ -134,8 +134,9 @@ Section S.
 
   Program Definition Tn' n : type 𝔄 := {|
     ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
-    ty_gho := (Tn n).(ty_gho);  ty_gho_pers := (Tn n).(ty_gho_pers);
+    ty_gho_own := (Tn n).(ty_gho_own);  ty_gho_pers := (Tn n).(ty_gho_pers);
     ty_phys := (Tn 0).(ty_phys);
+    ty_shr := default_shr (Tn n).(ty_gho_own);
   |}.
   Next Obligation.
     move=> *. rewrite ty_size_eq /Tn. (*iIntros "->!%/=". apply type_contractive_ty_size.*)
@@ -143,24 +144,26 @@ Section S.
   Qed.
   Next Obligation. intros. apply ty_size_eq2. Qed.
   Next Obligation. intros. apply ty_phys_eq2. Qed.
-  Next Obligation. move=> >. apply ty_gho_depth_mono. Qed.
+  Next Obligation. move=> >. apply ty_gho_own_depth_mono. Qed.
   Next Obligation. move=> >. apply ty_gho_pers_depth_mono. Qed.
   Next Obligation.
     move=> n *. iIntros "#LFT #?". iApply (ty_guard_proph with "LFT"); [done|].
     iApply llftl_incl_trans; [done|]. iDestruct (Tn_ty_lft_const n 0) as "[_ $]".
   Qed.
   Next Obligation. move=> >. apply ty_gho_pers_impl. Qed.
+  Solve All Obligations with solve_default_shr.
 
   Program Definition fix_ty: type 𝔄 := {|
     ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
-    ty_gho := (compl gho_chain).1;  ty_gho_pers := (compl gho_chain).2;
+    ty_gho_own := (compl gho_chain).1;  ty_gho_pers := (compl gho_chain).2;
     ty_phys := (Tn 0).(ty_phys);
+    ty_shr := default_shr (compl gho_chain).1;
   |}.
   Next Obligation. intros. apply ty_size_eq. Qed.
   Next Obligation. intros. apply ty_size_eq2. Qed.
   Next Obligation. intros. apply ty_phys_eq2. Qed.
   Next Obligation.
-    move=> *. apply @limit_preserving; [|move=> ?; by apply ty_gho_depth_mono].
+    move=> *. apply @limit_preserving; [|move=> ?; by apply ty_gho_own_depth_mono].
     apply limit_preserving_entails=> ??? Eq. { done. } f_equiv. { apply Eq. }
     f_equiv. { apply Eq. } f_equiv; apply Eq.
   Qed.
@@ -183,6 +186,7 @@ Section S.
     apply limit_preserving_entails; [done|]=> ??? Eq.
     f_equiv; apply Eq.
   Qed.
+  Solve All Obligations with solve_default_shr.
 
   Lemma fix_ty_Tn'_dist n : fix_ty ≡{n}≡ Tn' (3 + n).
   Proof. split=>// *; apply conv_compl. Qed.
@@ -198,8 +202,8 @@ Section fix_ty.
   Lemma fix_unfold_fold {𝔄} (T: type 𝔄 → type 𝔄) {HT: TypeContractive T} E L :
     eqtype E L (fix_ty T) (T (fix_ty T)) idₛ idₛ.
   Proof.
-    have EqOwn: ∀n vπ d tid vl, (T $ Tn T (3 + n)).(ty_gho) vπ d tid vl ≡
-      (T $ Tn' T (3 + n)).(ty_gho) vπ d tid vl.
+    have EqOwn: ∀n vπ d tid vl, (T $ Tn T (3 + n)).(ty_gho_own) vπ d tid vl ≡
+      (T $ Tn' T (3 + n)).(ty_gho_own) vπ d tid vl.
     { move=> n *. apply equiv_dist=> ?. apply HT=>//; [apply HT|
         apply (Tn_ty_lft_const T (3 + n) 0)|apply (Tn_ty_E_const T (2 + n) 0)|].
       intros. by do 2 (rewrite <- ty_phys_eq2).
@@ -210,8 +214,8 @@ Section fix_ty.
         apply (Tn_ty_lft_const T (3 + n) 0)|apply (Tn_ty_E_const T (2 + n) 0)|].
       intros. by do 2 (rewrite <- ty_phys_eq2).
     }
-    have EqOwn': ∀vπ d tid vl, (fix_ty T).(ty_gho) vπ d tid vl ≡
-      (T (fix_ty T)).(ty_gho) vπ d tid vl.
+    have EqOwn': ∀vπ d tid vl, (fix_ty T).(ty_gho_own) vπ d tid vl ≡
+      (T (fix_ty T)).(ty_gho_own) vπ d tid vl.
     { move=> *. apply equiv_dist=> n. etrans; [apply dist_S, conv_compl|].
       rewrite/= (EqOwn n). symmetry. apply HT=>// *; [apply lft_equiv_refl| |].
       - move: n=> [|n]; [apply dist_later_0|].

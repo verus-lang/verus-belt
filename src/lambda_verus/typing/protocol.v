@@ -23,7 +23,7 @@ Section StorageProtocol.
   (* very hacky type used to instantiate storage protocols *)
   Program Definition storable_ty {𝔄} (ty: type 𝔄) : ghost_type (storableₛ 𝔄) := {|
     gt_gho x tid := match x with
-        (x0, (d, g)) => ty.(ty_gho) x0 d g tid ∗ ⧖(S d `max` g)
+        (x0, (d, g)) => ty.(ty_gho_own) x0 d g tid ∗ ⧖(S d `max` g)
     end
   |}%I.
   Next Obligation. done. Qed.
@@ -91,7 +91,7 @@ Section StorageProtocol.
     iDestruct "Gho" as "[Gho #⧖2]".
     iMod (cumulative_persistent_time_receipt with "TIME ⧗ ⧖2") as "⧖S2"; first solve_ndisj.
     iExists ((S d0 `max` g0)), x0. iModIntro. iFrame. iFrame "#".
-    iDestruct (ty_gho_depth_mono with "Gho") as "[$ _]". { lia. } { lia. } 
+    iDestruct (ty_gho_own_depth_mono with "Gho") as "[$ _]". { lia. } { lia. } 
     iApply (proph_obs_impl with "Obs"). done.
   Qed.
 
@@ -127,7 +127,7 @@ Section StorageProtocol.
        iSplit. { leaf_goal laters to (S (d+1)); first lia. iFrame "pt". }
        iSplit. { leaf_goal laters to (S (d+1)); first lia. 
           iApply (guards_transitive_left with "gho []").
-          leaf_by_sep. iIntros "[A ⧖]". iDestruct (ty_gho_depth_mono with "A") as "[$ back]".
+          leaf_by_sep. iIntros "[A ⧖]". iDestruct (ty_gho_own_depth_mono with "A") as "[$ back]".
             { lia. } { lia. } iIntros "A". iFrame "⧖". iApply "back". iFrame.
        }
        iNext. iNext.
@@ -250,7 +250,7 @@ Section StorageProtocol.
     iFrame "L Hd1".
     iSplitL.
     - iExists _; iSplitR => //=.
-      rewrite /ty_own/ty_gho/ty_phys/=.
+      rewrite /ty_own/ty_gho_own/ty_phys/=.
       repeat rewrite heap_mapsto_fancy_vec_nil.
       iFrame; iSplitL => //.
     - iApply (proph_obs_impl with "Obs").

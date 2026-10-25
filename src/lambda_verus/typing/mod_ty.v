@@ -25,17 +25,19 @@ Section mod_ty.
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
     ty_gho_pers x d g tid := ty.(ty_gho_pers) (fⁱ ~~$ₛ x) d g tid ;
-    ty_gho x d g tid := ty.(ty_gho) (fⁱ ~~$ₛ x) d g tid ;
+    ty_gho_own x d g tid := ty.(ty_gho_own) (fⁱ ~~$ₛ x) d g tid ;
     ty_phys x tid := ty.(ty_phys) (fⁱ ~~$ₛ  x) tid ;
+    ty_shr := default_shr (λ x d g tid, ty.(ty_gho_own) (fⁱ ~~$ₛ x) d g tid);
   |}%I.
   Next Obligation. intros. apply ty_size_eq. Qed.
   Next Obligation. intros. rewrite <- ty_size_eq2. inversion Isoₛ0. done. Qed.
   Next Obligation. intros. simpl. rewrite <- ty_phys_eq2. inversion Isoₛ0.
     rewrite (syn_iso_phys_eq ((~~!ₛ) fⁱ x)). by rewrite semi_iso'. Qed.
-  Next Obligation. intros. apply ty_gho_depth_mono; trivial. Qed.
+  Next Obligation. intros. apply ty_gho_own_depth_mono; trivial. Qed.
   Next Obligation. intros. apply ty_gho_pers_depth_mono; trivial. Qed.
   Next Obligation. intros. apply ty_guard_proph. by rewrite <- syn_type_morphism_ξl. Qed.
   Next Obligation. intros. apply ty_gho_pers_impl. Qed.
+  Solve All Obligations with solve_default_shr.
 
   Global Instance mod_ty_ne {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) (fⁱ: 𝔅 →ₛ 𝔄) `{!Isoₛ f fⁱ} : NonExpansive (mod_ty f fⁱ).
   Proof. solve_ne_type. Qed.

@@ -166,11 +166,11 @@ Section programs_util_atomic.
     iMod (Hvs x1 x2 v1 v2 (d1 `max` d2) tid post mask na_mask at_mask with "LFT TIME PROPH UNIQ E L Iat I1 I1' p1 [own1] p2 [own2] Obs ⧖Smax ⧗2 £") as (xl' mask' at_mask' Hmasks') "(L & Iat & I1 & T)".
       { intuition. } { intuition. } 
       { iDestruct "own1" as "[gho phys]". iFrame.
-       iDestruct (ty_gho_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
+       iDestruct (ty_gho_own_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
        { lia. } { lia. }
      }
      { iDestruct "own2" as "[gho phys]". iFrame.
-       iDestruct (ty_gho_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
+       iDestruct (ty_gho_own_depth_mono with "gho") as "[gho _]"; last by iFrame "gho".
        { lia. } { lia. }
      }
     wp_let.
@@ -190,7 +190,7 @@ Section programs_util_atomic.
       llctx_interp L -∗ atomic_ctx at_mask (AtomicOpen n) -∗
       (cna_lifetimes tid (invctx_to_multiset Il ⊎ (list_to_set_disj iκs))) -∗
       ϝ ⊑ lft_intersect_list iκs -∗
-      ty_gho ty1 x1 d (S d) tid -∗
+      ty_gho_own ty1 x1 d (S d) tid -∗
       ⟨π, tr post -[(l1, x1)] mask π⟩ -∗
       ⧖(S (S d)) -∗
       ⧗1 -∗
@@ -200,7 +200,7 @@ Section programs_util_atomic.
       ⌜na_mask ∪ at_mask' = ⊤ ∧ na_mask ∩ at_mask' = mask'⌝ ∗
       ⧖(S d') ∗ llctx_interp L ∗ atomic_ctx at_mask' (AtomicOpen n') ∗
       (cna_lifetimes tid (invctx_to_multiset Il ⊎ (list_to_set_disj iκs))) ∗
-      ▷ ty_gho tyret xret (d') (S d') tid ∗
+      ▷ ty_gho_own tyret xret (d') (S d') tid ∗
           ⟨π, post -[(l1, xret)] mask' π⟩
     )%I)
     → typed_inv_instr E L
@@ -241,8 +241,8 @@ Section programs_util_atomic.
       llctx_interp L -∗ atomic_ctx at_mask (AtomicOpen n) -∗
       (cna_lifetimes tid (invctx_to_multiset Il ⊎ (list_to_set_disj iκs))) -∗
       ϝ ⊑ lft_intersect_list iκs -∗
-      ty_gho ty1 x1 d (S d) tid -∗
-      ty_gho ty2 x2 d (S d) tid -∗
+      ty_gho_own ty1 x1 d (S d) tid -∗
+      ty_gho_own ty2 x2 d (S d) tid -∗
       ⟨π, tr post -[(l1, x1); (l2, x2)] mask π⟩ -∗
       ⧖(S (S (S d))) -∗
       £(d+1) -∗

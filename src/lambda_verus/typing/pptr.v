@@ -51,9 +51,10 @@ Section points_to.
     ty_size := 0;
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
-    ty_gho x d g tid := P ∗ (ty.(ty_gho) x d g tid) ;
+    ty_gho_own x d g tid := P ∗ (ty.(ty_gho_own) x d g tid) ;
     ty_gho_pers x d g tid := (ty.(ty_gho_pers) x d g tid) ;
     ty_phys x tid := [];
+    ty_shr := default_shr (λ x d g tid, P ∗ (ty.(ty_gho_own) x d g tid));
   |}%I.
   Next Obligation. intros; done. Qed.
   Next Obligation. intros; done. Qed.
@@ -61,7 +62,7 @@ Section points_to.
   Next Obligation.
     intros.
     iIntros "[? gho]".
-    iDestruct (ty_gho_depth_mono ty with "gho") as "[? wand]" => //. 
+    iDestruct (ty_gho_own_depth_mono ty with "gho") as "[? wand]" => //. 
     iFrame.
     iIntros "[$ ?]".
     by iApply "wand".
@@ -76,6 +77,7 @@ Section points_to.
     by iApply ("Hguard" with "H2").
   Qed.
   Next Obligation. iIntros "* [? ?]". iApply (ty_gho_pers_impl 𝔄); trivial. Qed.
+  Solve All Obligations with solve_default_shr.
 
   Definition points_to_ty {𝔄} ty := tracked_ty (@own_ptr _ _ 𝔄 (ty_size ty) ty).
 
@@ -174,7 +176,7 @@ Section typing.
       iSplitL => //.
       iFrame.
       iNext.
-      iDestruct (ty.(ty_gho_depth_mono) with "gho") as "($ & ?)"; lia.
+      iDestruct (ty.(ty_gho_own_depth_mono) with "gho") as "($ & ?)"; lia.
     - iApply (proph_obs_impl with "Obs").
       intros π' Hpost.
       apply Hpost.
@@ -227,7 +229,7 @@ Section typing.
       rewrite freeable_sz_full.
       iFrame.
       iNext; iNext; iFrame.
-      iDestruct (ty.(ty_gho_depth_mono) with "Hgho") as "($ & ?)"; lia.
+      iDestruct (ty.(ty_gho_own_depth_mono) with "Hgho") as "($ & ?)"; lia.
     - iApply (proph_obs_impl with "Obs").
       intros π' Hpost.
       apply Hpost.
@@ -295,7 +297,7 @@ Section typing.
         replace (S (S (S (d' + 1)))) with (S (S (S (d' + 1))) + 0) at 2 by lia.
         iApply (guards_transitive_additive with "Hshr4").
         leaf_by_sep.
-        iApply ty.(ty_gho_depth_mono); lia.
+        iApply ty.(ty_gho_own_depth_mono); lia.
       - repeat iNext.
         iApply (ty.(ty_gho_pers_depth_mono) with "Hpers") => //; lia.
     }
@@ -375,7 +377,7 @@ Section typing.
       iMod (lc_fupd_elim_later with "£1' gho") as "gho".
       iDestruct "gho" as "[phys [free gho]]".
       iModIntro.
-      iDestruct (ty_gho_depth_mono _ _ _ (S d) g with "gho") as "[gho _]". { lia. } { lia. }
+      iDestruct (ty_gho_own_depth_mono _ _ _ (S d) g with "gho") as "[gho _]". { lia. } { lia. }
       iFrame "gho".
       simpl.
       rewrite -(ty.(ty_size_eq) x tid).

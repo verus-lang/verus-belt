@@ -14,11 +14,12 @@ Section pcell.
 
   Program Definition pcell_ty n : type (pcellₛ n) :=
     {| ty_size := n;
-      ty_gho x _ _ _ := ⌜ length x = n ⌝;
+      ty_gho_own x _ _ _ := ⌜ length x = n ⌝;
       ty_gho_pers  x _ _ _ := ⌜ length x = n ⌝;
       ty_phys (cell_ids: ~~ (pcellₛ n)) _ := pad (FCell <$> cell_ids) n ;
       ty_lfts := [];
       ty_E := [];
+      ty_shr := default_shr (λ (x: ~~(pcellₛ n)) _ _ _, ⌜ length x = n ⌝);
      |}%I.
   Next Obligation. move => n v tid. by rewrite length_pad. Qed.
   Next Obligation. done. Qed.
@@ -29,6 +30,7 @@ Section pcell.
       intros n κ x n0 d g tid ξ R Hin. simpl in Hin. set_solver.
   Qed.
   Next Obligation. move => *. by iIntros "?". Qed.
+  Solve All Obligations with solve_default_shr.
   
   Global Instance pcell_send n: Send (pcell_ty n).
   Proof.
@@ -51,11 +53,12 @@ Section points_to.
     {| ty_size := 0%nat;
       ty_lfts := ty.(ty_lfts);
       ty_E := ty.(ty_E);
-      ty_gho x d g tid := 
-        [S(d') := d] (cells_points_to_fancy_value_vec x.1 (ty.(ty_phys) x.2 tid))%I ∗ ▷ (ty.(ty_gho) x.2 d' g tid) ;
+      ty_gho_own x d g tid := 
+        [S(d') := d] (cells_points_to_fancy_value_vec x.1 (ty.(ty_phys) x.2 tid))%I ∗ ▷ (ty.(ty_gho_own) x.2 d' g tid) ;
       ty_gho_pers x d g tid := 
         [S(d') := d] ⌜ length x.1 = ty_size ty ⌝ ∗ ▷ (ty.(ty_gho_pers) (snd x) d' g tid) ;
       ty_phys _ _ := [];
+      ty_shr := default_shr (λ (x: ~~(trackedₛ (pcellₛ (ty.(ty_size)) * 𝔄))) d g tid, [S(d') := d] (cells_points_to_fancy_value_vec x.1 (ty.(ty_phys) x.2 tid))%I ∗ ▷ (ty.(ty_gho_own) x.2 d' g tid));
     |}%I.
   Next Obligation. move => 𝔄 tyA v tid //=. Qed.
   Next Obligation. done. Qed.
@@ -67,7 +70,7 @@ Section points_to.
     destruct d' => //=; first lia.
     iDestruct "H" as "[H↦ Hgho]".
     iFrame "H↦".
-    iDestruct (ty.(ty_gho_depth_mono) with "Hgho") as "[$ Hwand]" => //; first lia.
+    iDestruct (ty.(ty_gho_own_depth_mono) with "Hgho") as "[$ Hwand]" => //; first lia.
     iIntros "[$ Hgho] !>".
     by iApply "Hwand".
   Qed.
@@ -103,6 +106,7 @@ Section points_to.
     iSplit => //.
     iApply ty_gho_pers_impl. iFrame.
   Qed.
+  Solve All Obligations with solve_default_shr.
 
   Global Instance cell_points_to_send {𝔄} (ty: type 𝔄) :
       Send ty → Send (cell_points_to_ty ty).
@@ -199,7 +203,7 @@ Section typing.
       rewrite heap_complete_mapsto_fancy_val_vec_eq'.
       iFrame.
       iNext.
-      iDestruct (ty.(ty_gho_depth_mono) with "Hgho") as "($ & ?)"; lia.
+      iDestruct (ty.(ty_gho_own_depth_mono) with "Hgho") as "($ & ?)"; lia.
     - iApply (proph_obs_impl with "Obs").
       intros π Hpost.
       apply Hpost.
@@ -257,7 +261,7 @@ Section typing.
       do 2 iSplit => //=.
       iSplitL => //.
       iFrame.
-      iDestruct (ty.(ty_gho_depth_mono) with "Hgho") as "($ & ?)"; lia.
+      iDestruct (ty.(ty_gho_own_depth_mono) with "Hgho") as "($ & ?)"; lia.
     - iApply (proph_obs_impl with "Obs").
       intros π' Hpost.
       apply Hpost.
@@ -336,7 +340,7 @@ Section typing.
             iDestruct (guards_later_absorb_1 with "Hghoshared") as "Hghoshared1".
             iApply (guards_transitive_left with "Hghoshared1").
             leaf_by_sep.
-            iApply ty.(ty_gho_depth_mono); lia.
+            iApply ty.(ty_gho_own_depth_mono); lia.
           + repeat iNext.
             iApply (ty.(ty_gho_pers_depth_mono) with "Hgho") => //; lia.
       }
@@ -390,7 +394,7 @@ Section typing.
             1: instantiate (1 := S (S (S d))); lia.
             iApply (guards_transitive_left with "Hghoshared2").
             leaf_by_sep.
-            iApply ty.(ty_gho_depth_mono); lia.
+            iApply ty.(ty_gho_own_depth_mono); lia.
           + repeat iNext.
             iApply (ty.(ty_gho_pers_depth_mono) with "Hgho") => //; lia.
       }
@@ -491,7 +495,7 @@ Section typing.
       iDestruct "gho" as "[H↦ gho]".
       iModIntro.
       iSplitL "gho".
-      iDestruct (ty_gho_depth_mono _ _ _ (S d) g with "gho") as "[gho _]". { lia. } { lia. }
+      iDestruct (ty_gho_own_depth_mono _ _ _ (S d) g with "gho") as "[gho _]". { lia. } { lia. }
       done.
       simpl.
       rewrite -(ty.(ty_size_eq) x tid).
@@ -563,7 +567,7 @@ Section typing.
       iDestruct "gho" as "[H↦ gho]".
       iModIntro.
       iSplitL "gho".
-      iDestruct (ty_gho_depth_mono _ _ _ (S d) g with "gho") as "[gho _]". { lia. } { lia. }
+      iDestruct (ty_gho_own_depth_mono _ _ _ (S d) g with "gho") as "[gho _]". { lia. } { lia. }
       done.
       simpl.
       rewrite -(ty.(ty_size_eq) x tid).
