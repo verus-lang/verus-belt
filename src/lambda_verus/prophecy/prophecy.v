@@ -1,6 +1,6 @@
 Import EqNotations.
 From stdpp Require Import strings.
-From iris.algebra Require Import auth cmra functions gmap csum frac agree.
+From iris.algebra Require Import auth cmra functions gmap csum frac agree excl.
 From iris.bi Require Import fractional.
 From iris.proofmode Require Import proofmode.
 From iris.base_logic Require Import invariants.
@@ -147,9 +147,16 @@ Record proph_log_item :=
 Local Notation ".{ ξ := vπ }" := (ProphLogItem ξ vπ)
   (at level 1, format ".{ ξ  :=  vπ }").
 
-Local Definition proph_log := list proph_log_item.
+(** An entry of the log is an item together with a reservation flag:
+  [None] means that the item is resolved, and [Some ζl] means that the
+  variable is merely reserved (its value in the log being a placeholder),
+  and that it will be resolved to a value depending on [ζl] and on variables
+  that are unresolved at resolution time. *)
+Local Definition proph_log_ent : Type := proph_log_item * option (list proph_var).
+Local Definition proph_log := list proph_log_ent.
 
-Local Definition res (L: proph_log) := pli_pv <$> L.
+Local Definition res (L: proph_log) := (λ e, e.1.(pli_pv)) <$> L.
+Local Arguments res : simpl never.
 
 Local Definition proph_asn_eqv_out ξl π π' := ∀ξ, ξ ∉ ξl → π ξ = π' ξ.
 Local Notation "π .≡~{ ξl }≡ π'" := (proph_asn_eqv_out ξl π π')
@@ -159,15 +166,87 @@ Local Definition proph_dep_out {A} (vπ: proph A) ξl :=
 Local Notation "vπ ./~ ξl" := (proph_dep_out vπ ξl)
   (at level 70, format "vπ  ./~  ξl").
 
-Local Fixpoint proph_log_ok L :=
+(** A reserved entry records that its dependencies [ζl] were unresolved
+  at (and before) its position in the log. *)
+Local Definition rsv_ok (r: option (list proph_var)) ξl :=
+  match r with None => True | Some ζl => ∀ζ, ζ ∈ ζl → ζ ∉ ξl end.
+
+Local Fixpoint proph_log_ok (L: proph_log) :=
   match L with
   | [] => True
-  | .{ξ := vπ} :: L' => ξ ∉ res L' ∧ vπ ./~ res L ∧ proph_log_ok L'
+  | (.{ξ := vπ}, r) :: L' =>
+      ξ ∉ res L' ∧ vπ ./~ ξ :: res L' ∧ rsv_ok r (ξ :: res L') ∧ proph_log_ok L'
   end.
 Local Notation ".✓ L" := (proph_log_ok L) (at level 20, format ".✓  L").
 
-Local Definition proph_sat π L := Forall (λ pli, π pli.(pli_pv) = pli.(pli_val) π) L.
+Local Definition proph_sat π (L: list proph_log_item) :=
+  Forall (λ pli, π pli.(pli_pv) = pli.(pli_val) π) L.
 Local Notation "π ◁ L" := (proph_sat π L) (at level 70, format "π  ◁  L").
+
+(** ** Basic Facts on the Log *)
+
+Local Lemma res_cons e L : res (e :: L) = e.1.(pli_pv) :: res L.
+Proof. done. Qed.
+Local Lemma res_app_cons L1 e L2 :
+  res (L1 ++ e :: L2) = res L1 ++ e.1.(pli_pv) :: res L2.
+Proof. by rewrite /res fmap_app. Qed.
+Local Lemma res_elem e L : e ∈ L → e.1.(pli_pv) ∈ res L.
+Proof. apply (elem_of_list_fmap_1 (λ e, e.1.(pli_pv))). Qed.
+
+Local Lemma pli_inj ξ vπ wπ : .{ξ := vπ} = .{ξ := wπ} → vπ = wπ.
+Proof.
+  move=> Eq.
+  have := f_equal (λ pli, existT (P:=λ ζ, proph ζ.(pv_ty)) pli.(pli_pv) pli.(pli_val)) Eq.
+  by move=> /= /(Eqdep_dec.inj_pair2_eq_dec _ proph_var_eq_dec _ _ _ _).
+Qed.
+Local Lemma pli_ent_eq ξ vπ wπ (r r': option (list proph_var)) :
+  (.{ξ := wπ}, r') = (.{ξ := vπ}, r) ↔ (wπ, r') = (vπ, r).
+Proof.
+  split=> Eq; [|by case: Eq=> -> ->].
+  have /pli_inj -> := f_equal fst Eq. by have /= -> := f_equal snd Eq.
+Qed.
+
+Local Lemma proph_dep_out_anti {A} (vπ: proph A) ξl ζl :
+  ξl ⊆ ζl → vπ ./~ ζl → vπ ./~ ξl.
+Proof.
+  move=> Sub Dep ?? Eqv. apply Dep=> ? Nin. apply Eqv=> In. by apply Nin, Sub.
+Qed.
+Local Lemma rsv_ok_anti r ξl ζl : ξl ⊆ ζl → rsv_ok r ζl → rsv_ok r ξl.
+Proof. case: r=> [?|] //= Sub Ok ζ /Ok Nin In. by apply Nin, Sub. Qed.
+
+Local Lemma proph_log_ok_suffix L1 L2 : .✓ (L1 ++ L2) → .✓ L2.
+Proof. elim: L1=> [|[[??]?] L1 IH] //= [_[_[_ /IH ?]]]. done. Qed.
+
+Local Lemma proph_log_ok_unique L1 e L2 :
+  .✓ (L1 ++ e :: L2) → e.1.(pli_pv) ∉ res (L1 ++ L2).
+Proof.
+  elim: L1=> [|[[ζ wπ] r] L1 IH].
+  - by case: e=> [[??]?] /= [].
+  - move=> /= [Nin [_ [_ /IH ?]]]. rewrite res_cons not_elem_of_cons.
+    split; [|done]. move=> /= Eq. apply Nin. rewrite res_app_cons Eq. set_solver.
+Qed.
+
+(** Replacing an entry in place by one with the same variable *)
+Local Lemma proph_log_ok_replace L1 e e' L2 :
+  e.1.(pli_pv) = e'.1.(pli_pv) → .✓ (e' :: L2) →
+  .✓ (L1 ++ e :: L2) → .✓ (L1 ++ e' :: L2).
+Proof.
+  move=> Eq ?. elim: L1=> [|[[ζ wπ] r] L1 IH]; [done|].
+  have Eqr: res (L1 ++ e :: L2) = res (L1 ++ e' :: L2) by rewrite !res_app_cons Eq.
+  rewrite /= Eqr. move=> [?[?[? /IH ?]]]. done.
+Qed.
+
+(** Deleting an entry: this only weakens the conditions of newer entries *)
+Local Lemma proph_log_ok_delete L1 e L2 : .✓ (L1 ++ e :: L2) → .✓ (L1 ++ L2).
+Proof.
+  elim: L1=> [|[[ζ wπ] r] L1 IH]; [by case: e=> [[??]?] /= [?[?[??]]]|].
+  have Sub: res (L1 ++ L2) ⊆ res (L1 ++ e :: L2).
+  { rewrite res_app_cons /res fmap_app. set_solver. }
+  move=> /= [Nin [Dep [Rsv /IH ?]]]. split; [set_solver|].
+  split; [|split; [|done]].
+  - apply: proph_dep_out_anti Dep. set_solver.
+  - apply: rsv_ok_anti Rsv. set_solver.
+Qed.
 
 (** ** Satisfiability *)
 
@@ -181,40 +260,46 @@ Proof. rewrite /proph_upd. case (decide (ξ = ξ))=> [?|?]; by [simpl_eq|]. Qed.
 Local Lemma proph_upd_lookup_ne π ξ vπ ζ : ξ ≠ ζ → :<[ξ := vπ]> π ζ = π ζ.
 Proof. rewrite /proph_upd. by case (decide (ξ = ζ))=> [?|?]. Qed.
 
-Local Fixpoint proph_modify π L :=
+Local Fixpoint proph_modify π (L: proph_log) :=
   match L with
   | [] => π
-  | .{ξ := vπ} :: L' => proph_modify (:<[ξ := vπ]> π) L'
+  | (.{ξ := vπ}, _) :: L' => proph_modify (:<[ξ := vπ]> π) L'
   end.
 Local Notation "π ! L" := (proph_modify π L) (at level 30, format "π  !  L").
 
 Local Lemma proph_modify_eqv L : ∀π, π ! L .≡~{res L}≡ π.
 Proof.
-  elim L=>/= [|[??]? IH]; [done|]=> > /not_elem_of_cons [??].
-  rewrite IH; [|done]. by apply proph_upd_lookup_ne.
+  elim L=>/= [|[[??]?]? IH]; [done|]. rewrite res_cons /=.
+  move=> > /not_elem_of_cons [??]. rewrite IH; [|done]. by apply proph_upd_lookup_ne.
 Qed.
 
-Local Lemma proph_ok_modify_sat L : .✓ L → ∀π, π ! L ◁ L.
+Local Lemma proph_ok_modify_sat L : .✓ L → ∀π, π ! L ◁ L.*1.
 Proof.
-  rewrite /proph_sat. elim: L=>/= [|[ξ vπ] L' IH]; [done|]. move=> [?[? /IH ?]]?.
-  apply Forall_cons=>/=. split; [|done]. rewrite proph_modify_eqv; [|done].
-  rewrite proph_upd_lookup. set L := .{ξ := vπ} :: L'.
+  rewrite /proph_sat. elim: L=>/= [|[[ξ vπ] r] L' IH]; [done|].
+  move=> [?[?[_ /IH ?]]]?. apply Forall_cons=>/=. split; [|done].
+  rewrite proph_modify_eqv; [|done]. rewrite proph_upd_lookup.
+  set L := (.{ξ := vπ}, r) :: L'.
   have Dep': vπ ./~ res L by done. symmetry. apply Dep', (proph_modify_eqv L).
 Qed.
 
-Local Lemma proph_ok_sat L : .✓ L → ∃π, π ◁ L.
+Local Lemma proph_ok_sat L : .✓ L → ∃π, π ◁ L.*1.
 Proof. exists (inhabitant ! L). by apply proph_ok_modify_sat. Qed.
 
 (** * Prophecy Camera *)
 
+(** An item is either a fractional token, an (exclusive) reservation recording
+  its dependencies, or an (agreeing) resolved value. *)
 Local Definition proph_itemR (𝔄i: syn_typei) :=
-  csumR fracR (agreeR (leibnizO (proph 𝔄i))).
+  csumR fracR (csumR (exclR (leibnizO (list proph_var))) (agreeR (leibnizO (proph 𝔄i)))).
 Local Definition proph_gmapUR 𝔄i := gmapUR positive (proph_itemR 𝔄i).
 Local Definition proph_smryUR := discrete_funUR proph_gmapUR.
 Definition prophUR: ucmra := authUR proph_smryUR.
 
-Local Definition aitem {𝔄i} vπ : proph_itemR 𝔄i := Cinr (to_agree vπ).
+Local Definition aitem {𝔄i} vπ : proph_itemR 𝔄i := Cinr (Cinr (to_agree vπ)).
 Local Definition fitem {𝔄i} (q: Qp) : proph_itemR 𝔄i := Cinl q.
+Local Definition ritem {𝔄i} (ζl: list proph_var) : proph_itemR 𝔄i := Cinr (Cinl (Excl ζl)).
+Local Definition ent_item {𝔄i} vπ (r: option (list proph_var)) : proph_itemR 𝔄i :=
+  match r with None => aitem vπ | Some ζl => ritem ζl end.
 Local Definition line ξ it : proph_smryUR := .{[ξ.(pv_ty) := {[ξ.(pv_id) := it]}]}.
 Local Definition add_line ξ it (S: proph_smryUR) : proph_smryUR :=
   .<[ξ.(pv_ty) := <[ξ.(pv_id) := it]> (S ξ.(pv_ty))]> S.
@@ -227,11 +312,146 @@ Proof. solve_inG. Qed.
 
 Definition prophN: namespace := nroot .@ "proph".
 
+(** ** Camera Facts *)
+
+Local Lemma aitem_inj {𝔄i: syn_typei} (vπ wπ: proph 𝔄i) :
+  Some (aitem vπ) ≡ Some (aitem wπ) → vπ = wπ.
+Proof. by move=> /(inj (Some ∘ aitem)). Qed.
+Local Lemma ritem_inj {𝔄i: syn_typei} ζl ζl' :
+  Some (@ritem 𝔄i ζl) ≡ Some (ritem ζl') → ζl = ζl'.
+Proof.
+  move=> Eq. apply (inj Some) in Eq. apply (inj Cinr) in Eq.
+  apply (inj Cinl) in Eq. by apply (inj Excl) in Eq.
+Qed.
+Local Lemma aitem_ritem_ne {𝔄i: syn_typei} (vπ: proph 𝔄i) ζl :
+  ¬ Some (aitem vπ) ≡ Some (ritem ζl).
+Proof. move=> Eq. apply (inj Some), (inj Cinr) in Eq. inversion Eq. Qed.
+Local Lemma ritem_aitem_ne {𝔄i: syn_typei} (vπ: proph 𝔄i) ζl :
+  ¬ Some (ritem ζl) ≡ Some (aitem vπ).
+Proof. move=> Eq. apply (inj Some), (inj Cinr) in Eq. inversion Eq. Qed.
+
+Local Lemma fitem_Cinr_included {𝔄i: syn_typei} q b : ¬ Some (@fitem 𝔄i q) ≼ Some (Cinr b).
+Proof. by move=> /Some_csum_included [|[[?[?[_[?]]]]|[?[?[?]]]]]. Qed.
+
+Local Lemma aitem_included {𝔄i: syn_typei} (vπ: proph 𝔄i) it :
+  ✓ it → Some (aitem vπ) ≼ Some it → it ≡ aitem vπ.
+Proof.
+  rewrite /aitem.
+  move=> Val /Some_included [?|Inc]; [done|].
+  move: Inc Val=> /csum_included [->|[[?[?[??]]]|[b [b' [Eb [-> Inc]]]]]] //.
+  move: Eb Inc=> [<-] Inc /Cinr_valid Val. f_equiv.
+  move: Inc Val=> /csum_included [->|[[?[?[??]]]|[c [c' [Ec [-> Inc]]]]]] //.
+  move: Ec Inc=> [<-] Inc /Cinr_valid /to_agree_uninj [w Ew]. f_equiv.
+  rewrite -Ew in Inc *. by move: Inc=> /to_agree_included ->.
+Qed.
+
+Local Lemma add_line_lookup ξ it S : add_line ξ it S ξ.(pv_ty) !! ξ.(pv_id) = Some it.
+Proof. by rewrite /add_line discrete_fun_lookup_insert lookup_insert. Qed.
+Local Lemma add_line_lookup_ne ξ ζ it S : ξ ≠ ζ →
+  add_line ξ it S ζ.(pv_ty) !! ζ.(pv_id) = S ζ.(pv_ty) !! ζ.(pv_id).
+Proof.
+  move: ξ it ζ=> [𝔄i i] it [𝔅i j] Ne. rewrite /add_line /discrete_fun_insert /=.
+  case (decide (𝔄i = 𝔅i))=>// ?. subst=>/=.
+  case (decide (i = j))=> [?|?]; [|by rewrite lookup_insert_ne]. by subst.
+Qed.
+
 (** * Iris Propositions *)
 
 Local Definition proph_sim (S: proph_smryUR) (L: proph_log) :=
-  ∀ξ vπ, S ξ.(pv_ty) !! ξ.(pv_id) ≡ Some (aitem vπ) ↔ .{ξ := vπ} ∈ L.
+  (∀ξ vπ, S ξ.(pv_ty) !! ξ.(pv_id) ≡ Some (aitem vπ) ↔ (.{ξ := vπ}, None) ∈ L) ∧
+  (∀ξ ζl, S ξ.(pv_ty) !! ξ.(pv_id) ≡ Some (ritem ζl) ↔
+    ∃vπ, (.{ξ := vπ}, Some ζl) ∈ L).
 Local Notation "S :~ L" := (proph_sim S L) (at level 70, format "S  :~  L").
+
+(** ** Updating the Simulation *)
+
+Local Lemma proph_sim_fitem S L L' ξ :
+  S :~ L → (∀ e, ξ ≠ e.1.(pli_pv) → e ∈ L' ↔ e ∈ L) →
+  (∀ wπ r, (.{ξ := wπ}, r) ∉ L') → add_line ξ (fitem 1) S :~ L'.
+Proof.
+  move=> [SimA SimR] Oth Here. split.
+  - move=> ζ wπ. case (decide (ξ = ζ))=> [?|Ne].
+    + subst ζ. rewrite add_line_lookup.
+      split; [by move=> Eq; apply (inj Some) in Eq; inversion Eq|by move=> /Here].
+    + rewrite add_line_lookup_ne; [|done]. by rewrite SimA Oth.
+  - move=> ζ ζl. case (decide (ξ = ζ))=> [?|Ne].
+    + subst ζ. rewrite add_line_lookup.
+      split; [by move=> Eq; apply (inj Some) in Eq; inversion Eq|by move=> [? /Here]].
+    + rewrite add_line_lookup_ne; [|done]. rewrite SimR.
+      split=> [[w ?]|[w ?]]; exists w; by apply Oth.
+Qed.
+
+Local Lemma proph_sim_add S L L' ξ vπ r :
+  S :~ L → (∀ e, ξ ≠ e.1.(pli_pv) → e ∈ L' ↔ e ∈ L) →
+  (∀ wπ r', (.{ξ := wπ}, r') ∈ L' ↔ (wπ, r') = (vπ, r)) →
+  add_line ξ (ent_item vπ r) S :~ L'.
+Proof.
+  move=> [SimA SimR] Oth Here. split.
+  - move=> ζ wπ. case (decide (ξ = ζ))=> [?|Ne].
+    + subst ζ. rewrite add_line_lookup Here. destruct r as [ζl|]=>/=; split.
+      * by move=> /ritem_aitem_ne.
+      * by move=> [=].
+      * by move=> /aitem_inj ->.
+      * by move=> [= ->].
+    + rewrite add_line_lookup_ne; [|done]. by rewrite SimA Oth.
+  - move=> ζ ζl. case (decide (ξ = ζ))=> [?|Ne].
+    + subst ζ. rewrite add_line_lookup. setoid_rewrite Here.
+      destruct r as [ζl'|]=>/=; split.
+      * move=> /ritem_inj ->. by exists vπ.
+      * by move=> [? [= _ ->]].
+      * by move=> /aitem_ritem_ne.
+      * by move=> [? [=]].
+    + rewrite add_line_lookup_ne; [|done]. rewrite SimR.
+      split=> [[w ?]|[w ?]]; exists w; by apply Oth.
+Qed.
+
+Local Lemma proph_sim_fresh S L ξ :
+  S :~ L → S ξ.(pv_ty) !! ξ.(pv_id) = None → add_line ξ (fitem 1) S :~ L.
+Proof.
+  move=> Sim EqNone. apply (proph_sim_fitem _ _ _ _ Sim); [done|].
+  move=> wπ [ζl|] In.
+  - have: S ξ.(pv_ty) !! ξ.(pv_id) ≡ Some (ritem ζl).
+    { apply (proj2 Sim ξ ζl). by exists wπ. }
+    rewrite EqNone. by inversion 1.
+  - have: S ξ.(pv_ty) !! ξ.(pv_id) ≡ Some (aitem wπ) by apply (proj1 Sim ξ wπ).
+    rewrite EqNone. by inversion 1.
+Qed.
+
+Local Lemma proph_sim_cons S L ξ vπ r :
+  S :~ L → ξ ∉ res L → add_line ξ (ent_item vπ r) S :~ (.{ξ := vπ}, r) :: L.
+Proof.
+  move=> Sim Out. apply (proph_sim_add _ _ _ _ _ _ Sim).
+  - move=> e Ne. rewrite elem_of_cons.
+    have ?: e ≠ (.{ξ := vπ}, r) by move=> ?; subst e; by apply Ne.
+    tauto.
+  - move=> wπ r'. rewrite elem_of_cons pli_ent_eq.
+    have ?: (.{ξ := wπ}, r') ∉ L by move=> /res_elem /Out.
+    tauto.
+Qed.
+
+Local Lemma proph_sim_replace S L1 L2 ξ vπ r vπ' r' :
+  S :~ L1 ++ (.{ξ := vπ}, r) :: L2 → ξ ∉ res (L1 ++ L2) →
+  add_line ξ (ent_item vπ' r') S :~ L1 ++ (.{ξ := vπ'}, r') :: L2.
+Proof.
+  move=> Sim Out. apply (proph_sim_add _ _ _ _ _ _ Sim).
+  - move=> e Ne. rewrite !elem_of_app !elem_of_cons.
+    have Ne': ∀ wπ r'', e ≠ (.{ξ := wπ}, r'') by move=> ?? ?; subst e; by apply Ne.
+    move: (Ne' vπ r) (Ne' vπ' r'). tauto.
+  - move=> wπ r''. rewrite !elem_of_app elem_of_cons pli_ent_eq.
+    have: (.{ξ := wπ}, r'') ∉ L1 ++ L2 by move=> /res_elem /Out.
+    rewrite elem_of_app. tauto.
+Qed.
+
+Local Lemma proph_sim_delete S L1 L2 ξ vπ r :
+  S :~ L1 ++ (.{ξ := vπ}, r) :: L2 → ξ ∉ res (L1 ++ L2) →
+  add_line ξ (fitem 1) S :~ L1 ++ L2.
+Proof.
+  move=> Sim Out. apply (proph_sim_fitem _ _ _ _ Sim).
+  - move=> e Ne. rewrite !elem_of_app elem_of_cons.
+    have ?: e ≠ (.{ξ := vπ}, r) by move=> ?; subst e; by apply Ne.
+    tauto.
+  - by move=> ?? /res_elem /Out.
+Qed.
 
 Section defs.
 Context `{!invGS Σ, !prophG Σ}.
@@ -250,6 +470,13 @@ Local Definition proph_atom pli : iProp Σ :=
   own proph_name (◯ line pli.(pli_pv) (aitem pli.(pli_val))).
 Definition proph_obs (φπ: proph Prop) : iProp Σ :=
   ∃L, ⌜∀π, π ◁ L → φπ π⌝ ∗ [∗ list] pli ∈ L, proph_atom pli.
+
+(** Resolution Reservation *)
+(** [proph_reserved ξ ζl] is obtained by giving up [1:[ξ]]. It commits [ξ] to
+  be (possibly) resolved later to a value depending on [ζl] (and on currently
+  unresolved variables), without requiring tokens for [ζl] at that time. *)
+Definition proph_reserved (ξ: proph_var) (ζl: list proph_var) : iProp Σ :=
+  own proph_name (◯ line ξ (ritem ζl)).
 End defs.
 
 Notation "q :[ ξ ]" := (proph_tok ξ q)
@@ -331,8 +558,10 @@ Proof.
   move=> ?. iMod (own_alloc (● ε)) as (γ) "●ε"; [by apply auth_auth_valid|].
   set IProphG := ProphG Σ _ γ. iExists IProphG.
   iMod (inv_alloc _ _ proph_inv with "[●ε]") as "?"; [|done]. iModIntro.
-  iExists ε. iFrame "●ε". iPureIntro. exists []. split; [done|]=> ??.
-  rewrite lookup_empty. split=> Hyp; inversion Hyp.
+  iExists ε. iFrame "●ε". iPureIntro. exists []. split; [done|].
+  split=> ??; rewrite lookup_empty; (split; [by inversion 1|]).
+  - by move=> /elem_of_nil.
+  - by move=> [? /elem_of_nil].
 Qed.
 
 (** Taking 𝔄i Fresh Prophecy Variable *)
@@ -349,10 +578,7 @@ Proof.
       discrete_fun_insert_local_update, alloc_singleton_local_update. }
   iModIntro. iSplitL "●S'"; last first. { by iModIntro; iExists i; iFrame. }
   iModIntro. iExists S'. iFrame "●S'". iPureIntro. exists L.
-  split; [done|]. case=> [𝔅i j]?. rewrite /S' /add_line /discrete_fun_insert -Sim /=.
-  case (decide (𝔄i = 𝔅i))=>//= ?. subst=>/=.
-  case (decide (i = j))=> [<-|?]; [|by rewrite lookup_insert_ne].
-  rewrite lookup_insert EqNone. split=> Eqv; [apply (inj Some) in Eqv|]; inversion Eqv.
+  split; [done|]. by apply proph_sim_fresh.
 Qed.
 
 (** Prophecy Resolution *)
@@ -360,15 +586,19 @@ Qed.
 Local Lemma proph_tok_out S L ξ q :
   S :~ L → own proph_name (● S) -∗ q:[ξ] -∗ ⌜ξ ∉ res L⌝.
 Proof.
-  move=> Sim. iIntros "●S ξ".
+  move=> [SimA SimR]. iIntros "●S ξ".
   iDestruct (own_valid_2 with "●S ξ") as %ValBoth. iPureIntro.
-  move=> /(elem_of_list_fmap_2 pli_pv) [[[𝔄i i]?][? /Sim Eqv]]. simpl in *.
-  subst. move: ValBoth=> /auth_both_valid_discrete [Inc _].
+  rewrite /res. move=> /elem_of_list_fmap [[[[𝔄i i] vπ] r] [/= ? In]]. subst ξ.
+  move: ValBoth=> /auth_both_valid_discrete [Inc _].
   move/(discrete_fun_included_spec_1 _ _ 𝔄i) in Inc.
   rewrite /line discrete_fun_lookup_singleton /= in Inc.
-  move: Eqv. move: Inc=> /singleton_included_l [?[-> Inc]]. move=> Eqv.
-  apply (inj Some) in Eqv. move: Inc. rewrite Eqv.
-  by move=> /Some_csum_included [|[[?[?[_[?]]]]|[?[?[?]]]]].
+  move: Inc=> /singleton_included_l [it [Eqv Inc]].
+  have: Some it ≡ Some (ent_item vπ r).
+  { rewrite -Eqv. destruct r as [ζl|]=>/=.
+    - apply (SimR (PrVar 𝔄i i) ζl). by exists vπ.
+    - by apply (SimA (PrVar 𝔄i i)). }
+  move=> Eqit. apply (inj Some) in Eqit. move: Inc. rewrite Eqit.
+  destruct r; by apply fitem_Cinr_included.
 Qed.
 
 Local Lemma proph_tok_ne ξ ζ q : 1:[ξ] -∗ q:[ζ] -∗ ⌜ξ ≠ ζ⌝.
@@ -384,14 +614,13 @@ Lemma proph_resolve P E ξ vπ ζl : ↑prophN ⊆ E → vπ ./ ζl →
   (∀ ζ, ⌜ζ ∈ ζl⌝ → P -∗ ∃ q, q:[ζ]) -∗
   proph_ctx -∗ 1:[ξ] -∗ P ={E}=∗ ⟨π, π ξ = vπ π⟩ ∗ P.
 Proof.
-  move: ξ vπ => [𝔄i i] vπ. set ξ := PrVar 𝔄i i.
   iIntros (? Dep) "P→ ? ξ P". iInv prophN as (S) ">[(%L & % & %Sim) ●S]".
   iDestruct (proph_tok_out with "●S ξ") as %Outξ; [done|].
-  set L' := .{ξ := vπ} :: L. iAssert ⌜∀ζ, ζ ∈ ζl → ζ ∉ res L'⌝%I as %Outζl.
+  iAssert ⌜∀ζ, ζ ∈ ζl → ζ ∉ ξ :: res L⌝%I as %Outζl.
   { iIntros (??). iDestruct ("P→" with "[//] P") as (?) "ζ".
     iDestruct (proph_tok_ne with "ξ ζ") as %?.
     iDestruct (proph_tok_out with "●S ζ") as %?; [done|].
-    by rewrite not_elem_of_cons. }
+    iPureIntro. rewrite not_elem_of_cons. split; [by apply not_eq_sym|done]. }
   set S' := add_line ξ (aitem vπ) S.
   iMod (own_update_2 _ _ _ (● S' ⋅ ◯ line ξ (aitem vπ)) with "●S ξ")
     as "[●S' #?]".
@@ -400,20 +629,10 @@ Proof.
   iModIntro. iSplitL "●S'"; last first.
   { iModIntro. iFrame "P". iExists [.{ξ := vπ}]. rewrite big_sepL_singleton.
     iSplitR; [|done]. iPureIntro=> ? Sat. by inversion Sat. }
-  iModIntro. iExists S'. iFrame "●S'". iPureIntro. exists L'. split.
+  iModIntro. iExists S'. iFrame "●S'". iPureIntro.
+  exists ((.{ξ := vπ}, None) :: L). split.
   { split; [done| split; [|done]] => ?? Eqv. apply Dep => ? /Outζl ?. by apply Eqv. }
-  have InLNe ζ wπ : .{ζ := wπ} ∈ L → ξ ≠ ζ.
-  { move=> /(elem_of_list_fmap_1 pli_pv) ??. by subst. }
-  move=> [𝔅i j] ?. rewrite elem_of_cons. case (decide (ξ = PrVar 𝔅i j))=> [Eq|Ne].
-  { dependent destruction Eq.
-    rewrite /S' /add_line discrete_fun_lookup_insert lookup_insert. split.
-    - move=> /(inj (Some ∘ aitem)) ->. by left.
-    - move=> [Eq'|/InLNe ?]; [|done]. by dependent destruction Eq'. }
-  have Eqv : S' 𝔅i !! j ≡ S 𝔅i !! j.
-  { rewrite /S' /add_line /discrete_fun_insert /=.
-    case (decide (𝔄i = 𝔅i))=>// ?. simpl_eq.
-    case (decide (i = j))=> [?|?]; [|by rewrite lookup_insert_ne]. by subst. }
-  rewrite Eqv Sim. split; [by right|]. case; [|done]=> Eq. by dependent destruction Eq.
+  by apply (proph_sim_cons S L ξ vπ None).
 Qed.
 
 Lemma proph_resolve_toks E ξ vπ ζl q : ↑prophN ⊆ E → vπ ./ ζl →
@@ -421,6 +640,152 @@ Lemma proph_resolve_toks E ξ vπ ζl q : ↑prophN ⊆ E → vπ ./ ζl →
 Proof.
   iIntros (??). iApply proph_resolve=>//. iIntros (??) "ζl". iExists _. 
   by iApply (big_sepL_elem_of with "ζl").
+Qed.
+
+(** Resolution Reservations *)
+
+Global Instance proph_reserved_timeless ξ ζl : Timeless (proph_reserved ξ ζl) := _.
+
+Lemma proph_reserved_tok_excl ξ ζl q : proph_reserved ξ ζl -∗ q:[ξ] -∗ False.
+Proof.
+  iIntros "ξ ξ'". iDestruct (own_valid_2 with "ξ ξ'") as %ValBoth. iPureIntro.
+  move: ValBoth. rewrite -auth_frag_op auth_frag_valid discrete_fun_singleton_op
+    discrete_fun_singleton_valid singleton_op singleton_valid.
+  apply exclusive_l, _.
+Qed.
+
+Lemma proph_reserved_excl ξ ζl ζl' :
+  proph_reserved ξ ζl -∗ proph_reserved ξ ζl' -∗ False.
+Proof.
+  iIntros "ξ ξ'". iDestruct (own_valid_2 with "ξ ξ'") as %ValBoth. iPureIntro.
+  move: ValBoth. rewrite -auth_frag_op auth_frag_valid discrete_fun_singleton_op
+    discrete_fun_singleton_valid singleton_op singleton_valid.
+  apply exclusive_l, _.
+Qed.
+
+Local Lemma proph_reserved_lookup S ξ ζl :
+  own proph_name (● S) -∗ proph_reserved ξ ζl -∗
+    ⌜S ξ.(pv_ty) !! ξ.(pv_id) ≡ Some (ritem ζl)⌝.
+Proof.
+  iIntros "●S ξ". iDestruct (own_valid_2 with "●S ξ") as %ValBoth. iPureIntro.
+  move: ValBoth=> /auth_both_valid_discrete [Inc Val].
+  move/(discrete_fun_included_spec_1 _ _ ξ.(pv_ty)) in Inc.
+  rewrite /line discrete_fun_lookup_singleton in Inc.
+  move: Inc=> /singleton_included_l [it [Eqv Inc]]. rewrite Eqv. f_equiv.
+  have ?: ✓ it by apply (lookup_valid_Some (S ξ.(pv_ty)) ξ.(pv_id)); [apply Val|].
+  symmetry. by apply: Some_included_exclusive.
+Qed.
+
+(** Unresolved variables are not resolved, nor reserved, in the log *)
+Local Lemma proph_toks_out S L P ζl :
+  S :~ L → (∀ ζ, ⌜ζ ∈ ζl⌝ → P -∗ ∃ q, q:[ζ]) -∗ own proph_name (● S) -∗ P -∗
+    ⌜∀ζ, ζ ∈ ζl → ζ ∉ res L⌝.
+Proof.
+  iIntros (Sim) "P→ ●S P". iIntros (??).
+  iDestruct ("P→" with "[//] P") as (?) "ζ". by iApply (proph_tok_out with "●S ζ").
+Qed.
+
+Lemma proph_reserve E ξ ζl q : ↑prophN ⊆ E →
+  proph_ctx -∗ 1:[ξ] -∗ q:+[ζl] ={E}=∗ proph_reserved ξ ζl ∗ q:+[ζl].
+Proof.
+  iIntros (?) "? ξ ζl". iInv prophN as (S) ">[(%L & % & %Sim) ●S]".
+  iDestruct (proph_tok_out with "●S ξ") as %Outξ; [done|].
+  iAssert ⌜∀ζ, ζ ∈ ζl → ζ ∉ ξ :: res L⌝%I as %Outζl.
+  { iIntros (ζ ?). iDestruct (big_sepL_elem_of with "ζl") as "ζ"; [done|].
+    iDestruct (proph_tok_ne with "ξ ζ") as %?.
+    iDestruct (proph_tok_out with "●S ζ") as %?; [done|].
+    iPureIntro. rewrite not_elem_of_cons. split; [by apply not_eq_sym|done]. }
+  set S' := add_line ξ (ritem ζl) S.
+  iMod (own_update_2 _ _ _ (● S' ⋅ ◯ line ξ (ritem ζl)) with "●S ξ")
+    as "[●S' ξ]".
+  { apply auth_update, discrete_fun_singleton_local_update_any,
+      singleton_local_update_any => ? _. by apply exclusive_local_update. }
+  iModIntro. iSplitL "●S'"; [|by iFrame].
+  iModIntro. iExists S'. iFrame "●S'". iPureIntro.
+  exists ((.{ξ := λ _, inhabitant}, Some ζl) :: L). split.
+  { split; [done|]. split; [by move=> ???|]. by split. }
+  by apply (proph_sim_cons S L ξ (λ _, inhabitant) (Some ζl)).
+Qed.
+
+Lemma proph_unreserve E ξ ζl : ↑prophN ⊆ E →
+  proph_ctx -∗ proph_reserved ξ ζl ={E}=∗ 1:[ξ].
+Proof.
+  iIntros (?) "? ξ". iInv prophN as (S) ">[(%L & %Ok & %Sim) ●S]".
+  iDestruct (proph_reserved_lookup with "●S ξ") as %Eqv.
+  have [vπ In] := proj1 (proj2 Sim ξ ζl) Eqv.
+  destruct (elem_of_list_split _ _ In) as [L1 [L2 Eq]].
+  subst L. set S' := add_line ξ (fitem 1) S.
+  iMod (own_update_2 _ _ _ (● S' ⋅ ◯ line ξ (fitem 1)) with "●S ξ")
+    as "[●S' ξ]".
+  { apply auth_update, discrete_fun_singleton_local_update_any,
+      singleton_local_update_any => ? _. by apply exclusive_local_update. }
+  iModIntro. iSplitL "●S'"; [|done].
+  iModIntro. iExists S'. iFrame "●S'". iPureIntro.
+  exists (L1 ++ L2). split; [by eapply proph_log_ok_delete|].
+  apply: proph_sim_delete; [done|].
+  by apply (proph_log_ok_unique L1 (.{ξ := vπ}, Some ζl) L2).
+Qed.
+
+Lemma proph_reserve_extend E ξ ζl ζl' q : ↑prophN ⊆ E →
+  proph_ctx -∗ proph_reserved ξ ζl -∗ q:+[ζl'] ={E}=∗
+    proph_reserved ξ (ζl ++ ζl') ∗ q:+[ζl'].
+Proof.
+  iIntros (?) "? ξ ζl'". iInv prophN as (S) ">[(%L & %Ok & %Sim) ●S]".
+  iDestruct (proph_reserved_lookup with "●S ξ") as %Eqv.
+  have [vπ In] := proj1 (proj2 Sim ξ ζl) Eqv.
+  destruct (elem_of_list_split _ _ In) as [L1 [L2 Eq]].
+  subst L. iDestruct (proph_toks_out _ _ _ ζl' with "[] ●S ζl'") as %Outζl'; [done| |].
+  { iIntros (??) "ζl'". iExists _. by iApply (big_sepL_elem_of with "ζl'"). }
+  set S' := add_line ξ (ritem (ζl ++ ζl')) S.
+  iMod (own_update_2 _ _ _ (● S' ⋅ ◯ line ξ (ritem (ζl ++ ζl'))) with "●S ξ")
+    as "[●S' ξ]".
+  { apply auth_update, discrete_fun_singleton_local_update_any,
+      singleton_local_update_any => ? _. by apply exclusive_local_update. }
+  iModIntro. iSplitL "●S'"; [|by iFrame].
+  iModIntro. iExists S'. iFrame "●S'". iPureIntro.
+  have [? [? [Rsv ?]]] := proph_log_ok_suffix L1 _ Ok.
+  exists (L1 ++ (.{ξ := vπ}, Some (ζl ++ ζl')) :: L2). split.
+  { apply (proph_log_ok_replace L1 (.{ξ := vπ}, Some ζl)); [done| |done].
+    split; [done|]. split; [done|]. split; [|done].
+    move=> ζ /elem_of_app [/Rsv //|/Outζl' Out]. rewrite res_app_cons in Out.
+    set_solver. }
+  apply (proph_sim_replace S L1 L2 ξ vπ (Some ζl) vπ (Some (ζl ++ ζl'))); [done|].
+  by apply (proph_log_ok_unique L1 (.{ξ := vπ}, Some ζl) L2).
+Qed.
+
+Lemma proph_resolve_reserved_gen P E ξ vπ ζl ηl : ↑prophN ⊆ E → vπ ./ ζl ++ ηl →
+  (∀ η, ⌜η ∈ ηl⌝ → P -∗ ∃ q, q:[η]) -∗
+  proph_ctx -∗ proph_reserved ξ ζl -∗ P ={E}=∗ ⟨π, π ξ = vπ π⟩ ∗ P.
+Proof.
+  iIntros (? Dep) "P→ ? ξ P". iInv prophN as (S) ">[(%L & %Ok & %Sim) ●S]".
+  iDestruct (proph_reserved_lookup with "●S ξ") as %Eqv.
+  have [wπ In] := proj1 (proj2 Sim ξ ζl) Eqv.
+  destruct (elem_of_list_split _ _ In) as [L1 [L2 Eq]].
+  subst L. iDestruct (proph_toks_out with "P→ ●S P") as %Outηl; [done|].
+  set S' := add_line ξ (aitem vπ) S.
+  iMod (own_update_2 _ _ _ (● S' ⋅ ◯ line ξ (aitem vπ)) with "●S ξ")
+    as "[●S' #?]".
+  { apply auth_update, discrete_fun_singleton_local_update_any,
+      singleton_local_update_any => ? _. by apply exclusive_local_update. }
+  iModIntro. iSplitL "●S'"; last first.
+  { iModIntro. iFrame "P". iExists [.{ξ := vπ}]. rewrite big_sepL_singleton.
+    iSplitR; [|done]. iPureIntro=> ? Sat. by inversion Sat. }
+  iModIntro. iExists S'. iFrame "●S'". iPureIntro.
+  have [? [? [Rsv ?]]] := proph_log_ok_suffix L1 _ Ok.
+  exists (L1 ++ (.{ξ := vπ}, None) :: L2). split.
+  { apply (proph_log_ok_replace L1 (.{ξ := wπ}, Some ζl)); [done| |done].
+    split; [done|]. split; [|by split].
+    move=> ?? Eqv'. apply Dep=> ζ /elem_of_app [/Rsv ?|/Outηl Out]; apply Eqv'; [done|].
+    rewrite res_app_cons in Out. set_solver. }
+  apply (proph_sim_replace S L1 L2 ξ wπ (Some ζl) vπ None); [done|].
+  by apply (proph_log_ok_unique L1 (.{ξ := wπ}, Some ζl) L2).
+Qed.
+
+Lemma proph_resolve_reserved E ξ vπ ζl ηl q : ↑prophN ⊆ E → vπ ./ ζl ++ ηl →
+  proph_ctx -∗ proph_reserved ξ ζl -∗ q:+[ηl] ={E}=∗ ⟨π, π ξ = vπ π⟩ ∗ q:+[ηl].
+Proof.
+  iIntros (??). iApply proph_resolve_reserved_gen=>//. iIntros (??) "ηl". iExists _.
+  by iApply (big_sepL_elem_of with "ηl").
 Qed.
 
 (** Manipulating Prophecy Observations *)
@@ -460,14 +825,12 @@ Proof.
   set ξ := PrVar 𝔄i i. iAssert (proph_atom .{ξ := vπ}) with "[L']" as "ξvπ".
   { iApply big_sepL_elem_of; by [apply In|]. }
   iDestruct (own_valid_2 with "●S ξvπ") as %ValBoth. iPureIntro.
-  move: ValBoth=> /auth_both_valid_discrete [Inc Val]. apply (Sat .{ξ := vπ}), Sim.
+  move: ValBoth=> /auth_both_valid_discrete [Inc Val]. apply (Sat .{ξ := vπ}).
+  apply (elem_of_list_fmap_1 fst L (.{ξ := vπ}, None)), (proj1 Sim ξ vπ).
   move/(discrete_fun_included_spec_1 _ _ 𝔄i) in Inc.
   rewrite /line discrete_fun_lookup_singleton in Inc.
-  move: Inc=> /singleton_included_l [it [Eqv /Some_included [->|Inc]]]; [done|].
-  rewrite Eqv. constructor. apply (lookup_valid_Some _ i it) in Val; [|done]. move: Val.
-  move: Inc=> /csum_included [->|[[?[?[?]]]|[?[?[Eq[-> Inc]]]]]]; [done|done|].
-  move=> Val. move: Inc. move: Val=> /Cinr_valid/to_agree_uninj [?<-].
-  inversion Eq. by move/to_agree_included <-.
+  move: Inc=> /singleton_included_l [it [Eqv Inc]]. rewrite Eqv. f_equiv.
+  apply aitem_included; [|done]. by apply (lookup_valid_Some (S 𝔄i) i it); [apply Val|].
 Qed.
 
 Lemma proph_obs_false E φπ :
@@ -590,7 +953,7 @@ Proof.
   Qed.
 End proph.
 
-Global Opaque proph_ctx proph_tok proph_obs.
+Global Opaque proph_ctx proph_tok proph_obs proph_reserved.
 
 (** * Prophecy Equalizer *)
 
