@@ -1195,6 +1195,34 @@ Proof using All.
 Qed.
 
 
+(** Pre-resolve the prophecy variable [ξ] of a reserved generalized prophetic borrow
+    to a prophecy [uπ] that depends only on the reserved [ζl] (so no tokens are
+    needed), and give up the borrow. The body is closed again at the controller
+    prophecy [uπ] (the caller shows that the payload admits it); the lender of the
+    borrow gets it back when [κ] ends, as usual. *)
+Lemma proph_idx_bor_gen_preresolve_rsv E κ ξ x idx ζl (P: pv_val ξ → pv_proph ξ → iProp Σ)
+    (uπ: pv_proph ξ) G :
+  Timeless G → ↑Nllft ∪ ↑prophN ⊆ E → uπ ./ ζl →
+  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  (∀ wπ, ▷ P x wπ -∗ ▷ P x uπ) -∗
+  G -∗ proph_bor_tok_rsv ξ x idx ζl -∗ proph_idx_bor_gen κ ξ idx P ={E}=∗
+    ⟨π, π ξ = uπ π⟩ ∗ G.
+Proof using All.
+  iIntros (Ti Hmask Hdep) "#LFT #PROPH #UNIQ #Gk Wand G [Vo Tok] #IBor".
+  iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "Bor".
+  iMod (llftl_bor_acc_guarded with "LFT Bor Gk G") as "[Body Back]"; [solve_ndisj|].
+  iMod (bi.later_exist_except_0 with "Body") as (x') "Body".
+  iMod (bi.later_exist_except_0 with "Body") as (wπ) "(Pc & P)".
+  iMod (uniq_rsv_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iMod (uniq_preresolve_reserved ξ ζl [] uπ 1%Qp with "UNIQ PROPH Vo Pc []")
+    as "(#Obs & _ & ToPc)"; [solve_ndisj|by rewrite app_nil_r|done|].
+  iDestruct ("Wand" with "P") as "P".
+  iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
+  iMod ("Back" $! (pbor_body_gen ξ P) with "[ToPc P]") as "[_ G]".
+  { iSplitR; [by iIntros "!> $"|]. iNext. iExists x, uπ. iFrame "P". iApply "ToPc". }
+  iMod "Upd" as "_". iModIntro. iFrame "Obs G".
+Qed.
+
 (** Replace a generalized prophetic borrow [ξ] by two fresh ones [ζ1], [ζ2]
     (allocated by the caller as loans), pre-resolving [ξ] to [fπ] of them (see
     [proph_idx_bor_gen_map]). *)
