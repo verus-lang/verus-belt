@@ -72,12 +72,13 @@ Section uniq_util.
     receipts) or with a program step.
 
     The time receipt and the persistent predicate of the contents are outside the
-    update. Both are persistent, and both are needed in places where the update cannot
-    run: when a reborrow ends, [proph_ibor_reborrow] and [proph_ibor_unnest] record a
+    update. The time receipt is needed in places where the update cannot run: when a
+    reborrow ends, [proph_ibor_reborrow] and [proph_ibor_unnest] record it as the
     persistent summary of the final value of the reborrow in a closing view shift of
-    the lifetime logic (it is used to re-establish the persistent part of [&uniq] and
-    the time receipt of the restored borrow); and [resolve_uniq_body] reads the time
-    receipt to get the later credits it needs. *)
+    the lifetime logic (it is the time receipt of the restored borrow); and
+    [resolve_uniq_body] reads it to get the later credits it needs. The persistent
+    predicate is read by [resolve_uniq_body] before running the update (it is needed by
+    [ty_share]). *)
   Definition lazyE : coPset := ↑Nllft ∪ ↑prophN ∪ ↑uniqN.
 
   Lemma lazyE_NllftUsr : ↑NllftUsr ∪ ↑NllftUsr2 ⊆ lazyE.
@@ -389,7 +390,8 @@ Section uniq_util.
   (** Resolving a unique borrow to its current value: freeze the borrow, share the
       payload with [ty_share], and get the prophecy tokens from the sharing predicate by
       [ty_shr_guard_proph]. The sharing predicate of the payload and a guard of its
-      points-to remain. The later credits come from the time receipts. *)
+      points-to remain, as well as the persistent predicate. The later credits come from
+      the time receipts. *)
   Lemma resolve_uniq_body {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E L G F :
     Timeless G →
     lctx_lft_alive E L κ → ↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F →
@@ -398,7 +400,8 @@ Section uniq_util.
     G -∗
     uniq_body ty x ξi d g idx κ tid l ={F}=∗
       ⟨π, (π (uniq_prvar x ξi)).1 = (vπ x π)⟩ ∗ G ∗
-      ty.(ty_shr) κ x d g tid ∗ (@[κ] &&{↑NllftG; 1}&&> l #↦!∗ ty_phys ty x tid).
+      ty.(ty_shr) κ x d g tid ∗ (@[κ] &&{↑NllftG; 1}&&> l #↦!∗ ty_phys ty x tid) ∗
+      ty.(ty_gho_pers) x d g tid.
   Proof.
     intro Ti.
     iIntros (Alv ?) "#LFT #PROPH #UNIQ #TIME #In E #Guard G [Bor ⧗] /=".
@@ -407,7 +410,8 @@ Section uniq_util.
     iMod ("Back" with "L") as "G".
     iDestruct (guards_transitive with "Guard Alv") as "#Guard_K".
     iMod (proph_ibor_resolve_share F κ (uniq_prvar x ξi) (uniq_cell x d g) idx _ (ξl x)
-      (ty.(ty_shr) κ x d g tid ∗ (@[κ] &&{↑NllftG; 1}&&> l #↦!∗ ty_phys ty x tid))%I G
+      (ty.(ty_shr) κ x d g tid ∗ (@[κ] &&{↑NllftG; 1}&&> l #↦!∗ ty_phys ty x tid) ∗
+        ty.(ty_gho_pers) x d g tid)%I G
       (0 + (d+1)*(g+1)) with "LFT PROPH UNIQ Guard_K [⧗] G Bor") as "(#Obs & $ & $)".
     { solve_ndisj. } { apply uniq_body_proph_dep. }
     { iIntros (W HW) "#Wκ W Bor". rewrite uniq_payload_cell.
@@ -417,7 +421,7 @@ Section uniq_util.
       iMod (llftl_bor_guarded_pers with "LFT Wκ W Pers") as "[W #Pers]"; [solve_ndisj|].
       iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[_ £]";
         first by solve_ndisj.
-      iDestruct (lc_weaken (1 + 1 + d + d*(g+1) + (0 + (d+1)*(g+1))) with "£") as "£".
+      iDestruct (lc_weaken (1 + 1 + d + d*(g+2) + (0 + (d+1)*(g+1))) with "£") as "£".
       { unfold advance_credits. nia. }
       iDestruct "£" as "[[[[£f £1] £d] £k] $]".
       (* Run the lazy update of the payload inside the borrow. *)
@@ -427,8 +431,8 @@ Section uniq_util.
       iMod (llftl_bor_guard with "LFT Pt") as "$"; [solve_ndisj|].
       iMod (lc_fupd_elim_later with "£1 Pers") as "#Pers'".
       iMod (ty_share with "LFT In Pers' Wκ W Gho") as "Upd"; [solve_ndisj|].
-      iMod (lc_step_fupdN_elim_later with "£d Upd") as ">[$ #Shr]". iFrame "Shr".
-      iAssert (▷^(d*(g+1)) (∀ ζ : proph_var, ⌜ζ ∈ ξl x⌝ -∗
+      iMod (lc_step_fupdN_elim_later with "£d Upd") as ">[$ #Shr]". iFrame "Shr Pers'".
+      iAssert (▷^(d*(g+2)) (∀ ζ : proph_var, ⌜ζ ∈ ξl x⌝ -∗
           W &&{ ↑NllftG; 0 + (d+1)*(g+1) }&&> 1:[ζ]))%I as "#Hallζlater".
       { iIntros (ζ) "%HIn".
         iDestruct (ty_shr_guard_proph ty κ x 0 d g tid ζ W HIn with "LFT In Pers' Shr") as "X".
@@ -745,25 +749,25 @@ Section uniq_util.
   Lemma uniq_body_reborrow {𝔄} (ty: type 𝔄) x ξi d g idx κ κ' tid l E :
     ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ κ' ⊑ κ -∗ ⧗1 -∗
-    ⧖(S d `max` g) -∗ ([†κ] ∨ ty_gho_pers ty x d g tid) -∗
+    ⧖(S d `max` g) -∗
     uniq_body ty x ξi d g idx κ tid l ={E}=∗ ∃ ζi idx',
       uniq_body ty x ζi d g idx' κ' tid l ∗
       ([†κ'] ={↑Nllft}=∗ ∃ x' d' g' idx'', uniq_body ty x' ξi d' g' idx'' κ tid l ∗
           ▷ ((λ π, (π (uniq_prvar x ζi)).1) :== vπ x') ∗
-          ▷ (⧖(S d' `max` g') ∗ ([†κ] ∨ ty_gho_pers ty x' d' g' tid))).
+          ▷ ⧖(S d' `max` g')).
   Proof.
-    iIntros (?) "#LFT #PROPH #UNIQ #κ'⊑κ ⧗ #⧖ #Pers [Bor ⧗o]".
+    iIntros (?) "#LFT #PROPH #UNIQ #κ'⊑κ ⧗ #⧖ [Bor ⧗o]".
     iMod (proph_loan_intro (uniq_cell_tyi x) E (uniq_cell x d g) with "PROPH UNIQ")
       as (ζi) "Loan"; [set_solver|].
+    (* The summary of the final value is only its time receipt. *)
     set R := λ (c: ~~ (uniq_cellₛ 𝔄)),
-      (⧖(S (dec_depth c.2.1) `max` dec_depth c.2.2) ∗
-        ([†κ] ∨ ty_gho_pers ty c.1 (dec_depth c.2.1) (dec_depth c.2.2) tid))%I.
+      ⧖(S (dec_depth c.2.1) `max` dec_depth c.2.2)%I.
     have HR: ∀ c, Persistent (R c) by intros c; apply _.
     have Hm: ↑Nllft ⊆ E by solve_ndisj.
     iMod (proph_ibor_reborrow E κ κ' (uniq_prvar x ξi) (uniq_cell x d g) idx
       (uniq_payload ty tid l) R ζi HR Hm with "LFT PROPH UNIQ κ'⊑κ [] [] Loan Bor")
       as "[Bor' Inh]".
-    { iIntros "!>" (c) "(#⧖' & #Pers' & _)". iFrame "⧖'". by iRight. }
+    { iIntros "!>" (c) "(#⧖' & _)". iFrame "⧖'". }
     { rewrite /R /= !dec_enc_depth. iFrame "#". }
     iDestruct "Bor'" as (idx') "Bor'".
     iModIntro. iExists ζi, idx'. iSplitL "Bor' ⧗".

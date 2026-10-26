@@ -119,17 +119,9 @@ Section borrow.
     iDestruct (Alv with "L E") as "#Alv".
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
-    iDestruct "Own" as "[[#Incl [%Ineqs [UniqBody [#PtBase #Pers]]]] #Phys]".
+    iDestruct "Own" as "[[#Incl [%Ineqs [UniqBody #PtBase]]] #Phys]".
     
-    iDestruct "Pers" as "[Dead|Pers]". {
-      iDestruct "Dead" as (κ') "[Incl' Dead']".
-      iDestruct (guards_transitive with "Ghalf Alv") as "G2".
-      iDestruct (guards_transitive with "G2 Incl'") as "G3".
-      leaf_open "G3" with "H1" as "[Alive _]". { set_solver. }
-      iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
-    }
-    
-    iMod (resolve_uniq_body ty x0 ξi d' g' idx κ tid l with "LFT PROPH UNIQ TIME Incl E Ghalf H1 UniqBody") as "(#Obs2 & H1 & #Shr & #PtGuard)". { trivial. } { set_solver. }
+    iMod (resolve_uniq_body ty x0 ξi d' g' idx κ tid l with "LFT PROPH UNIQ TIME Incl E Ghalf H1 UniqBody") as "(#Obs2 & H1 & #Shr & #PtGuard & #Pers)". { trivial. } { set_solver. }
     iDestruct ("Halfback" with "H1 H2") as "Halfback'". iMod (fupd_mask_mono with "Halfback'") as "L". { set_solver. }
     iModIntro. iExists -[(l, x0)]. iFrame.
     iSplit. {
@@ -180,18 +172,10 @@ Section borrow.
     iDestruct (LftIncl with "L E") as "#κ'⊑κ".
     iDestruct "own" as "[gho %phys]". 
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
-    iDestruct "gho" as "(#Incl2 & %Hineq & UniqBody & #PtBase & #InnerPers)".
+    iDestruct "gho" as "(#Incl2 & %Hineq & UniqBody & #PtBase)".
     iDestruct (guards_transitive with "κ'⊑κ Incl2") as "Inclκ'".
-    (* Get the persistent information without a later, or that κ is dead. *)
-    iAssert (|={⊤}=> [†κ] ∨ ty_gho_pers ty x0 d' g' tid)%I with "[£]" as ">#InnerPers'".
-    { iDestruct "InnerPers" as "[Dead|InnerPers]".
-      - iDestruct "Dead" as (κ3) "[#Incl3 Dead3]".
-        iMod (llftl_incl_dead_implies_dead with "LFT Incl3 Dead3") as "#†κ". { set_solver. }
-        by iLeft.
-      - iRight. iApply (lc_fupd_elim_later with "[£] InnerPers").
-        iApply (lc_weaken with "£"). rewrite /advance_credits. lia. }
     iMod (uniq_body_reborrow ty x0 ξi d' g' idx κ κ' tid l with
-      "LFT PROPH UNIQ κ'⊑κ ⧗ [] InnerPers' UniqBody") as (ζi ζidx) "[UniqBody' Inh]".
+      "LFT PROPH UNIQ κ'⊑κ ⧗ [] UniqBody") as (ζi ζidx) "[UniqBody' Inh]".
     { solve_ndisj. } { iApply (persistent_time_receipt_mono with "⧖"). lia. }
     iModIntro. iExists -[(l, x0, ζi, d', g', ζidx);
         ((l, x0, ζi, d', g', idx), ζi, ξi)
@@ -205,56 +189,32 @@ Section borrow.
           iSplit. { iFrame "Inclκ'". }
           iSplit. { iPureIntro. lia. }
           iFrame "UniqBody'".
-          iSplit. {
-            leaf_goal laters to (d + 1); first by lia.
-            iApply (guards_transitive_right with "κ'⊑κ PtBase").
-          }
-          iDestruct "InnerPers" as "[Dead|$]". iLeft.
-          iApply (basically_dead_incl with "κ'⊑κ Dead").
+          leaf_goal laters to (d + 1); first by lia.
+          iApply (guards_transitive_right with "κ'⊑κ PtBase").
         } {
           iPureIntro. apply phys.
         }
       } {
         iSplit; last by done. iExists v. iFrame "P". iIntros "#†κ'".
         iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; first set_solver.
-        iMod ("Inh" with "†κ'") as (x'' d'' g'' idx'') "(UB & Eqz & R)".
+        iMod ("Inh" with "†κ'") as (x'' d'' g'' idx'') "(UB & Eqz & >#⧖'')".
         iMod "Upd" as "_".
-        iDestruct "R" as "[>#⧖'' Pers'']".
-        rewrite bi.later_or. iDestruct "Pers''" as "[>#Dead''|#Pers'']".
-        - iModIntro. iExists (l, x'', ξi, d'', g'', idx'').
-          iExists (d `max` S d'' `max` g'').
-          iSplitL "Eqz". {
-            iNext.
-            iApply (proph_eqz_prod with "[Eqz]").
-              - iFrame "Eqz".
-              - iApply (proph_eqz_eq with "[]"); [done| |iApply proph_eqz_refl].
-                fun_ext=> π /=. apply (uniq_prvar_app_irrel x0 x'' ξi π).
-          }
-          iCombine "⧖'' ⧖" as "⧖max".
-          iSplit. { iApply (persistent_time_receipt_mono with "⧖max"). lia. }
-          iFrame "⧗'".
-          iSplit; last by done. iSplit. { iFrame "Incl2". }
-          iSplit. { iPureIntro. nia. }
-          iFrame "UB".
-          iSplit. { leaf_goal laters to (d + 1); first by lia. iFrame "PtBase". }
-          iLeft. iExists κ. iFrame "Dead''". iApply guards_refl.
-        - iModIntro. iExists (l, x'', ξi, d'', g'', idx'').
-          iExists (d `max` S d'' `max` g'').
-          iSplitL "Eqz". {
-            iNext.
-            iApply (proph_eqz_prod with "[Eqz]").
-              - iFrame "Eqz".
-              - iApply (proph_eqz_eq with "[]"); [done| |iApply proph_eqz_refl].
-                fun_ext=> π /=. apply (uniq_prvar_app_irrel x0 x'' ξi π).
-          }
-          iCombine "⧖'' ⧖" as "⧖max".
-          iSplit. { iApply (persistent_time_receipt_mono with "⧖max"). lia. }
-          iFrame "⧗'".
-          iSplit; last by done. iSplit. { iFrame "Incl2". }
-          iSplit. { iPureIntro. nia. }
-          iFrame "UB".
-          iSplit. { leaf_goal laters to (d + 1); first by lia. iFrame "PtBase". }
-          iRight. iFrame "Pers''".
+        iModIntro. iExists (l, x'', ξi, d'', g'', idx'').
+        iExists (d `max` S d'' `max` g'').
+        iSplitL "Eqz". {
+          iNext.
+          iApply (proph_eqz_prod with "[Eqz]").
+            - iFrame "Eqz".
+            - iApply (proph_eqz_eq with "[]"); [done| |iApply proph_eqz_refl].
+              fun_ext=> π /=. apply (uniq_prvar_app_irrel x0 x'' ξi π).
+        }
+        iCombine "⧖'' ⧖" as "⧖max".
+        iSplit. { iApply (persistent_time_receipt_mono with "⧖max"). lia. }
+        iFrame "⧗'".
+        iSplit; last by done. iSplit. { iFrame "Incl2". }
+        iSplit. { iPureIntro. nia. }
+        iFrame "UB".
+        leaf_goal laters to (d + 1); first by lia. iFrame "PtBase".
       }
     }
         
@@ -308,15 +268,8 @@ Section borrow.
     destruct x0 as [l1 x1].
     iIntros "#LFT #TIME #PROPH #UNIQ E L #P own Obs ⧗ #⧖ £".
     iDestruct (Alv with "L E") as "#Alv".
-    iDestruct "own" as "[[#Incl [%Hineq [UniqBody [#PtBase #Pers]]]] %Phys]".
+    iDestruct "own" as "[[#Incl [%Hineq [UniqBody #PtBase]]] %Phys]".
     inversion Phys. subst v.
-    
-    iDestruct "Pers" as "[Dead|Pers]". {
-      iDestruct "Dead" as (κ') "[Incl' Dead']".
-      iDestruct (guards_transitive with "Alv Incl'") as "G2".
-      leaf_open "G2" with "L" as "[Alive _]". { solve_ndisj. }
-      iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
-    }
     
     iDestruct (lc_weaken (1 + 1 + 1 + 1) with "£") as "[[[£o £1'] £1] £f]"; [nia|].
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
@@ -358,15 +311,12 @@ Section borrow.
      }
     iDestruct ("Halfback" with "H1 H2") as "X".
     iMod (fupd_mask_mono with "X") as "L". { set_solver. }
-    iMod (lc_fupd_elim_later with "£1 Pers") as "#Pers'".
     iModIntro. iExists ((l1, repeat [] (length (ty_phys ty x1 tid))), x1, ζi, d', g', ζidx).
     iFrame "L". iFrame "UniqBody". iFrame "Incl".
     iSplit. {
       iSplit. {
         iSplit. { iPureIntro. lia. }
-        iSplit. { rewrite <- heap_cloc_mapsto_empty. iApply guards_true. }
-        iRight. destruct d'; [done|]. iNext.
-        iApply (ty_gho_pers_depth_mono _ d' g' with "Pers'"). { lia. } { lia. }
+        rewrite <- heap_cloc_mapsto_empty. iApply guards_true.
       }
       iPureIntro. done.
     }
@@ -477,17 +427,8 @@ Section borrow.
     
     destruct x as [[[[[l x0] ξi] d0] g0] ξidx].
     destruct x0 as [[[[[l1 x1] ωi] d1] g1] ωidx].
-    iDestruct "own" as "[[#Incl [%Ineqs [UniqBody [#PtBase #Pers]]]] %Phys]".
+    iDestruct "own" as "[[#Incl [%Ineqs [UniqBody #PtBase]]] %Phys]".
     iDestruct (lc_weaken (1 + 1) with "£") as "[£o £u]"; [nia|].
-     
-    iDestruct "Pers" as "[Dead|Pers]". {
-      iDestruct "Dead" as (κ'') "[Incl' Dead']".
-      iDestruct (guards_transitive with "HalfGuardsK Incl'") as "G2".
-      leaf_open "G2" with "H1" as "[Alive _]". { solve_ndisj. }
-      iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
-    }
-    iMod (lc_fupd_elim_later with "£1 Pers") as "#Pers'".
-    iDestruct "Pers'" as "(%Ineqs2 & #Pers2 & #ωBor)".
 
     iAssert (κ ⊑ κ')%I as "#Hκ⊑κ'". {
       iApply (guards_transitive with "Incl []"). iApply llftl_intersect_incl_l.
@@ -498,12 +439,6 @@ Section borrow.
     iAssert (fractional.half γ &&{ ↑NllftG }&&> @[κ'])%I as "#HalfGuardsK'". {
       iApply (guards_transitive with "HalfGuardsK Hκ⊑κ'").
     }
-    iDestruct "Pers2" as "[Dead|#Pers2]". {
-      iDestruct "Dead" as (κ'') "[Incl' Dead']".
-      iDestruct (guards_transitive with "HalfGuardsK' Incl'") as "G2".
-      leaf_open "G2" with "H2" as "[Alive _]". { solve_ndisj. }
-      iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
-    }
 
     inversion Phys. subst v.
     set ξ := uniq_prvar (𝔄:=uniq_borₛ 𝔄) (l1, x1, ωi, d1, g1, ωidx) ξi.
@@ -513,7 +448,8 @@ Section borrow.
        put in the guarding proposition for the read. *)
     iMod (uniq_body_acc_keep with "LFT HalfGuardsK £o UniqBody H1") as "(_ & Gho & Pt & Close)".
     { rewrite /lazyE. solve_ndisj. }
-    iDestruct "Gho" as "(#Incli0 & %Ineqsi0 & UBi & #PtBase2 & #Persi0)".
+    iDestruct "Gho" as "(#Incli0 & %Ineqs2 & UBi & #PtBase2)".
+    iDestruct (uniq_body_pers_component_impl with "UBi") as "#ωBor".
     iModIntro. iExists l, (l1.1),
       (fractional.half γ ∗ l #↦!∗ ty_phys (&uniq{κ'} ty) (l1, x1, ωi, d1, g1, ωidx) tid)%I.
     iSplit; [done|].
@@ -541,9 +477,9 @@ Section borrow.
     set Hπ := λ (a b: (uniq_cellₛ 𝔄)),
       (((a.1, b.1), (enc_depth (S (dec_depth a.2.1)), enc_depth (g0 `max` dec_depth a.2.2)))
         : (uniq_cellₛ (uniq_borₛ 𝔄))).
+    (* The summary of the final value of the inner borrow is only its time receipt. *)
     set Sm := λ (c: ~~ (uniq_cellₛ 𝔄)),
-      (⧖(S (S (dec_depth c.2.1)) `max` dec_depth c.2.2) ∗
-        ▷ ty_gho_pers ty c.1 (dec_depth c.2.1) (dec_depth c.2.2) tid)%I.
+      ⧖(S (S (dec_depth c.2.1)) `max` dec_depth c.2.2)%I.
     have HS: ∀ c, Persistent (Sm c) by intros; apply _.
     have Hinj: Inj (=) (=) h.
     { intros [c1 [p1 p2]] [c2 [p3 p4]] Heq. rewrite /h /uniq_cell /= in Heq.
@@ -570,16 +506,16 @@ Section borrow.
       iIntros "Payload".
       iMod (uniq_payload_force with "£u Payload") as "(#⧖o & Gho & Pt)";
         [rewrite /lazyE; solve_ndisj|].
-      iDestruct "Gho" as "(Incli & _ & UBody & PtBasei & _)".
+      iDestruct "Gho" as "(Incli & _ & UBody & PtBasei)".
       rewrite uniq_body_unfold. iDestruct "UBody" as "(ωTok & ⧗i & _)".
       iModIntro. iSplitL "ωTok"; [by iNext|]. iSplitL "⧗i Pt Incli PtBasei"; [iNext; iFrame "∗#"|].
-      iIntros ([x' [p1 p2]]) "ωTok #Sy' (#⧖o' & ⧗i & Pt & #Incli & #PtBasei)".
+      iIntros ([x' [p1 p2]]) "ωTok #⧖y' (#⧖o' & ⧗i & Pt & #Incli & #PtBasei)".
       rewrite /h uniq_payload_cell. iModIntro. iNext.
-      iDestruct "Sy'" as "[#⧖y' #Persy']". simpl.
+      rewrite /Sm /=.
       iCombine "⧖o' ⧖y'" as "⧖max".
       iSplit. { iApply (persistent_time_receipt_mono with "⧖max"). lia. }
       iSplitR.
-      { iSplit; [iPureIntro; lia|]. iSplit; [by iRight|].
+      { iSplit; [iPureIntro; lia|].
         by rewrite (uniq_pers_component_retarget ty x' x1 ωi _ _ d1 g1). }
       iModIntro. iFrame "Pt".
       iFrame "Incli".
@@ -589,9 +525,8 @@ Section borrow.
         - rewrite /uniq_tok -(uniq_cell_surj (x', (p1, p2))).
           by rewrite (uniq_bor_tok_retarget x1 x').
         - by rewrite (uniq_pers_component_retarget ty x' x1 ωi _ _ d1 g1). }
-      iSplit. { iApply (lguards_weaken_later with "PtBasei"). lia. }
-      iRight. iFrame "Persy'". }
-    { rewrite /Sm /= !dec_enc_depth. iFrame "Pers2".
+      iApply (lguards_weaken_later with "PtBasei"). lia. }
+    { rewrite /Sm /= !dec_enc_depth.
       iApply (persistent_time_receipt_mono with "⧖"). lia. }
     { (* Record a persistent summary of the final value *)
       iIntros ([x' [p1 p2]]) "Payload".
@@ -601,9 +536,7 @@ Section borrow.
       { solve_ndisj. }
       iModIntro. iSplitL "Lazy".
       { iNext. iFrame "∗#". }
-      iNext. iSplit.
-      - iApply (persistent_time_receipt_mono with "⧖y'"). lia.
-      - iFrame "GhoPers". }
+      iNext. iApply (persistent_time_receipt_mono with "⧖y'"). lia. }
     { rewrite proph_ibor_sep. iFrame "ξBor". iApply "ξTok". }
     iDestruct "ζBor" as (ζidx) "ζBor".
     iMod (fupd_mask_subseteq (↑NllftG)) as "Upd"; first solve_ndisj.
@@ -616,11 +549,8 @@ Section borrow.
       iSplit; [iFrame "Hκ⊑rest"|].
       iSplit; [iPureIntro; lia|].
       iSplitL "ζBor ⧗'". { rewrite /uniq_body. iFrame. }
-      iSplit. {
-        iApply (guards_transitive_right with "Hκ⊑κ' []").
-        iApply (lguards_weaken_later with "PtBase2"). lia.
-      }
-      iRight. iFrame "Pers2".
+      iApply (guards_transitive_right with "Hκ⊑κ' []").
+      iApply (lguards_weaken_later with "PtBase2"). lia.
     - iCombine "Obs Obs2" as "Obs".
       iApply (proph_obs_impl with "Obs"). intros π [Ha Hb].
       apply Ha; trivial.
@@ -661,13 +591,12 @@ Section borrow.
     destruct x as [l [[[[[l1 x0] ξi] d1] g1] ξidx]].
     iDestruct "own" as "[gho %phys]". inversion phys. subst v.
     destruct d as [|d']; first by done.
-    iDestruct "gho" as "[#G↦ [#Shr #Pers]]".
-    (* Unfold the (structural) sharing predicate of [&uniq]. *)
-    iDestruct "Shr" as "([%Le1 %Le2] & #Gpt & _ & #InnerShr)".
-    iDestruct (lc_weaken ((S d' + 1) + 1) with "£") as "[£p £s]"; [lia|].
-    iMod (lc_fupd_elim_laterN with "£p Pers") as "#Pers'".
-    iMod (lc_fupd_elim_later with "£s InnerShr") as "#InnerShr'".
-    iDestruct "Pers'" as "(_ & #InnerPers & _)".
+    iDestruct "gho" as "[#G↦ [#Shr _]]".
+    (* Unfold the (structural) sharing predicate of [&uniq], which also has the
+       persistent predicate of the referent. *)
+    iDestruct "Shr" as "([%Le1 %Le2] & #Gpt & _ & #InnerShr & #InnerPers)".
+    iDestruct (lc_weaken 1 with "£") as "£"; [lia|].
+    iMod (lc_fupd_elim_later with "£ InnerShr") as "#InnerShr'".
     iAssert (κ ⊑ κ ⊓ κ')%I as "#Hκ". { iApply llftl_incl_glb; [iApply guards_refl|done]. }
     
     iModIntro. iExists l, l1.1, (llctx_interp L). iSplit; first by done. iFrame "L".
@@ -678,19 +607,13 @@ Section borrow.
     }
     iIntros "L".
     
-    iDestruct "InnerPers" as "[Dead|InnerPers]". {
-      iDestruct "Dead" as (κ'') "[Incl' Dead']".
-      iDestruct (guards_transitive with "Alv' Incl'") as "G2".
-      leaf_open "G2" with "L" as "[Alive _]". { set_solver. }
-      iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
-    }
-    
     iModIntro. iExists (l1, x0). iFrame.
     iSplit; last by done.
     iSplit. { leaf_goal laters to (S d' + 1). { lia. }
       iApply (guards_transitive_right with "Hκ Gpt"). }
     iSplit. { iApply ty_shr_depth_mono; [| |iApply (ty_shr_lft_mono0 with "Hκ InnerShr'")]; lia. }
-    iNext. iApply (ty_gho_pers_depth_mono with "InnerPers"); lia.
+    iApply (bi.laterN_le 2); [lia|]. iNext. iNext.
+    iApply (ty_gho_pers_depth_mono with "InnerPers"); lia.
   Qed.
 
   Lemma type_deref_shr_uniq {𝔄 𝔅l ℭl 𝔇} κ κ' x p e (ty: type 𝔄)

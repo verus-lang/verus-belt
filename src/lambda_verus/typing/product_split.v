@@ -300,14 +300,8 @@ Section product_split.
     iDestruct (Alv with "L E") as "#Alv".
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
-    iDestruct "Own" as "[[#Incl [%Ineqs [UniqBody [#PtBase #Pers]]]] %Phys]".
+    iDestruct "Own" as "[[#Incl [%Ineqs [UniqBody #PtBase]]] %Phys]".
     iDestruct (guards_transitive with "Ghalf Alv") as "HalfGuardsK".
-    iDestruct "Pers" as "[Dead|Pers]". {
-      iDestruct "Dead" as (κ') "[Incl' Dead']".
-      iDestruct (guards_transitive with "HalfGuardsK Incl'") as "G3".
-      leaf_open "G3" with "H1" as "[Alive _]". { set_solver. }
-      iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
-    }
     iDestruct "UniqBody" as "(ξBor & £2)".
     iDestruct (lc_weaken 1 with "£") as "£f"; [rewrite /advance_credits; lia|].
     destruct x0 as [x0 y0].
@@ -388,7 +382,6 @@ Section product_split.
          iSplit. { iPureIntro. lia. }
          iSplitL "Bor £2". { rewrite /uniq_body. iFrame. }
          iFrame "PtBase1".
-         iDestruct "Pers" as "[Pers _]". iFrame "Pers".
       }
       iSplitL. {
          unfold tctx_elt_interp. iExists (#(l.1 +ₗ ty_size ty)), d.
@@ -399,8 +392,6 @@ Section product_split.
          iSplit. { iPureIntro. lia. }
          iSplitL "Bor' ⧗". { rewrite /uniq_body. iFrame. }
          iFrame "PtBase2".
-         iRight.
-         iDestruct "Pers" as "[_ Pers]". iFrame "Pers".
       }
       done.
     }

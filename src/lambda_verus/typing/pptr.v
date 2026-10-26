@@ -338,7 +338,7 @@ Section typing.
     iDestruct "Hperm" as (pl' d'' Heval') "(#Hd' & Huniq & %Hphys')".
     simpl in Hphys'.
     injection Hphys' => ?; subst pl'.
-    iDestruct "Huniq" as "[#Incl [%Hineq [UniqBody [#PtBase #Pers]]]]".
+    iDestruct "Huniq" as "[#Incl [%Hineq [UniqBody #PtBase]]]".
     rewrite /PPtrMutBorrow.
     wp_bind ptr.
     iApply wp_wand.
@@ -351,13 +351,6 @@ Section typing.
     iApply wp_fupd.
     iApply (wp_cumulative_time_receipt2 with "TIME"); [trivial |]; iIntros "⧗".
     destruct d'' as [ | ] => //=; first lia.
-    iDestruct "Pers" as "[Dead|Pers]". {
-      iDestruct "Dead" as (κ') "[Incl' Dead']".
-      iDestruct (guards_transitive with "Alv Incl'") as "G2".
-      wp_rec. repeat wp_seq.
-      leaf_open "G2" with "L" as "[Alive _]". { solve_ndisj. }
-      iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
-    }
     iDestruct "UniqBody" as "(ξBor & £saved)".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
     1: solve_ndisj.
@@ -370,13 +363,19 @@ Section typing.
       iMod (fupd_mask_mono with "Hlazy") as "[_ Hfalse]"; [rewrite /lazyE; solve_ndisj|].
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hfalse") as "%Hfalse".
       by simpl in Hfalse. }
+    destruct d.
+    { (* The contents at depth 0 are absurd. *)
+      iMod (uniq_body_acc with "LFT UNIQ Alv [$ξBor $£saved] L") as "[Hown _]"; [solve_ndisj|..].
+      wp_rec.
+      iDestruct "Hown" as "(_ & _ & Hlazy)".
+      iMod (fupd_mask_mono with "Hlazy") as "[Hf _]"; [rewrite /lazyE; solve_ndisj|].
+      by iDestruct "Hf" as "[]". }
 
     wp_rec.
     rewrite /tctx_elt_interp/ty_own/=.
 
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
     iDestruct (guards_transitive with "Ghalf Alv") as "HguardsK".
-    destruct d => //=.
     change 2 with (1 + 1).
     iDestruct "⧗" as "(⧗ & ⧗')".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ Hd'") as "(Hd'' & £)"; [trivial|..].
@@ -408,8 +407,6 @@ Section typing.
       rewrite /uniq_payload /=. by rewrite !heap_complete_mapsto_fancy_empty. }
     iDestruct ("Halfback" with "H1 H2") as "X".
     iMod (fupd_mask_mono with "X") as "L". { set_solver. }
-    iDestruct "£1" as "(£1 & £1')".
-    iMod (lc_fupd_elim_later with "£1 Pers") as "#Pers'".
     iModIntro.
     iExists -[((l, repeat [] (ty.(ty_size))), x, ζi, (S d), g, ζidx)].
     iFrame "L". iFrame "UniqBody". iFrame "Incl".
@@ -419,10 +416,7 @@ Section typing.
       iFrame.
       iSplit => //.
       iSplitR; first (iPureIntro; lia).
-      iSplitR.
-      rewrite <- heap_cloc_mapsto_empty. iApply guards_true. 
-      iRight.  iNext.
-      iApply (ty_gho_pers_depth_mono  with "Pers'"); lia. 
+      rewrite <- heap_cloc_mapsto_empty. iApply guards_true.
     - iCombine "Obs Obs2" as "Obs3".
       iApply (proph_obs_impl with "Obs3"). intros π [[_ Ha] Hb].
       apply Ha; intuition.

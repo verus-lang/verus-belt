@@ -550,7 +550,7 @@ Section lemmas.
     iMod ("Upd" with "†κ") as (x' d) "(Eqz & #⧖dp & ⧗ & ty)".
     
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖dp") as "[⧖S £]"; first by solve_ndisj.
-    iDestruct (lc_weaken (d * (d + 1) + (0 + (d+1)*(d+1)) + 1 + 1 + d + 1 + 1) with "£") as "£". {
+    iDestruct (lc_weaken (d * (d + 2) + (0 + (d+1)*(d+1)) + 1 + 1 + d + 1 + 1) with "£") as "£". {
       unfold advance_credits. lia. }
     iDestruct "£" as "[[[[[[£k £k'] £1] £1'] £s] £e] £g]".
     
@@ -575,7 +575,7 @@ Section lemmas.
     iAssert (κs ⊑ ty_lft ty)%I as "#Incl". { iApply llftl_intersect_incl_r. }
     iMod (ty_share with "LFT Incl ghoPers Wκs [$κf $H2] Bor") as "Upd"; [solve_ndisj|].
     iMod (lc_step_fupdN_elim_later with "£s Upd") as ">[[κf H2] #Shr]".
-    iAssert (▷^(d*(d+1)) (∀ ζ , ⌜ζ ∈ ξl x'⌝ -∗
+    iAssert (▷^(d*(d+2)) (∀ ζ , ⌜ζ ∈ ξl x'⌝ -∗
       ((@[κf] ∗ fractional.half γ2) &&{↑NllftG; 0 + (d+1)*(d+1)}&&> 1:[ζ])))%I
       as "#Hallζlater".
     { iIntros (ζ) "%Hin".

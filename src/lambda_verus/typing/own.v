@@ -83,7 +83,7 @@ Section own.
     intros 𝔄 n ty κ x n0 d g tid ξ R Hin.
     iIntros "#LFT #Incl #Pers #Shr".
     destruct d as [|d']; first by done. simpl.
-    iApply (bi.laterN_le (S (d' * (g + 1)))). { lia. }
+    iApply (bi.laterN_le (S (d' * (g + 2)))). { lia. }
     iNext. iDestruct "Shr" as "[_ Shr]".
     iDestruct (ty_shr_guard_proph ty κ x.2 n0 d' g tid ξ R Hin with "LFT Incl Pers Shr")
       as "GP".

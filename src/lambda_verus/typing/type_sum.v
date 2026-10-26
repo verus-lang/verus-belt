@@ -433,10 +433,8 @@ Section type_sum.
           
     destruct X as [x1 [PinjEq X]]. simpl in PinjEq. subst x0.
     
-    iDestruct "Own" as "[#Incl [%Ineqs [UniqBody [#PtBase #Pers]]]]".
+    iDestruct "Own" as "[#Incl [%Ineqs [UniqBody #PtBase]]]".
     iDestruct (guards_transitive with "GL GuardsK") as "HalfGuardsK".
-    iDestruct "Pers" as "[Dead|Pers]".
-    { iMod (basically_dead_alive_false with "HalfGuardsK Dead L") as "[]". solve_ndisj. }
     iDestruct "UniqBody" as "(ξBor & £2)".
     have ?: Inhabited (𝔄l !!ₗ i) := populate (vπ x1 inhabitant).
     iMod (proph_loan_intro (uniq_cell_tyi x1) ⊤ (uniq_cell x1 d' g') with "PROPH UNIQ")
@@ -498,8 +496,7 @@ Section type_sum.
            iApply lft_intersect_tyl_lfts_lookup_incl. }
          iSplit. { iPureIntro. lia. }
          iSplitL "Bor £2". { rewrite /uniq_body. iFrame. }
-         iFrame "PtBase2". iRight. unfold xsum_ty, ty_gho_pers.
-         rewrite to_xsum_pinj. iFrame "Pers".
+         iFrame "PtBase2".
     }
     iApply proph_obs_impl; [|done]=>/= π.
     intros [[x2 [Heq Ha]] Hb]. apply pinj_Inj in Heq. subst x2.
@@ -526,7 +523,7 @@ Section type_sum.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     wp_apply (wp_hasty with "p").
     iIntros (v d) "%Hpath #⧖ [gho %phys]". inversion phys. subst v.
-    iDestruct "gho" as "[#Incl [%Hle [uniq [#pt #pers]]]]".
+    iDestruct "gho" as "[#Incl [%Hle [uniq #pt]]]".
     destruct d as [|dx]; first by lia.
     iDestruct (Alv with "L E") as "#LguardsK".
     wp_bind (!(LitV l.1))%E.
@@ -562,10 +559,7 @@ Section type_sum.
     { iApply proph_obs_impl; [|done]=>/= ?. by rewrite to_xsum_pinj. }
     iFrame "T". iExists _, _. iSplit; [done|]. iFrame "⧖".
     iFrame. iFrame "pt". iSplit; last by done.
-    iSplit; first by iFrame "Incl". iSplit; first by done.
-    iDestruct "pers" as "[pers|pers]".
-      - iLeft. iFrame "pers".
-      - iRight. iFrame "pers".
+    iSplit; first by iFrame "Incl". done.
     }
     unfold advance_credits. lia.
   Qed.

@@ -329,8 +329,7 @@ Section ltype_own.
       (tid: thread_id) (l: cloc) : iProp Σ :=
     match k with
     | Owned m => l #↦!∗ ty.(ty_phys) x tid ∗ ▷^m ty.(ty_gho_own) x d g tid
-    | Uniq κ ξi _ => (∃ idx, uniq_body ty x ξi d g idx κ tid l) ∗
-        (basically_dead κ ∨ ▷ ty.(ty_gho_pers) x d g tid)
+    | Uniq κ ξi _ => ∃ idx, uniq_body ty x ξi d g idx κ tid l
     end.
 
   (** The relation between a place refinement and a value. *)
@@ -848,10 +847,10 @@ Section unfold.
   Proof.
     rewrite /ltype_own /= /ofty_own /=.
     iIntros "(%v & -> & Pt & Gho)". iFrame "Pt". iNext.
-    iDestruct "Gho" as "(#Incl & %Hle & Body & #G & Pers)".
+    iDestruct "Gho" as "(#Incl & %Hle & Body & #G)".
     iSplitR; [done|]. iSplitR; [done|].
     iExists d', g'. iSplit; [done|]. iExists x. iSplit; [done|].
-    iSplitL "Body"; [by iExists idx|]. done.
+    by iExists idx.
   Qed.
 
   Lemma uniq_ofty_fold_own m {𝔄} (ty: type 𝔄) κ l' x ξi γ d g tid l :
@@ -862,7 +861,7 @@ Section unfold.
     rewrite /ltype_own /= /ofty_own /=.
     have ?: Inhabited (~~𝔄) := populate x. have ?: Inhabited Idx := populate idx_dummy.
     iIntros "[Pt H]".
-    iDestruct "H" as "(Incl & G & %d' & %g' & Hle & %y & Hy & (%idx & Body) & Pers)".
+    iDestruct "H" as "(Incl & G & %d' & %g' & Hle & %y & Hy & %idx & Body)".
     iExists d', g', idx, _. iSplit; [done|]. iFrame "Pt". iNext.
     iDestruct "Hy" as %->. iFrame.
   Qed.
@@ -992,7 +991,6 @@ Section fold.
     iMod (lc_fupd_elim_later with "£ Node") as "Node".
     iMod (fupd_mask_mono with "Node") as "Node"; [rewrite /lazyE; solve_ndisj|].
     iDestruct (Hnode with "Node") as (v) "(%Hv & Gho & Pt)".
-    iDestruct (ty_gho_pers_impl with "Gho") as "#Pers".
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
     iMod ("Close" $! (uniq_cell v d g) (vπ (uniq_cell v d g))
       (λ c wπ, ⌜wπ = vπ c⌝ ∗ uniq_payload ty tid l c)%I with "[Gh Gh'] [Gho Pt]")
@@ -1010,7 +1008,7 @@ Section fold.
     iMod "Upd" as "_".
     iAssert (proph_idx_bor κ (uniq_prvar x₀ ξi) idx' (uniq_payload ty tid l)) with "[Bor']"
       as "#Bor2". { by rewrite proph_idx_bor_to_gen. }
-    iModIntro. iExists v. iSplit; [done|]. iFrame "G". iSplitL; [|iRight; iFrame "Pers"].
+    iModIntro. iExists v. iSplit; [done|]. iFrame "G".
     iExists idx'. iApply (uniq_body_make ty v x₀ with "[Tok Bor2] ⧗").
     rewrite proph_ibor_sep. iFrame "∗#".
   Qed.

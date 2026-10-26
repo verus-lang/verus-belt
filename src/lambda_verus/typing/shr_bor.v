@@ -50,8 +50,8 @@ Section shr_bor.
     iDestruct "Gho" as "[Phys [Shr #InnerPers]]".
     iDestruct (ty_shr_lft_mono0 ty κ κ0 with "[] Shr") as "#Shr0".
     { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_l. }
-    iApply (bi.laterN_le (g + 1 + d * (g + 1))); [lia|].
-    rewrite (bi.laterN_add (g + 1) (d * (g + 1))). iNext (g + 1).
+    iApply (bi.laterN_le (g + 1 + d * (g + 2))); [nia|].
+    rewrite (bi.laterN_add (g + 1) (d * (g + 2))). iNext (g + 1).
     iDestruct (ty_shr_guard_proph ty κ0 (snd x) n d g tid ξ R with "LFT [] InnerPers Shr0")
       as "InnerGuardProph"; [done| |].
     { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_r. }

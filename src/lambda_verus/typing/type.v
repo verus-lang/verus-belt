@@ -34,8 +34,8 @@ Definition thread_id := na_inv_pool_name.
     ownership predicate. A structural type uses the steps to look under the laters in
     front of its contents: [own_ptr] takes one step to turn the borrow of the
     [▷ gho_own] of its contents into a borrow of [gho_own], and [&uniq] takes one step
-    to strip the later in front of the persistent predicate of its contents (which the
-    recursive call needs). Both decrease the depth by one, so [d] steps suffice. A
+    to strip the later in front of the lazy contents of its borrow (whose ownership
+    predicate also gives the persistent predicate that the recursive call needs). Both decrease the depth by one, so [d] steps suffice. A
     product shares its components in parallel (splitting the guard [G] in halves), so
     the number of steps does not grow with the width of the type.
 
@@ -168,7 +168,7 @@ Definition guard_proph_stmt `{!typeG Σ} {𝔄} (lfts: list lft)
     (gho pers: ~~𝔄 → nat → nat → thread_id → iProp Σ) : Prop :=
   ∀ κ x n d g tid ξ R, ξ ∈ ξl x →
     llft_ctx -∗ κ ⊑ lft_intersect_list lfts -∗ pers x d g tid -∗
-    ▷^(d*(g+1)) (
+    ▷^(d*(g+2)) (
         (R &&{↑NllftG; n}&&> @[κ]) -∗
         (R &&{↑NllftG; n}&&> gho x d g tid) -∗
         (R &&{↑NllftG; n + d*(g+1)}&&> 1:[ξ])).
@@ -228,7 +228,7 @@ Section default_shr.
     gho_own_depth_mono_stmt gho → guard_proph_stmt lfts gho pers → ξ ∈ ξl x →
     llft_ctx -∗ κ ⊑ lft_intersect_list lfts -∗ pers x d g tid -∗
     default_shr gho κ x d g tid -∗
-    ▷^(d*(g+1)) (
+    ▷^(d*(g+2)) (
         (R &&{↑NllftG; n}&&> @[κ]) -∗
         (R &&{↑NllftG; n + (d+1)*(g+1)}&&> 1:[ξ])).
   Proof.
@@ -340,14 +340,18 @@ Record type `{!typeG Σ} 𝔄 := {
   (* The prophecy tokens of the value are guarded by anything that guards [@[κ]], given
      the sharing predicate at κ. The sharing predicate is taken before the laters,
      since a structural sharing predicate has the sharing predicates of its contents
-     under a later. *)
+     under a later. The budget of laters is [g+2] per level of depth (rather than the
+     [g+1] laters of the resulting guard): [&uniq] gets the persistent predicate of its
+     contents from its sharing predicate, where it is under two laters (see
+     [uniq_bor]), and needs one more later than the [g+1] of a level of depth when
+     [g = 0]. *)
   ty_shr_guard_proph κ x n d g tid ξ R :
       ξ ∈ ξl x →
       llft_ctx -∗
       κ ⊑ lft_intersect_list ty_lfts -∗
       ty_gho_pers x d g tid -∗
       ty_shr κ x d g tid -∗
-      ▷^(d*(g+1)) (
+      ▷^(d*(g+2)) (
           (R &&{↑NllftG; n}&&> @[κ]) -∗
           (R &&{↑NllftG; n + (d+1)*(g+1)}&&> 1:[ξ])
       );
@@ -569,7 +573,7 @@ Record simple_type `{!typeG Σ} 𝔄 := {
       κ ⊑ lft_intersect_list st_lfts -∗ 
       st_gho x d g tid -∗
       
-      ▷^(d*(g+1)) (
+      ▷^(d*(g+2)) (
           (R &&{↑NllftG; n}&&> @[κ]) -∗
           (R &&{↑NllftG; n}&&> st_gho x d g tid) -∗
           (R &&{↑NllftG; n + d*(g+1)}&&> 1:[ξ])
