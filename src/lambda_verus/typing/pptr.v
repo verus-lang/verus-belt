@@ -357,18 +357,24 @@ Section typing.
 
     destruct c as [cl [ | ]] eqn:?.
     2: {
-      iMod (uniq_body_acc with "LFT UNIQ Alv [$ξBor $£saved] L") as "[Hown _]"; [solve_ndisj|..].
+      iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf _]]]". { solve_ndisj. }
+      iDestruct (guards_transitive with "Ghalf Alv") as "#HguardsK".
+      iMod (uniq_body_acc with "LFT UNIQ HguardsK [$ξBor $£saved] H1") as "[Hown _]"; [solve_ndisj|..].
       wp_rec.
-      iDestruct "Hown" as "(_ & Hlazy)".
-      iMod (fupd_mask_mono with "Hlazy") as "[_ Hfalse]"; [rewrite /lazyE; solve_ndisj|].
+      iMod (uniq_payload_run with "[] H2 Hown") as "(_ & _ & _ & Hfalse)";
+        [rewrite /lazyE; solve_ndisj| |].
+      { iApply (guards_transitive with "HguardsK Incl"). }
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hfalse") as "%Hfalse".
       by simpl in Hfalse. }
     destruct d.
     { (* The contents at depth 0 are absurd. *)
-      iMod (uniq_body_acc with "LFT UNIQ Alv [$ξBor $£saved] L") as "[Hown _]"; [solve_ndisj|..].
+      iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf _]]]". { solve_ndisj. }
+      iDestruct (guards_transitive with "Ghalf Alv") as "#HguardsK".
+      iMod (uniq_body_acc with "LFT UNIQ HguardsK [$ξBor $£saved] H1") as "[Hown _]"; [solve_ndisj|..].
       wp_rec.
-      iDestruct "Hown" as "(_ & Hlazy)".
-      iMod (fupd_mask_mono with "Hlazy") as "[Hf _]"; [rewrite /lazyE; solve_ndisj|].
+      iMod (uniq_payload_run with "[] H2 Hown") as "(_ & _ & Hf & _)";
+        [rewrite /lazyE; solve_ndisj| |].
+      { iApply (guards_transitive with "HguardsK Incl"). }
       by iDestruct "Hf" as "[]". }
 
     wp_rec.
@@ -382,7 +388,8 @@ Section typing.
     iDestruct "£" as "[£ [£1' £1]]".
     iDestruct (lc_weaken 1 with "£") as "£f"; [rewrite /advance_credits; nia|].
 
-    iMod (uniq_body_transform (points_to_ty ty) ty (l, x) x (S d) g ξi ξidx κ tid (l, []) (l, repeat [] ty.(ty_size)) _ _ (pair_with_loc_trackedₛ l) (λ d g, (S d, g)) with "LFT PROPH UNIQ [⧗' £1'] HguardsK H1 £f [ξBor £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
+    iMod (uniq_body_transform (points_to_ty ty) ty (l, x) x (S d) g ξi ξidx κ tid (l, []) (l, repeat [] ty.(ty_size)) _ _ (pair_with_loc_trackedₛ l) (λ d g, (S d, g)) with "LFT PROPH UNIQ Incl [] [⧗' £1'] HguardsK H1 £f [ξBor £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
+    { iApply guards_refl. }
     { iIntros "[gho pt]".
       iMod (lc_fupd_elim_later with "£1' gho") as "gho".
       iDestruct "gho" as "[phys [free gho]]".
@@ -392,10 +399,11 @@ Section typing.
       simpl.
       rewrite -(ty.(ty_size_eq) x tid).
       rewrite <- heap_cloc_mapsto_fancy_empty.
-      iFrame "phys". iIntros (x2 d2 g2) "⧖2".
-      iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "#⧖2'". { solve_ndisj. }
+      iFrame "phys". iIntros (x2 d2 g2) "(⧖2 & gho & pt2)".
+      iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "#⧖2'".
+      { rewrite /lazyE. solve_ndisj. }
       iModIntro. iSplitR. { iApply (persistent_time_receipt_mono with "⧖2'"). simpl. lia. }
-      iIntros "[gho pt2] !>". iFrame "pt". simpl.
+      iFrame "pt". simpl.
       replace (length (ty_phys ty x tid)) with (length (ty_phys ty x2 tid)).
       2: { repeat rewrite ty_size_eq. done. }
       rewrite <- heap_cloc_mapsto_fancy_empty.

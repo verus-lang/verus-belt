@@ -100,13 +100,14 @@ Section type_context.
 
   (** Pending ownership of a value that has been given back to a lender: it becomes
       ownership (with a time receipt for its depth) once it is settled, which needs a
-      guard for the lifetime of the type. For a unique borrow whose reborrow has ended,
-      settling reads the time receipt of the final contents, which is in the lazy part
-      of the payload of the restored borrow. *)
+      guard for the lifetime of the type (it is a guarded update, see [guarded_upd]).
+      For a value that contains the payload of a unique borrow (e.g. the restored
+      borrow of an ended reborrow, or the contents given back to the lender of a
+      borrow), settling runs the lazy update of the payload, which needs that guard and
+      gives the time receipt of the contents. *)
   Definition tctx_pending_own {𝔄} (tid: thread_id) (ty: type 𝔄) (x: ~~ 𝔄) (v: val)
       : iProp Σ :=
-    ∀ G, ⌜Timeless G⌝ -∗ (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ G ={⊤}=∗
-      G ∗ ∃ d, ⧖d ∗ ty_own ty x d d tid [FVal v].
+    guarded_upd ⊤ @[ty_lft ty] (∃ d, ⧖d ∗ ty_own ty x d d tid [FVal v]).
 
   (** Type Context Element Interpretation *)
   Definition tctx_elt_interp {𝔄} (tid: thread_id) (t: tctx_elt 𝔄) (x: ~~ 𝔄)
@@ -564,8 +565,8 @@ Section lemmas.
     iMod ("back" with "L1") as "G".
     
     (* Settle the pending ownership, with the guard for the lifetime of the type. *)
-    iMod ("Pending" with "[%] [] G") as "[G (%d & #⧖dp & ty)]".
-    { apply _. } { iApply (guards_transitive with "L Lkg"). }
+    iMod (guarded_upd_run with "[] G Pending") as "[G (%d & #⧖dp & ty)]"; [done| |].
+    { iApply (guards_transitive with "L Lkg"). }
     
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖dp") as "[⧖S £]"; first by solve_ndisj.
     iDestruct (lc_weaken (d * (d + 2) + (0 + (d+1)*(d+1)) + 1 + 1 + d + 1 + 1) with "£") as "£". {

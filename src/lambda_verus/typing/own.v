@@ -279,7 +279,7 @@ Section typing.
     iExists (l, repeat [] (length (ty_phys ty x0 tid))).
     iModIntro. iExists _. iExists True%I. iSplit => //. iSplit => //.
     iSplitL "Hown Hgho".
-    - iNext. iModIntro.
+    - iNext. iApply guarded_upd_intro. iModIntro.
       iExists (ty_phys ty x0 tid). { rewrite <- heap_cloc_mapsto_fancy_empty. by iFrame. }
     - iSplit; first by done.
       iSplit. { rewrite <- heap_cloc_mapsto_empty. iApply guards_true. }

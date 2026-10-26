@@ -1051,9 +1051,10 @@ Section StorageProtocol.
     iIntros "H£' Hd2''".
     wp_if.
 
-    rewrite uniq_payload_cell.
+    (* The lifetime of the type is [static], so the lazy update needs no guard. *)
+    iMod (uniq_payload_run _ _ _ _ _ _ _ (@[static]) with "[] [] Hgho1") as "(_ & H⧖ & Hgho1 & H↦)";
+      [rewrite /lazyE; solve_ndisj|iApply guards_refl|iApply llftl_tok_unit|].
     unfold gt_gho.
-    iMod (fupd_mask_mono with "Hgho1") as "(H⧖ & Hgho1 & H↦)"; [rewrite /lazyE; solve_ndisj|].
     iDestruct "Hgho1" as "(%Hγ1 & #Hsto1 & Hown1)".
 
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & _)" => //.

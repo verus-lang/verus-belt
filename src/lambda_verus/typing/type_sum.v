@@ -458,9 +458,10 @@ Section type_sum.
       (uniq_payload (tyl +!! i) tid (cloc_take (cloc_skip (l, cells) 1) (ty_size (tyl +!! i))))
       f fπ (llctx_interp L) ltac:(apply _) ltac:(solve_ndisj) Hcomm Hrefl
       with "LFT PROPH UNIQ HalfGuardsK [£] L Loan ξBor") as "(#Obs' & Bor & L)".
-    { iIntros "Payload".
-      iMod (uniq_payload_force with "£ Payload") as "(#⧖1 & Gho1 & Pt1)";
-        [rewrite /lazyE; solve_ndisj|].
+    { iIntros (G' ?) "#G'κ G' Payload".
+      iMod (uniq_payload_force with "[] G' £ Payload") as "($ & #⧖1 & Gho1 & Pt1)";
+        [rewrite /lazyE; solve_ndisj| |].
+      { iApply (guards_transitive with "G'κ Incl"). }
       rewrite split_pt_xsum_cells''. iDestruct "Pt1" as "(Pt1 & Pt2 & Pt3)".
       iModIntro. iSplitL "Gho1 Pt2".
       { iApply uniq_payload_intro_later. iNext. iFrame "⧖1".
@@ -468,7 +469,9 @@ Section type_sum.
       iIntros ([x1' [p1 p2]]) "Payload".
       rewrite /uniq_payload /f /=.
       iModIntro. iNext.
-      iMod "Payload" as "(#⧖2 & Gho1 & Pt2)". iModIntro. iFrame "⧖2".
+      iApply (guarded_upd_weaken with "[]"); [iApply lft_intersect_tyl_lfts_lookup_incl|].
+      iApply (guarded_upd_mono with "[Pt1 Pt3] Payload").
+      iIntros "(#⧖2 & Gho1 & Pt2)". iModIntro. iFrame "⧖2".
       iSplitL "Gho1".
         { unfold xsum_ty, ty_gho_own. rewrite to_xsum_pinj. iFrame "Gho1". }
         { rewrite split_pt_xsum_cells''. iFrame. } }
@@ -533,7 +536,7 @@ Section type_sum.
     iDestruct (guards_transitive with "Ghalf LguardsK") as "#HguardsK".
     (* Open the borrow and run the lazy update of the payload; the points-to is put in
        the guarding proposition for the read of the discriminant. *)
-    iMod (uniq_body_acc_keep with "LFT HguardsK £o uniq H1") as "(_ & Gho & Pt & Close)".
+    iMod (uniq_body_acc_keep (Σ! tyl) with "LFT HguardsK Incl £o uniq H1") as "(_ & Gho & Pt & Close)".
     { rewrite /lazyE. solve_ndisj. }
     iAssert ((fractional.half γ ∗ l #↦!∗ ty_phys (Σ! tyl) (of_xsum (xinj i x0), pad) tid)
       &&{↑NllftG; S dx + 1}&&>
@@ -655,7 +658,8 @@ Section type_sum.
     iIntros "H£ #⧖S".
     iDestruct (lc_weaken (_ + _)%nat with "H£") as "[£0 £1]"; first last.
     {
-    iMod (lc_fupd_elim_later with "£0 Old") as ">(%vl & ↦ & A)".
+    iMod (lc_fupd_elim_later with "£0 Old") as "Old".
+    iMod (guarded_upd_run with "Ghalf H2 Old") as "[H2 (%vl & ↦ & A)]"; [solve_ndisj|].
     iDestruct "A" as "[tyb_ghos %tyb_phys]".
     assert (length vl = ty_size tyb) as Sz. { rewrite <- tyb_phys. apply ty_size_eq. }
     destruct vl as [|v vl]. { rewrite Eq in Sz. done. }
@@ -794,7 +798,8 @@ Section type_sum.
     iIntros "H£ #⧖S".
     iDestruct (lc_weaken (_ + _ + _ + _ + _)%nat with "H£") as "[[[[£0 £1] £2] £3] £4]"; first last.
     {
-    iMod (lc_fupd_elim_later with "£0 Old") as ">(%vl & ↦ & A)".
+    iMod (lc_fupd_elim_later with "£0 Old") as "Old".
+    iMod (guarded_upd_run with "Ghalf H2 Old") as "[H2 (%vl & ↦ & A)]"; [solve_ndisj|].
     iDestruct "A" as "[tyb_ghos %tyb_phys]".
     assert (length vl = ty_size tyb) as Sz. { rewrite <- tyb_phys. apply ty_size_eq. }
     destruct vl as [|v vl]. { rewrite Eq in Sz. done. }
@@ -904,7 +909,8 @@ Section type_sum.
     iIntros "H£ #⧖S".
     iDestruct (lc_weaken (_ + (_ + _))%nat with "H£") as "[£0 £1]"; first last.
     {
-    iMod (lc_fupd_elim_later with "£0 Old") as ">(%vl & ↦ & A)".
+    iMod (lc_fupd_elim_later with "£0 Old") as "Old".
+    iMod (guarded_upd_run with "Ghalf2 H2 Old") as "[H2 (%vl & ↦ & A)]"; [solve_ndisj|].
     iDestruct "A" as "[tyb_ghos %tyb_phys]".
     assert (length vl = ty_size tyb) as Sz. { rewrite <- tyb_phys. apply ty_size_eq. }
     destruct vl as [|v vl]. { rewrite Eq in Sz. done. }
