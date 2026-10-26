@@ -301,6 +301,7 @@ src/lambda_verus/typing/uninit.v
 src/lambda_verus/typing/freeable_util.v
 src/lambda_verus/typing/own.v
 src/lambda_verus/typing/ltype.v
+src/lambda_verus/typing/lpath.v
 src/lambda_verus/typing/place.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
