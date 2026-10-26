@@ -25,13 +25,9 @@ Section base.
   Next Obligation. done. Qed.
   Next Obligation. by iIntros. Qed.
   Next Obligation. by iIntros. Qed.
-  Next Obligation.
-    iIntros. iNext. iIntros "_ #G".
-    iApply (guards_transitive_additive with "G").
-    leaf_by_sep. iIntros "?". iExFalso. done.
-  Qed.
   Next Obligation. iIntros. done. Qed.
   Solve All Obligations with solve_default_shr.
+  Next Obligation. iIntros "* _ _ _ []". Qed.
   
   Global Instance base_copy {𝔄} : Copy (@base 𝔄).
   Proof. split=>//.

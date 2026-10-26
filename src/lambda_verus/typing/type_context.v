@@ -550,9 +550,9 @@ Section lemmas.
     iMod ("Upd" with "†κ") as (x' d) "(Eqz & #⧖dp & ⧗ & ty)".
     
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖dp") as "[⧖S £]"; first by solve_ndisj.
-    iDestruct (lc_weaken (d * (d + 1) + d * (d + 1) + 1 + 1) with "£") as "£". {
+    iDestruct (lc_weaken (d * (d + 1) + (0 + (d+1)*(d+1)) + 1 + 1 + d + 1 + 1) with "£") as "£". {
       unfold advance_credits. lia. }
-    iDestruct "£" as "[[[£k £k'] £1] £1']".
+    iDestruct "£" as "[[[[[[£k £k'] £1] £1'] £s] £e] £g]".
     
     leaf_open "L" with "G" as "[L1 back]". { set_solver. }
     iDestruct (Alv with "L1 E") as "#Lkg".
@@ -564,21 +564,35 @@ Section lemmas.
     
     iDestruct "ty" as "[gho phys]".
     iDestruct (ty_gho_pers_impl with "gho") as "#ghoPers".
-    iAssert (▷^(d*(d+1)) (∀ ζ , ⌜ζ ∈ ξl x'⌝ -∗ (fractional.half γ2 ∗ ty_gho_own ty x' d d tid &&{↑NllftG; d*(d+1)}&&> 1:[ζ])))%I as "#Hallζlater".
-    {
-      iIntros (ζ) "%Hin".
-      iDestruct (ty_guard_proph _ ty (foldr meet static (ty_lfts ty))%I x' 0 d d tid ζ ((fractional.half γ2 ∗ ty_gho_own ty x' d d tid)) Hin
-          with "LFT [] ghoPers") as "A"; first by iApply guards_refl.
-      iNext.
-      iApply "A".
-      - iApply guards_weaken_lhs_sep_l. iApply (guards_transitive with "Ghalf2 Lkg").
-      - iApply guards_weaken_sep_r.
-    }
+    (* Share the contents at a fresh lifetime, which gives guards of their prophecy
+       tokens; then end the lifetime to get the contents back. *)
+    iMod (llftl_begin with "LFT") as (κf) "[κf #κfend]"; [solve_ndisj|].
+    set κs := κf ⊓ ty_lft ty.
+    iMod (llftl_borrow _ κs (ty_gho_own ty x' d d tid) with "LFT [$gho]") as "[Bor Inh]"; [solve_ndisj|].
+    iAssert ((@[κf] ∗ fractional.half γ2) &&{↑NllftG}&&> @[κs])%I as "#Wκs".
+    { iApply guards_llft_glb; [iApply guards_weaken_sep_l|].
+      iApply guards_weaken_lhs_sep_r. iApply (guards_transitive with "Ghalf2 Lkg"). }
+    iAssert (κs ⊑ ty_lft ty)%I as "#Incl". { iApply llftl_intersect_incl_r. }
+    iMod (ty_share with "LFT Incl ghoPers Wκs [$κf $H2] Bor") as "Upd"; [solve_ndisj|].
+    iMod (lc_step_fupdN_elim_later with "£s Upd") as ">[[κf H2] #Shr]".
+    iAssert (▷^(d*(d+1)) (∀ ζ , ⌜ζ ∈ ξl x'⌝ -∗
+      ((@[κf] ∗ fractional.half γ2) &&{↑NllftG; 0 + (d+1)*(d+1)}&&> 1:[ζ])))%I
+      as "#Hallζlater".
+    { iIntros (ζ) "%Hin".
+      iDestruct (ty_shr_guard_proph ty κs x' 0 d d tid ζ (@[κf] ∗ fractional.half γ2)%I Hin
+        with "LFT Incl ghoPers Shr") as "A".
+      iNext. iApply "A". leaf_goal laters to 0; [lia|]. iFrame "Wκs". }
     iMod (lc_fupd_elim_laterN with "£k Hallζlater") as "#Hallζ".
     iMod (lc_fupd_elim_later with "£1 Eqz") as "Eqz".
     
-    iMod (uniq_cmra.proph_eqz_to_obs_with_guard with "£k' Hallζ [H2 gho] Eqz") as "[#Obs [H2 gho]]"; first by set_solver.
+    iMod (uniq_cmra.proph_eqz_to_obs_with_guard with "£k' Hallζ [κf H2] Eqz") as "[#Obs [κf H2]]"; first by set_solver.
       { apply syn_indep. } { iFrame. }
+    iAssert (|={⊤}=> [†κf])%I with "[£e κf]" as ">#†κf".
+    { iApply fupd_mask_mono; [|iApply (lc_step_fupd_elim_later with "£e"); by iApply "κfend"].
+      solve_ndisj. }
+    iAssert (|={⊤}=> ▷ ty_gho_own ty x' d d tid)%I with "[Inh]" as ">gho".
+    { iApply fupd_mask_mono; [|iApply "Inh"; iApply llftl_end_inter; by iLeft]. solve_ndisj. }
+    iMod (lc_fupd_elim_later with "£g gho") as "gho".
     
     iMod (lc_fupd_elim_later with "£1' ToT'") as "ToT'".
     iMod "ToT'". iModIntro. iExists dT. iExists (x' -:: xl'). iFrame "⧖dT".

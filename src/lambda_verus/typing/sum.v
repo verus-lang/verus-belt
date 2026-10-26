@@ -102,16 +102,6 @@ Section sum.
     apply ty_gho_pers_depth_mono; trivial.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl κ [x pad] n d g tid ξ R. simpl.
-    move=> Hin. replace x with (of_xsum (to_xsum x)) in Hin; last by rewrite semi_iso'. move: Hin.
-    refine (match (to_xsum x) with | xinj i x0 => _ end).
-    intros Hin. simpl in Hin. rewrite psum_map1_pinj in Hin. rewrite to_xsum_pinj in Hin.
-    iIntros "#LFT #Incl #Pers".
-    iApply ty_guard_proph; trivial.
-    iApply (guards_transitive with "Incl []").
-    iApply lft_intersect_tyl_lfts_lookup_incl.
-  Qed.
-  Next Obligation.
     intros 𝔄l tyl [x pad] d g tid.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
   Qed.
@@ -135,15 +125,15 @@ Section sum.
     by apply ty_shr_depth_mono.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl E κ [x pad] k d g tid G ???. simpl.
+    intros 𝔄l tyl E κ [x pad] d g tid G ??. simpl.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
-    iIntros "#LFT #Incl Gκ G Bor".
-    iApply (ty_share with "LFT [] Gκ G Bor"); [done..|].
+    iIntros "#LFT #Incl Pers Gκ G Bor".
+    iApply (ty_share with "LFT [] Pers Gκ G Bor"); [done..|].
     iApply (guards_transitive with "Incl []").
     iApply lft_intersect_tyl_lfts_lookup_incl.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl κ [x pad] n d g tid ξ R _ _. simpl.
+    intros 𝔄l tyl κ [x pad] n d g tid ξ R. simpl.
     move=> Hin. replace x with (of_xsum (to_xsum x)) in Hin; last by rewrite semi_iso'. move: Hin.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     intros Hin. simpl in Hin. rewrite psum_map1_pinj in Hin. rewrite to_xsum_pinj in Hin.
@@ -151,11 +141,6 @@ Section sum.
     iApply (ty_shr_guard_proph with "LFT [] Pers Shr"); [done|].
     iApply (guards_transitive with "Incl []").
     iApply lft_intersect_tyl_lfts_lookup_incl.
-  Qed.
-  Next Obligation.
-    intros 𝔄l tyl κ [x pad] d g tid. simpl.
-    refine (match (to_xsum x) with | xinj i x0 => _ end).
-    apply ty_shr_from_guard.
   Qed.
 
   Global Instance xsum_ty_ne {𝔄l} : NonExpansive (@xsum_ty 𝔄l).

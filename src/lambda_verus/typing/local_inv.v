@@ -110,7 +110,6 @@ Section local_invariants.
     iIntros "[A [[%B1 B1'] C]]". iFrame. done.
   Qed.
   Next Obligation. iIntros. done. Qed.
-  Next Obligation. set_solver. Qed.
   Next Obligation. iIntros. done. Qed.
   Solve All Obligations with solve_default_shr.
   
@@ -144,7 +143,6 @@ Section local_invariants.
   Next Obligation. done. Qed. 
   Next Obligation. iIntros. iFrame. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.
-  Next Obligation. set_solver. Qed.
   Next Obligation. iIntros. done. Qed.
   Solve All Obligations with solve_default_shr.
   

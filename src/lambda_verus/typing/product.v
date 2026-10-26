@@ -26,13 +26,14 @@ Section product.
   Next Obligation. done. Qed.
   Next Obligation. intros. iIntros. done. Qed.
   Next Obligation. intros. iIntros. done. Qed.
+  Next Obligation. iIntros. done. Qed.
+  Next Obligation. iIntros. done. Qed.
+  Next Obligation. iIntros. done. Qed.
+  Next Obligation.
+    iIntros. iFrame. iModIntro. iApply step_fupdN_intro; [done|].
+    by iApply bi.laterN_intro.
+  Qed.
   Next Obligation. intros. set_solver. Qed.
-  Next Obligation. iIntros. done. Qed.
-  Next Obligation. iIntros. done. Qed.
-  Next Obligation. iIntros. done. Qed.
-  Next Obligation. iIntros. iFrame. iModIntro. by iApply bi.laterN_intro. Qed.
-  Next Obligation. intros. set_solver. Qed.
-  Next Obligation. iIntros. done. Qed.
 
   Global Instance unit0_copy : Copy unit0.
   Proof.
@@ -77,22 +78,6 @@ Section product.
     iDestruct ((ty_gho_pers_depth_mono _ d g d' g') with "B") as "B'"; trivial.
     iFrame.
   Qed.
-  Next Obligation. intros 𝔄 𝔅 ty ty' κ x n d g tid ξ R Hin.
-    iIntros "LFT #Incl [Gho1 Gho2]".
-    rewrite elem_of_app in Hin. destruct Hin as [Hin|Hin].
-    - iDestruct (ty_guard_proph 𝔄 ty κ (fst x) n d g tid ξ R with "LFT [] Gho1") as "A1".
-      { apply Hin. }
-      { rewrite lft_intersect_list_app. iApply (guards_transitive with "Incl []").
-        iApply llftl_intersect_incl_l. }
-      iNext. iIntros "#Rk #Rgho". iApply "A1". { iFrame "Rk". }
-      iApply guards_weaken_rhs_sep_l. iFrame "Rgho".
-    - iDestruct (ty_guard_proph 𝔅 ty' κ (snd x) n d g tid ξ R with "LFT [] Gho2") as "A2".
-      { apply Hin. }
-      { rewrite lft_intersect_list_app. iApply (guards_transitive with "Incl []").
-        iApply llftl_intersect_incl_r. }
-      iNext. iIntros "#Rk #Rgho". iApply "A2". { iFrame "Rk". }
-      iApply guards_weaken_rhs_sep_r. iFrame "Rgho".
-  Qed.
   Next Obligation.
     intros 𝔄 𝔅 ty ty' x d g tid. iIntros "[A B]".
     iDestruct (ty_gho_pers_impl with "A") as "#A1".
@@ -106,19 +91,19 @@ Section product.
     intros. simpl. iIntros "[A B]". iSplitL "A"; by iApply (ty_shr_depth_mono with "[$]").
   Qed.
   Next Obligation.
-    intros 𝔄 𝔅 ty ty' E κ x k d g tid G ???. simpl. iIntros "#LFT #Incl #Gκ G Bor".
+    intros 𝔄 𝔅 ty ty' E κ x d g tid G ??. simpl. iIntros "#LFT #Incl [P1 P2] #Gκ G Bor".
     rewrite lft_intersect_list_app.
     iAssert (κ ⊑ ty_lft ty)%I as "#Incl1".
     { iApply (llftl_incl_trans with "Incl"). iApply llftl_intersect_incl_l. }
     iAssert (κ ⊑ ty_lft ty')%I as "#Incl2".
     { iApply (llftl_incl_trans with "Incl"). iApply llftl_intersect_incl_r. }
-    iMod (llftl_bor_laterN_sep_split with "LFT Bor") as "[B1 B2]"; [solve_ndisj|].
-    iMod (ty_share with "LFT Incl1 Gκ G B1") as "[G S1]"; [done..|].
-    iMod (ty_share with "LFT Incl2 Gκ G B2") as "[$ S2]"; [done..|].
-    iModIntro. iNext. iFrame.
+    iMod (llftl_sep_split with "LFT Bor") as "[B1 B2]"; [solve_ndisj|].
+    iApply (share_par with "Gκ G [P1 B1] [P2 B2]"); [solve_ndisj|..].
+    - iIntros (W ?) "#Wκ W". by iApply (ty_share with "LFT Incl1 P1 Wκ W B1").
+    - iIntros (W ?) "#Wκ W". by iApply (ty_share with "LFT Incl2 P2 Wκ W B2").
   Qed.
   Next Obligation.
-    intros 𝔄 𝔅 ty ty' κ x n d g tid ξ R _ _ Hin. simpl.
+    intros 𝔄 𝔅 ty ty' κ x n d g tid ξ R Hin. simpl.
     iIntros "LFT #Incl [P1 P2] [S1 S2]".
     rewrite elem_of_app in Hin. rewrite lft_intersect_list_app.
     destruct Hin as [Hin|Hin].
@@ -126,11 +111,6 @@ Section product.
       iApply (llftl_incl_trans with "Incl"). iApply llftl_intersect_incl_l.
     - iApply (ty_shr_guard_proph with "LFT [] P2 S2"); [done|].
       iApply (llftl_incl_trans with "Incl"). iApply llftl_intersect_incl_r.
-  Qed.
-  Next Obligation.
-    intros. simpl. iIntros "#G". iSplit; iApply ty_shr_from_guard.
-    - iApply (guards_weaken_rhs_sep_l with "G").
-    - iApply (guards_weaken_rhs_sep_r with "G").
   Qed.
 
   Global Instance prod_ty_ne {𝔄 𝔅} : NonExpansive2 (@prod_ty 𝔄 𝔅).

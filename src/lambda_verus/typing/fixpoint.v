@@ -127,10 +127,6 @@ Section S.
   Next Obligation. intros. apply ty_phys_eq2. Qed.
   Next Obligation. move=> >. apply ty_gho_own_depth_mono. Qed.
   Next Obligation. move=> >. apply ty_gho_pers_depth_mono. Qed.
-  Next Obligation.
-    move=> n *. iIntros "#LFT #?". iApply (ty_guard_proph with "LFT"); [done|].
-    iApply llftl_incl_trans; [done|]. iDestruct (Tn_ty_lft_const n 0) as "[_ $]".
-  Qed.
   Next Obligation. move=> >. apply ty_gho_pers_impl. Qed.
   Next Obligation. move=> >. apply ty_shr_lft_mono. Qed.
   Next Obligation. move=> >. by apply ty_shr_depth_mono. Qed.
@@ -142,7 +138,6 @@ Section S.
     move=> n *. iIntros "#LFT #?". iApply (ty_shr_guard_proph with "LFT"); [done|].
     iApply llftl_incl_trans; [done|]. iDestruct (Tn_ty_lft_const n 0) as "[_ $]".
   Qed.
-  Next Obligation. move=> >. apply ty_shr_from_guard. Qed.
 
   Program Definition fix_ty: type 𝔄 := {|
     ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
@@ -161,12 +156,6 @@ Section S.
   Next Obligation.
     move=> *. apply @limit_preserving; [|move=> ?; by apply ty_gho_pers_depth_mono].
     apply limit_preserving_entails=> ??? Eq. { done. } f_equiv; apply Eq.
-  Qed.
-  Next Obligation.
-    move=> *. apply @limit_preserving; [|move=> ?; by apply (ty_guard_proph _ (Tn' _))].
-    apply limit_preserving_entails; [done|]=> ??? Eq.
-    do 3 f_equiv. { apply Eq. }
-    do 4 f_equiv. { apply Eq. }
   Qed.
   Next Obligation.
     move=> *. apply @limit_preserving, _.
@@ -196,13 +185,9 @@ Section S.
     repeat (apply Eq || f_equiv).
   Qed.
   Next Obligation.
-    move=> > _ _ ?. apply @limit_preserving; [|move=> ?; by apply (ty_shr_guard_proph (Tn' _))].
+    move=> > ?. apply @limit_preserving; [|move=> ?; by apply (ty_shr_guard_proph (Tn' _))].
     apply limit_preserving_entails; [done|]=> ??? Eq.
     repeat (apply Eq || f_equiv).
-  Qed.
-  Next Obligation.
-    move=> *. apply @limit_preserving; [|move=> ?; by apply (ty_shr_from_guard (Tn' _))].
-    apply limit_preserving_entails=> ??? Eq; repeat (apply Eq || f_equiv).
   Qed.
 
   Lemma fix_ty_Tn'_dist n : fix_ty ≡{n}≡ Tn' (3 + n).

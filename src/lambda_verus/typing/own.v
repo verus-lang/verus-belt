@@ -12,12 +12,7 @@ Section own.
 
   (** The sharing predicate of [own_ptr n ty] is structural: a guard of the points-to
       and the sharing predicate of the contents, under one later (to keep [own_ptr]
-      contractive). The freeable token is not needed for shared access.
-      TEMPORARY: as an alternative, the default sharing predicate (a guard of the
-      ownership predicate) is allowed. This is needed for [ty_shr_from_guard], since a
-      guard of the ownership predicate only gives a guard of the ownership predicate of
-      the contents with one more later. The alternative goes away together with
-      [ty_shr_from_guard]. *)
+      contractive). The freeable token is not needed for shared access. *)
   Program Definition own_ptr {𝔄} (n: nat) (ty: type 𝔄) : type (at_locₛ 𝔄) := {|
     ty_size := 1;
     ty_lfts := ty.(ty_lfts);
@@ -33,13 +28,9 @@ Section own.
     
     ty_phys x tid := [FVal (LitV (fst x))];
     ty_shr κ x d g tid :=
-      (▷ [S(d') := d]
+      ▷ [S(d') := d]
         (@[κ] &&{↑NllftG; g+1}&&> (fst x) ↦!∗ ty.(ty_phys) (snd x) tid) ∗
-        ty.(ty_shr) κ (snd x) d' g tid) ∨
-      default_shr (λ (x: ~~(at_locₛ 𝔄)) d g tid, [S(d') := d]
-        ((fst x) ↦!∗ ty.(ty_phys) (snd x) tid) ∗
-        freeable_sz n ty.(ty_size) (fst x) ∗
-        ▷ (ty.(ty_gho_own) (snd x) d' g tid)) κ x d g tid;
+        ty.(ty_shr) κ (snd x) d' g tid;
   |}%I.
   Next Obligation. move=> ?????* //=. Qed.
   Next Obligation. done. Qed.
@@ -59,60 +50,37 @@ Section own.
     iDestruct (ty.(ty_gho_pers_depth_mono) with "H") as "$" => //; first lia.
   Qed.
   Next Obligation.
-    intros 𝔄 n ty κ x n0 d g tid ξ R Hin.
-    iIntros "#CTX #Incl #GhoPers".
-    destruct d as [|d']; first by done.
-    iDestruct (ty_guard_proph _ ty _ _ (n0+1) _ _ _ ξ R Hin with "CTX Incl GhoPers") as "#L".
-    iApply (bi.laterN_le (S (d' * (g + 1)))). { lia. }
-    iNext. iNext. iIntros "#A #B".
-    leaf_goal laters to (n0 + 1 + d' * (g + 1)). { lia. }
-    iApply "L".
-      - leaf_goal laters to n0. { lia. } iFrame "A".
-      - iApply (guards_transitive_additive with "B []"). leaf_by_sep.
-        simpl. iIntros "[C [D E]]". iNext. iFrame. iIntros. iFrame.
-  Qed.
-  Next Obligation.
     intros 𝔄 n ty x d g tid. iIntros "A". destruct d as [|d']; first by done.
     iDestruct "A" as "[_ [_ pers]]". iApply ty_gho_pers_impl. iFrame.
   Qed.
   Next Obligation.
-    intros 𝔄 n ty κ κ' x d g tid. iIntros "#Incl [Shr|Shr]".
-    - iLeft. iNext. destruct d as [|d']; [done|]. iDestruct "Shr" as "[Pt Shr]". iSplit.
-      + iApply (guards_transitive_right with "Incl Pt").
-      + iApply (ty_shr_lft_mono with "Incl Shr").
-    - iRight. by iApply (default_shr_lft_mono with "Incl Shr").
+    intros 𝔄 n ty κ κ' x d g tid. iIntros "#Incl Shr".
+    iNext. destruct d as [|d']; [done|]. iDestruct "Shr" as "[Pt Shr]". iSplit.
+    - iApply (guards_transitive_right with "Incl Pt").
+    - iApply (ty_shr_lft_mono with "Incl Shr").
   Qed.
   Next Obligation.
-    intros 𝔄 n ty κ d g d' g' x tid ??. iIntros "[Shr|Shr]".
-    - iLeft. iNext. destruct d as [|d0]; [done|]. destruct d' as [|d0']; [lia|].
-      iDestruct "Shr" as "[Pt Shr]". iSplit.
-      + leaf_goal laters to (g+1). { lia. } iFrame "Pt".
-      + iApply (ty_shr_depth_mono with "Shr"); lia.
-    - iRight. by iApply (default_shr_depth_mono with "Shr").
+    intros 𝔄 n ty κ d g d' g' x tid ??. iIntros "Shr".
+    iNext. destruct d as [|d0]; [done|]. destruct d' as [|d0']; [lia|].
+    iDestruct "Shr" as "[Pt Shr]". iSplit.
+    - leaf_goal laters to (g+1). { lia. } iFrame "Pt".
+    - iApply (ty_shr_depth_mono with "Shr"); lia.
   Qed.
   Next Obligation.
-    intros 𝔄 n ty E κ x k d g tid G ?? Hle. iIntros "#LFT #Incl #Gκ G Bor".
-    destruct d as [|d'].
-    { iMod (llftl_bor_guarded_pers with "LFT Gκ G Bor") as "[$ #F]"; [solve_ndisj|].
-      iAssert (▷^k ▷ False)%I as "#F'". { rewrite -bi.laterN_later. iExact "F". }
-      iModIntro. iNext. iLeft. iNext. done. }
-    simpl.
-    iMod (llftl_bor_laterN_sep_split with "LFT Bor") as "[Pt Bor]"; [solve_ndisj|].
-    iMod (llftl_bor_laterN_sep_split with "LFT Bor") as "[_ Bor]"; [solve_ndisj|].
-    iMod (llftl_bor_laterN_guard with "LFT Pt") as "#Pt"; [solve_ndisj|].
-    iDestruct (llftl_bor_iff _ _ (▷^(S k) ty.(ty_gho_own) x.2 d' g tid) with "[] Bor") as "Bor".
-    { iIntros "!> !>". rewrite -bi.laterN_later. iSplit; iIntros "H"; iExact "H". }
-    iMod (ty_share ty E κ x.2 (S k) d' g tid G with "LFT Incl Gκ G Bor")
-      as "[$ Shr]"; [first [done | lia]..|].
-    iAssert (▷^k ▷ ty.(ty_shr) κ x.2 d' g tid)%I with "[Shr]" as "Shr".
-    { rewrite -bi.laterN_later. iExact "Shr". }
-    iModIntro. iNext. iLeft. iNext. iFrame "Shr".
-    leaf_goal laters to (1 + k). { lia. } iFrame "Pt".
+    intros 𝔄 n ty E κ x d g tid G ??. iIntros "#LFT #Incl #Pers #Gκ G Bor".
+    destruct d as [|d']; [done|]. simpl.
+    iMod (llftl_sep_split with "LFT Bor") as "[Pt Bor]"; [solve_ndisj|].
+    iMod (llftl_sep_split with "LFT Bor") as "[_ Bor]"; [solve_ndisj|].
+    iMod (llftl_bor_guard with "LFT Pt") as "#Pt"; [solve_ndisj|].
+    iMod (llftl_bor_later_step with "LFT Gκ G Bor") as "Upd"; [first [apply _ | solve_ndisj]..|].
+    iModIntro. iModIntro. iNext. iMod "Upd" as "[G Bor]".
+    iMod (ty_share with "LFT Incl Pers Gκ G Bor") as "Shr"; [done..|].
+    iModIntro. iApply (step_fupdN_wand with "Shr"). iIntros ">[$ Shr] !> !>".
+    iFrame "Shr". leaf_goal laters to 1. { lia. } iFrame "Pt".
   Qed.
   Next Obligation.
-    intros 𝔄 n ty κ x n0 d g tid ξ R Mono GP Hin.
-    iIntros "#LFT #Incl #Pers [#Shr|#Shr]"; last first.
-    { by iApply (default_shr_guard_proph with "LFT Incl Pers Shr"). }
+    intros 𝔄 n ty κ x n0 d g tid ξ R Hin.
+    iIntros "#LFT #Incl #Pers #Shr".
     destruct d as [|d']; first by done. simpl.
     iApply (bi.laterN_le (S (d' * (g + 1)))). { lia. }
     iNext. iDestruct "Shr" as "[_ Shr]".
@@ -120,9 +88,6 @@ Section own.
       as "GP".
     iNext. iIntros "#Rκ".
     leaf_goal laters to (n0 + (d'+1)*(g+1)). { lia. } by iApply "GP".
-  Qed.
-  Next Obligation.
-    intros 𝔄 n ty κ x d g tid. iIntros "#G". iRight. by iApply default_shr_from_guard.
   Qed.
   
   Global Instance own_ne {𝔄} n : NonExpansive (@own_ptr 𝔄 n).
@@ -135,13 +100,9 @@ Section own.
     - intros. unfold ty_gho_pers, own_ptr. destruct d; first by done. simpl.
       f_contractive. naive_solver.
     - move=>/= > *. do 6 (f_contractive || f_equiv).
-    - move=>/= n' ty ty' Sz _ _ EqOwn _ EqPhys EqShr κ x d g tid. f_equiv.
-      + apply later_contractive. split=> m Hm. destruct d as [|d']; [done|]. simpl.
-        f_equiv; [by rewrite EqPhys|]. eapply dist_later_lt; [apply EqShr|lia].
-      + apply default_shr_contractive=> x' d0 g0 tid'. split=> m Hm.
-        destruct d0 as [|d0]; [done|]. simpl. f_equiv; [by rewrite EqPhys|].
-        f_equiv; [by rewrite Sz|]. apply later_contractive. split=> m' Hm'.
-        eapply dist_later_lt; [apply EqOwn|lia].
+    - move=>/= n' ty ty' Sz _ _ EqOwn _ EqPhys EqShr κ x d g tid.
+      apply later_contractive. split=> m Hm. destruct d as [|d']; [done|]. simpl.
+      f_equiv; [by rewrite EqPhys|]. eapply dist_later_lt; [apply EqShr|lia].
   Qed.
   
   Lemma own_stack_okay {𝔄} n (ty: type 𝔄) : StackOkay (own_ptr n ty).
@@ -173,9 +134,8 @@ Section own.
     split => //=. split; [apply EqOwn|]. split.
     - destruct d => //=. destruct (HSync tid tid' x.2 d g) as [_ [_ [-> _]]]. done.
     - move=> κ. f_equiv.
-      + destruct d => //=. destruct (HSync tid tid' x.2 d g) as [-> [_ [_ Hshr]]].
-        by rewrite Hshr.
-      + apply default_shr_change_tid=> d0 g0. apply EqOwn.
+      destruct d => //=. destruct (HSync tid tid' x.2 d g) as [-> [_ [_ Hshr]]].
+      by rewrite Hshr.
   Qed.
 
   Global Instance own_just_loc {𝔄} n (ty: type 𝔄) : JustLoc (own_ptr n ty).
@@ -234,36 +194,22 @@ Section own.
       iApply "InOwnPers". iFrame.
     }
     iSplit. { iPureIntro. move => [l x0] tid. done. }
-    iIntros "!>" (κ [l x0] d g tid) "[Shr|Shr]".
-    - iLeft. iNext. destruct d as [|d]; [done|]. simpl. iDestruct "Shr" as "[Pt Shr]".
-      rewrite -Phys. iFrame "Pt". by iApply "InShr".
-    - iRight. iDestruct (default_shr_incl with "InOwn'") as "#InShr'". by iApply "InShr'".
+    iIntros "!>" (κ [l x0] d g tid) "Shr".
+    iNext. destruct d as [|d]; [done|]. simpl. iDestruct "Shr" as "[Pt Shr]".
+    rewrite -Phys. iFrame "Pt". by iApply "InShr".
   Qed.
 
-  (** Unfolding the sharing predicate of [own_ptr]. The result is stated one step
-      later in [g], which covers the TEMPORARY alternative of the sharing predicate
-      (a guard of the ownership predicate, from which the sharing predicate of the
-      contents is obtained by [ty_shr_from_guard]). *)
+  (** Unfolding the sharing predicate of [own_ptr]. (The result is stated with some
+      slack in the later count of the guard and in [g].) *)
   Lemma own_shr_unfold {𝔄} n (ty: type 𝔄) E κ x d g tid :
     £ 1 -∗ (own_ptr n ty).(ty_shr) κ x (S d) g tid ={E}=∗
     (@[κ] &&{↑NllftG; g+2}&&> x.1 ↦!∗ ty.(ty_phys) x.2 tid) ∗
     ty.(ty_shr) κ x.2 d (S g) tid.
   Proof.
-    iIntros "£ [Shr|Shr]".
-    - iMod (lc_fupd_elim_later with "£ Shr") as "[Pt Shr]". iModIntro. iSplit.
-      + leaf_goal laters to (g+1). { lia. } iFrame "Pt".
-      + iApply (ty_shr_depth_mono with "Shr"); lia.
-    - (* TEMPORARY: uses [ty_shr_from_guard]. *)
-      rewrite default_shr_guard; [|exact (ty_gho_own_depth_mono (own_ptr n ty))].
-      iDestruct "Shr" as "#G". iModIntro. iSplit.
-      + leaf_goal laters to (g+1). { lia. }
-        iApply (guards_transitive_left with "G"). leaf_by_sep. simpl.
-        iIntros "($ & A & B) P". iFrame.
-      + iApply ty_shr_from_guard. leaf_goal laters to (g + 1 + 1). { lia. }
-        iApply (guards_transitive_additive _ _ _ _ (g+1) 1 with "G []").
-        leaf_by_sep. simpl. iIntros "(Pt & Free & Gho)". iNext.
-        iDestruct (ty_gho_own_depth_mono _ d g d (S g) with "Gho") as "[$ Back]"; [lia..|].
-        iIntros "Gho". iFrame. by iApply "Back".
+    iIntros "£ Shr".
+    iMod (lc_fupd_elim_later with "£ Shr") as "[Pt Shr]". iModIntro. iSplit.
+    - leaf_goal laters to (g+1). { lia. } iFrame "Pt".
+    - iApply (ty_shr_depth_mono with "Shr"); lia.
   Qed.
 
   Lemma own_subtype {𝔄 𝔅} E L n (f: 𝔄 →ₛ 𝔅) ty ty' :
@@ -296,13 +242,9 @@ Section box.
     - intros. unfold ty_gho_pers, own_ptr. destruct d; first by done. simpl.
       f_contractive. naive_solver.
     - move=>/= *. do 6 (f_contractive || f_equiv).
-    - move=>/= n' ty ty' Sz _ _ EqOwn _ EqPhys EqShr κ x d g tid. f_equiv.
-      + apply later_contractive. split=> m Hm. destruct d as [|d']; [done|]. simpl.
-        f_equiv; [by rewrite EqPhys|]. eapply dist_later_lt; [apply EqShr|lia].
-      + apply default_shr_contractive=> x' d0 g0 tid'. split=> m Hm.
-        destruct d0 as [|d0]; [done|]. simpl. f_equiv; [by rewrite EqPhys|].
-        f_equiv; [by rewrite Sz|]. apply later_contractive. split=> m' Hm'.
-        eapply dist_later_lt; [apply EqOwn|lia].
+    - move=>/= n' ty ty' Sz _ _ EqOwn _ EqPhys EqShr κ x d g tid.
+      apply later_contractive. split=> m Hm. destruct d as [|d']; [done|]. simpl.
+      f_equiv; [by rewrite EqPhys|]. eapply dist_later_lt; [apply EqShr|lia].
   Qed.
 
   Lemma box_type_incl {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) ty ty':

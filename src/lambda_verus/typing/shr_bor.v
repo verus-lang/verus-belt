@@ -14,9 +14,8 @@ Section shr_bor.
       predicate of [ty] (without a later). Its sharing predicate is the default one, i.e.
       a guard of the ownership predicate with [g+1] laters: this is structural (it gives
       access to the sharing predicate of [ty]), puts the sharing predicate of [ty] under
-      laters (so [&shr] stays contractive), and is compatible with [ty_shr_from_guard].
-      Since the ownership predicate is persistent and never lazy, it need not change when
-      [ty_shr_from_guard] goes away. *)
+      laters (so [&shr] stays contractive). Since the ownership predicate is persistent
+      and never lazy, nothing is gained from a structural sharing predicate. *)
   Program Definition shr_bor {𝔄} (κ: lft) (ty: type 𝔄) : type (at_clocₛ 𝔄) := @ty_of_st _ _ ((at_clocₛ 𝔄)) ({|
     st_size := 1;
     st_lfts := κ :: ty.(ty_lfts);

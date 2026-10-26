@@ -620,10 +620,11 @@ Qed.
     becomes available under the lifetime token.
 
     Resolving requires prophecy tokens for the dependencies [ζl] of the current
-    value; these are provided in guard form by the [Deps] premise
-    (c.f. [ty_guard_proph]). [Deps] is given access to the payload (which it
-    must return), and it must also provide the later credits needed for
-    opening its guards ([n] laters), plus two more. *)
+    value; these are provided in guard form by the [Deps] premise, given a guard of
+    the payload. [Deps] is given access to the payload (which it must return), and it
+    must also provide the later credits needed for opening its guards ([n] laters),
+    plus two more. (The typing rules use the variant [proph_ibor_resolve_share]
+    below, which shares the payload instead of guarding it.) *)
 Lemma proph_ibor_resolve E κ ξ x idx (P: (pv_val ξ) → iProp Σ) (ζl: list proph_var) G n :
   Timeless G →
   ↑Nllft ∪ ↑prophN ⊆ E →
@@ -690,6 +691,83 @@ Proof using All.
   iDestruct (guards_later_absorb_1 with "GBor2") as "GBor3".
   iDestruct (guards_weaken_rhs_sep_r with "GBor3") as "GBor4".
   iModIntro. iFrame "Obs G GBor4".
+Qed.
+
+(** ** Sharing
+
+    The structural sharing of a prophetic borrow whose timeless part is itself borrowed
+    (at [κ']), as done by the sharing predicate of [&uniq]: we obtain a borrow of the
+    payload at the current value, at [κ' ⊓ κ], and a guard of the prophecy token. This
+    needs no step, since the persistent part of the borrow is given. *)
+Lemma proph_bor_tok_share E κ κ' ξ x idx (P: (pv_val ξ) → iProp Σ) :
+  ↑Nllft ⊆ E →
+  llft_ctx -∗ proph_idx_bor κ ξ idx P -∗ &{κ'} (proph_bor_tok ξ x idx) ={E}=∗
+    &{κ' ⊓ κ} (P x) ∗ (@[κ' ⊓ κ] &&{↑NllftG; 1}&&> 1:[ξ]).
+Proof.
+  iIntros (?) "#LFT #IBor Bor". rewrite /proph_bor_tok /proph_idx_bor.
+  iMod (llftl_sep_split with "LFT Bor") as "[VoBor TokBor]"; [done|].
+  iMod (llftl_idx_bor_unnest with "LFT IBor TokBor") as "Body"; [done|].
+  iDestruct (llftl_bor_shorten _ (κ' ⊓ κ) with "[] Body") as "Body".
+  { iApply llftl_incl_glb; [iApply llftl_intersect_incl_r|iApply llftl_intersect_incl_l]. }
+  iDestruct (llftl_bor_shorten _ (κ' ⊓ κ) with "[] VoBor") as "VoBor".
+  { iApply llftl_intersect_incl_l. }
+  iMod (llftl_sep_join with "LFT VoBor Body") as "Bor"; [done|].
+  iDestruct (llftl_bor_iff _ _ ((.VO[ξ] x ∗ .PC[ξ] x (vπ x)) ∗ P x) with "[] Bor") as "Bor".
+  { iIntros "!> !>". rewrite /pbor_body. iSplit.
+    - iIntros "[Vo Body]". iDestruct "Body" as (x') "[Pc P]".
+      iDestruct (uniq_agree with "Vo Pc") as %<-. iFrame.
+    - iIntros "[[Vo Pc] P]". iFrame "Vo". iExists x. iFrame. }
+  iMod (llftl_sep_split with "LFT Bor") as "[TokBor $]"; [done|].
+  iMod (llftl_bor_guard with "LFT TokBor") as "#G"; [done|].
+  iModIntro. iApply (guards_transitive_left with "G"). leaf_by_sep. iIntros "[Vo Pc]".
+  iDestruct (uniq_proph_tok with "Vo Pc") as "(Vo & $ & Pc)". iIntros "tok". iFrame "Vo".
+  by iApply "Pc".
+Qed.
+
+(** Freezing by sharing: a variant of [proph_ibor_resolve] in which the payload is not
+    guarded but given as a borrow to the [Share] premise, which may share it (into the
+    persistent [S]) and must provide the guarded tokens of the dependencies [ζl] (for
+    any timeless [H] guarding [@[κ]], which it gets and returns), together with the later
+    credits for opening these guards. *)
+Lemma proph_ibor_resolve_share E κ ξ x idx (P: (pv_val ξ) → iProp Σ) (ζl: list proph_var)
+    (S: iProp Σ) G n :
+  Timeless G →
+  ↑Nllft ∪ ↑prophN ⊆ E →
+  vπ x ./ ζl →
+  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗
+  (G &&{↑NllftG}&&> @[κ]) -∗
+  (∀ (H: iProp Σ), ⌜Timeless H⌝ -∗ (H &&{↑NllftG}&&> @[κ]) -∗ H -∗ &{κ} (P x) ={E}=∗
+     H ∗ S ∗ £ n ∗ (∀ ζ, ⌜ζ ∈ ζl⌝ -∗ (H &&{↑NllftG; n}&&> 1:[ζ]))) -∗
+  G -∗ proph_ibor κ ξ x idx P ={E}=∗
+    ⟨π, π ξ = vπ x π⟩ ∗ G ∗ S.
+Proof using All.
+  iIntros (Ti ? Hdep) "#LFT #PROPH #UNIQ #Gk Share G ((Vo & Tok) & #IBor)".
+  iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "Bor".
+  (* Pin the contents to the current value, and split off the payload. *)
+  iMod (llftl_bor_acc_guarded with "LFT Bor Gk G") as "[Body Back]"; [solve_ndisj|].
+  iMod (bi.later_exist_except_0 with "Body") as (x') "(Pc & P)".
+  iMod (uniq_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
+  iMod ("Back" $! (.PC[ξ] x (vπ x) ∗ P x)%I with "[Pc P]") as "[Bor G]".
+  { iSplitR "Pc P"; [|iNext; iFrame]. iIntros "!> [Pc P] !> !>". rewrite /pbor_body.
+    iExists x. iFrame. }
+  iMod "Upd" as "_".
+  iMod (llftl_sep_split with "LFT Bor") as "[PcBor PBor]"; [solve_ndisj|].
+  (* Share the payload, and resolve with the guarded tokens. *)
+  iMod (frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Halfback]]]".
+  { solve_ndisj. }
+  iMod ("Share" with "[%] Gh H1 PBor") as "(H1 & $ & £ & #Deps)"; [apply _|].
+  iMod (llftl_bor_acc_guarded with "LFT PcBor Gh H2") as "[Pc Back]"; [solve_ndisj|].
+  iMod (uniq_strip_later with "Vo Pc") as "(_ & Vo & Pc)".
+  iMod (uniq_resolve_guarded with "Deps UNIQ PROPH Vo Pc H1") as "X".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. } { apply Hdep. }
+  iMod (lc_fupd_elim_laterN with "£ X") as "X". iMod "X" as "(Obs & Pc & H1)".
+  iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
+  iMod ("Back" $! (.PC[ξ] x (vπ x))%I with "[Pc]") as "[_ H2]".
+  { iSplitR "Pc"; [|by iNext]. iIntros "!> Pc". by iModIntro. }
+  iMod "Upd" as "_".
+  iMod (fupd_mask_mono with "(Halfback H1 H2)") as "$"; [solve_ndisj|].
+  by iFrame "Obs".
 Qed.
 
 (** ** Reservations

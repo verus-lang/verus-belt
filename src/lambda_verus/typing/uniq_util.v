@@ -302,6 +302,10 @@ Section uniq_util.
 
   (** ** Resolution *)
 
+  (** Resolving a unique borrow to its current value: freeze the borrow, share the
+      payload with [ty_share], and get the prophecy tokens from the sharing predicate by
+      [ty_shr_guard_proph]. The sharing predicate of the payload and a guard of its
+      points-to remain. The later credits come from the time receipts. *)
   Lemma resolve_uniq_body {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E L G F :
     Timeless G →
     lctx_lft_alive E L κ → ↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F →
@@ -309,8 +313,8 @@ Section uniq_util.
     (G &&{↑NllftG}&&> llctx_interp L) -∗
     G -∗
     uniq_body ty x ξi d g idx κ tid l ={F}=∗
-      ⟨π, (π (uniq_prvar x ξi)).1 = (vπ x π)⟩ ∗ G
-      ∗ (@[κ] &&{↑NllftG; 1}&&> (ty_gho_own ty x d g tid ∗ l #↦!∗ ty_phys ty x tid)).
+      ⟨π, (π (uniq_prvar x ξi)).1 = (vπ x π)⟩ ∗ G ∗
+      ty.(ty_shr) κ x d g tid ∗ (@[κ] &&{↑NllftG; 1}&&> l #↦!∗ ty_phys ty x tid).
   Proof.
     intro Ti.
     iIntros (Alv ?) "#LFT #PROPH #UNIQ #TIME #In E #Guard G [Bor ⧗] /=".
@@ -318,33 +322,34 @@ Section uniq_util.
     iDestruct (Alv with "L E") as "#Alv".
     iMod ("Back" with "L") as "G".
     iDestruct (guards_transitive with "Guard Alv") as "#Guard_K".
-    iMod (proph_ibor_resolve F κ (uniq_prvar x ξi) (uniq_cell x d g) idx _ (ξl x) G (d*(g+1))
-      with "LFT PROPH UNIQ Guard_K [⧗] G Bor") as "(#Obs & G & #Shr)".
+    iMod (proph_ibor_resolve_share F κ (uniq_prvar x ξi) (uniq_cell x d g) idx _ (ξl x)
+      (ty.(ty_shr) κ x d g tid ∗ (@[κ] &&{↑NllftG; 1}&&> l #↦!∗ ty_phys ty x tid))%I G
+      (0 + (d+1)*(g+1)) with "LFT PROPH UNIQ Guard_K [⧗] G Bor") as "(#Obs & $ & $)".
     { solve_ndisj. } { apply uniq_body_proph_dep. }
-    { iIntros (W) "#Wk #WP". rewrite uniq_payload_later_cell. iIntros "Payload".
-      iDestruct "Payload" as "(>#⧖ & Payload)".
+    { iIntros (W ?) "#Wκ W Bor". rewrite uniq_payload_cell.
+      iMod (llftl_sep_split with "LFT Bor") as "[T Bor]"; [solve_ndisj|].
+      iMod (llftl_bor_guarded_pers with "LFT Wκ W T") as "[W >#⧖]"; [solve_ndisj|].
+      iMod (llftl_sep_split with "LFT Bor") as "[Gho Pt]"; [solve_ndisj|].
+      iMod (llftl_bor_guard with "LFT Pt") as "$"; [solve_ndisj|].
+      iMod (llftl_bor_guarded_extract _ _ _ _ (ty_gho_pers ty x d g tid)
+        with "LFT Wκ W Gho []") as "(W & Gho & Pers)"; [solve_ndisj| |].
+      { iIntros "!>". iApply ty_gho_pers_impl. }
       iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[_ £]";
         first by solve_ndisj.
-      iDestruct (lc_weaken (1 + d * (g + 1) + (d * (g + 1) + 2)) with "£") as "£".
+      iDestruct (lc_weaken (1 + d + d*(g+1) + (0 + (d+1)*(g+1))) with "£") as "£".
       { unfold advance_credits. nia. }
-      iDestruct "£" as "[[£1 £k] £rest]".
-      iMod (lc_fupd_elim_later with "£1 Payload") as "[Gho Pt]".
-      iDestruct (ty_gho_pers_impl with "Gho") as "#GhoPers".
+      iDestruct "£" as "[[[£1 £d] £k] $]".
+      iMod (lc_fupd_elim_later with "£1 Pers") as "#Pers".
+      iMod (ty_share with "LFT In Pers Wκ W Gho") as "Upd"; [solve_ndisj|].
+      iMod (lc_step_fupdN_elim_later with "£d Upd") as ">[$ #Shr]". iFrame "Shr".
       iAssert (▷^(d*(g+1)) (∀ ζ : proph_var, ⌜ζ ∈ ξl x⌝ -∗
-          W &&{ ↑NllftG; 0 + d*(g+1) }&&> 1:[ζ]))%I as "#Hallζlater".
-      { iIntros (ζ) "%HIn". iDestruct (ty_guard_proph 𝔄 ty κ x 0 d g tid ζ W with "LFT In GhoPers") as "X";
-          [apply HIn|]. iNext. iApply "X".
-        - by iApply lguards_weaken_later; [|iFrame "Wk"]; lia.
-        - rewrite uniq_payload_cell.
-          iApply (guards_weaken_rhs_sep_l with "[]").
-          iApply (guards_weaken_rhs_sep_r with "[]"). iFrame "WP". }
+          W &&{ ↑NllftG; 0 + (d+1)*(g+1) }&&> 1:[ζ]))%I as "#Hallζlater".
+      { iIntros (ζ) "%HIn".
+        iDestruct (ty_shr_guard_proph ty κ x 0 d g tid ζ W HIn with "LFT In Pers Shr") as "X".
+        iNext. iApply "X". by iApply lguards_weaken_later; [|iFrame "Wκ"]; lia. }
       iMod (lc_fupd_elim_laterN with "£k Hallζlater") as "#Hallζ".
-      iModIntro. iSplitL "Gho Pt".
-      { iNext. iFrame "∗#". }
-      iFrame "£rest". iModIntro. iFrame "Hallζ". }
-    iModIntro. iFrame "G". iSplitR.
-    { iApply (proph_obs_impl with "Obs")=> π ->. done. }
-    rewrite uniq_payload_cell. iApply (guards_weaken_rhs_sep_r with "Shr").
+      by iModIntro. }
+    iModIntro. iApply (proph_obs_impl with "Obs")=> π ->. done.
   Qed.
 
   (** ** Changing the type and lifetime *)

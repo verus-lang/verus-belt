@@ -60,8 +60,6 @@ Section atomic_invariants.
   Next Obligation. done. Qed. 
   Next Obligation. iIntros. iFrame. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.
-  Next Obligation. intros 𝔄 𝔅 ty pred κ x n d g tid ξ R Hin. exfalso. simpl in Hin.
-      set_solver. Qed.
   Next Obligation. iIntros. done. Qed.
   Solve All Obligations with solve_default_shr.
   
@@ -90,7 +88,6 @@ Section atomic_invariants.
   Next Obligation. done. Qed. 
   Next Obligation. iIntros. iFrame. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.
-  Next Obligation. set_solver. Qed.
   Next Obligation. iIntros. done. Qed.
   Solve All Obligations with solve_default_shr.
 

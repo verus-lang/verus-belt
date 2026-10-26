@@ -71,14 +71,6 @@ Section points_to.
     by iApply "wand".
   Qed.
   Next Obligation. intros. apply (ty_gho_pers_depth_mono ty); trivial. Qed.
-  Next Obligation.
-    intros. iIntros "L Incl gho_pers".
-    iPoseProof (ty_guard_proph _ ty with "L Incl gho_pers") as "Hguard" => //.
-    iIntros "!> H1 H2".
-    iDestruct ("Hguard" with "H1") as "Hguard".
-    iDestruct (guards_weaken_rhs_sep_r with "H2") as "H2".
-    by iApply ("Hguard" with "H2").
-  Qed.
   Next Obligation. iIntros "* [? ?]". iApply (ty_gho_pers_impl 𝔄); trivial. Qed.
   Next Obligation.
     intros. iIntros "#Incl [P Shr]". iSplit.
@@ -91,19 +83,15 @@ Section points_to.
     - iApply (ty_shr_depth_mono with "Shr"); lia.
   Qed.
   Next Obligation.
-    intros 𝔄 ty P E κ x k d g tid G ???. iIntros "#LFT #Incl #Gκ G Bor".
-    iMod (llftl_bor_laterN_sep_split with "LFT Bor") as "[BP Bor]"; [solve_ndisj|].
-    iMod (llftl_bor_laterN_guard with "LFT BP") as "#GP"; [solve_ndisj|].
-    iMod (ty_share with "LFT Incl Gκ G Bor") as "[$ Shr]"; [done..|].
-    iModIntro. iNext. iFrame "Shr". leaf_goal laters to (1 + k). { lia. } iFrame "GP".
+    intros 𝔄 ty P E κ x d g tid G ??. iIntros "#LFT #Incl #Pers #Gκ G Bor".
+    iMod (llftl_sep_split with "LFT Bor") as "[BP Bor]"; [solve_ndisj|].
+    iMod (llftl_bor_guard with "LFT BP") as "#GP"; [solve_ndisj|].
+    iMod (ty_share with "LFT Incl Pers Gκ G Bor") as "Shr"; [done..|].
+    iModIntro. iApply (step_fupdN_wand with "Shr"). iIntros ">[$ $]". iModIntro.
+    leaf_goal laters to 1. { lia. } iFrame "GP".
   Qed.
   Next Obligation.
     intros. iIntros "LFT Incl Pers [_ Shr]". by iApply (ty_shr_guard_proph with "LFT Incl Pers Shr").
-  Qed.
-  Next Obligation.
-    intros. simpl. iIntros "#G". iSplit.
-    - iApply (guards_weaken_rhs_sep_l with "G").
-    - iApply (ty_shr_from_guard ty). iApply (guards_weaken_rhs_sep_r with "G").
   Qed.
 
   Definition points_to_ty {𝔄} ty := tracked_ty (@own_ptr _ _ 𝔄 (ty_size ty) ty).

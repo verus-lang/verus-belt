@@ -96,7 +96,13 @@ Section StorageProtocol.
     iApply (proph_obs_impl with "Obs"). done.
   Qed.
 
+  (* TEMPORARY (until the storage protocols are reworked to store borrows, see the plan,
+     step 6): restricted to types with the default sharing predicate. A guard of the
+     ownership predicate (which is all that [storable_ty], a ghost type with the default
+     sharing predicate, provides when shared) does not give the sharing predicate of a
+     type with a structural one. *)
   Lemma storable_borrow {𝔄} κ E L I p (ty : type 𝔄) :
+    ty_shr_is_default ty →
     lctx_lft_alive E L κ →
     typed_instr E L I
       +[p ◁ (&shr{κ} (storable_ty ty))]
@@ -104,7 +110,7 @@ Section StorageProtocol.
       (const +[p ◁ (&shr{κ} (tracked_ty ty))])
       (λ post '-[(l, (x, n))], λ mask π, ∀ l, post -[(l, x)] mask π).
   Proof.
-    intros Alv. apply typed_instr_of_skip; trivial.
+    intros Hdef Alv. apply typed_instr_of_skip; trivial.
     intros [l [x0 [d0 g0]]] v d tid post mask iκs.
     iIntros "#LFT #TIME #PROPH #UNIQ #E L Inv %Path Gho Obs ⧖ ⧗ ⧗' £".
     iDestruct "Gho" as "[Gho #phys]".
@@ -127,8 +133,9 @@ Section StorageProtocol.
        iSplit; first by done. iSplit; first by done.
        iSplit; last by done. unfold shr_bor. simpl.
        iSplit. { leaf_goal laters to (S (d+1)); first lia. iFrame "pt". }
-       iSplit. { (* TEMPORARY: uses [ty_shr_from_guard]. *)
-          iApply (ty_shr_from_guard (tracked_ty ty)).
+       iSplit. { (* TEMPORARY: uses that [ty] has the default sharing predicate. *)
+          iApply (ty_shr_default_from_guard (tracked_ty ty)).
+          { intros ?????. apply Hdef. }
           leaf_goal laters to (S (d+1)); first lia. 
           iApply (guards_transitive_left with "gho []").
           leaf_by_sep. iIntros "[A ⧖]". iDestruct (ty_gho_own_depth_mono with "A") as "[$ back]".
@@ -573,8 +580,8 @@ Section StorageProtocol.
       { by iApply guards_true. }
       rewrite -!bi.later_laterN.
       iSplitL => //.
-      (* TEMPORARY: uses [ty_shr_from_guard]. *)
-      iApply (ty_shr_from_guard (tracked_ty tyC)).
+      (* [tracked_ty tyC] has the default sharing predicate, since [tyC] is a ghost type. *)
+      iApply (ty_shr_default_from_guard (tracked_ty tyC)); [done|].
       iApply (lguards_weaken_later _ _ _ (S (S (d + 1))) ); first lia.
       by rewrite big_sepM_singleton.
     - iApply (proph_obs_impl with "Obs").

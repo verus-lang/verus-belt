@@ -35,7 +35,6 @@ Section mod_ty.
     rewrite (syn_iso_phys_eq ((~~!ₛ) fⁱ x)). by rewrite semi_iso'. Qed.
   Next Obligation. intros. apply ty_gho_own_depth_mono; trivial. Qed.
   Next Obligation. intros. apply ty_gho_pers_depth_mono; trivial. Qed.
-  Next Obligation. intros. apply ty_guard_proph. by rewrite <- syn_type_morphism_ξl. Qed.
   Next Obligation. intros. apply ty_gho_pers_impl. Qed.
   Next Obligation. intros. apply ty_shr_lft_mono. Qed.
   Next Obligation. intros. by apply ty_shr_depth_mono. Qed.
@@ -43,7 +42,6 @@ Section mod_ty.
   Next Obligation.
     intros. apply ty_shr_guard_proph. by rewrite <- syn_type_morphism_ξl.
   Qed.
-  Next Obligation. intros. apply ty_shr_from_guard. Qed.
 
   Global Instance mod_ty_ne {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) (fⁱ: 𝔅 →ₛ 𝔄) `{!Isoₛ f fⁱ} : NonExpansive (mod_ty f fⁱ).
   Proof. solve_ne_type. Qed.

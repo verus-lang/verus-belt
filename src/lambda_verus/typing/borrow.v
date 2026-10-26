@@ -129,7 +129,7 @@ Section borrow.
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
     }
     
-    iMod (resolve_uniq_body ty x0 ξi d' g' idx κ tid l with "LFT PROPH UNIQ TIME Incl E Ghalf H1 UniqBody") as "(#Obs2 & H1 & #ShrGuard)". { trivial. } { set_solver. }
+    iMod (resolve_uniq_body ty x0 ξi d' g' idx κ tid l with "LFT PROPH UNIQ TIME Incl E Ghalf H1 UniqBody") as "(#Obs2 & H1 & #Shr & #PtGuard)". { trivial. } { set_solver. }
     iDestruct ("Halfback" with "H1 H2") as "Halfback'". iMod (fupd_mask_mono with "Halfback'") as "L". { set_solver. }
     iModIntro. iExists -[(l, x0)]. iFrame.
     iSplit. {
@@ -137,15 +137,9 @@ Section borrow.
       iSplit. {
         iApply guard_cloc_combine_fancy.
          - leaf_goal laters to (d + 1); first by lia. iFrame "PtBase".
-         - leaf_goal laters to 1. { lia. } iApply (guards_weaken_rhs_sep_r with "ShrGuard").
+         - leaf_goal laters to 1. { lia. } iFrame "PtGuard".
       }
-      iSplit. { (* TEMPORARY: uses [ty_shr_from_guard]. *)
-        iApply ty_shr_from_guard.
-        leaf_goal laters to 1. { lia. } iApply (guards_transitive_left with "ShrGuard []").
-        leaf_by_sep. iIntros "[G pt]".
-        iDestruct (ty_gho_own_depth_mono _ _ _ d (S d) with "G") as "[G back]". { lia. } { lia. }
-        iFrame "G". iIntros "G". iFrame. iApply "back". iFrame.
-      }
+      iSplit. { iApply (ty_shr_depth_mono with "Shr"); lia. }
       iNext. iApply (ty_gho_pers_depth_mono _ _ _ d (S d)); last by iFrame "Pers".
       { lia. } { lia. }
     }
@@ -676,17 +670,13 @@ Section borrow.
     iDestruct "own" as "[gho %phys]". inversion phys. subst v.
     destruct d as [|d']; first by done.
     iDestruct "gho" as "[#G↦ [#Shr #Pers]]".
-    iDestruct (ty_shr_default_to_guard with "Shr") as "#Ggho"; [done|].
-    
-    iDestruct (guards_transitive_right with "Alv Ggho") as "Lgho".
-    leaf_open_laters "Lgho" with "L" as "H". { solve_ndisj. }
-    iMod (lc_fupd_elim_laterN with "[£] H") as "H".
-      { iApply (lc_weaken with "£"). nia. }
-    iMod "H" as "[H Lback]".
-    iDestruct (ty_gho_pers_impl with "H") as "[%Hineq [#InnerInnerPers #UniqBodyPers]]".
-    iAssert (@[κ'] &&{ ↑NllftG; S d' + 1 }&&> l1 #↦∗_) as "#InnerPtBase".
-      { iDestruct "H" as "(? & ? & ? & ? & ?)". iFrame. }
-    iMod ("Lback" with "H") as "L".
+    (* Unfold the (structural) sharing predicate of [&uniq]. *)
+    iDestruct "Shr" as "([%Le1 %Le2] & #Gpt & _ & #InnerShr)".
+    iDestruct (lc_weaken ((S d' + 1) + 1) with "£") as "[£p £s]"; [lia|].
+    iMod (lc_fupd_elim_laterN with "£p Pers") as "#Pers'".
+    iMod (lc_fupd_elim_later with "£s InnerShr") as "#InnerShr'".
+    iDestruct "Pers'" as "(_ & #InnerPers & _)".
+    iAssert (κ ⊑ κ ⊓ κ')%I as "#Hκ". { iApply llftl_incl_glb; [iApply guards_refl|done]. }
     
     iModIntro. iExists l, l1.1, (llctx_interp L). iSplit; first by done. iFrame "L".
     
@@ -696,34 +686,19 @@ Section borrow.
     }
     iIntros "L".
     
-    iDestruct "InnerInnerPers" as "[Dead|InnerInnerPers]". {
+    iDestruct "InnerPers" as "[Dead|InnerPers]". {
       iDestruct "Dead" as (κ'') "[Incl' Dead']".
       iDestruct (guards_transitive with "Alv' Incl'") as "G2".
       leaf_open "G2" with "L" as "[Alive _]". { set_solver. }
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
     }
     
-    iDestruct (guard_inner_from_guard_uniq_body with "LFT UniqBodyPers [] Incl") as "Gghopt".
-      { iApply (guards_transitive_left with "Ggho []").
-        leaf_by_sep. iIntros "[A [B [C D]]]". iFrame. iIntros. done.
-      }
-    iDestruct (guards_weaken_rhs_sep_l with "Gghopt") as "Ggho1".
-    iDestruct (guards_weaken_rhs_sep_r with "Gghopt") as "Gpt1".
-    
     iModIntro. iExists (l1, x0). iFrame.
     iSplit; last by done.
-    iSplit. { iApply guard_cloc_combine_fancy.
-      - leaf_goal laters to (S d' + 1). { lia. }
-        iApply (guards_transitive_right with "Incl InnerPtBase").
-      - leaf_goal laters to (S d' + 1 + 1). { lia. } iFrame "Gpt1".
-    }
-    iSplit. { (* TEMPORARY: uses [ty_shr_from_guard]. *)
-      iApply ty_shr_from_guard.
-      leaf_goal laters to (S d' + 1 + 1). { lia. }
-      iApply (guards_transitive_left with "Ggho1 []").
-      leaf_by_sep. iApply ty_gho_own_depth_mono; lia.
-    }
-    iNext. iApply (ty_gho_pers_depth_mono with "InnerInnerPers"); lia.
+    iSplit. { leaf_goal laters to (S d' + 1). { lia. }
+      iApply (guards_transitive_right with "Hκ Gpt"). }
+    iSplit. { iApply ty_shr_depth_mono; [| |iApply (ty_shr_lft_mono with "Hκ InnerShr'")]; lia. }
+    iNext. iApply (ty_gho_pers_depth_mono with "InnerPers"); lia.
   Qed.
 
   Lemma type_deref_shr_uniq {𝔄 𝔅l ℭl 𝔇} κ κ' x p e (ty: type 𝔄)
