@@ -1,7 +1,7 @@
 From iris.algebra Require Import auth cmra functions gmap dfrac_agree.
 From iris.proofmode Require Import proofmode.
 From iris.base_logic Require Import invariants.
-From lrust.util Require Import discrete_fun update cancellable.
+From lrust.util Require Import basic discrete_fun update cancellable.
 From lrust.prophecy Require Import prophecy.
 From guarding Require Import guard own_and tactics.
 
@@ -75,11 +75,14 @@ Local Definition val_obs2_done ξ x : iProp Σ := own_line ξ 1 true None x.
 
 (** Prophecy Controller *)  (* TODO vπ arg is superfluous, it's always `vπ x` *)
 (** The controller is in one of three states: unresolved (paired with [.VO]),
-  reserved (paired with [.VOR]), or resolved. *)
+  reserved (paired with [.VOR]), or resolved. A resolved controller records the
+  observation that [ξ] has been resolved to its prophecy [vπ] (rather than just an
+  equalizer), so that equalizers can be composed through it
+  ([proph_ctrl_eqz_compose]). *)
 Definition proph_ctrl (ξ: proph_var) x (vπ: proph ξ.(pv_ty)) : iProp Σ :=
   (val_obs ξ x ∗ 1:[ξ]) ∨
   (∃ζl, val_obs_rsv ξ ζl x ∗ proph_reserved ξ ζl) ∨
-  ((∃x', val_obs2_done ξ x') ∗ (.$ ξ) :== vπ).
+  ((∃x', val_obs2_done ξ x') ∗ ⟨π, π ξ = vπ π⟩).
 End defs.
 
 Notation ".VO[ ξ ]" := (val_obs ξ) (at level 5, format ".VO[ ξ ]") : bi_scope.
@@ -346,20 +349,20 @@ Proof.
   iIntros (??) "UNIQ PROPH Vo Pc ζl". iDestruct (vo_pc with "Vo Pc") as (<-) "[Vo2 ξ]".
   iMod (proph_resolve_toks with "PROPH ξ ζl") as "[#? $]"; [solve_ndisj|done|].
   iMod (vo2_vo2_done with "UNIQ Vo2") as "Vo2". { solve_ndisj. }
-  iModIntro. iSplitR; [done|]. iRight. iRight. iSplitL; [by iExists x|].
-  by iApply proph_eqz_obs.
+  iModIntro. iSplitR; [done|]. iRight. iRight. iSplitL; [by iExists x|]. done.
 Qed.
 
+(** Pre-resolution: [ξ] is resolved to [uπ], and the controller is resolved with the
+    prophecy [uπ] (at any value). *)
 Lemma uniq_preresolve ξ ζl uπ q x x'' vπ'' E : ↑uniqN ∪ ↑prophN ⊆ E → uπ ./ ζl →
   uniq_ctx -∗ proph_ctx -∗ .VO[ξ] x -∗ .PC[ξ] x'' vπ'' -∗ q:+[ζl] ={E}=∗
-    ⟨π, π ξ = uπ π⟩ ∗ q:+[ζl] ∗ (∀x' vπ', uπ :== vπ' -∗ .PC[ξ] x' vπ').
+    ⟨π, π ξ = uπ π⟩ ∗ q:+[ζl] ∗ (∀x', .PC[ξ] x' uπ).
 Proof.
   iIntros (??) "UNIQ PROPH Vo Pc ζl". iDestruct (vo_pc with "Vo Pc") as (<-) "[Vo2 ξ]".
   iMod (proph_resolve_toks with "PROPH ξ ζl") as "[#Obs $]"; [solve_ndisj|done|].
   iMod (vo2_vo2_done with "UNIQ Vo2") as "Vo2"; [solve_ndisj|].
-  iModIntro. iSplitR; [done|]. iIntros (??) "Eqz". iRight. iRight.
-  iSplitR "Eqz"; [by iExists x|].
-  by iDestruct (proph_eqz_modify with "Obs Eqz") as "?".
+  iModIntro. iSplitR; [done|]. iIntros (?). iRight. iRight.
+  iSplitL; [by iExists x|]. done.
 Qed.
 
 (** ** Reservations
@@ -418,21 +421,19 @@ Proof.
   iIntros (??) "UNIQ PROPH Vo Pc ηl". iDestruct (vor_pc with "Vo Pc") as (<-) "[Vo2 ξ]".
   iMod (proph_resolve_reserved with "PROPH ξ ηl") as "[#? $]"; [solve_ndisj|done|].
   iMod (vo2r_vo2_done with "UNIQ Vo2") as "Vo2". { solve_ndisj. }
-  iModIntro. iSplitR; [done|]. iRight. iRight. iSplitL; [by iExists x|].
-  by iApply proph_eqz_obs.
+  iModIntro. iSplitR; [done|]. iRight. iRight. iSplitL; [by iExists x|]. done.
 Qed.
 
 Lemma uniq_preresolve_reserved ξ ζl ηl uπ q x x'' vπ'' E : ↑uniqN ∪ ↑prophN ⊆ E →
   uπ ./ ζl ++ ηl →
   uniq_ctx -∗ proph_ctx -∗ .VOR[ξ;ζl] x -∗ .PC[ξ] x'' vπ'' -∗ q:+[ηl] ={E}=∗
-    ⟨π, π ξ = uπ π⟩ ∗ q:+[ηl] ∗ (∀x' vπ', uπ :== vπ' -∗ .PC[ξ] x' vπ').
+    ⟨π, π ξ = uπ π⟩ ∗ q:+[ηl] ∗ (∀x', .PC[ξ] x' uπ).
 Proof.
   iIntros (??) "UNIQ PROPH Vo Pc ηl". iDestruct (vor_pc with "Vo Pc") as (<-) "[Vo2 ξ]".
   iMod (proph_resolve_reserved with "PROPH ξ ηl") as "[#Obs $]"; [solve_ndisj|done|].
   iMod (vo2r_vo2_done with "UNIQ Vo2") as "Vo2"; [solve_ndisj|].
-  iModIntro. iSplitR; [done|]. iIntros (??) "Eqz". iRight. iRight.
-  iSplitR "Eqz"; [by iExists x|].
-  by iDestruct (proph_eqz_modify with "Obs Eqz") as "?".
+  iModIntro. iSplitR; [done|]. iIntros (?). iRight. iRight.
+  iSplitL; [by iExists x|]. done.
 Qed.
 
 Local Fixpoint remove_dupes (ζl: list proph_var) : list proph_var :=
@@ -542,7 +543,30 @@ Qed.
 Lemma proph_ctrl_eqz ξ x vπ : proph_ctx -∗ .PC[ξ] x vπ -∗ (.$ ξ) :== vπ.
 Proof.
   iIntros "#? [[_ ?]|[(%& _ & ?)|[_ ?]]]";
-    by [iApply proph_eqz_token|iApply proph_eqz_reserved|].
+    by [iApply proph_eqz_token|iApply proph_eqz_reserved|iApply proph_eqz_obs].
+Qed.
+
+(** Composing equalizers through a controller: if a projection [g] of the
+    controller's prophecy is equalized with [uπ], then so is [g] of [ξ]. If [ξ] is
+    unresolved or reserved, [ξ] can be resolved to any prophecy, here [s ∘ uπ] for a
+    section [s] of [g]; if [ξ] is resolved, the controller's observation is composed
+    with the equalizer. *)
+Lemma proph_ctrl_eqz_compose {B} ξ x vπ (g: proj1_sig (pv_ty ξ) → B)
+    (s: B → proj1_sig (pv_ty ξ)) (uπ: proph B) :
+  (∀ b, g (s b) = b) → (∀ ξl, uπ ./ ξl → s ∘ uπ ./ ξl) →
+  proph_ctx -∗ .PC[ξ] x vπ -∗ g ∘ vπ :== uπ -∗ (λ π, g (π ξ)) :== uπ.
+Proof.
+  iIntros (Hgs Hs) "#PROPH Pc Eqz".
+  iAssert ((.$ ξ) :== s ∘ uπ -∗ (λ π, g (π ξ)) :== uπ)%I as "Proj".
+  { iIntros "E". iDestruct (proph_eqz_constr_refl g with "E") as "E".
+    { intros ξl Dep. apply Hs. have ->: uπ = g ∘ (s ∘ uπ) by fun_ext=>?; rewrite /= Hgs.
+      done. }
+    iApply (proph_eqz_eq with "E"); [done|]. fun_ext=>? /=. by rewrite Hgs. }
+  iDestruct "Pc" as "[[_ ξ]|[(%& _ & ξ)|[_ #Obs]]]".
+  - iApply "Proj". by iApply proph_eqz_token.
+  - iApply "Proj". by iApply proph_eqz_reserved.
+  - iApply (proph_eqz_modify with "[] Eqz").
+    iApply (proph_obs_impl with "Obs")=> π /= ->. done.
 Qed.
 
 Lemma proph_ctrl_and_value_obs_entails_proph_tok ξ x vπ :

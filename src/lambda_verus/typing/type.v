@@ -1,8 +1,9 @@
 From iris.algebra Require Import numbers list dfrac_agree.
+From iris.base_logic.lib Require Export ghost_var.
 From lrust.util Require Export basic vector update fancy_lists cancellable cancellable_na_invariants.
 From lrust.prophecy Require Export prophecy.
 From lrust.lang Require Export proofmode notation heap.
-From lrust.typing Require Export base uniq_cmra.
+From lrust.typing Require Export base uniq_cmra lstate.
 From lrust.typing Require Export lft_contexts.
 From lrust.typing Require Export lifetime.
 From lrust.lifetime Require Import lifetime_full.
@@ -19,7 +20,9 @@ Class typeG Σ := TypeG {
   #[global] type_lftGS :: llft_logicGS Σ;
   #[global] type_frac_logicG :: frac_logicG Σ;
   #[global] type_ecInv_logicΣ :: ecInv_logicG Σ;
-  #[global] type_agree_pairΣ :: inG Σ (dfrac_agreeR (leibnizO nat))
+  #[global] type_agree_pairΣ :: inG Σ (dfrac_agreeR (leibnizO nat));
+  (** The states of the pinned bodies of unique borrows (see [uniq_util.v]). *)
+  #[global] type_lstate_ghost_varG :: ghost_varG Σ ltype_state
 }.
 
 Definition lrustN := nroot .@ "lrust".

@@ -81,8 +81,8 @@ Section uniq_bor.
   Qed.
   Next Obligation.
     destruct x as [[[[[l x0] ξi] d'] g'] idx]. fold indep_interp_of_syn_type. simpl.
-    intros d g tid. iIntros "[A [B [C D]]]". iFrame. iApply uniq_body_pers_component_impl.
-    iFrame.
+    intros d g tid. iIntros "[A [B [C D]]]". iFrame "B".
+    iApply (uniq_body_pers_component_impl with "C").
   Qed.
   Next Obligation.
     destruct x as [[[[[l x0] ξi] d'] g'] idx]. fold indep_interp_of_syn_type. simpl.
@@ -112,7 +112,7 @@ Section uniq_bor.
   Next Obligation.
     intros 𝔄 κ ty E κ0 x d g tid G ??. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
     iIntros "#LFT #Incl0 #Pers #Gκ0 G Bor".
-    iDestruct "Pers" as "([%Le1 %Le2] & #IdxBor)".
+    iDestruct "Pers" as "([%Le1 %Le2] & (%κpp & _ & #IdxBor))".
     iAssert (κ0 ⊑ κ)%I as "#Hκ0κ".
     { iApply (llftl_incl_trans with "Incl0"). iApply llftl_intersect_incl_l. }
     iAssert (κ0 ⊓ κ ⊑ ty_lft ty)%I as "#Incl'".
@@ -127,11 +127,26 @@ Section uniq_bor.
     iMod (llftl_bor_guarded_extract _ _ _ _ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_)
       with "LFT Gκ0 G Rest []") as "(G & _ & #PtBase)"; [solve_ndisj| |].
     { iIntros "!> $". }
-    iDestruct (llftl_bor_iff _ _ (uniq_tok x0 ξi d' g' idx ∗
-      (⧗1 ∗ uniq_body_pers_component ty x0 ξi d' g' idx κ tid l)) with "[] Body") as "Body".
-    { iIntros "!> !>". rewrite uniq_body_unfold. iSplit; iIntros "$". }
+    rewrite uniq_body_unfold.
+    iMod (llftl_bor_freeze with "LFT Body") as (κp) "Body"; [solve_ndisj|].
+    iMod (llftl_bor_freeze with "LFT Body") as (γ) "Body"; [solve_ndisj|].
+    iDestruct (llftl_bor_iff _ _
+      ((proph_bor_tok (uniq_prvar x0 ξi) (uniq_cell x0 d' g' γ) idx ∗
+        ghost_var γ (1/2) (lstate_triv x0)) ∗
+       (uniq_pat_lft κ κp ∗ ⧗1 ∗ uniq_persγ ty x0 ξi idx κ κp tid l)) with "[] Body") as "Body".
+    { iIntros "!> !>". rewrite /uniq_tokγ. iSplit.
+      - iIntros "($ & [$ $] & $ & $)".
+      - iIntros "[[$ $] ($ & $ & $)]". }
     iMod (llftl_sep_split with "LFT Body") as "[Tok _]"; [solve_ndisj|].
-    iMod (proph_bor_tok_share with "LFT IdxBor Tok") as "[PBor #TokG]"; [solve_ndisj|].
+    iMod (proph_bor_tok_share_gen _ κ κ0 (uniq_prvar x0 ξi) (uniq_cell x0 d' g' γ) idx
+      (uniq_gbody κpp ty tid l) (ghost_var γ (1/2) (lstate_triv x0))
+      (ghost_var γ (1/2) (lstate_triv x0) ∗ ghost_var γ (1/2) (lstate_triv x0) ∗
+        uniq_payload ty tid l x0 d' g')
+      (λ wπ, ⌜∀ π, (wπ π).1 = vπ x0 π⌝)%I
+      with "LFT IdxBor [] Tok") as "[PBor #TokG]"; [solve_ndisj| |].
+    { iIntros "!> !>" (wπ). rewrite uniq_gbody_triv_iff. iSplit; iIntros "$". }
+    iMod (llftl_sep_split with "LFT PBor") as "[_ PBor]"; [solve_ndisj|].
+    iMod (llftl_sep_split with "LFT PBor") as "[_ PBor]"; [solve_ndisj|].
     iDestruct (llftl_bor_iff _ _ (guarded_upd lazyE @[ty_lft ty] (⧖(S d' `max` g') ∗
       ty.(ty_gho_own) x0 d' g' tid ∗ l #↦!∗ ty.(ty_phys) x0 tid)) with "[] PBor")
       as "PBor".
@@ -140,7 +155,7 @@ Section uniq_bor.
        lazy update after the step (with the other half, which also guards the lifetime
        of the type; this also gives the persistent predicate of the contents), and close
        the borrow with the non-lazy contents. *)
-    iMod (fractional.frac_split_guard_in_half with "G Gκ") as (γ) "[H1 [H2 [#Gh #Back]]]";
+    iMod (fractional.frac_split_guard_in_half with "G Gκ") as (γh) "[H1 [H2 [#Gh #Back]]]";
       [solve_ndisj|].
     iMod (llftl_bor_acc_guarded with "LFT PBor Gh H1") as "[Upd Close]"; [solve_ndisj|].
     iModIntro. iApply (step_fupdN_nmono (S d')); [lia|]. simpl.
@@ -257,9 +272,8 @@ Section typing.
     iIntros "#LFT #UNIQ #TIME Hg H Gg G (#Incl & %Ineqs & UniqBody & Pt) ⧖o".
     destruct d; first by lia.
     simpl.
-    iMod (uniq_body_acc_rebody ty x0 ξi d' g' idx static tid l _ (uniq_payload ty tid' l)
-      with "LFT UNIQ [] UniqBody") as "Acc". { set_solver. }
-      { iApply llftl_tok_unit. }
+    iMod (uniq_body_acc_static_tid ty x0 ξi d' g' idx tid tid' l _
+      with "LFT UNIQ UniqBody") as "Acc". { set_solver. }
     iModIntro. iNext. iMod "Acc" as "(Lazy & ⧗ & Close)".
     (* The lifetime of the type is [static]-alive, which guards the lazy update. *)
     iMod (uniq_payload_run with "Incl [] Lazy") as "(_ & ⧖ & Gho & Pt1)";
@@ -271,13 +285,11 @@ Section typing.
     iApply (step_fupdN_wand with "J"). iFrame.
     iIntros "gho". iMod "gho" as (x' off) "[gho [#⧖off [%Habstract [G H]]]]".
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; first solve_ndisj.
-    iMod ("Close" $! (uniq_cell x' (d'+off) g') with "[Pt1 gho] []") as (idx2) "[Bor Alive]".
+    iMod ("Close" $! x' (d'+off) g' with "[Pt1 gho] ⧗") as (idx2) "UBody".
     { iApply uniq_payload_intro_later. iNext.
       rewrite (send_change_tid_phys tid tid' x0 x'); [|symmetry; trivial].
       iFrame "gho Pt1". iApply (persistent_time_receipt_mono with "⧖off"). lia. }
-    { iNext. iIntros (c2) "[_ static]". iExFalso. iApply (llftl_end_unit with "static"). }
     iMod "Upd" as "_".
-    iDestruct (uniq_body_make ty x' x0 with "Bor ⧗") as "UBody".
     iModIntro.
     iExists (l, x', ξi, d'+off, g', idx2), off. iFrame. iFrame "Incl".
     iSplit.
@@ -377,15 +389,16 @@ Section typing.
       iFrame "UniqBody Incl'' Hineq".
       iSplit. { iApply (guards_transitive_right with "In PtBase"). }
       iIntros "[Hincl'' [Hineq'' [UniqBody _]]]".
-      iFrame "#".
-      rewrite !uniq_body_unfold.
-      iDestruct "UniqBody" as "(Tok & ⧗ & _)". iFrame "Tok ⧗ Saved".
+      iDestruct "UniqBody" as (κp' γ') "(_ & Tok & ⧗ & _)".
+      iDestruct "Saved" as (κps) "[Inc P]".
+      iSplitR; [iFrame "Incl"|]. iSplitR "PtBase"; [|iFrame "PtBase"].
+      iExists κps, γ'. iFrame "∗#".
     }
     iSplit. {
       iModIntro. iIntros (x d g tid) "#Pers".
       destruct x as [[[[[l x0] ξi] d'] g'] idx].
       iDestruct "Pers" as "[A C]".
-      iFrame "#".
+      iSplitR; [iFrame "A"|].
       iApply (incl_uniq_body_pers_component with "In [] EqOwn [] C").
       { iFrame "Lfts1 Lfts2". }
       done.

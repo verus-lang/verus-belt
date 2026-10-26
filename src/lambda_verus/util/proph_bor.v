@@ -255,317 +255,10 @@ Proof.
   iModIntro. iExists idx'. iFrame.
 Qed.
 
-(** Open a prophetic borrow, pre-resolving its prophecy variable to an
-    arbitrary prophecy [uπ] (typically a function of fresh prophecy
-    variables). The caller receives the payload, and may close the borrow
-    with completely new contents [Q], provided future contents of [Q] can be
-    transformed back into the old payload together with an equalizer
-    witnessing that [uπ] matches the payload's final value. *)
-Lemma proph_ibor_acc_preresolve E κ ξ x idx (P: (pv_val ξ) → iProp Σ)
-    (uπ: proph (proj1_sig (pv_ty ξ))) ζl q G :
-  Timeless G → ↑Nllft ∪ ↑prophN ⊆ E → uπ ./ ζl →
-  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
-  G -∗ q:+[ζl] -∗ proph_ibor κ ξ x idx P ={E}=∗
-    ⟨π, π ξ = uπ π⟩ ∗ q:+[ζl] ∗ ▷ P x ∗
-    ∀ (Q: iProp Σ),
-       ▷ (▷ Q ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ ∃ x', (uπ :== vπ x') ∗ P x') -∗
-       ▷ Q ={↑Nllft}=∗ (&{κ} Q) ∗ G.
-Proof.
-  iIntros (???) "#LFT #PROPH #UNIQ #Gk G ζl ((Vo & Tok) & #IBor)".
-  iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "Bor".
-  iMod (llftl_bor_acc_guarded with "LFT Bor Gk G") as "[Body Back]"; [solve_ndisj|].
-  iMod (bi.later_exist_except_0 with "Body") as (x') "(Pc & P)".
-  iMod (uniq_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
-  iMod (uniq_preresolve ξ ζl uπ q with "UNIQ PROPH Vo Pc ζl")
-    as "(#Obs & ζl & ToPc)"; [solve_ndisj|done|].
-  iModIntro. iFrame "Obs ζl P".
-  iIntros (Q) "W Q".
-  iMod ("Back" $! Q with "[W ToPc $Q]") as "[$ $]"; [|done].
-  iNext. iIntros "Q". iMod ("W" with "Q") as "Big".
-  iModIntro. iNext.
-  iDestruct "Big" as (x1) "(Eqz & P)".
-  iExists x1. iFrame "P".
-  iApply ("ToPc" with "Eqz").
-Qed.
-
-(** ** Mapping
-
-    Replace a prophetic borrow [ξ] by a fresh one [ζ] (allocated by the caller
-    as a loan), whose payload [Q] is related to the old payload [P] via [f]:
-    the old prophecy is resolved to [fπ] of the new one. *)
-Lemma proph_ibor_map E κ ξ x idx (P: (pv_val ξ) → iProp Σ) ζ y (Q: (pv_val ζ) → iProp Σ)
-    (f: pv_val ζ → pv_val ξ) (fπ: proj1_sig (pv_ty ζ) → proj1_sig (pv_ty ξ)) G :
-  Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
-  (∀ y' π, vπ (f y') π = fπ (vπ y' π)) →
-  (∀ y' ζl, fπ ∘ vπ y' ./ ζl → vπ y' ./ ζl) →
-  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
-  (∀ G', ⌜Timeless G'⌝ -∗ (G' &&{↑NllftG}&&> @[κ]) -∗ G' -∗ ▷ P x ={E}=∗
-     G' ∗ ▷ Q y ∗ (∀ y', ▷ Q y' ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P (f y'))) -∗
-  G -∗ proph_loan ζ y -∗ proph_ibor κ ξ x idx P ={E}=∗
-    ⟨π, π ξ = fπ (π ζ)⟩ ∗ (∃ idx', proph_ibor κ ζ y idx' Q) ∗ G.
-Proof using All.
-  iIntros (Ti Hmask Hcomm Hrefl) "#LFT #PROPH #UNIQ #Gk Wand G Loan IBor".
-  iDestruct (proph_loan_tok with "Loan") as "[ζtok ToLoan]".
-  have Hdep: (λ π, fπ (π ζ)) ./ [ζ].
-  { apply (proph_dep_constr fπ (λ π, π ζ)). apply proph_dep_one. }
-  (* Half of [G] opens the borrow, the other half is for the transformation. *)
-  iMod (frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Halfback]]]";
-    [solve_ndisj|].
-  iMod (proph_ibor_acc_preresolve E κ ξ x idx P (λ π, fπ (π ζ)) [ζ] 1%Qp _ _ Hmask Hdep
-    with "LFT PROPH UNIQ Gh H1 [ζtok] IBor") as "(#Obs & ζtok & P & Close)".
-  { by rewrite big_sepL_singleton. }
-  rewrite big_sepL_singleton.
-  iDestruct ("ToLoan" with "ζtok") as "[Vo Pc]".
-  iMod ("Wand" with "[%] Gh H2 P") as "(H2 & Q & Back)"; [apply _|].
-  iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
-  iMod ("Close" $! (pbor_body ζ Q) with "[Back] [Pc Q]") as "[Bor H1]".
-  { iNext. iIntros "Body".
-    iMod (bi.later_exist_except_0 with "Body") as (y') "(Pc & Q)".
-    iMod ("Back" with "Q") as "P". iModIntro. iNext. iExists (f y'). iFrame "P".
-    iDestruct (proph_ctrl_eqz with "PROPH Pc") as "Eqz".
-    iDestruct (proph_eqz_constr_refl fπ with "Eqz") as "Eqz"; [apply Hrefl|].
-    iApply (proph_eqz_eq with "Eqz"); [done|]. fun_ext=> π /=. by rewrite Hcomm. }
-  { iNext. iExists y. iFrame. }
-  iMod "Upd" as "_".
-  iMod (fupd_mask_mono with "(Halfback H1 H2)") as "G"; [solve_ndisj|].
-  iDestruct (llftl_bor_idx with "Bor") as (idx') "[IBor' Tok']".
-  iModIntro. iFrame "Obs G". iExists idx'. iFrame.
-Qed.
-
-(** ** Splitting
-
-    Replace a prophetic borrow [ξ] by two fresh ones [ζ1], [ζ2] (allocated by
-    the caller as loans); the old prophecy is resolved to [fπ] of the new ones. *)
-Lemma proph_ibor_split E κ ξ x idx (P: (pv_val ξ) → iProp Σ)
-    ζ1 y1 (Q1: (pv_val ζ1) → iProp Σ) ζ2 y2 (Q2: (pv_val ζ2) → iProp Σ)
-    (f: pv_val ζ1 → pv_val ζ2 → pv_val ξ)
-    (fπ: proj1_sig (pv_ty ζ1) → proj1_sig (pv_ty ζ2) → proj1_sig (pv_ty ξ)) G :
-  Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
-  (∀ a b π, vπ (f a b) π = fπ (vπ a π) (vπ b π)) →
-  (∀ a b ζl, (λ π, fπ (vπ a π) (vπ b π)) ./ ζl → vπ a ./ ζl ∧ vπ b ./ ζl) →
-  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
-  (∀ G', ⌜Timeless G'⌝ -∗ (G' &&{↑NllftG}&&> @[κ]) -∗ G' -∗ ▷ P x ={E}=∗
-      G' ∗ ▷ Q1 y1 ∗ ▷ Q2 y2 ∗
-      (∀ a b, ▷ Q1 a -∗ ▷ Q2 b ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P (f a b))) -∗
-  G -∗ proph_loan ζ1 y1 -∗ proph_loan ζ2 y2 -∗ proph_ibor κ ξ x idx P ={E}=∗
-    ⟨π, π ξ = fπ (π ζ1) (π ζ2)⟩ ∗
-    (∃ i1, proph_ibor κ ζ1 y1 i1 Q1) ∗ (∃ i2, proph_ibor κ ζ2 y2 i2 Q2) ∗ G.
-Proof using All.
-  iIntros (Ti Hmask Hcomm Hrefl) "#LFT #PROPH #UNIQ #Gk Wand G Loan1 Loan2 IBor".
-  iDestruct (proph_loan_tok with "Loan1") as "[tok1 ToLoan1]".
-  iDestruct (proph_loan_tok with "Loan2") as "[tok2 ToLoan2]".
-  have Hdep: (λ π, fπ (π ζ1) (π ζ2)) ./ [ζ1; ζ2].
-  { apply (proph_dep_constr2 fπ (λ π, π ζ1) (λ π, π ζ2) [ζ1] [ζ2]); apply proph_dep_one. }
-  (* Half of [G] opens the borrow, the other half is for the transformation. *)
-  iMod (frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Halfback]]]";
-    [solve_ndisj|].
-  iMod (proph_ibor_acc_preresolve E κ ξ x idx P (λ π, fπ (π ζ1) (π ζ2)) [ζ1; ζ2] 1%Qp _
-    _ Hmask Hdep with "LFT PROPH UNIQ Gh H1 [tok1 tok2] IBor") as "(#Obs & toks & P & Close)".
-  { simpl. iFrame. }
-  iDestruct "toks" as "(tok1 & tok2 & _)".
-  iDestruct ("ToLoan1" with "tok1") as "[Vo1 Pc1]".
-  iDestruct ("ToLoan2" with "tok2") as "[Vo2 Pc2]".
-  iMod ("Wand" with "[%] Gh H2 P") as "(H2 & Q1 & Q2 & Back)"; [apply _|].
-  iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
-  iMod ("Close" $! (pbor_body ζ1 Q1 ∗ pbor_body ζ2 Q2)%I with "[Back] [Pc1 Q1 Pc2 Q2]")
-    as "[Bor H1]".
-  { iNext. iIntros "[Body1 Body2]".
-    iMod (bi.later_exist_except_0 with "Body1") as (a) "(Pc1 & Q1)".
-    iMod (bi.later_exist_except_0 with "Body2") as (b) "(Pc2 & Q2)".
-    iMod ("Back" with "Q1 Q2") as "P". iModIntro. iNext. iExists (f a b). iFrame "P".
-    iDestruct (proph_ctrl_eqz with "PROPH Pc1") as "Eqz1".
-    iDestruct (proph_ctrl_eqz with "PROPH Pc2") as "Eqz2".
-    iIntros (E' ζl' q') "[% %Dep] ζl".
-    have [Dep1 Dep2]: vπ a ./ ζl' ∧ vπ b ./ ζl'.
-    { apply Hrefl.
-      have Heq: vπ (f a b) = λ π, fπ (vπ a π) (vπ b π) by fun_ext=> π; apply Hcomm.
-      by rewrite -Heq. }
-    iMod ("Eqz1" with "[%//] ζl") as "[Obs1 ζl]".
-    iMod ("Eqz2" with "[%//] ζl") as "[Obs2 $]". iModIntro.
-    iCombine "Obs1 Obs2" as "Obs'".
-    iApply (proph_obs_impl with "Obs'")=> π /= [-> ->]. by rewrite Hcomm. }
-  { iNext. iSplitL "Pc1 Q1"; [iExists y1|iExists y2]; iFrame. }
-  iMod "Upd" as "_".
-  iMod (fupd_mask_mono with "(Halfback H1 H2)") as "G"; [solve_ndisj|].
-  iMod (llftl_sep_split with "LFT Bor") as "[Bor1 Bor2]"; [solve_ndisj|].
-  iDestruct (llftl_bor_idx with "Bor1") as (i1) "[IBor1 Tok1]".
-  iDestruct (llftl_bor_idx with "Bor2") as (i2) "[IBor2 Tok2]".
-  iModIntro. iFrame "Obs G". iSplitL "Vo1 IBor1 Tok1"; [iExists i1|iExists i2]; iFrame.
-Qed.
-
-(** ** Reborrowing
-
-    Reborrow at a shorter lifetime [κ'], under a fresh prophecy variable [ζ]
-    of the same type (allocated by the caller as a loan at the current value).
-    Once [κ'] has ended, we get the original borrow back, with the value
-    being the final value of the reborrow. Nothing is recorded about the final value
-    (if the payload has persistent information that the lender needs, it must be
-    recovered from the restored borrow). *)
-Lemma proph_ibor_reborrow E κ κ' ξ x idx (P: (pv_val ξ) → iProp Σ) ζi :
-  ↑Nllft ⊆ E →
-  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ κ' ⊑ κ -∗
-  proph_loan (PrVar (pv_ty ξ) ζi) x -∗ proph_ibor κ ξ x idx P ={E}=∗
-    (∃ idx', proph_ibor κ' (PrVar (pv_ty ξ) ζi) x idx' P) ∗
-    ([†κ'] ={↑Nllft}=∗ ∃ x' idx'', proph_ibor κ ξ x' idx'' P ∗
-        ▷ ((.$ (PrVar (pv_ty ξ) ζi)) :== vπ x')).
-Proof.
-  set ζ := PrVar (pv_ty ξ) ζi.
-  iIntros (?) "#LFT #PROPH #UNIQ #κ'⊑κ [ζVo ζPc] ((ξVo & Tok) & #IBor)".
-  iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "ξBor".
-  iMod (llftl_reborrow with "LFT κ'⊑κ ξBor") as "[ξBor ToξBor]"; [done|].
-  iMod (llftl_borrow _ κ' (∃ x', .VO[ξ] x' ∗ .PC[ζ] x' (vπ x'))%I with "LFT [ξVo ζPc]")
-    as "[ζBor ToζBig]"; [done| |].
-  { iNext. iExists x. iFrame. }
-  iMod (llftl_sep_join with "LFT ξBor ζBor") as "Bor"; [done|].
-  iAssert (|={↑Nllft}=> &{κ'} (pbor_body ζ P))%I with "[Bor]" as "Bor".
-  { iMod (llftl_bor_acc_atomic with "LFT Bor") as "[[[H1 H2] Back']|[Dead Back']]".
-    - iMod (bi.later_exist_except_0 with "H1") as (x1) "(Pc1 & P1)".
-      iMod (bi.later_exist_except_0 with "H2") as (x2) "(Vo2 & Pc2)".
-      iMod (uniq_strip_later with "Vo2 Pc1") as "(<- & Vo2 & Pc1)".
-      iApply ("Back'" with "[Vo2 Pc1] [Pc2 P1]").
-      + iNext. iIntros "[H3 _]".
-        iMod (bi.later_exist_except_0 with "H3") as (x3) "(Pc3 & P3)".
-        iMod (uniq_update ξ x3 (vπ x3) with "UNIQ Vo2 Pc1") as "[Vo4 Pc4]".
-        { pose proof (nclose_subseteq NllftUsr 0). solve_ndisj. }
-        iModIntro. iNext. iSplitL "Pc4 P3"; iExists x3; iFrame.
-      + iNext. iExists x2. iFrame.
-    - iMod "Back'". iApply (llftl_bor_fake with "LFT Dead"). { set_solver. } }
-  iMod (fupd_mask_mono with "Bor") as "Bor"; [done|].
-  iDestruct (llftl_bor_idx with "Bor") as (ζidx) "[#Bor Tok]".
-  iModIntro. iSplitL "Tok ζVo".
-  { iExists ζidx. iFrame "∗#". }
-  iIntros "#†κ'".
-  iMod ("ToξBor" with "†κ'") as "ξBor".
-  iMod ("ToζBig" with "†κ'") as "Back".
-  iMod (bi.later_exist_except_0 with "Back") as (x'') "(>Vo & Pc)".
-  iDestruct (llftl_bor_idx with "ξBor") as (idx'') "[ξBor Tok]".
-  iModIntro. iExists x'', idx''. iFrame.
-  iNext. iApply (proph_ctrl_eqz with "PROPH Pc").
-Qed.
-
-(** ** Extracting persistent information from the payload *)
-
-Lemma proph_ibor_pers E κ ξ x idx (P: (pv_val ξ) → iProp Σ) (R: iProp Σ) :
-  Persistent R → ↑Nllft ⊆ E →
-  llft_ctx -∗ proph_ibor κ ξ x idx P -∗ (P x -∗ R) ={E}=∗
-    (∃ idx', proph_ibor κ ξ x idx' P) ∗ (▷ R ∨ [†κ]).
-Proof.
-  iIntros (??) "#LFT ((Vo & Tok) & #IBor) Wand".
-  iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "Bor".
-  iMod (llftl_bor_pers_from_wand2 _ _ _ R with "LFT Bor [Wand] Vo") as "[Bor [R Vo]]";
-    [done| |].
-  { iIntros "Vo". iDestruct 1 as (x') "(Pc & P)".
-    iDestruct (uniq_agree with "Vo Pc") as %<-. by iApply "Wand". }
-  iDestruct (llftl_bor_idx with "Bor") as (idx') "[IBor' Tok']".
-  iModIntro. iFrame "R". iExists idx'. iFrame.
-Qed.
-
-(** ** Unnesting
-
-    The payload [Pout] of an outer prophetic borrow [ξ] (at lifetime [κ])
-    contains the timeless part of an inner prophetic borrow [ω] (at
-    lifetime [κ'], with [κ ⊑ κ']). We obtain a new prophetic borrow [ζ] at
-    lifetime [κ] of the inner payload, starting at the inner value [y]. The
-    outer prophecy is resolved to [Hπ] of the final value of [ζ] (and of the
-    final value of the inner borrow).
-
-    The splitting of the outer payload is given a guard for [κ] (as for
-    [proph_ibor_map]). Rebuilding the outer payload records nothing about the final
-    value of the inner borrow: if the outer payload needs persistent information about
-    it, it must recover it from the restored inner borrow (e.g. lazily). *)
-Lemma proph_ibor_unnest E κ κ' ξ x idx (Pout: (pv_val ξ) → iProp Σ)
-    ω y idxω (Q: (pv_val ω) → iProp Σ) ζi (R: iProp Σ)
-    (h: pv_val ω → pv_val ξ)
-    (Hπ: proj1_sig (pv_ty ω) → proj1_sig (pv_ty ω) → proj1_sig (pv_ty ξ)) G :
-  Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
-  Inj (=) (=) h →
-  (∀ y' π, vπ (h y') π = Hπ (vπ y' π) (π ω)) →
-  (∀ y' ζl, (λ π, Hπ (vπ y' π) (π ω)) ./ ζl → vπ y' ./ ζl) →
-  (λ π, Hπ (π (PrVar (pv_ty ω) ζi)) (π ω)) ./ [PrVar (pv_ty ω) ζi; ω] →
-  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ κ ⊑ κ' -∗
-  proph_idx_bor κ' ω idxω Q -∗
-  (∀ G', ⌜Timeless G'⌝ -∗ (G' &&{↑NllftG}&&> @[κ]) -∗ G' -∗ ▷ Pout x ={E}=∗
-     G' ∗ ▷ proph_bor_tok ω y idxω ∗ ▷ R ∗
-     (∀ y', ▷ proph_bor_tok ω y' idxω -∗ ▷ R ={↑NllftUsr ∪ ↑NllftUsr2}=∗
-        ▷ Pout (h y'))) -∗
-  G -∗ proph_loan (PrVar (pv_ty ω) ζi) y -∗ proph_ibor κ ξ x idx Pout ={E}=∗
-    ⟨π, π ξ = Hπ (π (PrVar (pv_ty ω) ζi)) (π ω)⟩ ∗
-    (∃ idx', proph_ibor κ (PrVar (pv_ty ω) ζi) y idx' Q) ∗ G.
-Proof using All.
-  set ζ := PrVar (pv_ty ω) ζi.
-  iIntros (?? Hinj Hcomm Hrefl Hdep) "#LFT #PROPH #UNIQ #Gk #κ⊑κ' #ωBor Wand G [ζVo ζPc]".
-  iIntros "((ξVo & ξTok) & #ξIBor)".
-  (* Step 1: open the outer borrow (with half of [G]; the other half is for the
-     splitting), and move the inner observer into it. *)
-  iDestruct (llftl_bor_idx_to_full with "ξIBor ξTok") as "ξBor".
-  iMod (frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Halfback]]]";
-    [solve_ndisj|].
-  iMod (llftl_bor_acc_guarded with "LFT ξBor Gh H1") as "[Body Back]"; [solve_ndisj|].
-  iMod (bi.later_exist_except_0 with "Body") as (x') "(ξPc & P)".
-  iMod (uniq_strip_later with "ξVo ξPc") as "(<- & ξVo & ξPc)".
-  iMod ("Wand" with "[%] Gh H2 P") as "(H2 & ωTok & R & Rebuild)"; [apply _|].
-  iMod "ωTok" as "[ωVo ωIdxTok]".
-  iMod (uniq_update ξ (h y) (vπ (h y)) with "UNIQ ξVo ξPc") as "[ξVo ξPc]".
-  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
-  iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
-  iMod ("Back" $! ((∃ y', .VO[ω] y' ∗ .PC[ξ] (h y') (vπ (h y'))) ∗ R ∗ idx_bor_tok idxω)%I
-    with "[Rebuild ωVo ξPc R ωIdxTok]") as "[Bor H1]".
-  { iSplitL "Rebuild"; last first.
-    { iNext. iFrame. }
-    iNext. iIntros "(A & R & ωIdxTok)".
-    iMod (bi.later_exist_except_0 with "A") as (y') "(ωVo & ξPc)".
-    iMod ("Rebuild" $! y' with "[ωVo ωIdxTok] R") as "P".
-    { iNext. iFrame. }
-    iModIntro. iNext. iExists (h y'). iFrame. }
-  iMod "Upd" as "_".
-  iMod (fupd_mask_mono with "(Halfback H1 H2)") as "G"; [solve_ndisj|].
-  (* Step 2: unnest the inner borrow. *)
-  iMod (llftl_sep_split with "LFT Bor") as "[ABor Bor]"; [solve_ndisj|].
-  iMod (llftl_sep_split with "LFT Bor") as "[_ TokBor]"; [solve_ndisj|].
-  iMod (llftl_idx_bor_unnest with "LFT ωBor TokBor") as "InBor"; [solve_ndisj|].
-  iDestruct (llftl_bor_shorten (κ' ⊓ κ) κ with "[] InBor") as "InBor".
-  { iApply llftl_incl_glb; [done|iApply guards_refl]. }
-  iMod (llftl_sep_join with "LFT ABor InBor") as "Bor"; [solve_ndisj|].
-  (* Step 3: open the combination, pre-resolve the outer prophecy, and
-     close with the new borrow [ζ]. *)
-  iMod (llftl_bor_acc_guarded with "LFT Bor Gk G") as "[[A InBody] Close]"; [solve_ndisj|].
-  iMod (bi.later_exist_except_0 with "A") as (y') "(ωVo & ξPc)".
-  iMod (bi.later_exist_except_0 with "InBody") as (y'') "(ωPc & Q)".
-  iMod (uniq_strip_later with "ξVo ξPc") as "(%Heq & ξVo & ξPc)".
-  apply Hinj in Heq. subst y'.
-  iMod (uniq_strip_later with "ωVo ωPc") as "(<- & ωVo & ωPc)".
-  iDestruct (uniq_proph_tok with "ζVo ζPc") as "(ζVo & ζtok & ToζPc)".
-  iDestruct (uniq_proph_tok with "ωVo ωPc") as "(ωVo & ωtok & ToωPc)".
-  have Hmask': ↑uniqN ∪ ↑prophN ⊆ E.
-  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
-  iMod (uniq_preresolve ξ [ζ; ω] (λ π, Hπ (π ζ) (π ω)) 1%Qp _ _ _ E Hmask' Hdep
-    with "UNIQ PROPH ξVo ξPc [$ζtok $ωtok]") as "(#Obs & (ζtok & ωtok & _) & ToξPc)".
-  { done. }
-  iDestruct ("ToζPc" with "ζtok") as "ζPc".
-  iDestruct ("ToωPc" with "ωtok") as "ωPc".
-  iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
-  iMod ("Close" $! (pbor_body ζ Q) with "[ωVo ωPc ToξPc ζPc Q]") as "[Bor G]".
-  { iSplitR "ζPc Q"; last first.
-    { iNext. iExists y. iFrame. }
-    iNext. iIntros "Body".
-    iMod (bi.later_exist_except_0 with "Body") as (y3) "(ζPc & Q)".
-    iMod (uniq_update ω y3 (vπ y3) with "UNIQ ωVo ωPc") as "[ωVo ωPc]".
-    { pose proof (nclose_subseteq NllftUsr 0). solve_ndisj. }
-    iDestruct (proph_ctrl_eqz with "PROPH ζPc") as "Eqz".
-    iModIntro. iNext. iSplitR "ωPc Q"; last first.
-    { iExists y3. iFrame. }
-    iExists y3. iFrame "ωVo". iApply "ToξPc".
-    iIntros (E' ζl' q') "[% %Dep] ζl".
-    have Dep': vπ y3 ./ ζl'.
-    { apply Hrefl.
-      have Heq: vπ (h y3) = λ π, Hπ (vπ y3 π) (π ω) by fun_ext=> π; apply Hcomm.
-      by rewrite -Heq. }
-    iMod ("Eqz" with "[%//] ζl") as "[Obs' $]". iModIntro.
-    iApply (proph_obs_impl with "Obs'")=> π /= ->. by rewrite Hcomm. }
-  iMod "Upd" as "_".
-  iDestruct (llftl_bor_idx with "Bor") as (idx') "[IBor' Tok']".
-  iModIntro. iFrame "Obs G". iExists idx'. iFrame.
-Qed.
+(* The pre-resolving operations (mapping, splitting and unnesting) are only provided
+   for generalized prophetic borrows (see below), on which unique borrows are built:
+   the pre-resolved variable's controller is then left at the pre-resolved prophecy
+   ([uniq_preresolve]). *)
 
 (** ** Guard-level reasoning *)
 
@@ -1153,6 +846,484 @@ Proof.
   iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
   iMod ("Back" with "[Pc P]") as "[Tok $]". { iNext. iExists x, wπ'. iFrame. }
   iMod "Upd" as "_". iModIntro. iFrame.
+Qed.
+
+
+(** Non-expansiveness / properness of generalized prophetic borrows in the payload. *)
+
+Local Lemma pbor_body_gen_proper ξ (P Q: pv_val ξ → pv_proph ξ → iProp Σ) :
+  (∀ x wπ, P x wπ ⊣⊢ Q x wπ) → pbor_body_gen ξ P ⊣⊢ pbor_body_gen ξ Q.
+Proof. intros HPQ. rewrite /pbor_body_gen. by setoid_rewrite HPQ. Qed.
+
+Local Lemma pbor_body_gen_ne ξ (P Q: pv_val ξ → pv_proph ξ → iProp Σ) n :
+  (∀ x wπ, P x wπ ≡{n}≡ Q x wπ) → pbor_body_gen ξ P ≡{n}≡ pbor_body_gen ξ Q.
+Proof. intros HPQ. rewrite /pbor_body_gen. do 2 (f_equiv=> ?). f_equiv. apply HPQ. Qed.
+
+Lemma proph_idx_bor_gen_proper κ ξ idx (P Q: pv_val ξ → pv_proph ξ → iProp Σ) :
+  (∀ x wπ, P x wπ ⊣⊢ Q x wπ) → proph_idx_bor_gen κ ξ idx P ⊣⊢ proph_idx_bor_gen κ ξ idx Q.
+Proof. intros HPQ. rewrite /proph_idx_bor_gen. f_equiv. by apply pbor_body_gen_proper. Qed.
+
+Lemma proph_idx_bor_gen_ne κ ξ idx (P Q: pv_val ξ → pv_proph ξ → iProp Σ) n :
+  (∀ x wπ, P x wπ ≡{n}≡ Q x wπ) → proph_idx_bor_gen κ ξ idx P ≡{n}≡ proph_idx_bor_gen κ ξ idx Q.
+Proof. intros HPQ. rewrite /proph_idx_bor_gen. f_equiv. by apply pbor_body_gen_ne. Qed.
+
+Lemma proph_idx_bor_gen_contractive κ ξ idx (P Q: pv_val ξ → pv_proph ξ → iProp Σ) n :
+  (∀ x wπ, dist_later n (P x wπ) (Q x wπ)) →
+  proph_idx_bor_gen κ ξ idx P ≡{n}≡ proph_idx_bor_gen κ ξ idx Q.
+Proof.
+  intros HPQ. rewrite /proph_idx_bor_gen. apply idx_bor_contractive.
+  destruct n as [|n]. { split. lia. }
+  apply dist_later_S. apply pbor_body_gen_ne => x wπ.
+  have := HPQ x wπ. rewrite dist_later_S. done.
+Qed.
+
+(** Unfolding lemmas. Clients that build their own operations on generalized
+    prophetic borrows directly on top of the lifetime logic and the observer/controller
+    ghost state (the unique borrows of [typing/uniq_util.v], whose operations depend on
+    the structure of their payloads) can use these. *)
+
+Lemma proph_idx_bor_gen_unfold κ ξ idx (P: pv_val ξ → pv_proph ξ → iProp Σ) :
+  proph_idx_bor_gen κ ξ idx P ⊣⊢ &{κ, idx} (∃ x' wπ', .PC[ξ] x' wπ' ∗ P x' wπ').
+Proof. done. Qed.
+
+Lemma proph_bor_tok_unfold ξ x idx : proph_bor_tok ξ x idx ⊣⊢ .VO[ξ] x ∗ idx_bor_tok idx.
+Proof. done. Qed.
+
+Lemma proph_bor_tok_rsv_unfold ξ x idx ζl :
+  proph_bor_tok_rsv ξ x idx ζl ⊣⊢ .VOR[ξ;ζl] x ∗ idx_bor_tok idx.
+Proof. done. Qed.
+
+Lemma proph_loan_unfold ξ x : proph_loan ξ x ⊣⊢ .VO[ξ] x ∗ .PC[ξ] x (vπ x).
+Proof. done. Qed.
+
+(** As [proph_loan_borrow_gen], the lender getting the controller (instead of an
+    equalizer). *)
+Lemma proph_loan_borrow_gen_pc E κ ξ x wπ (P: pv_val ξ → pv_proph ξ → iProp Σ) :
+  ↑Nllft ⊆ E →
+  llft_ctx -∗ uniq_ctx -∗ proph_loan ξ x -∗ ▷ P x wπ ={E}=∗ ∃ idx,
+    proph_bor_tok ξ x idx ∗ proph_idx_bor_gen κ ξ idx P ∗
+    ([†κ] ={↑Nllft}=∗ ▷ ∃ x' wπ', .PC[ξ] x' wπ' ∗ P x' wπ').
+Proof.
+  iIntros (?) "#LFT #UNIQ [Vo Pc] P".
+  iMod (uniq_update ξ x wπ with "UNIQ Vo Pc") as "[Vo Pc]".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
+  iMod (llftl_borrow E κ (pbor_body_gen ξ P) with "LFT [Pc P]") as "[Bor Back]"; [done| |].
+  { iNext. iExists x, wπ. iFrame. }
+  iDestruct (llftl_bor_idx with "Bor") as (idx) "[Bor Tok]".
+  iModIntro. iExists idx. iFrame.
+Qed.
+
+(** Open a generalized prophetic borrow, closing it with the same payload and index;
+    the value and the controller prophecy may change. *)
+Lemma proph_idx_bor_gen_acc_idx E κ ξ x idx (P: pv_val ξ → pv_proph ξ → iProp Σ) G :
+  Timeless G → ↑Nllft ⊆ E →
+  llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P -∗ G ={E}=∗ ∃ wπ,
+    ▷ P x wπ ∗ (∀ x1 wπ1, ▷ P x1 wπ1 ={↑Nllft}=∗ proph_bor_tok ξ x1 idx ∗ G).
+Proof.
+  iIntros (??) "#LFT #UNIQ #Gk [Vo Tok] #Bor G".
+  iMod (llftl_bor_idx_acc_guarded with "LFT Bor Tok Gk G") as "[Body Back]"; [done|].
+  iMod (bi.later_exist_except_0 with "Body") as (x') "Body".
+  iMod (bi.later_exist_except_0 with "Body") as (wπ') "[Pc P]".
+  iMod (uniq_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iModIntro. iExists wπ'. iFrame "P".
+  iIntros (x1 wπ1) "P".
+  iMod (uniq_update ξ x1 wπ1 with "UNIQ Vo Pc") as "[Vo Pc]".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
+  iMod ("Back" with "[Pc P]") as "[Tok G]". { iNext. iExists x1, wπ1. iFrame. }
+  iModIntro. iFrame.
+Qed.
+
+(** As [proph_idx_bor_gen_acc_idx], closing with the same value and controller
+    prophecy; this needs no [uniq_ctx]. *)
+Lemma proph_idx_bor_gen_acc_idx_keep E κ ξ x idx (P: pv_val ξ → pv_proph ξ → iProp Σ) G :
+  Timeless G → ↑Nllft ⊆ E →
+  llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P -∗ G ={E}=∗ ∃ wπ,
+    ▷ P x wπ ∗ (▷ P x wπ ={↑Nllft}=∗ proph_bor_tok ξ x idx ∗ G).
+Proof.
+  iIntros (??) "#LFT #Gk [Vo Tok] #Bor G".
+  iMod (llftl_bor_idx_acc_guarded with "LFT Bor Tok Gk G") as "[Body Back]"; [done|].
+  iMod (bi.later_exist_except_0 with "Body") as (x') "Body".
+  iMod (bi.later_exist_except_0 with "Body") as (wπ') "[Pc P]".
+  iMod (uniq_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iModIntro. iExists wπ'. iFrame "P". iIntros "P".
+  iMod ("Back" with "[Pc P]") as "[Tok G]". { iNext. iExists x, wπ'. iFrame. }
+  iModIntro. iFrame.
+Qed.
+
+(** As [proph_idx_bor_gen_acc_idx], for a reserved observer; the reservation is
+    kept. *)
+Lemma proph_idx_bor_gen_rsv_acc_idx E κ ξ x idx ζl (P: pv_val ξ → pv_proph ξ → iProp Σ) G :
+  Timeless G → ↑Nllft ⊆ E →
+  llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  proph_bor_tok_rsv ξ x idx ζl -∗ proph_idx_bor_gen κ ξ idx P -∗ G ={E}=∗ ∃ wπ,
+    ▷ P x wπ ∗ (∀ x1 wπ1, ▷ P x1 wπ1 ={↑Nllft}=∗ proph_bor_tok_rsv ξ x1 idx ζl ∗ G).
+Proof.
+  iIntros (??) "#LFT #UNIQ #Gk [Vo Tok] #Bor G".
+  iMod (llftl_bor_idx_acc_guarded with "LFT Bor Tok Gk G") as "[Body Back]"; [done|].
+  iMod (bi.later_exist_except_0 with "Body") as (x') "Body".
+  iMod (bi.later_exist_except_0 with "Body") as (wπ') "[Pc P]".
+  iMod (uniq_rsv_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iModIntro. iExists wπ'. iFrame "P".
+  iIntros (x1 wπ1) "P".
+  iMod (uniq_rsv_update ξ ζl x1 wπ1 with "UNIQ Vo Pc") as "[Vo Pc]".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
+  iMod ("Back" with "[Pc P]") as "[Tok G]". { iNext. iExists x1, wπ1. iFrame. }
+  iModIntro. iFrame.
+Qed.
+
+
+(** Open a generalized prophetic borrow with a lifetime token, closing it with a
+    possibly different payload (resulting in a fresh index). The new payload has to be
+    shifted back into the old one once the lifetime has ended. *)
+Lemma proph_idx_bor_gen_acc_rebody E κ ξ x idx (P Q: pv_val ξ → pv_proph ξ → iProp Σ) :
+  ↑Nllft ⊆ E →
+  llft_ctx -∗ uniq_ctx -∗ @[κ] -∗
+  proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P ={E}=∗ ▷ ◇ (∃ wπ,
+    P x wπ ∗
+    (∀ x1 wπ1, ▷ Q x1 wπ1 -∗
+       ▷ (∀ x2 wπ2, ▷ Q x2 wπ2 ∗ [†κ] ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P x2 wπ2)
+       ={↑Nllft}=∗
+       ∃ idx', proph_bor_tok ξ x1 idx' ∗ proph_idx_bor_gen κ ξ idx' Q ∗ @[κ])).
+Proof.
+  iIntros (?) "#LFT #UNIQ κ [Vo Tok] #IBor".
+  iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "Bor".
+  iMod (llftl_bor_acc with "LFT Bor κ") as "[Body Back]"; [done|].
+  iModIntro. iNext.
+  iDestruct "Body" as (x' wπ) "(Pc & P)".
+  iMod (uniq_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iModIntro. iExists wπ. iFrame "P".
+  iIntros (x1 wπ1) "Q W".
+  iMod (uniq_update ξ x1 wπ1 with "UNIQ Vo Pc") as "[Vo Pc]".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
+  iAssert (▷ (▷ pbor_body_gen ξ Q ∗ [†κ] ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ pbor_body_gen ξ P))%I
+    with "[W]" as "VS".
+  { iNext. iIntros "[Body †κ]".
+    iMod (bi.later_exist_except_0 with "Body") as (x2) "Body".
+    iMod (bi.later_exist_except_0 with "Body") as (wπ2) "(Pc2 & Q)".
+    iMod ("W" $! x2 wπ2 with "[$Q $†κ]") as "P".
+    iModIntro. iNext. iExists x2, wπ2. iFrame. }
+  iMod ("Back" $! (pbor_body_gen ξ Q) with "[VS Pc Q]") as "[Bor κ]".
+  { iFrame "VS". iNext. iExists x1, wπ1. iFrame. }
+  iDestruct (llftl_bor_idx with "Bor") as (idx') "[IBor' Tok']".
+  iModIntro. iExists idx'. iFrame.
+Qed.
+
+(** As [proph_idx_bor_gen_acc_rebody], with a lifetime guard instead of the token; the
+    closing view shift does not get [[†κ]]. *)
+Lemma proph_idx_bor_gen_acc_rebody_guarded E κ ξ x idx (P Q: pv_val ξ → pv_proph ξ → iProp Σ) G :
+  Timeless G → ↑Nllft ⊆ E →
+  llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P -∗ G ={E}=∗ ∃ wπ,
+    ▷ P x wπ ∗
+    (∀ x1 wπ1, ▷ Q x1 wπ1 -∗
+       ▷ (∀ x2 wπ2, ▷ Q x2 wπ2 ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P x2 wπ2)
+       ={↑Nllft}=∗
+       ∃ idx', proph_bor_tok ξ x1 idx' ∗ proph_idx_bor_gen κ ξ idx' Q ∗ G).
+Proof.
+  iIntros (??) "#LFT #UNIQ #Gk [Vo Tok] #IBor G".
+  iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "Bor".
+  iMod (llftl_bor_acc_guarded with "LFT Bor Gk G") as "[Body Back]"; [done|].
+  iMod (bi.later_exist_except_0 with "Body") as (x') "Body".
+  iMod (bi.later_exist_except_0 with "Body") as (wπ) "[Pc P]".
+  iMod (uniq_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iModIntro. iExists wπ. iFrame "P".
+  iIntros (x1 wπ1) "Q W".
+  iMod (uniq_update ξ x1 wπ1 with "UNIQ Vo Pc") as "[Vo Pc]".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
+  iAssert (▷ (▷ pbor_body_gen ξ Q ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ pbor_body_gen ξ P))%I
+    with "[W]" as "VS".
+  { iNext. iIntros "Body".
+    iMod (bi.later_exist_except_0 with "Body") as (x2) "Body".
+    iMod (bi.later_exist_except_0 with "Body") as (wπ2) "(Pc2 & Q)".
+    iMod ("W" $! x2 wπ2 with "Q") as "P".
+    iModIntro. iNext. iExists x2, wπ2. iFrame. }
+  iMod ("Back" $! (pbor_body_gen ξ Q) with "[VS Pc Q]") as "[Bor G]".
+  { iFrame "VS". iNext. iExists x1, wπ1. iFrame. }
+  iDestruct (llftl_bor_idx with "Bor") as (idx') "[IBor' Tok']".
+  iModIntro. iExists idx'. iFrame.
+Qed.
+
+(** ** Mapping, splitting and reborrowing generalized prophetic borrows *)
+
+(** Replace a generalized prophetic borrow [ξ] by a fresh one [ζ] (allocated by the
+    caller as a loan), pre-resolving [ξ] to [fπ] of [ζ]. The old payload is
+    transformed into the new one (with a guard for [κ]), at a chosen controller
+    prophecy [wζ] for [ζ]. Once [κ] has ended, the final contents of [ζ] (with its
+    controller) have to be shifted back into the old payload, at the controller
+    prophecy [fπ] of [ζ] (the controller of [ξ] is left at the pre-resolved
+    prophecy, see [uniq_preresolve]). *)
+Lemma proph_idx_bor_gen_map E κ ξ x idx (P: pv_val ξ → pv_proph ξ → iProp Σ)
+    ζ y (Q: pv_val ζ → pv_proph ζ → iProp Σ)
+    (fπ: proj1_sig (pv_ty ζ) → proj1_sig (pv_ty ξ)) G :
+  Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
+  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  (∀ G' wπ, ⌜Timeless G'⌝ -∗ (G' &&{↑NllftG}&&> @[κ]) -∗ G' -∗ ▷ P x wπ ={E}=∗
+     G' ∗ ∃ wζ, ▷ Q y wζ ∗
+     (∀ y' wζ', ▷ .PC[ζ] y' wζ' -∗ ▷ Q y' wζ' ={↑NllftUsr ∪ ↑NllftUsr2}=∗
+        ▷ ∃ x', P x' (λ π, fπ (π ζ)))) -∗
+  G -∗ proph_loan ζ y -∗ proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P ={E}=∗
+    ⟨π, π ξ = fπ (π ζ)⟩ ∗
+    (∃ idx', proph_bor_tok ζ y idx' ∗ proph_idx_bor_gen κ ζ idx' Q) ∗ G.
+Proof using All.
+  iIntros (Ti Hmask) "#LFT #PROPH #UNIQ #Gk Wand G [ζVo ζPc] [Vo Tok] #IBor".
+  iDestruct (uniq_proph_tok with "ζVo ζPc") as "(ζVo & ζtok & ToζPc)".
+  have Hdep: (λ π, fπ (π ζ)) ./ [ζ].
+  { apply (proph_dep_constr fπ (λ π, π ζ)). apply proph_dep_one. }
+  (* Half of [G] opens the borrow, the other half is for the transformation. *)
+  iMod (frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Halfback]]]";
+    [solve_ndisj|].
+  iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "Bor".
+  iMod (llftl_bor_acc_guarded with "LFT Bor Gh H1") as "[Body Back]"; [solve_ndisj|].
+  iMod (bi.later_exist_except_0 with "Body") as (x') "Body".
+  iMod (bi.later_exist_except_0 with "Body") as (wπ) "(Pc & P)".
+  iMod (uniq_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iMod (uniq_preresolve ξ [ζ] (λ π, fπ (π ζ)) 1%Qp with "UNIQ PROPH Vo Pc [ζtok]")
+    as "(#Obs & ζtok & ToPc)"; [solve_ndisj|done|by rewrite big_sepL_singleton|].
+  rewrite big_sepL_singleton.
+  iDestruct ("ToζPc" with "ζtok") as "ζPc".
+  iMod ("Wand" with "[%] Gh H2 P") as "(H2 & %wζ & Q & Back')"; [apply _|].
+  iMod (uniq_update ζ y wζ with "UNIQ ζVo ζPc") as "[ζVo ζPc]".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
+  iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
+  iMod ("Back" $! (pbor_body_gen ζ Q) with "[Back' ToPc ζPc Q]") as "[Bor H1]".
+  { iSplitR "ζPc Q"; [|iNext; iExists y, wζ; iFrame].
+    iNext. iIntros "Body".
+    iMod (bi.later_exist_except_0 with "Body") as (y') "Body".
+    iMod (bi.later_exist_except_0 with "Body") as (wζ') "[ζPc' Q']".
+    iMod ("Back'" with "ζPc' Q'") as "P". iModIntro. iNext.
+    iDestruct "P" as (x1) "P". iExists x1, (λ π, fπ (π ζ)). iFrame "P".
+    iApply "ToPc". }
+  iMod "Upd" as "_".
+  iMod (fupd_mask_mono with "(Halfback H1 H2)") as "G"; [solve_ndisj|].
+  iDestruct (llftl_bor_idx with "Bor") as (idx') "[IBor' Tok']".
+  iModIntro. iFrame "Obs G". iExists idx'. iFrame.
+Qed.
+
+
+(** Replace a generalized prophetic borrow [ξ] by two fresh ones [ζ1], [ζ2]
+    (allocated by the caller as loans), pre-resolving [ξ] to [fπ] of them (see
+    [proph_idx_bor_gen_map]). *)
+Lemma proph_idx_bor_gen_split E κ ξ x idx (P: pv_val ξ → pv_proph ξ → iProp Σ)
+    ζ1 y1 (Q1: pv_val ζ1 → pv_proph ζ1 → iProp Σ) ζ2 y2 (Q2: pv_val ζ2 → pv_proph ζ2 → iProp Σ)
+    (fπ: proj1_sig (pv_ty ζ1) → proj1_sig (pv_ty ζ2) → proj1_sig (pv_ty ξ)) G :
+  Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
+  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  (∀ G' wπ, ⌜Timeless G'⌝ -∗ (G' &&{↑NllftG}&&> @[κ]) -∗ G' -∗ ▷ P x wπ ={E}=∗
+     G' ∗ ∃ w1 w2, ▷ Q1 y1 w1 ∗ ▷ Q2 y2 w2 ∗
+     (∀ y1' w1' y2' w2', ▷ .PC[ζ1] y1' w1' -∗ ▷ Q1 y1' w1' -∗
+        ▷ .PC[ζ2] y2' w2' -∗ ▷ Q2 y2' w2' ={↑NllftUsr ∪ ↑NllftUsr2}=∗
+        ▷ ∃ x', P x' (λ π, fπ (π ζ1) (π ζ2)))) -∗
+  G -∗ proph_loan ζ1 y1 -∗ proph_loan ζ2 y2 -∗
+  proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P ={E}=∗
+    ⟨π, π ξ = fπ (π ζ1) (π ζ2)⟩ ∗
+    (∃ i1, proph_bor_tok ζ1 y1 i1 ∗ proph_idx_bor_gen κ ζ1 i1 Q1) ∗
+    (∃ i2, proph_bor_tok ζ2 y2 i2 ∗ proph_idx_bor_gen κ ζ2 i2 Q2) ∗ G.
+Proof using All.
+  iIntros (Ti Hmask) "#LFT #PROPH #UNIQ #Gk Wand G [Vo1 Pc1] [Vo2 Pc2] [Vo Tok] #IBor".
+  iDestruct (uniq_proph_tok with "Vo1 Pc1") as "(Vo1 & tok1 & ToPc1)".
+  iDestruct (uniq_proph_tok with "Vo2 Pc2") as "(Vo2 & tok2 & ToPc2)".
+  have Hdep: (λ π, fπ (π ζ1) (π ζ2)) ./ [ζ1; ζ2].
+  { apply (proph_dep_constr2 fπ (λ π, π ζ1) (λ π, π ζ2) [ζ1] [ζ2]); apply proph_dep_one. }
+  iMod (frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Halfback]]]";
+    [solve_ndisj|].
+  iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "Bor".
+  iMod (llftl_bor_acc_guarded with "LFT Bor Gh H1") as "[Body Back]"; [solve_ndisj|].
+  iMod (bi.later_exist_except_0 with "Body") as (x') "Body".
+  iMod (bi.later_exist_except_0 with "Body") as (wπ) "(Pc & P)".
+  iMod (uniq_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iMod (uniq_preresolve ξ [ζ1; ζ2] (λ π, fπ (π ζ1) (π ζ2)) 1%Qp
+    with "UNIQ PROPH Vo Pc [tok1 tok2]") as "(#Obs & toks & ToPc)";
+    [solve_ndisj|done|by iFrame|].
+  iDestruct "toks" as "(tok1 & tok2 & _)".
+  iDestruct ("ToPc1" with "tok1") as "Pc1".
+  iDestruct ("ToPc2" with "tok2") as "Pc2".
+  iMod ("Wand" with "[%] Gh H2 P") as "(H2 & %w1 & %w2 & Q1 & Q2 & Back')"; [apply _|].
+  iMod (uniq_update ζ1 y1 w1 with "UNIQ Vo1 Pc1") as "[Vo1 Pc1]".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
+  iMod (uniq_update ζ2 y2 w2 with "UNIQ Vo2 Pc2") as "[Vo2 Pc2]".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
+  iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
+  iMod ("Back" $! (pbor_body_gen ζ1 Q1 ∗ pbor_body_gen ζ2 Q2)%I
+    with "[Back' ToPc Pc1 Q1 Pc2 Q2]") as "[Bor H1]".
+  { iSplitR "Pc1 Q1 Pc2 Q2"; last first.
+    { iNext. iSplitL "Pc1 Q1"; [iExists y1, w1|iExists y2, w2]; iFrame. }
+    iNext. iIntros "[Body1 Body2]".
+    iMod (bi.later_exist_except_0 with "Body1") as (y1') "Body1".
+    iMod (bi.later_exist_except_0 with "Body1") as (w1') "[Pc1' Q1']".
+    iMod (bi.later_exist_except_0 with "Body2") as (y2') "Body2".
+    iMod (bi.later_exist_except_0 with "Body2") as (w2') "[Pc2' Q2']".
+    iMod ("Back'" with "Pc1' Q1' Pc2' Q2'") as "P". iModIntro. iNext.
+    iDestruct "P" as (x1) "P". iExists x1, (λ π, fπ (π ζ1) (π ζ2)). iFrame "P".
+    iApply "ToPc". }
+  iMod "Upd" as "_".
+  iMod (fupd_mask_mono with "(Halfback H1 H2)") as "G"; [solve_ndisj|].
+  iMod (llftl_sep_split with "LFT Bor") as "[Bor1 Bor2]"; [solve_ndisj|].
+  iDestruct (llftl_bor_idx with "Bor1") as (i1) "[IBor1 Tok1]".
+  iDestruct (llftl_bor_idx with "Bor2") as (i2) "[IBor2 Tok2]".
+  iModIntro. iFrame "Obs G". iSplitL "Vo1 IBor1 Tok1"; [iExists i1|iExists i2]; iFrame.
+Qed.
+
+(** Reborrow a generalized prophetic borrow at a shorter lifetime [κ'], under a fresh
+    prophecy variable [ζ] of the same type (allocated by the caller as a loan at a value
+    [y] with [F y = x]; [F] maps the values of the reborrow to values of the original
+    borrow). The payload of the reborrow is [Q]: the old payload (at any
+    controller prophecy), together with the initial [R], is transformed into [Q] (at
+    the controller prophecy of [R]), with an update at the empty mask, and the caller
+    provides a way
+    back, once [κ'] has ended, which also gives [R] at the final value. When [κ'] has
+    ended, the original borrow is given back, at the final value of the reborrow
+    (and with its final controller prophecy, see [R]), together with [R] and the
+    reborrow's controller. *)
+Lemma proph_idx_bor_gen_reborrow E κ κ' ξ x idx (P Q R: pv_val ξ → pv_proph ξ → iProp Σ)
+    (F: pv_val ξ → pv_val ξ) y ζi :
+  ↑Nllft ⊆ E → F y = x →
+  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ κ' ⊑ κ -∗
+  (∀ wπ wζ, ▷ P x wπ -∗ ▷ R y wζ ={∅}=∗ ▷ Q y wζ ∗
+     ▷ (∀ x2 wπ2, ▷ Q x2 wπ2 -∗ [†κ'] ={↑NllftUsr ∪ ↑NllftUsr2}=∗
+        ▷ P (F x2) wπ2 ∗ ▷ R x2 wπ2)) -∗
+  R y (vπ y) -∗
+  proph_loan (PrVar (pv_ty ξ) ζi) y -∗ proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P
+  ={E}=∗
+    (∃ idx', proph_bor_tok (PrVar (pv_ty ξ) ζi) y idx' ∗
+      proph_idx_bor_gen κ' (PrVar (pv_ty ξ) ζi) idx' Q) ∗
+    ([†κ'] ={↑Nllft}=∗ ∃ x' wπ' idx'', proph_bor_tok ξ (F x') idx'' ∗
+        proph_idx_bor_gen κ ξ idx'' P ∗ ▷ (.PC[PrVar (pv_ty ξ) ζi] x' wπ' ∗ R x' wπ')).
+Proof.
+  set ζ := PrVar (pv_ty ξ) ζi.
+  iIntros (? HF) "#LFT #PROPH #UNIQ #κ'⊑κ Spl R [ζVo ζPc] [ξVo Tok] #IBor".
+  iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "ξBor".
+  iMod (llftl_reborrow with "LFT κ'⊑κ ξBor") as "[ξBor ToξBor]"; [done|].
+  iMod (llftl_borrow _ κ' (∃ x' wπ', .VO[ξ] (F x') ∗ .PC[ζ] x' wπ' ∗ R x' wπ')%I
+    with "LFT [ξVo ζPc R]") as "[ζBor ToζBig]"; [done| |].
+  { iNext. iExists y, (vπ y). rewrite HF. iFrame. }
+  iMod (llftl_sep_join with "LFT ξBor ζBor") as "Bor"; [done|].
+  iAssert (|={↑Nllft}=> &{κ'} (pbor_body_gen ζ Q) ∗ .VO[ζ] y)%I with "[Bor Spl ζVo]"
+    as "Bor".
+  { iMod (llftl_bor_acc_atomic with "LFT Bor") as "[[[H1 H2] Back']|[Dead Back']]".
+    - iMod (bi.later_exist_except_0 with "H1") as (x1) "H1".
+      iMod (bi.later_exist_except_0 with "H1") as (w1) "(Pc1 & P1)".
+      iMod (bi.later_exist_except_0 with "H2") as (x2) "H2".
+      iMod (bi.later_exist_except_0 with "H2") as (w2) "(Vo2 & Pc2 & R2)".
+      iMod (uniq_strip_later with "Vo2 Pc1") as "(<- & Vo2 & Pc1)".
+      iMod (uniq_strip_later with "ζVo Pc2") as "(<- & ζVo & Pc2)".
+      rewrite HF.
+      iMod ("Spl" with "P1 R2") as "[Q Bk]". iFrame "ζVo".
+      iApply ("Back'" with "[Vo2 Pc1 Bk] [Pc2 Q]").
+      + iNext. iIntros "[Body †κ']".
+        iMod (bi.later_exist_except_0 with "Body") as (x3) "Body".
+        iMod (bi.later_exist_except_0 with "Body") as (w3) "(Pc3 & Q3)".
+        iMod ("Bk" with "Q3 †κ'") as "[P3 R3]".
+        iMod (uniq_update ξ (F x3) w3 with "UNIQ Vo2 Pc1") as "[Vo4 Pc4]".
+        { pose proof (nclose_subseteq NllftUsr 0). solve_ndisj. }
+        iModIntro. iNext. iSplitL "Pc4 P3"; [iExists (F x3), w3|iExists x3, w3]; iFrame.
+      + iNext. iExists y, w2. iFrame.
+    - iMod "Back'". iFrame "ζVo". iApply (llftl_bor_fake with "LFT Dead"). { set_solver. } }
+  iMod (fupd_mask_mono with "Bor") as "[Bor ζVo]"; [done|].
+  iDestruct (llftl_bor_idx with "Bor") as (ζidx) "[#Bor Tok]".
+  iModIntro. iSplitL "Tok ζVo".
+  { iExists ζidx. iFrame "∗#". }
+  iIntros "#†κ'".
+  iMod ("ToξBor" with "†κ'") as "ξBor".
+  iMod ("ToζBig" with "†κ'") as "Back".
+  iMod (bi.later_exist_except_0 with "Back") as (x'') "Back".
+  iMod (bi.later_exist_except_0 with "Back") as (w'') "(>Vo & Pc & R)".
+  iDestruct (llftl_bor_idx with "ξBor") as (idx'') "[ξBor Tok]".
+  iModIntro. iExists x'', w'', idx''. iFrame.
+Qed.
+
+
+(** ** Freezing and sharing generalized prophetic borrows *)
+
+(** Freezing by sharing (see [proph_ibor_resolve_share]), for a generalized
+    prophetic borrow whose payload can be pinned to the current value: [Pin] takes
+    the payload (at the current controller prophecy) to [P0], with a way back to the
+    payload at the controller [vπ x]. *)
+Lemma proph_idx_bor_gen_resolve_share E κ ξ x idx (P: pv_val ξ → pv_proph ξ → iProp Σ)
+    (P0: iProp Σ) (ζl: list proph_var) (S: iProp Σ) G n :
+  Timeless G →
+  ↑Nllft ∪ ↑prophN ⊆ E →
+  vπ x ./ ζl →
+  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗
+  (G &&{↑NllftG}&&> @[κ]) -∗
+  (∀ wπ, ▷ P x wπ -∗ ◇ (▷ P0 ∗ ▷ (P0 -∗ P x (vπ x)))) -∗
+  (∀ (H: iProp Σ), ⌜Timeless H⌝ -∗ (H &&{↑NllftG}&&> @[κ]) -∗ H -∗ &{κ} P0 ={E}=∗
+     H ∗ S ∗ £ n ∗ (∀ ζ, ⌜ζ ∈ ζl⌝ -∗ (H &&{↑NllftG; n}&&> 1:[ζ]))) -∗
+  G -∗ proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P ={E}=∗
+    ⟨π, π ξ = vπ x π⟩ ∗ G ∗ S.
+Proof using All.
+  iIntros (Ti ? Hdep) "#LFT #PROPH #UNIQ #Gk Pin Share G (Vo & Tok) #IBor".
+  iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "Bor".
+  (* Pin the contents to the current value, and split off the payload. *)
+  iMod (llftl_bor_acc_guarded with "LFT Bor Gk G") as "[Body Back]"; [solve_ndisj|].
+  iMod (bi.later_exist_except_0 with "Body") as (x') "Body".
+  iMod (bi.later_exist_except_0 with "Body") as (wπ) "(Pc & P)".
+  iMod (uniq_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iMod ("Pin" with "P") as "[P0 Inv]".
+  iMod (uniq_update ξ x (vπ x) with "UNIQ Vo Pc") as "[Vo Pc]".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
+  iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
+  iMod ("Back" $! (.PC[ξ] x (vπ x) ∗ P0)%I with "[Pc P0 Inv]") as "[Bor G]".
+  { iSplitR "Pc P0"; [|iNext; iFrame]. iNext. iIntros "[Pc P0]". iModIntro. iNext.
+    rewrite /pbor_body_gen. iExists x, (vπ x). iFrame. by iApply "Inv". }
+  iMod "Upd" as "_".
+  iMod (llftl_sep_split with "LFT Bor") as "[PcBor PBor]"; [solve_ndisj|].
+  (* Share the payload, and resolve with the guarded tokens. *)
+  iMod (frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Halfback]]]".
+  { solve_ndisj. }
+  iMod ("Share" with "[%] Gh H1 PBor") as "(H1 & $ & £ & #Deps)"; [apply _|].
+  iMod (llftl_bor_acc_guarded with "LFT PcBor Gh H2") as "[Pc Back]"; [solve_ndisj|].
+  iMod (uniq_strip_later with "Vo Pc") as "(_ & Vo & Pc)".
+  iMod (uniq_resolve_guarded with "Deps UNIQ PROPH Vo Pc H1") as "X".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. } { apply Hdep. }
+  iMod (lc_fupd_elim_laterN with "£ X") as "X". iMod "X" as "(Obs & Pc & H1)".
+  iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
+  iMod ("Back" $! (.PC[ξ] x (vπ x))%I with "[Pc]") as "[_ H2]".
+  { iSplitR "Pc"; [|by iNext]. iIntros "!> Pc". by iModIntro. }
+  iMod "Upd" as "_".
+  iMod (fupd_mask_mono with "(Halfback H1 H2)") as "$"; [solve_ndisj|].
+  by iFrame "Obs".
+Qed.
+
+(** The structural sharing of a generalized prophetic borrow whose timeless part is
+    itself borrowed (at [κ']), together with some [Ex] that pins the payload: we obtain
+    a borrow of [P0] at [κ' ⊓ κ], and a guard of the prophecy token. *)
+Lemma proph_bor_tok_share_gen E κ κ' ξ x idx (P: pv_val ξ → pv_proph ξ → iProp Σ)
+    (Ex P0: iProp Σ) (Φ: pv_proph ξ → iProp Σ) :
+  ↑Nllft ⊆ E →
+  llft_ctx -∗ proph_idx_bor_gen κ ξ idx P -∗
+  ▷ □ (∀ wπ, (Ex ∗ P x wπ) ↔ (Φ wπ ∗ P0)) -∗
+  &{κ'} (proph_bor_tok ξ x idx ∗ Ex) ={E}=∗
+    &{κ' ⊓ κ} P0 ∗ (@[κ' ⊓ κ] &&{↑NllftG; 1}&&> 1:[ξ]).
+Proof.
+  iIntros (?) "#LFT #IBor #Iff Bor". rewrite /proph_bor_tok /proph_idx_bor_gen.
+  iDestruct (llftl_bor_iff _ _ ((.VO[ξ] x ∗ Ex) ∗ idx_bor_tok idx) with "[] Bor") as "Bor".
+  { iIntros "!> !>". iSplit; [iIntros "[[$ $] $]"|iIntros "[[$ $] $]"]. }
+  iMod (llftl_sep_split with "LFT Bor") as "[VoBor TokBor]"; [done|].
+  iMod (llftl_idx_bor_unnest with "LFT IBor TokBor") as "Body"; [done|].
+  iDestruct (llftl_bor_shorten _ (κ' ⊓ κ) with "[] Body") as "Body".
+  { iApply llftl_incl_glb; [iApply llftl_intersect_incl_r|iApply llftl_intersect_incl_l]. }
+  iDestruct (llftl_bor_shorten _ (κ' ⊓ κ) with "[] VoBor") as "VoBor".
+  { iApply llftl_intersect_incl_l. }
+  iMod (llftl_sep_join with "LFT VoBor Body") as "Bor"; [done|].
+  iDestruct (llftl_bor_iff _ _ ((.VO[ξ] x ∗ ∃ wπ, .PC[ξ] x wπ ∗ Φ wπ) ∗ P0) with "[] Bor")
+    as "Bor".
+  { iIntros "!> !>". rewrite /pbor_body_gen. iSplit.
+    - iIntros "[[Vo Ex] Body]". iDestruct "Body" as (x' wπ) "[Pc P]".
+      iDestruct (uniq_agree with "Vo Pc") as %<-.
+      iDestruct ("Iff" $! wπ) as "[I1 _]".
+      iDestruct ("I1" with "[$Ex $P]") as "[Φ $]". iFrame "Vo". iExists wπ. iFrame.
+    - iIntros "[[Vo (%wπ & Pc & Φ)] P0]".
+      iDestruct ("Iff" $! wπ) as "[_ I2]".
+      iDestruct ("I2" with "[$Φ $P0]") as "[Ex P]".
+      iFrame "Vo Ex". iExists x, wπ. iFrame. }
+  iMod (llftl_sep_split with "LFT Bor") as "[TokBor $]"; [done|].
+  iMod (llftl_bor_guard with "LFT TokBor") as "#G"; [done|].
+  iModIntro. iApply (guards_transitive_left with "G"). leaf_by_sep.
+  iIntros "[Vo (%wπ & Pc & Φ)]".
+  iDestruct (uniq_proph_tok with "Vo Pc") as "(Vo & $ & Pc)". iIntros "tok". iFrame "Vo".
+  iExists wπ. iFrame. by iApply "Pc".
 Qed.
 
 End proph_bor.

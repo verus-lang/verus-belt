@@ -435,48 +435,63 @@ Section type_sum.
     
     iDestruct "Own" as "[#Incl [%Ineqs [UniqBody #PtBase]]]".
     iDestruct (guards_transitive with "GL GuardsK") as "HalfGuardsK".
-    iDestruct "UniqBody" as "(ξBor & £2)".
+    iDestruct "UniqBody" as (κp γo) "(#Inclp & (Gho & ξTok) & £2 & #ξBor)".
     have ?: Inhabited (𝔄l !!ₗ i) := populate (vπ x1 inhabitant).
-    iMod (proph_loan_intro (uniq_cell_tyi x1) ⊤ (uniq_cell x1 d' g') with "PROPH UNIQ")
+    iMod (ghost_var_alloc (lstate_triv x1)) as (γ1) "[Gh1 Gh1']".
+    iMod (proph_loan_intro (uniq_cell_tyi x1) ⊤ (uniq_cell x1 d' g' γ1) with "PROPH UNIQ")
       as (ζi) "Loan"; [solve_ndisj|].
     set ξ := uniq_prvar (𝔄:=Σ! 𝔄l) (pinj i x1, pad) ξi.
     set ζ := uniq_prvar x1 ζi.
-    set f := λ (c: ~~ (uniq_cellₛ (𝔄l !!ₗ i))),
-      ((((pinj i c.1, pad), c.2)) : ~~ (uniq_cellₛ (Σ! 𝔄l))).
+    (* Only the first component of the old controller matters. *)
     set fπ := λ (c: uniq_cellₛ (𝔄l !!ₗ i)),
-      ((((pinj i c.1, pad), c.2)) : uniq_cellₛ (Σ! 𝔄l)).
-    have Hcomm: ∀ c π, vπ (f c) π = fπ (vπ c π).
-    { intros [c [??]] π. rewrite /f /fπ /=. by rewrite psum_map1_pinj. }
-    have Hrefl: ∀ c ζl, fπ ∘ vπ c ./ ζl → vπ c ./ ζl.
-    { intros [c [p1 p2]] ζl Dep. apply uniq_cell_dep_rev. simpl.
-      have Hi: Inj (=) (=) (λ a: (𝔄l !!ₗ i), ((pinj i a, pad), (p1, p2))).
-      { intros ?? [=Heq]. by apply pinj_Inj in Heq. }
-      by apply (proph_dep_destr (λ a: (𝔄l !!ₗ i), ((pinj i a, pad), (p1, p2)))). }
+      ((((pinj i c.1, pad), (1%positive, (1%positive, 1%positive)))) : uniq_cellₛ (Σ! 𝔄l)).
+    have Hinj: Inj (=) (=) (λ a: (𝔄l !!ₗ i), ((pinj i a, pad) : (Σ! 𝔄l)%ST)).
+    { intros ?? [=Heq]. by apply pinj_Inj in Heq. }
     destruct l as [l cells].
-    iMod (proph_ibor_map ⊤ κ ξ (uniq_cell (𝔄:=Σ! 𝔄l) (pinj i x1, pad) d' g') idx
-      (uniq_payload (Σ! tyl) tid (l, cells)) ζ (uniq_cell x1 d' g')
-      (uniq_payload (tyl +!! i) tid (cloc_take (cloc_skip (l, cells) 1) (ty_size (tyl +!! i))))
-      f fπ (llctx_interp L) ltac:(apply _) ltac:(solve_ndisj) Hcomm Hrefl
-      with "LFT PROPH UNIQ HalfGuardsK [£] L Loan ξBor") as "(#Obs' & Bor & L)".
-    { iIntros (G' ?) "#G'κ G' Payload".
+    iMod (proph_idx_bor_gen_map ⊤ κ ξ (uniq_cell (𝔄:=Σ! 𝔄l) (pinj i x1, pad) d' g' γo) idx
+      (uniq_gbody κp (Σ! tyl) tid (l, cells)) ζ (uniq_cell x1 d' g' γ1)
+      (uniq_gbody κ (tyl +!! i) tid (cloc_take (cloc_skip (l, cells) 1) (ty_size (tyl +!! i))))
+      fπ (llctx_interp L)
+      with "LFT PROPH UNIQ HalfGuardsK [£ Gho Gh1'] L Loan ξTok ξBor") as "(#Obs' & Bor & L)";
+      [solve_ndisj| |].
+    { iIntros (G' wπ ?) "#G'κ G' Body".
+      iMod (uniq_gbody_triv_open with "Gho Body") as "(_ & Gho & Gho' & Payload)".
       iMod (uniq_payload_force with "[] G' £ Payload") as "($ & #⧖1 & Gho1 & Pt1)";
         [rewrite /lazyE; solve_ndisj| |].
       { iApply (guards_transitive with "G'κ Incl"). }
       rewrite split_pt_xsum_cells''. iDestruct "Pt1" as "(Pt1 & Pt2 & Pt3)".
-      iModIntro. iSplitL "Gho1 Pt2".
-      { iApply uniq_payload_intro_later. iNext. iFrame "⧖1".
+      iModIntro. iExists (vπ (uniq_cell x1 d' g' γ1)). iSplitL "Gho1 Pt2 Gh1'".
+      { iApply (uniq_gbody_triv_close with "Gh1'"); [done|].
+        iApply uniq_payload_intro_later. iNext. iFrame "⧖1".
         unfold xsum_ty, ty_gho_own. rewrite to_xsum_pinj. iFrame. }
-      iIntros ([x1' [p1 p2]]) "Payload".
-      rewrite /uniq_payload /f /=.
-      iModIntro. iNext.
+      (* The old body, once the new borrow has ended: blocked at [κ], and rebuilt from
+         the settled contents of the new borrow. *)
+      iIntros (c1 w1) "Pc1 Q1".
+      set sO := lstate (PatBlocked κ)
+        (inl (PlaceProph (𝔄:=Σ! 𝔄l) (pinj i x1, pad) (λ π, (pinj i (π ζ).1, pad)))).
+      iMod (ghost_var_update_halves sO with "Gho Gho'") as "[Gho _]".
+      iModIntro. iNext. iExists (uniq_cell (𝔄:=Σ! 𝔄l) (pinj i x1, pad) d' g' γo).
+      rewrite /uniq_gbody cpd_body_cell.
+      iExists (PatBlocked κ), (inl (PlaceProph (𝔄:=Σ! 𝔄l) (pinj i x1, pad) (λ π, (pinj i (π ζ).1, pad)))).
+      iFrame "Gho". iSplit; [iApply pat_ok_blocked; iApply "Inclp"|].
+      iSplit; [iPureIntro; intros π; by rewrite prfn_den_inl|].
+      iApply guarded_upd_intro. iModIntro. iFrame "⧖1".
+      rewrite leaf_node_inl /leaf_owned /blocked_owned. iIntros "#†κ". iModIntro.
+      iDestruct (uniq_lender_settle with "LFT PROPH †κ [Pc1 Q1]") as "S1".
+      { iExists c1, w1. iFrame. }
       iApply (guarded_upd_weaken with "[]"); [iApply lft_intersect_tyl_lfts_lookup_incl|].
-      iApply (guarded_upd_mono with "[Pt1 Pt3] Payload").
-      iIntros "(#⧖2 & Gho1 & Pt2)". iModIntro. iFrame "⧖2".
-      iSplitL "Gho1".
-        { unfold xsum_ty, ty_gho_own. rewrite to_xsum_pinj. iFrame "Gho1". }
-        { rewrite split_pt_xsum_cells''. iFrame. } }
+      iApply (guarded_upd_mono with "[Pt1 Pt3] S1").
+      iIntros "(%y & %d1 & %g1 & Eq & #⧖2 & Gho1 & Pt2)". iModIntro.
+      iExists (pinj i y, pad), d1, g1. iFrame "⧖2".
+      iSplitL "Eq".
+      { rewrite /place_rfn_rel. iNext.
+        iDestruct (proph_eqz_constr (λ a: (𝔄l !!ₗ i), ((pinj i a, pad) : (Σ! 𝔄l)%ST)) with "Eq") as "Eq".
+        iApply (proph_eqz_eq with "Eq"); [done|]. fun_ext=>π /=. by rewrite psum_map1_pinj. }
+      rewrite /ofty_owned /=. iSplitR "Gho1".
+      { rewrite split_pt_xsum_cells''. iFrame. }
+      unfold xsum_ty, ty_gho_own. rewrite to_xsum_pinj. iFrame "Gho1". }
     iCombine "Obs Obs'" as "#Obs2".
-    iDestruct "Bor" as (ζidx) "Bor".
+    iDestruct "Bor" as (ζidx) "[ζTok #Bor]".
 
     iAssert (@[κ] &&{ ↑NllftG; d + 1 }&&> (_))%I as "PtBaseExp".
     { rewrite split_pt_xsum_cells'. iFrame "PtBase". }
@@ -487,7 +502,7 @@ Section type_sum.
     inversion Phys. subst val.
     iApply ("Body" $! tid
       ((cloc_take (cloc_skip (l,cells) 1) (ty_size (tyl +!! i)), x1, ζi, d', g', ζidx) -:: xl)
-      with "LFT TIME PROPH UNIQ E L I C [Bor £2 T] []").
+      with "LFT TIME PROPH UNIQ E L I C [ζTok Gh1 £2 T] []").
     { iFrame "T".
          unfold tctx_elt_interp. iExists (#(l +ₗ 1)), d.
          iSplit. { iPureIntro. simpl. rewrite Ev. trivial. }
@@ -496,7 +511,7 @@ Section type_sum.
          iSplit. { iApply (guards_transitive with "Incl []").
            iApply lft_intersect_tyl_lfts_lookup_incl. }
          iSplit. { iPureIntro. lia. }
-         iSplitL "Bor £2". { rewrite /uniq_body. iFrame. }
+         iSplitL "ζTok Gh1 £2". { iExists κ, γ1. iFrame "∗#". iApply guards_refl. }
          iFrame "PtBase2".
     }
     iApply proph_obs_impl; [|done]=>/= π.

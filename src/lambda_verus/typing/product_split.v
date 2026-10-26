@@ -302,34 +302,29 @@ Section product_split.
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
     iDestruct "Own" as "[[#Incl [%Ineqs [UniqBody #PtBase]]] %Phys]".
     iDestruct (guards_transitive with "Ghalf Alv") as "HalfGuardsK".
-    iDestruct "UniqBody" as "(ξBor & £2)".
+    iDestruct "UniqBody" as (κp γo) "(#Inclp & (Gho & ξTok) & £2 & #ξBor)".
     iDestruct (lc_weaken 1 with "£") as "£f"; [rewrite /advance_credits; lia|].
     destruct x0 as [x0 y0].
-    iMod (proph_loan_intro (uniq_cell_tyi x0) ⊤ (uniq_cell x0 d' g') with "PROPH UNIQ")
+    iMod (ghost_var_alloc (lstate_triv x0)) as (γ1) "[Gh1 Gh1']".
+    iMod (ghost_var_alloc (lstate_triv y0)) as (γ2) "[Gh2 Gh2']".
+    iMod (proph_loan_intro (uniq_cell_tyi x0) ⊤ (uniq_cell x0 d' g' γ1) with "PROPH UNIQ")
       as (ζi) "Loan1"; [solve_ndisj|].
-    iMod (proph_loan_intro (uniq_cell_tyi y0) ⊤ (uniq_cell y0 d' g') with "PROPH UNIQ")
+    iMod (proph_loan_intro (uniq_cell_tyi y0) ⊤ (uniq_cell y0 d' g' γ2) with "PROPH UNIQ")
       as (ζ'i) "Loan2"; [solve_ndisj|].
     set ξ := uniq_prvar (𝔄:=(𝔄 * 𝔅)%ST) (x0, y0) ξi.
     set ζ := uniq_prvar x0 ζi. set ζ' := uniq_prvar y0 ζ'i.
-    set f := λ (a: ~~ (uniq_cellₛ 𝔄)) (b: ~~ (uniq_cellₛ 𝔅)),
-      uniq_cell (𝔄:=(𝔄 * 𝔅)%ST) (a.1, b.1)
-        (dec_depth a.2.1 `max` dec_depth b.2.1) (dec_depth a.2.2 `max` dec_depth b.2.2).
+    (* Only the first component of the old controller matters. *)
     set fπ := λ (a: uniq_cellₛ 𝔄) (b: uniq_cellₛ 𝔅),
-      (((a.1, b.1), (enc_depth (dec_depth a.2.1 `max` dec_depth b.2.1),
-                     enc_depth (dec_depth a.2.2 `max` dec_depth b.2.2))) : uniq_cellₛ (𝔄 * 𝔅)).
-    have Hcomm: ∀ a b π, vπ (f a b) π = fπ (vπ a π) (vπ b π).
-    { intros [a [??]] [b [??]] π. done. }
-    have Hrefl: ∀ a b ζl, (λ π, fπ (vπ a π) (vπ b π)) ./ ζl → vπ a ./ ζl ∧ vπ b ./ ζl.
-    { intros [a [??]] [b [??]] ζl Dep. split; apply uniq_cell_dep_rev; simpl;
-        intros π π' Heq; have := Dep π π' Heq; rewrite /fπ /=; by intros [=]. }
-    iMod (proph_ibor_split ⊤ κ ξ (uniq_cell (𝔄:=(𝔄 * 𝔅)%ST) (x0, y0) d' g') idx
-      (uniq_payload (ty * ty') tid l)
-      ζ (uniq_cell x0 d' g') (uniq_payload ty tid (cloc_take l ty.(ty_size)))
-      ζ' (uniq_cell y0 d' g') (uniq_payload ty' tid (cloc_skip l ty.(ty_size)))
-      f fπ (fractional.half γ) ltac:(apply _) ltac:(solve_ndisj) Hcomm Hrefl
-      with "LFT PROPH UNIQ HalfGuardsK [£f] H1 Loan1 Loan2 ξBor")
-      as "(#Obs' & Bor & Bor' & H1)".
-    { iIntros (G' ?) "#G'κ G' Payload".
+      (((a.1, b.1), (1%positive, (1%positive, 1%positive))) : uniq_cellₛ (𝔄 * 𝔅)).
+    iMod (proph_idx_bor_gen_split ⊤ κ ξ (uniq_cell (𝔄:=(𝔄 * 𝔅)%ST) (x0, y0) d' g' γo) idx
+      (uniq_gbody κp (ty * ty') tid l)
+      ζ (uniq_cell x0 d' g' γ1) (uniq_gbody κ ty tid (cloc_take l ty.(ty_size)))
+      ζ' (uniq_cell y0 d' g' γ2) (uniq_gbody κ ty' tid (cloc_skip l ty.(ty_size)))
+      fπ (fractional.half γ)
+      with "LFT PROPH UNIQ HalfGuardsK [£f Gho Gh1' Gh2'] H1 Loan1 Loan2 ξTok ξBor")
+      as "(#Obs' & Bor & Bor' & H1)"; [solve_ndisj| |].
+    { iIntros (G' wπ ?) "#G'κ G' Body".
+      iMod (uniq_gbody_triv_open with "Gho Body") as "(_ & Gho & Gho' & Payload)".
       iMod (uniq_payload_force with "[] G' £f Payload") as "($ & #⧖1 & Gho1 & Pt1)";
         [rewrite /lazyE; solve_ndisj| |].
       { iApply (guards_transitive with "G'κ Incl"). }
@@ -337,22 +332,44 @@ Section product_split.
       rewrite heap_cloc_mapsto_fancy_vec_app. rewrite ty_size_eq.
       iDestruct "Pt1" as "[Pt1 Pt2]".
       iDestruct "Gho1" as "[Gho1 Gho2]".
-      iModIntro. iSplitL "Gho1 Pt1".
-      { iApply uniq_payload_intro_later. iNext. iFrame "∗#". }
-      iSplitL "Gho2 Pt2".
-      { iApply uniq_payload_intro_later. iNext. iFrame "∗#". }
-      iIntros ([x1 [p1 p2]] [x2 [p3 p4]]) "Q1 Q2".
-      rewrite /uniq_payload /f /=. rewrite !dec_enc_depth.
-      iModIntro. iNext.
-      (* The lifetime of the product is the intersection of those of the components. *)
-      rewrite lft_intersect_list_app.
-      iDestruct (guarded_upd_weaken with "[] Q1") as "Q1"; [iApply llftl_intersect_incl_l|].
-      iDestruct (guarded_upd_weaken with "[] Q2") as "Q2"; [iApply llftl_intersect_incl_r|].
-      iApply (guarded_upd_mono with "[] [Q1 Q2]"); [|iApply (guarded_upd_sep with "Q1 Q2")].
-      iIntros "[(#⧖2 & Gho1 & Pt1) (#⧖3 & Gho2 & Pt2)]". iModIntro.
+      iModIntro. iExists (vπ (uniq_cell x0 d' g' γ1)), (vπ (uniq_cell y0 d' g' γ2)).
+      iSplitL "Gho1 Pt1 Gh1'".
+      { iApply (uniq_gbody_triv_close with "Gh1'"); [done|].
+        iApply uniq_payload_intro_later. iNext. iFrame "∗#". }
+      iSplitL "Gho2 Pt2 Gh2'".
+      { iApply (uniq_gbody_triv_close with "Gh2'"); [done|].
+        iApply uniq_payload_intro_later. iNext. iFrame "∗#". }
+      (* The old body, once the new borrows have ended: blocked at [κ] (their blocked
+         lifetimes are included in [κ]), and rebuilt from their settled contents. *)
+      iIntros (c1 w1 c2 w2) "Pc1 Q1 Pc2 Q2".
+      set sO := lstate (PatBlocked κ)
+        (inl (PlaceProph (𝔄:=(𝔄 * 𝔅)%ST) (x0, y0) (λ π, ((π ζ).1, (π ζ').1)))).
+      iMod (ghost_var_update_halves sO with "Gho Gho'") as "[Gho _]".
+      iModIntro. iNext. iExists (uniq_cell (𝔄:=(𝔄 * 𝔅)%ST) (x0, y0) d' g' γo).
+      rewrite /uniq_gbody cpd_body_cell.
+      iExists (PatBlocked κ), (inl (PlaceProph (𝔄:=(𝔄 * 𝔅)%ST) (x0, y0) (λ π, ((π ζ).1, (π ζ').1)))).
+      iFrame "Gho". iSplit; [iApply pat_ok_blocked; iApply "Inclp"|].
+      iSplit; [iPureIntro; intros π; by rewrite prfn_den_inl|].
+      iApply guarded_upd_intro. iModIntro.
+      iSplitR. { iApply (persistent_time_receipt_mono with "⧖"). lia. }
+      rewrite leaf_node_inl /leaf_owned /blocked_owned. iIntros "#†κ". iModIntro.
+      iDestruct (uniq_lender_settle with "LFT PROPH †κ [Pc1 Q1]") as "S1".
+      { iExists c1, w1. iFrame. }
+      iDestruct (uniq_lender_settle with "LFT PROPH †κ [Pc2 Q2]") as "S2".
+      { iExists c2, w2. iFrame. }
+      simpl. rewrite lft_intersect_list_app.
+      iDestruct (guarded_upd_weaken with "[] S1") as "S1"; [iApply llftl_intersect_incl_l|].
+      iDestruct (guarded_upd_weaken with "[] S2") as "S2"; [iApply llftl_intersect_incl_r|].
+      iApply (guarded_upd_mono with "[] [S1 S2]"); [|iApply (guarded_upd_sep with "S1 S2")].
+      iIntros "[(%y1 & %d1 & %g1 & Eq1 & #⧖2 & Gho1 & Pt1) (%y2 & %d2 & %g2 & Eq2 & #⧖3 & Gho2 & Pt2)]".
+      iModIntro. iExists (y1, y2), (d1 `max` d2), (g1 `max` g2).
+      iSplitL "Eq1 Eq2".
+      { rewrite /place_rfn_rel. iNext. iApply (proph_eqz_prod with "[Eq1] [Eq2]").
+        - iApply (proph_eqz_eq with "Eq1"); done.
+        - iApply (proph_eqz_eq with "Eq2"); done. }
       iCombine "⧖2 ⧖3" as "⧖4".
       iSplit. { iApply (persistent_time_receipt_mono with "⧖4"). lia. }
-      rewrite heap_cloc_mapsto_fancy_vec_app.
+      rewrite /ofty_owned /=. rewrite heap_cloc_mapsto_fancy_vec_app.
       rewrite ty_size_eq. iFrame.
       iDestruct (ty_gho_own_depth_mono with "Gho1") as "[Gho1 _]". 3: {
       iDestruct (ty_gho_own_depth_mono with "Gho2") as "[Gho2 _]". 3: {
@@ -361,8 +378,8 @@ Section product_split.
     iCombine "Obs Obs'" as "#Obs".
     iDestruct ("Halfback" with "H1 H2") as "L".
     iMod (fupd_mask_mono with "L") as "$". { set_solver. }
-    iDestruct "Bor" as (ζidx) "Bor".
-    iDestruct "Bor'" as (ζ'idx) "Bor'".
+    iDestruct "Bor" as (ζidx) "[ζTok #Bor]".
+    iDestruct "Bor'" as (ζ'idx) "[ζ'Tok #Bor']".
     iModIntro.
 
     rewrite lft_intersect_list_app.
@@ -374,14 +391,14 @@ Section product_split.
     iExists -[(cloc_take l ty.(ty_size), x0, ζi, d', g', ζidx); (cloc_skip l ty.(ty_size), y0, ζ'i, d', g', ζ'idx)].
     inversion Phys. subst v.
     iSplit. {
-      iSplitL "Bor £2". {
+      iSplitL "ζTok Gh1 £2". {
          unfold tctx_elt_interp. iExists (#l.1), d.
          iSplit. { iPureIntro. simpl. rewrite path. rewrite shift_loc_0. trivial. }
          iSplit. { iApply (persistent_time_receipt_mono with "⧖"). lia. }
          iSplit; last by done.
          iSplit. { iApply (guards_transitive with "Incl []"). iApply llftl_intersect_incl_l. }
          iSplit. { iPureIntro. lia. }
-         iSplitL "Bor £2". { rewrite /uniq_body. iFrame. }
+         iSplitL "ζTok Gh1 £2". { iExists κ, γ1. iFrame "∗#". iApply guards_refl. }
          iFrame "PtBase1".
       }
       iSplitL. {
@@ -391,7 +408,7 @@ Section product_split.
          iSplit; last by done.
          iSplit. { iApply (guards_transitive with "Incl []"). iApply llftl_intersect_incl_r. }
          iSplit. { iPureIntro. lia. }
-         iSplitL "Bor' ⧗". { rewrite /uniq_body. iFrame. }
+         iSplitL "ζ'Tok Gh2 ⧗". { iExists κ, γ2. iFrame "∗#". iApply guards_refl. }
          iFrame "PtBase2".
       }
       done.
