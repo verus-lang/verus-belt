@@ -347,13 +347,19 @@ Section uniq_util.
       (κ κp: lft) (γ: gname) (tid: thread_id) (l: cloc) : iProp Σ :=
     uniq_tokγ x ξi d g idx γ ∗ ⧗1 ∗ uniq_persγ ty x ξi idx κ κp tid l.
 
+  (** The inclusion of the lifetime of a unique borrow in the lifetime of the
+      membership condition of its body. (It is a definition, so that framing does not
+      instantiate [κp] with an unrelated inclusion.) *)
+  Definition uniq_pat_lft (κ κp: lft) : iProp Σ := κ ⊑ κp.
+  Global Instance uniq_pat_lft_persistent κ κp : Persistent (uniq_pat_lft κ κp) := _.
+
   Definition uniq_body {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx)
       (κ: lft) (tid: thread_id) (l: cloc) : iProp Σ :=
-    ∃ κp γ, κ ⊑ κp ∗ uniq_bodyγ ty x ξi d g idx κ κp γ tid l.
+    ∃ κp γ, uniq_pat_lft κ κp ∗ uniq_bodyγ ty x ξi d g idx κ κp γ tid l.
 
   Definition uniq_body_pers_component {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx)
       (κ: lft) (tid: thread_id) (l: cloc) : iProp Σ :=
-    ∃ κp, κ ⊑ κp ∗ uniq_persγ ty x ξi idx κ κp tid l.
+    ∃ κp, uniq_pat_lft κ κp ∗ uniq_persγ ty x ξi idx κ κp tid l.
 
   Global Instance uniq_tokγ_timeless {𝔄} (x: ~~ 𝔄) ξi d g idx γ :
     Timeless (uniq_tokγ x ξi d g idx γ).
@@ -369,11 +375,11 @@ Section uniq_util.
 
   Lemma uniq_body_unfold {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l :
     uniq_body ty x ξi d g idx κ tid l ⊣⊢
-      ∃ κp γ, κ ⊑ κp ∗ uniq_tokγ x ξi d g idx γ ∗ ⧗1 ∗ uniq_persγ ty x ξi idx κ κp tid l.
+      ∃ κp γ, uniq_pat_lft κ κp ∗ uniq_tokγ x ξi d g idx γ ∗ ⧗1 ∗ uniq_persγ ty x ξi idx κ κp tid l.
   Proof. done. Qed.
 
   Lemma uniq_body_from_parts {𝔄} (ty: type 𝔄) x ξi d g idx κ κp γ tid l :
-    κ ⊑ κp -∗ uniq_tokγ x ξi d g idx γ -∗ ⧗1 -∗ uniq_persγ ty x ξi idx κ κp tid l -∗
+    uniq_pat_lft κ κp -∗ uniq_tokγ x ξi d g idx γ -∗ ⧗1 -∗ uniq_persγ ty x ξi idx κ κp tid l -∗
     uniq_body ty x ξi d g idx κ tid l.
   Proof. iIntros "? ? ? ?". iExists κp, γ. iFrame. Qed.
 
@@ -497,6 +503,28 @@ Section uniq_util.
     rewrite /blocked_owned. f_equiv. f_equiv.
     rewrite (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv. do 3 (f_equiv=>?).
     do 2 f_equiv. apply Hofty.
+  Qed.
+
+  Lemma uniq_gbody_loc {𝔄} κp (ty: type 𝔄) tid l l' c wπ :
+    (∀ x, l #↦!∗ ty.(ty_phys) x tid ⊣⊢ l' #↦!∗ ty.(ty_phys) x tid) →
+    uniq_gbody κp ty tid l c wπ ⊣⊢ uniq_gbody κp ty tid l' c wπ.
+  Proof.
+    intros Hl. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
+    do 3 f_equiv. f_equiv. f_equiv.
+    rewrite /leaf_owned. destruct r as [lr|]; [|done].
+    have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ⊣⊢ ofty_owned 0 ty x d g tid l'.
+    { intros. by rewrite /ofty_owned Hl. }
+    destruct p; try (f_equiv=>?; f_equiv; apply Hofty).
+    rewrite /blocked_owned. f_equiv. f_equiv. f_equiv. do 3 (f_equiv=>?).
+    do 2 f_equiv. apply Hofty.
+  Qed.
+
+  Lemma uniq_body_loc {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l l' :
+    (∀ x, l #↦!∗ ty.(ty_phys) x tid ⊣⊢ l' #↦!∗ ty.(ty_phys) x tid) →
+    uniq_body ty x ξi d g idx κ tid l ⊣⊢ uniq_body ty x ξi d g idx κ tid l'.
+  Proof.
+    intros Hl. rewrite /uniq_body /uniq_bodyγ /uniq_persγ. do 2 (f_equiv=>?).
+    do 3 f_equiv. apply proph_idx_bor_gen_proper=> c wπ. by apply uniq_gbody_loc.
   Qed.
 
   Lemma uniq_body_ne {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
@@ -652,6 +680,26 @@ Section uniq_util.
     iModIntro. iApply (uniq_body_from_parts with "Incl [Gh Tok] ⧗ [Bor]").
     - rewrite -(uniq_tokγ_retarget x1 x). iFrame.
     - by rewrite (uniq_persγ_retarget _ x1 x).
+  Qed.
+
+  (** As [uniq_body_acc_lazy], giving up the borrow when closing. *)
+  Lemma uniq_body_acc_drop {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E G :
+    Timeless G → ↑Nllft ⊆ E →
+    llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+    uniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
+      ▷ uniq_payload ty tid l x d g ∗ ⧗1 ∗
+      (∀ x1 d1 g1, ▷ uniq_payload ty tid l x1 d1 g1 ={↑Nllft}=∗ G).
+  Proof.
+    iIntros (??) "#LFT #UNIQ #Gk (%κp & %γ & #Incl & (Gh & Tok) & ⧗ & #Bor) G".
+    iMod (proph_idx_bor_gen_acc_idx with "LFT UNIQ Gk Tok Bor G") as (wπ) "[Body Close]";
+      [done|].
+    iMod (uniq_gbody_triv_open with "Gh Body") as "(_ & Gh & Gh' & P)".
+    iModIntro. iFrame "P ⧗". iIntros (x1 d1 g1) "P".
+    iMod (ghost_var_update_halves (lstate_triv x1) with "Gh Gh'") as "[_ Gh']".
+    iMod ("Close" $! (uniq_cell x1 d1 g1 γ) (vπ (uniq_cell x1 d1 g1 γ)) with "[Gh' P]")
+      as "[_ $]".
+    { by iApply (uniq_gbody_triv_close with "Gh' P"). }
+    done.
   Qed.
 
   (** As [uniq_body_acc_lazy], closing with a non-lazy payload. *)
@@ -1356,3 +1404,4 @@ Section uniq_util.
     iApply (proph_eqz_eq with "Eqz"); [|done]. fun_ext=> π /=. by rewrite Hw prfn_den_inl.
   Qed.
 End uniq_util.
+Global Typeclasses Opaque uniq_pat_lft.

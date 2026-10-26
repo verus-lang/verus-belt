@@ -1025,7 +1025,7 @@ Section StorageProtocol.
     iDestruct (ty_shr_default_to_guard storage_resource_ty with "Hshr_shr") as "#Hshr"; [done|].
     iSimpl in "Hshr".
     iDestruct (Alv with "L E") as "#Alv".
-    iDestruct "Huniq" as "[_ [%Hineq [[Bor Credits] Pers]]]".
+    iDestruct "Huniq" as "[_ [%Hineq [UB Pers]]]".
 
     iMod (fractional.frac_split_guard_in_half NllftG with "L Alv") as (γ) "[F1 [F2 [#guardHalf #back]]]".
     { solve_ndisj. }
@@ -1038,7 +1038,7 @@ Section StorageProtocol.
     iDestruct (guards_transitive with "G1' guardHalf") as "Incl1".
     iDestruct (guards_transitive with "G2' guardHalf") as "Incl2".
 
-    iMod (proph_ibor_acc with "LFT UNIQ Incl1 Bor A1") as "(Hgho1 & Hclose1)".
+    iMod (uniq_body_acc_drop with "LFT UNIQ Incl1 UB A1") as "(Hgho1 & Credits & Hclose1)".
     1: trivial.
 
     iApply wp_fupd.
@@ -1073,7 +1073,7 @@ Section StorageProtocol.
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME Credits Hd2''") as "(#? & Credits)"; [trivial |..].
     iMod (fupd_mask_subseteq (↑Nllft)) as "Hclose".
     { trivial. }
-    iMod ("Hclose1" $! (uniq_cell (𝔄:=ghostₛ (positiveₛ * 𝔄)) (γ1, x1) _ _) with "[H↦ H⧖ Hown1]") as "(Htok & A1)".
+    iMod ("Hclose1" $! ((γ1, x1) : ~~ (ghostₛ (positiveₛ * 𝔄))) _ _ with "[H↦ H⧖ Hown1]") as "A1".
     { iNext. iApply (uniq_payload_intro with "H⧖ [Hown1] H↦").
       iFrame "#". iFrame "%". iFrame.
     }

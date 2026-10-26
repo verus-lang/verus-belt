@@ -133,7 +133,7 @@ Section uniq_bor.
     iDestruct (llftl_bor_iff _ _
       ((proph_bor_tok (uniq_prvar x0 ξi) (uniq_cell x0 d' g' γ) idx ∗
         ghost_var γ (1/2) (lstate_triv x0)) ∗
-       (κ ⊑ κp ∗ ⧗1 ∗ uniq_persγ ty x0 ξi idx κ κp tid l)) with "[] Body") as "Body".
+       (uniq_pat_lft κ κp ∗ ⧗1 ∗ uniq_persγ ty x0 ξi idx κ κp tid l)) with "[] Body") as "Body".
     { iIntros "!> !>". rewrite /uniq_tokγ. iSplit.
       - iIntros "($ & [$ $] & $ & $)".
       - iIntros "[[$ $] ($ & $ & $)]". }
