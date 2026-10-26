@@ -597,7 +597,7 @@ Section borrow.
       iDestruct (ghost_var_agree with "Ghω Ghω'") as %[<- <-]%lstate_inj.
       iMod (guarded_upd_run with "Ghty G2 Upd") as "[G2 [#⧖ω Node]]"; [done|].
       rewrite leaf_node_inl.
-      iMod (leaf_owned_unblock with "LFT Ghty Okω †κ G2 ⧖ω Node")
+      iMod (leaf_owned_unblock _ 0 with "LFT Ghty Okω †κ G2 ⧖ω Node")
         as "[G2 (%y & %d' & %g' & Rel & #⧖' & Pt' & Gho')]".
       (* The equalizer of [ζ]: in the initial phase, from its controller; in the final
          phase, from the refinement of the inner borrow. *)

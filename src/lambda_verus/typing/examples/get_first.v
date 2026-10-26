@@ -87,12 +87,12 @@ Section get_first.
       (* &mut ( *b).0, at α ⊓ α *)
       iApply type_seq.
       { apply (type_reborrow_place_instr _ _ _ vb α α (PFst PHole (OfTy int)) int);
-          [solve_typing|done]. }
+          [solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       (* &mut ( *b).1, at α ⊓ α *)
       iApply type_seq.
       { apply (type_reborrow_place_instr _ _ _ vb α α (PSnd (Blocked int (α ⊓ α)) PHole) int);
-          [solve_typing|done]. }
+          [solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       (* resolve the borrow of field 1 *)
       iApply type_resolve. { solve_typing. } { apply uniq_bor.uniq_resolve. solve_typing. }
@@ -188,17 +188,17 @@ Section get_first.
       (* &mut ( *b).0.1, at α ⊓ α *)
       iApply type_seq.
       { apply (type_reborrow_place_instr _ _ _ vb α α
-          (PFst (PSnd (OfTy int) PHole) (OfTy int)) int); [solve_typing|done]. }
+          (PFst (PSnd (OfTy int) PHole) (OfTy int)) int); [solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       (* &mut ( *b).0.0 and &mut ( *b).1 *)
       iApply type_seq.
       { apply (type_reborrow_place_instr _ _ _ vb α α
-          (PFst (PFst PHole (Blocked int (α ⊓ α))) (OfTy int)) int); [solve_typing|done]. }
+          (PFst (PFst PHole (Blocked int (α ⊓ α))) (OfTy int)) int); [solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
       { apply (type_reborrow_place_instr _ _ _ vb α α
           (PSnd (ProdLty (Blocked int (α ⊓ α)) (Blocked int (α ⊓ α))) PHole) int);
-          [solve_typing|done]. }
+          [solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       (* resolve them, and drop b *)
       iApply type_resolve. { solve_typing. } { apply uniq_bor.uniq_resolve. solve_typing. }
@@ -291,7 +291,7 @@ Section get_first.
       (* &mut ( *b).0, at α ⊓ β *)
       iApply type_seq.
       { apply (type_reborrow_place_instr _ _ _ vb α β (PFst PHole (OfTy int)) int);
-          [solve_typing|done]. }
+          [solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       (* write through the reborrow *)
       iApply type_int. iIntros (v5). simpl_subst.
@@ -302,7 +302,7 @@ Section get_first.
       (* end β: unblock field 0 *)
       iApply (type_endlft _ _ _ _ β).
       { solve_typing. }
-      { apply (unblock_tctx_place _ _ _ (PFst PHole (OfTy int))); [solve_typing|done|].
+      { apply (unblock_tctx_place _ _ _ (PFst PHole (OfTy int))); [solve_typing|done|done|].
         apply unblock_tctx_nil. }
       (* fold back, and resolve b *)
       iApply typed_body_tctx_incl.

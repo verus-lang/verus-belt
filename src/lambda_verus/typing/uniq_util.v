@@ -193,7 +193,13 @@ Section uniq_util.
     (under [m] laters, one per enclosing owned pointer). A blocked leaf holds an
     inheritance that gives back pending ownership of the leaf (to be settled with a
     guard for the lifetime of the type, as the blocked entries of the type context);
-    the inheritance can be fired in a lazy update. *)
+    the inheritance can be fired in a lazy update.
+
+    The time receipt of the contents given back by a blocked leaf under [m] owned
+    pointers is shifted by [m] ([⧖((m + S d') `max` g')]), so that the owned pointers
+    above it can be folded back at depths increased by one per pointer (see
+    [ltype_owned_unblock_fold] in [typing/ltype.v]). For [m = 0], this is the usual
+    receipt [⧖(S d' `max` g')]. *)
   Definition ofty_owned {𝔄} (m: nat) (ty: type 𝔄) (x: ~~𝔄) (d g: nat)
       (tid: thread_id) (l: cloc) : iProp Σ :=
     l #↦!∗ ty.(ty_phys) x tid ∗ ▷^m ty.(ty_gho_own) x d g tid.
@@ -201,7 +207,7 @@ Section uniq_util.
   Definition blocked_owned {𝔄} (m: nat) (ty: type 𝔄) (α: lft) (lr: place_rfn 𝔄)
       (tid: thread_id) (l: cloc) : iProp Σ :=
     [†α] ={lazyE}=∗ guarded_upd lazyE @[ty_lft ty]
-      (∃ x d' g', place_rfn_rel lr x ∗ ⧖(S d' `max` g') ∗ ofty_owned m ty x d' g' tid l).
+      (∃ x d' g', place_rfn_rel lr x ∗ ⧖((m + S d') `max` g') ∗ ofty_owned m ty x d' g' tid l).
 
   (** [c] selects the core interpretation, in which blocked leaves are unblocked. *)
   Definition leaf_owned {𝔄} (c: bool) (m: nat) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
@@ -228,8 +234,9 @@ Section uniq_util.
   Lemma leaf_owned_unblock {𝔄} κ m (ty: type 𝔄) p lr d g tid l G :
     Timeless G →
     llft_ctx -∗ (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ pat_ok κ p -∗ [†κ] -∗ G -∗
-    ⧖(S d `max` g) -∗ leaf_owned false m ty p (inl lr) d g tid l ={lazyE}=∗
-      G ∗ ∃ x d' g', place_rfn_rel lr x ∗ ⧖(S d' `max` g') ∗ ofty_owned m ty x d' g' tid l.
+    ⧖((m + S d) `max` g) -∗ leaf_owned false m ty p (inl lr) d g tid l ={lazyE}=∗
+      G ∗ ∃ x d' g', place_rfn_rel lr x ∗ ⧖((m + S d') `max` g') ∗
+        ofty_owned m ty x d' g' tid l.
   Proof.
     iIntros (?) "#LFT #Gty #Ok #†κ G #⧖ L".
     destruct p; try (iModIntro; iFrame "G"; iDestruct "L" as (x) "[Rel O]";
@@ -263,7 +270,7 @@ Section uniq_util.
         ofty_owned 0 ty x d' g' tid l.
   Proof.
     iIntros (?) "#LFT #Gty #Ok #†κ G #⧖ L". iDestruct (pat_ok_norm _ _ r with "Ok") as "Ok'".
-    iApply (leaf_owned_unblock with "LFT Gty Ok' †κ G ⧖ L").
+    iApply (leaf_owned_unblock _ 0 with "LFT Gty Ok' †κ G ⧖ L").
   Qed.
 
   (** ** The pinned body
@@ -1424,7 +1431,7 @@ Section uniq_util.
     iMod (guarded_upd_run with "[] H2 Upd") as "[H2 [#⧖ Node]]"; [done| |].
     { iApply (guards_transitive with "Gh2 In"). }
     rewrite leaf_node_inl.
-    iDestruct (leaf_owned_unblock with "LFT [] Ok †κ' H2 ⧖ Node") as "Upd".
+    iDestruct (leaf_owned_unblock _ 0 with "LFT [] Ok †κ' H2 ⧖ Node") as "Upd".
     { iApply (guards_transitive with "Gh2 In"). }
     iMod (fupd_mask_mono with "Upd") as "[H2 (%y & %d' & %g' & Rel & #⧖' & Pt & Gho)]";
       [done|].
