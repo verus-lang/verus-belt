@@ -48,7 +48,7 @@ Section shr_bor.
     iIntros "LFT #Incl #Gho".
     destruct d as [|d]; [done|]. rewrite /by_succ.
     iDestruct "Gho" as "[Phys [Shr #InnerPers]]".
-    iDestruct (ty_shr_lft_mono ty κ κ0 with "[] Shr") as "#Shr0".
+    iDestruct (ty_shr_lft_mono0 ty κ κ0 with "[] Shr") as "#Shr0".
     { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_l. }
     iApply (bi.laterN_le (g + 1 + d * (g + 1))); [lia|].
     rewrite (bi.laterN_add (g + 1) (d * (g + 1))). iNext (g + 1).
@@ -155,7 +155,7 @@ Section typing.
         unfold by_succ. iDestruct "A" as "[#Hphys [#Hshr #Hpers]]".
         iSplit. { rewrite Phys. iApply (guards_transitive_right with "Incl Hphys"). }
         iSplit. {
-            iApply (ty_shr_lft_mono with "Incl").
+            iApply (ty_shr_lft_mono0 with "Incl").
             iApply "SubShr". iFrame "Hshr".
         }
         { iApply "SubPers". iFrame "Hpers". }

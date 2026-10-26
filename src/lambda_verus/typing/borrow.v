@@ -689,7 +689,7 @@ Section borrow.
     iSplit; last by done.
     iSplit. { leaf_goal laters to (S d' + 1). { lia. }
       iApply (guards_transitive_right with "Hκ Gpt"). }
-    iSplit. { iApply ty_shr_depth_mono; [| |iApply (ty_shr_lft_mono with "Hκ InnerShr'")]; lia. }
+    iSplit. { iApply ty_shr_depth_mono; [| |iApply (ty_shr_lft_mono0 with "Hκ InnerShr'")]; lia. }
     iNext. iApply (ty_gho_pers_depth_mono with "InnerPers"); lia.
   Qed.
 

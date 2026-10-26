@@ -93,9 +93,10 @@ Section points_to.
     iApply ty_gho_pers_impl. iFrame.
   Qed.
   Next Obligation.
-    intros 𝔄 ty κ κ' x d g tid. iIntros "#Incl Shr".
+    intros 𝔄 ty κ κ' x n d g tid. iIntros "#Incl Shr".
     iNext. destruct d as [|d']; [done|]. iDestruct "Shr" as "[Pt Shr]". iSplit.
-    - iApply (guards_transitive_right with "Incl Pt").
+    - replace (g + n + 1) with (n + (g + 1)) by lia.
+      iApply (guards_transitive_additive with "Incl Pt").
     - iApply (ty_shr_lft_mono with "Incl Shr").
   Qed.
   Next Obligation.

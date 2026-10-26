@@ -39,14 +39,17 @@ Section uniq_bor.
     
     (* The sharing predicate is structural: sharing [&uniq{κ} ty] at κ0 gives shared
        access to the referent at [κ0 ⊓ κ]. The guard of the token of the prophecy
-       variable is what [ty_shr_guard_proph] needs for it. *)
+       variable is what [ty_shr_guard_proph] needs for it. The guards have [g+1]
+       laters and the sharing predicate of the referent is at depth [g] (rather than
+       the [g'] of the value), so that lifetime monotonicity can absorb the laters of a
+       lifetime inclusion into [g] (see [ty_shr_lft_mono]). *)
     ty_shr κ0 (x : ~~ (uniq_borₛ 𝔄)) d g tid :=
       match x with
         (l, x0, ξi, d', g', idx) =>
           ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗
           (@[κ0 ⊓ κ] &&{↑NllftG; g+1}&&> l.1 ↦[^ l.2]!∗ ty.(ty_phys) x0 tid) ∗
-          (@[κ0 ⊓ κ] &&{↑NllftG; 1}&&> 1:[uniq_prvar x0 ξi]) ∗
-          ▷ ty.(ty_shr) (κ0 ⊓ κ) x0 d' g' tid
+          (@[κ0 ⊓ κ] &&{↑NllftG; g+1}&&> 1:[uniq_prvar x0 ξi]) ∗
+          ▷ ty.(ty_shr) (κ0 ⊓ κ) x0 d' g tid
       end;
   |}%I.
   Next Obligation. intros ? ? ? x. destruct x as [[[[[[l ?] ?] ?] ?] ?] ?]. done. Qed.
@@ -77,19 +80,25 @@ Section uniq_bor.
     typeclasses eauto.
   Qed.
   Next Obligation.
-    intros 𝔄 κ ty κ0 κ1 x d g tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
-    iIntros "#Incl (%Le & #Pt & #Tok & Shr)".
-    iAssert (κ1 ⊓ κ ⊑ κ0 ⊓ κ)%I as "#Incl'".
-    { iApply llftl_incl_glb; [|iApply llftl_intersect_incl_r].
-      iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|done]. }
-    iSplit; [done|]. iSplit; [iApply (guards_transitive_right with "Incl' Pt")|].
-    iSplit; [iApply (guards_transitive_right with "Incl' Tok")|].
+    intros 𝔄 κ ty κ0 κ1 x n d g tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
+    iIntros "#Incl ([%Le1 %Le2] & #Pt & #Tok & Shr)".
+    iAssert (@[κ1 ⊓ κ] &&{↑NllftG; n}&&> @[κ0 ⊓ κ])%I as "#Incl'".
+    { iApply guards_llft_glb.
+      - leaf_goal laters to (0 + n). { lia. }
+        iApply (guards_transitive_additive with "[] Incl"). iApply llftl_intersect_incl_l.
+      - leaf_goal laters to 0. { lia. } iApply llftl_intersect_incl_r. }
+    iSplit. { iPureIntro. lia. }
+    replace (g + n + 1) with (n + (g + 1)) by lia.
+    iSplit; [iApply (guards_transitive_additive with "Incl' Pt")|].
+    iSplit; [iApply (guards_transitive_additive with "Incl' Tok")|].
     iNext. iApply (ty_shr_lft_mono with "Incl' Shr").
   Qed.
   Next Obligation.
     intros 𝔄 κ ty κ0 d g d1 g1 x tid ??. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
-    iIntros "(%Le & Pt & Tok & Shr)". iSplit; [iPureIntro; lia|]. iFrame "Tok Shr".
-    leaf_goal laters to (g+1). { lia. } iFrame "Pt".
+    iIntros "(%Le & Pt & Tok & Shr)". iSplit; [iPureIntro; lia|].
+    iSplitL "Pt". { leaf_goal laters to (g+1). { lia. } iFrame "Pt". }
+    iSplitL "Tok". { leaf_goal laters to (g+1). { lia. } iFrame "Tok". }
+    iNext. iApply (ty_shr_depth_mono with "Shr"); lia.
   Qed.
   Next Obligation.
     intros 𝔄 κ ty E κ0 x d g tid G ??. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
@@ -140,7 +149,10 @@ Section uniq_bor.
     iMod (ty_share with "LFT Incl' InnerPers Gκ G Gho") as "Upd"; [solve_ndisj|].
     iModIntro. iApply (step_fupdN_wand with "Upd"). iIntros ">[$ Shr] !>".
     iSplit; [iPureIntro; lia|].
-    iFrame "TokG". iSplitR "Shr"; [|by iNext]. iApply guard_cloc_combine_fancy.
+    iSplitR "Shr"; last first.
+    { iSplitR. { leaf_goal laters to 1. { lia. } iFrame "TokG". }
+      iNext. iApply (ty_shr_depth_mono with "Shr"); lia. }
+    iApply guard_cloc_combine_fancy.
     - iApply (guards_transitive_right with "[] PtBase"). iApply llftl_intersect_incl_r.
     - leaf_goal laters to 1. { lia. } iFrame "Pt".
   Qed.
@@ -155,7 +167,7 @@ Section uniq_bor.
       iApply (llftl_incl_trans with "Incl0"). iApply llftl_intersect_incl_r. }
     rewrite elem_of_cons in Hin. destruct Hin as [->|Hin].
     - iApply bi.laterN_intro. iIntros "#Rκ".
-      leaf_goal laters to (n + 1). { nia. }
+      leaf_goal laters to (n + (g + 1)). { nia. }
       iApply (guards_transitive_additive with "[] TokG").
       iApply guards_llft_glb; [done|]. iApply (guards_transitive_left with "Rκ Hκ0κ").
     - iDestruct "InnerPers" as "[Dead|InnerPers]".
@@ -166,11 +178,13 @@ Section uniq_bor.
         { iApply (guards_transitive_left with "Rκ Hκ0κ"). }
         iApply (guards_transitive_right with "Inclκ'").
         leaf_by_sep. iIntros "Alive". iExFalso. iApply (llftl_not_own_end with "Alive †κ'").
-      + iApply (bi.laterN_le (S (d' * (g' + 1)))). { nia. }
+      + iApply (bi.laterN_le (S (d' * (g + 1)))). { nia. }
         iNext.
-        iDestruct (ty_shr_guard_proph ty (κ0 ⊓ κ) x0 n d' g' tid ξ R Hin
-          with "LFT Incl' InnerPers Shr") as "GP".
-        iNext. iIntros "#Rκ". leaf_goal laters to (n + (d'+1)*(g'+1)). { nia. }
+        iDestruct (ty_gho_pers_depth_mono _ _ _ d' g with "InnerPers") as "#InnerPers'";
+          [lia..|].
+        iDestruct (ty_shr_guard_proph ty (κ0 ⊓ κ) x0 n d' g tid ξ R Hin
+          with "LFT Incl' InnerPers' Shr") as "GP".
+        iNext. iIntros "#Rκ". leaf_goal laters to (n + (d'+1)*(g+1)). { nia. }
         iApply "GP". iApply guards_llft_glb; [done|].
         iApply (guards_transitive_left with "Rκ Hκ0κ").
   Qed.
@@ -298,7 +312,7 @@ Section typing.
       - destruct (SyncTy tid tid' x0 d' g') as [H'phys [H'gho [H'pers _]]].
         setoid_rewrite H'pers. done.
       - by apply uniq_pers_component_proper. }
-    intros κ0. simpl. destruct (SyncTy tid tid' x0 d' g') as [H'phys [_ [_ H'shr]]].
+    intros κ0. simpl. destruct (SyncTy tid tid' x0 d' g) as [H'phys [_ [_ H'shr]]].
     by rewrite H'phys H'shr.
   Qed.
 
@@ -370,7 +384,7 @@ Section typing.
     rewrite EqPhys.
     iSplit; [iApply (guards_transitive_right with "Incl' Pt")|].
     iSplit; [iApply (guards_transitive_right with "Incl' Tok")|].
-    iNext. iApply (ty_shr_lft_mono with "Incl'"). by iApply "EqShr".
+    iNext. iApply (ty_shr_lft_mono0 with "Incl'"). by iApply "EqShr".
   Qed.
   
   Lemma uniq_eqtype {𝔄} E L κ κ' (ty ty': type 𝔄) :

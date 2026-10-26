@@ -73,8 +73,9 @@ Section points_to.
   Next Obligation. intros. apply (ty_gho_pers_depth_mono ty); trivial. Qed.
   Next Obligation. iIntros "* [? ?]". iApply (ty_gho_pers_impl 𝔄); trivial. Qed.
   Next Obligation.
-    intros. iIntros "#Incl [P Shr]". iSplit.
-    - iApply (guards_transitive_right with "Incl P").
+    intros 𝔄 ty P κ κ' x n d g tid. iIntros "#Incl [P Shr]". iSplit.
+    - replace (g + n + 1) with (n + (g + 1)) by lia.
+      iApply (guards_transitive_additive with "Incl P").
     - iApply (ty_shr_lft_mono with "Incl Shr").
   Qed.
   Next Obligation.

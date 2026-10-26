@@ -180,11 +180,13 @@ Section default_shr.
     Persistent (default_shr gho κ x d g tid).
   Proof. rewrite /default_shr. apply _. Qed.
 
-  Lemma default_shr_lft_mono κ κ' x d g tid :
-    κ' ⊑ κ -∗ default_shr gho κ x d g tid -∗ default_shr gho κ' x d g tid.
+  Lemma default_shr_lft_mono κ κ' x n d g tid :
+    (@[κ'] &&{↑NllftG; n}&&> @[κ]) -∗ default_shr gho κ x d g tid -∗
+    default_shr gho κ' x d (g+n) tid.
   Proof.
-    iIntros "#Incl Shr". iDestruct "Shr" as (d0 g0) "[%Le #Guard]". iExists d0, g0. iSplit; [done|].
-    iApply (guards_transitive_right with "Incl Guard").
+    iIntros "#Incl Shr". iDestruct "Shr" as (d0 g0) "[%Le #Guard]". iExists d0, g0.
+    iSplit. { iPureIntro. lia. } replace (g + n + 1) with (n + (g + 1)) by lia.
+    iApply (guards_transitive_additive with "Incl Guard").
   Qed.
 
   Lemma default_shr_depth_mono κ d g d' g' x tid :
@@ -319,8 +321,10 @@ Record type `{!typeG Σ} 𝔄 := {
   (* The sharing predicate, for sharing at the lifetime κ. *)
   ty_shr: lft → ~~𝔄 → nat → nat → thread_id → iProp Σ;
   ty_shr_persistent κ x d g tid : Persistent (ty_shr κ x d g tid);
-  ty_shr_lft_mono κ κ' x d g tid :
-      κ' ⊑ κ -∗ ty_shr κ x d g tid -∗ ty_shr κ' x d g tid;
+  (* Lifetime monotonicity, for an inclusion with laters: the laters of the inclusion
+     are absorbed into the depth [g]. *)
+  ty_shr_lft_mono κ κ' x n d g tid :
+      (@[κ'] &&{↑NllftG; n}&&> @[κ]) -∗ ty_shr κ x d g tid -∗ ty_shr κ' x d (g+n) tid;
   ty_shr_depth_mono κ d g d' g' x tid :
       (d ≤ d')%nat → (g ≤ g')%nat → ty_shr κ x d g tid -∗ ty_shr κ x d' g' tid;
   (* The sharing law: a full borrow of the ownership predicate at κ can be turned into
@@ -430,6 +434,14 @@ Notation ty_lft ty := (lft_intersect_list ty.(ty_lfts)).
 
 Section ty_shr_lemmas.
   Context `{!typeG Σ}.
+
+  (** Lifetime monotonicity for a lifetime inclusion (without laters). *)
+  Lemma ty_shr_lft_mono0 {𝔄} (ty: type 𝔄) κ κ' x d g tid :
+    κ' ⊑ κ -∗ ty.(ty_shr) κ x d g tid -∗ ty.(ty_shr) κ' x d g tid.
+  Proof.
+    iIntros "Incl Shr". iDestruct (ty_shr_lft_mono with "Incl Shr") as "Shr".
+    by rewrite Nat.add_0_r.
+  Qed.
 
   (** Whether a type uses the default sharing predicate. This is the case for every
       type defined with [ty_shr := default_shr ...] (and provable by [done]). *)

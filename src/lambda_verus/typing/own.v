@@ -54,9 +54,10 @@ Section own.
     iDestruct "A" as "[_ [_ pers]]". iApply ty_gho_pers_impl. iFrame.
   Qed.
   Next Obligation.
-    intros 𝔄 n ty κ κ' x d g tid. iIntros "#Incl Shr".
+    intros 𝔄 n ty κ κ' x m d g tid. iIntros "#Incl Shr".
     iNext. destruct d as [|d']; [done|]. iDestruct "Shr" as "[Pt Shr]". iSplit.
-    - iApply (guards_transitive_right with "Incl Pt").
+    - replace (g + m + 1) with (m + (g + 1)) by lia.
+      iApply (guards_transitive_additive with "Incl Pt").
     - iApply (ty_shr_lft_mono with "Incl Shr").
   Qed.
   Next Obligation.
