@@ -56,30 +56,31 @@ Section borrow.
         rewrite <- heap_cloc_mapsto_empty. iApply guards_true.
       }
       unfold blocked_type_elim. iSplit; [|done].
-      iExists v. iFrame "#". iIntros "†κ".
+      iExists v. iFrame "#". iIntros "#†κ".
       iDestruct ("Back" with "†κ") as "Back". iMod (fupd_mask_mono with "Back") as "Back". { set_solver. }
-      (* The later credit pays for the later in front of the final payload. The pending
-         ownership is the lazy update of the payload (for the lifetime of the type),
+      (* The later credit pays for the later in front of what the lender gets back. The
+         pending ownership is the settling of what the lender gets back (unblocking it
+         and composing the equalizer of its controller), for the lifetime of the type,
          settled by the unblocking rule with its guard. *)
-      iMod (lc_fupd_elim_later with "£ Back") as (x'' d'' g'') "(Eqz & Lazy)".
-      iModIntro. iExists (l, x''). iFrame "⧗'".
-      iSplitL "Eqz"; last first.
-      { rewrite /tctx_pending_own uniq_payload_cell.
-        iApply (guarded_upd_mask_mono lazyE); [set_solver|].
-        iApply (guarded_upd_mono with "[-Lazy] Lazy"). iIntros "(⧖'' & gho & pt) !>".
-        iExists (S d'' `max` g'').
+      iMod (lc_fupd_elim_later with "£ Back") as "Lender".
+      iModIntro. iFrame "⧗'".
+      iDestruct (uniq_lender_settle with "LFT PROPH †κ Lender") as "Settle".
+      rewrite /tctx_pending.
+      iApply (guarded_upd_mask_mono lazyE); [set_solver|].
+      iApply (guarded_upd_mono with "[] Settle").
+      iIntros "(%x'' & %d'' & %g'' & Eqz & ⧖'' & gho & pt) !>".
+      iExists (l, x''). iSplitL "Eqz".
+      { iNext.
+        iApply proph_eqz_modify.
+         2: { iApply (proph_eqz_constr (λ t, (l, t)) with "Eqz"). }
+        iApply (proph_obs_impl with "Obsξζ"). intros π Ha.
+        simpl. simpl in Ha. rewrite <- Ha.  trivial. }
+      iExists (S d'' `max` g'').
       destruct (S d'' `max` g'') as [|d1] eqn:Hd1; first by lia.
       iFrame.
       rewrite heap_cloc_mapsto_fancy_empty. repeat rewrite ty_size_eq. iFrame.
       iSplitL. { iDestruct (ty_gho_own_depth_mono with "gho") as "[gho _]"; last by iFrame "gho". { lia. } { lia. } }
-      done. }
-      {
-        iNext.
-        iApply proph_eqz_modify.
-         2: { iApply (proph_eqz_constr (λ t, (l, t)) with "Eqz"). }
-        iApply (proph_obs_impl with "Obsξζ"). intros π Ha.
-        simpl. simpl in Ha. rewrite <- Ha.  trivial.
-      }
+      done.
     }
     iCombine "Obs Obsξζ" as "Obs1".
     iApply (proph_obs_impl with "Obs1"). intros π [Hm Hk]. apply Hm; trivial.

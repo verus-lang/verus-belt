@@ -1,4 +1,5 @@
 From iris.algebra Require Import frac dfrac_agree.
+From iris.base_logic.lib Require Import ghost_var.
 From lrust.util Require Import cancellable_na_invariants.
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import races adequacy proofmode notation.
@@ -15,13 +16,14 @@ Class typePreG Σ := PreTypeG {
   #[global] type_preG_lftGS :: llft_logicGpreS Σ;
   #[global] type_preG_frac_logicG :: frac_logicG Σ;
   #[global] type_preG_ecInv_logicΣ :: ecInv_logicG Σ;
-  #[global] type_preG_agree_pairΣ :: inG Σ (dfrac_agreeR (leibnizO nat))
+  #[global] type_preG_agree_pairΣ :: inG Σ (dfrac_agreeR (leibnizO nat));
+  #[global] type_preG_lstate_ghost_varG :: ghost_varG Σ ltype_state
 }.
 
 Definition typeΣ : gFunctors :=
   #[lrustΣ; llft_logicΣ; cancellable_na_invariants.na_invΣ;
     GFunctor (constRF fracR); uniqΣ; prophΣ; frac_logicΣ; ecInv_logicΣ;
-    GFunctor ((dfrac_agreeR (leibnizO (nat))))].
+    GFunctor ((dfrac_agreeR (leibnizO (nat)))); ghost_varΣ ltype_state].
 Global Instance subG_typePreG {Σ} : subG typeΣ Σ → typePreG Σ.
 Proof. solve_inG. Qed.
 
@@ -47,7 +49,7 @@ Section type_soundness.
     apply: lrust_adequacy=>?. iIntros "£ #TIME".
     iMod (llft_alloc with "£") as (?) "#LFT".
     iMod proph_init as (?) "#PROPH"; first done.
-    iMod uniq_init as (?) "#UNIQ"; first done. set (Htype := TypeG Σ _ _ _ _ _ _ _).
+    iMod uniq_init as (?) "#UNIQ"; first done. set (Htype := TypeG Σ _ _ _ _ _ _ _ _).
     iMod (invctx_alloc ⊤) as (tid) "Hinvctx".
     Set Printing Implicit.
     wp_bind (of_val main). iApply (wp_wand with "[Hinvctx]").

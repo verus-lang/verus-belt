@@ -99,15 +99,18 @@ Section type_context.
   Qed.
 
   (** Pending ownership of a value that has been given back to a lender: it becomes
-      ownership (with a time receipt for its depth) once it is settled, which needs a
-      guard for the lifetime of the type (it is a guarded update, see [guarded_upd]).
-      For a value that contains the payload of a unique borrow (e.g. the restored
-      borrow of an ended reborrow, or the contents given back to the lender of a
-      borrow), settling runs the lazy update of the payload, which needs that guard and
-      gives the time receipt of the contents. *)
-  Definition tctx_pending_own {𝔄} (tid: thread_id) (ty: type 𝔄) (x: ~~ 𝔄) (v: val)
+      ownership (with a time receipt for its depth) of some value [x'], whose
+      prophecy is equalized with [xπ], once it is settled, which needs a guard for the
+      lifetime of the type (it is a guarded update, see [guarded_upd]). For a value that
+      contains the payload of a unique borrow (e.g. the restored borrow of an ended
+      reborrow, or the contents given back to the lender of a borrow), settling runs the
+      lazy update of the payload, which needs that guard and gives the time receipt of
+      the contents; the value is only known after settling, since the borrow may have
+      ended in a state with blocked parts, which have to be unblocked first. *)
+  Definition tctx_pending {𝔄} (tid: thread_id) (ty: type 𝔄) (xπ: proph 𝔄) (v: val)
       : iProp Σ :=
-    guarded_upd ⊤ @[ty_lft ty] (∃ d, ⧖d ∗ ty_own ty x d d tid [FVal v]).
+    guarded_upd ⊤ @[ty_lft ty]
+      (∃ x', ▷ (xπ :== vπ x') ∗ ∃ d, ⧖d ∗ ty_own ty x' d d tid [FVal v]).
 
   (** Type Context Element Interpretation *)
   Definition tctx_elt_interp {𝔄} (tid: thread_id) (t: tctx_elt 𝔄) (x: ~~ 𝔄)
@@ -115,7 +118,7 @@ Section type_context.
     | p ◁ ty => ∃v d, ⌜eval_path p = Some v⌝ ∗ ⧖d ∗ ty_own ty x d d tid [FVal v]
     | p ◁{κ} bty => blocked_type_elim bty x (λ 𝔄₀ ty x₀ ,
       ∃v, ⌜eval_path p = Some v⌝ ∗
-        ([†κ] ={⊤}=∗ ∃x', ▷(blockedπ x₀ :== @vπ 𝔄₀ x') ∗ ⧗1 ∗ tctx_pending_own tid ty x' v)
+        ([†κ] ={⊤}=∗ ⧗1 ∗ tctx_pending tid ty (blockedπ x₀) v)
       ) 
      end%I.
 
@@ -558,14 +561,14 @@ Section lemmas.
       (λ π '(x -:: xl), λ '(x' -:: xl'), blockedπ x π = vπ x' π ∧ f π xl xl').
   Proof.
     iIntros (Alv Un ??[??]?) "#LFT #TIME #E #L G #†κ /=[(%v &%& Upd) T]".
-    iMod ("Upd" with "†κ") as (x') "(Eqz & ⧗ & Pending)".
+    iMod ("Upd" with "†κ") as "(⧗ & Pending)".
     
     leaf_open "L" with "G" as "[L1 back]". { set_solver. }
     iDestruct (Alv with "L1 E") as "#Lkg".
     iMod ("back" with "L1") as "G".
     
     (* Settle the pending ownership, with the guard for the lifetime of the type. *)
-    iMod (guarded_upd_run with "[] G Pending") as "[G (%d & #⧖dp & ty)]"; [done| |].
+    iMod (guarded_upd_run with "[] G Pending") as "[G (%x' & Eqz & %d & #⧖dp & ty)]"; [done| |].
     { iApply (guards_transitive with "L Lkg"). }
     
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖dp") as "[⧖S £]"; first by solve_ndisj.

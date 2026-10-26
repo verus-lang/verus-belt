@@ -131,8 +131,8 @@ Proof.
    - destruct x. apply (proph_dep_constr (λ i, (_,i))). apply (FIX 𝔄).
    - destruct x. apply (proph_dep_constr (λ i, (_,i))). apply (FIX 𝔄).
    - destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
-     set ξ := PrVar ((𝔄 * (positiveₛ * positiveₛ))%ST
-       ↾ @to_inh_syn_type ((𝔄 * (positiveₛ * positiveₛ))%ST) (vπ x0 inhabitant, (1%positive, 1%positive))) ξi.
+     set ξ := PrVar ((𝔄 * (positiveₛ * (positiveₛ * positiveₛ)))%ST
+       ↾ @to_inh_syn_type ((𝔄 * (positiveₛ * (positiveₛ * positiveₛ)))%ST) (vπ x0 inhabitant, (1%positive, (1%positive, 1%positive)))) ξi.
      apply (proph_dep_constr2 (λ a b, (b, a)) (λ π, (π ξ).1) _ [ξ]).
      + apply (proph_dep_constr fst (λ π, π ξ)). apply proph_dep_one.
      + apply (FIX 𝔄).
