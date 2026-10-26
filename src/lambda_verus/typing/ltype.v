@@ -996,7 +996,7 @@ Section fold.
       (λ c wπ, ⌜wπ = vπ c⌝ ∗ uniq_payload ty tid l c)%I with "[Gh Gh'] [Gho Pt]")
       as (idx') "(Tok & Bor' & G)".
     { iIntros "!>" (c wπ2) "[>-> Pl]". rewrite /uniq_payload.
-      iDestruct "Pl" as "(>#⧖2 & _ & Pl)".
+      iDestruct "Pl" as "(>#⧖2 & Pl)".
       destruct (Hback c.1 (dec_depth c.2.1) (dec_depth c.2.2))
         as (p'' & r'' & [Hok'' Hden''] & Hent).
       iMod (ghost_var_update_halves ((p'', existT 𝔄 r'') : ltype_state) with "Gh Gh'")

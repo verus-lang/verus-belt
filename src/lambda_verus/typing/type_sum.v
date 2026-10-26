@@ -467,9 +467,8 @@ Section type_sum.
         unfold xsum_ty, ty_gho_own. rewrite to_xsum_pinj. iFrame. }
       iIntros ([x1' [p1 p2]]) "Payload".
       rewrite /uniq_payload /f /=.
-      iDestruct "Payload" as "(>#⧖2 & Pers1 & Lazy)".
+      iDestruct "Payload" as "(>#⧖2 & Lazy)".
       iModIntro. iNext. iFrame "⧖2".
-      iSplitL "Pers1". { by rewrite xsum_gho_pers_pinj. }
       iMod "Lazy" as "[Gho1 Pt2]". iModIntro.
       iSplitL "Gho1".
         { unfold xsum_ty, ty_gho_own. rewrite to_xsum_pinj. iFrame "Gho1". }

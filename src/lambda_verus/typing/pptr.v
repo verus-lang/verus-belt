@@ -359,7 +359,7 @@ Section typing.
     2: {
       iMod (uniq_body_acc with "LFT UNIQ Alv [$ξBor $£saved] L") as "[Hown _]"; [solve_ndisj|..].
       wp_rec.
-      iDestruct "Hown" as "(_ & _ & Hlazy)".
+      iDestruct "Hown" as "(_ & Hlazy)".
       iMod (fupd_mask_mono with "Hlazy") as "[_ Hfalse]"; [rewrite /lazyE; solve_ndisj|].
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hfalse") as "%Hfalse".
       by simpl in Hfalse. }
@@ -367,7 +367,7 @@ Section typing.
     { (* The contents at depth 0 are absurd. *)
       iMod (uniq_body_acc with "LFT UNIQ Alv [$ξBor $£saved] L") as "[Hown _]"; [solve_ndisj|..].
       wp_rec.
-      iDestruct "Hown" as "(_ & _ & Hlazy)".
+      iDestruct "Hown" as "(_ & Hlazy)".
       iMod (fupd_mask_mono with "Hlazy") as "[Hf _]"; [rewrite /lazyE; solve_ndisj|].
       by iDestruct "Hf" as "[]". }
 
@@ -395,7 +395,6 @@ Section typing.
       iFrame "phys". iIntros (x2 d2 g2) "⧖2".
       iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "#⧖2'". { solve_ndisj. }
       iModIntro. iSplitR. { iApply (persistent_time_receipt_mono with "⧖2'"). simpl. lia. }
-      iSplitR. { iIntros "Pers2". simpl. by iNext. }
       iIntros "[gho pt2] !>". iFrame "pt". simpl.
       replace (length (ty_phys ty x tid)) with (length (ty_phys ty x2 tid)).
       2: { repeat rewrite ty_size_eq. done. }

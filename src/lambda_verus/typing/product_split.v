@@ -342,14 +342,11 @@ Section product_split.
       { iApply uniq_payload_intro_later. iNext. iFrame "∗#". }
       iIntros ([x1 [p1 p2]] [x2 [p3 p4]]) "Q1 Q2".
       rewrite /uniq_payload /f /=. rewrite !dec_enc_depth.
-      iDestruct "Q1" as "(>#⧖2 & Pers1 & Lazy1)".
-      iDestruct "Q2" as "(>#⧖3 & Pers2 & Lazy2)".
+      iDestruct "Q1" as "(>#⧖2 & Lazy1)".
+      iDestruct "Q2" as "(>#⧖3 & Lazy2)".
       iModIntro. iNext.
       iCombine "⧖2 ⧖3" as "⧖4".
       iSplit. { iApply (persistent_time_receipt_mono with "⧖4"). lia. }
-      iSplitL "Pers1 Pers2".
-      { iSplitL "Pers1"; [iApply (ty_gho_pers_depth_mono with "Pers1")|
-          iApply (ty_gho_pers_depth_mono with "Pers2")]; lia. }
       iMod "Lazy1" as "[Gho1 Pt1]". iMod "Lazy2" as "[Gho2 Pt2]". iModIntro.
       rewrite heap_cloc_mapsto_fancy_vec_app.
       rewrite ty_size_eq. iFrame.

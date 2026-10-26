@@ -302,7 +302,6 @@ Section borrow.
        iFrame "phys". iIntros (x2 d2 g2) "⧖2".
        iMod (cumulative_persistent_time_receipt with "TIME ⧗ ⧖2") as "#⧖2'". { solve_ndisj. }
        iModIntro. iSplitR. { iApply (persistent_time_receipt_mono with "⧖2'"). simpl. lia. }
-       iSplitR. { iIntros "Pers2". simpl. by iNext. }
        iIntros "[gho pt2] !>". iFrame "pt". simpl.
        replace (length (ty_phys ty x1 tid)) with (length (ty_phys ty x2 tid)).
         2: { repeat rewrite ty_size_eq. done. }
@@ -514,9 +513,6 @@ Section borrow.
       rewrite /Sm /=.
       iCombine "⧖o' ⧖y'" as "⧖max".
       iSplit. { iApply (persistent_time_receipt_mono with "⧖max"). lia. }
-      iSplitR.
-      { iSplit; [iPureIntro; lia|].
-        by rewrite (uniq_pers_component_retarget ty x' x1 ωi _ _ d1 g1). }
       iModIntro. iFrame "Pt".
       iFrame "Incli".
       iSplit. { iPureIntro. lia. }
@@ -531,7 +527,7 @@ Section borrow.
     { (* Record a persistent summary of the final value *)
       iIntros ([x' [p1 p2]]) "Payload".
       rewrite /uniq_payload /Sm /=.
-      iDestruct "Payload" as "(>#⧖y & #GhoPers & Lazy)".
+      iDestruct "Payload" as "(>#⧖y & Lazy)".
       iMod (cumulative_persistent_time_receipt with "TIME ⧗ ⧖y") as "#⧖y'".
       { solve_ndisj. }
       iModIntro. iSplitL "Lazy".

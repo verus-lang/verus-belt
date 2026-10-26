@@ -486,14 +486,14 @@ Section typing.
     { (* The contents at depth 0 are absurd. *)
       iMod (uniq_body_acc with "LFT UNIQ Alv [$ξBor $£saved] L") as "[Hown _]"; [solve_ndisj|..].
       wp_rec.
-      iDestruct "Hown" as "(_ & _ & Hlazy)".
+      iDestruct "Hown" as "(_ & Hlazy)".
       iMod (fupd_mask_mono with "Hlazy") as "[Hf _]"; [rewrite /lazyE; solve_ndisj|].
       by iDestruct "Hf" as "[]". }
     destruct cl' as [l' [ | ]] eqn:?.
     2: {
       iMod (uniq_body_acc with "LFT UNIQ Alv [$ξBor $£saved] L") as "[Hown _]"; [solve_ndisj|..].
       wp_rec.
-      iDestruct "Hown" as "(_ & _ & Hlazy)".
+      iDestruct "Hown" as "(_ & Hlazy)".
       iMod (fupd_mask_mono with "Hlazy") as "[_ Hfalse]"; [rewrite /lazyE; solve_ndisj|].
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hfalse") as "%Hfalse".
       by simpl in Hfalse. }
@@ -553,7 +553,6 @@ Section typing.
       iIntros (x2 d2 g2) "⧖2".
       iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "#⧖2'". { solve_ndisj. }
       iModIntro. iSplitR. { iApply (persistent_time_receipt_mono with "⧖2'"). simpl. lia. }
-      iSplitR. { iIntros "Pers2". simpl. iSplit; [done|by iNext]. }
       iIntros "[gho pt2] !>". simpl.
       replace (length (ty_phys ty x tid)) with (length (ty_phys ty x2 tid)).
       2: { repeat rewrite ty_size_eq. done. }
@@ -630,7 +629,6 @@ Section typing.
       iIntros (x2 d2 g2) "⧖2".
       iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "#⧖2'". { solve_ndisj. }
       iModIntro. iSplitR. { iApply (persistent_time_receipt_mono with "⧖2'"). simpl. lia. }
-      iSplitR. { iIntros "Pers2". simpl. iSplit; [done|by iNext]. }
       iIntros "[gho pt2] !>". simpl.
       replace (length (ty_phys ty x tid)) with (length (ty_phys ty x2 tid)).
       2: { repeat rewrite ty_size_eq. done. }
@@ -898,7 +896,7 @@ Section atomics.
     iMod (uniq_body_acc with "LFT UNIQ HguardsK UniqBody H1") as "(Bor & £saved & Hclose)".
     1: solve_ndisj.
     wp_rec.
-    iDestruct "Bor" as "(#H⧖ & _ & Hlazy)".
+    iDestruct "Bor" as "(#H⧖ & Hlazy)".
     iMod (fupd_mask_mono with "Hlazy") as "[H↦ Hcl']"; [rewrite /lazyE; solve_ndisj|].
     (* The contents at depth 0 are absurd. *)
     destruct di; [by iDestruct "H↦" as "[]"|].
@@ -1066,7 +1064,7 @@ Section atomics.
     iMod (uniq_body_acc with "LFT UNIQ HguardsK UniqBody H1") as "(Bor & £saved & Hclose)".
     1: solve_ndisj.
     wp_rec.
-    iDestruct "Bor" as "(#H⧖ & _ & Hlazy)".
+    iDestruct "Bor" as "(#H⧖ & Hlazy)".
     iMod (fupd_mask_mono with "Hlazy") as "[H↦ Hcl']"; [rewrite /lazyE; solve_ndisj|].
     (* The contents at depth 0 are absurd. *)
     destruct di; [by iDestruct "H↦" as "[]"|].
