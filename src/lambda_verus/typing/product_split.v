@@ -309,6 +309,7 @@ Section product_split.
       iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
     }
     iDestruct "UniqBody" as "(ξBor & £2)".
+    iDestruct (lc_weaken 1 with "£") as "£f"; [rewrite /advance_credits; lia|].
     destruct x0 as [x0 y0].
     iMod (proph_loan_intro (uniq_cell_tyi x0) ⊤ (uniq_cell x0 d' g') with "PROPH UNIQ")
       as (ζi) "Loan1"; [solve_ndisj|].
@@ -332,22 +333,30 @@ Section product_split.
       ζ (uniq_cell x0 d' g') (uniq_payload ty tid (cloc_take l ty.(ty_size)))
       ζ' (uniq_cell y0 d' g') (uniq_payload ty' tid (cloc_skip l ty.(ty_size)))
       f fπ (fractional.half γ) ltac:(apply _) ltac:(solve_ndisj) Hcomm Hrefl
-      with "LFT PROPH UNIQ HalfGuardsK [] H1 Loan1 Loan2 ξBor")
+      with "LFT PROPH UNIQ HalfGuardsK [£f] H1 Loan1 Loan2 ξBor")
       as "(#Obs' & Bor & Bor' & H1)".
-    { iIntros "Payload". rewrite uniq_payload_cell.
-      iDestruct "Payload" as "(>#⧖1 & Gho1 & >Pt1)".
+    { iIntros "Payload".
+      iMod (uniq_payload_force with "£f Payload") as "(#⧖1 & Gho1 & Pt1)";
+        [rewrite /lazyE; solve_ndisj|].
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Pt1") as "%LenEq".
       rewrite heap_cloc_mapsto_fancy_vec_app. rewrite ty_size_eq.
       iDestruct "Pt1" as "[Pt1 Pt2]".
       iDestruct "Gho1" as "[Gho1 Gho2]".
-      iModIntro. rewrite !uniq_payload_cell. iFrame "∗#".
+      iModIntro. iSplitL "Gho1 Pt1".
+      { iApply uniq_payload_intro_later. iNext. iFrame "∗#". }
+      iSplitL "Gho2 Pt2".
+      { iApply uniq_payload_intro_later. iNext. iFrame "∗#". }
       iIntros ([x1 [p1 p2]] [x2 [p3 p4]]) "Q1 Q2".
       rewrite /uniq_payload /f /=. rewrite !dec_enc_depth.
-      iDestruct "Q1" as "(>#⧖2 & Gho1 & >Pt1)".
-      iDestruct "Q2" as "(>#⧖3 & Gho2 & >Pt2)".
+      iDestruct "Q1" as "(>#⧖2 & Pers1 & Lazy1)".
+      iDestruct "Q2" as "(>#⧖3 & Pers2 & Lazy2)".
       iModIntro. iNext.
       iCombine "⧖2 ⧖3" as "⧖4".
       iSplit. { iApply (persistent_time_receipt_mono with "⧖4"). lia. }
+      iSplitL "Pers1 Pers2".
+      { iSplitL "Pers1"; [iApply (ty_gho_pers_depth_mono with "Pers1")|
+          iApply (ty_gho_pers_depth_mono with "Pers2")]; lia. }
+      iMod "Lazy1" as "[Gho1 Pt1]". iMod "Lazy2" as "[Gho2 Pt2]". iModIntro.
       rewrite heap_cloc_mapsto_fancy_vec_app.
       rewrite ty_size_eq. iFrame.
       iDestruct (ty_gho_own_depth_mono with "Gho1") as "[Gho1 _]". 3: {

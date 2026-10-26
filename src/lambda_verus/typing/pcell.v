@@ -494,7 +494,8 @@ Section typing.
     2: {
       iMod (uniq_body_acc with "LFT UNIQ Alv [$ξBor $£saved] L") as "[Hown _]"; [solve_ndisj|..].
       wp_rec.
-      iDestruct "Hown" as "(_ & _ & Hfalse)".
+      iDestruct "Hown" as "(_ & _ & Hlazy)".
+      iMod (fupd_mask_mono with "Hlazy") as "[_ Hfalse]"; [rewrite /lazyE; solve_ndisj|].
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hfalse") as "%Hfalse".
       by simpl in Hfalse. }
     wp_rec.
@@ -525,7 +526,8 @@ Section typing.
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
     iDestruct (guards_transitive with "Ghalf Alv") as "HguardsK".
 
-    iMod (uniq_body_transform (cell_points_to_ty ty) ty (γs, x) x (S d) g ξi ξidx κ tid cl' (cloc_flat_insert cl γs) _ _ (pair_with_cell_idsₛ (ty_size ty) γs) (λ d g, (S d, g)) with "LFT PROPH UNIQ [⧗' £1'] HguardsK H1 [ξBor £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
+    iDestruct (lc_weaken (1 + 8) with "£1") as "[£f _]"; [lia|].
+    iMod (uniq_body_transform (cell_points_to_ty ty) ty (γs, x) x (S d) g ξi ξidx κ tid cl' (cloc_flat_insert cl γs) _ _ (pair_with_cell_idsₛ (ty_size ty) γs) (λ d g, (S d, g)) with "LFT PROPH UNIQ [⧗' £1'] HguardsK H1 £f [ξBor £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
     { iIntros "[gho pt]".
       iMod (lc_fupd_elim_later with "£1' gho") as "gho".
       iDestruct "gho" as "[H↦ gho]".
@@ -543,14 +545,16 @@ Section typing.
       iDestruct (heap_complete_mapsto_fancy_val_vec_eq'' _ cl with "H↦") as "H↦".
       { rewrite ty.(ty_size_eq) in Hlen. by rewrite Hlen' -Hlen. }
       iFrame.
-      iIntros (x2 d2 g2) "[gho [pt2 ⧖2]]".
-      iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "⧖2'". { solve_ndisj. }
-      iModIntro. simpl.
+      iIntros (x2 d2 g2) "⧖2".
+      iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "#⧖2'". { solve_ndisj. }
+      iModIntro. iSplitR. { iApply (persistent_time_receipt_mono with "⧖2'"). simpl. lia. }
+      iSplitR. { iIntros "Pers2". simpl. iSplit; [done|by iNext]. }
+      iIntros "[gho pt2] !>". simpl.
       replace (length (ty_phys ty x tid)) with (length (ty_phys ty x2 tid)).
       2: { repeat rewrite ty_size_eq. done. }
       simpl.
       rewrite heap_complete_mapsto_fancy_val_vec_eq''.
-      iFrame. iApply (persistent_time_receipt_mono with "⧖2'"). lia.
+      iFrame.
       rewrite ty.(ty_size_eq) in Hlen.
       by rewrite Hlen' - Hlen.
     }
@@ -597,7 +601,8 @@ Section typing.
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
     iDestruct (guards_transitive with "Ghalf Alv") as "HguardsK".
 
-    iMod (uniq_body_transform (cell_points_to_ty ty) ty (γs, x) x (S d) g ξi ξidx κ tid cl' (cloc_flat_insert cl γs) _ _ (pair_with_cell_idsₛ _ γs) (λ d g, (S d, g)) with "LFT PROPH UNIQ [⧗' £1'] HguardsK H1 [ξBor £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
+    iDestruct (lc_weaken (1 + 8) with "£1") as "[£f _]"; [lia|].
+    iMod (uniq_body_transform (cell_points_to_ty ty) ty (γs, x) x (S d) g ξi ξidx κ tid cl' (cloc_flat_insert cl γs) _ _ (pair_with_cell_idsₛ _ γs) (λ d g, (S d, g)) with "LFT PROPH UNIQ [⧗' £1'] HguardsK H1 £f [ξBor £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
     { iIntros "[gho pt]".
       iMod (lc_fupd_elim_later with "£1' gho") as "gho".
       iDestruct "gho" as "[H↦ gho]".
@@ -615,14 +620,16 @@ Section typing.
       iDestruct (heap_complete_mapsto_fancy_val_vec_eq'' _ cl with "H↦") as "H↦".
       { rewrite ty.(ty_size_eq) in Hlen. by rewrite Hlen' -Hlen. }
       iFrame.
-      iIntros (x2 d2 g2) "[gho [pt2 ⧖2]]".
-      iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "⧖2'". { solve_ndisj. }
-      iModIntro. simpl.
+      iIntros (x2 d2 g2) "⧖2".
+      iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "#⧖2'". { solve_ndisj. }
+      iModIntro. iSplitR. { iApply (persistent_time_receipt_mono with "⧖2'"). simpl. lia. }
+      iSplitR. { iIntros "Pers2". simpl. iSplit; [done|by iNext]. }
+      iIntros "[gho pt2] !>". simpl.
       replace (length (ty_phys ty x tid)) with (length (ty_phys ty x2 tid)).
       2: { repeat rewrite ty_size_eq. done. }
       simpl.
       rewrite heap_complete_mapsto_fancy_val_vec_eq''.
-      iFrame. iApply (persistent_time_receipt_mono with "⧖2'"). lia.
+      iFrame.
       rewrite ty.(ty_size_eq) in Hlen.
       by rewrite Hlen' - Hlen.
     }
@@ -898,7 +905,8 @@ Section atomics.
     1: solve_ndisj.
     wp_rec.
     iDestruct "Pers" as "[%Hlen Hgho_pers]".
-    iDestruct "Bor" as "(#H⧖ & H↦ & Hcl')".
+    iDestruct "Bor" as "(#H⧖ & _ & Hlazy)".
+    iMod (fupd_mask_mono with "Hlazy") as "[H↦ Hcl']"; [rewrite /lazyE; solve_ndisj|].
     destruct cl' as [l' [ | ]] eqn:?.
     2: {
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hcl'") as "%Hfalse".
@@ -1072,7 +1080,8 @@ Section atomics.
     1: solve_ndisj.
     wp_rec.
     iDestruct "Pers" as "[%Hlen Hgho_pers]".
-    iDestruct "Bor" as "(#H⧖ & H↦ & Hcl')".
+    iDestruct "Bor" as "(#H⧖ & _ & Hlazy)".
+    iMod (fupd_mask_mono with "Hlazy") as "[H↦ Hcl']"; [rewrite /lazyE; solve_ndisj|].
     destruct cl' as [l' [ | ]] eqn:?.
     2: {
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hcl'") as "%Hfalse".

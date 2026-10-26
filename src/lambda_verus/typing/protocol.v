@@ -1020,7 +1020,8 @@ Section StorageProtocol.
 
     rewrite uniq_payload_cell.
     unfold gt_gho.
-    iDestruct "Hgho1" as "(H⧖ & Hgho1 & H↦)".
+    iDestruct "Hgho1" as "(H⧖ & _ & Hlazy)".
+    iMod (fupd_mask_mono with "Hlazy") as "[Hgho1 H↦]"; [rewrite /lazyE; solve_ndisj|].
     iDestruct "Hgho1" as "(%Hγ1 & #Hsto1 & Hown1)".
 
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & _)" => //.
@@ -1040,8 +1041,8 @@ Section StorageProtocol.
     iMod (fupd_mask_subseteq (↑Nllft)) as "Hclose".
     { trivial. }
     iMod ("Hclose1" $! (uniq_cell (𝔄:=ghostₛ (positiveₛ * 𝔄)) (γ1, x1) _ _) with "[H↦ H⧖ Hown1]") as "(Htok & A1)".
-    { iNext. rewrite uniq_payload_cell.
-      iFrame "H⧖ H↦". iFrame "#". iFrame "%". iFrame.
+    { iNext. iApply (uniq_payload_intro with "H⧖ [Hown1] H↦").
+      iFrame "#". iFrame "%". iFrame.
     }
     iDestruct "Credits" as "(Credits1 & Credits2)".
     iDestruct "Credits2" as "(C1 & C2 & C3)".

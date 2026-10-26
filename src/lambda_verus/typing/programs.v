@@ -83,7 +83,7 @@ Section typing.
     Timeless G →
     llft_ctx -∗ uniq_ctx -∗ elctx_interp E -∗ (G &&{↑NllftG}&&> llctx_interp L) -∗
     G -∗ ty_own ty x d d tid [v] ={⊤}=∗ ∃(l: cloc) (d':nat) (H: iProp Σ),
-      ⌜v = FVal #(l.1)⌝ ∗ ⌜d = S d'⌝ ∗ ▷ l #↦!∗: ty_own tyb (gt x) d' d tid ∗
+      ⌜v = FVal #(l.1)⌝ ∗ ⌜d = S d'⌝ ∗ ▷ (|={⊤ ∖ ↑advN}=> l #↦!∗: ty_own tyb (gt x) d' d tid) ∗
       H ∗ (H &&{↑NllftG; d+1}&&> l #↦∗_) ∗
       ∀y db', ▷ l #↦!∗: ty_own tyb' y db' (S db') tid -∗ ⧖(S db') -∗
         £(2*db'*db' + 4*db' + 2) -∗ H
@@ -396,11 +396,18 @@ Section typing.
       "#LFT #TIME PROPH #UNIQ #E L I (p & pb & _) Obs".
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
     wp_bind p. iApply (wp_hasty with "p"). iIntros (v d Heq) "#⧖ ty".
-    iMod (Wrt with "LFT UNIQ E Ghalf H1 ty") as (l d' H Heqv ->) "[(%vl & >↦ & A) [H [#Hguards Toty']]]". inversion Heqv. subst v.
+    iMod (Wrt with "LFT UNIQ E Ghalf H1 ty") as (l d' H Heqv ->) "[Old [H [#Hguards Toty']]]". inversion Heqv. subst v.
     unfold ty_own.
-    iDestruct "A" as "[tyb_ghos #>%tyb_phys]".
-    assert (length vl = ty_size tyb) as Sz. { rewrite <- tyb_phys. apply ty_size_eq. }
     wp_bind pb. iApply (wp_hasty with "pb"). iIntros (vb db ?) "#⧖' tyb'".
+    iApply wp_fupd.
+    iCombine "⧖ ⧖'" as "⧖max".
+    iApply (wp_persistent_time_receipt with "TIME ⧖max"); [solve_ndisj|].
+    iIntros "H£ #⧖S".
+    iDestruct (lc_weaken (_ + _ + _ + _ + _)%nat with "H£") as "[[[[£0 £1] £2] £3] £4]"; first last.
+    {
+    iMod (lc_fupd_elim_later with "£0 Old") as ">(%vl & ↦ & A)".
+    iDestruct "A" as "[tyb_ghos %tyb_phys]".
+    assert (length vl = ty_size tyb) as Sz. { rewrite <- tyb_phys. apply ty_size_eq. }
     iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN)) with "LFT PROPH UNIQ TIME E Ghalf H2 tyb_ghos") as "ToObs"; [set_solver|].
     iDestruct "tyb'" as "[tyb'_gho %tyb'_phys]".
     assert (ty_size tyb' = 1) as Sz'. {
@@ -410,12 +417,6 @@ Section typing.
     rewrite <-Sz in Sz'.
     generalize Sz'.
     case vl=> [|?[|]]=>// ?.
-    iApply wp_fupd.
-    iCombine "⧖ ⧖'" as "⧖max".
-    iApply (wp_persistent_time_receipt with "TIME ⧖max"); [solve_ndisj|].
-    iIntros "H£ #⧖S".
-    iDestruct (lc_weaken (_ + _ + _ + _)%nat with "H£") as "[[[£1 £2] £3] £4]"; first last.
-    {
     iMod (lc_fupd_elim_later with "£1 ToObs") as "ToObs".
     iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj. }
     iDestruct (lc_step_fupdN_elim_later with "£2 ToObs") as "ToObs".
@@ -532,9 +533,8 @@ Section typing.
     iMod (fractional.frac_split_guard_in_half with "H2 Ghalf") as (γ2) "[H2 [H3 [#Ghalf2 #Halfback2]]]". { solve_ndisj. }
       
     wp_bind pw. iApply (wp_hasty with "pw"). iIntros (???) "#⧖ tyw".
-    iMod (Wrt with "LFT UNIQ E Ghalf H1 tyw") as (?? Hw Heqv ->) "[(% & >↦ & Own) (Hw & #Hwpt & Totyw)]".
+    iMod (Wrt with "LFT UNIQ E Ghalf H1 tyw") as (?? Hw Heqv ->) "[Old (Hw & #Hwpt & Totyw)]".
     inversion Heqv. subst v.
-    iDestruct "Own" as "[tyb_gho #>%tyb_phys]".
     wp_bind pr.
     iApply (wp_hasty with "pr"). iIntros (???) "#⧖' tyr".
     
@@ -542,8 +542,10 @@ Section typing.
     iCombine "⧖ ⧖'" as "⧖max".
     iApply (wp_persistent_time_receipt with "TIME ⧖max"). { set_solver. }
     iIntros "H£ #⧖Smax".
-    iDestruct (lc_weaken (_ + _ + _ + _ + _ + _)%nat with "H£") as "[[[[[£1 £2] £3] £4] £5] £6]"; first last.
+    iDestruct (lc_weaken (_ + _ + _ + _ + _ + _ + _)%nat with "H£") as "[[[[[[£0 £1] £2] £3] £4] £5] £6]"; first last.
     {
+    iMod (lc_fupd_elim_later with "£0 Old") as ">(% & ↦ & Own)".
+    iDestruct "Own" as "[tyb_gho %tyb_phys]".
     
     iMod (Rd with "LFT E Ghalf2 H2 tyr £1") as (? vlb_concrete vlb Hr Heqv2 Hleneq) "(Hr & #Hrpt' & Retether & _ & Own' & Totyr')".
       inversion Heqv2. subst v.

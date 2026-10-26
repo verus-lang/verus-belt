@@ -41,9 +41,10 @@ Definition thread_id := na_inv_pool_name.
 
     The sharing law is also given the persistent predicate [ty_gho_pers]. This is what
     lets [&uniq] unnest the borrow of its contents right away: the persistent part of
-    the inner borrow is in the persistent predicate of [&uniq], not under a later. Once
-    the payload of [&uniq] becomes lazy, the lazy update can be run during the step
-    [&uniq] already takes, so the step count stays [d].
+    the inner borrow is in the persistent predicate of [&uniq], not under a later. The
+    payload of [&uniq] is lazy (see [uniq_payload]): [&uniq] opens the borrow of its
+    contents before its step and runs the lazy update after the step, so the step count
+    stays [d].
 
     An earlier version took no steps and instead kept laters ([▷^k]) in front of both
     the borrowed ownership predicate and the resulting sharing predicate. That does not
@@ -1335,7 +1336,7 @@ Class Send `{!typeG Σ} {𝔄} (ty: type 𝔄) := {
       (H &&{↑SendN}&&> cna_lifetimes tid κs) -∗ H -∗
       (∀ (κ: lft) , ⌜κ ∈ κs⌝ -∗ (G &&{↑NllftG}&&> @[κ])) -∗ G -∗
       ty.(ty_gho_own) x d g tid -∗ ⧖(d0) -∗
-      |={↑Nllft ∪ ↑SendN ∪ ↑nainvN ∪ ↑uniqN ∪ ↑timeN}▷=>^(d) |={↑Nllft ∪ ↑SendN ∪ ↑nainvN ∪ ↑uniqN ∪ ↑timeN}=>
+      |={↑Nllft ∪ ↑SendN ∪ ↑nainvN ∪ ↑uniqN ∪ (↑timeN ∪ ↑prophN)}▷=>^(d) |={↑Nllft ∪ ↑SendN ∪ ↑nainvN ∪ ↑uniqN ∪ (↑timeN ∪ ↑prophN)}=>
       ∃ x' off, 
       ty.(ty_gho_own) x' (d+off) g tid' ∗ ⧖(d0+off) ∗ ⌜@syn_abstract 𝔄 x' = @syn_abstract 𝔄 x⌝ ∗ G ∗ H
      )

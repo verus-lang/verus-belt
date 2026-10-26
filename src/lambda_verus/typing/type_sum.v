@@ -84,6 +84,12 @@ Section type_sum.
       drop n (drop 1 cells) = drop (S n) cells.
   Proof. destruct n; destruct cells; trivial. Qed.
     
+  Lemma xsum_gho_pers_pinj {𝔄l} i (tyl: typel 𝔄l) x0 pad d g tid :
+    ty_gho_pers (Σ! tyl) (pinj i x0, pad) d g tid ⊣⊢ ty_gho_pers (tyl +!! i) x0 d g tid.
+  Proof.
+    rewrite [ty_gho_pers (Σ! tyl)]/ty_gho_pers /xsum_ty /=. by rewrite to_xsum_pinj.
+  Qed.
+
   Lemma split_pt_xsum_cells {𝔄l} i (tyl: typel 𝔄l) x0 pad tid l cells :
       l ↦[^ cells ]!∗ ty_phys (Σ! tyl) (pinj i x0, pad) tid
       ⊣⊢
@@ -400,40 +406,37 @@ Section type_sum.
 
   (** * Unique References *)
 
-  Lemma tctx_unwrap_uniq_xsum {𝔄l 𝔅l} i (tyl: typel 𝔄l) κ p (T: tctx 𝔅l) E L :
+  (** Unwrapping a unique borrow of a sum to a unique borrow of its variant. This splits
+      the points-to of the payload, so it needs to run the lazy update of the payload,
+      and hence a later credit. It is therefore not a [tctx_incl], but is done during the
+      step of [type_case_uniq]. *)
+  Lemma typed_body_unwrap_uniq_xsum {𝔄l 𝔅l 𝔇} i (tyl: typel 𝔄l) κ p (T: tctx 𝔅l) e tr
+      E L I (C: cctx 𝔇) :
     lctx_lft_alive E L κ →
-    tctx_incl E L (p ◁ &uniq{κ} (Σ! tyl) +:: T) (p +ₗ #1 ◁ &uniq{κ} (tyl +!! i) +:: T)
+    typed_body E L I C (p +ₗ #1 ◁ &uniq{κ} (tyl +!! i) +:: T) e tr -∗ £1 -∗
+    typed_body E L I C (p ◁ &uniq{κ} (Σ! tyl) +:: T) e
       (λ post '(bor -:: bl), λ mask π, ∃a: ~~(𝔄l !!ₗ i), (uniq_bor_current bor).1 = pinj i a ∧
         ∀a': (𝔄l !!ₗ i), (uniq_bor_future bor π).1 = pinj i a' →
-        ∀ (bor_inner: ~~ (uniq_borₛ (𝔄l !!ₗ i))), 
+        ∀ (bor_inner: ~~ (uniq_borₛ (𝔄l !!ₗ i))),
           (uniq_bor_current bor_inner) = a →
           (uniq_bor_future bor_inner π) = a' →
-          (*uniq_bor_loc bor_inner = uniq_bor_loc bor +ₗ 1 →*)
-          post (bor_inner -:: bl) mask π).
+          tr post (bor_inner -:: bl) mask π)%type.
   Proof.
-    move=> Alv. split.
-    { move=>/= ?? Eq [[[[[[[l x0] ξi] d'] g'] idx][??]]?]. do 5 f_equiv. 
-      apply forall_proper=> ?. setoid_rewrite Eq. trivial. }
-    iIntros (G tid [x xl] mask post TimelessG) "#LFT #PROPH #UNIQ #E #L G /=[p T] #Obs".
-    
-    iMod (lctx_lft_alive_get_guards _ _ _ _ _ Alv with "L E G") as "[G #GuardsK]". { solve_ndisj. }
+    iIntros (Alv) "Body £".
+    iIntros (tid [x xl] mask post iκs) "#LFT #TIME #PROPH #UNIQ #E L I C /=[p T] #Obs".
+    iAssert (llctx_interp L &&{↑NllftG}&&> llctx_interp L)%I as "#GL". { iApply guards_refl. }
+    iMod (lctx_lft_alive_get_guards _ _ _ _ _ Alv with "GL E L") as "[L #GuardsK]". { solve_ndisj. }
     
     iDestruct "p" as (val d Ev) "[#⧖ [Own %Phys]]".
     iMod (proph_obs_sat with "PROPH Obs") as (πSat) "%X". { solve_ndisj. }
     destruct x as [[[[[l [x0 pad]] ξi] d'] g'] idx].
           
     destruct X as [x1 [PinjEq X]]. simpl in PinjEq. subst x0.
-    (*replace x0 with (@of_xsum _ (~~) (𝔄l) (to_xsum x0)); last by rewrite semi_iso'; trivial.
-    refine (match (to_xsum x0) with | xinj i x0 => _ end).*)
     
     iDestruct "Own" as "[#Incl [%Ineqs [UniqBody [#PtBase #Pers]]]]".
-    iDestruct (guards_transitive with "L GuardsK") as "HalfGuardsK".
-    iDestruct "Pers" as "[Dead|Pers]". {
-      iDestruct "Dead" as (κ') "[Incl' Dead']".
-      iDestruct (guards_transitive with "HalfGuardsK Incl'") as "G3".
-      leaf_open "G3" with "G" as "[Alive _]". { set_solver. }
-      iExFalso. iApply (llftl_not_own_end with "Alive Dead'").
-    }
+    iDestruct (guards_transitive with "GL GuardsK") as "HalfGuardsK".
+    iDestruct "Pers" as "[Dead|Pers]".
+    { iMod (basically_dead_alive_false with "HalfGuardsK Dead L") as "[]". solve_ndisj. }
     iDestruct "UniqBody" as "(ξBor & £2)".
     have ?: Inhabited (𝔄l !!ₗ i) := populate (vπ x1 inhabitant).
     iMod (proph_loan_intro (uniq_cell_tyi x1) ⊤ (uniq_cell x1 d' g') with "PROPH UNIQ")
@@ -455,23 +458,25 @@ Section type_sum.
     iMod (proph_ibor_map ⊤ κ ξ (uniq_cell (𝔄:=Σ! 𝔄l) (pinj i x1, pad) d' g') idx
       (uniq_payload (Σ! tyl) tid (l, cells)) ζ (uniq_cell x1 d' g')
       (uniq_payload (tyl +!! i) tid (cloc_take (cloc_skip (l, cells) 1) (ty_size (tyl +!! i))))
-      f fπ G ltac:(apply _) ltac:(solve_ndisj) Hcomm Hrefl
-      with "LFT PROPH UNIQ HalfGuardsK [] G Loan ξBor") as "(#Obs' & Bor & G)".
-    { iIntros "Payload". rewrite uniq_payload_cell.
-      iDestruct "Payload" as "(>#⧖1 & Gho1 & >Pt1)".
+      f fπ (llctx_interp L) ltac:(apply _) ltac:(solve_ndisj) Hcomm Hrefl
+      with "LFT PROPH UNIQ HalfGuardsK [£] L Loan ξBor") as "(#Obs' & Bor & L)".
+    { iIntros "Payload".
+      iMod (uniq_payload_force with "£ Payload") as "(#⧖1 & Gho1 & Pt1)";
+        [rewrite /lazyE; solve_ndisj|].
       rewrite split_pt_xsum_cells''. iDestruct "Pt1" as "(Pt1 & Pt2 & Pt3)".
-      iModIntro. rewrite uniq_payload_cell. iSplitL "Gho1 Pt2".
-      { iNext. iFrame "⧖1". unfold xsum_ty, ty_gho_own. rewrite to_xsum_pinj. iFrame. }
+      iModIntro. iSplitL "Gho1 Pt2".
+      { iApply uniq_payload_intro_later. iNext. iFrame "⧖1".
+        unfold xsum_ty, ty_gho_own. rewrite to_xsum_pinj. iFrame. }
       iIntros ([x1' [p1 p2]]) "Payload".
       rewrite /uniq_payload /f /=.
-      iDestruct "Payload" as "(>#⧖2 & Gho1 & >Pt2)".
+      iDestruct "Payload" as "(>#⧖2 & Pers1 & Lazy)".
       iModIntro. iNext. iFrame "⧖2".
+      iSplitL "Pers1". { by rewrite xsum_gho_pers_pinj. }
+      iMod "Lazy" as "[Gho1 Pt2]". iModIntro.
       iSplitL "Gho1".
         { unfold xsum_ty, ty_gho_own. rewrite to_xsum_pinj. iFrame "Gho1". }
         { rewrite split_pt_xsum_cells''. iFrame. } }
     iCombine "Obs Obs'" as "#Obs2".
-    iFrame "G".
-    iModIntro.
     iDestruct "Bor" as (ζidx) "Bor".
 
     iAssert (@[κ] &&{ ↑NllftG; d + 1 }&&> (_))%I as "PtBaseExp".
@@ -480,10 +485,11 @@ Section type_sum.
     iDestruct (guards_weaken_rhs_sep_r with "PtBaseExp") as "PtBasex".
     iDestruct (guards_weaken_rhs_sep_l with "PtBasex") as "PtBase2".
 
-    iExists ((cloc_take (cloc_skip (l,cells) 1) (ty_size (tyl +!! i)), x1, ζi, d', g', ζidx) -:: xl).
     inversion Phys. subst val.
-    iSplit. {
-      iSplitL "Bor £2". {
+    iApply ("Body" $! tid
+      ((cloc_take (cloc_skip (l,cells) 1) (ty_size (tyl +!! i)), x1, ζi, d', g', ζidx) -:: xl)
+      with "LFT TIME PROPH UNIQ E L I C [Bor £2 T] []").
+    { iFrame "T".
          unfold tctx_elt_interp. iExists (#(l +ₗ 1)), d.
          iSplit. { iPureIntro. simpl. rewrite Ev. trivial. }
          iSplit. { iApply (persistent_time_receipt_mono with "⧖"). lia. }
@@ -494,8 +500,6 @@ Section type_sum.
          iSplitL "Bor £2". { rewrite /uniq_body. iFrame. }
          iFrame "PtBase2". iRight. unfold xsum_ty, ty_gho_pers.
          rewrite to_xsum_pinj. iFrame "Pers".
-      }
-      done.
     }
     iApply proph_obs_impl; [|done]=>/= π.
     intros [[x2 [Heq Ha]] Hb]. apply pinj_Inj in Heq. subst x2.
@@ -503,12 +507,14 @@ Section type_sum.
      + simpl. unfold uniq_bor_future. simpl. rewrite Hb. trivial.
   Qed.
 
-  Lemma type_case_uniq_outer {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
+  (** Reading the discriminant of a unique borrow of a sum. Each branch gets a later
+      credit (e.g. to unwrap the borrow with [typed_body_unwrap_uniq_xsum]). *)
+  Lemma type_case_uniq_outer_cred {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
       (T': tctx ℭl) κ p el el' trx E L I (C: cctx 𝔇) :
     IntoPlistc el el' →
     tctx_extract_ctx E L +[p ◁ &uniq{κ} (Σ! tyl)] T T' trx → lctx_lft_alive E L κ →
     ([∗ hlist] ty;- e; tr ∈ tyl;- el'; trl,
-      typed_body E L I C (p ◁ &uniq{κ} (Σ! tyl) +:: T') e tr) -∗
+      £1 -∗ typed_body E L I C (p ◁ &uniq{κ} (Σ! tyl) +:: T') e tr) -∗
     typed_body E L I C T (case: !p of el)
       (trx ∘ (λ post '(bor -:: cl), let 'xinj i _ := to_xsum (uniq_bor_current bor).1 in
         (trl -!! i) post (bor -:: cl)))%type.
@@ -523,28 +529,35 @@ Section type_sum.
     iDestruct "gho" as "[#Incl [%Hle [uniq [#pt #pers]]]]".
     destruct d as [|dx]; first by lia.
     iDestruct (Alv with "L E") as "#LguardsK".
-    iDestruct (uniq_util.uniq_body_pers_component_impl with "uniq") as "#uniq_pers".
-    iDestruct (uniq_util.guard_inner_from_guard_uniq_body _ _ _ _ _ _ _ _ _
-        (uniq_util.uniq_body (Σ! tyl) (pinj i x0, pad) ξi d' g' idx κ tid l ∗ llctx_interp L)
-        with "LFT uniq_pers [] []") as "Gu1".
-      { iApply guards_weaken_sep_l. }
-      { iApply (guards_weaken_lhs_sep_r with "LguardsK"). }
-    iDestruct (guards_weaken_rhs_sep_r with "Gu1") as "Gu2".
-    iDestruct (guard_cloc_combine_fancy with "[] Gu2") as "Gpt".
-     { iApply guards_weaken_lhs_sep_r. iApply (guards_transitive_right with "LguardsK pt"). }
-    rewrite (split_pt_xsum_cells i).
-    iDestruct (guards_weaken_rhs_sep_l with "Gpt") as "#Gdiscriminant".
-    iDestruct (guards_weaken_rhs_sep_r with "Gpt") as "#Grest".
-    iDestruct (guards_weaken_rhs_sep_l with "Grest") as "#Gmain".
     wp_bind (!(LitV l.1))%E.
     iApply (wp_persistent_time_receipt with "TIME ⧖"). { set_solver. } iIntros "H£ ⧖'".
-    iDestruct (lc_weaken (_)%nat with "H£") as "£1"; last first.
+    iDestruct (lc_weaken (_ + 1 + 1)%nat with "H£") as "[[£1 £o] £b]"; last first.
     {
-    iApply (wp_read_na_guarded_cells_singleton with "[L uniq £1]"); first by solve_ndisj.
+    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]".
+    { solve_ndisj. }
+    iDestruct (guards_transitive with "Ghalf LguardsK") as "#HguardsK".
+    (* Open the borrow and run the lazy update of the payload; the points-to is put in
+       the guarding proposition for the read of the discriminant. *)
+    iMod (uniq_body_acc_keep with "LFT HguardsK £o uniq H1") as "(_ & Gho & Pt & Close)".
+    { rewrite /lazyE. solve_ndisj. }
+    iAssert ((fractional.half γ ∗ l #↦!∗ ty_phys (Σ! tyl) (of_xsum (xinj i x0), pad) tid)
+      &&{↑NllftG; S dx + 1}&&>
+        (l.1 ↦[^ l.2]!∗ ty_phys (Σ! tyl) (of_xsum (xinj i x0), pad) tid))%I as "#Gpt".
+    { iApply guard_cloc_combine_fancy.
+      - iApply guards_weaken_lhs_sep_l. iApply (guards_transitive_right with "HguardsK pt").
+      - leaf_goal laters to 0. { lia. } iApply guards_weaken_sep_r. }
+    iEval (rewrite (split_pt_xsum_cells i)) in "Gpt".
+    iDestruct (guards_weaken_rhs_sep_l with "Gpt") as "#Gdiscriminant".
+    iApply (wp_read_na_guarded_cells_singleton with "[H2 Pt £1]"); first by solve_ndisj.
     { iFrame "Gdiscriminant". iFrame. }
-    iNext. iIntros "[uniq L]".
+    iNext. iIntros "[H2 Pt]".
+    iDestruct ("Close" with "[Gho Pt]") as "Close". { iNext. iFrame. }
+    iMod (fupd_mask_mono with "Close") as "[uniq H1]"; [solve_ndisj|].
+    iDestruct ("Halfback" with "H1 H2") as "L".
+    iMod (fupd_mask_mono with "L") as "L"; [solve_ndisj|].
     wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
     iDestruct (big_sepHL_2_lookup with "el") as "el".
+    iSpecialize ("el" with "£b").
     iApply ("el" $! _ ((_) -:: _) with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
     { iApply proph_obs_impl; [|done]=>/= ?. by rewrite to_xsum_pinj. }
     iFrame "T". iExists _, _. iSplit; [done|]. iFrame "⧖".
@@ -555,6 +568,21 @@ Section type_sum.
       - iRight. iFrame "pers".
     }
     unfold advance_credits. lia.
+  Qed.
+
+  Lemma type_case_uniq_outer {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
+      (T': tctx ℭl) κ p el el' trx E L I (C: cctx 𝔇) :
+    IntoPlistc el el' →
+    tctx_extract_ctx E L +[p ◁ &uniq{κ} (Σ! tyl)] T T' trx → lctx_lft_alive E L κ →
+    ([∗ hlist] ty;- e; tr ∈ tyl;- el'; trl,
+      typed_body E L I C (p ◁ &uniq{κ} (Σ! tyl) +:: T') e tr) -∗
+    typed_body E L I C T (case: !p of el)
+      (trx ∘ (λ post '(bor -:: cl), let 'xinj i _ := to_xsum (uniq_bor_current bor).1 in
+        (trl -!! i) post (bor -:: cl)))%type.
+  Proof.
+    iIntros (???) "el". iApply type_case_uniq_outer_cred; [done..|].
+    rewrite !big_sepHL_2_big_sepN. iApply (big_sepN_impl with "el").
+    iIntros "!>" (i) "H _". iExact "H".
   Qed.
 
   Lemma type_case_uniq {𝔄l 𝔅l ℭl 𝔇} (tyl: typel 𝔄l) trl (T: tctx 𝔅l)
@@ -576,13 +604,13 @@ Section type_sum.
         end))%type.
   Proof.
     iIntros (???) "el". iApply typed_body_tctx_incl; [done|]. via_tr_impl.
-    { iApply (type_case_uniq_outer _ (pbyidx (λ i post '(bor -:: cl), λ mask π,
+    { iApply (type_case_uniq_outer_cred _ (pbyidx (λ i post '(bor -:: cl), λ mask π,
         match trl -!! i with inl otr => otr post (bor -:: cl) mask π | inr itr => _ end
         : Prop))); [apply tctx_incl_refl|done|].
       rewrite !big_sepHL_2_big_sepN. iApply (big_sepN_impl with "el").
-      iIntros "!>" (i) "?". rewrite pbyidx_plookup.
+      iIntros "!>" (i) "Hb £". rewrite pbyidx_plookup.
       case (trl -!! i)=> ?; [by via_tr_impl; [done|]=> ?[[??]?]?|]. via_tr_impl.
-      { iApply typed_body_tctx_incl; [by apply tctx_unwrap_uniq_xsum|done]. }
+      { iApply (typed_body_unwrap_uniq_xsum with "Hb £"). done. }
       move=>/= ?[[??]?]??. exact id. }
     move=> ?[bor ?]/=. case (to_xsum (uniq_bor_current bor).1) as [i ?] eqn: Eq. rewrite pbyidx_plookup.
     move: (trl -!! i). case; [done|]=>/= ??. eexists _. split; [|done].
@@ -626,18 +654,20 @@ Section type_sum.
     iDestruct (closed_hasty with "p") as %C1. iDestruct (closed_hasty with "q") as %C2.
     wp_apply (wp_hasty with "p"). iIntros (v d Heq) "#⧖ ty".
     
-    iMod (Wrt with "LFT UNIQ E Ghalf H1 ty") as (l d' H Heqv ->) "[(%vl & >↦ & A) [H [#Hguards Toty']]]". inversion Heqv. subst v.
+    iMod (Wrt with "LFT UNIQ E Ghalf H1 ty") as (l d' H Heqv ->) "[Old [H [#Hguards Toty']]]". inversion Heqv. subst v.
     unfold ty_own.
-    iDestruct "A" as "[tyb_ghos #>%tyb_phys]".
-    assert (length vl = ty_size tyb) as Sz. { rewrite <- tyb_phys. apply ty_size_eq. }
-    destruct vl as [|v vl]. { rewrite Eq in Sz. done. }
-    destruct l as [l cells]. destruct cells as [|cells0 cells]. { done. }
+    destruct l as [l cells].
     
-    wp_bind (LitV (l, cells0 :: cells).1 <- #i)%E.
+    wp_bind (LitV (l, cells).1 <- #i)%E.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
     iIntros "H£ #⧖S".
-    iDestruct (lc_weaken (_)%nat with "H£") as "£1"; first last.
+    iDestruct (lc_weaken (_ + _)%nat with "H£") as "[£0 £1]"; first last.
     {
+    iMod (lc_fupd_elim_later with "£0 Old") as ">(%vl & ↦ & A)".
+    iDestruct "A" as "[tyb_ghos %tyb_phys]".
+    assert (length vl = ty_size tyb) as Sz. { rewrite <- tyb_phys. apply ty_size_eq. }
+    destruct vl as [|v vl]. { rewrite Eq in Sz. done. }
+    destruct cells as [|cells0 cells]. { done. }
     
     rewrite heap_mapsto_cloc_fancy_vec_cons.
     iDestruct "↦" as "[↦1 ↦2]".
@@ -762,19 +792,21 @@ Section type_sum.
     iDestruct (closed_hasty with "p") as %C1.
     wp_apply (wp_hasty with "p"). iIntros (v d Heq) "#⧖ ty".
     
-    iMod (Wrt with "LFT UNIQ E Ghalf H1 ty") as (l d' H Heqv ->) "[(%vl & >↦ & A) [H [#Hguards Toty']]]". inversion Heqv. subst v.
+    iMod (Wrt with "LFT UNIQ E Ghalf H1 ty") as (l d' H Heqv ->) "[Old [H [#Hguards Toty']]]". inversion Heqv. subst v.
     unfold ty_own.
-    iDestruct "A" as "[tyb_ghos #>%tyb_phys]".
-    assert (length vl = ty_size tyb) as Sz. { rewrite <- tyb_phys. apply ty_size_eq. }
-    destruct vl as [|v vl]. { rewrite Eq in Sz. done. }
-    destruct l as [l cells]. destruct cells as [|cells0 cells]. { done. }
+    destruct l as [l cells].
     
     iApply wp_fupd.
-    wp_bind (LitV (l, cells0 :: cells).1 <- #i)%E.
+    wp_bind (LitV (l, cells).1 <- #i)%E.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
     iIntros "H£ #⧖S".
-    iDestruct (lc_weaken (_ + _ + _ + _)%nat with "H£") as "[[[£1 £2] £3] £4]"; first last.
+    iDestruct (lc_weaken (_ + _ + _ + _ + _)%nat with "H£") as "[[[[£0 £1] £2] £3] £4]"; first last.
     {
+    iMod (lc_fupd_elim_later with "£0 Old") as ">(%vl & ↦ & A)".
+    iDestruct "A" as "[tyb_ghos %tyb_phys]".
+    assert (length vl = ty_size tyb) as Sz. { rewrite <- tyb_phys. apply ty_size_eq. }
+    destruct vl as [|v vl]. { rewrite Eq in Sz. done. }
+    destruct cells as [|cells0 cells]. { done. }
     
     rewrite heap_mapsto_cloc_fancy_vec_cons.
     iDestruct "↦" as "[↦1 ↦2]".
@@ -871,18 +903,20 @@ Section type_sum.
     iDestruct (closed_hasty with "p") as %C1. iDestruct (closed_hasty with "q") as %C2.
     wp_apply (wp_hasty with "p"). iIntros (v d Heq) "#⧖ ty".
     
-    iMod (Wrt with "LFT UNIQ E Ghalf H1 ty") as (l d' Hw Heqv ->) "[(%vl & >↦ & A) (Hw & #Hwpt & Totyw)]". inversion Heqv. subst v.
+    iMod (Wrt with "LFT UNIQ E Ghalf H1 ty") as (l d' Hw Heqv ->) "[Old (Hw & #Hwpt & Totyw)]". inversion Heqv. subst v.
     unfold ty_own.
-    iDestruct "A" as "[tyb_ghos #>%tyb_phys]".
-    assert (length vl = ty_size tyb) as Sz. { rewrite <- tyb_phys. apply ty_size_eq. }
-    destruct vl as [|v vl]. { rewrite Eq in Sz. done. }
-    destruct l as [l cells]. destruct cells as [|cells0 cells]. { done. }
+    destruct l as [l cells].
     
-    wp_bind (LitV (l, cells0 :: cells).1 <- #i)%E.
+    wp_bind (LitV (l, cells).1 <- #i)%E.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
     iIntros "H£ #⧖S".
-    iDestruct (lc_weaken (_ + _)%nat with "H£") as "£1"; first last.
+    iDestruct (lc_weaken (_ + (_ + _))%nat with "H£") as "[£0 £1]"; first last.
     {
+    iMod (lc_fupd_elim_later with "£0 Old") as ">(%vl & ↦ & A)".
+    iDestruct "A" as "[tyb_ghos %tyb_phys]".
+    assert (length vl = ty_size tyb) as Sz. { rewrite <- tyb_phys. apply ty_size_eq. }
+    destruct vl as [|v vl]. { rewrite Eq in Sz. done. }
+    destruct cells as [|cells0 cells]. { done. }
     
     rewrite heap_mapsto_cloc_fancy_vec_cons.
     iDestruct "↦" as "[↦1 ↦2]".

@@ -365,7 +365,8 @@ Section typing.
     2: {
       iMod (uniq_body_acc with "LFT UNIQ Alv [$ξBor $£saved] L") as "[Hown _]"; [solve_ndisj|..].
       wp_rec.
-      iDestruct "Hown" as "(_ & _ & Hfalse)".
+      iDestruct "Hown" as "(_ & _ & Hlazy)".
+      iMod (fupd_mask_mono with "Hlazy") as "[_ Hfalse]"; [rewrite /lazyE; solve_ndisj|].
       iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hfalse") as "%Hfalse".
       by simpl in Hfalse. }
 
@@ -379,8 +380,9 @@ Section typing.
     iDestruct "⧗" as "(⧗ & ⧗')".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ Hd'") as "(Hd'' & £)"; [trivial|..].
     iDestruct "£" as "[£ [£1' £1]]".
+    iDestruct (lc_weaken 1 with "£") as "£f"; [rewrite /advance_credits; nia|].
 
-    iMod (uniq_body_transform (points_to_ty ty) ty (l, x) x (S d) g ξi ξidx κ tid (l, []) (l, repeat [] ty.(ty_size)) _ _ (pair_with_loc_trackedₛ l) (λ d g, (S d, g)) with "LFT PROPH UNIQ [⧗' £1'] HguardsK H1 [ξBor £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
+    iMod (uniq_body_transform (points_to_ty ty) ty (l, x) x (S d) g ξi ξidx κ tid (l, []) (l, repeat [] ty.(ty_size)) _ _ (pair_with_loc_trackedₛ l) (λ d g, (S d, g)) with "LFT PROPH UNIQ [⧗' £1'] HguardsK H1 £f [ξBor £saved]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
     { iIntros "[gho pt]".
       iMod (lc_fupd_elim_later with "£1' gho") as "gho".
       iDestruct "gho" as "[phys [free gho]]".
@@ -390,13 +392,15 @@ Section typing.
       simpl.
       rewrite -(ty.(ty_size_eq) x tid).
       rewrite <- heap_cloc_mapsto_fancy_empty.
-      iFrame "phys". iIntros (x2 d2 g2) "[gho [pt2 ⧖2]]".
-      iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "⧖2'". { solve_ndisj. }
-      iModIntro. iFrame "pt". simpl.
+      iFrame "phys". iIntros (x2 d2 g2) "⧖2".
+      iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "#⧖2'". { solve_ndisj. }
+      iModIntro. iSplitR. { iApply (persistent_time_receipt_mono with "⧖2'"). simpl. lia. }
+      iSplitR. { iIntros "Pers2". simpl. by iNext. }
+      iIntros "[gho pt2] !>". iFrame "pt". simpl.
       replace (length (ty_phys ty x tid)) with (length (ty_phys ty x2 tid)).
       2: { repeat rewrite ty_size_eq. done. }
       rewrite <- heap_cloc_mapsto_fancy_empty.
-      iFrame. iApply (persistent_time_receipt_mono with "⧖2'"). lia.
+      iFrame.
      }
     { rewrite /uniq_body. iFrame "£saved".
       iApply (proph_ibor_proper with "ξBor"). intros c0.

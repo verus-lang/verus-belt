@@ -202,6 +202,23 @@ Proof.
   iModIntro. iFrame "∗#".
 Qed.
 
+(** As [proph_ibor_acc], closing with the same value; this needs no [uniq_ctx]. *)
+Lemma proph_ibor_acc_keep E κ ξ x idx (P: (pv_val ξ) → iProp Σ) G :
+  Timeless G → ↑Nllft ⊆ E →
+  llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  proph_ibor κ ξ x idx P -∗ G ={E}=∗
+    ▷ P x ∗ (▷ P x ={↑Nllft}=∗ proph_ibor κ ξ x idx P ∗ G).
+Proof.
+  iIntros (??) "#LFT #Gk ((Vo & Tok) & #Bor) G".
+  iMod (llftl_bor_idx_acc_guarded with "LFT Bor Tok Gk G") as "[Body Back]"; [done|].
+  iMod (bi.later_exist_except_0 with "Body") as (x') "(Pc & P)".
+  iMod (uniq_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iModIntro. iFrame "P". iIntros "P".
+  iMod ("Back" with "[Pc P]") as "[Tok G]".
+  { iNext. iExists x. iFrame. }
+  iModIntro. iFrame "∗#".
+Qed.
+
 (** Open a prophetic borrow with a lifetime token, closing with a possibly
     different payload (resulting in a fresh index). The caller must provide a
     way to transform the contents of the new payload back into the old
