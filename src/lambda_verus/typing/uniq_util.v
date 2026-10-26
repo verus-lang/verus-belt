@@ -84,15 +84,17 @@ Section uniq_util.
     prophetic borrow ([proph_idx_bor_gen]) of the prophecy variable [ξ :=
     uniq_prvar x ξi] at lifetime [κ], with a _pinned, state-indexed_ body
     ([cpd_body]): the body is the interpretation of a fixed core ([OfTy ty], the
-    leaf node [leaf_owned false 0 ty]) at a state [(p, r)] (a blocking pattern and a
-    place refinement, see [lstate.v]) held in a Leibniz ghost variable [γ]; the
-    controller prophecy of [ξ] is the denotation of [r]. The owner of the borrow
+    leaf node [leaf_node κp ty]) at a state [(p, r)] (a blocking pattern and a
+    refinement, see [lstate.v]) held in a Leibniz ghost variable [γ], whose name is
+    stored in the value of [ξ] ([uniq_cell]); the controller prophecy of [ξ] is the
+    denotation of [r]. The owner of the borrow
     holds the other half of the ghost variable, at the trivial state
     [lstate_triv x] ([PatLeaf], [PlaceIn x]); at that state, the body is exactly the
     (guarded, lazy) payload [uniq_payload] ([uniq_gbody_triv_open],
     [uniq_gbody_triv_close]), so that the operations on unique borrows are as for a
     plain prophetic borrow of the payload. Other states arise when the place behind
-    the borrow is unfolded or blocked (see [ltype.v]); the borrow can then be
+    the borrow is unfolded or blocked (see [ltype.v]; a leaf sees a state with a
+    structured refinement, written by an unfolded place, as blocked at [κp]); the borrow can then be
     switched to another core (with a fresh ghost variable), and the old body is
     given a state that gives back the new contents once they are unblocked
     ([PatBlocked], with a [PlaceProph] refinement).
@@ -237,6 +239,33 @@ Section uniq_util.
     by iApply (guarded_upd_run with "Gty G Upd").
   Qed.
 
+  (** The leaf node of the body of a borrow whose membership condition is at [κp]: a
+      leaf at a state with a structured refinement (written by an unfolded compound
+      place, see [typing/ltype.v]) is blocked at [κp]. *)
+  Definition leaf_node {𝔄} (κp: lft) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
+      (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
+    leaf_owned false 0 ty (norm_pat κp p r) (inl (prfn_place r)) d g tid l.
+
+  Lemma leaf_node_inl {𝔄} κp (ty: type 𝔄) p lr d g tid l :
+    leaf_node κp ty p (inl lr) d g tid l = leaf_owned false 0 ty p (inl lr) d g tid l.
+  Proof. done. Qed.
+
+  Lemma pat_ok_norm κ {𝔄} p (r: prfn 𝔄) : pat_ok κ p -∗ pat_ok κ (norm_pat κ p r).
+  Proof.
+    iIntros "Ok". destruct r; [done|]. iApply pat_ok_blocked. iApply guards_refl.
+  Qed.
+
+  Lemma leaf_node_unblock {𝔄} κp (ty: type 𝔄) p r d g tid l G :
+    Timeless G →
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ pat_ok κp p -∗ [†κp] -∗ G -∗
+    ⧖(S d `max` g) -∗ leaf_node κp ty p r d g tid l ={lazyE}=∗
+      G ∗ ∃ x d' g', place_rfn_rel (prfn_place r) x ∗ ⧖(S d' `max` g') ∗
+        ofty_owned 0 ty x d' g' tid l.
+  Proof.
+    iIntros (?) "#LFT #Gty #Ok #†κ G #⧖ L". iDestruct (pat_ok_norm _ _ r with "Ok") as "Ok'".
+    iApply (leaf_owned_unblock with "LFT Gty Ok' †κ G ⧖ L").
+  Qed.
+
   (** ** The pinned body
 
       [node] is the [Owned] interpretation of the (fixed) core at a given state. The
@@ -331,7 +360,7 @@ Section uniq_util.
   (** The body: the pinned body with the leaf [OfTy ty] as core. *)
   Definition uniq_gbody {𝔄} (κp: lft) (ty: type 𝔄) (tid: thread_id) (l: cloc)
       (c: ~~ (uniq_cellₛ 𝔄)) (wπ: proph (uniq_cellₛ 𝔄)) : iProp Σ :=
-    cpd_body κp (ty_lft ty) (leaf_owned false 0 ty) tid l c wπ.
+    cpd_body κp (ty_lft ty) (leaf_node κp ty) tid l c wπ.
 
   (** The timeless part of a unique borrow (at the trivial state). *)
   Definition uniq_tokγ {𝔄} (x: ~~ 𝔄) (ξi: positive) (d g: nat) (idx: Idx) (γ: gname)
@@ -479,7 +508,7 @@ Section uniq_util.
   Proof.
     intros Hl Hg Hp. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
     do 3 f_equiv. rewrite (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv. f_equiv.
-    rewrite /leaf_owned. destruct r as [lr|]; [|done].
+    rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
     have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ≡{n}≡ ofty_owned 0 ty' x d g tid l.
     { intros. rewrite /ofty_owned Hp. f_equiv. apply Hg. }
     destruct p; try (f_equiv=>?; f_equiv; apply Hofty).
@@ -496,7 +525,7 @@ Section uniq_util.
   Proof.
     intros Hl Hg Hp. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
     do 3 f_equiv. rewrite (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv. f_equiv.
-    rewrite /leaf_owned. destruct r as [lr|]; [|done].
+    rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
     have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ⊣⊢ ofty_owned 0 ty' x d g tid' l.
     { intros. rewrite /ofty_owned Hp. f_equiv. apply Hg. }
     destruct p; try (f_equiv=>?; f_equiv; apply Hofty).
@@ -511,7 +540,7 @@ Section uniq_util.
   Proof.
     intros Hl. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
     do 3 f_equiv. f_equiv. f_equiv.
-    rewrite /leaf_owned. destruct r as [lr|]; [|done].
+    rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
     have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ⊣⊢ ofty_owned 0 ty x d g tid l'.
     { intros. by rewrite /ofty_owned Hl. }
     destruct p; try (f_equiv=>?; f_equiv; apply Hofty).
@@ -611,7 +640,7 @@ Section uniq_util.
     iModIntro. iFrame "Gh Gh'". iSplit.
     { iPureIntro. intros π. by rewrite Hw prfn_den_in. }
     iNext. rewrite uniq_payload_cell. iApply (guarded_upd_mono with "[] Upd").
-    iIntros "[$ H] !>". rewrite leaf_owned_triv /ofty_owned. iDestruct "H" as "[$ $]".
+    iIntros "[$ H] !>". rewrite leaf_node_inl leaf_owned_triv /ofty_owned. iDestruct "H" as "[$ $]".
   Qed.
 
   Lemma uniq_gbody_triv_open' {𝔄} κp (ty: type 𝔄) γ tid l x d g wπ :
@@ -625,7 +654,7 @@ Section uniq_util.
     iFrame "Gh Gh'". iSplit.
     { iPureIntro. intros π. by rewrite Hw prfn_den_in. }
     rewrite uniq_payload_cell. iApply (guarded_upd_mono with "[] Upd").
-    iIntros "[$ H] !>". rewrite leaf_owned_triv /ofty_owned. iDestruct "H" as "[$ $]".
+    iIntros "[$ H] !>". rewrite leaf_node_inl leaf_owned_triv /ofty_owned. iDestruct "H" as "[$ $]".
   Qed.
 
   Lemma uniq_gbody_triv_close' {𝔄} κp (ty: type 𝔄) γ tid l x d g wπ :
@@ -637,7 +666,7 @@ Section uniq_util.
     iExists PatLeaf, (inl (PlaceIn x)). iFrame "Gh". iSplit; [iApply pat_ok_leaf|].
     iSplit. { iPureIntro. intros π. by rewrite Hw prfn_den_in. }
     rewrite uniq_payload_cell. iApply (guarded_upd_mono with "[] P").
-    iIntros "($ & Gho & Pt) !>". rewrite leaf_owned_triv /ofty_owned. by iFrame.
+    iIntros "($ & Gho & Pt) !>". rewrite leaf_node_inl leaf_owned_triv /ofty_owned. by iFrame.
   Qed.
 
   Lemma uniq_gbody_triv_close {𝔄} κp (ty: type 𝔄) γ tid l x d g wπ :
@@ -833,13 +862,12 @@ Section uniq_util.
     iDestruct "Body" as (p r) "(#Ok & %Hw & _ & Upd)".
     iIntros (G ?) "#Gty G". iMod (guarded_upd_run with "Gty G Upd") as "[G [#⧖ Node]]";
       [done|].
-    destruct r as [lr|]; [|done].
-    iMod (leaf_owned_unblock with "LFT Gty Ok †κ G ⧖ Node")
+    iMod (leaf_node_unblock with "LFT Gty Ok †κ G ⧖ Node")
       as "[$ (%x & %d' & %g' & Rel & ⧖' & Pt & Gho)]".
     iModIntro. iExists x, d', g'. iFrame "⧖' Pt Gho".
     iDestruct (place_rfn_rel_eqz with "Rel") as "Eqz". iNext.
     iApply (uniq_ctrl_eqz_fst with "PROPH Pc").
-    iApply (proph_eqz_eq with "Eqz"); [|done]. fun_ext=> π /=. by rewrite Hw prfn_den_inl.
+    iApply (proph_eqz_eq with "Eqz"); [|done]. fun_ext=> π /=. by rewrite Hw prfn_place_den.
   Qed.
 
   Lemma alloc_uniq_body
@@ -1111,21 +1139,25 @@ Section uniq_util.
     iIntros (Hf Hcomm Hu) "#LFT #PROPH #Incl Gh Gh' Bump Back Pc Body".
     rewrite /uniq_gbody (uniq_cell_surj y) cpd_body_cell.
     iMod (bi.later_exist_except_0 with "Body") as (p) "Body".
-    iMod (bi.later_exist_except_0 with "Body") as (r) "(#Ok & >%Hw & _ & Upd)".
+    iMod (bi.later_exist_except_0 with "Body") as (r) "(#Ok0 & >%Hw0 & _ & Upd)".
+    rewrite /leaf_node. set pn := norm_pat κp p r. set lrn := prfn_place r.
+    iAssert (▷ pat_ok κp pn)%I as "#Ok". { iNext. by iApply pat_ok_norm. }
+    have Hw: ∀ π, (wζ π).1 = place_rfn_den lrn π. { intros π. by rewrite Hw0 prfn_place_den. }
+    clearbody pn lrn.
     set d1 := cell_d y. set g1 := cell_g y.
     set r_old : prfn 𝔄 := inl (PlaceProph (fv y.1) (λ π, fp ((π (uniq_prvar y₀ ζi)).1))).
     (* The relation of the old refinement, from the relation of the new one. *)
-    iAssert (∀ c x, .PC[uniq_prvar y₀ ζi] c wζ -∗ (∀ lr, ⌜r = inl lr⌝ -∗ place_rfn_rel lr x -∗
+    iAssert (∀ c x, .PC[uniq_prvar y₀ ζi] c wζ -∗ (place_rfn_rel lrn x -∗
       place_rfn_rel (𝔄:=𝔄) (PlaceProph (fv y.1) (λ π, fp ((π (uniq_prvar y₀ ζi)).1)))
         (fv x)))%I as "Rel".
-    { iIntros (c x) "Pc %lr -> Rel". iDestruct (place_rfn_rel_eqz with "Rel") as "Eqz".
+    { iIntros (c x) "Pc Rel". iDestruct (place_rfn_rel_eqz with "Rel") as "Eqz".
       rewrite /place_rfn_rel. iNext.
       iDestruct (uniq_ctrl_eqz_fst with "PROPH Pc [Eqz]") as "Eqz".
       { iApply (proph_eqz_eq with "Eqz"); [|done]. fun_ext=>π /=.
-        by rewrite Hw prfn_den_inl. }
+        by rewrite Hw. }
       iDestruct (proph_eqz_constr fp with "Eqz") as "Eqz".
       iApply (proph_eqz_eq with "Eqz"); [done|]. fun_ext=>π /=. by rewrite Hcomm. }
-    destruct (lpat_blocked_dec p) as [[α ->]|Hnb].
+    destruct (lpat_blocked_dec pn) as [[α ->]|Hnb].
     - (* Blocked: the old body stays blocked at [α]. *)
       iMod (ghost_var_update_halves (lstate (PatBlocked α) r_old) with "Gh Gh'") as "[Gh _]".
       iModIntro. iNext. iExists (uniq_cell (fv y.1) d1 g1 γ). rewrite cpd_body_cell.
@@ -1134,7 +1166,7 @@ Section uniq_util.
       iIntros (G ?) "#Gty G".
       iMod (guarded_upd_run with "[] G Upd") as "[$ [⧖ Node]]"; [done| |].
       { iApply (guards_transitive with "Gty Incl"). }
-      iModIntro. iFrame "⧖". destruct r as [lr|]; [|done].
+      iModIntro. iFrame "⧖".
       rewrite /leaf_owned /blocked_owned. iIntros "†α". iMod ("Node" with "†α") as "Upd".
       iModIntro. iIntros (G2 ?) "#G2ty G2".
       iMod (guarded_upd_run with "[] G2 Upd") as "[$ (%x & %d2 & %g2 & R & ⧖2 & Pt & Gho)]";
@@ -1143,7 +1175,7 @@ Section uniq_util.
       iMod ("Back" with "[$Gho $Pt]") as "[Gho Pt]".
       iMod ("Bump" with "⧖2") as "⧖2".
       iModIntro. iExists (fv x), (h d2 g2).1, (h d2 g2).2. iFrame "⧖2 Pt Gho".
-      by iApply ("Rel" with "Pc [//] R").
+      by iApply ("Rel" with "Pc R").
     - (* Unblocked: the contents are mapped. *)
       iMod (ghost_var_update_halves (lstate PatLeaf r_old) with "Gh Gh'") as "[Gh _]".
       iModIntro. iNext. iExists (uniq_cell (fv y.1) (h d1 g1).1 (h d1 g1).2 γ).
@@ -1152,12 +1184,12 @@ Section uniq_util.
       iIntros (G ?) "#Gty G".
       iMod (guarded_upd_run with "[] G Upd") as "[$ [⧖ Node]]"; [done| |].
       { iApply (guards_transitive with "Gty Incl"). }
-      destruct r as [lr|]; [|done]. rewrite (leaf_owned_unblocked _ _ _ _ _ _ _ _ _ Hnb).
+      rewrite (leaf_owned_unblocked _ _ _ _ _ _ _ _ _ Hnb).
       iDestruct "Node" as (x) "(R & Pt & Gho)".
       iMod ("Back" with "[$Gho $Pt]") as "[Gho Pt]".
       iMod ("Bump" with "⧖") as "$".
       iModIntro. rewrite leaf_owned_unblocked; [|by intros ?].
-      iExists (fv x). iFrame "Pt Gho". by iApply ("Rel" with "[Pc] [//] R").
+      iExists (fv x). iFrame "Pt Gho". by iApply ("Rel" with "[Pc] R").
   Qed.
 
   (** Replace a unique borrow by a fresh one at another type and location, given a way
@@ -1303,11 +1335,12 @@ Section uniq_util.
       controller. It is settled with [uniq_restored_settle]. *)
   Definition uniq_restored {𝔄} (ty: type 𝔄) (x₀: ~~𝔄) (ξi ζi: positive) (κ κ': lft)
       (tid: thread_id) (l: cloc) : iProp Σ :=
-    ∃ κp γ γk c wπ idx p r, κ ⊑ κp ∗
+    ∃ κp γ γk c wπ idx p (lr: place_rfn 𝔄), κ ⊑ κp ∗
       proph_bor_tok (uniq_prvar x₀ ξi) (uniq_cell c.1 (cell_d c) (cell_g c) γ) idx ∗ ⧗1 ∗
       uniq_persγ ty x₀ ξi idx κ κp tid l ∗
-      ▷ (.PC[uniq_prvar x₀ ζi] c wπ ∗ ghost_var γ (1/2) (lstate p r) ∗
-         ⌜∀ π, (wπ π).1 = prfn_den r π⌝ ∗ pat_ok κ' p ∗ ghost_var γk (1/2) (lstate p r)).
+      ▷ (.PC[uniq_prvar x₀ ζi] c wπ ∗ ghost_var γ (1/2) (lstate p (inl lr)) ∗
+         ⌜∀ π, (wπ π).1 = place_rfn_den lr π⌝ ∗ pat_ok κ' p ∗
+         ghost_var γk (1/2) (lstate p (inl lr))).
 
   (** Reborrowing records no summary of the final value: the inheritance only gives
       back the restored borrow (see [uniq_restored]). *)
@@ -1324,8 +1357,9 @@ Section uniq_util.
       as (ζi) "Loan"; [set_solver|].
     iMod (ghost_var_alloc (lstate_triv x)) as (γk) "[Ghk Ghk']".
     set R := λ (c: ~~ (uniq_cellₛ 𝔄)) (w: proph (uniq_cellₛ 𝔄)),
-      (∃ p r, ghost_var γ (1/2) (lstate p r) ∗ ⌜∀ π, (w π).1 = prfn_den r π⌝ ∗
-        pat_ok κ' p ∗ ghost_var γk (1/2) (lstate p r))%I.
+      (∃ p (lr: place_rfn 𝔄), ghost_var γ (1/2) (lstate p (inl lr)) ∗
+        ⌜∀ π, (w π).1 = place_rfn_den lr π⌝ ∗
+        pat_ok κ' p ∗ ghost_var γk (1/2) (lstate p (inl lr)))%I.
     iMod (proph_idx_bor_gen_reborrow E κ κ' (uniq_prvar x ξi) (uniq_cell x d g γ) idx
       (uniq_gbody κp ty tid l) (uniq_gbody κ' ty tid l) R
       (λ c, uniq_cell c.1 (cell_d c) (cell_g c) γ) (uniq_cell x d g γζ) ζi
@@ -1334,29 +1368,34 @@ Section uniq_util.
     { (* The reborrow starts at the trivial state, which [γk] pins. *)
       iIntros (wπ wζ) "Body R".
       iMod (bi.later_exist_except_0 with "R") as (p) "R".
-      iMod (bi.later_exist_except_0 with "R") as (r) "(>Gh & >%Hw & Ok & >Ghk)".
-      iDestruct (ghost_var_agree with "Ghk Ghk'") as %[-> ->]%lstate_inj.
+      iMod (bi.later_exist_except_0 with "R") as (lr) "(>Gh & >%Hw & Ok & >Ghk)".
+      iDestruct (ghost_var_agree with "Ghk Ghk'") as %[-> [= ->]]%lstate_inj.
       iMod (uniq_gbody_triv_open with "Gh Body") as "(_ & Gh & Gh' & P)".
       iModIntro. iSplitL "Ghζ' P".
-      { iApply (uniq_gbody_triv_close with "Ghζ' P"). intros π. by rewrite Hw prfn_den_in. }
+      { iApply (uniq_gbody_triv_close with "Ghζ' P"). intros π. by rewrite Hw. }
       iNext. iIntros (c2 w2) "Body †κ'". rewrite /uniq_gbody cpd_body_cell {1}/cpd_body.
       iMod (bi.later_exist_except_0 with "Body") as (p2) "Body".
       iMod (bi.later_exist_except_0 with "Body") as (r2) "(#Ok2 & >%Hw2 & >Ghζ2 & Upd)".
-      iMod (ghost_var_update_halves (lstate p2 r2) with "Gh Gh'") as "[Gh Gh']".
-      iMod (ghost_var_update_halves (lstate p2 r2) with "Ghk Ghk'") as "[Ghk Ghk']".
+      (* The state is copied, normalized for a leaf (see [leaf_node]). *)
+      set p3 := norm_pat κ' p2 r2. set lr3 := prfn_place r2.
+      iAssert (▷ pat_ok κ' p3)%I as "#Ok3". { iNext. by iApply pat_ok_norm. }
+      have Hw3: ∀ π, (w2 π).1 = place_rfn_den lr3 π.
+      { intros π. by rewrite Hw2 prfn_place_den. }
+      iMod (ghost_var_update_halves (lstate p3 (inl lr3)) with "Gh Gh'") as "[Gh Gh']".
+      iMod (ghost_var_update_halves (lstate p3 (inl lr3)) with "Ghk Ghk'") as "[Ghk Ghk']".
       iModIntro. iSplitL "Gh' Upd".
-      - iNext. iExists p2, r2. iFrame "Gh' Upd". iSplit; [|done].
-        iApply (pat_ok_mono with "[] Ok2"). iApply (llftl_incl_trans with "κ'⊑κ Incl").
-      - iNext. iExists p2, r2. by iFrame "∗#". }
-    { iExists PatLeaf, (inl (PlaceIn x)). iFrame "Gh Ghk". iSplit; [|iApply pat_ok_leaf].
-      iPureIntro. intros π. by rewrite prfn_den_in. }
+      - iNext. iExists p3, (inl lr3). iFrame "Gh' Upd". iSplit; [|by rewrite prfn_den_inl].
+        iApply (pat_ok_mono with "[] Ok3"). iApply (llftl_incl_trans with "κ'⊑κ Incl").
+      - iNext. iExists p3, lr3. by iFrame "∗#". }
+    { iExists PatLeaf, (PlaceIn x). iFrame "Gh Ghk". iSplit; [|iApply pat_ok_leaf].
+      iPureIntro. intros π. done. }
     iDestruct "Bor'" as (idx') "[Tok' #Bor']".
     iModIntro. iExists ζi, idx'. iSplitL "Ghζ Tok' ⧗".
     { iExists κ', γζ. iFrame "∗#". iApply guards_refl. }
     iIntros "†κ'". iMod ("Inh" with "†κ'") as (c wπ idx'') "(Tok & #Bor'' & Pc & R)".
     iMod (bi.later_exist_except_0 with "R") as (p) "R".
-    iMod (bi.later_exist_except_0 with "R") as (r) "(Gh & Hw & Ok & Ghk)".
-    iModIntro. iExists κp, γ, γk, c, wπ, idx'', p, r. iFrame "∗#".
+    iMod (bi.later_exist_except_0 with "R") as (lr) "(Gh & Hw & Ok & Ghk)".
+    iModIntro. iExists κp, γ, γk, c, wπ, idx'', p, lr. iFrame "∗#".
   Qed.
 
   (** Settling a restored borrow: open it (with a guard for [κ]), unblock its contents
@@ -1371,7 +1410,7 @@ Section uniq_util.
         ▷ ((λ π, (π (uniq_prvar x₀ ζi)).1) :== vπ x) ∗ G.
   Proof.
     iIntros (? HE) "#LFT #PROPH #UNIQ #Gk #In #†κ' £ £' Rst G".
-    iDestruct "Rst" as (κp γ γk c wπ idx p r) "(#Incl & Tok & ⧗ & #Bor & Rst)".
+    iDestruct "Rst" as (κp γ γk c wπ idx p lr) "(#Incl & Tok & ⧗ & #Bor & Rst)".
     iMod (lc_fupd_elim_later with "£ Rst") as "(Pc & Gh & %Hw & #Ok & _)".
     have ?: ↑Nllft ⊆ E. { etrans; [|done]. rewrite /lazyE. set_solver. }
     iMod (fractional.frac_split_guard_in_half with "G Gk") as (γh) "[H1 [H2 [#Gh2 #Back]]]";
@@ -1384,7 +1423,7 @@ Section uniq_util.
     iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
     iMod (guarded_upd_run with "[] H2 Upd") as "[H2 [#⧖ Node]]"; [done| |].
     { iApply (guards_transitive with "Gh2 In"). }
-    destruct r as [lr|]; [|done].
+    rewrite leaf_node_inl.
     iDestruct (leaf_owned_unblock with "LFT [] Ok †κ' H2 ⧖ Node") as "Upd".
     { iApply (guards_transitive with "Gh2 In"). }
     iMod (fupd_mask_mono with "Upd") as "[H2 (%y & %d' & %g' & Rel & #⧖' & Pt & Gho)]";
@@ -1401,7 +1440,7 @@ Section uniq_util.
       - by rewrite (uniq_persγ_retarget _ y x₀). }
     iDestruct (place_rfn_rel_eqz with "Rel") as "Eqz". iNext.
     iApply (uniq_ctrl_eqz_fst with "PROPH Pc").
-    iApply (proph_eqz_eq with "Eqz"); [|done]. fun_ext=> π /=. by rewrite Hw prfn_den_inl.
+    iApply (proph_eqz_eq with "Eqz"); [|done]. fun_ext=> π /=. by rewrite Hw.
   Qed.
 End uniq_util.
 Global Typeclasses Opaque uniq_pat_lft.

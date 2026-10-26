@@ -35,7 +35,7 @@ Definition PlaceGhost {𝔄} (x₀: ~~𝔄) (ζi: positive) : place_rfn 𝔄 :=
 (** Structured refinements of compound places. *)
 Fixpoint prfn_struct (𝔄: syn_type) : Type :=
   match 𝔄 with
-  | uniq_borₛ 𝔅 => cloc * (place_rfn 𝔅 + prfn_struct 𝔅) * positive * gname
+  | uniq_borₛ 𝔅 => cloc * (place_rfn 𝔅 + prfn_struct 𝔅) * positive
   | at_locₛ 𝔅 => loc * (place_rfn 𝔅 + prfn_struct 𝔅)
   | prodₛ 𝔅 ℭ => (place_rfn 𝔅 + prfn_struct 𝔅) * (place_rfn ℭ + prfn_struct ℭ)
   | _ => Empty_set
@@ -61,7 +61,7 @@ Fixpoint prfn_wit {𝔄} : prfn 𝔄 → ~~𝔄 :=
   match 𝔄 return prfn 𝔄 → ~~𝔄 with
   | uniq_borₛ 𝔅 => λ r, match r with
       | inl lr => place_rfn_wit lr
-      | inr (l', r', ξi, _) => (l', prfn_wit r', ξi, 0%nat, 0%nat, idx_dummy)
+      | inr (l', r', ξi) => (l', prfn_wit r', ξi, 0%nat, 0%nat, idx_dummy)
       end
   | at_locₛ 𝔅 => λ r, match r with
       | inl lr => place_rfn_wit lr
@@ -79,7 +79,7 @@ Fixpoint prfn_den {𝔄} : prfn 𝔄 → proph 𝔄 :=
   match 𝔄 return prfn 𝔄 → proph 𝔄 with
   | uniq_borₛ 𝔅 => λ r, match r with
       | inl lr => place_rfn_den lr
-      | inr (l', r', ξi, _) => λ π, (prfn_den r' π, (π (uniq_prvar (prfn_wit r') ξi)).1)
+      | inr (l', r', ξi) => λ π, (prfn_den r' π, (π (uniq_prvar (prfn_wit r') ξi)).1)
       end
   | at_locₛ 𝔅 => λ r, match r with
       | inl lr => place_rfn_den lr
@@ -103,6 +103,14 @@ Proof. by destruct 𝔄. Qed.
 
 Lemma prfn_wit_in {𝔄} (x: ~~𝔄) : prfn_wit (inl (PlaceIn x)) = x.
 Proof. by destruct 𝔄. Qed.
+
+(** A refinement as a place refinement: a structured refinement is seen as the
+    prophecy of its denotation. *)
+Definition prfn_place {𝔄} (r: prfn 𝔄) : place_rfn 𝔄 :=
+  match r with inl lr => lr | inr _ => PlaceProph (prfn_wit r) (prfn_den r) end.
+
+Lemma prfn_place_den {𝔄} (r: prfn 𝔄) : place_rfn_den (prfn_place r) = prfn_den r.
+Proof. destruct r; [by rewrite prfn_den_inl|done]. Qed.
 
 (** * Blocking patterns *)
 
@@ -133,6 +141,11 @@ Fixpoint pat_blk_lfts (p: lpat) : list lft :=
   | PatOwn p' => pat_blk_lfts p'
   | PatProd p1 p2 => pat_blk_lfts p1 ++ pat_blk_lfts p2
   end.
+
+(** The pattern of a leaf at a state: a structured refinement (of an unfolded
+    compound place) is seen by a leaf as blocked at [κ]. *)
+Definition norm_pat (κ: lft) {𝔄} (p: lpat) (r: prfn 𝔄) : lpat :=
+  match r with inl _ => p | inr _ => PatBlocked κ end.
 
 (** * States *)
 

@@ -352,7 +352,7 @@ Section product_split.
       iSplit; [iPureIntro; intros π; by rewrite prfn_den_inl|].
       iApply guarded_upd_intro. iModIntro.
       iSplitR. { iApply (persistent_time_receipt_mono with "⧖"). lia. }
-      rewrite /leaf_owned /blocked_owned. iIntros "#†κ". iModIntro.
+      rewrite leaf_node_inl /leaf_owned /blocked_owned. iIntros "#†κ". iModIntro.
       iDestruct (uniq_lender_settle with "LFT PROPH †κ [Pc1 Q1]") as "S1".
       { iExists c1, w1. iFrame. }
       iDestruct (uniq_lender_settle with "LFT PROPH †κ [Pc2 Q2]") as "S2".

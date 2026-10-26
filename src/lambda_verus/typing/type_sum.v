@@ -476,7 +476,7 @@ Section type_sum.
       iFrame "Gho". iSplit; [iApply pat_ok_blocked; iApply "Inclp"|].
       iSplit; [iPureIntro; intros π; by rewrite prfn_den_inl|].
       iApply guarded_upd_intro. iModIntro. iFrame "⧖1".
-      rewrite /leaf_owned /blocked_owned. iIntros "#†κ". iModIntro.
+      rewrite leaf_node_inl /leaf_owned /blocked_owned. iIntros "#†κ". iModIntro.
       iDestruct (uniq_lender_settle with "LFT PROPH †κ [Pc1 Q1]") as "S1".
       { iExists c1, w1. iFrame. }
       iApply (guarded_upd_weaken with "[]"); [iApply lft_intersect_tyl_lfts_lookup_incl|].

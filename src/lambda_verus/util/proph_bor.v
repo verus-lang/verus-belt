@@ -1010,6 +1010,41 @@ Proof.
   iModIntro. iExists idx'. iFrame.
 Qed.
 
+(** As [proph_idx_bor_gen_acc_rebody], with a lifetime guard instead of the token; the
+    closing view shift does not get [[†κ]]. *)
+Lemma proph_idx_bor_gen_acc_rebody_guarded E κ ξ x idx (P Q: pv_val ξ → pv_proph ξ → iProp Σ) G :
+  Timeless G → ↑Nllft ⊆ E →
+  llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P -∗ G ={E}=∗ ∃ wπ,
+    ▷ P x wπ ∗
+    (∀ x1 wπ1, ▷ Q x1 wπ1 -∗
+       ▷ (∀ x2 wπ2, ▷ Q x2 wπ2 ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P x2 wπ2)
+       ={↑Nllft}=∗
+       ∃ idx', proph_bor_tok ξ x1 idx' ∗ proph_idx_bor_gen κ ξ idx' Q ∗ G).
+Proof.
+  iIntros (??) "#LFT #UNIQ #Gk [Vo Tok] #IBor G".
+  iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "Bor".
+  iMod (llftl_bor_acc_guarded with "LFT Bor Gk G") as "[Body Back]"; [done|].
+  iMod (bi.later_exist_except_0 with "Body") as (x') "Body".
+  iMod (bi.later_exist_except_0 with "Body") as (wπ) "[Pc P]".
+  iMod (uniq_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iModIntro. iExists wπ. iFrame "P".
+  iIntros (x1 wπ1) "Q W".
+  iMod (uniq_update ξ x1 wπ1 with "UNIQ Vo Pc") as "[Vo Pc]".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
+  iAssert (▷ (▷ pbor_body_gen ξ Q ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ pbor_body_gen ξ P))%I
+    with "[W]" as "VS".
+  { iNext. iIntros "Body".
+    iMod (bi.later_exist_except_0 with "Body") as (x2) "Body".
+    iMod (bi.later_exist_except_0 with "Body") as (wπ2) "(Pc2 & Q)".
+    iMod ("W" $! x2 wπ2 with "Q") as "P".
+    iModIntro. iNext. iExists x2, wπ2. iFrame. }
+  iMod ("Back" $! (pbor_body_gen ξ Q) with "[VS Pc Q]") as "[Bor G]".
+  { iFrame "VS". iNext. iExists x1, wπ1. iFrame. }
+  iDestruct (llftl_bor_idx with "Bor") as (idx') "[IBor' Tok']".
+  iModIntro. iExists idx'. iFrame.
+Qed.
+
 (** ** Mapping, splitting and reborrowing generalized prophetic borrows *)
 
 (** Replace a generalized prophetic borrow [ξ] by a fresh one [ζ] (allocated by the

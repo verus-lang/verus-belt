@@ -553,18 +553,18 @@ Section borrow.
     (* The outer borrow keeps (besides the inner token) the observer of [ω] and the outer
        half of its state, with the phase: initially (before [ζ]'s body is in place) also
        the loan of [ζ]; finally, the state of [ω] refines the final value of [ζ]. *)
-    pose (A := (∃ cω' p r tag, .VO[ω] cω' ∗ ⌜cell_γ cω' = γω⌝ ∗
-      ghost_var γω (1/2) (lstate p r) ∗ pat_ok κ p ∗ ghost_var γk (1/2) tag ∗
-      ((⌜tag = tinit ∧ cω' = uniq_cell x1 d1 g1 γω ∧ lstate p r = lstate_triv x1⌝ ∗
+    pose (A := (∃ cω' p (lr: place_rfn 𝔄) tag, .VO[ω] cω' ∗ ⌜cell_γ cω' = γω⌝ ∗
+      ghost_var γω (1/2) (lstate p (inl lr)) ∗ pat_ok κ p ∗ ghost_var γk (1/2) tag ∗
+      ((⌜tag = tinit ∧ cω' = uniq_cell x1 d1 g1 γω ∧ lstate p (inl lr) = lstate_triv x1⌝ ∗
           .VO[ζ] (uniq_cell x1 d1 g1 γζ) ∗ ∃ wζ, .PC[ζ] (uniq_cell x1 d1 g1 γζ) wζ) ∨
-       ⌜tag = tfin ∧ ∀ π, prfn_den r π = (π ζ).1⌝))%I).
+       ⌜tag = tfin ∧ ∀ π, prfn_den (inl lr) π = (π ζ).1⌝))%I).
     pose (R := (⧗1 ∗ ⧗1 ∗ £1 ∗ l #↦!∗ ty_phys (&uniq{κ'} ty) xo tid)%I).
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
     iMod ("Close1" $! (A ∗ R ∗ idx_bor_tok ωidx)%I
       with "[Gho1 Gho2 ToξPc ωVo Ghω Ghk ζVo ζPc ⧗i ⧗ £s Pt ωIdxTok]") as "[ξB1 H1]".
     { iSplitL "Gho1 Gho2 ToξPc"; last first.
       { iNext. iFrame "⧗i ⧗ £s Pt ωIdxTok".
-        iExists _, PatLeaf, (inl (PlaceIn x1)), tinit. iFrame "ωVo Ghω Ghk".
+        iExists _, PatLeaf, (PlaceIn x1), tinit. iFrame "ωVo Ghω Ghk".
         iSplit; [done|]. iSplit; [iApply pat_ok_leaf|]. iLeft. iFrame "ζVo".
         iSplit; [done|]. iExists _. iFrame "ζPc". }
       (* Rebuilding the outer body, once [κ] has ended: it is blocked at [κ]; once
@@ -596,7 +596,7 @@ Section borrow.
       iDestruct "ωB" as (p' r') "(_ & %Hw' & Ghω' & Upd)".
       iDestruct (ghost_var_agree with "Ghω Ghω'") as %[<- <-]%lstate_inj.
       iMod (guarded_upd_run with "Ghty G2 Upd") as "[G2 [#⧖ω Node]]"; [done|].
-      destruct ra as [lr|]; [|done].
+      rewrite leaf_node_inl.
       iMod (leaf_owned_unblock with "LFT Ghty Okω †κ G2 ⧖ω Node")
         as "[G2 (%y & %d' & %g' & Rel & #⧖' & Pt' & Gho')]".
       (* The equalizer of [ζ]: in the initial phase, from its controller; in the final
@@ -656,7 +656,7 @@ Section borrow.
     iDestruct (ghost_var_agree with "Ghk Ghk'") as %->.
     iDestruct "Br" as "[(>%Hin & >ζVo & Hζ)|>%Hfin]"; last first.
     { exfalso. destruct Hfin as [Hfin _]. by apply lstate_inj in Hfin as [? _]. }
-    destruct Hin as (_ & -> & Hpr). apply lstate_inj in Hpr as [-> ->].
+    destruct Hin as (_ & -> & Hpr). apply lstate_inj in Hpr as [-> [= ->]].
     iMod (bi.later_exist_except_0 with "Hζ") as (wζ) "ζPc".
     iMod (uniq_strip_later with "ζVo ζPc") as "(_ & ζVo & ζPc)".
     iMod (bi.later_exist_except_0 with "ωB") as (c2) "ωB".
@@ -686,7 +686,7 @@ Section borrow.
       iMod (uniq_update ω cnew wnew with "UNIQ ωVo ωPc") as "[ωVo ωPc]".
       { pose proof (nclose_subseteq NllftUsr 0). solve_ndisj. }
       iModIntro. iNext. iSplitL "ωVo Ghω Ghk".
-      { iExists cnew, (PatBlocked κ), (inl (PlaceProph x1 (λ π, (π ζ).1))), tfin.
+      { iExists cnew, (PatBlocked κ), (PlaceProph x1 (λ π, (π ζ).1)), tfin.
         iFrame "ωVo Ghω Ghk". iSplit; [done|].
         iSplit; [iApply pat_ok_blocked; iApply guards_refl|].
         iRight. iPureIntro. split; [done|]. intros π. by rewrite prfn_den_inl. }
@@ -697,15 +697,14 @@ Section borrow.
       iIntros (G' ?) "#G'ty G'".
       iMod (guarded_upd_run with "G'ty G' Upd3") as "[$ [#⧖3 Node3]]"; [done|].
       iModIntro. iFrame "⧖3".
-      destruct r3 as [lr3|]; [|done].
-      rewrite /leaf_owned /blocked_owned. iIntros "#†κ". iModIntro.
+      rewrite leaf_node_inl /leaf_owned /blocked_owned. iIntros "#†κ". iModIntro.
       iIntros (G'' ?) "#G''ty G''".
-      iMod (leaf_owned_unblock with "LFT G''ty Ok3 †κ G'' ⧖3 Node3")
+      iMod (leaf_node_unblock with "LFT G''ty Ok3 †κ G'' ⧖3 Node3")
         as "[$ (%y & %d' & %g' & Rel & ⧖' & O)]".
       iModIntro. iExists y, d', g'. iFrame "⧖' O".
       iDestruct (place_rfn_rel_eqz with "Rel") as "Eqz". rewrite /place_rfn_rel. iNext.
       iApply (uniq_ctrl_eqz_fst with "PROPH ζPc3").
-      iApply (proph_eqz_eq with "Eqz"); [|done]. fun_ext=> π /=. by rewrite Hw3 prfn_den_inl. }
+      iApply (proph_eqz_eq with "Eqz"); [|done]. fun_ext=> π /=. by rewrite Hw3 prfn_place_den. }
     iMod "Upd" as "_".
     iDestruct (llftl_bor_idx with "ζBor") as (ζidx) "[#ζBor ζIdxTok]".
     iMod (fupd_mask_subseteq (↑NllftG)) as "Upd"; first solve_ndisj.
