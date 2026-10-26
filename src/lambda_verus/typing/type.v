@@ -145,6 +145,101 @@ Section share_util.
   Qed.
 End share_util.
 
+(** * Guarded updates
+
+    [guarded_upd E P Q] is a fancy update (with mask [E]) to [Q] that can only be run
+    given a guard for [P]: whoever runs it lends it a timeless proposition [G] that
+    guards [P], and gets [G] back. This is how lazy contents can depend on a lifetime
+    being alive. The payload of [&uniq] ([uniq_payload]) is a guarded update for the
+    lifetime of the referent type, so that running it can open borrows at that lifetime
+    (e.g. the restored inner borrow of an unnested [&uniq &uniq], see
+    [type_deref_uniq_uniq_instr]); the old contents handed out by [typed_write] are a
+    guarded update for the lifetime context. *)
+Section guarded_upd.
+  Context `{!typeG Σ}.
+
+  Definition guarded_upd (E: coPset) (P Q: iProp Σ) : iProp Σ :=
+    ∀ G, ⌜Timeless G⌝ -∗ (G &&{↑NllftG}&&> P) -∗ G ={E}=∗ G ∗ Q.
+
+  Global Instance guarded_upd_ne E P : NonExpansive (guarded_upd E P).
+  Proof. solve_proper. Qed.
+  Global Instance guarded_upd_proper E P : Proper ((≡) ==> (≡)) (guarded_upd E P).
+  Proof. solve_proper. Qed.
+
+  Lemma guarded_upd_intro E P Q : (|={E}=> Q) -∗ guarded_upd E P Q.
+  Proof. iIntros "Q" (G ?) "_ G". iMod "Q". by iFrame. Qed.
+
+  Lemma guarded_upd_run E E' P Q G :
+    Timeless G → E ⊆ E' →
+    (G &&{↑NllftG}&&> P) -∗ G -∗ guarded_upd E P Q ={E'}=∗ G ∗ Q.
+  Proof. iIntros (??) "Gk G Upd". iApply (fupd_mask_mono with "(Upd [%] Gk G)"); done. Qed.
+
+  (** Mapping, where the map may use the guard. *)
+  Lemma guarded_upd_wand E P Q Q' :
+    (∀ G, ⌜Timeless G⌝ -∗ (G &&{↑NllftG}&&> P) -∗ G -∗ Q ={E}=∗ G ∗ Q') -∗
+    guarded_upd E P Q -∗ guarded_upd E P Q'.
+  Proof.
+    iIntros "W Upd" (G ?) "#Gk G". iMod ("Upd" with "[//] Gk G") as "[G Q]".
+    iApply ("W" with "[//] Gk G Q").
+  Qed.
+
+  Lemma guarded_upd_mono E P Q Q' :
+    (Q ={E}=∗ Q') -∗ guarded_upd E P Q -∗ guarded_upd E P Q'.
+  Proof.
+    iIntros "W". iApply guarded_upd_wand. iIntros (G ?) "_ $ Q". by iApply "W".
+  Qed.
+
+  Lemma guarded_upd_weaken E P P' Q :
+    (P' &&{↑NllftG}&&> P) -∗ guarded_upd E P Q -∗ guarded_upd E P' Q.
+  Proof.
+    iIntros "#P'P Upd" (G ?) "#Gk G". iApply ("Upd" with "[//] [] G").
+    iApply (guards_transitive with "Gk P'P").
+  Qed.
+
+  Lemma guarded_upd_mask_mono E E' P Q :
+    E ⊆ E' → guarded_upd E P Q -∗ guarded_upd E' P Q.
+  Proof.
+    iIntros (HE) "Upd". iIntros (G ?) "Gk G".
+    iApply (fupd_mask_mono with "(Upd [%] Gk G)"); done.
+  Qed.
+
+  Lemma guarded_upd_sep E P Q1 Q2 :
+    guarded_upd E P Q1 -∗ guarded_upd E P Q2 -∗ guarded_upd E P (Q1 ∗ Q2).
+  Proof.
+    iIntros "U1 U2" (G ?) "#Gk G". iMod ("U1" with "[//] Gk G") as "[G $]".
+    iApply ("U2" with "[//] Gk G").
+  Qed.
+
+  (** Guarded updates for equivalent lifetimes are equivalent. *)
+  Lemma guarded_upd_lft_equiv E κ κ' Q :
+    (⊢ κ ≡ₗ κ') → guarded_upd E @[κ] Q ⊣⊢ guarded_upd E @[κ'] Q.
+  Proof.
+    intros Hκ. iDestruct Hκ as "#[A B]".
+    iSplit; iApply guarded_upd_weaken; done.
+  Qed.
+
+  (** Running a guarded update inside a full borrow at [κ], given a guard for [κ] (half
+      of which keeps the borrow open, the other half runs the update) and a later credit
+      for the later in front of the borrowed contents. *)
+  Lemma llftl_bor_guarded_upd E M κ P Q G :
+    Timeless G → ↑Nllft ⊆ E → M ⊆ E →
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ (@[κ] &&{↑NllftG}&&> P) -∗ G -∗ £1 -∗
+    &{κ} (guarded_upd M P Q) ={E}=∗ &{κ} Q ∗ G.
+  Proof.
+    iIntros (???) "#LFT #Gk #κP G £ Bor".
+    iMod (fractional.frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Back]]]";
+      [solve_ndisj|].
+    iMod (llftl_bor_acc_guarded with "LFT Bor Gh H1") as "[Upd Close]"; [done|].
+    iMod (lc_fupd_elim_later with "£ Upd") as "Upd".
+    iMod (guarded_upd_run M E P Q with "[] H2 Upd") as "[H2 Q]"; [done| |].
+    { iApply (guards_transitive with "Gh κP"). }
+    iDestruct ("Close" $! Q with "[Q]") as "Close".
+    { iSplitR; [|by iNext]. iIntros "!> Q !> !>". iApply guarded_upd_intro. by iModIntro. }
+    iMod (fupd_mask_mono with "Close") as "[$ H1]"; [done|].
+    iApply (fupd_mask_mono with "(Back H1 H2)"). solve_ndisj.
+  Qed.
+End guarded_upd.
+
 (** The default sharing predicate: a guard of the ownership predicate by [@[κ]] (with
     [g+1] laters), at some depth no larger than the given one. Closing it downwards in
     the depth makes depth monotonicity hold for any ownership predicate; for a type whose

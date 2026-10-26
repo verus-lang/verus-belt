@@ -83,7 +83,8 @@ Section typing.
     Timeless G →
     llft_ctx -∗ uniq_ctx -∗ elctx_interp E -∗ (G &&{↑NllftG}&&> llctx_interp L) -∗
     G -∗ ty_own ty x d d tid [v] ={⊤}=∗ ∃(l: cloc) (d':nat) (H: iProp Σ),
-      ⌜v = FVal #(l.1)⌝ ∗ ⌜d = S d'⌝ ∗ ▷ (|={⊤ ∖ ↑advN}=> l #↦!∗: ty_own tyb (gt x) d' d tid) ∗
+      ⌜v = FVal #(l.1)⌝ ∗ ⌜d = S d'⌝ ∗
+      ▷ guarded_upd (⊤ ∖ ↑advN) (llctx_interp L) (l #↦!∗: ty_own tyb (gt x) d' d tid) ∗
       H ∗ (H &&{↑NllftG; d+1}&&> l #↦∗_) ∗
       ∀y db', ▷ l #↦!∗: ty_own tyb' y db' (S db') tid -∗ ⧖(S db') -∗
         £(2*db'*db' + 4*db' + 2) -∗ H
@@ -405,7 +406,8 @@ Section typing.
     iIntros "H£ #⧖S".
     iDestruct (lc_weaken (_ + _ + _ + _ + _)%nat with "H£") as "[[[[£0 £1] £2] £3] £4]"; first last.
     {
-    iMod (lc_fupd_elim_later with "£0 Old") as ">(%vl & ↦ & A)".
+    iMod (lc_fupd_elim_later with "£0 Old") as "Old".
+    iMod (guarded_upd_run with "Ghalf H2 Old") as "[H2 (%vl & ↦ & A)]"; [solve_ndisj|].
     iDestruct "A" as "[tyb_ghos %tyb_phys]".
     assert (length vl = ty_size tyb) as Sz. { rewrite <- tyb_phys. apply ty_size_eq. }
     iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN)) with "LFT PROPH UNIQ TIME E Ghalf H2 tyb_ghos") as "ToObs"; [set_solver|].
@@ -544,7 +546,8 @@ Section typing.
     iIntros "H£ #⧖Smax".
     iDestruct (lc_weaken (_ + _ + _ + _ + _ + _ + _)%nat with "H£") as "[[[[[[£0 £1] £2] £3] £4] £5] £6]"; first last.
     {
-    iMod (lc_fupd_elim_later with "£0 Old") as ">(% & ↦ & Own)".
+    iMod (lc_fupd_elim_later with "£0 Old") as "Old".
+    iMod (guarded_upd_run with "Ghalf2 H2 Old") as "[H2 (% & ↦ & Own)]"; [solve_ndisj|].
     iDestruct "Own" as "[tyb_gho %tyb_phys]".
     
     iMod (Rd with "LFT E Ghalf2 H2 tyr £1") as (? vlb_concrete vlb Hr Heqv2 Hleneq) "(Hr & #Hrpt' & Retether & _ & Own' & Totyr')".

@@ -61,23 +61,31 @@ Section uniq_util.
 
   (** ** The payload of a unique borrow
 
-    The payload is lazy: the ownership predicate of the contents and the points-to are
-    under a fancy update with the mask [lazyE]. This lets a future lender of blocked
-    contents turn them back into the payload inside the update, by firing inheritances
-    of the lifetime logic ([[†κ] ={↑Nllft}=∗ …]), which cannot be done in the closing
-    view shift of a borrow (whose mask is [↑NllftUsr ∪ ↑NllftUsr2]). Since
-    [↑NllftG ⊆ ↑Nllft ⊆ lazyE], the update can never run while a guard is open; it is
-    run after opening the borrow non-atomically (with a guard for the lifetime), paying
-    for the later in front of the contents with a later credit (e.g. from time
-    receipts) or with a program step.
+    The payload is lazy: the time receipt, the ownership predicate of the contents and
+    the points-to are under a guarded update ([guarded_upd]) with the mask [lazyE], for
+    the lifetime [ty_lft ty] of the referent type. The update can fire inheritances of
+    the lifetime logic ([[†κ] ={↑Nllft}=∗ …]) and open borrows, which cannot be done in
+    the closing view shift of a borrow (whose mask is [↑NllftUsr ∪ ↑NllftUsr2]). Since
+    [↑NllftG ⊆ ↑Nllft ⊆ lazyE], it can never run while a guard is open.
 
-    The time receipt is outside the update. It is persistent, and it is needed in
-    places where the update cannot run: when a reborrow ends, [proph_ibor_reborrow] and
-    [proph_ibor_unnest] record it as the persistent summary of the final value of the
-    reborrow in a closing view shift of the lifetime logic (it is the time receipt of
-    the restored borrow); and [resolve_uniq_body] reads it to get the later credits it
-    needs. The persistent predicate of the contents is not part of the payload: it is
-    implied by their ownership predicate, inside the update. *)
+    Running the update needs a guard for [ty_lft ty]. An opener of the borrow (at [κ])
+    has a guard for [κ], and [κ ⊑ ty_lft ty] from the ownership predicate of [&uniq];
+    it opens the borrow with half of the guard and runs the update with the other half,
+    paying for the later in front of the contents with a later credit or a program
+    step. A lender gets a guard when it unblocks: the blocked entries of the type
+    context hold a pending ownership ([tctx_pending_own]) that is settled with a guard
+    for the lifetime of the type. The guard is what lets the payload rebuilt when an
+    unnested [&uniq &uniq] ends ([type_deref_uniq_uniq_instr]) open the restored inner
+    borrow (at a lifetime of the referent type), to read the time receipt of its
+    contents.
+
+    Since the time receipt is inside the update, nothing about the final value of a
+    reborrow is recorded when it ends ([uniq_body_reborrow]); the time receipt is
+    recovered by settling the restored borrow ([uniq_body_settle]). Elsewhere, the
+    receipt of the contents is implied by the receipt of the enclosing [&uniq] and its
+    depth constraint (e.g. [resolve_uniq_body] takes it as a premise). The persistent
+    predicate of the contents is not part of the payload: it is implied by their
+    ownership predicate, inside the update. *)
   Definition lazyE : coPset := ↑Nllft ∪ ↑prophN ∪ ↑uniqN.
 
   Lemma lazyE_NllftUsr : ↑NllftUsr ∪ ↑NllftUsr2 ⊆ lazyE.
@@ -85,28 +93,23 @@ Section uniq_util.
 
   Definition uniq_payload {𝔄} (ty: type 𝔄) (tid: thread_id) (l: cloc)
       (c: ~~ (uniq_cellₛ 𝔄)) : iProp Σ :=
-    ⧖(S (dec_depth c.2.1) `max` dec_depth c.2.2) ∗
-    |={lazyE}=> (ty.(ty_gho_own) c.1 (dec_depth c.2.1) (dec_depth c.2.2) tid ∗
+    guarded_upd lazyE @[ty_lft ty] (⧖(S (dec_depth c.2.1) `max` dec_depth c.2.2) ∗
+      ty.(ty_gho_own) c.1 (dec_depth c.2.1) (dec_depth c.2.2) tid ∗
       l #↦!∗ ty.(ty_phys) c.1 tid).
 
   Lemma uniq_payload_cell {𝔄} (ty: type 𝔄) tid l x d g :
     uniq_payload ty tid l (uniq_cell x d g) ⊣⊢
-      ⧖(S d `max` g) ∗
-      |={lazyE}=> (ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid).
+      guarded_upd lazyE @[ty_lft ty]
+        (⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid).
   Proof. by rewrite /uniq_payload /= !dec_enc_depth. Qed.
-
-  Lemma uniq_payload_later_cell {𝔄} (ty: type 𝔄) tid l x d g :
-    ▷ uniq_payload ty tid l (uniq_cell x d g) ⊣⊢
-      ▷ (⧖(S d `max` g) ∗
-        |={lazyE}=> (ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid)).
-  Proof. by rewrite uniq_payload_cell. Qed.
 
   (** A non-lazy payload. *)
   Lemma uniq_payload_intro {𝔄} (ty: type 𝔄) tid l x d g :
     ⧖(S d `max` g) -∗ ty.(ty_gho_own) x d g tid -∗ l #↦!∗ ty.(ty_phys) x tid -∗
     uniq_payload ty tid l (uniq_cell x d g).
   Proof.
-    rewrite uniq_payload_cell. iIntros "$ Gho Pt". iModIntro. iFrame.
+    rewrite uniq_payload_cell. iIntros "⧖ Gho Pt". iApply guarded_upd_intro.
+    iModIntro. iFrame.
   Qed.
 
   Lemma uniq_payload_intro_later {𝔄} (ty: type 𝔄) tid l x d g :
@@ -114,27 +117,42 @@ Section uniq_util.
     ▷ uniq_payload ty tid l (uniq_cell x d g).
   Proof. iIntros "(⧖ & Gho & Pt) !>". iApply (uniq_payload_intro with "⧖ Gho Pt"). Qed.
 
+  (** Running the lazy update of a payload, given a guard for the lifetime of the
+      type. *)
+  Lemma uniq_payload_run {𝔄} (ty: type 𝔄) tid l x d g E G :
+    Timeless G → lazyE ⊆ E →
+    (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ G -∗ uniq_payload ty tid l (uniq_cell x d g) ={E}=∗
+      G ∗ ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid.
+  Proof.
+    iIntros (??) "Gk G P". rewrite uniq_payload_cell.
+    iApply (guarded_upd_run with "Gk G P"); done.
+  Qed.
+
   (** Running the lazy update of a payload that is under a later, with a later
       credit. *)
-  Lemma uniq_payload_force {𝔄} (ty: type 𝔄) tid l x d g E :
-    lazyE ⊆ E →
+  Lemma uniq_payload_force {𝔄} (ty: type 𝔄) tid l x d g E G :
+    Timeless G → lazyE ⊆ E →
+    (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ G -∗
     £1 -∗ ▷ uniq_payload ty tid l (uniq_cell x d g) ={E}=∗
-      ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid.
+      G ∗ ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid.
   Proof.
-    iIntros (?) "£ P". rewrite uniq_payload_cell.
-    iMod (lc_fupd_elim_later with "£ P") as "($ & Upd)".
-    by iMod (fupd_mask_mono with "Upd") as "$".
+    iIntros (??) "Gk G £ P".
+    iMod (lc_fupd_elim_later with "£ P") as "P".
+    by iApply (uniq_payload_run with "Gk G P").
   Qed.
 
   (** Mapping the lazy part of a payload. *)
   Lemma uniq_payload_map {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) tid tid' l l' x x' d g d' g' :
+    ty_lft ty' ⊑ ty_lft ty -∗
     (⧖(S d `max` g) -∗ ⧖(S d' `max` g')) -∗
     (ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid ={lazyE}=∗
       ty'.(ty_gho_own) x' d' g' tid' ∗ l' #↦!∗ ty'.(ty_phys) x' tid') -∗
     uniq_payload ty tid l (uniq_cell x d g) -∗ uniq_payload ty' tid' l' (uniq_cell x' d' g').
   Proof.
-    rewrite !uniq_payload_cell. iIntros "T W (⧖ & Upd)".
-    iSplitL "T ⧖"; [by iApply "T"|]. iMod "Upd". by iApply "W".
+    rewrite !uniq_payload_cell. iIntros "#Incl T W Upd".
+    iApply (guarded_upd_weaken with "Incl").
+    iApply (guarded_upd_mono with "[T W] Upd"). iIntros "(⧖ & Upd)".
+    iDestruct ("T" with "⧖") as "$". by iApply "W".
   Qed.
 
   Definition uniq_body_pers_component {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx)
@@ -165,89 +183,91 @@ Section uniq_util.
 
   (** ** Non-expansiveness *)
 
+  (** The payload depends on the lifetime of the type only up to equivalence, which is
+      what [TypeNonExpansive] provides. *)
   Lemma uniq_payload_ne {𝔄} n (ty ty': type 𝔄) tid l c :
+    (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
-    (∀ x d g, ty.(ty_gho_pers) x d g tid ≡{n}≡ ty'.(ty_gho_pers) x d g tid) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_payload ty tid l c ≡{n}≡ uniq_payload ty' tid l c.
   Proof.
-    intros Hg Hpers Hp. rewrite /uniq_payload Hp. f_equiv. f_equiv. f_equiv. apply Hg.
+    intros Hl Hg Hp. rewrite /uniq_payload (guarded_upd_lft_equiv _ _ _ _ Hl) Hp.
+    f_equiv. f_equiv. f_equiv. apply Hg.
   Qed.
 
   Lemma uniq_payload_proper {𝔄} (ty ty': type 𝔄) tid tid' l c :
+    (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
-    (∀ x d g, ty.(ty_gho_pers) x d g tid ⊣⊢ ty'.(ty_gho_pers) x d g tid') →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
     uniq_payload ty tid l c ⊣⊢ uniq_payload ty' tid' l c.
   Proof.
-    intros Hg Hpers Hp. rewrite /uniq_payload Hp. f_equiv. f_equiv. f_equiv. apply Hg.
+    intros Hl Hg Hp. rewrite /uniq_payload (guarded_upd_lft_equiv _ _ _ _ Hl) Hp.
+    f_equiv. f_equiv. f_equiv. apply Hg.
   Qed.
 
   Lemma uniq_body_ne {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
+    (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
-    (∀ x d g, ty.(ty_gho_pers) x d g tid ≡{n}≡ ty'.(ty_gho_pers) x d g tid) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_body ty x ξi d g idx κ tid l ≡{n}≡ uniq_body ty' x ξi d g idx κ tid l.
   Proof.
-    intros Hg Hpers Hp. rewrite /uniq_body. f_equiv. apply proph_ibor_ne=> c.
+    intros Hl Hg Hp. rewrite /uniq_body. f_equiv. apply proph_ibor_ne=> c.
     by apply uniq_payload_ne.
   Qed.
 
   Lemma uniq_body_contractive {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
+    (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, dist_later n (ty.(ty_gho_own) x d g tid) (ty'.(ty_gho_own) x d g tid)) →
-    (∀ x d g, dist_later n (ty.(ty_gho_pers) x d g tid) (ty'.(ty_gho_pers) x d g tid)) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_body ty x ξi d g idx κ tid l ≡{n}≡ uniq_body ty' x ξi d g idx κ tid l.
   Proof.
-    intros Hg Hpers Hp. rewrite /uniq_body. f_equiv. apply proph_ibor_contractive=> c.
+    intros Hl Hg Hp. rewrite /uniq_body. f_equiv. apply proph_ibor_contractive=> c.
     destruct n as [|n]; [split; lia|]. apply dist_later_S.
-    apply uniq_payload_ne; [| |done]=> x1 d1 g1.
-    - have := Hg x1 d1 g1. by rewrite dist_later_S.
-    - have := Hpers x1 d1 g1. by rewrite dist_later_S.
+    apply uniq_payload_ne; [done| |done]=> x1 d1 g1.
+    have := Hg x1 d1 g1. by rewrite dist_later_S.
   Qed.
 
   Lemma uniq_body_proper {𝔄} (ty ty': type 𝔄) x ξi d g idx κ tid tid' l :
+    (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
-    (∀ x d g, ty.(ty_gho_pers) x d g tid ⊣⊢ ty'.(ty_gho_pers) x d g tid') →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
     uniq_body ty x ξi d g idx κ tid l ⊣⊢ uniq_body ty' x ξi d g idx κ tid' l.
   Proof.
-    intros Hg Hpers Hp. rewrite /uniq_body. f_equiv. apply proph_ibor_proper=> c.
+    intros Hl Hg Hp. rewrite /uniq_body. f_equiv. apply proph_ibor_proper=> c.
     by apply uniq_payload_proper.
   Qed.
 
   Lemma uniq_pers_component_ne {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
+    (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
-    (∀ x d g, ty.(ty_gho_pers) x d g tid ≡{n}≡ ty'.(ty_gho_pers) x d g tid) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_body_pers_component ty x ξi d g idx κ tid l ≡{n}≡
       uniq_body_pers_component ty' x ξi d g idx κ tid l.
   Proof.
-    intros Hg Hpers Hp. apply proph_idx_bor_ne=> c. by apply uniq_payload_ne.
+    intros Hl Hg Hp. apply proph_idx_bor_ne=> c. by apply uniq_payload_ne.
   Qed.
 
   Lemma uniq_pers_component_contractive {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
+    (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, dist_later n (ty.(ty_gho_own) x d g tid) (ty'.(ty_gho_own) x d g tid)) →
-    (∀ x d g, dist_later n (ty.(ty_gho_pers) x d g tid) (ty'.(ty_gho_pers) x d g tid)) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_body_pers_component ty x ξi d g idx κ tid l ≡{n}≡
       uniq_body_pers_component ty' x ξi d g idx κ tid l.
   Proof.
-    intros Hg Hpers Hp. apply proph_idx_bor_contractive=> c.
+    intros Hl Hg Hp. apply proph_idx_bor_contractive=> c.
     destruct n as [|n]; [split; lia|]. apply dist_later_S.
-    apply uniq_payload_ne; [| |done]=> x1 d1 g1.
-    - have := Hg x1 d1 g1. by rewrite dist_later_S.
-    - have := Hpers x1 d1 g1. by rewrite dist_later_S.
+    apply uniq_payload_ne; [done| |done]=> x1 d1 g1.
+    have := Hg x1 d1 g1. by rewrite dist_later_S.
   Qed.
 
   Lemma uniq_pers_component_proper {𝔄} (ty ty': type 𝔄) x ξi d g idx κ tid tid' l :
+    (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
-    (∀ x d g, ty.(ty_gho_pers) x d g tid ⊣⊢ ty'.(ty_gho_pers) x d g tid') →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
     uniq_body_pers_component ty x ξi d g idx κ tid l ⊣⊢
       uniq_body_pers_component ty' x ξi d g idx κ tid' l.
   Proof.
-    intros Hg Hpers Hp. apply proph_idx_bor_proper=> c. by apply uniq_payload_proper.
+    intros Hl Hg Hp. apply proph_idx_bor_proper=> c. by apply uniq_payload_proper.
   Qed.
 
   Lemma uniq_body_from_parts {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l :
@@ -319,8 +339,8 @@ Section uniq_util.
         uniq_body ty x ξi d g idx κ tid l ∗
         ⟨π, π ζ = (l.1, (π ξ).1)⟩ ∗
         ([†κ] ={↑Nllft}=∗
-           ▷ ∃ x' (d' g' : nat), ((λ π, (π ξ).1) :== vπ x') ∗ ⧖ (S d' `max` g') ∗
-               |={lazyE}=> (ty_gho_own ty x' d' g' tid ∗ l #↦!∗ ty_phys ty x' tid)).
+           ▷ ∃ x' (d' g' : nat), ((λ π, (π ξ).1) :== vπ x') ∗
+               uniq_payload ty tid l (uniq_cell x' d' g')).
   Proof.
     intros Hmask. iIntros "#LFT #PROPH #UNIQ #⧖ gho pt £".
     iMod (proph_loan_intro (uniq_cell_tyi x) E (uniq_cell x d g) with "PROPH UNIQ")
@@ -345,9 +365,9 @@ Section uniq_util.
     { rewrite /uniq_body. iFrame. }
     iIntros "†κ". iMod ("Back" with "†κ") as "Back". iModIntro. iNext.
     iDestruct "Back" as (c) "[Eqz Payload]".
-    rewrite {2}(uniq_cell_surj c) uniq_payload_cell.
+    rewrite {2}(uniq_cell_surj c).
     iExists c.1, (dec_depth c.2.1), (dec_depth c.2.2).
-    iDestruct "Payload" as "($ & $)".
+    iFrame "Payload".
     iApply (proph_eqz_fst_const (λ π, π ξ) (vπ c.1) c.2).
     iApply (proph_eqz_eq with "Eqz"); [done|].
     fun_ext=> π. destruct c as [? [??]]. done.
@@ -390,14 +410,14 @@ Section uniq_util.
     lctx_lft_alive E L κ → ↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ κ ⊑ ty_lft ty -∗ elctx_interp E -∗
     (G &&{↑NllftG}&&> llctx_interp L) -∗
-    G -∗
+    G -∗ ⧖(S d `max` g) -∗
     uniq_body ty x ξi d g idx κ tid l ={F}=∗
       ⟨π, (π (uniq_prvar x ξi)).1 = (vπ x π)⟩ ∗ G ∗
       ty.(ty_shr) κ x d g tid ∗ (@[κ] &&{↑NllftG; 1}&&> l #↦!∗ ty_phys ty x tid) ∗
       ty.(ty_gho_pers) x d g tid.
   Proof.
     intro Ti.
-    iIntros (Alv ?) "#LFT #PROPH #UNIQ #TIME #In E #Guard G [Bor ⧗] /=".
+    iIntros (Alv ?) "#LFT #PROPH #UNIQ #TIME #In E #Guard G #⧖ [Bor ⧗] /=".
     leaf_open "Guard" with "G" as "[L Back]". { solve_ndisj. }
     iDestruct (Alv with "L E") as "#Alv".
     iMod ("Back" with "L") as "G".
@@ -408,16 +428,15 @@ Section uniq_util.
       (0 + (d+1)*(g+1)) with "LFT PROPH UNIQ Guard_K [⧗] G Bor") as "(#Obs & $ & $)".
     { solve_ndisj. } { apply uniq_body_proph_dep. }
     { iIntros (W HW) "#Wκ W Bor". rewrite uniq_payload_cell.
-      iMod (llftl_sep_split with "LFT Bor") as "[T Bor]"; [solve_ndisj|].
-      iMod (llftl_bor_guarded_pers with "LFT Wκ W T") as "[W >#⧖]"; [solve_ndisj|].
       iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[_ £]";
         first by solve_ndisj.
       iDestruct (lc_weaken (1 + 1 + d + d*(g+2) + (0 + (d+1)*(g+1))) with "£") as "£".
       { unfold advance_credits. nia. }
       iDestruct "£" as "[[[[£f £1] £d] £k] $]".
       (* Run the lazy update of the payload inside the borrow. *)
-      iMod (llftl_bor_fupd_guarded with "LFT Wκ W £f Bor") as "[Bor W]";
+      iMod (llftl_bor_guarded_upd with "LFT Wκ In W £f Bor") as "[Bor W]";
         [solve_ndisj|rewrite /lazyE; solve_ndisj|].
+      iMod (llftl_sep_split with "LFT Bor") as "[_ Bor]"; [solve_ndisj|].
       iMod (llftl_sep_split with "LFT Bor") as "[Gho Pt]"; [solve_ndisj|].
       iMod (llftl_bor_guard with "LFT Pt") as "$"; [solve_ndisj|].
       (* The persistent predicate of the contents, for [ty_share]. *)
@@ -441,29 +460,31 @@ Section uniq_util.
   (** ** Changing the type and lifetime *)
 
   Lemma incl_uniq_body_pers_component {𝔄} (ty ty': type 𝔄) x ξi d g idx κ κ' tid l :
-    κ' ⊑ κ -∗
+    κ' ⊑ κ -∗ ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d tid vl, ty.(ty_gho_own) x d tid vl ↔ ty'.(ty_gho_own) x d tid vl) -∗
-    □ (∀x d tid vl, ty.(ty_gho_pers) x d tid vl ↔ ty'.(ty_gho_pers) x d tid vl) -∗
     (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
     uniq_body_pers_component ty x ξi d g idx κ tid l -∗ uniq_body_pers_component ty' x ξi d g idx κ' tid l.
   Proof.
-    iIntros "#InLft #EqOwn #EqPers %EqPhys Pc". unfold uniq_body_pers_component.
+    iIntros "#InLft #[Incl Incl'] #EqOwn %EqPhys Pc". unfold uniq_body_pers_component.
     iApply (proph_idx_bor_shorten with "InLft [] Pc").
     iIntros "!> !>" (c). rewrite /uniq_payload EqPhys.
-    iSplit; iIntros "($ & Upd)"; iMod "Upd" as "[Gho $]"; by iApply "EqOwn".
+    iSplit; iIntros "Upd".
+    - iApply (guarded_upd_weaken with "Incl'"). iApply (guarded_upd_mono with "[] Upd").
+      iIntros "($ & Gho & $)". by iApply "EqOwn".
+    - iApply (guarded_upd_weaken with "Incl"). iApply (guarded_upd_mono with "[] Upd").
+      iIntros "($ & Gho & $)". by iApply "EqOwn".
   Qed.
 
   Lemma incl_uniq_body {𝔄} (ty ty': type 𝔄) x ξi d g idx κ κ' tid l :
-    κ' ⊑ κ -∗
+    κ' ⊑ κ -∗ ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d tid vl, ty.(ty_gho_own) x d tid vl ↔ ty'.(ty_gho_own) x d tid vl) -∗
-    □ (∀x d tid vl, ty.(ty_gho_pers) x d tid vl ↔ ty'.(ty_gho_pers) x d tid vl) -∗
     (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
     uniq_body ty x ξi d g idx κ tid l -∗ uniq_body ty' x ξi d g idx κ' tid l.
   Proof.
-    iIntros "#InLft #EqOwn #EqPers %EqPhys". rewrite !uniq_body_unfold.
+    iIntros "#InLft #Lfts #EqOwn %EqPhys". rewrite !uniq_body_unfold.
     iIntros "($ & $ & Pc)".
     iApply (incl_uniq_body_pers_component ty ty' x ξi d g idx κ κ' tid l
-      with "InLft EqOwn EqPers"); done.
+      with "InLft Lfts EqOwn"); done.
   Qed.
 
   (** ** Guards *)
@@ -506,52 +527,38 @@ Section uniq_util.
     Timeless G → ↑Nllft ⊆ E →
     llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
     uniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
-      ▷ (⧖(S d `max` g) ∗
-         |={lazyE}=> (ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid)) ∗ ⧗1 ∗
+      ▷ uniq_payload ty tid l (uniq_cell x d g) ∗ ⧗1 ∗
       (∀ x1 d1 g1, ▷ (⧖(S d1 `max` g1) ∗ ty.(ty_gho_own) x1 d1 g1 tid ∗ l #↦!∗ ty.(ty_phys) x1 tid) -∗ ⧗1
         ={↑Nllft}=∗ uniq_body ty x1 ξi d1 g1 idx κ tid l ∗ G).
   Proof.
     iIntros (??) "#LFT #UNIQ #Gk Body G".
     iMod (uniq_body_acc_lazy with "LFT UNIQ Gk Body G") as "(P & $ & Close)"; [done..|].
-    iModIntro. rewrite uniq_payload_later_cell. iFrame "P".
+    iModIntro. iFrame "P".
     iIntros (x1 d1 g1) "P ⧗". iApply ("Close" with "[P] ⧗").
     by iApply uniq_payload_intro_later.
   Qed.
 
-  (** As [uniq_body_acc], running the lazy update of the payload with a later
-      credit. *)
-  Lemma uniq_body_acc_forced {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E G :
-    Timeless G → lazyE ⊆ E →
-    llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ £1 -∗
-    uniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
-      ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid ∗ ⧗1 ∗
-      (∀ x1 d1 g1, ▷ (⧖(S d1 `max` g1) ∗ ty.(ty_gho_own) x1 d1 g1 tid ∗ l #↦!∗ ty.(ty_phys) x1 tid) -∗ ⧗1
-        ={↑Nllft}=∗ uniq_body ty x1 ξi d1 g1 idx κ tid l ∗ G).
-  Proof.
-    iIntros (? HE) "#LFT #UNIQ #Gk £ Body G".
-    have ?: ↑Nllft ⊆ E. { etrans; [|done]. rewrite /lazyE. set_solver. }
-    iMod (uniq_body_acc_lazy with "LFT UNIQ Gk Body G") as "(P & $ & Close)"; [done..|].
-    iMod (uniq_payload_force with "£ P") as "($ & $ & $)"; [done|].
-    iModIntro. iIntros (x1 d1 g1) "P ⧗". iApply ("Close" with "[P] ⧗").
-    by iApply uniq_payload_intro_later.
-  Qed.
-
   (** Open a unique borrow and run the lazy update of its payload, closing it with the
-      same value and depth; this needs no [uniq_ctx]. *)
+      same value and depth; this needs no [uniq_ctx]. Half of the guard keeps the borrow
+      open, the other half runs the update. *)
   Lemma uniq_body_acc_keep {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E G :
     Timeless G → lazyE ⊆ E →
-    llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ £1 -∗
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ κ ⊑ ty_lft ty -∗ £1 -∗
     uniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
       ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid ∗
       (▷ (ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid)
         ={↑Nllft}=∗ uniq_body ty x ξi d g idx κ tid l ∗ G).
   Proof.
-    iIntros (? HE) "#LFT #Gk £ [Bor ⧗] G".
+    iIntros (? HE) "#LFT #Gk #In £ [Bor ⧗] G".
     have ?: ↑Nllft ⊆ E. { etrans; [|done]. rewrite /lazyE. set_solver. }
-    iMod (proph_ibor_acc_keep with "LFT Gk Bor G") as "[P Close]"; [done..|].
-    iMod (uniq_payload_force with "£ P") as "(#⧖ & $ & $)"; [done|]. iFrame "⧖".
-    iModIntro. iIntros "P". iMod ("Close" with "[P]") as "[Bor $]".
+    iMod (fractional.frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Back]]]";
+      [solve_ndisj|].
+    iMod (proph_ibor_acc_keep with "LFT Gh Bor H1") as "[P Close]"; [done..|].
+    iMod (uniq_payload_force with "[] H2 £ P") as "(H2 & #⧖ & $ & $)"; [done| |].
+    { iApply (guards_transitive with "Gh In"). }
+    iFrame "⧖". iModIntro. iIntros "P". iMod ("Close" with "[P]") as "[Bor H1]".
     { iApply uniq_payload_intro_later. iNext. iFrame "∗#". }
+    iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
     iModIntro. iFrame.
   Qed.
 
@@ -573,7 +580,8 @@ Section uniq_util.
         first by solve_ndisj.
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
     iMod ("Back" with "[Inner] ⧗") as "[$ $]"; [|done].
-    iNext. iApply (uniq_payload_map with "[] [] Inner").
+    iNext. iApply (uniq_payload_map with "[] [] [] Inner").
+    - iApply guards_refl.
     - iIntros "_". iFrame "⧖".
     - iIntros "[Gho $]". iModIntro.
       iDestruct (ty_gho_own_depth_mono with "Gho") as "[$ _]"; trivial.
@@ -586,8 +594,7 @@ Section uniq_util.
     ↑Nllft ⊆ E →
     llft_ctx -∗ uniq_ctx -∗ @[κ] -∗
     uniq_body ty x ξi d g idx κ tid l ={E}=∗ ▷ ◇ (
-      (⧖(S d `max` g) ∗
-        |={lazyE}=> (ty.(ty_gho_own) x d g tid ∗ l #↦!∗ ty.(ty_phys) x tid)) ∗ ⧗1 ∗
+      uniq_payload ty tid l (uniq_cell x d g) ∗ ⧗1 ∗
       (∀ c1, ▷ Q c1 -∗
          ▷ (∀ c2, ▷ Q c2 ∗ [†κ] ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ uniq_payload ty tid l c2)
          ={↑Nllft}=∗
@@ -595,15 +602,14 @@ Section uniq_util.
   Proof.
     iIntros (?) "#LFT #UNIQ κ [Bor ⧗]".
     iMod (proph_ibor_acc_rebody E κ (uniq_prvar x ξi) _ _ _ Q with "LFT UNIQ κ Bor") as "Acc"; [done|].
-    iModIntro. iNext. iMod "Acc" as "[P Close]". iModIntro.
-    rewrite uniq_payload_cell. iFrame.
+    iModIntro. iNext. iMod "Acc" as "[P Close]". iModIntro. iFrame.
   Qed.
 
   (** ** Transforming the payload *)
 
   (** Replace a unique borrow by a fresh one at another type and location, given a way
-      to transform the payloads in both directions. The old prophecy variable is
-      resolved to [f] of the new one. *)
+      to transform the payloads in both directions (the forward transformation is given
+      a guard for [κ]). The old prophecy variable is resolved to [f] of the new one. *)
   Lemma uniq_body_transform_gen {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) x x' d g ξi ξidx κ tid l l' E G
     (f: 𝔅 →ₛ 𝔄) (h: nat → nat → nat * nat)
     :
@@ -613,8 +619,9 @@ Section uniq_util.
       llft_ctx -∗
       proph_ctx -∗
       uniq_ctx -∗
-      (▷ uniq_payload ty tid l (uniq_cell x d g) ={E}=∗
-        ▷ uniq_payload ty' tid l' (uniq_cell x' d g) ∗
+      (∀ G', ⌜Timeless G'⌝ -∗ (G' &&{↑NllftG}&&> @[κ]) -∗ G' -∗
+        ▷ uniq_payload ty tid l (uniq_cell x d g) ={E}=∗
+        G' ∗ ▷ uniq_payload ty' tid l' (uniq_cell x' d g) ∗
         (∀ x'1 d1 g1, ▷ uniq_payload ty' tid l' (uniq_cell x'1 d1 g1)
           ={↑NllftUsr ∪ ↑NllftUsr2}=∗
             ▷ uniq_payload ty tid l (uniq_cell (f ~~$ₛ x'1) (h d1 g1).1 (h d1 g1).2))
@@ -647,7 +654,8 @@ Section uniq_util.
                 enc_depth (h (dec_depth p1) (dec_depth p2)).2).
       have Hi: Inj (=) (=) (λ a: 𝔄, (a, k)) by intros ?? [=].
       by apply (proph_dep_destr (λ a: 𝔄, (a, k))). }
-    { iIntros "Payload". iMod ("wand" with "Payload") as "[$ Back]". iModIntro.
+    { iIntros (G' ?) "#G'κ G' Payload".
+      iMod ("wand" with "[//] G'κ G' Payload") as "($ & $ & Back)". iModIntro.
       iIntros ([c1 [p1 p2]]) "Payload".
       iMod ("Back" $! c1 (dec_depth p1) (dec_depth p2) with "[Payload]") as "P".
       { by rewrite /uniq_cell !enc_dec_depth. }
@@ -659,10 +667,10 @@ Section uniq_util.
     rewrite /uniq_body. iFrame.
   Qed.
 
-  (** [uniq_body_transform_gen] where the old payload is forced with a later credit,
-      so that the transformation gets the old contents. The transformation back is
-      split into a non-lazy part for the time receipt, and a part that is run inside
-      the lazy update of the new payload. *)
+  (** [uniq_body_transform_gen] where the old payload is forced (with the guard for [κ],
+      [κ ⊑ ty_lft ty] and a later credit), so that the transformation gets the old
+      contents. The transformation back is run inside the lazy update of the new
+      payload; it is given the time receipt of the new contents. *)
   Lemma uniq_body_transform {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) x x' d g ξi ξidx κ tid l l' E G
     (f: 𝔅 →ₛ 𝔄) (h: nat → nat → nat * nat)
     :
@@ -672,13 +680,14 @@ Section uniq_util.
       llft_ctx -∗
       proph_ctx -∗
       uniq_ctx -∗
+      κ ⊑ ty_lft ty -∗ ty_lft ty ⊑ ty_lft ty' -∗
       (▷ ty_gho_own ty x d g tid ∗ l #↦!∗ ty_phys ty x tid
         ={E}=∗ ▷ ty_gho_own ty' x' d g tid ∗ l' #↦!∗ ty_phys ty' x' tid ∗
-        (∀ x'1 d1 g1, ⧖(S d1 `max` g1) ={↑NllftUsr ∪ ↑NllftUsr2}=∗
+        (∀ x'1 d1 g1, ⧖(S d1 `max` g1) ∗ ty_gho_own ty' x'1 d1 g1 tid ∗
+            l' #↦!∗ ty_phys ty' x'1 tid ={lazyE}=∗
           ⧖(S (h d1 g1).1 `max` (h d1 g1).2) ∗
-          (ty_gho_own ty' x'1 d1 g1 tid ∗ l' #↦!∗ ty_phys ty' x'1 tid ={lazyE}=∗
-            ty_gho_own ty (f ~~$ₛ x'1) (h d1 g1).1 (h d1 g1).2 tid ∗
-            l #↦!∗ ty_phys ty (f ~~$ₛ x'1) tid))
+          ty_gho_own ty (f ~~$ₛ x'1) (h d1 g1).1 (h d1 g1).2 tid ∗
+          l #↦!∗ ty_phys ty (f ~~$ₛ x'1) tid)
         ) -∗
       (G &&{↑NllftG}&&> @[κ]) -∗
       G -∗
@@ -688,17 +697,19 @@ Section uniq_util.
       ⟨π, (π (uniq_prvar x ξi)).1 = (!ₛ) f ((π (uniq_prvar x' ζi)).1)⟩ ∗
       uniq_body ty' x' ζi d g ζidx κ tid l' ∗ G.
   Proof.
-    intros Htimeless Hinj Hmask. iIntros "#LFT #PROPH #UNIQ wand #GuardsK G £ Body".
+    intros Htimeless Hinj Hmask.
+    iIntros "#LFT #PROPH #UNIQ #In #Incl wand #GuardsK G £ Body".
     iApply (uniq_body_transform_gen with "LFT PROPH UNIQ [wand £] GuardsK G Body"); [done..|].
-    iIntros "P". iMod (uniq_payload_force with "£ P") as "(#⧖ & Gho & Pt)"; [done|].
+    iIntros (G' ?) "#G'κ G' P".
+    iMod (uniq_payload_force with "[] G' £ P") as "($ & #⧖ & Gho & Pt)";
+      [rewrite /lazyE; solve_ndisj| |].
+    { iApply (guards_transitive with "G'κ In"). }
     iMod ("wand" with "[$Gho $Pt]") as "(Gho' & Pt' & Back)".
     iModIntro. iSplitL "Gho' Pt'".
     { iApply uniq_payload_intro_later. iNext. iFrame "∗#". }
-    iIntros (x'1 d1 g1) "P". rewrite uniq_payload_later_cell.
-    iDestruct "P" as "(>#⧖1 & Upd)".
-    iMod ("Back" with "⧖1") as "(#⧖2 & BackGho)".
-    iModIntro. iNext. rewrite uniq_payload_cell. iFrame "⧖2".
-    iMod "Upd". by iApply "BackGho".
+    iIntros (x'1 d1 g1). rewrite !uniq_payload_cell. iIntros "P". iModIntro. iNext.
+    iApply (guarded_upd_weaken with "Incl"). iSpecialize ("Back" $! x'1 d1 g1).
+    iApply (guarded_upd_mono with "Back P").
   Qed.
 
   (** [uniq_body_transform_gen] where the transformations do not change the depth and
@@ -712,6 +723,7 @@ Section uniq_util.
       llft_ctx -∗
       proph_ctx -∗
       uniq_ctx -∗
+      ty_lft ty ≡ₗ ty_lft ty' -∗
       (ty_gho_own ty x d g tid ∗ l #↦!∗ ty_phys ty x tid ={lazyE}=∗
         ty_gho_own ty' x' d g tid ∗ l' #↦!∗ ty_phys ty' x' tid) -∗
       (∀ x'1 d1 g1, ty_gho_own ty' x'1 d1 g1 tid ∗ l' #↦!∗ ty_phys ty' x'1 tid ={lazyE}=∗
@@ -724,52 +736,83 @@ Section uniq_util.
       uniq_body ty' x' ζi d g ζidx κ tid l' ∗ G.
   Proof.
     intros Htimeless Hinj Hmask.
-    iIntros "#LFT #PROPH #UNIQ FwGho BkGho #GuardsK G Body".
+    iIntros "#LFT #PROPH #UNIQ #[Incl Incl'] FwGho BkGho #GuardsK G Body".
     iApply (uniq_body_transform_gen _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (λ d g, (d, g))
       with "LFT PROPH UNIQ [FwGho BkGho] GuardsK G Body"); [done..|].
-    iIntros "P". iModIntro. iSplitL "FwGho P".
-    { iNext. iApply (uniq_payload_map with "[] FwGho P"). by iIntros "$". }
+    iIntros (G' ?) "_ $ P". iModIntro. iSplitL "FwGho P".
+    { iNext. iApply (uniq_payload_map with "Incl' [] FwGho P"). by iIntros "$". }
     iIntros (x'1 d1 g1) "P". iModIntro. iNext.
-    iApply (uniq_payload_map with "[] BkGho P"). by iIntros "$".
+    iApply (uniq_payload_map with "Incl [] BkGho P"). by iIntros "$".
   Qed.
 
   (** ** Reborrowing *)
 
+  (** Reborrowing records no summary of the final value: the inheritance only gives
+      back the restored borrow, whose final value and depth are unknown. Its time
+      receipt is in the lazy part of its payload, and is recovered later, with a guard
+      for [κ], by [uniq_body_settle]. *)
   Lemma uniq_body_reborrow {𝔄} (ty: type 𝔄) x ξi d g idx κ κ' tid l E :
     ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ κ' ⊑ κ -∗ ⧗1 -∗
-    ⧖(S d `max` g) -∗
     uniq_body ty x ξi d g idx κ tid l ={E}=∗ ∃ ζi idx',
       uniq_body ty x ζi d g idx' κ' tid l ∗
       ([†κ'] ={↑Nllft}=∗ ∃ x' d' g' idx'', uniq_body ty x' ξi d' g' idx'' κ tid l ∗
-          ▷ ((λ π, (π (uniq_prvar x ζi)).1) :== vπ x') ∗
-          ▷ ⧖(S d' `max` g')).
+          ▷ ((λ π, (π (uniq_prvar x ζi)).1) :== vπ x')).
   Proof.
-    iIntros (?) "#LFT #PROPH #UNIQ #κ'⊑κ ⧗ #⧖ [Bor ⧗o]".
+    iIntros (?) "#LFT #PROPH #UNIQ #κ'⊑κ ⧗ [Bor ⧗o]".
     iMod (proph_loan_intro (uniq_cell_tyi x) E (uniq_cell x d g) with "PROPH UNIQ")
       as (ζi) "Loan"; [set_solver|].
-    (* The summary of the final value is only its time receipt. *)
-    set R := λ (c: ~~ (uniq_cellₛ 𝔄)),
-      ⧖(S (dec_depth c.2.1) `max` dec_depth c.2.2)%I.
-    have HR: ∀ c, Persistent (R c) by intros c; apply _.
-    have Hm: ↑Nllft ⊆ E by solve_ndisj.
     iMod (proph_ibor_reborrow E κ κ' (uniq_prvar x ξi) (uniq_cell x d g) idx
-      (uniq_payload ty tid l) R ζi HR Hm with "LFT PROPH UNIQ κ'⊑κ [] [] Loan Bor")
-      as "[Bor' Inh]".
-    { iIntros "!>" (c) "(#⧖' & _)". iFrame "⧖'". }
-    { rewrite /R /= !dec_enc_depth. iFrame "#". }
+      (uniq_payload ty tid l) ζi with "LFT PROPH UNIQ κ'⊑κ Loan Bor")
+      as "[Bor' Inh]"; [solve_ndisj|].
     iDestruct "Bor'" as (idx') "Bor'".
     iModIntro. iExists ζi, idx'. iSplitL "Bor' ⧗".
     { rewrite /uniq_body. iFrame. }
-    iIntros "†κ'". iMod ("Inh" with "†κ'") as (c idx'') "(Bor & #R & Eqz)".
+    iIntros "†κ'". iMod ("Inh" with "†κ'") as (c idx'') "(Bor & Eqz)".
     iModIntro. iExists c.1, (dec_depth c.2.1), (dec_depth c.2.2), idx''.
     iSplitL "Bor ⧗o".
     { iApply (uniq_body_make with "[Bor] ⧗o"). by rewrite -uniq_cell_surj. }
-    iSplitL "Eqz".
-    { iNext. iApply (proph_eqz_fst_const (λ π, π (uniq_prvar x ζi)) (vπ c.1) c.2).
-      iApply (proph_eqz_eq with "Eqz"); [done|].
-      fun_ext=> π. destruct c as [? [??]]. done. }
-    iFrame "R".
+    iNext. iApply (proph_eqz_fst_const (λ π, π (uniq_prvar x ζi)) (vπ c.1) c.2).
+    iApply (proph_eqz_eq with "Eqz"); [done|].
+    fun_ext=> π. destruct c as [? [??]]. done.
+  Qed.
+
+  (** Settling a unique borrow: recover the time receipt of its contents, by opening it
+      with a guard for [κ] and running the lazy update of its payload (with
+      [κ ⊑ ty_lft ty]). *)
+  Lemma uniq_body_settle {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E G :
+    Timeless G → lazyE ⊆ E →
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ κ ⊑ ty_lft ty -∗ £1 -∗
+    uniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
+      ⧖(S d `max` g) ∗ uniq_body ty x ξi d g idx κ tid l ∗ G.
+  Proof.
+    iIntros (? HE) "#LFT #Gk #In £ Body G".
+    iMod (uniq_body_acc_keep with "LFT Gk In £ Body G") as "(#⧖ & Gho & Pt & Close)";
+      [done..|].
+    iFrame "⧖". iApply (fupd_mask_mono with "(Close [$Gho $Pt])").
+    etrans; [|done]. rewrite /lazyE. set_solver.
+  Qed.
+
+  (** As [uniq_body_settle], paying for the later of the payload with a program step
+      instead of a later credit. *)
+  Lemma uniq_body_settle_step {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E G :
+    Timeless G → lazyE ⊆ E →
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ κ ⊑ ty_lft ty -∗
+    uniq_body ty x ξi d g idx κ tid l -∗ G -∗ |={E}▷=>
+      ⧖(S d `max` g) ∗ uniq_body ty x ξi d g idx κ tid l ∗ G.
+  Proof.
+    iIntros (? HE) "#LFT #Gk #In [Bor ⧗] G".
+    have ?: ↑Nllft ⊆ E. { etrans; [|done]. rewrite /lazyE. set_solver. }
+    iMod (fractional.frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Back]]]";
+      [solve_ndisj|].
+    iMod (proph_ibor_acc_keep with "LFT Gh Bor H1") as "[P Close]"; [done..|].
+    iModIntro. iNext.
+    iMod (uniq_payload_run with "[] H2 P") as "(H2 & #⧖ & Gho & Pt)"; [done| |].
+    { iApply (guards_transitive with "Gh In"). }
+    iMod (fupd_mask_mono with "(Close [Gho Pt])") as "[Bor H1]"; [done| |].
+    { iApply uniq_payload_intro_later. iNext. iFrame "∗#". }
+    iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
+    iModIntro. iFrame "⧖ Bor ⧗".
   Qed.
 
   (* Verus: probably not needed *)
