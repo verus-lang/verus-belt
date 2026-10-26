@@ -19,9 +19,14 @@ Definition blocked_type_elim `{!typeG Σ} {𝔄 T} (bty: blocked_type 𝔄) (x: 
   | blocked_type_ctor 𝔄₀ ty => f 𝔄₀ ty
   end x.
   
+(** Type context elements. Besides typed paths and blocked paths, a _semantic_
+    element [TCtx_sem p Φ] gives an arbitrary interpretation [Φ] to the value of a path;
+    it is used for place types ([typing/place.v]), whose interpretation depends on
+    files that depend on this one. *)
 Inductive tctx_elt `{!typeG Σ} 𝔄 : Type :=
 | TCtx_hasty (p: path) (ty: type 𝔄)
-| TCtx_blocked (p: path) (κ: lft) (ty: blocked_type 𝔄).
+| TCtx_blocked (p: path) (κ: lft) (ty: blocked_type 𝔄)
+| TCtx_sem (p: path) (Φ: ~~𝔄 → thread_id → val → iProp Σ).
 
 Notation tctx := (hlist tctx_elt).
 
@@ -120,6 +125,7 @@ Section type_context.
       ∃v, ⌜eval_path p = Some v⌝ ∗
         ([†κ] ={⊤}=∗ ⧗1 ∗ tctx_pending tid ty (blockedπ x₀) v)
       ) 
+    | TCtx_sem _ p Φ => ∃v, ⌜eval_path p = Some v⌝ ∗ Φ x tid v
      end%I.
 
   (* Block tctx_elt_interp from reducing with simpl when t is a constructor. *)
@@ -545,13 +551,14 @@ Section lemmas.
   
   Definition unblock_tctx {𝔄l 𝔄l'} (E: elctx) (L: llctx) (κ: lft) (T: tctx 𝔄l) (T': tctx 𝔄l')
     (f: proph_asn → plist indep_interp_of_syn_type 𝔄l → plist indep_interp_of_syn_type 𝔄l' → Prop) : Prop :=
-    ∀G tid xl, Timeless G → llft_ctx -∗ time_ctx -∗ elctx_interp E -∗ (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗ [†κ] -∗
+    ∀G tid xl, Timeless G → llft_ctx -∗ time_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
+      (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗ [†κ] -∗
       tctx_interp tid T xl ={⊤}=∗ ∃d xl', ⧖d ∗ |={⊤}▷=> |={⊤}▷=>^(d*(d+1)) |={⊤}=>
         G ∗ tctx_interp tid T' xl' ∗ ⟨π, f π xl xl'⟩.
 
   Lemma unblock_tctx_nil κ E L : unblock_tctx E L κ +[] +[] (λ _ _ _, True).
   Proof.
-    iIntros (??[]?) "_ _ _ _ $ _ _". iMod persistent_time_receipt_0 as "⧖". iExists 0%nat, -[].
+    iIntros (??[]?) "_ _ _ _ _ _ $ _ _". iMod persistent_time_receipt_0 as "⧖". iExists 0%nat, -[].
     iIntros "{$⧖}!>!>!>!>!>". iSplit; [done|]. by iApply proph_obs_true.
   Qed.
 
@@ -560,7 +567,7 @@ Section lemmas.
     unblock_tctx E L κ (p ◁{κ} blocked_type_ctor _ ty +:: T) (p ◁ ty +:: T')
       (λ π '(x -:: xl), λ '(x' -:: xl'), blockedπ x π = vπ x' π ∧ f π xl xl').
   Proof.
-    iIntros (Alv Un ??[??]?) "#LFT #TIME #E #L G #†κ /=[(%v &%& Upd) T]".
+    iIntros (Alv Un ??[??]?) "#LFT #TIME #PROPH #UNIQ #E #L G #†κ /=[(%v &%& Upd) T]".
     iMod ("Upd" with "†κ") as "(⧗ & Pending)".
     
     leaf_open "L" with "G" as "[L1 back]". { set_solver. }
@@ -578,7 +585,7 @@ Section lemmas.
     
     iMod (fractional.frac_split_guard_in_half with "G L") as (γ2) "[H1 [H2 [#Ghalf2 #Halfback2]]]"; first by solve_ndisj.
     
-    iMod (Un with "LFT TIME E Ghalf2 H1 †κ T") as (dT xl') "[⧖dT >ToT']".
+    iMod (Un with "LFT TIME PROPH UNIQ E Ghalf2 H1 †κ T") as (dT xl') "[⧖dT >ToT']".
     
     iDestruct "ty" as "[gho phys]".
     iDestruct (ty_gho_pers_impl with "gho") as "#ghoPers".
@@ -629,8 +636,8 @@ Section lemmas.
     unblock_tctx E L κ (t +:: T) (t +:: T')
         (λ π '(x -:: xl), λ '(x' -:: xl'), x = x' ∧ f π xl xl').
   Proof.
-    iIntros (Un ?? [x xl] ?) "LFT TIME E L G †κ /=[t T]".
-    iMod (Un with "LFT TIME E L G †κ T") as (d xl') "[⧖ Upd]". iModIntro.
+    iIntros (Un ?? [x xl] ?) "LFT TIME PROPH UNIQ E L G †κ /=[t T]".
+    iMod (Un with "LFT TIME PROPH UNIQ E L G †κ T") as (d xl') "[⧖ Upd]". iModIntro.
     iExists d, (x -:: xl'). iFrame "⧖". iApply (step_fupdN_wand with "Upd").
     iIntros "!> >($&$&Obs) !>". iFrame "t". iApply (proph_obs_impl with "Obs"); split; trivial.
   Qed.

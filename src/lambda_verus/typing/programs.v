@@ -324,7 +324,7 @@ Section typing.
     iApply wp_mask_mono; [|iApply (wp_step_fupd with "To†")]; [set_solver..|].
     wp_seq. iIntros "† !>". wp_seq. wp_bind Skip.
     iMod (llctx_interp_make_guarded with "L") as (γ1) "[H1 [H2 [#Ghalf1 #Halfback1]]]". { solve_ndisj. }
-    iMod (Un with "LFT TIME E Ghalf1 H1 [†] T'") as (??) "[⧖ ToT']".
+    iMod (Un with "LFT TIME PROPH UNIQ E Ghalf1 H1 [†] T'") as (??) "[⧖ ToT']".
     { simpl in *. subst. rewrite llftl_end_inter. by iRight. }
     iApply (wp_step_fupdN_persistent_time_receipt' _ _ ∅ with "TIME ⧖ [ToT']")=>//.
     { iApply step_fupdN_with_emp.
