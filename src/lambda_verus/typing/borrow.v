@@ -422,7 +422,11 @@ Section borrow.
     iDestruct "own" as "[gho %phys]".
     destruct d as [|d']; first by done.
     iDestruct "gho" as "[#Gp [#Shr #pers]]".
-    iDestruct (ty_shr_default_to_guard with "Shr") as "#Ggho"; [done|].
+    destruct d' as [|d''].
+    { iMod (lc_fupd_elim_later with "£1 pers") as "#pers'".
+      iMod (lc_fupd_elim_later with "£1' pers'") as "#pers''".
+      by iDestruct "pers''" as "[]". }
+    iMod (own_shr_unfold with "£1 Shr") as "[#Gpt #Shr']".
     
     iModIntro. iExists l1, l2, (llctx_interp L).
     inversion phys. subst v.
@@ -438,25 +442,11 @@ Section borrow.
     iDestruct (proph_obs_impl with "Obs") as "$". { intros π Ha. apply Ha. done. }
     iSplit; last by done.
     iSplit. {
-       leaf_goal laters to (S d' + 1). { lia. }
-       iApply (guards_transitive_left with "Ggho []").
-       leaf_by_sep. iIntros "g". destruct d' as [|d'']; first by done. simpl.
-       rewrite <- heap_mapsto_cells_fancy_empty.
-       iDestruct "g" as "[pt [free gho]]". iFrame. iIntros. done.
+       simpl. rewrite <- heap_mapsto_cells_fancy_empty.
+       leaf_goal laters to (S (S d'') + 2). { lia. } iFrame "Gpt".
     }
-    iSplit. { (* TEMPORARY: uses [ty_shr_from_guard]. *)
-       iApply ty_shr_from_guard.
-       leaf_goal laters to ((S d' + 1) + 1). { lia. }
-       iApply (guards_transitive_additive _ _ _ _ _ 1 with "Ggho []").
-       leaf_by_sep. iIntros "g". destruct d' as [|d'']; first by done.
-          iDestruct "g" as "[pt [free gho]]". iNext.
-          iDestruct (ty_gho_own_depth_mono with "gho") as "[gho back]"; last first.
-          - iSplitL "gho". { iFrame "gho". }
-            iIntros "A". iSpecialize ("back" with "A"). iFrame.
-          - lia. - lia.
-    }
-    rewrite (bi.laterN_add (S (S d'))). iNext.
-    destruct d' as [|d'']; first by done.
+    iSplit. { iApply (ty_shr_depth_mono with "Shr'"); lia. }
+    rewrite (bi.laterN_add (S (S (S d'')))). iNext.
     iApply (ty_gho_pers_depth_mono ty with "pers"). { lia. } { lia. }
   Qed.
 

@@ -58,7 +58,12 @@ Section points_to.
       ty_gho_pers x d g tid := 
         [S(d') := d] ⌜ length x.1 = ty_size ty ⌝ ∗ ▷ (ty.(ty_gho_pers) (snd x) d' g tid) ;
       ty_phys _ _ := [];
-      ty_shr := default_shr (λ (x: ~~(trackedₛ (pcellₛ (ty.(ty_size)) * 𝔄))) d g tid, [S(d') := d] (cells_points_to_fancy_value_vec x.1 (ty.(ty_phys) x.2 tid))%I ∗ ▷ (ty.(ty_gho_own) x.2 d' g tid));
+      (* Structural, as for [own_ptr] (see there, also for the TEMPORARY alternative). *)
+      ty_shr κ x d g tid :=
+        (▷ [S(d') := d]
+          (@[κ] &&{↑NllftG; g+1}&&> cells_points_to_fancy_value_vec x.1 (ty.(ty_phys) x.2 tid)) ∗
+          ty.(ty_shr) κ x.2 d' g tid) ∨
+        default_shr (λ (x: ~~(trackedₛ (pcellₛ (ty.(ty_size)) * 𝔄))) d g tid, [S(d') := d] (cells_points_to_fancy_value_vec x.1 (ty.(ty_phys) x.2 tid))%I ∗ ▷ (ty.(ty_gho_own) x.2 d' g tid)) κ x d g tid;
     |}%I.
   Next Obligation. move => 𝔄 tyA v tid //=. Qed.
   Next Obligation. done. Qed.
@@ -106,7 +111,55 @@ Section points_to.
     iSplit => //.
     iApply ty_gho_pers_impl. iFrame.
   Qed.
-  Solve All Obligations with solve_default_shr.
+  Next Obligation.
+    intros 𝔄 ty κ κ' x d g tid. iIntros "#Incl [Shr|Shr]".
+    - iLeft. iNext. destruct d as [|d']; [done|]. iDestruct "Shr" as "[Pt Shr]". iSplit.
+      + iApply (guards_transitive_right with "Incl Pt").
+      + iApply (ty_shr_lft_mono with "Incl Shr").
+    - iRight. by iApply (default_shr_lft_mono with "Incl Shr").
+  Qed.
+  Next Obligation.
+    intros 𝔄 ty κ d g d' g' x tid ??. iIntros "[Shr|Shr]".
+    - iLeft. iNext. destruct d as [|d0]; [done|]. destruct d' as [|d0']; [lia|].
+      iDestruct "Shr" as "[Pt Shr]". iSplit.
+      + leaf_goal laters to (g+1). { lia. } iFrame "Pt".
+      + iApply (ty_shr_depth_mono with "Shr"); lia.
+    - iRight. by iApply (default_shr_depth_mono with "Shr").
+  Qed.
+  Next Obligation.
+    intros 𝔄 ty E κ x k d g tid G ?? Hle. iIntros "#LFT #Incl #Gκ G Bor".
+    destruct d as [|d'].
+    { iMod (llftl_bor_guarded_pers with "LFT Gκ G Bor") as "[$ #F]"; [solve_ndisj|].
+      iAssert (▷^k ▷ False)%I as "#F'". { rewrite -bi.laterN_later. iExact "F". }
+      iModIntro. iNext. iLeft. iNext. done. }
+    simpl.
+    iMod (llftl_bor_laterN_sep_split with "LFT Bor") as "[Pt Bor]"; [solve_ndisj|].
+    iMod (llftl_bor_laterN_guard with "LFT Pt") as "#Pt"; [solve_ndisj|].
+    iDestruct (llftl_bor_iff _ _ (▷^(S k) ty.(ty_gho_own) x.2 d' g tid) with "[] Bor") as "Bor".
+    { iIntros "!> !>". rewrite -bi.laterN_later. iSplit; iIntros "H"; iExact "H". }
+    iMod (ty_share ty E κ x.2 (S k) d' g tid G with "LFT Incl Gκ G Bor")
+      as "[$ Shr]"; [first [done | lia]..|].
+    iAssert (▷^k ▷ ty.(ty_shr) κ x.2 d' g tid)%I with "[Shr]" as "Shr".
+    { rewrite -bi.laterN_later. iExact "Shr". }
+    iModIntro. iNext. iLeft. iNext. iFrame "Shr".
+    leaf_goal laters to (1 + k). { lia. } iFrame "Pt".
+  Qed.
+  Next Obligation.
+    intros 𝔄 ty κ x n0 d g tid ξ R Mono GP Hin.
+    iIntros "#LFT #Incl #Pers [#Shr|#Shr]"; last first.
+    { by iApply (default_shr_guard_proph with "LFT Incl Pers Shr"). }
+    destruct d as [|d']; first by done. simpl.
+    iDestruct "Pers" as "[_ Pers]".
+    iApply (bi.laterN_le (S (d' * (g + 1)))). { lia. }
+    iNext. iDestruct "Shr" as "[_ Shr]".
+    iDestruct (ty_shr_guard_proph ty κ x.2 n0 d' g tid ξ R Hin with "LFT Incl Pers Shr")
+      as "GP".
+    iNext. iIntros "#Rκ".
+    leaf_goal laters to (n0 + (d'+1)*(g+1)). { lia. } by iApply "GP".
+  Qed.
+  Next Obligation.
+    intros 𝔄 ty κ x d g tid. iIntros "#G". iRight. by iApply default_shr_from_guard.
+  Qed.
 
   Global Instance cell_points_to_send {𝔄} (ty: type 𝔄) :
       Send ty → Send (cell_points_to_ty ty).
@@ -128,27 +181,63 @@ Section points_to.
   Global Instance cell_points_to_sync {𝔄} (ty: type 𝔄) :
       Sync ty → Sync (cell_points_to_ty ty).
   Proof.
-      move=> HSync. apply sync_default; [done|]. move=> tid tid' x d g. split => //=. split.
-      + iSplit.
-         - iIntros "Hgho".
-           destruct d => //=.
-           iDestruct "Hgho" as "(Hown&Hgho)".
-           pose proof (sync_change_tid tid tid' (snd x) d g) as [-> [Hgho [Hghopers _]]].
-           iFrame "%".
-           iFrame.
-           iApply (Hgho with "Hgho").
-         - iIntros "Hgho".
-           destruct d => //=.
-           iDestruct "Hgho" as "(Hown&Hgho)".
-           pose proof (sync_change_tid tid tid' (snd x) d g) as [-> [Hgho [Hghopers _]]].
-           iFrame "%".
-           iFrame.
-           iApply (Hgho with "Hgho").
-       + destruct d => //=.
-         pose proof (sync_change_tid tid tid' (snd x) d g) as [_ [Hgho [Hghopers _]]].
-         rewrite Hghopers. trivial.
+      move=> HSync tid tid' x d g.
+      have EqOwn: ∀ d0 g0, (cell_points_to_ty ty).(ty_gho_own) x d0 g0 tid ⊣⊢
+          (cell_points_to_ty ty).(ty_gho_own) x d0 g0 tid'.
+      { move=> [|d0] g0 //=. destruct (HSync tid tid' x.2 d0 g0) as [-> [Hgho _]].
+        by rewrite Hgho. }
+      split => //=. split; [apply EqOwn|]. split.
+      - destruct d => //=.
+        pose proof (sync_change_tid tid tid' (snd x) d g) as [_ [Hgho [Hghopers _]]].
+        rewrite Hghopers. trivial.
+      - move=> κ. f_equiv.
+        + destruct d => //=. destruct (HSync tid tid' x.2 d g) as [-> [_ [_ Hshr]]].
+          by rewrite Hshr.
+        + apply default_shr_change_tid=> d0 g0. apply EqOwn.
   Qed.
 
+  (** Unfolding the sharing predicate of [cell_points_to_ty], as [own_shr_unfold]. This
+      version takes the sharing predicate with the later of its first alternative
+      stripped (as it is after a program step); see [cell_points_to_shr_unfold] for the
+      version with a credit. *)
+  Lemma cell_points_to_shr_unfold' {𝔄} (ty: type 𝔄) κ x d g tid :
+    ([S(d') := d]
+        (@[κ] &&{↑NllftG; g+1}&&> cells_points_to_fancy_value_vec x.1 (ty.(ty_phys) x.2 tid)) ∗
+        ty.(ty_shr) κ x.2 d' g tid) ∨
+    default_shr (cell_points_to_ty ty).(ty_gho_own) κ x d g tid -∗
+    (@[κ] &&{↑NllftG; g+2}&&> [S(d') := d]
+        cells_points_to_fancy_value_vec x.1 (ty.(ty_phys) x.2 tid)) ∗
+    (∀ d', ⌜d = S d'⌝ -∗ ty.(ty_shr) κ x.2 d' (S g) tid).
+  Proof.
+    iIntros "[Shr|Shr]".
+    - destruct d as [|d]; [simpl; by iDestruct "Shr" as %[]|].
+      iDestruct "Shr" as "[Pt Shr]". iSplit.
+      + leaf_goal laters to (g+1). { lia. } iFrame "Pt".
+      + iIntros (? [= <-]). iApply (ty_shr_depth_mono with "Shr"); lia.
+    - (* TEMPORARY: uses [ty_shr_from_guard]. *)
+      rewrite default_shr_guard; [|exact (ty_gho_own_depth_mono (cell_points_to_ty ty))].
+      iDestruct "Shr" as "#G". iSplit.
+      + leaf_goal laters to (g+1). { lia. }
+        iApply (guards_transitive_left with "G"). leaf_by_sep.
+        destruct d as [|d]; simpl; [by iIntros "[]"|]. iIntros "($ & A) P". iFrame.
+      + iIntros (d' ->). iApply ty_shr_from_guard. leaf_goal laters to (g + 1 + 1). { lia. }
+        iApply (guards_transitive_additive _ _ _ _ (g+1) 1 with "G []").
+        leaf_by_sep. simpl. iIntros "(Pt & Gho)". iNext.
+        iDestruct (ty_gho_own_depth_mono _ d' g d' (S g) with "Gho") as "[$ Back]"; [lia..|].
+        iIntros "Gho". iFrame. by iApply "Back".
+  Qed.
+
+  Lemma cell_points_to_shr_unfold {𝔄} (ty: type 𝔄) E κ x d g tid :
+    £ 1 -∗ (cell_points_to_ty ty).(ty_shr) κ x d g tid ={E}=∗
+    (@[κ] &&{↑NllftG; g+2}&&> [S(d') := d]
+        cells_points_to_fancy_value_vec x.1 (ty.(ty_phys) x.2 tid)) ∗
+    (∀ d', ⌜d = S d'⌝ -∗ ty.(ty_shr) κ x.2 d' (S g) tid).
+  Proof.
+    iIntros "£ [Shr|Shr]".
+    - iMod (lc_fupd_elim_later with "£ Shr") as "Shr". iModIntro.
+      iApply cell_points_to_shr_unfold'. by iLeft.
+    - iModIntro. iApply cell_points_to_shr_unfold'. by iRight.
+  Qed.
 End points_to.
 
 Section typing.
@@ -309,7 +398,9 @@ Section typing.
       wp_rec.
       iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
       iDestruct "Hshr'" as "(_ & #Hshr'0 & (H&Hpers))".
-      iDestruct (ty_shr_default_to_guard (cell_points_to_ty ty) with "Hshr'0") as "#Hshr'"; [done|].
+      iDestruct (cell_points_to_shr_unfold' ty κ (γs, x) (S d') (S (S d')) tid with "Hshr'0")
+        as "[#Hpt #Hshr']".
+      iDestruct ("Hshr'" $! d' with "[//]") as "#Hshr''". iSimpl in "Hpt".
       iExists -[(cloc_flat_insert l γs, x)].
       rewrite /tctx_elt_interp/ty_own/=.
       iFrame.
@@ -330,20 +421,13 @@ Section typing.
           iSplit => //.
           iSplitR; last iSplitL.
           + iDestruct "Hshr" as "(H↦shared1 & _ & _)".
-            iDestruct (guards_weaken_rhs_sep_l with "Hshr'") as "H↦shared2 ".
             iDestruct (lguards_weaken_later with "H↦shared1") as "H↦shared1'".
-            1: instantiate (1 := S (S (S d'))); lia.
-            iDestruct (guard_cloc_combine_fancy' with "H↦shared1' H↦shared2") as "H↦shared3".
+            1: instantiate (1 := S (S d') + 2); lia.
+            iDestruct (guard_cloc_combine_fancy' with "H↦shared1' Hpt") as "H↦shared3".
             simpl.
             iApply (lguards_weaken_later with "H↦shared3").
             lia.
-          + (* TEMPORARY: uses [ty_shr_from_guard]. *)
-            iApply ty_shr_from_guard.
-            iDestruct (guards_weaken_rhs_sep_r with "Hshr'") as "Hghoshared".
-            iDestruct (guards_later_absorb_1 with "Hghoshared") as "Hghoshared1".
-            iApply (guards_transitive_left with "Hghoshared1").
-            leaf_by_sep.
-            iApply ty.(ty_gho_own_depth_mono); lia.
+          + iApply (ty_shr_depth_mono with "Hshr''"); lia.
           + repeat iNext.
             iApply (ty.(ty_gho_pers_depth_mono) with "Hgho") => //; lia.
       }
@@ -363,7 +447,9 @@ Section typing.
       wp_rec.
       iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
       iDestruct "Hshr'" as "(_ & #Hshr'0 & (H&Hpers))".
-      iDestruct (ty_shr_default_to_guard (cell_points_to_ty ty) with "Hshr'0") as "#Hshr'"; [done|].
+      iDestruct (cell_points_to_shr_unfold' ty κ (γs, x) (S d') (S (S d')) tid with "Hshr'0")
+        as "[#Hpt #Hshr']".
+      iDestruct ("Hshr'" $! d' with "[//]") as "#Hshr''". iSimpl in "Hpt".
       iExists -[(cloc_flat_insert l γs, x)].
       rewrite /tctx_elt_interp/ty_own/=.
       iFrame.
@@ -384,23 +470,13 @@ Section typing.
           iSplit => //.
           iSplitR; last iSplitL.
           + iDestruct "Hshr" as "(H↦shared1 & _ & _)".
-            iDestruct (guards_weaken_rhs_sep_l with "Hshr'") as "H↦shared2 ".
-            iDestruct (lguards_weaken_later with "H↦shared2") as "H↦shared2'".
+            iDestruct (lguards_weaken_later with "Hpt") as "H↦shared2'".
             1: instantiate (1 := S (S d)); lia.
             iDestruct (guard_cloc_combine_fancy' with "H↦shared1 H↦shared2'") as "H↦shared3".
             simpl.
             iApply (lguards_weaken_later with "H↦shared3").
             lia.
-          + (* TEMPORARY: uses [ty_shr_from_guard]. *)
-            iApply ty_shr_from_guard.
-            iDestruct (guards_weaken_rhs_sep_r with "Hshr'") as "Hghoshared".
-            iDestruct (guards_later_absorb_1 with "Hghoshared") as "Hghoshared1".
-            rewrite !Nat.add_1_r.
-            iDestruct (lguards_weaken_later with "Hghoshared1") as "Hghoshared2".
-            1: instantiate (1 := S (S (S d))); lia.
-            iApply (guards_transitive_left with "Hghoshared2").
-            leaf_by_sep.
-            iApply ty.(ty_gho_own_depth_mono); lia.
+          + iApply (ty_shr_depth_mono with "Hshr''"); lia.
           + repeat iNext.
             iApply (ty.(ty_gho_pers_depth_mono) with "Hgho") => //; lia.
       }
@@ -658,8 +734,6 @@ Section atomics.
     destruct d'' => //.
     iSimpl in "Hint". 
     iDestruct "Hint" as "(_ & #H↦_shr & _)".
-    iDestruct (ty_shr_default_to_guard (cell_points_to_ty int) with "H↦_shr") as "#H↦"; [done|].
-    iSimpl in "H↦".
     iSimpl in "Hcell_shr".
     iDestruct "Hcell_shr" as "[#Hcell_shr #[_ Hlen]]".
     rewrite /AtomicLoad.
@@ -676,17 +750,20 @@ Section atomics.
       iIntros "£ #Hd''".
       iApply wp_fupd.
       destruct d'' => //=.
-      { iDestruct (guards_transitive_right with "Alv H↦") as "H↦'".
-        wp_rec.
+      { wp_rec.
+        iDestruct (cell_points_to_shr_unfold' int κ (γs, n) 0 (S 0) tid with "H↦_shr")
+          as "[#H↦ _]".
+        iDestruct (guards_transitive_right with "Alv H↦") as "H↦'".
         leaf_open_laters "H↦'" with "L" as "Hfalse"; [trivial | .. ].
         { solve_ndisj. }
-        iMod (lc_fupd_add_laterN _ _ _ 2 with "[£] [Hfalse]") as "?".
+        iMod (lc_fupd_add_laterN _ _ _ 3 with "[£] [Hfalse]") as "?".
         { iApply (lc_weaken with "£"). rewrite /advance_credits. nia. }
         { iNext. iDestruct "Hfalse" as "[Hfalse _]". iExact "Hfalse". }
         done. }
       wp_rec.
-      iDestruct (lguards_weaken_later _ _ _ _ (S (S (d'' + 1))) with "Hcell_shr") as "Hcell_shr'"; first lia.
-      iDestruct (guards_weaken_rhs_sep_l with "H↦") as "H↦'".
+      iDestruct (cell_points_to_shr_unfold' int κ (γs, n) (S d'') (S (S d'')) tid with "H↦_shr")
+        as "[#H↦' _]".
+      iDestruct (lguards_weaken_later _ _ _ _ (S (S d'') + 2) with "Hcell_shr") as "Hcell_shr'"; first lia.
       destruct γs as [ | γ [ | ]] eqn:Hγs; cycle 2.
       + iMod (lc_fupd_add_laterN _ _ _ (d' + 1) with "[£] [Hlen]") as "Hlen'".
         { iApply (lc_weaken with "£"). rewrite /advance_credits. nia. }
@@ -741,17 +818,20 @@ Section atomics.
       iIntros "£ #Hd''".
       iApply wp_fupd.
       destruct d'' => //=.
-      { iDestruct (guards_transitive_right with "Alv H↦") as "H↦'".
-        wp_rec.
+      { wp_rec.
+        iDestruct (cell_points_to_shr_unfold' int κ (γs, n) 0 (S 0) tid with "H↦_shr")
+          as "[#H↦ _]".
+        iDestruct (guards_transitive_right with "Alv H↦") as "H↦'".
         leaf_open_laters "H↦'" with "L" as "Hfalse"; [trivial | .. ].
         { solve_ndisj. }
-        iMod (lc_fupd_add_laterN _ _ _ 2 with "[£] [Hfalse]") as "?".
+        iMod (lc_fupd_add_laterN _ _ _ 3 with "[£] [Hfalse]") as "?".
         { iApply (lc_weaken with "£"). rewrite /advance_credits. nia. }
         { iNext. iDestruct "Hfalse" as "[Hfalse _]". iExact "Hfalse". }
         done. }
       wp_rec.
-      iDestruct (lguards_weaken_later _ _ _ _ (S (d' + 1)) with "H↦") as "H↦''"; first lia.
-      iDestruct (guards_weaken_rhs_sep_l with "H↦''") as "H↦'".
+      iDestruct (cell_points_to_shr_unfold' int κ (γs, n) (S d'') (S (S d'')) tid with "H↦_shr")
+        as "[#H↦ _]".
+      iDestruct (lguards_weaken_later _ _ _ _ (S (d' + 1)) with "H↦") as "H↦'"; first lia.
       destruct γs as [ | γ [ | ]] eqn:Hγs; cycle 2.
       + iMod (lc_fupd_add_laterN _ _ _ (d' + 1) with "[£] [Hlen]") as "Hlen'".
         { iApply (lc_weaken with "£"). rewrite /advance_credits. nia. }

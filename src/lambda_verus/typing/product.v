@@ -19,7 +19,7 @@ Section product.
        ty_gho_own x d g tid := True%I;
        ty_gho_pers x d g tid := True%I;
        ty_phys x tid := [];
-       ty_shr := default_shr (λ x d g tid, True%I);
+       ty_shr κ x d g tid := True%I;
     |}%I.
   Next Obligation. iIntros (??). trivial. Qed.
   Next Obligation. done. Qed.
@@ -28,11 +28,15 @@ Section product.
   Next Obligation. intros. iIntros. done. Qed.
   Next Obligation. intros. set_solver. Qed.
   Next Obligation. iIntros. done. Qed.
-  Solve All Obligations with solve_default_shr.
+  Next Obligation. iIntros. done. Qed.
+  Next Obligation. iIntros. done. Qed.
+  Next Obligation. iIntros. iFrame. iModIntro. by iApply bi.laterN_intro. Qed.
+  Next Obligation. intros. set_solver. Qed.
+  Next Obligation. iIntros. done. Qed.
 
   Global Instance unit0_copy : Copy unit0.
   Proof.
-    split. - by apply _. - done. - intros. by apply copy_shr_default.
+    split. - by apply _. - done. - intros. iIntros. iApply guards_true.
   Qed.
 
   Global Instance unit0_send : Send unit0.
@@ -43,7 +47,7 @@ Section product.
   Qed.
   
   Global Instance unit0_sync : Sync unit0.
-  Proof. apply sync_default; [done|]. intros. split; trivial; split; trivial. Qed.
+  Proof. intros. split; trivial; split; [|split]; trivial. Qed.
 
   Lemma unit0_resolve E L : resolve E L unit0 (const (const True)).
   Proof. apply resolve_just. Qed.
@@ -55,7 +59,7 @@ Section product.
     ty_gho_own x d g tid := ty.(ty_gho_own) (fst x) d g tid ∗ ty'.(ty_gho_own) (snd x) d g tid;
     ty_gho_pers x d g tid := ty.(ty_gho_pers) (fst x) d g tid ∗ ty'.(ty_gho_pers) (snd x) d g tid;
     ty_phys x tid := ty.(ty_phys) (fst x) tid ++ ty'.(ty_phys) (snd x) tid;
-    ty_shr := default_shr (λ (x: ~~(𝔄 * 𝔅)) d g tid, ty.(ty_gho_own) (fst x) d g tid ∗ ty'.(ty_gho_own) (snd x) d g tid);
+    ty_shr κ x d g tid := ty.(ty_shr) κ (fst x) d g tid ∗ ty'.(ty_shr) κ (snd x) d g tid;
   |}%I.
   Next Obligation. intros. rewrite length_app !ty_size_eq. trivial. Qed.
   Next Obligation. intros. simpl. by do 2 (rewrite <- ty_size_eq2). Qed.
@@ -95,7 +99,39 @@ Section product.
     iDestruct (ty_gho_pers_impl with "B") as "#B1".
     iFrame "#".
   Qed.
-  Solve All Obligations with solve_default_shr.
+  Next Obligation.
+    intros. simpl. iIntros "#Incl [A B]". iSplit; by iApply (ty_shr_lft_mono with "Incl").
+  Qed.
+  Next Obligation.
+    intros. simpl. iIntros "[A B]". iSplitL "A"; by iApply (ty_shr_depth_mono with "[$]").
+  Qed.
+  Next Obligation.
+    intros 𝔄 𝔅 ty ty' E κ x k d g tid G ???. simpl. iIntros "#LFT #Incl #Gκ G Bor".
+    rewrite lft_intersect_list_app.
+    iAssert (κ ⊑ ty_lft ty)%I as "#Incl1".
+    { iApply (llftl_incl_trans with "Incl"). iApply llftl_intersect_incl_l. }
+    iAssert (κ ⊑ ty_lft ty')%I as "#Incl2".
+    { iApply (llftl_incl_trans with "Incl"). iApply llftl_intersect_incl_r. }
+    iMod (llftl_bor_laterN_sep_split with "LFT Bor") as "[B1 B2]"; [solve_ndisj|].
+    iMod (ty_share with "LFT Incl1 Gκ G B1") as "[G S1]"; [done..|].
+    iMod (ty_share with "LFT Incl2 Gκ G B2") as "[$ S2]"; [done..|].
+    iModIntro. iNext. iFrame.
+  Qed.
+  Next Obligation.
+    intros 𝔄 𝔅 ty ty' κ x n d g tid ξ R _ _ Hin. simpl.
+    iIntros "LFT #Incl [P1 P2] [S1 S2]".
+    rewrite elem_of_app in Hin. rewrite lft_intersect_list_app.
+    destruct Hin as [Hin|Hin].
+    - iApply (ty_shr_guard_proph with "LFT [] P1 S1"); [done|].
+      iApply (llftl_incl_trans with "Incl"). iApply llftl_intersect_incl_l.
+    - iApply (ty_shr_guard_proph with "LFT [] P2 S2"); [done|].
+      iApply (llftl_incl_trans with "Incl"). iApply llftl_intersect_incl_r.
+  Qed.
+  Next Obligation.
+    intros. simpl. iIntros "#G". iSplit; iApply ty_shr_from_guard.
+    - iApply (guards_weaken_rhs_sep_l with "G").
+    - iApply (guards_weaken_rhs_sep_r with "G").
+  Qed.
 
   Global Instance prod_ty_ne {𝔄 𝔅} : NonExpansive2 (@prod_ty 𝔄 𝔅).
   Proof. solve_ne_type. Qed.
@@ -162,21 +198,23 @@ Section typing.
   Global Instance prod_type_ne {𝔄 𝔅 ℭ} (T: type 𝔄 → type 𝔅) (T': type 𝔄 → type ℭ) :
     TypeNonExpansive T → TypeNonExpansive T' → TypeNonExpansive (λ ty, T ty * T' ty)%T.
   Proof.
-    move=> ??. apply type_ne_default=>/=; [done|apply _| | | |].
+    move=> ??. split=>/=; [apply _| | | | |].
     - move=> *. f_equiv; by apply type_ne_ty_size.
     - move=> *. f_equiv; by apply type_ne_ty_gho_own.
     - move=> *. f_equiv; by apply type_ne_ty_gho_pers.
     - move=> *. f_equiv; by apply type_ne_ty_phys.
+    - move=> *. f_equiv; by apply type_ne_ty_shr.
   Qed.
   
   Global Instance prod_type_contractive {𝔄 𝔅 ℭ} (T: type 𝔄 → type 𝔅) (T': type 𝔄 → type ℭ) :
     TypeContractive T → TypeContractive T' → TypeContractive (λ ty, T ty * T' ty)%T.
   Proof.
-    move=> ??. apply type_contractive_default=>/=; [done|apply _| | | |].
+    move=> ??. split=>/=; [apply _| | | | |].
     - move=> *. f_equiv; by apply type_contractive_ty_size.
     - move=> *. f_equiv; by apply type_contractive_ty_gho_own.
     - move=> *. f_equiv; by apply type_contractive_ty_gho_pers.
     - move=> *. f_equiv; by apply type_contractive_ty_phys.
+    - move=> *. f_equiv; by apply type_contractive_ty_shr.
   Qed.
 
   Global Instance xprod_type_ne {𝔄 𝔅l} (T: type 𝔄 → typel 𝔅l) :
@@ -202,7 +240,9 @@ Section typing.
       iDestruct (copy_concrete with "G1") as "%Conc1".
       iDestruct (copy_concrete with "G2") as "%Conc2".
       iPureIntro. apply all_concrete_app. split; trivial.
-    - intros. by apply copy_shr_default.
+    - intros. iIntros "[S1 S2]".
+      iDestruct (copy_shr with "S1") as "#G1". iDestruct (copy_shr with "S2") as "#G2".
+      by iApply (guards_sep_pers with "G1 G2").
   Qed.
 
   Global Instance prod_send {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) :
@@ -241,14 +281,15 @@ Section typing.
   
   Global Instance prod_sync {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) :
     Sync ty → Sync ty' → Sync (ty * ty').
-  Proof. intros S1 S2. apply sync_default; [done|]. intro tid. intro tid'. intro x. intros d g. 
-      destruct (S1 tid tid' (fst x) d g) as [S1p [S1g [S1gp _]]].
-      destruct (S2 tid tid' (snd x) d g) as [S2p [S2g [S2gp _]]].
+  Proof. intros S1 S2. intro tid. intro tid'. intro x. intros d g. 
+      destruct (S1 tid tid' (fst x) d g) as [S1p [S1g [S1gp S1s]]].
+      destruct (S2 tid tid' (snd x) d g) as [S2p [S2g [S2gp S2s]]].
       move=> >/=. split.
       - f_equiv; trivial.
-      - split.
+      - split; [|split].
         + f_equiv; trivial.
         + f_equiv; trivial.
+        + move=> ?. f_equiv; trivial.
   Qed.
 
   Global Instance xprod_copy {𝔄l} (tyl: typel 𝔄l) : ListCopy tyl → Copy (Π! tyl).
@@ -320,10 +361,9 @@ Section typing.
     move=> Sub Sub'. iIntros "L".
     iDestruct (Sub with "L") as "#Sub".
     iDestruct (Sub' with "L") as "#Sub'". iIntros "!> #E".
-    iDestruct ("Sub" with "E") as (Eq) "(#? & #InOwn & #InOwnPers & %InPhys & _)".
-    iDestruct ("Sub'" with "E") as (?) "(#? & #InOwn' & #InOwnPers' & %InPhys' & _)".
-    iApply type_incl_default; [done|done|].
-    iSplit=>/=; [|iSplit; [|iSplit; [|iSplit]]].
+    iDestruct ("Sub" with "E") as (Eq) "(#? & #InOwn & #InOwnPers & %InPhys & #InShr)".
+    iDestruct ("Sub'" with "E") as (?) "(#? & #InOwn' & #InOwnPers' & %InPhys' & #InShr')".
+    iSplit=>/=; [|iSplit; [|iSplit; [|iSplit; [|iSplit]]]].
     - iPureIntro. by f_equal.
     - rewrite !lft_intersect_list_app. by iApply lft_intersect_mono.
     - iModIntro. iIntros "* [A B]".
@@ -338,6 +378,7 @@ Section typing.
       iDestruct ("InOwnPers'" with "B") as "B1".
       iFrame "A1". iFrame "B1".
     - iPureIntro. intros. f_equiv; done.
+    - iModIntro. iIntros "* [A B]". iSplitL "A"; [by iApply "InShr"|by iApply "InShr'"].
   Qed.
   
   Lemma prod_eqtype {𝔄 𝔅 𝔄' 𝔅'} E L (f: 𝔄 →ₛ 𝔄') f' (g: 𝔅 →ₛ 𝔅') g'
@@ -368,12 +409,12 @@ Section typing.
   Lemma prod_ty_assoc {𝔄 𝔅 ℭ} E L (ty1: type 𝔄) (ty2: type 𝔅) (ty3: type ℭ) :
     eqtype E L (ty1 * (ty2 * ty3)) ((ty1 * ty2) * ty3) prod_assocₛ prod_assoc'ₛ.
   Proof.
-    apply eqtype_unfold_default; [|done|done|].
+    apply eqtype_unfold.
       { split. apply _. apply _. simpl. { lia. } intros [x0 [x1 x2]]. simpl. rewrite List.app_assoc. trivial. }
     iIntros "*_!>_/=".
     iSplit; [iPureIntro; lia|].
     iSplit; [rewrite (assoc (++)); by iApply lft_equiv_refl|].
-    iSplit; [|iSplit].
+    iSplit; [|iSplit; [|iSplit]].
     - iIntros "!>" (x) "*". iSplit.
       + iIntros "[a [b c]]". destruct x as [x [y z]]. iFrame.
       + iIntros "[[a b] c]". destruct x as [x [y z]]. iFrame.
@@ -381,34 +422,39 @@ Section typing.
       + iIntros "[a [b c]]". destruct x as [x [y z]]. iFrame.
       + iIntros "[[a b] c]". destruct x as [x [y z]]. iFrame.
     - iPureIntro. intros [x [y z]]. intros. rewrite assoc. trivial.
+    - iIntros "!>" (κ x) "*". iSplit.
+      + iIntros "[a [b c]]". destruct x as [x [y z]]. iFrame.
+      + iIntros "[[a b] c]". destruct x as [x [y z]]. iFrame.
   Qed.
   
   Lemma prod_ty_left_id {𝔄} E L (ty: type 𝔄) :
     eqtype E L (() * ty) ty prod_left_idₛ prod_left_id'ₛ.
   Proof.
-    (* TEMPORARY: uses [ty_shr_default_equiv] for [ty]. *)
-    apply eqtype_unfold_default; [apply _|done|apply ty_shr_default_equiv|].
+    apply eqtype_unfold; [apply _|].
     iIntros "*_!>_/=". iSplit; [done|].
     iSplit; [by iApply lft_equiv_refl|].
     iSplit. { iModIntro. iIntros (x d g tid). destruct x as [[]x]. iSplit.
       { iIntros "[_ A]". iFrame "A". } { iIntros "A". iFrame "A". } }
     iSplit. { iModIntro. iIntros (x d g tid). destruct x as [[]x]. iSplit.
       { iIntros "[_ A]". iFrame "A". } { iIntros "A". iFrame "A". } }
-    { iPureIntro. intros [[]?] tid. done. }
+    iSplit. { iPureIntro. intros [[]?] tid. done. }
+    iModIntro. iIntros (κ x d g tid). destruct x as [[]x]. iSplit.
+    { iIntros "[_ A]". iFrame "A". } { iIntros "A". iFrame "A". }
   Qed.
 
   Lemma prod_ty_right_id {𝔄} E L (ty: type 𝔄) :
     eqtype E L (ty * ()) ty prod_right_idₛ prod_right_id'ₛ.
   Proof.
-    (* TEMPORARY: uses [ty_shr_default_equiv] for [ty]. *)
-    apply eqtype_unfold_default; [apply _|done|apply ty_shr_default_equiv|].
+    apply eqtype_unfold; [apply _|].
     iIntros "*_!>_/=".
     rewrite !right_id. iSplit; [done|]. iSplit; [by iApply lft_equiv_refl|].
     iSplit. { iModIntro. iIntros (x d g tid). destruct x as [x[]]. iSplit.
       { iIntros "[A _]". iFrame "A". } { iIntros "A". iFrame "A". } }
     iSplit. { iModIntro. iIntros (x d g tid). destruct x as [x[]]. iSplit.
       { iIntros "[A _]". iFrame "A". } { iIntros "A". iFrame "A". } }
-    { iPureIntro. intros [?[]] tid. rewrite <- app_nil_r. done. }
+    iSplit. { iPureIntro. intros [?[]] tid. rewrite <- app_nil_r. done. }
+    iModIntro. iIntros (κ x d g tid). destruct x as [x[]]. iSplit.
+    { iIntros "[A _]". iFrame "A". } { iIntros "A". iFrame "A". }
   Qed.
   
   (*

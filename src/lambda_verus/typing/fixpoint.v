@@ -135,7 +135,7 @@ Section S.
   Next Obligation. move=> >. apply ty_shr_lft_mono. Qed.
   Next Obligation. move=> >. by apply ty_shr_depth_mono. Qed.
   Next Obligation.
-    move=> n *. iIntros "#LFT #?". iApply (ty_share with "LFT"); [done|].
+    move=> n *. iIntros "#LFT #?". iApply (ty_share with "LFT"); [done..|].
     iApply llftl_incl_trans; [done|]. iDestruct (Tn_ty_lft_const n 0) as "[_ $]".
   Qed.
   Next Obligation.
@@ -143,7 +143,6 @@ Section S.
     iApply llftl_incl_trans; [done|]. iDestruct (Tn_ty_lft_const n 0) as "[_ $]".
   Qed.
   Next Obligation. move=> >. apply ty_shr_from_guard. Qed.
-  Next Obligation. move=> >. apply ty_shr_to_default. Qed.
 
   Program Definition fix_ty: type 𝔄 := {|
     ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
@@ -204,11 +203,6 @@ Section S.
   Next Obligation.
     move=> *. apply @limit_preserving; [|move=> ?; by apply (ty_shr_from_guard (Tn' _))].
     apply limit_preserving_entails=> ??? Eq; repeat (apply Eq || f_equiv).
-  Qed.
-  Next Obligation.
-    move=> *. apply @limit_preserving; [|move=> ?; by apply (ty_shr_to_default (Tn' _))].
-    apply limit_preserving_entails; [done|]=> ??? Eq.
-    repeat (apply Eq || f_equiv || (apply default_shr_ne; intros)).
   Qed.
 
   Lemma fix_ty_Tn'_dist n : fix_ty ≡{n}≡ Tn' (3 + n).

@@ -10,6 +10,13 @@ Implicit Type 𝔄 𝔅: syn_type.
 Section shr_bor.
   Context `{!typeG Σ}.
   
+  (** The ownership predicate of [&shr{κ} ty] is persistent and contains the sharing
+      predicate of [ty] (without a later). Its sharing predicate is the default one, i.e.
+      a guard of the ownership predicate with [g+1] laters: this is structural (it gives
+      access to the sharing predicate of [ty]), puts the sharing predicate of [ty] under
+      laters (so [&shr] stays contractive), and is compatible with [ty_shr_from_guard].
+      Since the ownership predicate is persistent and never lazy, it need not change when
+      [ty_shr_from_guard] goes away. *)
   Program Definition shr_bor {𝔄} (κ: lft) (ty: type 𝔄) : type (at_clocₛ 𝔄) := @ty_of_st _ _ ((at_clocₛ 𝔄)) ({|
     st_size := 1;
     st_lfts := κ :: ty.(ty_lfts);
@@ -40,18 +47,18 @@ Section shr_bor.
   Next Obligation.
     intros 𝔄 κ ty κ0 x n d g tid ξ R Hin.
     iIntros "LFT #Incl #Gho".
-    destruct d.
-    + simpl. iExFalso. done.
-    + simpl.
-      iDestruct "Gho" as "[Phys [Shr #InnerPers]]".
-      iDestruct (ty_shr_guard_proph ty κ0 (snd x) n d g tid ξ R with "LFT [] InnerPers") as "InnerGuardProph". { trivial. }
-      { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_r. }
-      iDestruct (ty_shr_lft_mono ty κ κ0 with "[] Shr") as "Shr0".
-      { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_l. }
-      rewrite <- bi.laterN_add. iNext.
-      iIntros "#Rk #Rg".
-      replace (n + (g + 1 + d * (g + 1))) with (n + (d + 1) * (g + 1)); last by lia.
-      iApply ("InnerGuardProph" with "Rk Shr0").
+    destruct d as [|d]; [done|]. rewrite /by_succ.
+    iDestruct "Gho" as "[Phys [Shr #InnerPers]]".
+    iDestruct (ty_shr_lft_mono ty κ κ0 with "[] Shr") as "#Shr0".
+    { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_l. }
+    iApply (bi.laterN_le (g + 1 + d * (g + 1))); [lia|].
+    rewrite (bi.laterN_add (g + 1) (d * (g + 1))). iNext (g + 1).
+    iDestruct (ty_shr_guard_proph ty κ0 (snd x) n d g tid ξ R with "LFT [] InnerPers Shr0")
+      as "InnerGuardProph"; [done| |].
+    { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_r. }
+    iNext. iIntros "#Rk #Rg".
+    leaf_goal laters to (n + (d + 1) * (g + 1)). { lia. }
+    iApply ("InnerGuardProph" with "Rk").
   Qed.
   Next Obligation. done. Qed.
   

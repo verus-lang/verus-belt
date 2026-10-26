@@ -70,7 +70,7 @@ Section typing.
   
   Lemma uninit_unit E L : eqtype E L (↯ 0) () (uninit0_to_unitₛ) (unit_to_uninit0ₛ).
   Proof.
-    apply eqtype_unfold_default; [|done|done|]. { 
+    apply eqtype_unfold. { 
       split.
         + split.
           * fun_ext. intros x. simpl. unfold indep_interp_of_syn_type in x.
@@ -85,9 +85,10 @@ Section typing.
     iIntros "_!>_". iSplit; [done|]. iSplit; [iApply lft_equiv_refl|].
     iSplit; first iModIntro=>/=.
     - iIntros (??? vl). naive_solver. 
-    - iSplit.
+    - iSplit; [|iSplit].
     + iIntros (??? vl). naive_solver. 
     + iPureIntro. intros. refine (match x with vnil => _ end). trivial.
+    + iIntros "!>" (?????). iSplit; iIntros; [done|iApply default_shr_True].
   Qed.
   Lemma uninit_unit_1 E L : subtype E L (↯ 0) () (uninit0_to_unitₛ).
   Proof. eapply proj1, uninit_unit. Qed.
@@ -120,7 +121,7 @@ Section typing.
   Lemma uninit_plus_prod E L m n :
     eqtype E L (↯ (m + n)) (↯ m * ↯ n) uninit_splitₛ uninit_joinₛ.
   Proof.
-    apply eqtype_unfold_default; [|done|done|].
+    apply eqtype_unfold.
     { destruct (@vapp_vsepat_iso val m n) as [A B]. split.
       - split; trivial.
       - split; trivial; fun_ext; intro x.
@@ -135,10 +136,11 @@ Section typing.
     iIntros "_!>_". iSplit; [done|]. iSplit; [iApply lft_equiv_refl|].
     iSplit; first iModIntro=>/=.
     - iIntros (????). naive_solver. 
-    - iPureIntro. split.
-      + intuition.
-      + rewrite /ty_phys /= .
+    - iSplit; [|iSplit].
+      + iIntros "!>" (????). iSplit; iIntros; done.
+      + iPureIntro. rewrite /ty_phys /= .
         intros x tid. rewrite <- fmap_app. rewrite <- vec_to_list_app. rewrite <- vsepat_app. trivial.
+      + iIntros "!>" (?????). iSplit; iIntros; [iSplit|]; iApply default_shr_True.
   Qed.
   Lemma uninit_plus_prod_1 E L m n :
     subtype E L (↯ (m + n) ) (↯ m  * ↯ n ) uninit_splitₛ.

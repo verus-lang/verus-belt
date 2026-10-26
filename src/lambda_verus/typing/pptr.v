@@ -57,7 +57,7 @@ Section points_to.
     ty_gho_own x d g tid := P ∗ (ty.(ty_gho_own) x d g tid) ;
     ty_gho_pers x d g tid := (ty.(ty_gho_pers) x d g tid) ;
     ty_phys x tid := [];
-    ty_shr := default_shr (λ x d g tid, P ∗ (ty.(ty_gho_own) x d g tid));
+    ty_shr κ x d g tid := (@[κ] &&{↑NllftG; g+1}&&> P) ∗ ty.(ty_shr) κ x d g tid;
   |}%I.
   Next Obligation. intros; done. Qed.
   Next Obligation. intros; done. Qed.
@@ -80,7 +80,31 @@ Section points_to.
     by iApply ("Hguard" with "H2").
   Qed.
   Next Obligation. iIntros "* [? ?]". iApply (ty_gho_pers_impl 𝔄); trivial. Qed.
-  Solve All Obligations with solve_default_shr.
+  Next Obligation.
+    intros. iIntros "#Incl [P Shr]". iSplit.
+    - iApply (guards_transitive_right with "Incl P").
+    - iApply (ty_shr_lft_mono with "Incl Shr").
+  Qed.
+  Next Obligation.
+    intros. iIntros "[P Shr]". iSplit.
+    - leaf_goal laters to (g+1). { lia. } iFrame "P".
+    - iApply (ty_shr_depth_mono with "Shr"); lia.
+  Qed.
+  Next Obligation.
+    intros 𝔄 ty P E κ x k d g tid G ???. iIntros "#LFT #Incl #Gκ G Bor".
+    iMod (llftl_bor_laterN_sep_split with "LFT Bor") as "[BP Bor]"; [solve_ndisj|].
+    iMod (llftl_bor_laterN_guard with "LFT BP") as "#GP"; [solve_ndisj|].
+    iMod (ty_share with "LFT Incl Gκ G Bor") as "[$ Shr]"; [done..|].
+    iModIntro. iNext. iFrame "Shr". leaf_goal laters to (1 + k). { lia. } iFrame "GP".
+  Qed.
+  Next Obligation.
+    intros. iIntros "LFT Incl Pers [_ Shr]". by iApply (ty_shr_guard_proph with "LFT Incl Pers Shr").
+  Qed.
+  Next Obligation.
+    intros. simpl. iIntros "#G". iSplit.
+    - iApply (guards_weaken_rhs_sep_l with "G").
+    - iApply (ty_shr_from_guard ty). iApply (guards_weaken_rhs_sep_r with "G").
+  Qed.
 
   Definition points_to_ty {𝔄} ty := tracked_ty (@own_ptr _ _ 𝔄 (ty_size ty) ty).
 
@@ -272,9 +296,11 @@ Section typing.
       iIntros "(£ & _) #Hd''".
       wp_rec.
       by iMod (lc_fupd_elim_later with "£ Hpers"). }
-    iDestruct (ty_shr_default_to_guard (points_to_ty ty) with "Hshr0") as "#Hshr"; [done|].
+    rewrite /advance_credits /=.
+    iIntros "(£ & _) #Hd''".
+    iMod (own_shr_unfold (ty_size ty) ty _ κ (l', x) d' (S (S d')) tid with "£ Hshr0")
+      as "[#Hpt #Hshr]".
     iClear "Hshr0".
-    iIntros "_ #Hd''".
     wp_rec.
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
     iModIntro.
@@ -290,20 +316,8 @@ Section typing.
       iSplitR; last iSplitL.
       - rewrite heap_mapsto_cells_fancy_empty.
         rewrite (ty.(ty_size_eq) x tid).
-        iPoseProof (guards_weaken_rhs_sep_l with "Hshr") as "Hshr2".
-        iPoseProof (lguards_weaken_later with "Hshr2") as "Hshr3".
-        2: iFrame "#".
-        lia.
-      - (* TEMPORARY: uses [ty_shr_from_guard]. *)
-        iApply ty_shr_from_guard.
-        iPoseProof (guards_weaken_rhs_sep_r with "Hshr") as "Hshr2".
-        iPoseProof (guards_weaken_rhs_sep_r with "Hshr2") as "Hshr3".
-        iPoseProof (guards_later_absorb_1 with "Hshr3") as "Hshr4".
-        iClear "Hshr Hshr2 Hshr3".
-        leaf_goal laters to (S (S (d' + 1)) + 1). { lia. }
-        iApply (guards_transitive_left with "Hshr4").
-        leaf_by_sep.
-        iApply ty.(ty_gho_own_depth_mono); lia.
+        leaf_goal laters to (S (S d') + 2). { lia. } iFrame "Hpt".
+      - iApply (ty_shr_depth_mono with "Hshr"); lia.
       - repeat iNext.
         iApply (ty.(ty_gho_pers_depth_mono) with "Hpers") => //; lia.
     }

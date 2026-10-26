@@ -29,11 +29,71 @@ Definition thread_id := na_inv_pool_name.
 
 (** * Sharing *)
 
-(** The number of later credits that a type's sharing law [ty_share] may consume.
-    This is a placeholder: no type uses credits for sharing yet (every type uses
-    [default_shr]). Recursive structural sharing and the lazy [&uniq] payload will
-    need credits scaled by the depth. *)
-Definition share_cost (d g: nat) : nat := 2 * d * (g + 1).
+(** About laters and credits in the sharing law [ty_share]. The sharing law does not
+    take any later credits. Credits cannot be scaled by the depth only: a product shares
+    both of its components from the same borrow, so a per-component credit cost would
+    have to be paid once per component, i.e. it would grow with the width of the type,
+    not only with its depth.
+
+    Instead, the laters that a structural type such as [own_ptr] puts in front of the
+    ownership predicate of its contents are kept in front of the sharing predicate: the
+    sharing law is stated for a borrow of [▷^k ty_gho_own] and produces [▷^k ty_shr]
+    (see [ty_share]). Products split [▷^k] over both components for free. At the leaves
+    (the default sharing predicate), the [k] laters are absorbed into the later count of
+    the guard; this needs [k ≤ g], which is guaranteed by the side condition [k + d ≤ g]
+    since every later added by [own_ptr] also decreases the depth [d]. *)
+
+Section guards_sep.
+  Context `{!typeG Σ}.
+
+  (** A guard of a persistent proposition and a guard of another proposition by the
+      same left-hand side can be combined. *)
+  Lemma guards_sep_pers (P Q1 Q2 : iProp Σ) F n :
+    Persistent Q1 →
+    (P &&{F; n}&&> Q1) -∗ (P &&{F; n}&&> Q2) -∗ (P &&{F; n}&&> Q1 ∗ Q2).
+  Proof.
+    iIntros (?) "#G1 #G2".
+    iAssert (P &&{F; n}&&> ∃ _: unit, Q2)%I as "#G2'".
+    { iApply (guards_transitive_left with "G2"). iApply guards_weaken.
+      iIntros "!> Q2". iSplitL; [by iExists ()|]. by iIntros "[% $]". }
+    iDestruct (guards_strengthen_exists unit P Q1 (λ _, Q1) (λ _, Q2) F n
+      (λ _, bi.and_elim_l _ _) _ with "G1 G2'") as "G".
+    iApply (guards_transitive_left with "G"). iApply guards_weaken.
+    iIntros "!> [%u [Q2 #Q1]]". iFrame "Q1 Q2". iIntros "[_ Q2]". iExists u. by iFrame.
+  Qed.
+End guards_sep.
+
+Section share_util.
+  Context `{!typeG Σ}.
+
+  (** Freezing a borrow of contents under [k] laters into a guard of the contents. *)
+  Lemma llftl_bor_laterN_guard E κ k P :
+    ↑Nllft ⊆ E → llft_ctx -∗ &{κ} (▷^k P) ={E}=∗ @[κ] &&{↑NllftG; 1 + k}&&> P.
+  Proof.
+    iIntros (?) "#LFT Bor". iMod (llftl_bor_guard with "LFT Bor") as "#G"; [done|].
+    iModIntro. by iApply guards_later_absorb_n.
+  Qed.
+
+  Lemma llftl_bor_laterN_sep_split E κ k P Q :
+    ↑Nllft ⊆ E → llft_ctx -∗ &{κ} (▷^k (P ∗ Q)) ={E}=∗ &{κ} (▷^k P) ∗ &{κ} (▷^k Q).
+  Proof.
+    iIntros (?) "#LFT Bor".
+    iDestruct (llftl_bor_iff _ _ (▷^k P ∗ ▷^k Q) with "[] Bor") as "Bor".
+    { iIntros "!> !>". rewrite bi.laterN_sep. iSplit; iIntros "$". }
+    by iApply (llftl_sep_split with "LFT Bor").
+  Qed.
+
+  (** Reading a persistent proposition out of a borrow, given a guard for [κ]. *)
+  Lemma llftl_bor_guarded_pers E κ G P :
+    Timeless G → Persistent P → ↑Nllft ⊆ E →
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ &{κ} P ={E}=∗ G ∗ ▷ P.
+  Proof.
+    iIntros (???) "#LFT #Gκ G Bor".
+    iMod (llftl_bor_acc_guarded with "LFT Bor Gκ G") as "[#P Back]"; [done..|].
+    iDestruct ("Back" $! P with "[]") as "Close". { iFrame "P". iIntros "!> H". by iModIntro. }
+    iMod (fupd_mask_mono with "Close") as "[_ $]"; [done|]. by iModIntro.
+  Qed.
+End share_util.
 
 (** The default sharing predicate: a guard of the ownership predicate by [@[κ]] (with
     [g+1] laters), at some depth no larger than the given one. Closing it downwards in
@@ -84,15 +144,16 @@ Section default_shr.
     iSplit. { iPureIntro. lia. } leaf_goal laters to (g+1). { lia. } iFrame "Guard".
   Qed.
 
-  Lemma default_shr_share E κ x d g tid G :
-    ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E → Timeless G →
-    llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
-    &{κ} (gho x d g tid) ={E}=∗ G ∗ default_shr gho κ x d g tid.
+  (** The sharing law for the default sharing predicate. The [k] laters in front of the
+      borrowed ownership predicate are absorbed into the later count of the guard. *)
+  Lemma default_shr_share E κ x k d g tid :
+    ↑Nllft ⊆ E → k ≤ g →
+    llft_ctx -∗ &{κ} (▷^k gho x d g tid) ={E}=∗ ▷^k default_shr gho κ x d g tid.
   Proof.
-    iIntros (??) "#LFT _ G Bor".
-    iMod (llftl_bor_guard with "LFT Bor") as "#Guard". { solve_ndisj. }
-    iModIntro. iFrame "G". iExists d, g. iSplit; [done|].
-    leaf_goal laters to 1. { lia. } iFrame "Guard".
+    iIntros (??) "#LFT Bor".
+    iMod (llftl_bor_laterN_guard with "LFT Bor") as "#Guard"; [done|].
+    iModIntro. iApply bi.laterN_intro. iExists d, g. iSplit; [done|].
+    leaf_goal laters to (1 + k). { lia. } iFrame "Guard".
   Qed.
 
   Lemma default_shr_from_guard κ x d g tid :
@@ -112,14 +173,14 @@ Section default_shr.
   Lemma default_shr_guard_proph lfts pers κ x n d g tid ξ R :
     gho_own_depth_mono_stmt gho → guard_proph_stmt lfts gho pers → ξ ∈ ξl x →
     llft_ctx -∗ κ ⊑ lft_intersect_list lfts -∗ pers x d g tid -∗
+    default_shr gho κ x d g tid -∗
     ▷^(d*(g+1)) (
         (R &&{↑NllftG; n}&&> @[κ]) -∗
-        default_shr gho κ x d g tid -∗
         (R &&{↑NllftG; n + (d+1)*(g+1)}&&> 1:[ξ])).
   Proof.
-    iIntros (Mono GP Hin) "#LFT #Incl Pers".
+    iIntros (Mono GP Hin) "#LFT #Incl Pers #Shr".
     iDestruct (GP κ x (n + (g+1)) d g tid ξ R Hin with "LFT Incl Pers") as "GP".
-    iNext. iIntros "#Rκ Shr".
+    iNext. iIntros "#Rκ".
     iDestruct (default_shr_guard with "Shr") as "#Guard"; [done|].
     replace (n + (d+1)*(g+1)) with (n + (g+1) + d*(g+1)) by lia.
     iApply "GP".
@@ -160,6 +221,10 @@ Section default_shr.
   Qed.
 End default_shr.
 
+Lemma default_shr_True `{!typeG Σ} {𝔄} κ (x: ~~𝔄) d g tid :
+  ⊢ default_shr (λ _ _ _ _, True%I) κ x d g tid.
+Proof. iExists d, g. iSplit; [done|]. iApply guards_true. Qed.
+
 (** Discharges the obligations about [ty_shr] of a type defined with [default_shr]. *)
 Ltac solve_default_shr :=
   intros; first
@@ -167,11 +232,10 @@ Ltac solve_default_shr :=
     | apply default_shr_lft_mono
     | apply default_shr_depth_mono; assumption
     | apply default_shr_from_guard
-    | iIntros "$"
     | by eapply default_shr_guard_proph
-    | iIntros "#LFT _ #Guard G _ Bor";
-      iApply (default_shr_share with "LFT Guard G [Bor]");
-      first [assumption | iExact "Bor"] ].
+    | iIntros "#LFT _ _ G Bor"; iFrame "G";
+      iApply (default_shr_share with "LFT [Bor]");
+      first [solve_ndisj | lia | iExact "Bor"] ].
 
 (** * Type *)
 
@@ -222,15 +286,22 @@ Record type `{!typeG Σ} 𝔄 := {
   (* The sharing law: a full borrow of the ownership predicate at κ can be turned into
      the sharing predicate at κ, given a guard G for κ. The guard (rather than a
      token) lets the borrow be opened non-atomically, so that fancy updates (e.g. a
-     lazy payload) can be run inside. *)
-  ty_share E κ x d g tid G :
-      ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E → Timeless G →
+     lazy payload) can be run inside. The law is generalized to a borrow of the
+     ownership predicate under [k] laters, which then remain in front of the sharing
+     predicate: this is what the recursive call of a structural type like [own_ptr]
+     needs, since its ownership predicate has the contents under a later. Use
+     [ty_share0] for [k = 0]. See the comment at the top of the file about laters and
+     credits. *)
+  ty_share E κ x k d g tid G :
+      ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E → Timeless G → k + d ≤ g →
       llft_ctx -∗ κ ⊑ lft_intersect_list ty_lfts -∗
-      (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £ (share_cost d g) -∗
-      &{κ} (ty_gho_own x d g tid) ={E}=∗ G ∗ ty_shr κ x d g tid;
+      (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
+      &{κ} (▷^k ty_gho_own x d g tid) ={E}=∗ G ∗ ▷^k ty_shr κ x d g tid;
   (* The analogue of [ty_guard_proph] for the sharing predicate: a guard of [@[κ]] and
      the sharing predicate at κ guard the prophecy tokens. Use the lemma
-     [ty_shr_guard_proph] instead of this field.
+     [ty_shr_guard_proph] instead of this field. Unlike in [ty_guard_proph], the
+     sharing predicate is taken before the laters, since a structural sharing predicate
+     has the sharing predicates of its contents under a later.
      TEMPORARY: the two hypotheses restate [ty_gho_own_depth_mono] and [ty_guard_proph].
      They let a type with the default sharing predicate derive this law from those
      two laws (see [default_shr_guard_proph]), which cannot be referred to from inside
@@ -243,27 +314,23 @@ Record type `{!typeG Σ} 𝔄 := {
       llft_ctx -∗
       κ ⊑ lft_intersect_list ty_lfts -∗
       ty_gho_pers x d g tid -∗
+      ty_shr κ x d g tid -∗
       ▷^(d*(g+1)) (
           (R &&{↑NllftG; n}&&> @[κ]) -∗
-          ty_shr κ x d g tid -∗
           (R &&{↑NllftG; n + (d+1)*(g+1)}&&> 1:[ξ])
       );
   (* TEMPORARY: a guard of the ownership predicate by [@[κ]] gives the sharing
      predicate. This holds for [default_shr], and is used by the typing rules that
      produce a shared reference from such a guard without a borrow at hand. It will
      be false once [&uniq] gets a lazy ownership predicate (and a structural sharing
-     predicate), so these uses have to be reworked then. *)
+     predicate), so these uses have to be reworked then. For the structural types
+     whose ownership predicate puts the contents under a later ([own_ptr],
+     [cell_points_to_ty]), it is the reason why their sharing predicate allows, as an
+     alternative to the sharing predicate of the contents, a guard of the ownership
+     predicate of the contents (with one more later); that alternative can go together
+     with this law. *)
   ty_shr_from_guard κ x d g tid :
       (@[κ] &&{↑NllftG; g+1}&&> ty_gho_own x d g tid) -∗ ty_shr κ x d g tid;
-  (* TEMPORARY: the converse, i.e. the sharing predicate is (at most) the default one.
-     This holds for [default_shr], and is used where the sharing predicate of a generic
-     type has to be compared with the default sharing predicate of a type built on it
-     ([mod_ty_in], [mod_ty_out], [prod_ty_left_id], [prod_ty_right_id], via
-     [ty_shr_default_equiv]). It will be false once some type has a structural sharing
-     predicate; these uses go away once [mod_ty] and [prod_ty] get structural sharing
-     predicates. *)
-  ty_shr_to_default κ x d g tid :
-      ty_shr κ x d g tid -∗ default_shr ty_gho_own κ x d g tid;
   
  (* ty_gho_own_depth_mono d g d' g' vπ tid :
     (d ≤ d')%nat → (g ≤ g')%nat → ty_gho_own vπ d g tid -∗ ty_gho_own vπ d' g' tid;
@@ -343,7 +410,6 @@ Arguments ty_shr_depth_mono {_ _ _}.
 Arguments ty_share {_ _ _}.
 Arguments ty_shr_guard_proph' {_ _ _}.
 Arguments ty_shr_from_guard {_ _ _}.
-Arguments ty_shr_to_default {_ _ _}.
 
 Notation ty_lft ty := (lft_intersect_list ty.(ty_lfts)).
 
@@ -355,9 +421,9 @@ Section ty_shr_lemmas.
       llft_ctx -∗
       κ ⊑ ty_lft ty -∗
       ty.(ty_gho_pers) x d g tid -∗
+      ty.(ty_shr) κ x d g tid -∗
       ▷^(d*(g+1)) (
           (R &&{↑NllftG; n}&&> @[κ]) -∗
-          ty.(ty_shr) κ x d g tid -∗
           (R &&{↑NllftG; n + (d+1)*(g+1)}&&> 1:[ξ])
       ).
   Proof.
@@ -370,12 +436,15 @@ Section ty_shr_lemmas.
   Definition ty_shr_is_default {𝔄} (ty: type 𝔄) : Prop :=
     ∀ κ x d g tid, ty.(ty_shr) κ x d g tid = default_shr ty.(ty_gho_own) κ x d g tid.
 
-  (** TEMPORARY (uses [ty_shr_to_default] and [ty_shr_from_guard]). *)
-  Lemma ty_shr_default_equiv {𝔄} (ty: type 𝔄) κ x d g tid :
-    ty.(ty_shr) κ x d g tid ⊣⊢ default_shr ty.(ty_gho_own) κ x d g tid.
+  (** The sharing law for a borrow of the ownership predicate itself. *)
+  Lemma ty_share0 {𝔄} (ty: type 𝔄) E κ x d g tid G :
+      ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E → Timeless G → d ≤ g →
+      llft_ctx -∗ κ ⊑ ty_lft ty -∗
+      (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
+      &{κ} (ty.(ty_gho_own) x d g tid) ={E}=∗ G ∗ ty.(ty_shr) κ x d g tid.
   Proof.
-    iSplit; [iApply ty_shr_to_default|].
-    rewrite default_shr_guard; [iApply ty_shr_from_guard|exact (ty_gho_own_depth_mono ty)].
+    iIntros (???) "LFT Incl Gκ G Bor".
+    iApply (ty_share ty E κ x 0 with "LFT Incl Gκ G Bor"); try done; lia.
   Qed.
 
   Lemma ty_shr_default_guard {𝔄} (ty: type 𝔄) κ x d g tid :

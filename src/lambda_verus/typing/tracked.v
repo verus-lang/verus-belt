@@ -15,7 +15,7 @@ Section tracked.
     ty_gho_own x d g tid := (ty.(ty_gho_own) x d g tid) ;
     ty_gho_pers x d g tid := (ty.(ty_gho_pers) x d g tid) ;
     ty_phys x tid := [];
-    ty_shr := default_shr (λ x d g tid, (ty.(ty_gho_own) x d g tid));
+    ty_shr κ x d g tid := ty.(ty_shr) κ x d g tid;
   |}%I.
   Next Obligation. intros; done. Qed.
   Next Obligation. done. Qed.
@@ -24,7 +24,11 @@ Section tracked.
   Next Obligation. intros. apply (ty_gho_pers_depth_mono ty); trivial. Qed.
   Next Obligation. intros. iIntros. iApply (ty_guard_proph _ ty); trivial. Qed.
   Next Obligation. intros. apply (ty_gho_pers_impl); trivial. Qed.
-  Solve All Obligations with solve_default_shr.
+  Next Obligation. intros. apply ty_shr_lft_mono. Qed.
+  Next Obligation. intros. by apply ty_shr_depth_mono. Qed.
+  Next Obligation. intros. by apply ty_share. Qed.
+  Next Obligation. intros. by apply ty_shr_guard_proph. Qed.
+  Next Obligation. intros. apply ty_shr_from_guard. Qed.
   
   Global Instance tracked_ne {𝔄} : NonExpansive (@tracked_ty 𝔄).
   Proof. solve_ne_type. Qed.
@@ -33,15 +37,14 @@ Section tracked.
   Proof. intros [Hphys Hgho]. split; trivial. Qed.
   
   Global Instance tracked_sync {𝔄} (ty : type 𝔄) : Sync ty → Sync (tracked_ty ty).
-  Proof. intros Hsync. apply sync_default; [done|]. split; trivial.
-    destruct (Hsync tid tid' x d g) as [A [B [C _]]]. split; trivial.
+  Proof. intros Hsync tid tid' x d g. split; trivial.
+    destruct (Hsync tid tid' x d g) as [A [B [C D]]]. split; trivial. split; trivial.
   Qed.
   
   Global Instance tracked_copy {𝔄} (ty : type 𝔄) : Copy ty → Copy (tracked_ty ty).
   Proof.
     intros Hcopy. destruct Hcopy. split; trivial.
-    - intros. iIntros "_". iPureIntro. done.
-    - intros. by apply copy_shr_default.
+    intros. iIntros "_". iPureIntro. done.
   Qed.
 
   Lemma tracked_resolve {𝔄} (ty: type 𝔄) E L f : resolve E L ty f → resolve E L (tracked_ty ty) f.
@@ -52,8 +55,7 @@ Section tracked.
   Lemma tracked_type_incl {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) f :
     type_incl ty ty' f ⊢ type_incl (tracked_ty ty) (tracked_ty ty') (tracked_mapₛ f).
   Proof.
-    iIntros "(A & B & C & D & E & _)". iApply type_incl_default; [done|done|].
-    iFrame. done.
+    iIntros "(_ & #B & #C & #D & _ & #F)". iSplit; [done|]. iFrame "B C D F". done.
   Qed.
   
   Lemma tracked_subtype {𝔄 𝔅} E L (ty: type 𝔄) (ty': type 𝔅) f :

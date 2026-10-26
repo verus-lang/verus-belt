@@ -248,16 +248,10 @@ Section product_split.
     iIntros (G tid [[l [x y]][]] post mask ?) "#LFT #PROPH #UNIQ #E #GuardsL G [T _] #Obs".
     iDestruct "T" as (v d) "(%path & #⧖ & [gho %phys])".
     destruct d as [|d']; first by done.
-    iDestruct "gho" as "[#G↦ [#Shr [#InnerPers1 #InnerPers2]]]".
-    iDestruct (ty_shr_default_to_guard with "Shr") as "#Ggho"; [done|].
+    iDestruct "gho" as "[#G↦ [[#Shr1 #Shr2] [#InnerPers1 #InnerPers2]]]".
     rewrite heap_mapsto_cells_fancy_vec_app.
     iDestruct (guards_weaken_rhs_sep_l with "G↦") as "G↦1".
     iDestruct (guards_weaken_rhs_sep_r with "G↦") as "G↦2".
-    (* TEMPORARY: uses [ty_shr_from_guard]. *)
-    iDestruct (ty_shr_from_guard with "[]") as "#Ggho1".
-    { iApply (guards_weaken_rhs_sep_l with "Ggho"). }
-    iDestruct (ty_shr_from_guard with "[]") as "#Ggho2".
-    { iApply (guards_weaken_rhs_sep_r with "Ggho"). }
     iModIntro. iExists -[(cloc_take l ty.(ty_size), x); (cloc_skip l ty.(ty_size), y)]. iFrame "G".
     inversion phys. subst v.
     iSplit. {
