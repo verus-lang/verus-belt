@@ -292,7 +292,8 @@ Section local_invariants.
     iDestruct (lc_weaken (_ + _)%nat with "£") as "[£1 £2]"; first last.
     {
     destruct d as [|d]; first by done.
-    iDestruct "shrgho" as "[_ [#KguardsGho _]]".
+    iDestruct "shrgho" as "[_ [#KShr _]]".
+    iDestruct (ty_shr_default_to_guard (local_inv_ty ty pred) with "KShr") as "#KguardsGho"; [done|].
     iDestruct (Halive with "L E") as "#LguardsK".
     iDestruct (guards_transitive_right with "LguardsK KguardsGho") as "LguardsGho".
     

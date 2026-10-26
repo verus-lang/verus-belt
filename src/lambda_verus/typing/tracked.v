@@ -33,13 +33,15 @@ Section tracked.
   Proof. intros [Hphys Hgho]. split; trivial. Qed.
   
   Global Instance tracked_sync {𝔄} (ty : type 𝔄) : Sync ty → Sync (tracked_ty ty).
-  Proof. intros Hsync. split; trivial.
-    destruct (Hsync tid tid' x d g) as [A [B C]]. split; trivial.
+  Proof. intros Hsync. apply sync_default; [done|]. split; trivial.
+    destruct (Hsync tid tid' x d g) as [A [B [C _]]]. split; trivial.
   Qed.
   
   Global Instance tracked_copy {𝔄} (ty : type 𝔄) : Copy ty → Copy (tracked_ty ty).
   Proof.
-    intros Hcopy. destruct Hcopy. split; trivial. intros. iIntros "_". iPureIntro. done.
+    intros Hcopy. destruct Hcopy. split; trivial.
+    - intros. iIntros "_". iPureIntro. done.
+    - intros. by apply copy_shr_default.
   Qed.
 
   Lemma tracked_resolve {𝔄} (ty: type 𝔄) E L f : resolve E L ty f → resolve E L (tracked_ty ty) f.
@@ -50,7 +52,8 @@ Section tracked.
   Lemma tracked_type_incl {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) f :
     type_incl ty ty' f ⊢ type_incl (tracked_ty ty) (tracked_ty ty') (tracked_mapₛ f).
   Proof.
-    iIntros "(A & B & C & D & E)". iFrame. iSplit; done.
+    iIntros "(A & B & C & D & E & _)". iApply type_incl_default; [done|done|].
+    iFrame. done.
   Qed.
   
   Lemma tracked_subtype {𝔄 𝔅} E L (ty: type 𝔄) (ty': type 𝔅) f :

@@ -139,7 +139,9 @@ Section borrow.
          - leaf_goal laters to (d + 1); first by lia. iFrame "PtBase".
          - leaf_goal laters to 1. { lia. } iApply (guards_weaken_rhs_sep_r with "ShrGuard").
       }
-      iSplit. { leaf_goal laters to 1. { lia. } iApply (guards_transitive_left with "ShrGuard []").
+      iSplit. { (* TEMPORARY: uses [ty_shr_from_guard]. *)
+        iApply ty_shr_from_guard.
+        leaf_goal laters to 1. { lia. } iApply (guards_transitive_left with "ShrGuard []").
         leaf_by_sep. iIntros "[G pt]".
         iDestruct (ty_gho_own_depth_mono _ _ _ d (S d) with "G") as "[G back]". { lia. } { lia. }
         iFrame "G". iIntros "G". iFrame. iApply "back". iFrame.
@@ -419,7 +421,8 @@ Section borrow.
     
     iDestruct "own" as "[gho %phys]".
     destruct d as [|d']; first by done.
-    iDestruct "gho" as "[#Gp [#Ggho #pers]]".
+    iDestruct "gho" as "[#Gp [#Shr #pers]]".
+    iDestruct (ty_shr_default_to_guard with "Shr") as "#Ggho"; [done|].
     
     iModIntro. iExists l1, l2, (llctx_interp L).
     inversion phys. subst v.
@@ -441,7 +444,8 @@ Section borrow.
        rewrite <- heap_mapsto_cells_fancy_empty.
        iDestruct "g" as "[pt [free gho]]". iFrame. iIntros. done.
     }
-    iSplit. {
+    iSplit. { (* TEMPORARY: uses [ty_shr_from_guard]. *)
+       iApply ty_shr_from_guard.
        leaf_goal laters to ((S d' + 1) + 1). { lia. }
        iApply (guards_transitive_additive _ _ _ _ _ 1 with "Ggho []").
        leaf_by_sep. iIntros "g". destruct d' as [|d'']; first by done.
@@ -681,7 +685,8 @@ Section borrow.
     destruct x as [l [[[[[l1 x0] ξi] d1] g1] ξidx]].
     iDestruct "own" as "[gho %phys]". inversion phys. subst v.
     destruct d as [|d']; first by done.
-    iDestruct "gho" as "[#G↦ [#Ggho #Pers]]".
+    iDestruct "gho" as "[#G↦ [#Shr #Pers]]".
+    iDestruct (ty_shr_default_to_guard with "Shr") as "#Ggho"; [done|].
     
     iDestruct (guards_transitive_right with "Alv Ggho") as "Lgho".
     leaf_open_laters "Lgho" with "L" as "H". { solve_ndisj. }
@@ -722,7 +727,9 @@ Section borrow.
         iApply (guards_transitive_right with "Incl InnerPtBase").
       - leaf_goal laters to (S d' + 1 + 1). { lia. } iFrame "Gpt1".
     }
-    iSplit. { leaf_goal laters to (S d' + 1 + 1). { lia. }
+    iSplit. { (* TEMPORARY: uses [ty_shr_from_guard]. *)
+      iApply ty_shr_from_guard.
+      leaf_goal laters to (S d' + 1 + 1). { lia. }
       iApply (guards_transitive_left with "Ggho1 []").
       leaf_by_sep. iApply ty_gho_own_depth_mono; lia.
     }

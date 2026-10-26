@@ -125,7 +125,7 @@ Section sum.
   Proof.
     move=> n tyl tyl' Eqv. have EqMsz: max_ty_size tyl = max_ty_size tyl'.
     { elim: Eqv=>/= [|>Eqv ? ->]; [done|]. f_equiv. apply Eqv. }
-    split=>/=.
+    apply type_dist_default=>/=; [done|done| | | | | |].
     - by rewrite EqMsz.
     - rewrite /tyl_lfts. elim: Eqv=>/= [|>Eqv ? ->]; [done|]. f_equiv. apply Eqv.
     - rewrite /tyl_E. elim: Eqv=>/= [|>Eqv ? ->]; [done|]. f_equiv. apply Eqv.
@@ -205,15 +205,15 @@ Section typing.
     move=> [Tl[->All]]. have EqMsz: ∀ty ty',
       ty_size ty = ty_size ty' → max_ty_size (Tl +$ ty) = max_ty_size (Tl +$ ty').
     { move=> *. elim All; [done|]=>/= ???? One _ ->. f_equal. by apply One. }
-    split=>/=.
+    apply type_ne_default=>/=; first done.
     - apply xsum_lft_morphism. eapply TCHForall_impl; [|done]. by move=> >[].
     - move=> *. f_equiv. by apply EqMsz.
-    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 [x pad] d g tid.
+    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 H7 [x pad] d g tid.
       unfold xsum_ty, ty_gho_own. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
       by apply All.
-    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 [x pad] d g tid.
+    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 H7 [x pad] d g tid.
       unfold xsum_ty, ty_gho_pers. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
@@ -233,15 +233,15 @@ Section typing.
     move=> [Tl[->All]].
     have EqMsz: ∀ty ty', max_ty_size (Tl +$ ty) = max_ty_size (Tl +$ ty').
     { move=> *. elim All; [done|]=>/= ???? One _ ->. f_equal. by apply One. }
-    split=>/=.
+    apply type_contractive_default=>/=; first done.
     - apply xsum_lft_morphism. eapply TCHForall_impl; [|done]. by move=> >[].
     - move=> *. f_equiv. by apply EqMsz.
-    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 [x pad] d g tid.
+    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 H7 [x pad] d g tid.
       unfold xsum_ty, ty_gho_own. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
       by apply All.
-    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 [x pad] d g tid.
+    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 H7 [x pad] d g tid.
       unfold xsum_ty, ty_gho_pers. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
@@ -268,6 +268,7 @@ Section typing.
       iPureIntro. apply all_concrete_pad. simpl. split; trivial.
       rewrite <- all_concrete_app. split; trivial.
       apply all_concrete_fmap_fval.
+    - intros. by apply copy_shr_default.
   Qed.
 
   Global Instance xsum_send {𝔄l} (tyl: typel 𝔄l) : ListSend tyl → Send (Σ! tyl).
@@ -306,11 +307,12 @@ Section typing.
   Proof.
     move=> ?. have Sync: ∀i, Sync (hlookup tyl i).
     { move=> *. by apply TCHForall_lookup. }
+    apply sync_default; [done|].
     intros tid tid' x d g.
     destruct x as [x pad].
     unfold ty_gho_own, ty_phys, ty_gho_pers, xsum_ty.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
-    destruct (Sync i tid tid' x0 d g) as [Ha [Hb Hc]].
+    destruct (Sync i tid tid' x0 d g) as [Ha [Hb [Hc _]]].
     rewrite <- Ha.
     split; last split; trivial.
   Qed.
@@ -385,6 +387,7 @@ Section typing.
     (* iSplit; simpl; [iPureIntro; by f_equal|]. iSplit; [done|]. *)
     (* iSplit; first iModIntro; iIntros "*". *)
     (* iDestruct ("InTyl" $! i) as (?) "[#?[#InOwn %Hphys]]". *)
+    iApply type_incl_default; [done|done|].
     iSplit; simpl; [iPureIntro; by f_equal|]. iSplit; [done|].
     iSplit. { (* gho *)
       iModIntro. iIntros (x d g tid). destruct x as [x pad].
@@ -413,7 +416,7 @@ Section typing.
       iIntros (x tid). destruct x as [x pad].
       replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'; trivial.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
-      iDestruct ("InTyl" $! i) as "(%Hsize & Incl & _ & _ & %Phys)".
+      iDestruct ("InTyl" $! i) as "(%Hsize & Incl & _ & _ & %Phys & _)".
       iDestruct ("EqSz" with "E") as "%Hsize1".
       have P := Phys x0 tid. simpl. iPureIntro.
       rewrite psum_map_p2lookup_pinj.

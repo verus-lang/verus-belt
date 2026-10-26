@@ -23,7 +23,7 @@ Section ghost.
   Next Obligation. done. Qed.
   
   Global Instance tracked_ne {𝔄} : NonExpansive (@ghost_ty 𝔄).
-  Proof. solve_ne_type. Qed.
+  Proof. move=> ????. apply ty_of_st_ne. solve_ne_type. Qed.
 
   Global Instance ghost_send {𝔄} (ty : type 𝔄) : Send (ghost_ty ty).
   Proof.
@@ -33,10 +33,12 @@ Section ghost.
   Qed.
   
   Global Instance ghost_sync {𝔄} (ty : type 𝔄) : Sync (ghost_ty ty).
-  Proof. split; trivial. split; iSplit; done. Qed.
+  Proof. apply sync_default; [done|]. split; trivial. split; iSplit; done. Qed.
   
   Global Instance ghost_copy {𝔄} (ty : type 𝔄) : Copy (ghost_ty ty).
-  Proof. split; try done. typeclasses eauto. Qed.
+  Proof.
+    split; [typeclasses eauto|done|]. intros. by apply copy_shr_default.
+  Qed.
 
   Lemma ghost_resolve {𝔄} (ty: type 𝔄) E L : resolve E L (ghost_ty ty) (const (const True)).
   Proof. apply resolve_just. Qed.

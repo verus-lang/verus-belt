@@ -32,7 +32,10 @@ Section typing.
   Context `{!typeG Σ}.
 
   Global Instance uninit_copy n : Copy (↯ n).
-  Proof. split; [apply _|]=>/= *. iIntros. iPureIntro. apply all_concrete_fmap_fval. Qed.
+  Proof.
+    split; [apply _| |intros; by apply copy_shr_default]=>/= *.
+    iIntros. iPureIntro. apply all_concrete_fmap_fval.
+  Qed.
 
   Global Instance uninit_send n : Send (↯ n).
   Proof.
@@ -44,7 +47,7 @@ Section typing.
   Qed.
   
   Global Instance uninit_sync n : Sync (↯ n).
-  Proof. split => //=. Qed.
+  Proof. apply sync_default; [done|]. split => //=. Qed.
 
   Lemma uninit_resolve n E L : resolve E L (↯ n) (const (const True)).
   Proof. apply resolve_just. Qed.
@@ -67,7 +70,7 @@ Section typing.
   
   Lemma uninit_unit E L : eqtype E L (↯ 0) () (uninit0_to_unitₛ) (unit_to_uninit0ₛ).
   Proof.
-    apply eqtype_unfold. { 
+    apply eqtype_unfold_default; [|done|done|]. { 
       split.
         + split.
           * fun_ext. intros x. simpl. unfold indep_interp_of_syn_type in x.
@@ -117,7 +120,7 @@ Section typing.
   Lemma uninit_plus_prod E L m n :
     eqtype E L (↯ (m + n)) (↯ m * ↯ n) uninit_splitₛ uninit_joinₛ.
   Proof.
-    apply eqtype_unfold.
+    apply eqtype_unfold_default; [|done|done|].
     { destruct (@vapp_vsepat_iso val m n) as [A B]. split.
       - split; trivial.
       - split; trivial; fun_ext; intro x.

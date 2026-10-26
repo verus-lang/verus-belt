@@ -138,6 +138,10 @@ to [[T]].own and [[T]].phys from the paper. Also of note are:
   * `ty_gho_pers`: the "persistent part of" `ty_gho_own`.
   * `ty_shr`: the sharing predicate, a persistent predicate indexed by a lifetime `κ`
     (see `ty_share` for how it is obtained from a full borrow of `ty_gho_own`).
+    The ownership predicate of a shared reference `&shr{κ} T` contains `T`'s sharing
+    predicate at `κ`; `ty_shr_guard_proph` gives the prophecy tokens from it, and the
+    `Copy` law `copy_shr` gives access to `ty_gho_own` from it. Currently every type
+    uses the default sharing predicate `default_shr` (a guard of `ty_gho_own` by `@[κ]`).
 
 Finally, there are a bunch of well-formedness conditions.
 

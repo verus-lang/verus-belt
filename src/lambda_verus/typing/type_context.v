@@ -387,7 +387,7 @@ Section lemmas.
     iIntros (??[x wπl]???) "#LFT _ _ E #L G /=[(%v & %d &%&?& A) T] Obs /=".
     iDestruct "A" as "[ty %phys]".
     leaf_open "L" with "G" as "[L1 back]". { set_solver. }
-    iDestruct (Sub with "L1 E") as "#(_ & _ & #InOwn & #InOwnPers & %InPhys)".
+    iDestruct (Sub with "L1 E") as "#(_ & _ & #InOwn & #InOwnPers & %InPhys & _)".
     iMod ("back" with "L1") as "G".
     iModIntro.
     iExists (f ~~$ₛ x -:: wπl). iFrame "G T".

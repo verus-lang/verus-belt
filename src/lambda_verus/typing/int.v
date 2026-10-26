@@ -19,7 +19,10 @@ Section int.
   Next Obligation. intros. done. Qed.
   
   Global Instance int_copy: Copy int.
-  Proof. split. - typeclasses eauto. - iIntros. iPureIntro. done. Qed.
+  Proof.
+    split. - typeclasses eauto. - iIntros. iPureIntro. done.
+    - intros. by apply copy_shr_default.
+  Qed.
   
   Lemma int_stack_okay : StackOkay int.
   Proof. done. Qed.
@@ -34,7 +37,7 @@ Section int.
   Qed.
 
   Global Instance int_sync: Sync bool_ty.
-  Proof. split; trivial. split; iSplit; done. Qed.
+  Proof. apply sync_default; [done|]. split; trivial. split; iSplit; done. Qed.
 
   Lemma int_resolve E L : resolve E L int (const (const True)).
   Proof. apply resolve_just. Qed.

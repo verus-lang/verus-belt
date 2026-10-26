@@ -131,7 +131,7 @@ Section atomic_invariants.
   Lemma atomic_inv_ty_sync {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → proph_asn → Prop)
       : Send ty → Sync (atomic_inv_ty ty pred).
   Proof.
-    intros Hsend.
+    intros Hsend. apply sync_default; [done|].
     split; [done|split; [|done]].
     apply gho_equiv_of_send; trivial.
   Qed.
@@ -303,7 +303,8 @@ Section atomic_invariants.
     iDestruct (lc_weaken (_ + _)%nat with "£") as "[£1 £2]"; first last.
     {
     destruct d as [|d]; first by done.
-    iDestruct "shrgho" as "[_ [#KguardsGho _]]".
+    iDestruct "shrgho" as "[_ [#KShr _]]".
+    iDestruct (ty_shr_default_to_guard (atomic_inv_ty ty pred) with "KShr") as "#KguardsGho"; [done|].
     iDestruct (Halive with "L E") as "#LguardsK".
     iDestruct (guards_transitive_right with "LguardsK KguardsGho") as "LguardsGho".
     

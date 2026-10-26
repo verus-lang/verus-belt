@@ -33,7 +33,8 @@ Section spawn.
         True;
       ty_phys (x : ~~ (at_locₛ ℭ)) tid := 
         [FVal (#x.1)];
-      ty_shr := default_shr (λ (x : ~~ (at_locₛ ℭ)) d g tid, join_handle spawnN x.1 (join_future ty (spec x.2)));
+      ty_shr := default_shr (𝔄 := at_locₛ (join_handleₛ ℭ))
+        (λ (x : ~~ (at_locₛ ℭ)) d g tid, join_handle spawnN x.1 (join_future ty (spec x.2)));
   |}%I.
   Next Obligation. iIntros (????) => //=. Qed.
   Next Obligation. done. Qed.
@@ -65,7 +66,7 @@ Section spawn.
   Qed.
   
   Global Instance join_handle_sync {𝔄 ℭ} (spec: (~~ℭ) → pred' (~~𝔄)) (ty: type 𝔄) : Sync (join_handle spec ty).
-  Proof. done. Qed.
+  Proof. apply sync_default; [done|]. done. Qed.
 
   Lemma join_handle_resolve {𝔄 ℭ} (spec: (~~ℭ) → pred' (~~𝔄)) (ty: type 𝔄) E L :
     resolve E L (join_handle spec ty) (const (const True)).

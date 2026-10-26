@@ -43,7 +43,7 @@ Section pcell.
   Qed.
   
   Global Instance pcell_sync n: Sync (pcell_ty n).
-  Proof. split; trivial. split; iSplit; done. Qed.
+  Proof. apply sync_default; [done|]. split; trivial. split; iSplit; done. Qed.
 End pcell.
 
 Section points_to.
@@ -128,24 +128,24 @@ Section points_to.
   Global Instance cell_points_to_sync {𝔄} (ty: type 𝔄) :
       Sync ty → Sync (cell_points_to_ty ty).
   Proof.
-      move=> HSync tid tid' x d g. split => //=. split.
+      move=> HSync. apply sync_default; [done|]. move=> tid tid' x d g. split => //=. split.
       + iSplit.
          - iIntros "Hgho".
            destruct d => //=.
            iDestruct "Hgho" as "(Hown&Hgho)".
-           pose proof (sync_change_tid tid tid' (snd x) d g) as [-> [Hgho Hghopers]].
+           pose proof (sync_change_tid tid tid' (snd x) d g) as [-> [Hgho [Hghopers _]]].
            iFrame "%".
            iFrame.
            iApply (Hgho with "Hgho").
          - iIntros "Hgho".
            destruct d => //=.
            iDestruct "Hgho" as "(Hown&Hgho)".
-           pose proof (sync_change_tid tid tid' (snd x) d g) as [-> [Hgho Hghopers]].
+           pose proof (sync_change_tid tid tid' (snd x) d g) as [-> [Hgho [Hghopers _]]].
            iFrame "%".
            iFrame.
            iApply (Hgho with "Hgho").
        + destruct d => //=.
-         pose proof (sync_change_tid tid tid' (snd x) d g) as [_ [Hgho Hghopers]].
+         pose proof (sync_change_tid tid tid' (snd x) d g) as [_ [Hgho [Hghopers _]]].
          rewrite Hghopers. trivial.
   Qed.
 
@@ -308,7 +308,8 @@ Section typing.
       iIntros "H£ #Hd''".
       wp_rec.
       iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
-      iDestruct "Hshr'" as "(_ & #Hshr' & (H&Hpers))".
+      iDestruct "Hshr'" as "(_ & #Hshr'0 & (H&Hpers))".
+      iDestruct (ty_shr_default_to_guard (cell_points_to_ty ty) with "Hshr'0") as "#Hshr'"; [done|].
       iExists -[(cloc_flat_insert l γs, x)].
       rewrite /tctx_elt_interp/ty_own/=.
       iFrame.
@@ -336,7 +337,9 @@ Section typing.
             simpl.
             iApply (lguards_weaken_later with "H↦shared3").
             lia.
-          + iDestruct (guards_weaken_rhs_sep_r with "Hshr'") as "Hghoshared".
+          + (* TEMPORARY: uses [ty_shr_from_guard]. *)
+            iApply ty_shr_from_guard.
+            iDestruct (guards_weaken_rhs_sep_r with "Hshr'") as "Hghoshared".
             iDestruct (guards_later_absorb_1 with "Hghoshared") as "Hghoshared1".
             iApply (guards_transitive_left with "Hghoshared1").
             leaf_by_sep.
@@ -359,7 +362,8 @@ Section typing.
       iIntros "H£ #Hd''".
       wp_rec.
       iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
-      iDestruct "Hshr'" as "(_ & #Hshr' & (H&Hpers))".
+      iDestruct "Hshr'" as "(_ & #Hshr'0 & (H&Hpers))".
+      iDestruct (ty_shr_default_to_guard (cell_points_to_ty ty) with "Hshr'0") as "#Hshr'"; [done|].
       iExists -[(cloc_flat_insert l γs, x)].
       rewrite /tctx_elt_interp/ty_own/=.
       iFrame.
@@ -387,7 +391,9 @@ Section typing.
             simpl.
             iApply (lguards_weaken_later with "H↦shared3").
             lia.
-          + iDestruct (guards_weaken_rhs_sep_r with "Hshr'") as "Hghoshared".
+          + (* TEMPORARY: uses [ty_shr_from_guard]. *)
+            iApply ty_shr_from_guard.
+            iDestruct (guards_weaken_rhs_sep_r with "Hshr'") as "Hghoshared".
             iDestruct (guards_later_absorb_1 with "Hghoshared") as "Hghoshared1".
             rewrite !Nat.add_1_r.
             iDestruct (lguards_weaken_later with "Hghoshared1") as "Hghoshared2".
@@ -651,7 +657,9 @@ Section atomics.
     iSimpl in "Hint". 
     destruct d'' => //.
     iSimpl in "Hint". 
-    iDestruct "Hint" as "(_ & #H↦ & _)".
+    iDestruct "Hint" as "(_ & #H↦_shr & _)".
+    iDestruct (ty_shr_default_to_guard (cell_points_to_ty int) with "H↦_shr") as "#H↦"; [done|].
+    iSimpl in "H↦".
     iSimpl in "Hcell_shr".
     iDestruct "Hcell_shr" as "[#Hcell_shr #[_ Hlen]]".
     rewrite /AtomicLoad.

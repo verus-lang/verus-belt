@@ -23,7 +23,10 @@ Section ptr.
   Next Obligation. done. Qed.
   
   Global Instance ptr_copy: Copy ptr_ty.
-  Proof. split. - typeclasses eauto. - iIntros. iPureIntro. done. Qed.
+  Proof.
+    split. - typeclasses eauto. - iIntros. iPureIntro. done.
+    - intros. by apply copy_shr_default.
+  Qed.
   
   Lemma ptr_stack_okay : StackOkay ptr_ty.
   Proof. done. Qed.
@@ -38,7 +41,7 @@ Section ptr.
   Qed.
   
   Global Instance ptr_sync: Sync ptr_ty.
-  Proof. split; trivial. split; iSplit; done. Qed.
+  Proof. apply sync_default; [done|]. split; trivial. split; iSplit; done. Qed.
   
   Lemma ptr_resolve E L : resolve E L ptr_ty (const (const True)).
   Proof. apply resolve_just. Qed.
@@ -264,11 +267,13 @@ Section typing.
     iIntros (? ->).
     iApply wp_fupd.
     iApply (wp_persistent_time_receipt with "TIME Hd'"); [done|].
-    destruct d' as [ | [ | d']] => //=; iDestruct "Hshr" as "(_ & #Hshr & #Hpers)".
+    destruct d' as [ | [ | d']] => //=; iDestruct "Hshr" as "(_ & #Hshr0 & #Hpers)".
     { rewrite /advance_credits /=.
       iIntros "(£ & _) #Hd''".
       wp_rec.
       by iMod (lc_fupd_elim_later with "£ Hpers"). }
+    iDestruct (ty_shr_default_to_guard (points_to_ty ty) with "Hshr0") as "#Hshr"; [done|].
+    iClear "Hshr0".
     iIntros "_ #Hd''".
     wp_rec.
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
@@ -289,13 +294,14 @@ Section typing.
         iPoseProof (lguards_weaken_later with "Hshr2") as "Hshr3".
         2: iFrame "#".
         lia.
-      - iPoseProof (guards_weaken_rhs_sep_r with "Hshr") as "Hshr2".
+      - (* TEMPORARY: uses [ty_shr_from_guard]. *)
+        iApply ty_shr_from_guard.
+        iPoseProof (guards_weaken_rhs_sep_r with "Hshr") as "Hshr2".
         iPoseProof (guards_weaken_rhs_sep_r with "Hshr2") as "Hshr3".
         iPoseProof (guards_later_absorb_1 with "Hshr3") as "Hshr4".
-        replace (S (S (d' + 1)) + 1) with (S (S (S (d' + 1)))) by lia.
         iClear "Hshr Hshr2 Hshr3".
-        replace (S (S (S (d' + 1)))) with (S (S (S (d' + 1))) + 0) at 2 by lia.
-        iApply (guards_transitive_additive with "Hshr4").
+        leaf_goal laters to (S (S (d' + 1)) + 1). { lia. }
+        iApply (guards_transitive_left with "Hshr4").
         leaf_by_sep.
         iApply ty.(ty_gho_own_depth_mono); lia.
       - repeat iNext.

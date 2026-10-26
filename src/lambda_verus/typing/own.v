@@ -70,7 +70,7 @@ Section own.
 
   Global Instance own_type_contractive 𝔄 n : TypeContractive (@own_ptr 𝔄 n).
   Proof.
-    split; [by apply type_lft_morphism_id_like|done| | |].
+    apply type_contractive_default; [done|by apply type_lft_morphism_id_like|done| | |].
     - move=>/= > ->*. do 5 (f_contractive || f_equiv) => //; naive_solver.
     - intros. unfold ty_gho_pers, own_ptr. destruct d; first by done. simpl.
       f_contractive. naive_solver.
@@ -97,24 +97,24 @@ Section own.
   Qed.
 
   Global Instance own_sync {𝔄} n (ty: type 𝔄) : Sync ty → Sync (own_ptr n ty).
-  Proof. move=> HSync tid tid' x d g. split => //=. split.
+  Proof. move=> HSync. apply sync_default; [done|]. move=> tid tid' x d g. split => //=. split.
       + iSplit.
          - iIntros "Hgho".
            destruct d => //=.
            iDestruct "Hgho" as "(Hown&Hfree&Hgho)".
-           pose proof (sync_change_tid tid tid' (snd x) d g) as [-> [Hgho Hghopers]].
+           pose proof (sync_change_tid tid tid' (snd x) d g) as [-> [Hgho [Hghopers _]]].
            iFrame "%".
            iFrame.
            iApply (Hgho with "Hgho").
          - iIntros "Hgho".
            destruct d => //=.
            iDestruct "Hgho" as "(Hown&Hfree&Hgho)".
-           pose proof (sync_change_tid tid tid' (snd x) d g) as [-> [Hgho Hghopers]].
+           pose proof (sync_change_tid tid tid' (snd x) d g) as [-> [Hgho [Hghopers _]]].
            iFrame "%".
            iFrame.
            iApply (Hgho with "Hgho").
        + destruct d => //=.
-         pose proof (sync_change_tid tid tid' (snd x) d g) as [_ [Hgho Hghopers]].
+         pose proof (sync_change_tid tid tid' (snd x) d g) as [_ [Hgho [Hghopers _]]].
          rewrite Hghopers. trivial.
   Qed.
 
@@ -150,7 +150,8 @@ Section own.
   Lemma own_type_incl {𝔄 𝔅} n (f: 𝔄 →ₛ 𝔅) ty1 ty2 :
     type_incl ty1 ty2 f -∗ type_incl (own_ptr n ty1) (own_ptr n ty2) (at_loc_mapₛ f).
   Proof.
-    iIntros "(%Eq & #Incl & #InOwn & #InOwnPers & %Phys)".
+    iIntros "(%Eq & #Incl & #InOwn & #InOwnPers & %Phys & _)".
+    iApply type_incl_default; [done|done|].
     do 2 (iSplit; [done|]). 
     iSplit. {
       iModIntro.
@@ -197,7 +198,7 @@ Section box.
 
   Global Instance box_type_contractive 𝔄 : TypeContractive (@box 𝔄).
   Proof.
-    split; [by apply type_lft_morphism_id_like|done| | |].
+    apply type_contractive_default; [done|by apply type_lft_morphism_id_like|done| | |].
     - move=>/= > ->*. do 4 (f_contractive || f_equiv) => //.
       f_contractive; naive_solver.
     - intros. unfold ty_gho_pers, own_ptr. destruct d; first by done. simpl.

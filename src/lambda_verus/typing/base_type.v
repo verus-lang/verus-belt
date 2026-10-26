@@ -37,6 +37,7 @@ Section base.
   Proof. split=>//.
      - typeclasses eauto.
      - iIntros. contradiction.
+     - intros. by apply copy_shr_default.
   Qed.
 
   Global Instance base_send {𝔄} : Send (@base 𝔄).
@@ -57,12 +58,14 @@ Section base.
     (∀ x, syn_phys x = syn_phys ((~~!ₛ) f x)) →
     subtype E L (base) (base) f.
   Proof.
-    move=> Eq Eq2 Eq3. iIntros "L". iModIntro. iIntros "E". iSplit; [|iSplit; [|iSplit; [|iSplit]]].
+    move=> Eq Eq2 Eq3. iIntros "L". iModIntro. iIntros "E".
+    iSplit; [|iSplit; [|iSplit; [|iSplit; [|iSplit]]]].
       - iPureIntro. rewrite <- ty_size_eq2. by rewrite <- ty_size_eq2.
       - iApply lft_incl_refl.
       - iModIntro. iIntros. contradiction.
       - iModIntro. iIntros. contradiction.
       - iPureIntro. simpl. intros. rewrite Eq3. trivial.
+      - iApply type_incl_shr_default; [done|done|]. iModIntro. iIntros. contradiction.
   Qed.
 
   Lemma base_eqtype {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) (g : 𝔅 →ₛ 𝔄) E L :

@@ -127,7 +127,7 @@ Section uniq_bor.
   
   Global Instance uniq_bor_ne {𝔄} κ : NonExpansive (@uniq_bor 𝔄 κ).
   Proof. 
-    intros n ty ty' Heqv. split.
+    intros n ty ty' Heqv. apply type_dist_default; [done|done| | | | | |].
      - done.
      - simpl. f_equiv. apply Heqv.
      - simpl. f_equiv. { apply Heqv. } 
@@ -151,15 +151,15 @@ Section typing.
 
   Global Instance uniq_type_contractive {𝔄} κ : TypeContractive (uniq_bor (𝔄:=𝔄) κ).
   Proof.
-    split; [by apply (type_lft_morphism_add_one κ)|done| | |].
-     - intros n ty ty' Heq Heq1 Heq2 Heq3 Heq4 Heq5 x d g tid.
+    apply type_contractive_default; [done|by apply (type_lft_morphism_add_one κ)|done| | |].
+     - intros n ty ty' Heq Heq1 Heq2 Heq3 Heq4 Heq5 _ x d g tid.
        destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. f_equiv.
         + apply equiv_dist. iDestruct Heq1 as "#[??]".
           iSplit; iIntros "#H"; (iApply llftl_incl_trans; [iApply "H"|done]).
         + do 2 f_equiv.
           * apply uniq_body_contractive; intros; [apply Heq3|apply Heq5].
           * do 2 f_equiv. apply later_contractive. apply Heq4.
-     - intros n ty ty' Heq Heq1 Heq2 Heq3 Heq4 Heq5 x d g tid.
+     - intros n ty ty' Heq Heq1 Heq2 Heq3 Heq4 Heq5 _ x d g tid.
        destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. do 2 f_equiv.
         + f_equiv. apply later_contractive. apply Heq4.
         + apply uniq_pers_component_contractive; intros; [apply Heq3|apply Heq5].
@@ -222,9 +222,9 @@ Section typing.
 
   Global Instance uniq_sync {𝔄} κ (ty: type 𝔄) : Sync ty → Sync (&uniq{κ} ty).
   Proof. 
-    intros SyncTy tid tid' x d g.
+    intros SyncTy. apply sync_default; [done|]. intros tid tid' x d g.
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
-    destruct (SyncTy tid tid' x0 d g) as [Hphys [Hgho Hpers]].
+    destruct (SyncTy tid tid' x0 d g) as [Hphys [Hgho [Hpers _]]].
     split. { done. }
     have Hg: ∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty.(ty_gho_own) x d g tid'.
     { intros. apply SyncTy. }
@@ -236,7 +236,7 @@ Section typing.
       f_equiv. unfold ty_gho_pers. f_equiv. apply SyncTy.
     }
     unfold uniq_bor, ty_gho_pers. do 2 f_equiv.
-      - destruct (SyncTy tid tid' x0 d' g') as [H'phys [H'gho H'pers]].
+      - destruct (SyncTy tid tid' x0 d' g') as [H'phys [H'gho [H'pers _]]].
         setoid_rewrite H'pers. done.
       - by apply uniq_pers_component_proper.
   Qed.
@@ -271,9 +271,9 @@ Section typing.
     move=> In.
     intros Eqt. rewrite <-eqtype_id_unfold in Eqt. iIntros "L".
     iDestruct (Eqt with "L") as "#Eqt". iDestruct (In with "L") as "#In". iIntros "!> #E".
-    iSplit; [done|].
-    iDestruct ("Eqt" with "E") as (?) "[[Lfts1 Lfts2][#EqOwn [#EqPers %EqPhys]]]".
-    iSpecialize ("In" with "E"). iSplit; [by iApply lft_intersect_mono|].
+    iDestruct ("Eqt" with "E") as (?) "[[Lfts1 Lfts2][#EqOwn [#EqPers [%EqPhys _]]]]".
+    iSpecialize ("In" with "E"). iApply type_incl_default; [done|done|].
+    iSplit; [done|]. iSplit; [by iApply lft_intersect_mono|].
     iSplit. {
       iModIntro. iIntros (x d g tid) "[#Incl gho]".
       destruct x as [[[[[l x0] ξi] d'] g'] idx].
@@ -490,7 +490,7 @@ Section typing.
     rewrite <- eqtype_unfold in Heqtype; last by trivial.
     
     leaf_open "GguardsL" with "G" as "[L back]". { set_solver. }
-    iDestruct (Heqtype with "L E") as "(%Hsizeeq & #Hlfts & #EqGho & #EqPers & %EqPhys)".
+    iDestruct (Heqtype with "L E") as "#(%Hsizeeq & #Hlfts & #EqGho & #EqPers & %EqPhys & _)".
     iDestruct (Alv with "L E") as "#LguardsK".
     iMod ("back" with "L") as "G".
     

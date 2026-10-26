@@ -32,7 +32,7 @@ Section product.
 
   Global Instance unit0_copy : Copy unit0.
   Proof.
-    split. - by apply _. - done.
+    split. - by apply _. - done. - intros. by apply copy_shr_default.
   Qed.
 
   Global Instance unit0_send : Send unit0.
@@ -43,7 +43,7 @@ Section product.
   Qed.
   
   Global Instance unit0_sync : Sync unit0.
-  Proof. intros. split; trivial; split; trivial. Qed.
+  Proof. apply sync_default; [done|]. intros. split; trivial; split; trivial. Qed.
 
   Lemma unit0_resolve E L : resolve E L unit0 (const (const True)).
   Proof. apply resolve_just. Qed.
@@ -162,7 +162,7 @@ Section typing.
   Global Instance prod_type_ne {𝔄 𝔅 ℭ} (T: type 𝔄 → type 𝔅) (T': type 𝔄 → type ℭ) :
     TypeNonExpansive T → TypeNonExpansive T' → TypeNonExpansive (λ ty, T ty * T' ty)%T.
   Proof.
-    move=> ??. split=>/=; first apply _.
+    move=> ??. apply type_ne_default=>/=; [done|apply _| | | |].
     - move=> *. f_equiv; by apply type_ne_ty_size.
     - move=> *. f_equiv; by apply type_ne_ty_gho_own.
     - move=> *. f_equiv; by apply type_ne_ty_gho_pers.
@@ -172,7 +172,7 @@ Section typing.
   Global Instance prod_type_contractive {𝔄 𝔅 ℭ} (T: type 𝔄 → type 𝔅) (T': type 𝔄 → type ℭ) :
     TypeContractive T → TypeContractive T' → TypeContractive (λ ty, T ty * T' ty)%T.
   Proof.
-    move=> ??. split=>/=; first apply _.
+    move=> ??. apply type_contractive_default=>/=; [done|apply _| | | |].
     - move=> *. f_equiv; by apply type_contractive_ty_size.
     - move=> *. f_equiv; by apply type_contractive_ty_gho_own.
     - move=> *. f_equiv; by apply type_contractive_ty_gho_pers.
@@ -202,6 +202,7 @@ Section typing.
       iDestruct (copy_concrete with "G1") as "%Conc1".
       iDestruct (copy_concrete with "G2") as "%Conc2".
       iPureIntro. apply all_concrete_app. split; trivial.
+    - intros. by apply copy_shr_default.
   Qed.
 
   Global Instance prod_send {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) :
@@ -240,9 +241,9 @@ Section typing.
   
   Global Instance prod_sync {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) :
     Sync ty → Sync ty' → Sync (ty * ty').
-  Proof. intros S1 S2. intro tid. intro tid'. intro x. intros d g. 
-      destruct (S1 tid tid' (fst x) d g) as [S1p [S1g S1gp]].
-      destruct (S2 tid tid' (snd x) d g) as [S2p [S2g S2gp]].
+  Proof. intros S1 S2. apply sync_default; [done|]. intro tid. intro tid'. intro x. intros d g. 
+      destruct (S1 tid tid' (fst x) d g) as [S1p [S1g [S1gp _]]].
+      destruct (S2 tid tid' (snd x) d g) as [S2p [S2g [S2gp _]]].
       move=> >/=. split.
       - f_equiv; trivial.
       - split.
@@ -319,8 +320,9 @@ Section typing.
     move=> Sub Sub'. iIntros "L".
     iDestruct (Sub with "L") as "#Sub".
     iDestruct (Sub' with "L") as "#Sub'". iIntros "!> #E".
-    iDestruct ("Sub" with "E") as (Eq) "(#? & #InOwn & #InOwnPers & %InPhys)".
-    iDestruct ("Sub'" with "E") as (?) "(#? & #InOwn' & #InOwnPers' & %InPhys')".
+    iDestruct ("Sub" with "E") as (Eq) "(#? & #InOwn & #InOwnPers & %InPhys & _)".
+    iDestruct ("Sub'" with "E") as (?) "(#? & #InOwn' & #InOwnPers' & %InPhys' & _)".
+    iApply type_incl_default; [done|done|].
     iSplit=>/=; [|iSplit; [|iSplit; [|iSplit]]].
     - iPureIntro. by f_equal.
     - rewrite !lft_intersect_list_app. by iApply lft_intersect_mono.
@@ -366,7 +368,7 @@ Section typing.
   Lemma prod_ty_assoc {𝔄 𝔅 ℭ} E L (ty1: type 𝔄) (ty2: type 𝔅) (ty3: type ℭ) :
     eqtype E L (ty1 * (ty2 * ty3)) ((ty1 * ty2) * ty3) prod_assocₛ prod_assoc'ₛ.
   Proof.
-    apply eqtype_unfold.
+    apply eqtype_unfold_default; [|done|done|].
       { split. apply _. apply _. simpl. { lia. } intros [x0 [x1 x2]]. simpl. rewrite List.app_assoc. trivial. }
     iIntros "*_!>_/=".
     iSplit; [iPureIntro; lia|].
@@ -384,7 +386,9 @@ Section typing.
   Lemma prod_ty_left_id {𝔄} E L (ty: type 𝔄) :
     eqtype E L (() * ty) ty prod_left_idₛ prod_left_id'ₛ.
   Proof.
-    apply eqtype_unfold; [apply _|]. iIntros "*_!>_/=". iSplit; [done|].
+    (* TEMPORARY: uses [ty_shr_default_equiv] for [ty]. *)
+    apply eqtype_unfold_default; [apply _|done|apply ty_shr_default_equiv|].
+    iIntros "*_!>_/=". iSplit; [done|].
     iSplit; [by iApply lft_equiv_refl|].
     iSplit. { iModIntro. iIntros (x d g tid). destruct x as [[]x]. iSplit.
       { iIntros "[_ A]". iFrame "A". } { iIntros "A". iFrame "A". } }
@@ -396,7 +400,9 @@ Section typing.
   Lemma prod_ty_right_id {𝔄} E L (ty: type 𝔄) :
     eqtype E L (ty * ()) ty prod_right_idₛ prod_right_id'ₛ.
   Proof.
-    apply eqtype_unfold; [apply _|]. iIntros "*_!>_/=".
+    (* TEMPORARY: uses [ty_shr_default_equiv] for [ty]. *)
+    apply eqtype_unfold_default; [apply _|done|apply ty_shr_default_equiv|].
+    iIntros "*_!>_/=".
     rewrite !right_id. iSplit; [done|]. iSplit; [by iApply lft_equiv_refl|].
     iSplit. { iModIntro. iIntros (x d g tid). destruct x as [x[]]. iSplit.
       { iIntros "[A _]". iFrame "A". } { iIntros "A". iFrame "A". } }

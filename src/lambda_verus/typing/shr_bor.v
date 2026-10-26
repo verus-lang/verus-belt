@@ -17,14 +17,11 @@ Section shr_bor.
     
     st_gho x d g tid := [S(d') := d]
       (@[κ] &&{↑NllftG; g+1}&&> ((x.1).1 ↦[^ (x.1).2 ]!∗ ty.(ty_phys) (snd x) tid)) ∗
-      (@[κ] &&{↑NllftG; g+1}&&> ty.(ty_gho_own) (snd x) d' g tid) ∗
+      ty.(ty_shr) κ (snd x) d' g tid ∗
       ▷^(g+1) (ty.(ty_gho_pers) (snd x) d' g tid)
     ;
       
     st_phys x tid := [FVal (LitV (x.1).1)];
-    
-    (*st_gho vπ d g tid := [S(d') := d] [loc[l] := vl] ty.(ty_shr) vπ d' κ tid l
-    st_phys vπ tid*)
   |}%I : simple_type (at_clocₛ 𝔄)).
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
@@ -32,13 +29,10 @@ Section shr_bor.
   Next Obligation.
     intros. iIntros "#A". destruct d. { done. } unfold by_succ.
     destruct d'. { lia. }
-    iDestruct "A" as "[Phys [Gho #Pers]]". iSplit.
+    iDestruct "A" as "[Phys [Shr #Pers]]". iSplit.
     { leaf_goal laters to (g+1). { lia. } done. }
     iSplit.
-    { leaf_goal laters to (g+1); first by lia.
-      leaf_goal rhs to (ty_gho_own ty (snd x) d g tid); last by done.
-      leaf_by_sep. iApply ty_gho_own_depth_mono; lia.
-    }
+    { iApply ty_shr_depth_mono; last by iFrame "Shr". { lia. } { lia. } }
     iApply (bi.laterN_le (g+1) (g'+1)); first by lia. iNext.
     iApply ty_gho_pers_depth_mono; last by iFrame "Pers".
     { lia. } { trivial. }
@@ -49,24 +43,20 @@ Section shr_bor.
     destruct d.
     + simpl. iExFalso. done.
     + simpl.
-      iDestruct "Gho" as "[Phys [Gho #InnerPers]]".
-      iDestruct (ty_guard_proph 𝔄 ty κ0 (snd x) (n + g + 1) d g tid ξ R with "LFT [] InnerPers") as "InnerGuardProph". { trivial. }
+      iDestruct "Gho" as "[Phys [Shr #InnerPers]]".
+      iDestruct (ty_shr_guard_proph ty κ0 (snd x) n d g tid ξ R with "LFT [] InnerPers") as "InnerGuardProph". { trivial. }
       { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_r. }
+      iDestruct (ty_shr_lft_mono ty κ κ0 with "[] Shr") as "Shr0".
+      { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_l. }
       rewrite <- bi.laterN_add. iNext.
       iIntros "#Rk #Rg".
-      replace (n + (g + 1 + d * (g + 1))) with (n + g + 1 + d * (g + 1)); last by lia.
-      iApply "InnerGuardProph".
-      - leaf_goal laters to n. { lia. } iApply "Rk".
-      - replace (n + g + 1) with (n + (g + 1)) by lia.
-        iApply (guards_transitive_additive with "Rk []").
-        iApply (guards_transitive_right with "Incl []").
-        iApply (guards_transitive_right with "[] Gho").
-        iApply llftl_intersect_incl_l.
+      replace (n + (g + 1 + d * (g + 1))) with (n + (d + 1) * (g + 1)); last by lia.
+      iApply ("InnerGuardProph" with "Rk Shr0").
   Qed.
   Next Obligation. done. Qed.
   
   Global Instance shr_ne {𝔄} κ : NonExpansive (@shr_bor 𝔄 κ).
-  Proof. solve_ne_type. Qed.
+  Proof. move=> ????. apply ty_of_st_ne. solve_ne_type. Qed.
 End shr_bor.
 
 Notation "&shr{ κ }" := (shr_bor κ) (format "&shr{ κ }") : lrust_type_scope.
@@ -74,32 +64,39 @@ Notation "&shr{ κ }" := (shr_bor κ) (format "&shr{ κ }") : lrust_type_scope.
 Section typing.
   Context `{!typeG Σ}.
 
+  Local Lemma shr_bor_gho_dist {𝔄} n κ (ty ty': type 𝔄) x d g tid :
+    (∀x tid, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
+    (∀x d g tid, dist_later n (ty.(ty_gho_pers) x d g tid) (ty'.(ty_gho_pers) x d g tid)) →
+    (∀κ x d g tid, ty.(ty_shr) κ x d g tid ≡{n}≡ ty'.(ty_shr) κ x d g tid) →
+    (&shr{κ} ty)%T.(ty_gho_own) x d g tid ≡{n}≡ (&shr{κ} ty')%T.(ty_gho_own) x d g tid.
+  Proof.
+    move=> EqPhys EqPers EqShr /=. f_equiv=> d' /=. f_equiv; [|f_equiv].
+    + f_equiv. by rewrite EqPhys.
+    + apply EqShr.
+    + replace (g + 1) with (S g); last by lia.
+      apply later_contractive.
+      destruct n; [split; lia|]. apply dist_later_S.
+      have H1 := EqPers (x.2) d' g tid.
+      rewrite <- dist_later_S in H1. f_equiv. apply H1.
+  Qed.
+
   Global Instance shr_type_contractive {𝔄} κ : TypeContractive (@shr_bor _ _ 𝔄 κ).
   Proof.
-    split; [by apply (type_lft_morphism_add_one κ)|done| | |].
-    - move=>/= n ty ty' ???? Eq4 ? x d g tid. do 4 f_equiv.
-      + f_equiv. done.
-      + apply guards_contractive_right_if_n_ge_1; first by lia. trivial.
-      + replace (g + 1) with (S g); last by lia. 
-        apply later_contractive.
-        destruct n; [split; lia|]. apply dist_later_S.
-        have H1 := Eq4 (x.2) a g tid.
-        rewrite <- dist_later_S in H1. f_equiv. apply H1.
-    - move=>/= n ty ty' ???? Eq4 ? x d g tid.
-      do 3 f_equiv.
-      + do 2 f_equiv. done.
-      + f_equiv.
-      * apply guards_contractive_right_if_n_ge_1; first by lia. trivial.
-      * replace (g + 1) with (S g); last by lia. 
-        apply later_contractive.
-        destruct n; [split; lia|]. apply dist_later_S.
-        have H1 := Eq4 (x.2) a g tid.
-        rewrite <- dist_later_S in H1. f_equiv. apply H1.
+    split; [by apply (type_lft_morphism_add_one κ)|done| | | |].
+    - move=> n ty ty' ???? EqPers EqPhys EqShr *. by apply shr_bor_gho_dist.
+    - move=> n ty ty' ???? EqPers EqPhys EqShr *. by apply shr_bor_gho_dist.
     - done.
+    - move=> n ty ty' ???? EqPers EqPhys EqShr *. apply default_shr_contractive=> *.
+      split=> m ?. apply shr_bor_gho_dist; [done| |].
+      + move=> *. split=> ??. eapply dist_later_lt; [apply EqPers|lia].
+      + move=> *. eapply dist_later_lt; [apply EqShr|lia].
   Qed.
   
   Lemma shr_copy {𝔄} κ (ty: type 𝔄) : Copy (&shr{κ} ty).
-  Proof. split. - typeclasses eauto. - iIntros. iPureIntro. done. Qed.
+  Proof.
+    split. - typeclasses eauto. - iIntros. iPureIntro. done.
+    - intros. by apply copy_shr_default.
+  Qed.
   
   Lemma shr_stack_okay {𝔄} κ (ty: type 𝔄) : StackOkay (&shr{κ} ty).
   Proof. done. Qed.
@@ -111,26 +108,26 @@ Section typing.
     - destruct x, x'. intros Ha. inversion Ha. trivial.
     - intros tid tid' x d g. destruct d as [|d]. { iIntros. contradiction. }
       have Ha := (Hsync tid tid' (snd x) d g).
-      destruct Ha as [Hphys [Hgho Hghopers]].
+      destruct Ha as [Hphys [Hgho [Hghopers Hshr]]].
       iIntros (G H κs d0 Hineq TG TH) "#LFT #UNIQ #TIME Hg H Gg G A ⧖o". 
-      iDestruct "A" as "[#Hgho [#Hphys #Hpers]]". simpl.
+      iDestruct "A" as "[#Hphys [#Hshr #Hpers]]". simpl.
       iModIntro. iApply step_fupdN_intro; first by trivial. iModIntro. iModIntro.
       iNext.
       iModIntro. iExists x, 0.
       iSplit; [iSplit; [|iSplit] | ].
       + rewrite Hphys. done.
-      + rewrite Hgho. replace (d + 0) with d by lia. done.
+      + rewrite Hshr. replace (d + 0) with d by lia. done.
       + iNext. rewrite Hghopers. replace (d + 0) with d by lia. done.
       + iFrame "G H". iSplit; last done. replace (d0 + 0) with d0 by lia. done.
   Qed.
   
   Global Instance shr_sync {𝔄} κ (ty: type 𝔄) : Sync ty → Sync (&shr{κ} ty).
   Proof.
-    intros Hsync. split.
-      - destruct x as [l x]. destruct (Hsync tid tid' x d g) as [phys [gho pers]]; trivial.
+    intros Hsync. apply sync_default; [done|]. split.
+      - destruct x as [l x]. destruct (Hsync tid tid' x d g) as [phys [gho [pers shr]]]; trivial.
       - destruct x as [l x]. destruct d as [|d]; first by done.
-        destruct (Hsync tid tid' x d g) as [phys [gho pers]]; trivial.
-        split; simpl; rewrite gho; rewrite phys; rewrite pers; trivial.
+        destruct (Hsync tid tid' x d g) as [phys [gho [pers shr]]]; trivial.
+        split; simpl; rewrite shr; rewrite phys; rewrite pers; trivial.
   Qed.
 
   Global Instance shr_just_loc {𝔄} κ (ty: type 𝔄) : JustLoc (&shr{κ} ty).
@@ -143,19 +140,17 @@ Section typing.
     κ' ⊑ κ -∗ type_incl ty ty' f -∗ type_incl (&shr{κ} ty) (&shr{κ'} ty') (at_cloc_mapₛ f).
   Proof.
     iIntros "#Incl".
-    iDestruct 1 as "(_ & #Incl2 & #Sub & #SubPers & %Phys)".
+    iDestruct 1 as "(_ & #Incl2 & #Sub & #SubPers & %Phys & #SubShr)".
     iApply (@type_incl_simple_type Σ _ (at_clocₛ 𝔄) (at_clocₛ 𝔅) _ _).
       - done.
       - unfold ty_lfts, ty_of_st, st_lfts. by iApply lft_intersect_mono.
       - unfold st_gho. iModIntro. iIntros (x d g tid) "A".  destruct x as [l x].
         destruct d as [|d]. { done. }
-        unfold by_succ. iDestruct "A" as "[#Hphys [#Hgho #Hpers]]".
+        unfold by_succ. iDestruct "A" as "[#Hphys [#Hshr #Hpers]]".
         iSplit. { rewrite Phys. iApply (guards_transitive_right with "Incl Hphys"). }
         iSplit. {
-            leaf_goal lhs to (@[κ])%I. { iApply "Incl". }
-            iApply (guards_transitive_left with "Hgho []").
-            leaf_by_sep.
-            iApply "Sub".
+            iApply (ty_shr_lft_mono with "Incl").
+            iApply "SubShr". iFrame "Hshr".
         }
         { iApply "SubPers". iFrame "Hpers". }
       - simpl. iPureIntro. intros [l x]. done.
@@ -182,7 +177,8 @@ Section typing.
     iIntros (Hcopy Alv ?[|d']????) "#LFT #E #Guard L T H£";
       iDestruct "T" as "[#gho %phys]".
     { done. }
-    iDestruct "gho" as "[#A [#B #C]]".
+    iDestruct "gho" as "[#A [#Shr #C]]".
+    iDestruct (copy_shr with "Shr") as "#B".
     leaf_open "Guard" with "L" as "[InterpL back]". { solve_ndisj. }
     iDestruct (Alv with "InterpL E") as "#Alv".
     iMod ("back" with "InterpL") as "G".

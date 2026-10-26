@@ -296,8 +296,11 @@ Section type_sum.
       - simpl. iApply (guards_transitive_left with "pt []"). leaf_by_sep.
         destruct cloc as [q cells]. simpl. rewrite Eq. rewrite split_pt_xsum_cells.
         iIntros "(A & B & C)". iFrame. iIntros. iFrame.
-      - simpl. unfold xsum_ty, ty_gho_own, ty_phys, ty_gho_pers. simpl. rewrite Eq.
-        rewrite to_xsum_pinj. iFrame "gho".
+      - (* TEMPORARY: uses [ty_shr_from_guard]. *)
+        iApply ty_shr_from_guard.
+        iDestruct (ty_shr_default_to_guard with "gho") as "#G"; [done|].
+        simpl. unfold xsum_ty, ty_gho_own, ty_phys, ty_gho_pers. simpl. rewrite Eq.
+        rewrite to_xsum_pinj. iFrame "G".
       - simpl. unfold xsum_ty, ty_gho_own, ty_phys, ty_gho_pers. simpl. rewrite Eq.
         rewrite to_xsum_pinj. iFrame "ghopers".
       - iPureIntro. simpl in phys. inversion phys. trivial.
@@ -757,7 +760,7 @@ Section type_sum.
   Proof.
     iIntros ([Eq Wrt] Rslv Subtype ???? (x & []))
       "#LFT #TIME PROPH #UNIQ #E L I (p & _) Obs".
-    iDestruct (Subtype with "L E") as "#(%Ssz & SIncl & Sgho & Sghopers & %Sphys)".
+    iDestruct (Subtype with "L E") as "#(%Ssz & SIncl & Sgho & Sghopers & %Sphys & _)".
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
     iDestruct (closed_hasty with "p") as %C1.
     wp_apply (wp_hasty with "p"). iIntros (v d Heq) "#⧖ ty".

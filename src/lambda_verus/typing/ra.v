@@ -207,7 +207,7 @@ Section Ra.
   Qed.
 
   Global Instance ra_sync : Sync ra_ty.
-  Proof. move => ??[??]??; split => //=. Qed.
+  Proof. apply sync_default; [done|]. move => ??[??]??; split => //=. Qed.
 
   Lemma ra_resolve E L : resolve E L ra_ty (const (const True)).
   Proof. apply resolve_just. Qed.
@@ -527,7 +527,9 @@ Section RA_type.
     simpl in Hphys.
     injection Hphys => ? /=; subst pl'.
     destruct d => //.
-    iDestruct "Hown" as "(? & #Hshr & _)".
+    iDestruct "Hown" as "(? & #Hshr0 & _)".
+    iDestruct (ty_shr_default_to_guard (ra_ty VRA 𝔄_const) with "Hshr0") as "#Hshr"; [done|].
+    iSimpl in "Hshr".
     (* iMod (proph_obs_sat with "PROPH Obs") as "(%π & %Alv & _)" => //=. *)
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct (guards_transitive_right with "Alv Hshr") as "G1".
@@ -578,8 +580,12 @@ Section RA_type.
     injection Hphys2 => ? /=; subst pl2'.
     destruct d1 => //.
     destruct d2 => //.
-    iDestruct "Hown1" as "(_ & #Hshr1 & _)".
-    iDestruct "Hown2" as "(_ & #Hshr2 & _)".
+    iDestruct "Hown1" as "(_ & #Hshr1_shr & _)".
+    iDestruct (ty_shr_default_to_guard (ra_ty VRA 𝔄_const) with "Hshr1_shr") as "#Hshr1"; [done|].
+    iSimpl in "Hshr1".
+    iDestruct "Hown2" as "(_ & #Hshr2_shr & _)".
+    iDestruct (ty_shr_default_to_guard (ra_ty VRA 𝔄_const) with "Hshr2_shr") as "#Hshr2"; [done|].
+    iSimpl in "Hshr2".
     iDestruct (Alv with "L E") as "#Alv".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
     destruct (decide (d1 ≤ d2)) as [Hle | Hgt].
@@ -626,8 +632,12 @@ Section RA_type.
     injection Hphys2 => ? /=; subst pl2'.
     destruct d1 => //.
     destruct d2 => //.
-    iDestruct "Hown1" as "(_ & #Hshr1 & _)".
-    iDestruct "Hown2" as "(_ & #Hshr2 & _)".
+    iDestruct "Hown1" as "(_ & #Hshr1_shr & _)".
+    iDestruct (ty_shr_default_to_guard (ra_ty VRA 𝔄_const) with "Hshr1_shr") as "#Hshr1"; [done|].
+    iSimpl in "Hshr1".
+    iDestruct "Hown2" as "(_ & #Hshr2_shr & _)".
+    iDestruct (ty_shr_default_to_guard (ra_ty VRA 𝔄_const) with "Hshr2_shr") as "#Hshr2"; [done|].
+    iSimpl in "Hshr2".
     iDestruct (Alv with "L E") as "#Alv".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hy & _)" => //.
     have Hand : ∀ Q1 Q2 : iProp Σ,
@@ -668,7 +678,7 @@ Section RA_type.
         rewrite /ty_own/=.
         iSplit; last done.
         iSplitR; first by iApply guards_true.
-        iSplit; first done.
+        iSplit; first by iApply (ty_shr_default_from_guard (ra_ty VRA 𝔄_const)).
         by iNext.
       + iApply (proph_obs_impl with "Obs").
         intros π' (? & ? & Hpost).
@@ -685,7 +695,7 @@ Section RA_type.
         rewrite /ty_own/=.
         iSplit; last done.
         iSplitR; first by iApply guards_true.
-        iSplit; first done.
+        iSplit; first by iApply (ty_shr_default_from_guard (ra_ty VRA 𝔄_const)).
         by iNext.
       + iApply (proph_obs_impl with "Obs").
         intros π' (? & ? & Hpost).
@@ -712,7 +722,9 @@ Section RA_type.
     simpl in Hphys.
     injection Hphys => ? /=; subst pl'.
     destruct d => //.
-    iDestruct "Hown" as "(_ & #Hshr & _)".
+    iDestruct "Hown" as "(_ & #Hshr_shr & _)".
+    iDestruct (ty_shr_default_to_guard (ra_ty VRA 𝔄_const) with "Hshr_shr") as "#Hshr"; [done|].
+    iSimpl in "Hshr".
     iDestruct (Alv with "L E") as "#Alv".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & %Hincl & _)" => //.
     (* Extract the (persistent) invariant from the shared borrow. *)
@@ -748,7 +760,7 @@ Section RA_type.
       rewrite /ty_own/=.
       iSplit; last done.
       iSplitR; first by iApply guards_true.
-      iSplit; first done.
+      iSplit; first by iApply (ty_shr_default_from_guard (ra_ty VRA 𝔄_const)).
       by iNext.
     + iApply (proph_obs_impl with "Obs").
       intros π' [_ Hpost].
@@ -778,7 +790,9 @@ Section RA_type.
     destruct d1 => //.
     destruct d2 => //.
     iDestruct "Hown1" as "(_ & _ & Hx & _)".
-    iDestruct "Hown2" as "(_ & #Hy & _)".
+    iDestruct "Hown2" as "(_ & #Hy_shr & _)".
+    iDestruct (ty_shr_default_to_guard (ra_ty VRA 𝔄_const) with "Hy_shr") as "#Hy"; [done|].
+    iSimpl in "Hy".
     iDestruct (Alv with "L E") as "#Alv".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
     iDestruct (guards_transitive_right with "Alv Hy") as "G1".
@@ -848,7 +862,9 @@ Section RA_type.
     destruct d1 => //.
     destruct d2 => //.
     iDestruct "Hown1" as "(_ & _ & Hx & _)".
-    iDestruct "Hown2" as "(_ & #Hy & _)".
+    iDestruct "Hown2" as "(_ & #Hy_shr & _)".
+    iDestruct (ty_shr_default_to_guard (ra_ty VRA 𝔄_const) with "Hy_shr") as "#Hy"; [done|].
+    iSimpl in "Hy".
     iDestruct (Alv with "L E") as "#Alv".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hupd & _)" => //.
     iDestruct (guards_transitive_right with "Alv Hy") as "G1".

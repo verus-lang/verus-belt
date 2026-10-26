@@ -20,7 +20,10 @@ Section bool.
   Next Obligation. intros. done. Qed.
   
   Global Instance bool_copy: Copy bool_ty.
-  Proof. split. - typeclasses eauto. - iIntros. iPureIntro. done. Qed.
+  Proof.
+    split. - typeclasses eauto. - iIntros. iPureIntro. done.
+    - intros. by apply copy_shr_default.
+  Qed.
 
   Global Instance bool_send: Send bool_ty.
   Proof.
@@ -32,7 +35,7 @@ Section bool.
   Qed.
   
   Global Instance bool_sync: Sync bool_ty.
-  Proof. split; trivial. split; iSplit; done. Qed.
+  Proof. apply sync_default; [done|]. split; trivial. split; iSplit; done. Qed.
 
   Lemma bool_resolve E L : resolve E L bool_ty (const (const True)).
   Proof. apply resolve_just. Qed.

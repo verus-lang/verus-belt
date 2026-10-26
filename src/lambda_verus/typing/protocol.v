@@ -37,7 +37,7 @@ Section StorageProtocol.
   Global Instance storable_ty_send {𝔄} (ty : type 𝔄) : Send ty → Sync ty → Send (storable_ty ty).
   Proof. intros Hsend. intros Hsync. split; trivial.
     destruct x as [x0 [d0 g0]].
-    destruct (Hsync tid tid' x0 d0 g0) as [A [B C]].
+    destruct (Hsync tid tid' x0 d0 g0) as [A [B [C _]]].
     iIntros (d g G H κs d1 Hineq TG TH) "LFT UNIQ TIME Hg H Gg G gho ⧖".
     iDestruct "gho" as "[gho1 A]".
     setoid_rewrite B.
@@ -47,9 +47,9 @@ Section StorageProtocol.
   Qed.
 
   Global Instance storable_ty_sync {𝔄} (ty : type 𝔄) : Sync ty → Sync (storable_ty ty).
-  Proof. intros Hsync. split; trivial.
+  Proof. intros Hsync. apply sync_default; [done|]. split; trivial.
     split; last trivial. destruct x as [x0 [d0 g0]].
-    destruct (Hsync tid tid' x0 d0 g0) as [A [B C]]. unfold storable_ty, gt_gho. simpl.
+    destruct (Hsync tid tid' x0 d0 g0) as [A [B [C _]]]. unfold storable_ty, gt_gho. simpl.
     setoid_rewrite B. done.
   Qed.
   
@@ -59,6 +59,7 @@ Section StorageProtocol.
     - intros. destruct x as [x0 [d0 g0]]. unfold storable_ty, gt_gho. simpl. typeclasses eauto.
     - intros. destruct x as [x0 [d0 g0]]. iIntros "[gho _]".
       iDestruct (copy_concrete with "gho") as "%Hconc". iPureIntro. done.
+    - intros. by apply copy_shr_default.
   Qed.
   
   Lemma storable_new {𝔄} E L I p (ty : type 𝔄) :
@@ -108,7 +109,8 @@ Section StorageProtocol.
     iIntros "#LFT #TIME #PROPH #UNIQ #E L Inv %Path Gho Obs ⧖ ⧗ ⧗' £".
     iDestruct "Gho" as "[Gho #phys]".
     destruct d as [|d]; first done.
-    iDestruct "Gho" as "[#pt [#gho #pers]]".
+    iDestruct "Gho" as "[#pt [#shr #pers]]".
+    iDestruct (ty_shr_default_to_guard (storable_ty ty) with "shr") as "#gho"; [done|].
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct (guards_transitive_right with "Alv gho") as "LguardsGho".
     iDestruct (lc_weaken (_)%nat with "£") as "£1"; first last. {
@@ -125,7 +127,9 @@ Section StorageProtocol.
        iSplit; first by done. iSplit; first by done.
        iSplit; last by done. unfold shr_bor. simpl.
        iSplit. { leaf_goal laters to (S (d+1)); first lia. iFrame "pt". }
-       iSplit. { leaf_goal laters to (S (d+1)); first lia. 
+       iSplit. { (* TEMPORARY: uses [ty_shr_from_guard]. *)
+          iApply (ty_shr_from_guard (tracked_ty ty)).
+          leaf_goal laters to (S (d+1)); first lia. 
           iApply (guards_transitive_left with "gho []").
           leaf_by_sep. iIntros "[A ⧖]". iDestruct (ty_gho_own_depth_mono with "A") as "[$ back]".
             { lia. } { lia. } iIntros "A". iFrame "⧖". iApply "back". iFrame.
@@ -170,10 +174,10 @@ Section StorageProtocol.
 
   Lemma storage_ty_sync : Send tyC → Sync tyC → Sync storage_resource_ty.
   Proof.
-    intros Hsend Hsync. split; first by done. split; last by done.
+    intros Hsend Hsync. apply sync_default; [done|]. split; first by done. split; last by done.
     simpl. unfold gt_gho. destruct x as [γ p].
     have Hg : ∀ c, tyC.(gt_gho) c tid ⊣⊢ tyC.(gt_gho) c tid'.
-    { intros c. destruct (Hsync tid tid' c 0 0) as [H1 [H2 H3]]. apply H2. }
+    { intros c. destruct (Hsync tid tid' c 0 0) as [H1 [H2 [H3 _]]]. apply H2. }
     rewrite /sp_sto /sp_inv_body. by setoid_rewrite Hg.
   Qed.
 
@@ -182,7 +186,7 @@ Section StorageProtocol.
     intros Hsend. intros Hsync. split; trivial.
     iIntros (tid tid' x d g G H' κs d1 Hineq TG TH) "LFT UNIQ TIME Hg H Gg G gho ⧖".
     have H1 := storage_ty_sync Hsend Hsync.
-    destruct (H1 tid tid' x d g) as [H2 [H3 H4]]. rewrite H3. iIntros.
+    destruct (H1 tid tid' x d g) as [H2 [H3 [H4 _]]]. rewrite H3. iIntros.
     iIntros. iApply step_fupdN_intro; first done. iNext. iModIntro.
     iExists x, 0. iFrame. replace (d1 + 0) with d1 by lia. iFrame.
     done.
@@ -523,7 +527,9 @@ Section StorageProtocol.
     iDestruct "Hp" as "(% & %d & % & #Hd & Hshr & %Hphys)".
     injection Hphys => ? /=; subst v.
     destruct d => //.
-    iDestruct "Hshr" as "(_&#Hshr&_)".
+    iDestruct "Hshr" as "(_&#Hshr_shr&_)".
+    iDestruct (ty_shr_default_to_guard storage_resource_ty with "Hshr_shr") as "#Hshr"; [done|].
+    iSimpl in "Hshr".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & %guard & _)" => //.
     iDestruct (Alv with "L E") as "#Alv".
     iApply wp_fupd.
@@ -567,6 +573,8 @@ Section StorageProtocol.
       { by iApply guards_true. }
       rewrite -!bi.later_laterN.
       iSplitL => //.
+      (* TEMPORARY: uses [ty_shr_from_guard]. *)
+      iApply (ty_shr_from_guard (tracked_ty tyC)).
       iApply (lguards_weaken_later _ _ _ (S (S (d + 1))) ); first lia.
       by rewrite big_sepM_singleton.
     - iApply (proph_obs_impl with "Obs").
@@ -592,8 +600,12 @@ Section StorageProtocol.
     injection Hphys2 => ? /=; subst pl2'.
     destruct d1 => //.
     destruct d2 => //.
-    iDestruct "Hown1" as "(_ & #Hshr1 & _)".
-    iDestruct "Hown2" as "(_ & #Hshr2 & _)".
+    iDestruct "Hown1" as "(_ & #Hshr1_shr & _)".
+    iDestruct (ty_shr_default_to_guard storage_resource_ty with "Hshr1_shr") as "#Hshr1"; [done|].
+    iSimpl in "Hshr1".
+    iDestruct "Hown2" as "(_ & #Hshr2_shr & _)".
+    iDestruct (ty_shr_default_to_guard storage_resource_ty with "Hshr2_shr") as "#Hshr2"; [done|].
+    iSimpl in "Hshr2".
     iDestruct (Alv with "L E") as "#Alv".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
     destruct (decide (d1 ≤ d2)) as [Hle | Hgt].
@@ -625,8 +637,12 @@ Section StorageProtocol.
     injection Hphys2 => ? /=; subst pl2'.
     destruct d1 => //.
     destruct d2 => //.
-    iDestruct "Hown1" as "(_ & #Hshr1 & _)".
-    iDestruct "Hown2" as "(_ & #Hshr2 & _)".
+    iDestruct "Hown1" as "(_ & #Hshr1_shr & _)".
+    iDestruct (ty_shr_default_to_guard storage_resource_ty with "Hshr1_shr") as "#Hshr1"; [done|].
+    iSimpl in "Hshr1".
+    iDestruct "Hown2" as "(_ & #Hshr2_shr & _)".
+    iDestruct (ty_shr_default_to_guard storage_resource_ty with "Hshr2_shr") as "#Hshr2"; [done|].
+    iSimpl in "Hshr2".
     iDestruct (Alv with "L E") as "#Alv".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hy & _)" => //.
     destruct (decide (d1 ≤ d2)) as [Hle | Hgt].
@@ -672,6 +688,7 @@ Section StorageProtocol.
         iSplitR; first iSplit; last done.
         { by iApply guards_true. }
         iSplitL => //.
+        iApply (ty_shr_default_from_guard storage_resource_ty); first done. iSimpl.
         by rewrite (bi.sep_comm (sp_own γ1 y)) bi.sep_assoc.
       + iApply (proph_obs_impl with "Obs").
         intros π' (? & ? & Hpost).
@@ -719,6 +736,7 @@ Section StorageProtocol.
         iSplitR; first iSplit; last done.
         { by iApply guards_true. }
         iSplitL => //.
+        iApply (ty_shr_default_from_guard storage_resource_ty); first done. iSimpl.
         by rewrite Nat.add_1_r (bi.sep_comm (sp_own γ1 y)) (bi.sep_assoc _ _ (sp_own _ y)).
       + iApply (proph_obs_impl with "Obs").
         intros π' (? & ? & Hpost).
@@ -742,7 +760,9 @@ Section StorageProtocol.
     iDestruct "H" as "(%pl1' & %d & % & #Hd & Hshr & %Hphys)".
     destruct d => //.
     injection Hphys => ? /=; subst pl1'.
-    iDestruct "Hshr" as "(_ & #Hshr & _)".
+    iDestruct "Hshr" as "(_ & #Hshr_shr & _)".
+    iDestruct (ty_shr_default_to_guard storage_resource_ty with "Hshr_shr") as "#Hshr"; [done|].
+    iSimpl in "Hshr".
 
     iDestruct (Alv with "L E") as "#Alv".
     iApply wp_fupd.
@@ -784,6 +804,7 @@ Section StorageProtocol.
       { by iApply guards_true. }
       rewrite -!bi.later_laterN.
       iSplitL => //.
+      iApply (ty_shr_default_from_guard storage_resource_ty); first done. iSimpl.
       iClear "Hshr".
       iPoseProof (guards_include_pers (⌜{[γ]} ⊆ ↑NllftG⌝ ∗ sp_sto γ (λ _ c, gt_gho tyC c tid))%I with "[] Hsp_own2") as "Hshr".
       { by iSplit. }
@@ -815,7 +836,9 @@ Section StorageProtocol.
     iDestruct "H" as "(%pl' & %d & % & #Hd & Hshr & %Hphys)".
     destruct d => //.
     injection Hphys => ? /=; subst pl'.
-    iDestruct "Hshr" as "(_ & #Hshr & _)".
+    iDestruct "Hshr" as "(_ & #Hshr_shr & _)".
+    iDestruct (ty_shr_default_to_guard storage_resource_ty with "Hshr_shr") as "#Hshr"; [done|].
+    iSimpl in "Hshr".
 
     iDestruct (Alv with "L E") as "#Alv".
     iApply wp_fupd.
@@ -888,7 +911,9 @@ Section StorageProtocol.
     injection Hphys => ? /=; subst v. injection Hphys' => ? /=; subst v0. injection Hphys'' => ? /=; subst v1.
     destruct d,d',d'' => //.
     iDestruct "Hown" as "(_&_&Hγ&#Hsto&Hown)".
-    iDestruct "Hown'" as "(_&Hshr&_)".
+    iDestruct "Hown'" as "(_&#Hshr_shr&_)".
+    iDestruct (ty_shr_default_to_guard storage_resource_ty with "Hshr_shr") as "#Hshr"; [done|].
+    iSimpl in "Hshr".
     iDestruct "Hown''" as "(_&_&HghoC)".
 
     iDestruct (Alv with "L E") as "#Alv".
@@ -956,7 +981,9 @@ Section StorageProtocol.
     iDestruct "H1" as "(%pl1' & %d1 & % & #Hd1 & Huniq & %Hphys1)".
     iDestruct "H2" as "(%pl2' & %d2 & % & #Hd2 & Hshr & %Hphys2)".
     destruct d2 => //.
-    iDestruct "Hshr" as "(_ & #Hshr & _)".
+    iDestruct "Hshr" as "(_ & #Hshr_shr & _)".
+    iDestruct (ty_shr_default_to_guard storage_resource_ty with "Hshr_shr") as "#Hshr"; [done|].
+    iSimpl in "Hshr".
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct "Huniq" as "[_ [%Hineq [[Bor Credits] Pers]]]".
 
@@ -1088,7 +1115,9 @@ Section StorageProtocol.
     injection Hphys => ? /=; subst v. injection Hphys' => ? /=; subst v0. injection Hphys'' => ? /=; subst v1.
     destruct d,d',d'' => //.
     iDestruct "Hown" as "(_&_&Hγ&#Hsto&Hown)".
-    iDestruct "Hown'" as "(_&Hshr&_)".
+    iDestruct "Hown'" as "(_&#Hshr_shr&_)".
+    iDestruct (ty_shr_default_to_guard storage_resource_ty with "Hshr_shr") as "#Hshr"; [done|].
+    iSimpl in "Hshr".
     iDestruct "Hown''" as "(_&_&HghoC)".
 
     iDestruct (Alv with "L E") as "#Alv".

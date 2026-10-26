@@ -60,7 +60,8 @@ Section typing.
 
   Global Instance mod_ty_type_ne {𝔄 𝔅} `{!@Isoₛ 𝔄 𝔅 f fⁱ} : TypeNonExpansive <{f;fⁱ}>%T.
   Proof.
-    split=>/= *; by [apply type_lft_morphism_id_like| |do 3 f_equiv|do 3 f_equiv].
+    split=>/= *; by [apply type_lft_morphism_id_like| |do 3 f_equiv|do 3 f_equiv
+      |apply default_shr_contractive].
   Qed.
 
   Global Instance mod_ty_copy {𝔄 𝔅} `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty : Copy ty → Copy (<{f;fⁱ}> ty).
@@ -68,6 +69,7 @@ Section typing.
     intros Hcopy. inversion Hcopy. split.
       - intros. apply copy_persistent.
       - intros. apply copy_concrete.
+      - intros. by apply copy_shr_default.
   Qed.
 
   Global Instance mod_ty_send {𝔄 𝔅} `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty
@@ -92,8 +94,8 @@ Section typing.
 
   Global Instance mod_ty_sync {𝔄 𝔅} `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty : Sync ty → Sync (<{f;fⁱ}> ty).
   Proof.
-    intros Hsync. unfold Sync in Hsync. intros tid tid' x d g.
-      have Hsync' := Hsync tid tid' (fⁱ ~~$ₛ x) d g. apply Hsync'.
+    intros Hsync. apply sync_default; [done|]. unfold Sync in Hsync. intros tid tid' x d g.
+      have Hsync' := Hsync tid tid' (fⁱ ~~$ₛ x) d g. split; [apply Hsync'|split; apply Hsync'].
   Qed.
 
   Lemma mod_ty_resolve {𝔄 𝔅} E L `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty Φ :
@@ -108,7 +110,9 @@ Section typing.
   Proof. move=> ?. apply resolve_just. Qed.
 
   Lemma mod_ty_id {𝔄} (ty: type 𝔄) : <{idₛ;idₛ}>%T ty ≡ ty.
-  Proof. split; move=>// *; by [rewrite mod_ty_own|rewrite mod_ty_shr]. Qed.
+  Proof.
+    split; move=>// *; by [rewrite mod_ty_own|rewrite /= ty_shr_default_equiv].
+  Qed.
 
   Lemma mod_ty_compose {𝔄 𝔅 ℭ} `{!@Isoₛ 𝔄 𝔅 f fⁱ} `{!@Isoₛ 𝔅 ℭ g gⁱ} ty :
     (<{g;gⁱ}> (<{f;fⁱ}> ty) ≡ <{g ∘ₛ f ; fⁱ ∘ₛ gⁱ}> ty)%T.
@@ -125,7 +129,11 @@ Section typing.
     unfold mod_ty; simpl.
     iSplit. { iModIntro. iIntros. rewrite semi_iso'. iFrame. iIntros. done. }
     iSplit. { iModIntro. iIntros. rewrite semi_iso'. done. }
-    iPureIntro; intros; rewrite semi_iso'; done.
+    iSplit. { iPureIntro; intros; rewrite semi_iso'; done. }
+    (* TEMPORARY: uses [ty_shr_to_default]; [mod_ty] should pass [ty_shr] through. *)
+    iIntros "!>" (κ x d g tid) "Shr".
+    iDestruct (ty_shr_to_default with "Shr") as (d0 g0) "[% Guard]".
+    iExists d0, g0. rewrite /= semi_iso'. by iFrame.
   Qed.
 
   Lemma mod_ty_out {𝔄 𝔅} E L f fⁱ `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty :
@@ -135,7 +143,10 @@ Section typing.
     unfold mod_ty; simpl.
     iSplit. { iModIntro. iIntros. iFrame. iIntros. done. }
     iSplit. { iModIntro. iIntros. done. }
-    iPureIntro; intros; done.
+    iSplit. { iPureIntro; intros; done. }
+    (* TEMPORARY: uses [ty_shr_default_equiv]; [mod_ty] should pass [ty_shr] through. *)
+    iIntros "!>" (κ x d g tid) "Shr". iDestruct "Shr" as (d0 g0) "[% Guard]".
+    rewrite ty_shr_default_equiv. iExists d0, g0. by iFrame.
   Qed.
 
   Lemma mod_ty_inout {𝔄 𝔅} E L f fⁱ `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty :
