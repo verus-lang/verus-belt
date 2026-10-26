@@ -1,10 +1,16 @@
 (** * Typing rules with place types
 
   This file brings the place types of [ltype.v] into the type system (see
-  [~/verus-belt-phase3-design.md]), for a minimal vertical slice: a unique borrow
-  of a pair is unfolded into a place, field 0 is reborrowed (which blocks it), and
-  the outer borrow can then be dropped while field 0 is still blocked; its prophecy
-  is resolved through a reservation for the reborrow's prophecy.
+  [~/verus-belt-phase3-design.md]), for a minimal vertical slice:
+  - a unique borrow of a pair is unfolded into a place, and folded back
+    ([tctx_unfold_uniq_prod], [tctx_fold_uniq_prod]);
+  - field 0 is reborrowed, which blocks it and reserves the prophecy of the outer
+    borrow for the reborrow's prophecy ([type_reborrow_field0_instr]);
+  - the outer borrow can be dropped while field 0 is still blocked: its prophecy is
+    resolved through the reservation ([type_drop_blocked_field0_instr]);
+  - or, once the reborrow's lifetime has ended, field 0 is unblocked
+    ([unblock_tctx_place_field0]).
+  See [examples/get_first.v].
 
   ** The place element
 
@@ -74,14 +80,27 @@ Section place.
   Definition place_cur {𝔄} (lt: lty 𝔄) (x: ~~ (placeₛ 𝔄)) : proph 𝔄 :=
     prfn_den (place_rfn lt x).
 
+  (** The current value of a pair whose field 0 is blocked (it does not depend on
+      the blocking lifetime, see [place_cur_blk0]). *)
+  Definition place_blk0_cur {𝔄 𝔅} (x: ~~ (placeₛ (𝔄 * 𝔅))) : proph (𝔄 * 𝔅) := λ π,
+    ((π (uniq_prvar (uniq_bor_current (place_bor x)).1 (hd 1%positive (place_ζis x)))).1,
+      vπ (uniq_bor_current (place_bor x)).2 π).
+
+  Lemma place_cur_blk0 {𝔄 𝔅} (ty1: type 𝔄) (ty2: type 𝔅) α x :
+    place_cur (ProdLty (Blocked ty1 α) (OfTy ty2)) x = place_blk0_cur x.
+  Proof.
+    destruct x as [[[[[[l [x1 x2]] ξi] d'] g'] idx] ζis].
+    fun_ext=> π. by rewrite /place_cur /place_rfn /= !prfn_den_inl.
+  Qed.
+
   (** The interpretation of a place element, as the ownership of [&uniq{κ}] with
-      [uniq_body] replaced by the ownership of the place. It also holds a cumulative
-      time receipt per blocked leaf, which pays for unblocking it (see
+      [uniq_body] replaced by the ownership of the place. It also holds two cumulative
+      time receipts per blocked leaf, which pay for unblocking it (see
       [unblock_tctx_place_field0]). *)
   Definition place_uniq_own {𝔄} (κ: lft) (lt: lty 𝔄) (x: ~~ (placeₛ 𝔄))
       (tid: thread_id) (v: val) : iProp Σ :=
     match x with ((l, x₀, ξi, d', g', _), ζis) =>
-      ∃ d, ⧖d ∗ ⧗(lty_nblk lt) ∗ ⌜v = #(l.1)⌝ ∗ ⌜S d' ≤ d ∧ g' ≤ d⌝ ∗
+      ∃ d, ⧖d ∗ ⧗(2 * lty_nblk lt) ∗ ⌜v = #(l.1)⌝ ∗ ⌜S d' ≤ d ∧ g' ≤ d⌝ ∗
         κ ⊑ ty_lft (lty_fold lt) ∗
         (@[κ] &&{↑NllftG; d+1}&&> l #↦∗_) ∗
         ltype_own (Uniq κ ξi) lt (lty_rfn lt x₀ ζis).1 d' g' tid l
@@ -107,7 +126,7 @@ Section typing.
     (∀ x v d tid post mask iκs, ⊢ (llft_ctx -∗ time_ctx -∗ proph_ctx -∗ uniq_ctx -∗
       elctx_interp E -∗ llctx_interp L -∗ invctx_interp tid mask iκs I -∗
       ⌜eval_path p = Some v⌝ -∗ Φ x tid v -∗ ⧖d -∗ ⟨π, tr post -[x] mask π⟩ -∗
-      ⧗1 -∗ ⧗1 -∗ £(advance_credits d) -∗ |={⊤}=>
+      ⧗1 -∗ ⧗1 -∗ ⧗1 -∗ £(advance_credits d) -∗ |={⊤}=>
       ∃ xl', llctx_interp L ∗ invctx_interp tid mask iκs I ∗ tctx_interp tid T' xl' ∗
         ⟨π, post xl' mask π⟩)%I) →
     typed_instr E L I +[TCtx_sem _ p Φ] (Seq Skip Skip) (const T') tr.
@@ -118,12 +137,14 @@ Section typing.
     iDestruct (HΦ with "Φ") as (d) "#⧖".
     wp_bind Skip. iApply wp_fupd.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [set_solver|].
-    iIntros "£ _". wp_let. iModIntro. wp_let. iApply wp_fupd.
-    iApply (wp_cumulative_time_receipt2 with "TIME"); [set_solver|].
-    iIntros "⧗". replace 2 with (1 + 1)%nat by done.
-    iDestruct (cumulative_time_receipt_sep with "⧗") as "[⧗1 ⧗2]".
+    iIntros "£ #⧖S". wp_let. iModIntro. wp_let. iApply wp_fupd.
+    iApply (wp_cumulative_time_receipt_linear with "TIME ⧖S"); [set_solver|].
+    iIntros "⧗". iDestruct (cumulative_time_receipt_mono (1 + (1 + 1)) with "⧗") as "⧗";
+      [lia|].
+    iDestruct (cumulative_time_receipt_sep with "⧗") as "[⧗1 ⧗]".
+    iDestruct (cumulative_time_receipt_sep with "⧗") as "[⧗2 ⧗3]".
     wp_let.
-    iMod (Hvs x v d tid post with "LFT TIME PROPH UNIQ E L I [//] Φ ⧖ Obs ⧗1 ⧗2 £")
+    iMod (Hvs x v d tid post with "LFT TIME PROPH UNIQ E L I [//] Φ ⧖ Obs ⧗1 ⧗2 ⧗3 £")
       as (xl') "(? & ? & ? & ?)".
     iModIntro. iExists xl'. iFrame.
   Qed.
@@ -239,7 +260,7 @@ Section typing.
   Proof.
     intros Alv. apply typed_instr_of_skip_sem; [apply place_uniq_own_receipt|].
     iIntros ([[[[[[l [x1 x2]] ξi] d'] g'] idx] ζis] v d tid post mask iκs)
-      "#LFT #TIME #PROPH #UNIQ #E L $ %Hp Own _ Obs ⧗ ⧗' £".
+      "#LFT #TIME #PROPH #UNIQ #E L $ %Hp Own _ Obs ⧗ ⧗' ⧗'' £".
     iDestruct "Own" as (d0) "(#⧖0 & _ & -> & %Hle & #Incl & #PtBase & Own)".
     iDestruct (Alv with "L E") as "#Alv".
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
@@ -308,7 +329,9 @@ Section typing.
       iApply (guards_weaken_rhs_sep_l with "PtBase"). }
     iSplit; [|done].
     rewrite /tctx_elt_interp. iExists #(l.1). iSplit; [done|]. iExists d0.
-    iFrame "⧖0 ⧗' Incl Own". iSplit; [done|]. iSplit; [done|].
+    iFrame "⧖0 Incl Own". iSplitL "⧗' ⧗''".
+    { iApply (cumulative_time_receipt_sep 1 1). iFrame. }
+    iSplit; [done|]. iSplit; [done|].
     by iEval (rewrite (heap_cloc_mapsto_emp_vec_app l (ty_size ty1))).
   Qed.
 
@@ -326,12 +349,12 @@ Section typing.
         uniq_bor_loc m2 = cloc_skip (uniq_bor_loc (place_bor x)) (ty_size ty1) →
         uniq_bor_current m2 = (uniq_bor_current (place_bor x)).2 →
         uniq_bor_future (place_bor x) π =
-          ((place_cur (ProdLty (Blocked ty1 α) (OfTy ty2)) x π).1, uniq_bor_future m2 π) →
+          ((place_blk0_cur x π).1, uniq_bor_future m2 π) →
         post -[m2] mask π).
   Proof.
     intros Alv. apply typed_instr_of_skip_sem; [apply place_uniq_own_receipt|].
     iIntros ([[[[[[l [x1 x2]] ξi] d'] g'] idx] ζis] v d tid post mask iκs)
-      "#LFT #TIME #PROPH #UNIQ #E L $ %Hp Own _ Obs _ _ £".
+      "#LFT #TIME #PROPH #UNIQ #E L $ %Hp Own _ Obs _ _ _ £".
     iDestruct "Own" as (d0) "(#⧖0 & _ & -> & %Hle & #Incl & #PtBase & Own)".
     iDestruct (Alv with "L E") as "#Alv".
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
@@ -394,7 +417,7 @@ Section typing.
     { iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ Heq].
       apply Hπ; [done|done|].
       rewrite !uniq_bor_future_eq (uniq_prvar_app_irrel (𝔄:=𝔄 * 𝔅) (x1, x2) x₀) Heq.
-      by rewrite /place_cur /place_rfn /= prfn_den_inl. }
+      done. }
     iSplit; [|done].
     rewrite /tctx_elt_interp. iExists #(l.1 +ₗ ty_size ty1), d0.
     iSplit. { iPureIntro. by rewrite /= Hp. }
@@ -404,5 +427,139 @@ Section typing.
     { iExists κ, γη. iFrame "∗#". iApply guards_refl. }
     iEval (rewrite (heap_cloc_mapsto_emp_vec_app l (ty_size ty1))) in "PtBase".
     iApply (guards_weaken_rhs_sep_r with "PtBase").
+  Qed.
+
+  (** * Unblocking field 0 *)
+
+  (** Turning an equalizer of the value of some contents into an observation, by
+      sharing the contents at a fresh lifetime to get guards of their prophecy tokens
+      (as in [unblock_tctx_cons_unblock]). *)
+  Lemma proph_eqz_obs_by_share {𝔄} (ty: type 𝔄) (xπ: proph 𝔄) x d g tid G :
+    Timeless G →
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ G -∗
+    £(d + d*(g+2) + (0 + (d+1)*(g+1)) + 1 + 1) -∗
+    (xπ :== vπ x) -∗ ty_gho_own ty x d g tid ={⊤}=∗
+      ⟨π, xπ π = vπ x π⟩ ∗ G ∗ ty_gho_own ty x d g tid.
+  Proof.
+    iIntros (?) "#LFT #Gty G £ Eqz gho".
+    iDestruct "£" as "[[[[£s £k] £k'] £e] £g]".
+    iDestruct (ty_gho_pers_impl with "gho") as "#ghoPers".
+    iMod (llftl_begin with "LFT") as (κf) "[κf #κfend]"; [solve_ndisj|].
+    set κs := κf ⊓ ty_lft ty.
+    iMod (llftl_borrow _ κs (ty_gho_own ty x d g tid) with "LFT [$gho]") as "[Bor Inh]";
+      [solve_ndisj|].
+    iAssert ((@[κf] ∗ G) &&{↑NllftG}&&> @[κs])%I as "#Wκs".
+    { iApply guards_llft_glb; [iApply guards_weaken_sep_l|].
+      iApply guards_weaken_lhs_sep_r. iApply "Gty". }
+    iAssert (κs ⊑ ty_lft ty)%I as "#Incl". { iApply llftl_intersect_incl_r. }
+    iMod (ty_share with "LFT Incl ghoPers Wκs [$κf $G] Bor") as "Upd"; [solve_ndisj|].
+    iMod (lc_step_fupdN_elim_later with "£s Upd") as ">[[κf G] #Shr]".
+    iAssert (▷^(d*(g+2)) (∀ ζ, ⌜ζ ∈ ξl x⌝ -∗
+      ((@[κf] ∗ G) &&{↑NllftG; 0 + (d+1)*(g+1)}&&> 1:[ζ])))%I as "#Hallζlater".
+    { iIntros (ζ) "%Hin".
+      iDestruct (ty_shr_guard_proph ty κs x 0 d g tid ζ (@[κf] ∗ G)%I Hin
+        with "LFT Incl ghoPers Shr") as "A".
+      iNext. iApply "A". leaf_goal laters to 0; [lia|]. iFrame "Wκs". }
+    iMod (lc_fupd_elim_laterN with "£k Hallζlater") as "#Hallζ".
+    iMod (uniq_cmra.proph_eqz_to_obs_with_guard with "£k' Hallζ [κf G] Eqz")
+      as "[#Obs [κf G]]"; [set_solver|apply syn_indep|iFrame|].
+    iAssert (|={⊤}=> [†κf])%I with "[£e κf]" as ">#†κf".
+    { iApply fupd_mask_mono; [|iApply (lc_step_fupd_elim_later with "£e"); by iApply "κfend"].
+      solve_ndisj. }
+    iAssert (|={⊤}=> ▷ ty_gho_own ty x d g tid)%I with "[Inh]" as ">gho".
+    { iApply fupd_mask_mono; [|iApply "Inh"; iApply llftl_end_inter; by iLeft]. solve_ndisj. }
+    iMod (lc_fupd_elim_later with "£g gho") as "gho".
+    iModIntro. iFrame "∗#".
+  Qed.
+
+  (** Once [κ ⊓ α] has ended (by ending [α]), field 0 of the place is unblocked: it
+      gets the final contents of its reborrow, whose value is the final value of the
+      reborrow. The place stays unfolded (and reserved, for no prophetic leaf), and
+      can then be folded back with [tctx_fold_uniq_prod]. Unblocking pays with the
+      two cumulative time receipts of the blocked leaf. *)
+  Lemma unblock_tctx_place_field0 {𝔄 𝔅 𝔄l 𝔄l'} p κ α (ty1: type 𝔄) (ty2: type 𝔅)
+      (T: tctx 𝔄l) (T': tctx 𝔄l') E L f :
+    lctx_lft_alive E L κ → unblock_tctx E L α T T' f →
+    unblock_tctx E L α (p ◁ₗ{κ} ProdLty (Blocked ty1 (κ ⊓ α)) (OfTy ty2) +:: T)
+      (p ◁ₗ{κ} ProdLty (OfTy ty1) (OfTy ty2) +:: T')
+      (λ π '(x -:: xl), λ '(x' -:: xl'),
+        uniq_bor_loc (place_bor x') = uniq_bor_loc (place_bor x) ∧
+        uniq_bor_future (place_bor x') π = uniq_bor_future (place_bor x) π ∧
+        place_cur (ProdLty (OfTy ty1) (OfTy ty2)) x' π =
+          place_blk0_cur x π ∧
+        f π xl xl').
+  Proof.
+    iIntros (Alv Un G tid [x xl] ?) "#LFT #TIME #PROPH #UNIQ #E #L G #†α /=[(%v & %Hp & Own) T]".
+    destruct x as [[[[[[l [x1 x2]] ξi] d'] g'] idx] ζis].
+    iDestruct "Own" as (d0) "(#⧖0 & ⧗ & -> & %Hle & #Incl & #PtBase & Own)".
+    iDestruct (cumulative_time_receipt_sep 1 1 with "⧗") as "[⧗a ⧗b]".
+    leaf_open "L" with "G" as "[L1 back]"; [set_solver|].
+    iDestruct (Alv with "L1 E") as "#Lκ". iMod ("back" with "L1") as "G".
+    (* Half of [G] for the rest of the context, the other half for the place. *)
+    iMod (fractional.frac_split_guard_in_half with "G L") as (γ1) "[GT [GP [#GhT #BackT]]]";
+      [solve_ndisj|].
+    iMod (Un with "LFT TIME PROPH UNIQ E GhT GT †α T") as (dT xl') "[#⧖T ToT']".
+    iDestruct (guards_transitive with "GhT Lκ") as "#GPκ".
+    iMod (fractional.frac_split_guard_in_half with "GP GPκ") as (γ2) "[H1 [H2 [#Gh2 #Back2]]]";
+      [solve_ndisj|].
+    iAssert (fractional.half γ2 &&{↑NllftG}&&> @[ty_lft ty1])%I as "#Gty1".
+    { iApply (guards_transitive with "Gh2"). iApply (llftl_incl_trans with "Incl").
+      iApply lft_incl_prod_l. }
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗a ⧖0") as "[_ £]";
+      [solve_ndisj|].
+    iDestruct (lc_weaken 1 with "£") as "£"; [rewrite /advance_credits; lia|].
+    rewrite /ltype_own /=.
+    iMod (cpd_acc with "LFT PROPH UNIQ Gh2 H1 Own") as (κp) "(#Inclp & _ & Upd & Close)";
+      [solve_ndisj|].
+    iMod (lc_fupd_elim_later with "£ Upd") as "Upd".
+    iMod (guarded_upd_run with "[] H2 Upd") as "(H2 & #⧖' & N)";
+      [rewrite /lazyE; solve_ndisj| |].
+    { iApply (guards_transitive with "Gh2 Incl"). }
+    iSimpl in "N". iDestruct "N" as "[L1 L2]".
+    iDestruct "L2" as (? ->) "[Pt2 Gho2]".
+    (* Unblock field 0: fire the inheritance of the reborrow and settle it. *)
+    iAssert ([†(κ ⊓ α)])%I as "#†κα". { rewrite llftl_end_inter. by iRight. }
+    iMod (fupd_mask_mono with "(L1 †κα)") as "Upd1"; [rewrite /lazyE; solve_ndisj|].
+    iMod (guarded_upd_run with "Gty1 H2 Upd1") as "(H2 & %y1 & %d1 & %g1 & Eqz & #⧖1 & O1)";
+      [rewrite /lazyE; solve_ndisj|].
+    iDestruct "O1" as "[Pt1 Gho1]".
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗b ⧖1") as "[_ £]";
+      [solve_ndisj|].
+    iDestruct (lc_weaken (1 + (d1 + d1*(g1+2) + (0 + (d1+1)*(g1+1)) + 1 + 1)) with "£")
+      as "[£e £]"; [rewrite /advance_credits; nia|].
+    iSimpl in "Eqz". iMod (lc_fupd_elim_later with "£e Eqz") as "Eqz".
+    iMod (proph_eqz_obs_by_share ty1 with "LFT Gty1 H2 £ Eqz Gho1") as "(#Obs1 & H2 & Gho1)".
+    (* Close the outer borrow at the unblocked state, at the maximal depths. *)
+    set d'' := d1 `max` d'. set g'' := g1 `max` g'.
+    iDestruct (ty_gho_own_depth_mono _ d1 g1 d'' g'' with "Gho1") as "[Gho1 _]"; [lia..|].
+    iDestruct (ty_gho_own_depth_mono _ d' g' d'' g'' with "Gho2") as "[Gho2 _]"; [lia..|].
+    iAssert (⧖(S d'' `max` g''))%I as "#⧖''".
+    { iCombine "⧖' ⧖1" as "⧖". iApply (persistent_time_receipt_mono with "⧖"). lia. }
+    iMod ("Close" $! (PatProd PatLeaf PatLeaf) (inr (inl (PlaceIn y1), inl (PlaceIn x2)) : prfn (𝔄 * 𝔅))
+      d'' g'' [] 1%Qp True%I with "[] [] [Pt1 Gho1 Pt2 Gho2]") as "(Own & H1 & _)".
+    { iPureIntro. intros ζl _. split; apply prfn_rsv_in. }
+    { done. }
+    { iIntros "_". iModIntro. iSplitR; [iNext; by rewrite /pat_ok|]. iSplitL; [|done].
+      iNext. iApply guarded_upd_intro. iModIntro. iFrame "⧖''". iSimpl.
+      iSplitL "Pt1 Gho1"; [iExists y1|iExists x2]; by iFrame. }
+    iMod (fupd_mask_mono with "(Back2 H1 H2)") as "GP"; [solve_ndisj|].
+    iMod cumulative_time_receipt_0 as "⧗0".
+    iCombine "⧖0 ⧖''" as "⧖D".
+    iModIntro. iExists dT, (((l, (y1, x2), ξi, d'', g'', idx), []) -:: xl').
+    iSplitR; [done|].
+    iMod "ToT'". iModIntro. iNext. iMod "ToT'". iModIntro.
+    iApply (step_fupdN_wand with "ToT'"). iIntros ">(GT & T' & #Obs')".
+    iMod (fupd_mask_mono with "(BackT GT GP)") as "$"; [solve_ndisj|].
+    iModIntro. iSplitR "Obs'".
+    { iFrame "T'". rewrite /tctx_elt_interp. iExists #(l.1). iSplit; [done|].
+      iExists (d0 `max` (S d'' `max` g'')). iFrame "⧖D ⧗0 Incl Own".
+      iSplit; [done|]. iSplit; [iPureIntro; lia|].
+      iApply (lguards_weaken_later with "PtBase"). lia. }
+    iCombine "Obs1 Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Heq Hf].
+    split; [done|]. split.
+    { rewrite !uniq_bor_future_eq. apply (uniq_prvar_app_irrel (𝔄:=𝔄 * 𝔅)). }
+    split; [|done].
+    rewrite /place_cur /place_rfn /place_blk0_cur /= !prfn_den_inl /=. f_equal.
+    symmetry. exact Heq.
   Qed.
 End typing.
