@@ -126,6 +126,7 @@ src/lambda_verus/typing/soundness.v
 src/lambda_verus/typing/examples/assert.v
 src/lambda_verus/typing/examples/list.v
 src/lambda_verus/typing/examples/pcell_example.v
+src/lambda_verus/typing/examples/get_first.v
 
 
 -arg -w -arg -argument-scope-delimiter
