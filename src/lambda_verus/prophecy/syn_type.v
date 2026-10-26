@@ -64,7 +64,7 @@ Fixpoint indep_interp_of_syn_type (𝔄: syn_type) : Type :=
   | blockedₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀ * positive * positive  (* first elem is only to show inhabitness *)
   | ghostₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
   | trackedₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
-  | storableₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀ * (nat * nat)
+  | storableₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀ * (nat * nat) * lft
   | invₛ 𝔄₀ => namespace * gname * indep_interp_of_syn_type 𝔄₀
   | local_invₛ 𝔄₀ => namespace * (gname * gname * nat) * indep_interp_of_syn_type 𝔄₀
   | namespaceₛ => namespace
@@ -95,7 +95,7 @@ Fixpoint proph_interp_of_syn_type (𝔄: syn_type) : Type :=
   | blockedₛ 𝔄₀  => ()
   | ghostₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
   | trackedₛ 𝔄₀ => proph_interp_of_syn_type 𝔄₀
-  | storableₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀ * (nat * nat)
+  | storableₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀ * (nat * nat) * lft
   | uninitₛ n => ()
   | pcellₛ n => list positive
   | locₛ => loc
@@ -125,7 +125,7 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
   | blockedₛ 𝔄₀ => ()
   | ghostₛ 𝔄₀ => abstracted_syn_type 𝔄₀
   | trackedₛ 𝔄₀ => abstracted_syn_type 𝔄₀
-  | storableₛ 𝔄₀ => abstracted_syn_type 𝔄₀ * (nat * nat)
+  | storableₛ 𝔄₀ => abstracted_syn_type 𝔄₀ * (nat * nat) * lft
   | invₛ 𝔄₀ => namespace * gname * abstracted_syn_type 𝔄₀
   | local_invₛ 𝔄₀ => namespace * abstracted_syn_type 𝔄₀
   | namespaceₛ => namespace
@@ -233,7 +233,7 @@ Proof.
     + move=> 𝔄 x. exact (fst (FIX 𝔄) x, inhabitant, inhabitant).
     + move=> 𝔄 x. exact (fst (FIX 𝔄) x).
     + move=> 𝔄 x. exact (fst (FIX 𝔄) x).
-    + move=> 𝔄 x. exact (fst (FIX 𝔄) x, inhabitant).
+    + move=> 𝔄 x. exact (fst (FIX 𝔄) x, inhabitant, (∅ : lft)).
     + move=> 𝔄 x. exact (inhabitant, inhabitant, fst (FIX 𝔄) x).
     + move=> 𝔄 x. exact (inhabitant, inhabitant, fst (FIX 𝔄) x).
     + move=> 𝔄?. case Eq: (inh_syn_type' 𝔄)=>/= ??; [by apply FIX|].
@@ -259,7 +259,7 @@ Proof.
     + move=> 𝔄 Hneg [x _]. exact (snd (FIX 𝔄) Hneg (fst x)).
     + move=> 𝔄 Hneg x. exact (snd (FIX 𝔄) Hneg x).
     + move=> 𝔄 Hneg x. exact (snd (FIX 𝔄) Hneg x).
-    + move=> 𝔄 Hneg x. exact (snd (FIX 𝔄) Hneg (fst x)).
+    + move=> 𝔄 Hneg x. exact (snd (FIX 𝔄) Hneg x.1.1).
     + move=> 𝔄 Hneg x. exact (snd (FIX 𝔄) Hneg (snd x)).
     + move=> 𝔄 Hneg x. exact (snd (FIX 𝔄) Hneg (snd x)).
     + move=> ??. rewrite negb_negb_orb=> /andb_True[??] f. eapply FIX; [done|].
@@ -290,7 +290,7 @@ Proof.
     + move=> 𝔄 x. exact (fst (FIX 𝔄) x, fst (FIX 𝔄) x).
     + move=> 𝔄 x. exact (fst (@of_just_and_neg_inh_syn_type' 𝔄) x).
     + move=> 𝔄 x. exact (fst (FIX 𝔄) x).
-    + move=> 𝔄 x. exact (fst (@of_just_and_neg_inh_syn_type' 𝔄) x, inhabitant).
+    + move=> 𝔄 x. exact (fst (@of_just_and_neg_inh_syn_type' 𝔄) x, inhabitant, (∅ : lft)).
     + move=> 𝔄 x. exact (inhabitant, inhabitant, fst (@of_just_and_neg_inh_syn_type' 𝔄) x).
     + move=> 𝔄 x. exact (inhabitant, inhabitant, fst (@of_just_and_neg_inh_syn_type' 𝔄) x).
     + move=> 𝔄?. case Eq: (inh_syn_type' 𝔄)=>/= ??; [by apply @of_just_and_neg_inh_syn_type'|].
@@ -315,7 +315,7 @@ Proof.
     + move=> 𝔄 Hneg [x _]. exact (snd (FIX 𝔄) Hneg x).
     + move=> 𝔄 Hneg x. exact (snd (@of_just_and_neg_inh_syn_type' 𝔄) Hneg x).
     + move=> 𝔄 Hneg x. exact (snd (FIX 𝔄) Hneg x).
-    + move=> 𝔄 Hneg x. exact (snd (@of_just_and_neg_inh_syn_type' 𝔄) Hneg (fst x)).
+    + move=> 𝔄 Hneg x. exact (snd (@of_just_and_neg_inh_syn_type' 𝔄) Hneg x.1.1).
     + move=> 𝔄 Hneg x. exact (snd (@of_just_and_neg_inh_syn_type' 𝔄) Hneg (snd x)).
     + move=> 𝔄 Hneg x. exact (snd (@of_just_and_neg_inh_syn_type' 𝔄) Hneg (snd x)).
     + move=> ??. rewrite negb_negb_orb=> /andb_True[??] f. eapply @of_just_and_neg_inh_syn_type'; [done|].
@@ -617,7 +617,7 @@ Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   | blockedₛ 𝔄₀ => λ '(x₀, ξi, ζi) , ()
   | ghostₛ 𝔄₀ => λ x , @syn_abstract 𝔄₀ x
   | trackedₛ 𝔄₀ => λ x , @syn_abstract 𝔄₀ x
-  | storableₛ 𝔄₀ => λ x , (@syn_abstract 𝔄₀ (fst x), snd x)
+  | storableₛ 𝔄₀ => λ x , (@syn_abstract 𝔄₀ x.1.1, x.1.2, x.2)
   | uninitₛ n => λ x , x
   | pcellₛ n => λ x , x
   | paddingₛ => λ x , x

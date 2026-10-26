@@ -20,134 +20,167 @@ Section StorageProtocol.
 
   Context `{!typeG Σ}.
     
-  (* very hacky type used to instantiate storage protocols *)
+  (** The ghost type of storable values, used to put values of a real type [ty] into a
+      storage protocol. A value is made storable by sharing it up front, at a fresh
+      lifetime [α] (which is part of the storable value), with [ty_share]. The storable
+      value holds the token of [α] (to keep the sharing period alive), the resulting
+      persistent sharing predicate at [α ⊓ ty_lft ty] (for shared access, see
+      [storable_borrow]) and the inheritance of the borrow (to get the ownership
+      predicate back after ending [α], see [storable_into_inner]). *)
   Program Definition storable_ty {𝔄} (ty: type 𝔄) : ghost_type (storableₛ 𝔄) := {|
     gt_gho x tid := match x with
-        (x0, (d, g)) => ty.(ty_gho_own) x0 d g tid ∗ ⧖(S d `max` g)
+        (x0, (d, g), α) =>
+          ⌜α ≠ llft_empty⌝ ∗ @[α] ∗ ty.(ty_shr) (α ⊓ ty_lft ty) x0 d g tid ∗
+          ([†α] ={↑Nllft}=∗ ▷ ty.(ty_gho_own) x0 d g tid) ∗
+          ⧖(S d `max` g) ∗ ty.(ty_gho_pers) x0 d g tid
     end
   |}%I.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  
+
+  Local Lemma storable_ty_gho_change_tid {𝔄} (ty : type 𝔄) tid tid' x :
+    Sync ty → (storable_ty ty).(gt_gho) x tid ⊣⊢ (storable_ty ty).(gt_gho) x tid'.
+  Proof.
+    intros Hsync. destruct x as [[x0 [d0 g0]] α].
+    destruct (Hsync tid tid' x0 d0 g0) as [_ [Hgho [Hpers Hshr]]]. simpl.
+    by rewrite Hgho Hpers Hshr.
+  Qed.
+
   (* this shouldn't really require Sync, but we would need another layer of step-indexing
     accounting to fix it (similar to how local_inv works). At least in this case,
     it doesn't matter, since the Storage Protocol requires Sync anyway. *)
   Global Instance storable_ty_send {𝔄} (ty : type 𝔄) : Send ty → Sync ty → Send (storable_ty ty).
   Proof. intros Hsend. intros Hsync. split; trivial.
-    destruct x as [x0 [d0 g0]].
-    destruct (Hsync tid tid' x0 d0 g0) as [A [B [C _]]].
-    iIntros (d g G H κs d1 Hineq TG TH) "LFT UNIQ TIME Hg H Gg G gho ⧖".
-    iDestruct "gho" as "[gho1 A]".
-    setoid_rewrite B.
-    iIntros. iApply step_fupdN_intro; first done. iNext. iModIntro.
-    iExists (x0, (d0, g0)), 0. iFrame. replace (d1 + 0) with d1 by lia. iFrame.
+    iIntros (tid tid' x d g G H κs d1 Hineq TG TH) "LFT UNIQ TIME Hg H Gg G gho ⧖".
+    iDestruct (storable_ty_gho_change_tid ty tid tid' x with "gho") as "gho".
+    iApply step_fupdN_intro; first done. iNext. iModIntro.
+    iExists x, 0. iFrame. replace (d1 + 0) with d1 by lia. iFrame.
     done.
   Qed.
 
   Global Instance storable_ty_sync {𝔄} (ty : type 𝔄) : Sync ty → Sync (storable_ty ty).
   Proof. intros Hsync. apply sync_default; [done|]. split; trivial.
-    split; last trivial. destruct x as [x0 [d0 g0]].
-    destruct (Hsync tid tid' x0 d0 g0) as [A [B [C _]]]. unfold storable_ty, gt_gho. simpl.
-    setoid_rewrite B. done.
+    split; last trivial. by apply storable_ty_gho_change_tid.
   Qed.
-  
-  Global Instance storable_ty_copy {𝔄} (ty : type 𝔄) : Copy ty → Copy (storable_ty ty).
-  Proof.
-    intros Hcopy. destruct Hcopy. split.
-    - intros. destruct x as [x0 [d0 g0]]. unfold storable_ty, gt_gho. simpl. typeclasses eauto.
-    - intros. destruct x as [x0 [d0 g0]]. iIntros "[gho _]".
-      iDestruct (copy_concrete with "gho") as "%Hconc". iPureIntro. done.
-    - intros. by apply copy_shr_default.
-  Qed.
-  
+
+  (** Making a value storable: begin a fresh lifetime [α], borrow the ownership
+      predicate at [α ⊓ ty_lft ty] and share it. The [d] steps of [ty_share] are paid for
+      with later credits from the time receipts. *)
   Lemma storable_new {𝔄} E L I p (ty : type 𝔄) :
+    lctx_lft_alive E L (ty_lft ty) →
     typed_instr E L I
       +[p ◁ own_ptr 0 (tracked_ty ty)]
       (Seq Skip Skip)
       (const +[p ◁ own_ptr 0 (storable_ty ty)])
-      (λ post '-[(l, x)], λ mask π, ∀ l n, post -[(l, (x, n))] mask π).
+      (λ post '-[(l, x)], λ mask π, ∀ l n α, post -[(l, (x, n, α))] mask π).
   Proof.
-    apply typed_instr_of_skip_own_own_t; trivial.
+    intros Alv. apply typed_instr_of_skip_own_own_t; trivial.
     intros l1 x1 d tid iκs post mask.
     iIntros "#LFT #TIME #PROPH #UNIQ #E L Inv Gho Obs #⧖ ⧗".
-    iExists (S d), (x1, (d, S d)). iModIntro. iFrame. iFrame "#".
-    iSplit.
-       - iApply (persistent_time_receipt_mono with "⧖"). lia.
-       - iApply (proph_obs_impl with "Obs"). done.
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[_ £]";
+      [solve_ndisj|].
+    iDestruct (lc_weaken d with "£") as "£"; [unfold advance_credits; nia|].
+    iDestruct (Alv with "L E") as "#Alv".
+    iDestruct (ty_gho_pers_impl with "Gho") as "#Pers".
+    iMod (llftl_begin' with "LFT") as (α) "[α %Hne]"; [solve_ndisj|].
+    iMod (llftl_borrow ⊤ (α ⊓ ty_lft ty) (ty.(ty_gho_own) x1 d (S d) tid)
+      with "LFT [Gho]") as "[Bor Inh]"; [solve_ndisj|by iNext|].
+    iAssert ((@[α] ∗ llctx_interp L) &&{↑NllftG}&&> @[α ⊓ ty_lft ty])%I as "#Gκ".
+    { iApply guards_llft_glb; [iApply guards_weaken_sep_l|].
+      iApply (guards_transitive with "[] Alv"). iApply guards_weaken_sep_r. }
+    iMod (ty_share with "LFT [] Pers Gκ [$α $L] Bor") as "Upd"; [solve_ndisj| |].
+    { iApply llftl_intersect_incl_r. }
+    iMod (lc_step_fupdN_elim_later with "£ Upd") as ">[[α L] #Shr]".
+    iModIntro. iExists (S d), (x1, (d, S d), α). iFrame "L Inv ⧖". iSplitR "Obs".
+    - iNext. iFrame "α Shr Pers". iSplit; [done|]. iSplitL "Inh".
+      + iIntros "#Dead". iApply "Inh". rewrite llftl_end_inter. by iLeft.
+      + iApply (persistent_time_receipt_mono with "⧖"). lia.
+    - iApply (proph_obs_impl with "Obs"). done.
   Qed.
-  
+
+  (** Getting the value back: end [α] and use the inheritance of the borrow. *)
   Lemma storable_into_inner {𝔄} E L I p (ty : type 𝔄) :
     typed_instr E L I
       +[p ◁ own_ptr 0 (storable_ty ty)]
       (Seq Skip Skip)
       (const +[p ◁ own_ptr 0 (tracked_ty ty)])
-      (λ post '-[(l, (x, n))], λ mask π, ∀ l, post -[(l, x)] mask π).
+      (λ post '-[(l, (x, n, α))], λ mask π, ∀ l, post -[(l, x)] mask π).
   Proof.
     apply typed_instr_of_skip_own_own_t; trivial.
     intros l1 x1 d tid iκs post mask.
     iIntros "#LFT #TIME #PROPH #UNIQ #E L Inv Gho Obs ⧖ ⧗".
-    destruct x1 as [x0 [d0 g0]].
-    iDestruct "Gho" as "[Gho #⧖2]".
-    iMod (cumulative_persistent_time_receipt with "TIME ⧗ ⧖2") as "⧖S2"; first solve_ndisj.
-    iExists ((S d0 `max` g0)), x0. iModIntro. iFrame. iFrame "#".
-    iDestruct (ty_gho_own_depth_mono with "Gho") as "[$ _]". { lia. } { lia. } 
-    iApply (proph_obs_impl with "Obs"). done.
+    destruct x1 as [[x0 [d0 g0]] α].
+    iDestruct "Gho" as (Hne) "(α & _ & Inh & #⧖2 & _)".
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖2") as "[#⧖S £]";
+      [solve_ndisj|].
+    iDestruct (lc_weaken 1 with "£") as "£"; [unfold advance_credits; nia|].
+    iMod (fupd_mask_subseteq (↑Nllft)) as "Close"; [solve_ndisj|].
+    iMod (llftl_end' with "LFT α") as "End"; [done|].
+    iMod (lc_fupd_elim_later with "£ End") as "End".
+    iMod "End" as "#Dead".
+    iMod ("Inh" with "Dead") as "Gho".
+    iMod "Close" as "_".
+    iModIntro. iExists ((S d0 `max` g0)), x0. iFrame "L Inv".
+    iSplit. { iApply (persistent_time_receipt_mono with "⧖S"). lia. }
+    iSplitL "Gho".
+    - iNext. iDestruct (ty_gho_own_depth_mono with "Gho") as "[$ _]"; lia.
+    - iApply (proph_obs_impl with "Obs"). done.
   Qed.
 
-  (* TEMPORARY (until the storage protocols are reworked to store borrows, see the plan,
-     step 6): restricted to types with the default sharing predicate. A guard of the
-     ownership predicate (which is all that [storable_ty], a ghost type with the default
-     sharing predicate, provides when shared) does not give the sharing predicate of a
-     type with a structural one. *)
+  (** Shared access to a stored value: the guard of the storable value gives a guard
+      [@[κ] &&{n}&&> @[α]] (with laters), which together with [κ ⊑ ty_lft ty] gives a
+      guard of [@[α ⊓ ty_lft ty]]. Lifetime monotonicity then turns the stored sharing
+      predicate at [α ⊓ ty_lft ty] into one at [κ], at a depth increased by [n]. The
+      time receipt for the increased depth comes from the second step, which turns the
+      stored time receipt into a cumulative one (see [typed_instr_of_skip_linear]). *)
   Lemma storable_borrow {𝔄} κ E L I p (ty : type 𝔄) :
-    ty_shr_is_default ty →
     lctx_lft_alive E L κ →
+    lctx_lft_incl E L κ (ty_lft ty) →
     typed_instr E L I
       +[p ◁ (&shr{κ} (storable_ty ty))]
       (Seq Skip Skip)
       (const +[p ◁ (&shr{κ} (tracked_ty ty))])
-      (λ post '-[(l, (x, n))], λ mask π, ∀ l, post -[(l, x)] mask π).
+      (λ post '-[(l, (x, n, α))], λ mask π, ∀ l, post -[(l, x)] mask π).
   Proof.
-    intros Hdef Alv. apply typed_instr_of_skip; trivial.
-    intros [l [x0 [d0 g0]]] v d tid post mask iκs.
-    iIntros "#LFT #TIME #PROPH #UNIQ #E L Inv %Path Gho Obs ⧖ ⧗ ⧗' £".
-    iDestruct "Gho" as "[Gho #phys]".
+    intros Alv Incl. apply typed_instr_of_skip_linear.
+    intros [l [[x0 [d0 g0]] α]] v d tid post mask iκs.
+    iIntros "#LFT #TIME #PROPH #UNIQ #E L Inv %Path Gho Obs #⧖ £".
+    iDestruct "Gho" as "[Gho %phys]".
     destruct d as [|d]; first done.
-    iDestruct "Gho" as "[#pt [#shr #pers]]".
-    iDestruct (ty_shr_default_to_guard (storable_ty ty) with "shr") as "#gho"; [done|].
+    iDestruct "Gho" as "[#pt [#shr _]]".
+    iDestruct "shr" as (d1 g1) "[_ #gho]".
     iDestruct (Alv with "L E") as "#Alv".
+    iDestruct (Incl with "L E") as "#Incl".
     iDestruct (guards_transitive_right with "Alv gho") as "LguardsGho".
-    iDestruct (lc_weaken (_)%nat with "£") as "£1"; first last. {
+    iDestruct (lc_weaken (S d + 1) with "£") as "£"; [unfold advance_credits; nia|].
     leaf_open_laters "LguardsGho" with "L" as "Opened"; first solve_ndisj.
-    iMod (lc_fupd_elim_laterN with "£1 Opened") as ">[Inner back]".
-    iDestruct "Inner" as "[Inner #Inner⧖]".
-    iDestruct (ty_gho_pers_impl with "Inner") as "#InnerPers".
-    iMod ("back" with "[Inner]") as "L". { iFrame. iFrame "Inner⧖". }
-    iCombine "⧖ Inner⧖" as "⧖max".
-    iMod (cumulative_persistent_time_receipt with "TIME ⧗ ⧖max") as "#⧖maxS";
-        first solve_ndisj.
+    iMod (lc_fupd_elim_laterN with "£ Opened") as ">[Inner back]".
+    iDestruct "Inner" as "(%Hne & α & #Shr & Inh & #⧖2 & #Pers)".
+    iMod ("back" with "[α Inh]") as "L". { by iFrame "α Shr Inh ⧖2 Pers". }
+    (* The guard of [@[α ⊓ ty_lft ty]], with the laters of the guard of the stored value. *)
+    iAssert (@[κ] &&{↑NllftG; S d + 1}&&> @[α ⊓ ty_lft ty])%I as "#Gκ".
+    { iApply guards_llft_glb.
+      - iApply (guards_transitive_left with "gho"). leaf_by_sep.
+        iIntros "(% & $ & R)". iIntros "α". by iFrame.
+      - leaf_goal laters to 0. { lia. } iFrame "Incl". }
+    iDestruct (ty_shr_lft_mono with "Gκ Shr") as "#Shrκ".
+    iModIntro. iExists (S d0 `max` g0). iFrame "⧖2". iIntros "⧗".
+    iMod (cumulative_persistent_time_receipt with "TIME ⧗ ⧖") as "#⧖S"; [solve_ndisj|].
     iExists -[(l, x0)]. iModIntro. iFrame "L Inv". iSplit.
-     - iSplit; last by done. iExists v, (1 + S (S d) `max` (S d0 `max` g0)).
-       iSplit; first by done. iSplit; first by done.
-       iSplit; last by done. unfold shr_bor. simpl.
-       iSplit. { leaf_goal laters to (S (d+1)); first lia. iFrame "pt". }
-       iSplit. { (* TEMPORARY: uses that [ty] has the default sharing predicate. *)
-          iApply (ty_shr_default_from_guard (tracked_ty ty)).
-          { intros ?????. apply Hdef. }
-          leaf_goal laters to (S (d+1)); first lia. 
-          iApply (guards_transitive_left with "gho []").
-          leaf_by_sep. iIntros "[A ⧖]". iDestruct (ty_gho_own_depth_mono with "A") as "[$ back]".
-            { lia. } { lia. } iIntros "A". iFrame "⧖". iApply "back". iFrame.
-       }
-       iNext. iNext.
-       iDestruct (ty_gho_pers_depth_mono with "InnerPers") as "$"; lia.
-     - iApply (proph_obs_impl with "Obs"). done.
-    }
-    unfold advance_credits. lia.
+    - iSplit; last by done.
+      iExists v, (S (S (S d0 `max` g0)) + S (S d)). iFrame "⧖S".
+      iSplit; first by done. iSplit; last by done.
+      replace (S (S (S d0 `max` g0)) + S (S d)) with (S (S (S (S d0 `max` g0)) + S d)) by lia.
+      unfold shr_bor. simpl.
+      iSplit. { leaf_goal laters to (S d + 1); first lia. iFrame "pt". }
+      iSplit. { iApply (ty_shr_depth_mono with "Shrκ"); lia. }
+      iApply (bi.laterN_le 0); [lia|]. simpl.
+      iApply (ty_gho_pers_depth_mono with "Pers"); lia.
+    - iApply (proph_obs_impl with "Obs"). done.
   Qed.
-  
+
   Context {𝔄 ℭ : syn_type}.
   Context {K : Type} `{Countable K}.
   (** The storage protocol, given as a Verus-style [VerusSP] over protocol elements [~~𝔄]

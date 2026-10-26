@@ -38,6 +38,43 @@ Section programs_util.
     iModIntro. iFrame.
   Qed.
   
+  (** A variant of [typed_instr_of_skip] whose second step gives the cumulative time
+      receipt [⧗(S (S m))] for a persistent time receipt [⧖m] provided after the first
+      step (e.g. read from the contents of a guard). Combined with [⧖(S d)], this gives
+      a persistent time receipt for the sum [S (S m) + S d]. *)
+  Lemma typed_instr_of_skip_linear
+    {𝔄 𝔅l} (E: elctx) (L: llctx) (I: invctx)
+    (p : path) (ty : type 𝔄)
+    (T': tctx 𝔅l) (tr: predl_trans [𝔄] 𝔅l) :
+    (∀ x v d tid post mask iκs, ⊢ (llft_ctx -∗ time_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
+      llctx_interp L -∗ invctx_interp tid mask iκs I -∗
+      ⌜eval_path p = Some v⌝ -∗ ty_own ty x d d tid [FVal v] -∗
+      ⟨π, tr post -[x] mask π⟩ -∗
+      ⧖(S d) -∗ £(advance_credits d) -∗ |={⊤}=>
+      ∃ m, ⧖m ∗ (⧗(S (S m)) ={⊤}=∗
+        ∃ xl' , llctx_interp L ∗ invctx_interp tid mask iκs I ∗ tctx_interp tid T' xl' ∗
+          ⟨π, post xl' mask π⟩)
+    )%I)
+    → typed_instr E L I +[p ◁ ty] (Seq Skip Skip) (const T') tr.
+  Proof.
+    intros Hvs tid post mask iκs xl. destruct xl as [x []].
+    iIntros "#CTX #TIME #PROPH #UNIQ #E L I [T _] Obs".
+    iDestruct "T" as (v d) "(p & #⧖1 & own)".
+    wp_bind Skip.
+    iApply wp_fupd.
+    iApply (wp_persistent_time_receipt with "TIME ⧖1"). { set_solver. }
+    iIntros "£ #⧖". wp_let. iModIntro.
+    iMod (Hvs x v d tid post with "CTX TIME PROPH UNIQ E L I p own Obs ⧖ £")
+      as (m) "[#⧖m Cont]".
+    wp_let.
+    iApply wp_fupd.
+    iApply (wp_cumulative_time_receipt_linear with "TIME ⧖m"). { set_solver. }
+    iIntros "⧗".
+    wp_let.
+    iMod ("Cont" with "⧗") as (xl') "(? & ? & ? & ?)".
+    iModIntro. iFrame.
+  Qed.
+
   Lemma typed_inv_instr_of_skip
     {𝔄 𝔅l} (E: elctx) (L: llctx) (I: invctx) (I': invctx)
     (p : path) (ty : type 𝔄)
