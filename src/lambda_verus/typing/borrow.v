@@ -58,22 +58,26 @@ Section borrow.
       unfold blocked_type_elim. iSplit; [|done].
       iExists v. iFrame "#". iIntros "†κ".
       iDestruct ("Back" with "†κ") as "Back". iMod (fupd_mask_mono with "Back") as "Back". { set_solver. }
-      (* The later credit pays for running the lazy update of the final payload. *)
-      iMod (lc_fupd_elim_later with "£ Back") as (x'' d'' g'') "(Eqz & ⧖'' & Lazy)".
-      iMod (fupd_mask_mono with "Lazy") as "[gho pt]"; [rewrite /lazyE; solve_ndisj|].
-      iModIntro. iExists (l, x''), (S d'' `max` g'').
+      (* The later credit pays for running the lazy update of the final payload. The
+         payload is not behind a borrow any more, so the pending ownership is settled
+         right away, without the guard. *)
+      iMod (lc_fupd_elim_later with "£ Back") as (x'' d'' g'') "(Eqz & Lazy)".
+      iMod (fupd_mask_mono with "Lazy") as "(⧖'' & gho & pt)"; [rewrite /lazyE; solve_ndisj|].
+      iModIntro. iExists (l, x''). iFrame "⧗'".
+      iSplitL "Eqz"; last first.
+      { iIntros (G ?) "_ $ !>". iExists (S d'' `max` g'').
       destruct (S d'' `max` g'') as [|d1] eqn:Hd1; first by lia.
       iFrame.
-      iSplitL "Eqz". {
+      rewrite heap_cloc_mapsto_fancy_empty. repeat rewrite ty_size_eq. iFrame.
+      iSplitL. { iDestruct (ty_gho_own_depth_mono with "gho") as "[gho _]"; last by iFrame "gho". { lia. } { lia. } }
+      done. }
+      {
         iNext.
         iApply proph_eqz_modify.
          2: { iApply (proph_eqz_constr (λ t, (l, t)) with "Eqz"). }
         iApply (proph_obs_impl with "Obsξζ"). intros π Ha.
         simpl. simpl in Ha. rewrite <- Ha.  trivial.
       }
-      rewrite heap_cloc_mapsto_fancy_empty. repeat rewrite ty_size_eq. iFrame.
-      iSplitL. { iDestruct (ty_gho_own_depth_mono with "gho") as "[gho _]"; last by iFrame "gho". { lia. } { lia. } }
-      done.
     }
     iCombine "Obs Obsξζ" as "Obs1".
     iApply (proph_obs_impl with "Obs1"). intros π [Hm Hk]. apply Hm; trivial.
@@ -121,7 +125,8 @@ Section borrow.
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
     iDestruct "Own" as "[[#Incl [%Ineqs [UniqBody #PtBase]]] #Phys]".
     
-    iMod (resolve_uniq_body ty x0 ξi d' g' idx κ tid l with "LFT PROPH UNIQ TIME Incl E Ghalf H1 UniqBody") as "(#Obs2 & H1 & #Shr & #PtGuard & #Pers)". { trivial. } { set_solver. }
+    iDestruct (persistent_time_receipt_mono (S d' `max` g') with "⧖") as "#⧖'"; [lia|].
+    iMod (resolve_uniq_body ty x0 ξi d' g' idx κ tid l with "LFT PROPH UNIQ TIME Incl E Ghalf H1 ⧖' UniqBody") as "(#Obs2 & H1 & #Shr & #PtGuard & #Pers)". { trivial. } { set_solver. }
     iDestruct ("Halfback" with "H1 H2") as "Halfback'". iMod (fupd_mask_mono with "Halfback'") as "L". { set_solver. }
     iModIntro. iExists -[(l, x0)]. iFrame.
     iSplit. {
@@ -175,8 +180,9 @@ Section borrow.
     iDestruct "gho" as "(#Incl2 & %Hineq & UniqBody & #PtBase)".
     iDestruct (guards_transitive with "κ'⊑κ Incl2") as "Inclκ'".
     iMod (uniq_body_reborrow ty x0 ξi d' g' idx κ κ' tid l with
-      "LFT PROPH UNIQ κ'⊑κ ⧗ [] UniqBody") as (ζi ζidx) "[UniqBody' Inh]".
-    { solve_ndisj. } { iApply (persistent_time_receipt_mono with "⧖"). lia. }
+      "LFT PROPH UNIQ κ'⊑κ ⧗ UniqBody") as (ζi ζidx) "[UniqBody' Inh]".
+    { solve_ndisj. }
+    iDestruct (lc_weaken 1 with "£") as "£"; [rewrite /advance_credits; lia|].
     iModIntro. iExists -[(l, x0, ζi, d', g', ζidx);
         ((l, x0, ζi, d', g', idx), ζi, ξi)
     ].
@@ -197,10 +203,10 @@ Section borrow.
       } {
         iSplit; last by done. iExists v. iFrame "P". iIntros "#†κ'".
         iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; first set_solver.
-        iMod ("Inh" with "†κ'") as (x'' d'' g'' idx'') "(UB & Eqz & >#⧖'')".
+        iMod ("Inh" with "†κ'") as (x'' d'' g'' idx'') "(UB & Eqz)".
         iMod "Upd" as "_".
         iModIntro. iExists (l, x'', ξi, d'', g'', idx'').
-        iExists (d `max` S d'' `max` g'').
+        iFrame "⧗'".
         iSplitL "Eqz". {
           iNext.
           iApply (proph_eqz_prod with "[Eqz]").
@@ -208,9 +214,17 @@ Section borrow.
             - iApply (proph_eqz_eq with "[]"); [done| |iApply proph_eqz_refl].
               fun_ext=> π /=. apply (uniq_prvar_app_irrel x0 x'' ξi π).
         }
+        (* The restored borrow is pending: its depth is only known after settling it,
+           which reads the time receipt in the lazy part of its payload, with a guard
+           for [κ] (from the guard for the lifetime of [&uniq{κ} ty]). *)
+        iIntros (G ?) "#Gty G".
+        iAssert (G &&{↑NllftG}&&> @[κ])%I as "#Gκ".
+        { iApply (guards_transitive with "Gty"). iApply llftl_intersect_incl_l. }
+        iMod (uniq_body_settle with "LFT Gκ £ UB G") as "(#⧖'' & UB & $)";
+          [rewrite /lazyE; solve_ndisj|].
+        iModIntro. iExists (d `max` S d'' `max` g'').
         iCombine "⧖'' ⧖" as "⧖max".
         iSplit. { iApply (persistent_time_receipt_mono with "⧖max"). lia. }
-        iFrame "⧗'".
         iSplit; last by done. iSplit. { iFrame "Incl2". }
         iSplit. { iPureIntro. nia. }
         iFrame "UB".
@@ -405,6 +419,19 @@ Section borrow.
     destruct Extr as [Htrx _]=>??. apply Htrx. by case.
   Qed.
  
+  (* PROTOTYPE (proto/settle-at-unblock): the [&uniq &uniq] deref is disabled.
+     With the time receipt inside the lazy part of the payload, the outer payload
+     cannot be rebuilt when [κ] ends: [proph_ibor_unnest] rebuilds it in a closing view
+     shift, as [|={lazyE}=> ⧖(S (S d1') `max` …) ∗ own (&uniq{κ'} ty) … ∗ pt], and the
+     receipt [⧖(S d1' `max` g1')] of the final inner value is now only available in the
+     lazy part of the payload of the restored inner borrow, at [κ'], which may still be
+     alive. Opening it needs a guard for [κ'], which neither the closing view shift nor
+     the lazy update of the outer payload has. Relaxing the depth constraint of
+     [&uniq{κ'}] for a dead [κ'] does not help, since [κ'] need not be dead. What would
+     work is to settle the outer payload later, with a guard for the lifetime of its type
+     (which every consumer of the payload has), i.e. a pending ownership with a settling
+     law per type. *)
+  (*
   Lemma type_deref_uniq_uniq_instr {𝔄 E L I} κ κ' p (ty : type 𝔄) :
     lctx_lft_alive E L κ →
     typed_instr_ty E L I +[p ◁ &uniq{κ} (&uniq{κ'}ty)] (!p) (&uniq{κ} ty)
@@ -571,6 +598,7 @@ Section borrow.
     iIntros. iApply typed_body_tctx_incl; [done|].
     by iApply type_let; [by eapply type_deref_uniq_uniq_instr|solve_typing| |done].
   Qed.
+  *)
 
   Lemma type_deref_shr_uniq_instr {𝔄} {E L I} κ κ' p (ty : type 𝔄) :
     lctx_lft_alive E L κ →

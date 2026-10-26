@@ -896,8 +896,7 @@ Section atomics.
     iMod (uniq_body_acc with "LFT UNIQ HguardsK UniqBody H1") as "(Bor & £saved & Hclose)".
     1: solve_ndisj.
     wp_rec.
-    iDestruct "Bor" as "(#H⧖ & Hlazy)".
-    iMod (fupd_mask_mono with "Hlazy") as "[H↦ Hcl']"; [rewrite /lazyE; solve_ndisj|].
+    iMod (fupd_mask_mono with "Bor") as "(#H⧖ & H↦ & Hcl')"; [rewrite /lazyE; solve_ndisj|].
     (* The contents at depth 0 are absurd. *)
     destruct di; [by iDestruct "H↦" as "[]"|].
     destruct cl' as [l' [ | ]] eqn:?.
@@ -987,7 +986,7 @@ Section atomics.
     iMod ("Halfback" with "H1 H2") as "L".
     iMod "Hback" as "_".
 
-    iMod (resolve_uniq_body (cell_points_to_ty int) ([γ1], n) with "LFT PROPH UNIQ TIME [Incl] E [] L UB") as "[#Hrslv [L #HBor]]"=> //.
+    iMod (resolve_uniq_body (cell_points_to_ty int) ([γ1], n) with "LFT PROPH UNIQ TIME [Incl] E [] L H⧖ UB") as "[#Hrslv [L #HBor]]"=> //.
     { iApply guards_refl. }
     
     iModIntro.
@@ -1064,8 +1063,7 @@ Section atomics.
     iMod (uniq_body_acc with "LFT UNIQ HguardsK UniqBody H1") as "(Bor & £saved & Hclose)".
     1: solve_ndisj.
     wp_rec.
-    iDestruct "Bor" as "(#H⧖ & Hlazy)".
-    iMod (fupd_mask_mono with "Hlazy") as "[H↦ Hcl']"; [rewrite /lazyE; solve_ndisj|].
+    iMod (fupd_mask_mono with "Bor") as "(#H⧖ & H↦ & Hcl')"; [rewrite /lazyE; solve_ndisj|].
     (* The contents at depth 0 are absurd. *)
     destruct di; [by iDestruct "H↦" as "[]"|].
     destruct cl' as [l' [ | ]] eqn:?.
@@ -1155,7 +1153,7 @@ Section atomics.
       iMod ("Halfback" with "H1 H2") as "L".
       iMod "Hback" as "_".
 
-      iMod (resolve_uniq_body (cell_points_to_ty int) ([γ1], n2) with "LFT PROPH UNIQ TIME [Incl] E [] L UB") as "[#Hrslv [L #HBor]]"=> //.
+      iMod (resolve_uniq_body (cell_points_to_ty int) ([γ1], n2) with "LFT PROPH UNIQ TIME [Incl] E [] L H⧖ UB") as "[#Hrslv [L #HBor]]"=> //.
       { iApply guards_refl. }
       
       iModIntro.
@@ -1220,7 +1218,7 @@ Section atomics.
       iMod ("Halfback" with "H1 H2") as "L".
       iMod "Hback" as "_".
 
-      iMod (resolve_uniq_body (cell_points_to_ty int) ([γ1], x) with "LFT PROPH UNIQ TIME [Incl] E [] L UB") as "[#Hrslv [L #HBor]]"=> //.
+      iMod (resolve_uniq_body (cell_points_to_ty int) ([γ1], x) with "LFT PROPH UNIQ TIME [Incl] E [] L H⧖ UB") as "[#Hrslv [L #HBor]]"=> //.
       { iApply guards_refl. }
       
       iModIntro.

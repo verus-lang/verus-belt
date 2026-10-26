@@ -411,8 +411,8 @@ Section ltype_own.
       (c: ~~ (uniq_cellₛ 𝔄)) (wπ: proph (uniq_cellₛ 𝔄)) : iProp Σ :=
     ∃ (p: lpat) (r: prfn 𝔄), ⌜pat_ok κ p⌝ ∗ ⌜wπ = λ π, (prfn_den r π, c.2)⌝ ∗
       ghost_var γ (1/2) ((p, existT 𝔄 r) : ltype_state) ∗
-      ⧖(S (dec_depth c.2.1) `max` dec_depth c.2.2) ∗
-      |={lazyE}=> node p r (dec_depth c.2.1) (dec_depth c.2.2) tid l.
+      |={lazyE}=> (⧖(S (dec_depth c.2.1) `max` dec_depth c.2.2) ∗
+        node p r (dec_depth c.2.1) (dec_depth c.2.2) tid l).
 
   Definition cpd_own {𝔄} (κ: lft) (ξi: positive) (γ: gname) (p: lpat)
       (node: lpat → prfn 𝔄 → nat → nat → thread_id → cloc → iProp Σ)
@@ -894,8 +894,8 @@ Section cpd.
       tid l (x: ~~𝔄) d g wπ :
     cpd_body κ γ node tid l (uniq_cell x d g) wπ ⊣⊢
     ∃ p r, ⌜pat_ok κ p⌝ ∗ ⌜wπ = λ π, (prfn_den r π, (enc_depth d, enc_depth g))⌝ ∗
-      ghost_var γ (1/2) ((p, existT 𝔄 r) : ltype_state) ∗ ⧖(S d `max` g) ∗
-      |={lazyE}=> node p r d g tid l.
+      ghost_var γ (1/2) ((p, existT 𝔄 r) : ltype_state) ∗
+      |={lazyE}=> (⧖(S d `max` g) ∗ node p r d g tid l).
   Proof. by rewrite /cpd_body /= !dec_enc_depth. Qed.
 
   Local Lemma ltype_state_agree {𝔄} (p p': lpat) (r r': prfn 𝔄) :
@@ -914,17 +914,17 @@ Section cpd.
     Timeless G → ↑Nllft ⊆ E →
     llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
     cpd_own κ ξi γ p node r d g tid l ={E}=∗
-      ⌜pat_ok κ p⌝ ∗ ⧖(S d `max` g) ∗ ▷ (|={lazyE}=> node p r d g tid l) ∗
+      ⌜pat_ok κ p⌝ ∗ ▷ (|={lazyE}=> (⧖(S d `max` g) ∗ node p r d g tid l)) ∗
       (∀ p' (r': prfn 𝔄) d' g', ⌜pat_ok κ p'⌝ -∗ ⧖(S d' `max` g') -∗ ▷ node p' r' d' g' tid l
          ={↑Nllft}=∗ cpd_own κ ξi γ p' node r' d' g' tid l ∗ G).
   Proof.
     iIntros (??) "#LFT #UNIQ #Gk G (%x₀ & %idx & Obs & Gh & ⧗ & #Bor)".
     have ?: Inhabited (prfn 𝔄) := populate r.
     iAssert (∀ wπ, ▷ cpd_body κ γ node tid l (uniq_cell x₀ d g) wπ -∗ ghost_var γ (1/2) ((p, existT 𝔄 r) : ltype_state) ={E}=∗
-      ⌜pat_ok κ p⌝ ∗ ⧖(S d `max` g) ∗ ▷ (|={lazyE}=> node p r d g tid l) ∗ ghost_var γ (1/2) ((p, existT 𝔄 r) : ltype_state) ∗
+      ⌜pat_ok κ p⌝ ∗ ▷ (|={lazyE}=> (⧖(S d `max` g) ∗ node p r d g tid l)) ∗ ghost_var γ (1/2) ((p, existT 𝔄 r) : ltype_state) ∗
       ghost_var γ (1/2) ((p, existT 𝔄 r) : ltype_state))%I as "Open".
     { iIntros (wπ) "Body Gh". rewrite cpd_body_cell.
-      iDestruct "Body" as (p1 r1) "(>%Hok & >%Hwπ & >Gh' & >#⧖ & Node)".
+      iDestruct "Body" as (p1 r1) "(>%Hok & >%Hwπ & >Gh' & Node)".
       iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%ltype_state_agree.
       by iFrame "∗#". }
     iAssert (∀ p' (r': prfn 𝔄) d' g', ⌜pat_ok κ p'⌝ -∗ ⧖(S d' `max` g') -∗ ▷ node p' r' d' g' tid l -∗
@@ -937,14 +937,14 @@ Section cpd.
       iModIntro. rewrite cpd_body_cell. iNext. iExists p', r'. by iFrame "∗#". }
     iDestruct "Obs" as "[Tok|(%ζl & Tok)]".
     - iMod (proph_idx_bor_gen_acc with "LFT UNIQ Gk Tok Bor G") as (wπ) "[Body Close]"; [done|].
-      iMod ("Open" with "Body Gh") as "($ & $ & $ & Gh & Gh')". iModIntro.
+      iMod ("Open" with "Body Gh") as "($ & $ & Gh & Gh')". iModIntro.
       iIntros (p' r' d' g') "%Hok' #⧖' Node'".
       iMod ("Shift" with "[//] ⧖' Node' Gh Gh'") as "[Gh Body]".
       iMod ("Close" with "[] Body") as (idx') "(Tok & Bor' & $)".
       { by iIntros "!>" (??) "$". }
       iModIntro. iExists x₀, idx'. iSplitL "Tok"; [by iLeft|]. iFrame.
     - iMod (proph_idx_bor_gen_rsv_acc with "LFT UNIQ Gk Tok Bor G") as (wπ) "[Body Close]"; [done|].
-      iMod ("Open" with "Body Gh") as "($ & $ & $ & Gh & Gh')". iModIntro.
+      iMod ("Open" with "Body Gh") as "($ & $ & Gh & Gh')". iModIntro.
       iIntros (p' r' d' g') "%Hok' #⧖' Node'".
       iMod ("Shift" with "[//] ⧖' Node' Gh Gh'") as "[Gh Body]".
       iMod ("Close" with "[] Body") as (idx') "(Tok & Bor' & $)".
@@ -986,24 +986,23 @@ Section fold.
     iMod (proph_idx_bor_gen_acc with "LFT UNIQ Gk Tok Bor G") as (wπ) "[Body Close]";
       [solve_ndisj|].
     rewrite cpd_body_cell.
-    iDestruct "Body" as (p1 r1) "(>%Hok & >%Hwπ & >Gh' & >#⧖ & Node)".
+    iDestruct "Body" as (p1 r1) "(>%Hok & >%Hwπ & >Gh' & Node)".
     iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%ltype_state_agree.
     iMod (lc_fupd_elim_later with "£ Node") as "Node".
-    iMod (fupd_mask_mono with "Node") as "Node"; [rewrite /lazyE; solve_ndisj|].
+    iMod (fupd_mask_mono with "Node") as "[#⧖ Node]"; [rewrite /lazyE; solve_ndisj|].
     iDestruct (Hnode with "Node") as (v) "(%Hv & Gho & Pt)".
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
     iMod ("Close" $! (uniq_cell v d g) (vπ (uniq_cell v d g))
       (λ c wπ, ⌜wπ = vπ c⌝ ∗ uniq_payload ty tid l c)%I with "[Gh Gh'] [Gho Pt]")
       as (idx') "(Tok & Bor' & G)".
     { iIntros "!>" (c wπ2) "[>-> Pl]". rewrite /uniq_payload.
-      iDestruct "Pl" as "(>#⧖2 & Pl)".
       destruct (Hback c.1 (dec_depth c.2.1) (dec_depth c.2.2))
         as (p'' & r'' & [Hok'' Hden''] & Hent).
       iMod (ghost_var_update_halves ((p'', existT 𝔄 r'') : ltype_state) with "Gh Gh'")
         as "[_ Gh]".
-      iModIntro. iNext. iExists p'', r''. iFrame "Gh ⧖2". iSplit; [done|]. iSplit.
+      iModIntro. iNext. iExists p'', r''. iFrame "Gh". iSplit; [done|]. iSplit.
       { iPureIntro. rewrite Hden''. by destruct c as [? [??]]. }
-      iMod "Pl". iModIntro. by iApply Hent. }
+      iMod "Pl" as "($ & Pl)". iModIntro. by iApply Hent. }
     { iNext. iSplit; [done|]. iApply (uniq_payload_intro with "⧖ Gho Pt"). }
     iMod "Upd" as "_".
     iAssert (proph_idx_bor κ (uniq_prvar x₀ ξi) idx' (uniq_payload ty tid l)) with "[Bor']"
@@ -1153,7 +1152,7 @@ Section create.
       ltype_own (Uniq κ ξi γ) lt r d g tid l ∗
       ([†κ] ={↑Nllft}=∗ ▷ ∃ p' r' d' g',
         ((λ π, (π (uniq_prvar (prfn_wit r) ξi)).1) :== prfn_den r') ∗ ⌜pat_ok κ p'⌝ ∗
-        ⧖(S d' `max` g') ∗ |={lazyE}=> ltype_own_cp false lt (Owned 0) p' r' d' g' tid l).
+        |={lazyE}=> (⧖(S d' `max` g') ∗ ltype_own_cp false lt (Owned 0) p' r' d' g' tid l)).
   Proof.
     iIntros (Hcpd Hok ?) "#LFT #PROPH #UNIQ #⧖ ⧗ H".
     set x₀ := prfn_wit r.
@@ -1170,8 +1169,8 @@ Section create.
       iExists x₀, idx. iSplitL "Tok"; [by iLeft|]. iFrame "∗#".
     - iIntros "†κ". iMod ("Back" with "†κ") as "Back". iModIntro. iNext.
       iDestruct "Back" as (c wπ) "[Eqz Body]". rewrite {1}(uniq_cell_surj c) cpd_body_cell.
-      iDestruct "Body" as (p' r') "(%Hok' & -> & _ & ⧖' & Node)".
-      iExists p', r', (dec_depth c.2.1), (dec_depth c.2.2). iFrame "⧖' Node". iSplit; [|done].
+      iDestruct "Body" as (p' r') "(%Hok' & -> & _ & Node)".
+      iExists p', r', (dec_depth c.2.1), (dec_depth c.2.2). iFrame "Node". iSplit; [|done].
       iApply (proph_eqz_fst_const (λ π, π (uniq_prvar x₀ ξi)) (prfn_den r')
         (enc_depth (dec_depth c.2.1), enc_depth (dec_depth c.2.2))).
       by rewrite !enc_dec_depth.

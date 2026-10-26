@@ -98,13 +98,23 @@ Section type_context.
       case=>//. case=>// ? IH ? _. move: (IH _ eq_refl). apply _.
   Qed.
 
+  (** Pending ownership of a value that has been given back to a lender: it becomes
+      ownership (with a time receipt for its depth) once it is settled, which needs a
+      guard for the lifetime of the type. For a unique borrow whose reborrow has ended,
+      settling reads the time receipt of the final contents, which is in the lazy part
+      of the payload of the restored borrow. *)
+  Definition tctx_pending_own {𝔄} (tid: thread_id) (ty: type 𝔄) (x: ~~ 𝔄) (v: val)
+      : iProp Σ :=
+    ∀ G, ⌜Timeless G⌝ -∗ (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ G ={⊤}=∗
+      G ∗ ∃ d, ⧖d ∗ ty_own ty x d d tid [FVal v].
+
   (** Type Context Element Interpretation *)
   Definition tctx_elt_interp {𝔄} (tid: thread_id) (t: tctx_elt 𝔄) (x: ~~ 𝔄)
     : iProp Σ := match t with
     | p ◁ ty => ∃v d, ⌜eval_path p = Some v⌝ ∗ ⧖d ∗ ty_own ty x d d tid [FVal v]
     | p ◁{κ} bty => blocked_type_elim bty x (λ 𝔄₀ ty x₀ ,
       ∃v, ⌜eval_path p = Some v⌝ ∗
-        ([†κ] ={⊤}=∗ ∃x' d, ▷(blockedπ x₀ :== @vπ 𝔄₀ x') ∗ ⧖d ∗ ⧗1 ∗ (ty_own ty x' d d tid [FVal v]))
+        ([†κ] ={⊤}=∗ ∃x', ▷(blockedπ x₀ :== @vπ 𝔄₀ x') ∗ ⧗1 ∗ tctx_pending_own tid ty x' v)
       ) 
      end%I.
 
@@ -547,16 +557,20 @@ Section lemmas.
       (λ π '(x -:: xl), λ '(x' -:: xl'), blockedπ x π = vπ x' π ∧ f π xl xl').
   Proof.
     iIntros (Alv Un ??[??]?) "#LFT #TIME #E #L G #†κ /=[(%v &%& Upd) T]".
-    iMod ("Upd" with "†κ") as (x' d) "(Eqz & #⧖dp & ⧗ & ty)".
+    iMod ("Upd" with "†κ") as (x') "(Eqz & ⧗ & Pending)".
+    
+    leaf_open "L" with "G" as "[L1 back]". { set_solver. }
+    iDestruct (Alv with "L1 E") as "#Lkg".
+    iMod ("back" with "L1") as "G".
+    
+    (* Settle the pending ownership, with the guard for the lifetime of the type. *)
+    iMod ("Pending" with "[%] [] G") as "[G (%d & #⧖dp & ty)]".
+    { apply _. } { iApply (guards_transitive with "L Lkg"). }
     
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖dp") as "[⧖S £]"; first by solve_ndisj.
     iDestruct (lc_weaken (d * (d + 2) + (0 + (d+1)*(d+1)) + 1 + 1 + d + 1 + 1) with "£") as "£". {
       unfold advance_credits. lia. }
     iDestruct "£" as "[[[[[[£k £k'] £1] £1'] £s] £e] £g]".
-    
-    leaf_open "L" with "G" as "[L1 back]". { set_solver. }
-    iDestruct (Alv with "L1 E") as "#Lkg".
-    iMod ("back" with "L1") as "G".
     
     iMod (fractional.frac_split_guard_in_half with "G L") as (γ2) "[H1 [H2 [#Ghalf2 #Halfback2]]]"; first by solve_ndisj.
     

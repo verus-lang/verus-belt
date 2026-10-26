@@ -1053,8 +1053,7 @@ Section StorageProtocol.
 
     rewrite uniq_payload_cell.
     unfold gt_gho.
-    iDestruct "Hgho1" as "(H⧖ & Hlazy)".
-    iMod (fupd_mask_mono with "Hlazy") as "[Hgho1 H↦]"; [rewrite /lazyE; solve_ndisj|].
+    iMod (fupd_mask_mono with "Hgho1") as "(H⧖ & Hgho1 & H↦)"; [rewrite /lazyE; solve_ndisj|].
     iDestruct "Hgho1" as "(%Hγ1 & #Hsto1 & Hown1)".
 
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & _)" => //.
