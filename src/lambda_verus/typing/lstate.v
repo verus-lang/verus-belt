@@ -112,6 +112,70 @@ Definition prfn_place {𝔄} (r: prfn 𝔄) : place_rfn 𝔄 :=
 Lemma prfn_place_den {𝔄} (r: prfn 𝔄) : place_rfn_den (prfn_place r) = prfn_den r.
 Proof. destruct r; [by rewrite prfn_den_inl|done]. Qed.
 
+(** * Reservations
+
+  [prfn_rsv r ζl]: the denotations of the prophetic leaves ([PlaceProph]) of [r]
+  depend only on [ζl]. A compound place behind a unique borrow holds a reservation
+  of the borrow's prophecy variable for such a [ζl] (see [cpd_own] in
+  [typing/ltype.v]), so that it can be resolved while some of its leaves are
+  blocked. *)
+
+Definition place_rfn_rsv {𝔄} (r: place_rfn 𝔄) (ζl: list proph_var) : Prop :=
+  match r with PlaceIn _ => True | PlaceProph _ f => f ./ ζl end.
+
+Fixpoint prfn_rsv {𝔄} : prfn 𝔄 → list proph_var → Prop :=
+  match 𝔄 return prfn 𝔄 → list proph_var → Prop with
+  | uniq_borₛ 𝔅 => λ r ζl, match r with
+      | inl lr => place_rfn_rsv lr ζl
+      | inr (_, r', _) => prfn_rsv r' ζl
+      end
+  | at_locₛ 𝔅 => λ r ζl, match r with
+      | inl lr => place_rfn_rsv lr ζl
+      | inr (_, r') => prfn_rsv r' ζl
+      end
+  | prodₛ 𝔅 ℭ => λ r ζl, match r with
+      | inl lr => place_rfn_rsv lr ζl
+      | inr (r1, r2) => prfn_rsv r1 ζl ∧ prfn_rsv r2 ζl
+      end
+  | _ => λ r ζl, match r with inl lr => place_rfn_rsv lr ζl | inr e => match e with end end
+  end.
+
+Lemma prfn_rsv_inl {𝔄} (lr: place_rfn 𝔄) ζl : prfn_rsv (inl lr) ζl = place_rfn_rsv lr ζl.
+Proof. by destruct 𝔄. Qed.
+
+Lemma prfn_rsv_in {𝔄} (x: ~~𝔄) ζl : prfn_rsv (inl (PlaceIn x)) ζl.
+Proof. by rewrite prfn_rsv_inl. Qed.
+
+Lemma proph_dep_weaken {A} (vπ: proph A) ζl ζl' :
+  (∀ ζ, ζ ∈ ζl → ζ ∈ ζl') → vπ ./ ζl → vπ ./ ζl'.
+Proof. move=> In Dep π π' Eqv. apply Dep=> ζ ?. by apply Eqv, In. Qed.
+
+Lemma prfn_rsv_weaken {𝔄} (r: prfn 𝔄) ζl ζl' :
+  (∀ ζ, ζ ∈ ζl → ζ ∈ ζl') → prfn_rsv r ζl → prfn_rsv r ζl'.
+Proof.
+  move=> In. have Hl: ∀ (𝔅: syn_type) (lr: place_rfn 𝔅),
+    place_rfn_rsv lr ζl → place_rfn_rsv lr ζl'.
+  { move=> ? [?|??] /=; [done|]. by apply proph_dep_weaken. }
+  induction 𝔄; destruct r as [lr|r]; simpl; try apply Hl; try (destruct r; fail).
+  - destruct r as [r1 r2]. move=> [??]. split; [by apply IH𝔄1|by apply IH𝔄2].
+  - destruct r as [l' r']. apply IH𝔄.
+  - destruct r as [[l' r'] ξi]. apply IH𝔄.
+Qed.
+
+Lemma prfn_rsv_app_l {𝔄} (r: prfn 𝔄) ζl ζl' : prfn_rsv r ζl → prfn_rsv r (ζl ++ ζl').
+Proof. apply prfn_rsv_weaken=> ??. set_solver. Qed.
+
+Lemma prfn_rsv_app_r {𝔄} (r: prfn 𝔄) ζl ζl' : prfn_rsv r ζl' → prfn_rsv r (ζl ++ ζl').
+Proof. apply prfn_rsv_weaken=> ??. set_solver. Qed.
+
+(** The denotation of [PlaceGhost x₀ ζi] depends only on the prophecy variable. *)
+Lemma place_ghost_dep {𝔄} (x₀: ~~𝔄) ζi :
+  place_rfn_den (PlaceGhost x₀ ζi) ./ [uniq_prvar x₀ ζi].
+Proof. apply (proph_dep_constr fst (λ π, π (uniq_prvar x₀ ζi))), proph_dep_one. Qed.
+
+Lemma place_ghost_rsv {𝔄} (x₀: ~~𝔄) ζi : place_rfn_rsv (PlaceGhost x₀ ζi) [uniq_prvar x₀ ζi].
+Proof. apply place_ghost_dep. Qed.
+
 (** * Blocking patterns *)
 
 (** The [Σ]-independent part of a place type: which subplaces are blocked,
