@@ -342,6 +342,7 @@ src/lambda_verus/typing/examples/place_sum.v
 src/lambda_verus/typing/examples/place_sum2.v
 src/lambda_verus/typing/examples/place_resolve.v
 src/lambda_verus/typing/examples/place_memcpy.v
+src/lambda_verus/typing/examples/place_deep_box.v
 
 
 -arg -w -arg -argument-scope-delimiter

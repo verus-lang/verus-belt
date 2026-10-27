@@ -17,7 +17,9 @@
   ([type_write_oplace_instr], which also re-initializes an uninitialized leaf). Moving
   out and writing change the type of the leaf, so the place context is retyped
   ([pctx_retype]). Folding back gives an owned pointer whose type may have
-  uninitialized components. All leaf operations are of values of size 1, at any path
+  uninitialized components. An owned pointer below other owned pointers (two or more
+  laters deep) is unfolded by an instruction ([type_unfold_oplace_own_instr]). All leaf
+  operations are of values of size 1, at any path
   (the address is computed by [pctx_expr], one load per owned pointer above the
   leaf). *)
 
@@ -169,6 +171,40 @@ Section typing.
   Proof.
     apply tctx_oplace_change_hole; [done|done|].
     iIntros ([l' y] ??????) "H !>". by iApply (ownptr_ofty_fold_own with "H").
+  Qed.
+
+  (** Unfolding an owned pointer at any depth (e.g. a box inside a box inside the root):
+      below [k] laters ([pctx_mode K 1 = k]), the points-to of the pointee is stripped of
+      its laters with the later credits of a program step. *)
+  Lemma type_unfold_oplace_own_instr {𝔅 𝔄} E L I p n' (K: pctx (at_locₛ 𝔅) 𝔄) n (ty: type 𝔅) :
+    typed_instr E L I +[p ◁ₗown{n'} pctx_plug K (OfTy (own_ptr n ty))] Skip
+      (λ _, +[p ◁ₗown{n'} pctx_plug K (OwnPtrLty n (OfTy ty))]) (λ post '-[x], post -[x]).
+  Proof.
+    iIntros (tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
+    destruct x as [[l x₀] ζm].
+    rewrite /tctx_elt_interp.
+    iDestruct "T" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|]. iIntros "£ _".
+    rewrite /ltype_own !lty_pat_plug !lty_rfn_plug !ltype_own_plug.
+    iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
+    iDestruct (pctx_own_mode_le with "Rest") as %Hk.
+    iDestruct "L1" as (? ->) "[Pt Gho]".
+    destruct (pctx_get K x₀) as [l' y] eqn:Hm.
+    iDestruct (lc_weaken (pctx_mode K 1) with "£") as "£";
+      [rewrite /advance_credits pctx_mode_add; nia|].
+    iMod (lc_fupd_elim_laterN with "£ Gho") as "Gho".
+    destruct (pctx_depth K d) as [|dh] eqn:Hdh; [done|].
+    iDestruct "Gho" as "(Pt' & Fr' & Gho)".
+    wp_seq. iExists -[((l, x₀), ζm)]. iFrame "L I Obs". iSplit; [|done].
+    rewrite /tctx_elt_interp. iExists #l. iSplit; [done|]. iExists D, d, g. iFrame "⧖".
+    rewrite !lty_nblk_plug /=. iFrame "⧗p".
+    rewrite (lty_size_plug_eq K (OwnPtrLty n (OfTy ty)) (OfTy (own_ptr n ty))) //.
+    iFrame "Fr". iSplit; [done|]. iSplit; [done|].
+    rewrite /ltype_own !lty_pat_plug !lty_rfn_plug !ltype_own_plug Hm Hdh /=.
+    iFrame "Rest Pt". iSplit; [done|]. iSplitL "Fr'"; [by iApply bi.laterN_intro|].
+    iExists y. iSplit; [done|]. rewrite /ofty_owned.
+    iEval (rewrite (heap_cloc_mapsto_fancy_empty l' (ty_phys ty y tid)) ty_size_eq) in "Pt'".
+    iFrame "Pt'". rewrite Nat.add_1_r /=. iNext. by iApply bi.laterN_intro.
   Qed.
 
   (** * Mutable borrow of a leaf *)
