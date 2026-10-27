@@ -102,7 +102,7 @@ Section place_sum2.
       set_some_fst_spec _ [BNamed "x"; BNamed "v"] _ _ _) as H.
     unlock in H. apply H. clear H.
     intros α ϝ k wl. destruct wl as [vx [vv []]]. simpl_subst.
-    (* [α] is alive (proved once: the proof by [solve_typing] is slow to check). *)
+    (* [α] is alive (proved once and reused). *)
     have Alv: lctx_lft_alive
       (fp_E (FP ∅ +[&uniq{α} (opt * int); int]%T int AtomicClosed) ϝ) [ϝ ⊑ₗ []] α.
     { eapply lctx_lft_alive_external; [rewrite /fp_E /=; by left|solve_typing]. }

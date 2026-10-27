@@ -4,8 +4,9 @@ From lrust.typing Require Export type function product programs own cont uninit 
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
-(** Kept in its own file: the kernel check of [get_mid_shr_type] takes about 14
-    minutes. *)
+(** (The kernel check of [get_mid_shr_type] used to take about 14 minutes, because of
+    the [solve_typing] proofs of membership in [fp_E …]; see [list_spine_norm] in
+    [typing/base.v].) *)
 
 Section place_shr_mid.
   Context `{!typeG Σ}.

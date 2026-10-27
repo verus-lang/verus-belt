@@ -59,7 +59,7 @@ Section place_resolve.
       get_last_spec _ [BNamed "x"] _ _ _) as H.
     unlock in H. apply H. clear H.
     intros α ϝ k wl. destruct wl as [vx []]. simpl_subst.
-    (* [α] is alive (proved once: the proof by [solve_typing] is slow to check). *)
+    (* [α] is alive (proved once and reused). *)
     have Alv: lctx_lft_alive
       (fp_E (FP ∅ +[&uniq{α} (own_ptr 1 int * (opt * int))]%T (&uniq{α} int) AtomicClosed) ϝ)
       [ϝ ⊑ₗ []] α.
@@ -188,7 +188,7 @@ Section place_resolve.
       { apply (type_sum_assign_oplace_instr _ _ _ vb v5 3
           (PSnd (OwnPtrLty 1 (OfTy (↯ 1))) PHole) +[(); int]%T 1%fin (const (const True)));
           [done|apply resolve_just]. }
-      { simpl. solve_typing. } { reflexivity. }
+      { solve_typing. } { reflexivity. }
       (* drop b *)
       iApply type_seq.
       { apply (type_drop_oplace_instr _ _ _ vb 3 3

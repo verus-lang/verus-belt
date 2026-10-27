@@ -518,10 +518,11 @@ Section uniq_util.
     rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
     have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ≡{n}≡ ofty_owned 0 ty' x d g tid l.
     { intros. rewrite /ofty_owned Hp. f_equiv. apply Hg. }
-    destruct p; try (f_equiv=>?; f_equiv; apply Hofty).
-    rewrite /blocked_owned. f_equiv. f_equiv.
-    rewrite (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv. do 3 (f_equiv=>?).
-    do 2 f_equiv. apply Hofty.
+    (* [PatBlocked] separately: [f_equiv=>?] takes about 25 s to fail on it. *)
+    destruct p; [|rewrite /blocked_owned; f_equiv; f_equiv;
+      rewrite (guarded_upd_lft_equiv _ _ _ _ Hl); f_equiv; do 3 (f_equiv=>?);
+      do 2 f_equiv; apply Hofty|..];
+      f_equiv=>?; f_equiv; apply Hofty.
   Qed.
 
   Lemma uniq_gbody_proper {𝔄} κp (ty ty': type 𝔄) tid tid' l c wπ :
@@ -535,10 +536,11 @@ Section uniq_util.
     rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
     have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ⊣⊢ ofty_owned 0 ty' x d g tid' l.
     { intros. rewrite /ofty_owned Hp. f_equiv. apply Hg. }
-    destruct p; try (f_equiv=>?; f_equiv; apply Hofty).
-    rewrite /blocked_owned. f_equiv. f_equiv.
-    rewrite (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv. do 3 (f_equiv=>?).
-    do 2 f_equiv. apply Hofty.
+    (* [PatBlocked] separately: [f_equiv=>?] takes about 25 s to fail on it. *)
+    destruct p; [|rewrite /blocked_owned; f_equiv; f_equiv;
+      rewrite (guarded_upd_lft_equiv _ _ _ _ Hl); f_equiv; do 3 (f_equiv=>?);
+      do 2 f_equiv; apply Hofty|..];
+      f_equiv=>?; f_equiv; apply Hofty.
   Qed.
 
   Lemma uniq_gbody_loc {𝔄} κp (ty: type 𝔄) tid l l' c wπ :
@@ -550,9 +552,10 @@ Section uniq_util.
     rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
     have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ⊣⊢ ofty_owned 0 ty x d g tid l'.
     { intros. by rewrite /ofty_owned Hl. }
-    destruct p; try (f_equiv=>?; f_equiv; apply Hofty).
-    rewrite /blocked_owned. f_equiv. f_equiv. f_equiv. do 3 (f_equiv=>?).
-    do 2 f_equiv. apply Hofty.
+    (* [PatBlocked] separately: [f_equiv=>?] takes long to fail on it. *)
+    destruct p; [|rewrite /blocked_owned; f_equiv; f_equiv; f_equiv; do 3 (f_equiv=>?);
+      do 2 f_equiv; apply Hofty|..];
+      f_equiv=>?; f_equiv; apply Hofty.
   Qed.
 
   Lemma uniq_body_loc {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l l' :
