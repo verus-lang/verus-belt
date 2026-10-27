@@ -404,7 +404,9 @@ Section typing.
     iSplit; [done|]. iSplit; [done|].
     rewrite (lty_fold_plug_eq' K (OwnPtrLty n (OfTy ty)) (OfTy (own_ptr n ty))) //.
     iFrame "Incl".
-    rewrite /ltype_own ltype_own_cp_uniq_plug // lty_pat_plug lty_rfn_plug Hm /=.
+    (* Only in the goal: a [rewrite] in the whole proof-mode goal also tries to match
+       [ltype_own_cp_uniq_plug] in the hypotheses, which takes about 80 s. *)
+    iEval (rewrite /ltype_own ltype_own_cp_uniq_plug // lty_pat_plug lty_rfn_plug Hm /=).
     rewrite (lty_fold_plug_eq' K (OwnPtrLty n (OfTy ty)) (OfTy (own_ptr n ty))) //.
   Qed.
 
