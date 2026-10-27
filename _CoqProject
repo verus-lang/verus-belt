@@ -307,6 +307,7 @@ src/lambda_verus/typing/place_nested.v
 src/lambda_verus/typing/place_own.v
 src/lambda_verus/typing/place_shr.v
 src/lambda_verus/typing/place_sum.v
+src/lambda_verus/typing/place_resolve.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/tracked.v
@@ -336,6 +337,7 @@ src/lambda_verus/typing/examples/place_own.v
 src/lambda_verus/typing/examples/place_shr.v
 src/lambda_verus/typing/examples/place_shr_mid.v
 src/lambda_verus/typing/examples/place_sum.v
+src/lambda_verus/typing/examples/place_resolve.v
 
 
 -arg -w -arg -argument-scope-delimiter
