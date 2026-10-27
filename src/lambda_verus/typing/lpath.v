@@ -2,13 +2,16 @@
 
   Access to a subplace of a (nested) place type, in the style of the place
   contexts of RefinedRust (paper §5.3; [typed_place] in [rust_typing/programs.v]
-  of the RefinedRust development). The subplaces are fields of (nested) products
-  and pointees of owned pointers.
+  of the RefinedRust development). The subplaces are fields of (nested) products,
+  pointees of owned pointers and payloads of sums.
 
   - A _place context_ [K : pctx 𝔅 𝔄] is a place type of [𝔄] with a hole of
     type [𝔅]. It is given from the root: [PFst K lt2] is a pair whose field 0 is
     the context [K] and whose field 1 has the place type [lt2] ([PSnd] dually);
-    [POwn n K] is an owned pointer whose pointee is the context [K].
+    [POwn n K] is an owned pointer whose pointee is the context [K]; [PSum tyl i w K] is
+    a sum of variant [i] whose payload is the context [K] (at offset 1, after the tag;
+    [w] is a default payload value, only used by [pctx_get] for values of other
+    variants, which are not owned: see [pctx_in]).
     [pctx_plug K lt] plugs a place type into the hole.
   - The hole has a value ([pctx_get], [pctx_set] on values of the root), a
     _path_ from the root ([pctx_path], a list of field selectors, innermost
@@ -30,7 +33,7 @@
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype.
-From lrust.typing Require Import uniq_util uniq_bor freeable_util.
+From lrust.typing Require Import uniq_util uniq_bor freeable_util sum type_sum.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -66,6 +69,15 @@ Qed.
 Section lty_rfn.
   Context `{!typeG Σ}.
 
+  (** A refinement with a constant denotation. *)
+  Definition prfn_dummy {𝔄} (x: ~~𝔄) : prfn 𝔄 := inl (PlaceProph x (λ _, vπ x inhabitant)).
+
+  Lemma prfn_dummy_rsv {𝔄} (x: ~~𝔄) ζl : prfn_rsv (prfn_dummy x) ζl.
+  Proof. rewrite prfn_rsv_inl. by intros ???. Qed.
+
+  Lemma prfn_dummy_dep {𝔄} (x: ~~𝔄) ζl : prfn_den (prfn_dummy x) ./ ζl.
+  Proof. rewrite prfn_den_inl. by intros ???. Qed.
+
   (** The refinement of a place [lt] at path [q], with current value [x] and blocking
       map [ζm]. *)
   Fixpoint lty_rfn {𝔄} (lt: lty 𝔄) : ~~𝔄 → blk_map → lpath → prfn 𝔄 :=
@@ -81,15 +93,35 @@ Section lty_rfn.
         inr (lty_rfn lt1 x.1 ζm (false :: q), lty_rfn lt2 x.2 ζm (true :: q))
     (* A shared-blocked leaf keeps its value. *)
     | ShrBlocked _ _ => λ x _ _, inl (PlaceIn x)
+    (* A sum at variant [i]: the refinement of the payload (below the path
+       [false :: q]) and the padding. (If the value is of another variant, the place is
+       not owned, see [sum_node]; the refinement is a constant.) *)
+    | SumLty _ i lt => λ x ζm q,
+        match psum_proj i x.1 with
+        | Some y => prfn_sum i (lty_rfn lt y ζm (false :: q)) x.2
+        | None => prfn_dummy x
+        end
     end.
+
+  Lemma lty_rfn_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) x ζm q :
+    lty_rfn (SumLty tyl i lt) x ζm q =
+      match psum_proj i x.1 with
+      | Some y => prfn_sum i (lty_rfn lt y ζm (false :: q)) x.2
+      | None => prfn_dummy x
+      end.
+  Proof. done. Qed.
 
   (** The refinement only depends on the entries of the blocking map below [q]. *)
   Lemma lty_rfn_blk_irrel {𝔄} (lt: lty 𝔄) x ζm ζm' q :
     (∀ r, blk_lookup ζm (r ++ q) = blk_lookup ζm' (r ++ q)) →
     lty_rfn lt x ζm q = lty_rfn lt x ζm' q.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|] in x, q |- *;
-      intros Heq; simpl; [done| | | | |done].
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH] in x, q |- *;
+      intros Heq; simpl; [done| | | | |done|].
+    5: { destruct (psum_proj i x.1); [|done].
+      rewrite (IH _ (false :: q)); [done|].
+      intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
+      by rewrite -app_assoc. }
     - by rewrite (Heq []).
     - rewrite (IH _ (false :: q)); [done|].
       intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
@@ -108,7 +140,7 @@ Section lty_rfn.
   Fixpoint lty_nblk {𝔄} (lt: lty 𝔄) : nat :=
     match lt with
     | Blocked _ _ => 1
-    | UniqLty lt _ | OwnPtrLty _ lt => lty_nblk lt
+    | UniqLty lt _ | OwnPtrLty _ lt | SumLty _ _ lt => lty_nblk lt
     | ProdLty lt1 lt2 => lty_nblk lt1 + lty_nblk lt2
     | _ => 0
     end.
@@ -117,7 +149,7 @@ Section lty_rfn.
   Fixpoint lty_blk_all {𝔄} (lt: lty 𝔄) : Prop :=
     match lt with
     | Blocked _ _ => True
-    | UniqLty lt _ | OwnPtrLty _ lt => lty_blk_all lt
+    | UniqLty lt _ | OwnPtrLty _ lt | SumLty _ _ lt => lty_blk_all lt
     | ProdLty lt1 lt2 => lty_blk_all lt1 ∧ lty_blk_all lt2
     | _ => False
     end.
@@ -127,8 +159,12 @@ Section lty_rfn.
   Lemma lty_blk_all_dep {𝔄} (lt: lty 𝔄) x ζm q ζl :
     lty_blk_all lt → prfn_rsv (lty_rfn lt x ζm q) ζl → prfn_den (lty_rfn lt x ζm q) ./ ζl.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|] in x, q |- *;
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH] in x, q |- *;
       intros Hb Hr; try done.
+    5: { revert Hr. rewrite lty_rfn_sum. destruct (psum_proj i x.1) as [y|];
+        [|intros; apply prfn_dummy_dep].
+      rewrite prfn_rsv_sum prfn_den_sum. intros Hr.
+      apply (proph_dep_constr (λ a, (pinj i a, x.2))). by apply IH. }
     - simpl in *. rewrite prfn_den_inl. by rewrite prfn_rsv_inl in Hr.
     - destruct Hr as [Hr Hξ]. apply (proph_dep_weaken _ (ζl ++ ζl)); [set_solver|].
       apply (proph_dep_constr2 pair); [by apply IH|exact Hξ].
@@ -148,7 +184,11 @@ Section pctx.
   | PHole {𝔅} : pctx 𝔅 𝔅
   | PFst {𝔅 𝔄1 𝔄2} (K: pctx 𝔅 𝔄1) (lt2: lty 𝔄2) : pctx 𝔅 (𝔄1 * 𝔄2)
   | PSnd {𝔅 𝔄1 𝔄2} (lt1: lty 𝔄1) (K: pctx 𝔅 𝔄2) : pctx 𝔅 (𝔄1 * 𝔄2)
-  | POwn {𝔅 𝔄'} (n: nat) (K: pctx 𝔅 𝔄') : pctx 𝔅 (at_locₛ 𝔄').
+  | POwn {𝔅 𝔄'} (n: nat) (K: pctx 𝔅 𝔄') : pctx 𝔅 (at_locₛ 𝔄')
+  (* The payload of a sum at variant [i]; [w] is a default value of the payload,
+     used (by [pctx_get]) only for values of other variants. *)
+  | PSum {𝔅 𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (w: ~~ (𝔄l !!ₗ i))
+      (K: pctx 𝔅 (𝔄l !!ₗ i)) : pctx 𝔅 (Σ! 𝔄l).
 
   Definition pctx_nonempty {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
     match K with PHole => False | _ => True end.
@@ -159,6 +199,7 @@ Section pctx.
     | PFst K lt2 => λ lt, ProdLty (pctx_plug K lt) lt2
     | PSnd lt1 K => λ lt, ProdLty lt1 (pctx_plug K lt)
     | POwn n K => λ lt, OwnPtrLty n (pctx_plug K lt)
+    | PSum tyl i _ K => λ lt, SumLty tyl i (pctx_plug K lt)
     end.
 
   Fixpoint pctx_get {𝔅 𝔄} (K: pctx 𝔅 𝔄) : ~~𝔄 → ~~𝔅 :=
@@ -167,6 +208,7 @@ Section pctx.
     | PFst K _ => λ x, pctx_get K x.1
     | PSnd _ K => λ x, pctx_get K x.2
     | POwn _ K => λ x, pctx_get K x.2
+    | PSum _ i w K => λ x, pctx_get K (psum_proj_or i x.1 w)
     end.
 
   Fixpoint pctx_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) : ~~𝔄 → ~~𝔅 → ~~𝔄 :=
@@ -175,6 +217,7 @@ Section pctx.
     | PFst K _ => λ x y, (pctx_set K x.1 y, x.2)
     | PSnd _ K => λ x y, (x.1, pctx_set K x.2 y)
     | POwn _ K => λ x y, (x.1, pctx_set K x.2 y)
+    | PSum _ i w K => λ x y, (pinj i (pctx_set K (psum_proj_or i x.1 w) y), x.2)
     end.
 
   (** The path of the hole, from a place at path [q]. *)
@@ -184,6 +227,7 @@ Section pctx.
     | PFst K _ => pctx_path K (false :: q)
     | PSnd _ K => pctx_path K (true :: q)
     | POwn _ K => pctx_path K (false :: q)
+    | PSum _ _ _ K => pctx_path K (false :: q)
     end.
 
   (** The size of the place, for a hole of size [n]. *)
@@ -193,14 +237,40 @@ Section pctx.
     | PFst K lt2 => pctx_size K n + lty_size lt2
     | PSnd lt1 K => lty_size lt1 + pctx_size K n
     | POwn _ _ => 1
+    | PSum tyl i _ K => S (max_hlist_set (λ _, ty_size) tyl i (pctx_size K n))
     end.
 
   (** The hole is not below an owned pointer. *)
   Fixpoint pctx_noderef {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
     match K with
     | PHole => True
-    | PFst K _ | PSnd _ K => pctx_noderef K
+    | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_noderef K
     | POwn _ _ => False
+    end.
+
+  (** The hole is not in the payload of a sum. *)
+  Fixpoint pctx_nosum {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
+    match K with
+    | PHole => True
+    | PFst K _ | PSnd _ K | POwn _ K => pctx_nosum K
+    | PSum _ _ _ _ => False
+    end.
+
+  (** The hole is a field of (nested) products. *)
+  Fixpoint pctx_fields {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
+    match K with
+    | PHole => True
+    | PFst K _ | PSnd _ K => pctx_fields K
+    | POwn _ _ | PSum _ _ _ _ => False
+    end.
+
+  (** The value [x] is of the variants of the sums of [K]. *)
+  Fixpoint pctx_in {𝔅 𝔄} (K: pctx 𝔅 𝔄) : ~~𝔄 → Prop :=
+    match K in pctx 𝔅 𝔄 return ~~𝔄 → Prop with
+    | PHole => λ _, True
+    | PFst K _ => λ x, pctx_in K x.1
+    | PSnd _ K | POwn _ K => λ x, pctx_in K x.2
+    | PSum _ i _ K => λ x, match psum_proj i x.1 with Some y => pctx_in K y | None => False end
     end.
 
   (** The offset of the hole (if it is not below an owned pointer). *)
@@ -210,6 +280,7 @@ Section pctx.
     | PFst K _ => pctx_off K
     | PSnd lt1 K => lty_size lt1 + pctx_off K
     | POwn _ _ => 0
+    | PSum _ _ _ K => S (pctx_off K)
     end.
 
   (** The location of the hole (of size [n]), in a place at [l] with value [x]. *)
@@ -219,13 +290,15 @@ Section pctx.
     | PFst K _ => λ x l, pctx_loc K n x.1 (cloc_take l (pctx_size K n))
     | PSnd lt1 K => λ x l, pctx_loc K n x.2 (cloc_skip l (lty_size lt1))
     | POwn _ K => λ x _, pctx_loc K n x.2 (x.1, repeat [] (pctx_size K n))
+    | PSum _ i w K => λ x l,
+        pctx_loc K n (psum_proj_or i x.1 w) (cloc_take (cloc_skip l 1) (pctx_size K n))
     end.
 
   (** The number of laters of the hole, in a place with [m] laters. *)
   Fixpoint pctx_mode {𝔅 𝔄} (K: pctx 𝔅 𝔄) (m: nat) : nat :=
     match K with
     | PHole => m
-    | PFst K _ | PSnd _ K => pctx_mode K m
+    | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_mode K m
     | POwn _ K => pctx_mode K (m + 1)
     end.
 
@@ -233,7 +306,7 @@ Section pctx.
   Fixpoint pctx_depth {𝔅 𝔄} (K: pctx 𝔅 𝔄) (d: nat) : nat :=
     match K with
     | PHole => d
-    | PFst K _ | PSnd _ K => pctx_depth K d
+    | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_depth K d
     | POwn _ K => pctx_depth K (pred d)
     end.
 
@@ -244,6 +317,7 @@ Section pctx.
     | PFst K lt2 => PatProd (pctx_pat K p) (lty_pat lt2)
     | PSnd lt1 K => PatProd (lty_pat lt1) (pctx_pat K p)
     | POwn _ K => PatOwn (pctx_pat K p)
+    | PSum _ _ _ K => PatSum (pctx_pat K p)
     end.
 
   (** The refinement of the place (at path [q], with current value [x] and blocking
@@ -256,6 +330,11 @@ Section pctx.
     | PSnd lt1 K => λ x ζm q r,
         inr (lty_rfn lt1 x.1 ζm (false :: q), pctx_rfn K x.2 ζm (true :: q) r)
     | POwn _ K => λ x ζm q r, inr (x.1, pctx_rfn K x.2 ζm (false :: q) r)
+    | PSum _ i _ K => λ x ζm q r,
+        match psum_proj i x.1 with
+        | Some y => prfn_sum i (pctx_rfn K y ζm (false :: q) r) x.2
+        | None => prfn_dummy x
+        end
     end.
 
   (** The number of blocked leaves outside the hole. *)
@@ -264,7 +343,7 @@ Section pctx.
     | PHole => 0
     | PFst K lt2 => pctx_nblk K + lty_nblk lt2
     | PSnd lt1 K => lty_nblk lt1 + pctx_nblk K
-    | POwn _ K => pctx_nblk K
+    | POwn _ K | PSum _ _ _ K => pctx_nblk K
     end.
 
   (** The core of the context. *)
@@ -274,19 +353,25 @@ Section pctx.
     | PFst K lt2 => PFst (pctx_core K) (lty_core lt2)
     | PSnd lt1 K => PSnd (lty_core lt1) (pctx_core K)
     | POwn n K => POwn n (pctx_core K)
+    | PSum tyl i w K => PSum tyl i w (pctx_core K)
     end.
 
   (** ** Basic laws *)
 
   Lemma pctx_get_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) x y : pctx_get K (pctx_set K x y) = y.
-  Proof. induction K in x, y |- *; simpl; auto. Qed.
+  Proof. induction K in x, y |- *; simpl; auto. by rewrite psum_proj_or_pinj IHK. Qed.
 
-  Lemma pctx_set_get {𝔅 𝔄} (K: pctx 𝔅 𝔄) x : pctx_set K x (pctx_get K x) = x.
-  Proof. induction K in x |- *; simpl; [done|by rewrite IHK -surjective_pairing..]. Qed.
+  Lemma pctx_set_get {𝔅 𝔄} (K: pctx 𝔅 𝔄) x : pctx_in K x → pctx_set K x (pctx_get K x) = x.
+  Proof.
+    induction K in x |- *; simpl; [by intros|intros; by rewrite IHK // -surjective_pairing..|].
+    rewrite /psum_proj_or. destruct x as [s pad]. simpl.
+    case_match eqn:Hs; [|intros []]. intros Hin.
+    rewrite IHK //. by rewrite -(psum_proj_Some _ _ _ Hs).
+  Qed.
 
   Lemma pctx_mode_add {𝔅 𝔄} (K: pctx 𝔅 𝔄) m : pctx_mode K m = m + pctx_mode K 0.
   Proof.
-    induction K in m |- *; simpl; [lia|done|done|]. rewrite IHK (IHK (0 + 1)). lia.
+    induction K in m |- *; simpl; [lia|done|done| |apply IHK]. rewrite IHK (IHK (0 + 1)). lia.
   Qed.
 
   Lemma pctx_mode_noderef {𝔅 𝔄} (K: pctx 𝔅 𝔄) m : pctx_noderef K → pctx_mode K m = m.
@@ -296,20 +381,21 @@ Section pctx.
   Proof. induction K in d |- *; simpl; naive_solver. Qed.
 
   Lemma pctx_depth_mono {𝔅 𝔄} (K: pctx 𝔅 𝔄) d d' : d ≤ d' → pctx_depth K d ≤ pctx_depth K d'.
-  Proof. induction K in d, d' |- *; simpl; [done|auto|auto|]. intros. apply IHK. lia. Qed.
+  Proof. induction K in d, d' |- *; simpl; [done|auto|auto| |auto]. intros. apply IHK. lia. Qed.
 
   (** The depth of the hole decreases by one per owned pointer. *)
   Lemma pctx_depth_sub {𝔅 𝔄} (K: pctx 𝔅 𝔄) d : pctx_depth K d = d - pctx_mode K 0.
   Proof.
-    induction K in d |- *; simpl; [lia|done|done|].
+    induction K in d |- *; simpl; [lia|done|done| |apply IHK].
     rewrite IHK (pctx_mode_add K (0 + 1)). lia.
   Qed.
 
   Lemma pctx_path_app {𝔅 𝔄} (K: pctx 𝔅 𝔄) q : pctx_path K q = pctx_path K [] ++ q.
   Proof.
-    induction K in q |- *; simpl; [done| | |].
+    induction K in q |- *; simpl; [done| | | |].
     - rewrite IHK (IHK [false]) -app_assoc. done.
     - rewrite IHK (IHK [true]) -app_assoc. done.
+    - rewrite IHK (IHK [false]) -app_assoc. done.
     - rewrite IHK (IHK [false]) -app_assoc. done.
   Qed.
 
@@ -333,29 +419,43 @@ Section pctx.
   Lemma lty_rfn_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt x ζm q :
     lty_rfn (pctx_plug K lt) x ζm q =
       pctx_rfn K x ζm q (lty_rfn lt (pctx_get K x) ζm (pctx_path K q)).
-  Proof. induction K in lt, x, q |- *; simpl; by rewrite ?IHK. Qed.
+  Proof.
+    induction K in lt, x, q |- *; simpl; try by rewrite ?IHK.
+    rewrite /psum_proj_or. destruct (psum_proj i x.1); [by rewrite IHK|done].
+  Qed.
 
   Lemma pctx_rfn_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) x y ζm q r :
-    pctx_rfn K (pctx_set K x y) ζm q r = pctx_rfn K x ζm q r.
-  Proof. induction K in x, y, q, r |- *; simpl; by rewrite ?IHK. Qed.
+    pctx_in K x → pctx_rfn K (pctx_set K x y) ζm q r = pctx_rfn K x ζm q r.
+  Proof.
+    induction K in x, y, q, r |- *; simpl; try (intros; by rewrite ?IHK).
+    rewrite psum_proj_pinj /psum_proj_or. destruct (psum_proj i x.1); [|done].
+    intros. by rewrite IHK.
+  Qed.
+
+  Lemma pctx_in_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) x y : pctx_in K x → pctx_in K (pctx_set K x y).
+  Proof.
+    induction K in x, y |- *; simpl; [by intros|apply IHK|apply IHK|apply IHK|].
+    rewrite psum_proj_pinj /psum_proj_or. case_match; [apply IHK|intros []].
+  Qed.
 
   (** Adding an entry for the path of the hole does not change the refinements of
       the rest. *)
   Lemma pctx_rfn_blk_cons {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm ζi q r :
     pctx_rfn K x ((pctx_path K q, ζi) :: ζm) q r = pctx_rfn K x ζm q r.
   Proof.
-    induction K in x, q, r |- *; simpl; [done| | |by rewrite IHK].
+    induction K in x, q, r |- *; simpl; [done| | |by rewrite IHK|].
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
+    - destruct (psum_proj i x.1); [by rewrite IHK|done].
   Qed.
 
   (** More generally, adding an entry for a path below the hole. *)
   Lemma pctx_rfn_blk_cons_below {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm ζi q s r :
     pctx_rfn K x ((s ++ pctx_path K q, ζi) :: ζm) q r = pctx_rfn K x ζm q r.
   Proof.
-    induction K in x, q, r |- *; simpl; [done| | |].
+    induction K in x, q, r |- *; simpl; [done| | | |].
     - rewrite IHK.
       f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app app_assoc. by apply lpath_app_cons_ne.
@@ -363,29 +463,41 @@ Section pctx.
       f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app app_assoc. by apply lpath_app_cons_ne.
     - by rewrite IHK.
+    - destruct (psum_proj i x.1); [by rewrite IHK|done].
   Qed.
 
   Lemma pctx_rfn_rsv {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm q (r r': prfn 𝔅) ζl ζl' :
     (∀ ζ, ζ ∈ ζl → ζ ∈ ζl') →
     prfn_rsv (pctx_rfn K x ζm q r) ζl → prfn_rsv r' ζl' → prfn_rsv (pctx_rfn K x ζm q r') ζl'.
   Proof.
-    intros Hin. induction K in x, q, r, r' |- *; simpl; [done| | |].
+    intros Hin. induction K in x, q, r, r' |- *; simpl; [done| | | |].
     - intros [H1 H2] H'. split; [by eapply IHK|]. by eapply prfn_rsv_weaken.
     - intros [H1 H2] H'. split; [by eapply prfn_rsv_weaken|]. by eapply IHK.
     - intros H H'. by eapply IHK.
+    - destruct (psum_proj i x.1); [|intros; rewrite /prfn_dummy /=; by intros ???].
+      rewrite !(prfn_rsv_sum' _ _ x.2). intros H H'. by eapply IHK.
   Qed.
 
-  Lemma pctx_rfn_rsv_hole {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm q (r: prfn 𝔅) ζl :
-    prfn_rsv (pctx_rfn K x ζm q r) ζl → prfn_rsv r ζl.
+  (** If a new hole refinement [r'] depends on what [r] depends on (and [ζl']), so does
+      the plugged refinement. *)
+  Lemma pctx_rfn_rsv_mono {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm q (r r': prfn 𝔅) ζl ζl' :
+    (∀ ζ, ζ ∈ ζl → ζ ∈ ζl') → (prfn_rsv r ζl → prfn_rsv r' ζl') →
+    prfn_rsv (pctx_rfn K x ζm q r) ζl → prfn_rsv (pctx_rfn K x ζm q r') ζl'.
   Proof.
-    induction K in x, q, r |- *; simpl; [done|intros [? _]|intros [_ ?]|intros ?]; by eapply IHK.
+    intros Hin. induction K in x, q, r, r' |- *; simpl; [done| | | |].
+    - intros H [H1 H2]. split; [by eapply IHK|]. by eapply prfn_rsv_weaken.
+    - intros H [H1 H2]. split; [by eapply prfn_rsv_weaken|]. by eapply IHK.
+    - intros H H'. by eapply IHK.
+    - destruct (psum_proj i x.1); [|intros; rewrite /prfn_dummy /=; by intros ???].
+      rewrite !(prfn_rsv_sum' _ _ x.2). intros H H'. by eapply IHK.
   Qed.
 
   Lemma pctx_loc_fst {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x l :
     pctx_noderef K → (pctx_loc K n x l).1 = l.1 +ₗ pctx_off K.
   Proof.
-    induction K in x, l |- *; simpl; [by rewrite shift_loc_0|intros ?; by rewrite IHK| |done].
-    intros ?. rewrite IHK // /= shift_loc_assoc. f_equal. lia.
+    induction K in x, l |- *; simpl; [by rewrite shift_loc_0|intros ?; by rewrite IHK| |done|].
+    - intros ?. rewrite IHK // /= shift_loc_assoc. f_equal. lia.
+    - intros ?. rewrite IHK // /= shift_loc_assoc. f_equal. lia.
   Qed.
 
   (** ** Ownership in [Owned] mode *)
@@ -407,6 +519,16 @@ Section pctx.
     | POwn n' K => λ x ζm q d g tid l,
         l #↦!∗ [FVal (LitV x.1)] ∗ ⌜d ≠ 0%nat⌝ ∗ ▷^m (freeable_sz n' (pctx_size K n) x.1) ∗
         pctx_own K n (m + 1) x.2 ζm (false :: q) (pred d) g tid (x.1, repeat [] (pctx_size K n))
+    | PSum tyl i _ K => λ x ζm q d g tid l,
+        match psum_proj i x.1 with
+        | Some y =>
+            cloc_take l 1 #↦∗ [ #i ] ∗
+            pctx_own K n m y ζm (false :: q) d g tid (cloc_take (cloc_skip l 1) (pctx_size K n)) ∗
+            cloc_skip (cloc_skip l 1) (pctx_size K n) #↦!∗ fmap FVal (vec_to_list
+              (padding_to_vec (max_hlist_set (λ _, ty_size) tyl i (pctx_size K n) -
+                pctx_size K n) x.2))
+        | None => False
+        end
     end%I.
 
   Lemma ltype_own_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) m p r x ζm q d g tid l :
@@ -424,27 +546,50 @@ Section pctx.
     - rewrite /own_node lty_size_plug IHK. iSplit.
       + iIntros "($ & $ & $ & $ & $)".
       + iIntros "($ & $ & $ & $ & $)".
+    - rewrite /psum_proj_or. destruct (psum_proj i x.1) as [y|].
+      + rewrite sum_node_sum lty_size_plug IHK. iSplit.
+        * iIntros "($ & [$ $] & $)".
+        * iIntros "[$ ($ & $ & $)]".
+      + rewrite /sum_node. iSplit; [by iIntros "[]"|by iIntros "[_ []]"].
+  Qed.
+
+  (** The ownership of the rest of the place implies that the value is of the
+      variants of [K]. *)
+  Lemma pctx_own_in {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid l :
+    pctx_own K n m x ζm q d g tid l -∗ ⌜pctx_in K x⌝.
+  Proof.
+    induction K in m, x, q, d, l |- *; simpl; [by iIntros| | | |].
+    - iIntros "[A _]". by iApply IHK.
+    - iIntros "[_ A]". by iApply IHK.
+    - iIntros "(_ & _ & _ & A)". by iApply IHK.
+    - destruct (psum_proj i x.1); [|by iIntros "[]"]. iIntros "(_ & A & _)". by iApply IHK.
   Qed.
 
   Lemma pctx_own_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x y ζm q d g tid l :
+    pctx_in K x →
     pctx_own K n m (pctx_set K x y) ζm q d g tid l = pctx_own K n m x ζm q d g tid l.
-  Proof. induction K in m, x, y, q, d, l |- *; simpl; by rewrite ?IHK. Qed.
+  Proof.
+    induction K in m, x, y, q, d, l |- *; simpl; try (intros; by rewrite ?IHK).
+    rewrite psum_proj_pinj /psum_proj_or. destruct (psum_proj i x.1); [|done].
+    intros. by rewrite IHK.
+  Qed.
 
   Lemma pctx_own_blk_cons {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm ζi q d g tid l :
     pctx_own K n m x ((pctx_path K q, ζi) :: ζm) q d g tid l = pctx_own K n m x ζm q d g tid l.
   Proof.
-    induction K in m, x, q, d, l |- *; simpl; [done| | |by rewrite IHK].
+    induction K in m, x, q, d, l |- *; simpl; [done| | |by rewrite IHK|].
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
+    - destruct (psum_proj i x.1); [by rewrite IHK|done].
   Qed.
 
   Lemma pctx_own_blk_cons_below {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm ζi q s d g tid l :
     pctx_own K n m x ((s ++ pctx_path K q, ζi) :: ζm) q d g tid l =
       pctx_own K n m x ζm q d g tid l.
   Proof.
-    induction K in m, x, q, d, l |- *; simpl; [done| | |].
+    induction K in m, x, q, d, l |- *; simpl; [done| | | |].
     - rewrite IHK.
       f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app app_assoc. by apply lpath_app_cons_ne.
@@ -452,29 +597,33 @@ Section pctx.
       f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app app_assoc. by apply lpath_app_cons_ne.
     - by rewrite IHK.
+    - destruct (psum_proj i x.1); [by rewrite IHK|done].
   Qed.
 
   Lemma pctx_own_depth_mono {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g d' g' tid l :
     d ≤ d' → g ≤ g' →
     pctx_own K n m x ζm q d g tid l ⊢ pctx_own K n m x ζm q d' g' tid l.
   Proof.
-    induction K in m, x, q, d, d', l |- *; intros ??; simpl; [done| | |].
+    induction K in m, x, q, d, d', l |- *; intros ??; simpl; [done| | | |].
     - iIntros "[A B]". iSplitL "A"; [by iApply IHK|].
       by iApply (ltype_own_owned_depth_mono with "B").
     - iIntros "[A B]". iSplitL "A"; [by iApply (ltype_own_owned_depth_mono with "A")|].
       by iApply IHK.
     - iIntros "($ & % & $ & A)". iSplit; [iPureIntro; lia|]. iApply (IHK with "A"); lia.
+    - destruct (psum_proj i x.1); [|by iIntros "[]"].
+      iIntros "($ & A & $)". by iApply IHK.
   Qed.
 
   (** The depth of the place is at least the number of owned pointers above the hole. *)
   Lemma pctx_own_mode_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid l :
     pctx_own K n m x ζm q d g tid l -∗ ⌜pctx_mode K 0 ≤ d⌝.
   Proof.
-    induction K in m, x, q, d, l |- *; simpl; [iIntros "_"; iPureIntro; lia| | |].
+    induction K in m, x, q, d, l |- *; simpl; [iIntros "_"; iPureIntro; lia| | | |].
     - iIntros "[A _]". by iApply IHK.
     - iIntros "[_ A]". by iApply IHK.
     - iIntros "(_ & %Hd & _ & A)". iDestruct (IHK with "A") as %?.
       rewrite pctx_mode_add. iPureIntro. lia.
+    - destruct (psum_proj i x.1); [|by iIntros "[]"]. iIntros "(_ & A & _)". by iApply IHK.
   Qed.
 
   (** The location of the hole is part of the location of the place (below an owned
@@ -488,6 +637,10 @@ Section pctx.
     - rewrite (heap_cloc_mapsto_emp_vec_app l (lty_size lt1)).
       iApply (guards_weaken_rhs_sep_r with "G").
     - rewrite -heap_cloc_mapsto_empty. iApply guards_true.
+    - rewrite (heap_cloc_mapsto_emp_vec_app l 1).
+      iDestruct (guards_weaken_rhs_sep_r with "G") as "G".
+      rewrite (heap_cloc_mapsto_emp_vec_app (cloc_skip l 1) (pctx_size K n)).
+      iApply (guards_weaken_rhs_sep_l with "G").
   Qed.
 
   (** ** The address of the hole
@@ -500,6 +653,7 @@ Section pctx.
     | PFst K _ => pctx_expr K e
     | PSnd lt1 K => pctx_expr K (e +ₗ #(lty_size lt1))%E
     | POwn _ K => pctx_expr K (!e)%E
+    | PSum _ _ _ K => pctx_expr K (e +ₗ #1)%E
     end.
 
   Lemma pctx_expr_closed {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : Closed [] e → Closed [] (pctx_expr K e).
@@ -538,6 +692,17 @@ Section pctx.
             * iApply (lguards_weaken_later _ _ _ 0); [lia|iApply guards_weaken_sep_r].
           + iIntros "!> [G Pt]". iFrame. done. }
       iIntros (v) "($ & [$ $] & $ & $)". by iFrame.
+    - destruct (psum_proj i x.1) as [y|] eqn:Hy; [|by iIntros "_ _ _ []"].
+      iIntros "#Gl £ WP (Tag & Own & Pad)". iApply (wp_wand with "[- Tag Pad]").
+      { iApply (IHK m y (false :: q) d (cloc_take (cloc_skip l 1) (pctx_size K n)) _ R
+          with "[] £ [WP] Own").
+        - rewrite (heap_cloc_mapsto_emp_vec_app l 1).
+          iDestruct (guards_weaken_rhs_sep_r with "Gl") as "Gl'".
+          rewrite (heap_cloc_mapsto_emp_vec_app (cloc_skip l 1) (pctx_size K n)).
+          iApply (guards_weaken_rhs_sep_l with "Gl'").
+        - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
+          iFrame. done. }
+      rewrite /psum_proj_or Hy. iIntros (v) "($ & $ & $ & $)". iFrame.
   Qed.
 
   (** ** Patterns *)
@@ -545,7 +710,7 @@ Section pctx.
   Lemma pat_blk_lfts_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) p p' α :
     α ∈ pat_blk_lfts (pctx_pat K p') → α ∈ pat_blk_lfts p' ∨ α ∈ pat_blk_lfts (pctx_pat K p).
   Proof.
-    induction K; simpl; [by left| | |done]; rewrite !elem_of_app.
+    induction K; simpl; [by left| | |done|done]; rewrite !elem_of_app.
     - intros [Hα|Hα]; [destruct (IHK Hα); [by left|by right; left]|by right; right].
     - intros [Hα|Hα]; [by right; left|destruct (IHK Hα); [by left|by right; right]].
   Qed.
@@ -562,7 +727,7 @@ Section pctx.
   Lemma pat_ok_plug_hole κ {𝔅 𝔄} (K: pctx 𝔅 𝔄) p :
     pat_ok κ (pctx_pat K p) -∗ pat_ok κ p.
   Proof.
-    rewrite /pat_ok. induction K; simpl; [by iIntros "$"| | |done]; rewrite big_sepL_app.
+    rewrite /pat_ok. induction K; simpl; [by iIntros "$"| | |done|done]; rewrite big_sepL_app.
     - iIntros "[A _]". by iApply IHK.
     - iIntros "[_ A]". by iApply IHK.
   Qed.
@@ -583,7 +748,8 @@ Section pctx.
   Lemma lty_lft_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
     ⊢ ty_lft (lty_fold (pctx_plug K lt)) ⊑ ty_lft (lty_fold lt).
   Proof.
-    induction K in lt |- *; simpl; [iApply guards_refl| | |iApply IHK];
+    induction K in lt |- *; simpl; [iApply guards_refl| | |iApply IHK|
+      iApply llftl_incl_trans; [iApply (lty_lft_sum _ _ (pctx_plug K lt))|iApply IHK]];
       (iApply llftl_incl_trans; [|iApply IHK]); rewrite lft_intersect_list_app;
       [iApply llftl_intersect_incl_l|iApply llftl_intersect_incl_r].
   Qed.
@@ -591,7 +757,10 @@ Section pctx.
   Lemma pctx_rfn_den {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm q (r r': prfn 𝔅) π :
     prfn_den r π = prfn_den r' π →
     prfn_den (pctx_rfn K x ζm q r) π = prfn_den (pctx_rfn K x ζm q r') π.
-  Proof. intros Heq. induction K in x, q, r, r', Heq |- *; simpl; by rewrite ?(IHK _ _ r r'). Qed.
+  Proof.
+    intros Heq. induction K in x, q, r, r', Heq |- *; simpl; try by rewrite ?(IHK _ _ r r').
+    destruct (psum_proj i x.1); [|done]. rewrite /prfn_sum /= !psum_map1_pinj. by rewrite (IHK _ _ r r').
+  Qed.
 
   (** ** Simple places and compound places *)
 
@@ -600,7 +769,7 @@ Section pctx.
     | PHole => True
     | PFst K lt2 => pctx_simple K ∧ lty_simple lt2
     | PSnd lt1 K => lty_simple lt1 ∧ pctx_simple K
-    | POwn _ K => pctx_simple K
+    | POwn _ K | PSum _ _ _ K => pctx_simple K
     end.
 
   Lemma lty_simple_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
@@ -645,6 +814,9 @@ Section pctx.
     | @PFst _ _ 𝔄2 K _ => (pctx_root K 𝔅' * 𝔄2)%ST
     | @PSnd _ 𝔄1 _ _ K => (𝔄1 * pctx_root K 𝔅')%ST
     | POwn _ K => at_locₛ (pctx_root K 𝔅')
+    (* Not supported: changing the type of the payload of a sum (the layer is
+       dropped, see [pctx_nosum]). *)
+    | PSum _ _ _ K => pctx_root K 𝔅'
     end.
 
   Fixpoint pctx_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) (𝔅': syn_type) : pctx 𝔅' (pctx_root K 𝔅') :=
@@ -653,6 +825,7 @@ Section pctx.
     | PFst K lt2 => PFst (pctx_retype K 𝔅') lt2
     | PSnd lt1 K => PSnd lt1 (pctx_retype K 𝔅')
     | POwn n K => POwn n (pctx_retype K 𝔅')
+    | PSum _ _ _ K => pctx_retype K 𝔅'
     end.
 
   Fixpoint pctx_reset {𝔅 𝔄} (K: pctx 𝔅 𝔄) {𝔅'} : ~~𝔄 → ~~𝔅' → ~~(pctx_root K 𝔅') :=
@@ -661,14 +834,16 @@ Section pctx.
     | PFst K _ => λ x y, (pctx_reset K x.1 y, x.2)
     | PSnd _ K => λ x y, (x.1, pctx_reset K x.2 y)
     | POwn _ K => λ x y, (x.1, pctx_reset K x.2 y)
+    | PSum _ i w K => λ x y, pctx_reset K (psum_proj_or i x.1 w) y
     end.
 
   Lemma pctx_get_reset {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) x (y: ~~𝔅') :
     pctx_get (pctx_retype K 𝔅') (pctx_reset K x y) = y.
   Proof. induction K in x |- *; simpl; auto. Qed.
 
-  Lemma pctx_size_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' n : pctx_size (pctx_retype K 𝔅') n = pctx_size K n.
-  Proof. induction K; simpl; by rewrite ?IHK. Qed.
+  Lemma pctx_size_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' n :
+    pctx_nosum K → pctx_size (pctx_retype K 𝔅') n = pctx_size K n.
+  Proof. induction K; simpl; try done; intros; by rewrite ?IHK. Qed.
 
   Lemma pctx_mode_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' m : pctx_mode (pctx_retype K 𝔅') m = pctx_mode K m.
   Proof. induction K in m |- *; simpl; by rewrite ?IHK. Qed.
@@ -676,28 +851,33 @@ Section pctx.
   Lemma pctx_depth_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' d : pctx_depth (pctx_retype K 𝔅') d = pctx_depth K d.
   Proof. induction K in d |- *; simpl; by rewrite ?IHK. Qed.
 
-  Lemma pctx_path_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' q : pctx_path (pctx_retype K 𝔅') q = pctx_path K q.
-  Proof. induction K in q |- *; simpl; by rewrite ?IHK. Qed.
+  Lemma pctx_path_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' q :
+    pctx_nosum K → pctx_path (pctx_retype K 𝔅') q = pctx_path K q.
+  Proof. induction K in q |- *; simpl; try done; intros; by rewrite ?IHK. Qed.
 
   Lemma pctx_nblk_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' : pctx_nblk (pctx_retype K 𝔅') = pctx_nblk K.
   Proof. induction K; simpl; by rewrite ?IHK. Qed.
 
-  Lemma pctx_expr_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' e : pctx_expr (pctx_retype K 𝔅') e = pctx_expr K e.
-  Proof. induction K in e |- *; simpl; by rewrite ?IHK. Qed.
+  Lemma pctx_expr_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' e :
+    pctx_nosum K → pctx_expr (pctx_retype K 𝔅') e = pctx_expr K e.
+  Proof. induction K in e |- *; simpl; try done; intros; by rewrite ?IHK. Qed.
 
   Lemma pctx_loc_reset {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) n x (y: ~~𝔅') l :
-    pctx_loc (pctx_retype K 𝔅') n (pctx_reset K x y) l = pctx_loc K n x l.
-  Proof. induction K in x, l |- *; simpl; by rewrite ?pctx_size_retype ?IHK. Qed.
+    pctx_nosum K → pctx_loc (pctx_retype K 𝔅') n (pctx_reset K x y) l = pctx_loc K n x l.
+  Proof. induction K in x, l |- *; simpl; try done; intros; by rewrite ?pctx_size_retype ?IHK. Qed.
 
   Lemma pctx_own_reset {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) n m x (y: ~~𝔅') ζm q d g tid l :
+    pctx_nosum K →
     pctx_own (pctx_retype K 𝔅') n m (pctx_reset K x y) ζm q d g tid l =
       pctx_own K n m x ζm q d g tid l.
-  Proof. induction K in m, x, q, d, l |- *; simpl; by rewrite ?pctx_size_retype ?IHK. Qed.
+  Proof.
+    induction K in m, x, q, d, l |- *; simpl; try done; intros; by rewrite ?pctx_size_retype ?IHK.
+  Qed.
 
   Lemma lty_size_plug_retype {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (lt': lty 𝔅') :
-    lty_size lt' = lty_size lt →
+    pctx_nosum K → lty_size lt' = lty_size lt →
     lty_size (pctx_plug (pctx_retype K 𝔅') lt') = lty_size (pctx_plug K lt).
-  Proof. intros Hsz. by rewrite !lty_size_plug pctx_size_retype Hsz. Qed.
+  Proof. intros ? Hsz. by rewrite !lty_size_plug pctx_size_retype // Hsz. Qed.
 
   Lemma lty_nblk_plug_retype {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (lt': lty 𝔅') :
     lty_nblk lt' = lty_nblk lt →
@@ -720,5 +900,9 @@ Section pctx.
     - rewrite /cloc_take /= take_repeat_add. apply IHK.
     - rewrite /cloc_skip /= drop_repeat_add. apply IHK.
     - apply IHK.
+    - rewrite /cloc_take /cloc_skip /=.
+      have Hle := max_hlist_set_ge (λ _, ty_size) tyl i (pctx_size K n).
+      rewrite -(Nat.sub_add (pctx_size K n) (max_hlist_set _ tyl i _)) //.
+      rewrite drop_0 Nat.add_comm repeat_app take_app_length'; [apply IHK|by rewrite repeat_length].
   Qed.
 End pctx.

@@ -189,8 +189,7 @@ Section typing.
       [solve_ndisj|].
     rewrite (lty_fold_plug_eq' K lt' lt) //.
     iApply ("Close" with "[%] [] [] [Upd]").
-    - intros ζl. rewrite !lty_rfn_plug. intros Hr. eapply pctx_rfn_rsv; [done|exact Hr|].
-      apply Hrsv. by eapply pctx_rfn_rsv_hole.
+    - intros ζl. rewrite !lty_rfn_plug. apply pctx_rfn_rsv_mono; [done|]. by apply Hrsv.
     - iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖ N". rewrite -(lty_fold_plug_eq' K lt' lt) //.
       iApply (ltype_owned_leaf_node with "LFT Ok2 ⧖ N"); [by destruct K|by apply lty_simple_plug].
     - iNext. rewrite !lty_pat_plug. iApply (pat_ok_plug with "Ok").
@@ -198,6 +197,44 @@ Section typing.
     - iNext. iApply (guarded_upd_mono with "[] Upd"). iIntros "[$ N]".
       rewrite !lty_pat_plug !lty_rfn_plug !ltype_own_plug Hsz. iDestruct "N" as "[H $]".
       by iApply Hown.
+  Qed.
+
+  (** As [tctx_place_change_hole] below, without the (unused) condition on the
+      denotations. *)
+  Lemma tctx_place_change_hole' {𝔅 𝔄} E L p κ (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅) :
+    lctx_lft_alive E L κ → pctx_simple K → lty_simple lt' →
+    lty_size lt' = lty_size lt → lty_fold lt' = lty_fold lt → lty_nblk lt' = lty_nblk lt →
+    (∀ α, α ∈ pat_blk_lfts (lty_pat lt') → α ∈ pat_blk_lfts (lty_pat lt)) →
+    (∀ y ζm q ζl, prfn_rsv (lty_rfn lt y ζm q) ζl → prfn_rsv (lty_rfn lt' y ζm q) ζl) →
+    (∀ y ζm q d g tid l, ltype_own (Owned (pctx_mode K 0)) lt (lty_rfn lt y ζm q) d g tid l ⊢
+       |={lazyE}=> ltype_own (Owned (pctx_mode K 0)) lt' (lty_rfn lt' y ζm q) d g tid l) →
+    (∀ κ ξi y ζm d g tid l G, Timeless G →
+       ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
+         ltype_own (Uniq κ ξi) lt (lty_rfn lt y ζm []) d g tid l ={⊤}=∗
+         ltype_own (Uniq κ ξi) lt' (lty_rfn lt' y ζm []) d g tid l ∗ G) →
+    tctx_incl E L +[p ◁ₗ{κ} pctx_plug K lt] +[p ◁ₗ{κ} pctx_plug K lt']
+      (λ post '-[x], post -[x]).
+  Proof.
+    intros Alv HsK Hs' Hsz Hfold Hnb Hpat Hrsv Hown Hroot.
+    split; [by intros ??? [? []]|].
+    iIntros (G tid [x []] mask post ?) "#LFT #PROPH #UNIQ #E #GL G [T _] Obs".
+    destruct x as [[[[[[l x₀] ξi] d'] g'] idx] ζm].
+    rewrite /tctx_elt_interp. iDestruct "T" as (v ?) "(%d & ⧖ & ⧗ & -> & %Hle & #Incl & #Pt & Own)".
+    leaf_open "GL" with "G" as "[L back]"; [set_solver|].
+    iDestruct (Alv with "L E") as "#Lκ". iMod ("back" with "L") as "G".
+    iDestruct (guards_transitive with "GL Lκ") as "#Gκ".
+    have Hrsv' := λ y q ζl, Hrsv y ζm q ζl. have Hown' := λ y q, Hown y ζm q.
+    iAssert (|={⊤}=> ltype_own (Uniq κ ξi) (pctx_plug K lt') (lty_rfn (pctx_plug K lt') x₀ ζm [])
+      d' g' tid l ∗ G)%I with "[Own G]" as ">[Own G]".
+    { destruct K as [|? ? ? K lt2|? ? ? lt1 K|? ? n K|? ? tyl i w K].
+      - by iApply (Hroot with "LFT PROPH UNIQ Gκ G Own").
+      - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
+      - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
+      - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
+      - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own"). }
+    iModIntro. iExists -[((l, x₀, ξi, d', g', idx), ζm)]. iFrame "G Obs".
+    iSplit; [|done]. iExists #(l.1). iSplit; [done|]. iExists d.
+    rewrite !lty_nblk_plug Hnb (lty_fold_plug_eq' K lt' lt) //. by iFrame "∗#".
   Qed.
 
   Lemma tctx_place_change_hole {𝔅 𝔄} E L p κ (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅) :
@@ -215,25 +252,7 @@ Section typing.
     tctx_incl E L +[p ◁ₗ{κ} pctx_plug K lt] +[p ◁ₗ{κ} pctx_plug K lt']
       (λ post '-[x], post -[x]).
   Proof.
-    intros Alv HsK Hs' Hsz Hfold Hnb Hpat Hden Hrsv Hown Hroot.
-    split; [by intros ??? [? []]|].
-    iIntros (G tid [x []] mask post ?) "#LFT #PROPH #UNIQ #E #GL G [T _] Obs".
-    destruct x as [[[[[[l x₀] ξi] d'] g'] idx] ζm].
-    rewrite /tctx_elt_interp. iDestruct "T" as (v ?) "(%d & ⧖ & ⧗ & -> & %Hle & #Incl & #Pt & Own)".
-    leaf_open "GL" with "G" as "[L back]"; [set_solver|].
-    iDestruct (Alv with "L E") as "#Lκ". iMod ("back" with "L") as "G".
-    iDestruct (guards_transitive with "GL Lκ") as "#Gκ".
-    have Hrsv' := λ y q ζl, Hrsv y ζm q ζl. have Hown' := λ y q, Hown y ζm q.
-    iAssert (|={⊤}=> ltype_own (Uniq κ ξi) (pctx_plug K lt') (lty_rfn (pctx_plug K lt') x₀ ζm [])
-      d' g' tid l ∗ G)%I with "[Own G]" as ">[Own G]".
-    { destruct K as [|? ? ? K lt2|? ? ? lt1 K|? ? n K].
-      - by iApply (Hroot with "LFT PROPH UNIQ Gκ G Own").
-      - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
-      - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
-      - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own"). }
-    iModIntro. iExists -[((l, x₀, ξi, d', g', idx), ζm)]. iFrame "G Obs".
-    iSplit; [|done]. iExists #(l.1). iSplit; [done|]. iExists d.
-    rewrite !lty_nblk_plug Hnb (lty_fold_plug_eq' K lt' lt) //. by iFrame "∗#".
+    intros Alv HsK Hs' Hsz Hfold Hnb Hpat Hden. by apply tctx_place_change_hole'.
   Qed.
 
   (** ** Unfolding and folding products *)
@@ -616,6 +635,7 @@ Section typing.
     rewrite lty_pat_plug lty_rfn_plug ltype_own_plug pctx_mode_noderef // pctx_depth_noderef //.
     iDestruct "N" as "[L1 Rest]". iSimpl in "L1".
     iDestruct "L1" as (? ->) "[Pt1 Gho1]".
+    iDestruct (pctx_own_in with "Rest") as %Hin.
     set y := pctx_get K x₀. set lK := pctx_loc K (ty_size ty) x₀ l.
     (* Resolve the old value. *)
     iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN))
@@ -668,7 +688,7 @@ Section typing.
       iSplit; [done|]. iSplit; [iPureIntro; lia|].
       iSplitR. { iApply (lguards_weaken_later with "PtBase"). lia. }
       rewrite /ltype_own ltype_own_cp_uniq_plug // lty_pat_plug lty_rfn_plug pctx_get_set
-        pctx_rfn_set. done. }
+        pctx_rfn_set //. }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
     apply Hπ; [exact HΦ|done|done| |done].
     rewrite !uniq_bor_future_eq. apply (uniq_prvar_app_irrel _ x₀).
@@ -840,6 +860,7 @@ Section typing.
     { iApply (guards_transitive with "Gh2 Incl"). }
     rewrite lty_pat_plug lty_rfn_plug ltype_own_plug.
     iDestruct "N" as "[L1 Rest]". iSimpl in "L1".
+    iDestruct (pctx_own_in with "Rest") as %Hin.
     set y := pctx_get K x₀. set ζi := blk_lookup ζm (pctx_path K []).
     set k := pctx_mode K 0.
     (* Unblock the leaf: fire the inheritance of the reborrow and settle it. *)
@@ -889,7 +910,7 @@ Section typing.
       iSplit; [done|]. iSplit; [iPureIntro; lia|].
       iSplitR. { iApply (lguards_weaken_later with "PtBase"). lia. }
       rewrite /ltype_own ltype_own_cp_uniq_plug // lty_pat_plug lty_rfn_plug pctx_get_set
-        pctx_rfn_set. done. }
+        pctx_rfn_set //. }
     iCombine "Obs1 Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Heq Hf].
     split; [done|]. split.
     { rewrite !uniq_bor_future_eq. apply (uniq_prvar_app_irrel _ x₀). }

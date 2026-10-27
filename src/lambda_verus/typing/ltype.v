@@ -19,7 +19,12 @@
   - [ProdLty lt1 lt2]: a pair of places;
   - [ShrBlocked ty κ]: the place is shared until [κ] ends (its value does not change
     and it can still be read), afterwards it contains a value of type [ty] again
-    ([shr_blocked_owned]; RefinedRust's [ShrBlockedLtype]).
+    ([shr_blocked_owned]; RefinedRust's [ShrBlockedLtype]);
+  - [SumLty tyl i lt]: a sum of the variant [i], whose payload has the place type [lt]
+    ([sum_node]: the tag, the payload and the padding; RefinedRust's [EnumLtype]). Its
+    folded type is [Σ! tyl] with the type of variant [i] replaced by the folded type of
+    [lt] ([hlist_set]), so that folding needs no side condition; its refinement is the
+    refinement of the payload and the padding ([prfn_sum]).
   [lty_core] replaces [Blocked ty κ] and [ShrBlocked ty κ] by [OfTy ty] (pointwise
   otherwise), as
   RefinedRust's [lty_core]; [lty_fold] is the type of the place once folded
@@ -98,7 +103,7 @@
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.typing Require Export type.
-From lrust.typing Require Import uniq_util uniq_bor own product freeable_util.
+From lrust.typing Require Import uniq_util uniq_bor own product freeable_util sum type_sum.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -122,7 +127,8 @@ Section lty.
   | UniqLty {𝔄} (lt: lty 𝔄) (κ: lft) : lty (uniq_borₛ 𝔄)
   | OwnPtrLty {𝔄} (n: nat) (lt: lty 𝔄) : lty (at_locₛ 𝔄)
   | ProdLty {𝔄 𝔅} (lt1: lty 𝔄) (lt2: lty 𝔅) : lty (𝔄 * 𝔅)
-  | ShrBlocked {𝔄} (ty: type 𝔄) (κ: lft) : lty 𝔄.
+  | ShrBlocked {𝔄} (ty: type 𝔄) (κ: lft) : lty 𝔄
+  | SumLty {𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (lt: lty (𝔄l !!ₗ i)) : lty (Σ! 𝔄l).
 
   Fixpoint lty_core {𝔄} (lt: lty 𝔄) : lty 𝔄 :=
     match lt in lty 𝔄 return lty 𝔄 with
@@ -132,6 +138,7 @@ Section lty.
     | OwnPtrLty n lt => OwnPtrLty n (lty_core lt)
     | ProdLty lt1 lt2 => ProdLty (lty_core lt1) (lty_core lt2)
     | ShrBlocked ty _ => OfTy ty
+    | SumLty tyl i lt => SumLty tyl i (lty_core lt)
     end.
 
   Fixpoint lty_pat {𝔄} (lt: lty 𝔄) : lpat :=
@@ -142,6 +149,7 @@ Section lty.
     | OwnPtrLty _ lt => PatOwn (lty_pat lt)
     | ProdLty lt1 lt2 => PatProd (lty_pat lt1) (lty_pat lt2)
     | ShrBlocked _ κ => PatShrBlocked κ
+    | SumLty _ _ lt => PatSum (lty_pat lt)
     end.
 
   (** The type of a place, once folded. *)
@@ -153,6 +161,7 @@ Section lty.
     | OwnPtrLty n lt => own_ptr n (lty_fold lt)
     | ProdLty lt1 lt2 => prod_ty (lty_fold lt1) (lty_fold lt2)
     | ShrBlocked ty _ => ty
+    | SumLty tyl i lt => xsum_ty (hlist_set tyl i (lty_fold lt))
     end.
 
   Fixpoint lty_size {𝔄} (lt: lty 𝔄) : nat :=
@@ -160,6 +169,7 @@ Section lty.
     | OfTy ty | Blocked ty _ | ShrBlocked ty _ => ty.(ty_size)
     | UniqLty _ _ | OwnPtrLty _ _ => 1
     | ProdLty lt1 lt2 => lty_size lt1 + lty_size lt2
+    | SumLty tyl i lt => S (max_hlist_set (λ _, ty_size) tyl i (lty_size lt))
     end.
 
   Fixpoint lty_lfts {𝔄} (lt: lty 𝔄) : list lft :=
@@ -168,6 +178,7 @@ Section lty.
     | UniqLty lt κ => κ :: lty_lfts lt
     | OwnPtrLty _ lt => lty_lfts lt
     | ProdLty lt1 lt2 => lty_lfts lt1 ++ lty_lfts lt2
+    | SumLty tyl i lt => tyl_lfts (hlist_set tyl i (lty_fold lt))
     end.
 
   Definition lty_blocked_lfts {𝔄} (lt: lty 𝔄) : list lft := pat_blk_lfts (lty_pat lt).
@@ -178,17 +189,29 @@ Section lty.
   Lemma lty_size_core {𝔄} (lt: lty 𝔄) : lty_size (lty_core lt) = lty_size lt.
   Proof. induction lt; simpl; rewrite ?IHlt ?IHlt1 ?IHlt2; done. Qed.
 
-  Lemma lty_lfts_core {𝔄} (lt: lty 𝔄) : lty_lfts (lty_core lt) = lty_lfts lt.
-  Proof. induction lt; simpl; rewrite ?IHlt ?IHlt1 ?IHlt2; done. Qed.
-
   Lemma lty_fold_core {𝔄} (lt: lty 𝔄) : lty_fold (lty_core lt) = lty_fold lt.
   Proof. induction lt; simpl; rewrite ?IHlt ?IHlt1 ?IHlt2; done. Qed.
 
+  Lemma lty_lfts_core {𝔄} (lt: lty 𝔄) : lty_lfts (lty_core lt) = lty_lfts lt.
+  Proof. induction lt; simpl; rewrite ?lty_fold_core ?IHlt ?IHlt1 ?IHlt2; done. Qed.
+
   Lemma lty_size_fold {𝔄} (lt: lty 𝔄) : lty_size lt = ty_size (lty_fold lt).
-  Proof. induction lt; simpl; rewrite ?IHlt ?IHlt1 ?IHlt2; done. Qed.
+  Proof.
+    induction lt; simpl; rewrite ?IHlt ?IHlt1 ?IHlt2; try done.
+    by rewrite max_hlist_with_hlist_set.
+  Qed.
 
   Lemma lty_lfts_fold {𝔄} (lt: lty 𝔄) : lty_lfts lt = ty_lfts (lty_fold lt).
   Proof. induction lt; simpl; rewrite ?IHlt ?IHlt1 ?IHlt2; done. Qed.
+
+  (** The folded type of a sum place whose payload is the leaf of its variant. *)
+  Lemma lty_fold_sum_ofty {𝔄l} (tyl: typel 𝔄l) i :
+    lty_fold (SumLty tyl i (OfTy (tyl +!! i))) = xsum_ty tyl.
+  Proof. by rewrite /= hlist_set_hlookup. Qed.
+
+  Lemma lty_size_sum_ofty {𝔄l} (tyl: typel 𝔄l) i :
+    lty_size (SumLty tyl i (OfTy (tyl +!! i))) = ty_size (xsum_ty tyl).
+  Proof. by rewrite lty_size_fold lty_fold_sum_ofty. Qed.
 End lty.
 
 (** * Interpretation *)
@@ -292,6 +315,24 @@ Section ltype_own.
     | inr (r1, r2) => c1 r1 d g tid (cloc_take l sz1) ∗ c2 r2 d g tid (cloc_skip l sz1)
     end%I.
 
+  (** The node of a sum at variant [i] (with a payload of size [sz]): the tag, the
+      payload, and the padding (as in [split_pt_xsum_cells'']). The tag and the padding
+      have no ghost ownership, so the node does not depend on the mode. *)
+  Definition sum_node {𝔅l} (tyl: typel 𝔅l) (i: fin (length 𝔅l)) (sz: nat)
+      (child: prfn (𝔅l !!ₗ i) → nat → nat → thread_id → cloc → iProp Σ)
+      (r: prfn (Σ! 𝔅l)) (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
+    match r with
+    | inl _ => False
+    | inr (s, pad) =>
+        match psum_proj i s with
+        | None => False
+        | Some r' =>
+            cloc_take l 1 #↦∗ [ #i ] ∗ child r' d g tid (cloc_take (cloc_skip l 1) sz) ∗
+            cloc_skip (cloc_skip l 1) sz #↦!∗ fmap FVal (vec_to_list
+              (padding_to_vec (max_hlist_set (λ _, ty_size) tyl i sz - sz) pad))
+        end
+    end%I.
+
   (** ** Compound places in [Uniq] mode *)
 
   (** The token of the owner of a compound place in [Uniq] mode. *)
@@ -359,6 +400,12 @@ Section ltype_own.
               (ltype_own_cp false lt1 (Owned 0) (pat_l p'))
               (ltype_own_cp false lt2 (Owned 0) (pat_r p')))
         end
+    | SumLty tyl i lt' => λ k p,
+        match k with
+        | Owned m => sum_node tyl i (lty_size lt') (ltype_own_cp c lt' (Owned m) (pat_sum p))
+        | Uniq κ ξi => cpd_own κ ξi (xsum_ty (hlist_set tyl i (lty_fold lt'))) p
+            (λ p', sum_node tyl i (lty_size lt') (ltype_own_cp false lt' (Owned 0) (pat_sum p')))
+        end
     end.
 
   Definition ltype_own (k: bor_kind) {𝔄} (lt: lty 𝔄) (r: prfn 𝔄) (d g: nat)
@@ -414,16 +461,51 @@ Section ltype_lemmas.
     iIntros "[A B]". iSplitL "A"; [by iApply H1|by iApply H2].
   Qed.
 
+  Lemma sum_node_mono {𝔅l} (tyl: typel 𝔅l) i sz
+      (c1 c2: prfn (𝔅l !!ₗ i) → nat → nat → thread_id → cloc → iProp Σ) r d g d' g' tid l :
+    (∀ r' tid' l', c1 r' d g tid' l' ⊢ c2 r' d' g' tid' l') →
+    sum_node tyl i sz c1 r d g tid l ⊢ sum_node tyl i sz c2 r d' g' tid l.
+  Proof.
+    intros Hc. destruct r as [?|[s pad]]; [done|]. rewrite /sum_node.
+    case_match; [|by iIntros "[]"]. iIntros "($ & C & $)". by iApply Hc.
+  Qed.
+
+  Lemma ltype_own_cp_sum_owned c {𝔅l} (tyl: typel 𝔅l) i (lt: lty (𝔅l !!ₗ i)) m p :
+    ltype_own_cp c (SumLty tyl i lt) (Owned m) p =
+      sum_node tyl i (lty_size lt) (ltype_own_cp c lt (Owned m) (pat_sum p)).
+  Proof. done. Qed.
+
+  (** The node of a sum at the refinement of a payload. *)
+  Lemma sum_node_sum {𝔅l} (tyl: typel 𝔅l) i sz
+      (c: prfn (𝔅l !!ₗ i) → nat → nat → thread_id → cloc → iProp Σ) r pad d g tid l :
+    sum_node tyl i sz c (prfn_sum i r pad) d g tid l ⊣⊢
+      cloc_take l 1 #↦∗ [ #i ] ∗ c r d g tid (cloc_take (cloc_skip l 1) sz) ∗
+      cloc_skip (cloc_skip l 1) sz #↦!∗ fmap FVal (vec_to_list
+        (padding_to_vec (max_hlist_set (λ _, ty_size) tyl i sz - sz) pad)).
+  Proof. rewrite /sum_node /prfn_sum. by rewrite psum_proj_pinj. Qed.
+
+  (** A sum node at a structured refinement is at a payload refinement. *)
+  Lemma sum_node_inv {𝔅l} (tyl: typel 𝔅l) i sz
+      (c: prfn (𝔅l !!ₗ i) → nat → nat → thread_id → cloc → iProp Σ) r d g tid l :
+    sum_node tyl i sz c r d g tid l -∗ ∃ r' pad, ⌜r = prfn_sum i r' pad⌝.
+  Proof.
+    destruct r as [?|[s pad]]; [by iIntros "[]"|]. rewrite /sum_node.
+    case_match eqn:Hs; [|by iIntros "[]"]. iIntros "_".
+    iExists _, pad. iPureIntro. rewrite /prfn_sum. f_equal. f_equal.
+    by apply psum_proj_Some.
+  Qed.
+
   (** ** The core *)
 
   (** Only the core of a place type matters for [ltype_own_cp]. *)
   Lemma ltype_own_cp_core c {𝔄} (lt: lty 𝔄) : ltype_own_cp c (lty_core lt) = ltype_own_cp c lt.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|]
-      in c |- *; simpl; [done|done| | | |done].
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH]
+      in c |- *; simpl; [done|done| | | |done|].
     - by rewrite lty_fold_core !IH.
     - by rewrite lty_size_core lty_fold_core !IH.
     - by rewrite lty_size_core !lty_fold_core !IH1 !IH2.
+    - by rewrite lty_size_core lty_fold_core !IH.
   Qed.
 
   (** In [Owned] mode, the core interpretation does not depend on the
@@ -431,7 +513,7 @@ Section ltype_lemmas.
   Lemma ltype_own_cp_true_owned_pat {𝔄} (lt: lty 𝔄) m p p' r d g tid l :
     ltype_own_cp true lt (Owned m) p r d g tid l ⊢ ltype_own_cp true lt (Owned m) p' r d g tid l.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α]
+    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH]
       in m, p, p', r, d, g, tid, l |- *; simpl.
     - destruct r as [lr|]; [|done]. by destruct p, p'.
     - destruct r as [lr|]; [|done]. by destruct p, p'.
@@ -439,6 +521,7 @@ Section ltype_lemmas.
     - apply own_node_mono=> *. apply IH.
     - apply prod_node_mono=> *; [apply IH1|apply IH2].
     - destruct r as [lr|]; [|done]. by destruct p, p'.
+    - apply sum_node_mono=> *. apply IH.
   Qed.
 
   (** Core idempotence. *)
@@ -478,9 +561,10 @@ Section ltype_lemmas.
     d ≤ d' → g ≤ g' →
     ltype_own_cp c lt (Owned m) p r d g tid l ⊢ ltype_own_cp c lt (Owned m) p r d' g' tid l.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α]
+    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH]
       in m, p, r, d, g, d', g', tid, l |- *; intros Hd Hg; simpl;
       try by apply leaf_owned_depth_mono.
+    4: { apply sum_node_mono=> *. by apply IH. }
     - destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /uniq_node.
       iIntros "($ & $ & H)". iNext. iDestruct "H" as "($ & #G & %d1 & %g1 & %Hle & C)".
       iSplitR. { iApply (lguards_weaken_later with "G"). lia. }
@@ -603,11 +687,36 @@ Section ltype_lemmas.
     - iApply (ltype_own_core_owned_depth_mono with "H2"); lia.
   Qed.
 
+  (** The lifetime of (the folded type of) a sum place is included in the lifetime of
+      its payload. *)
+  Lemma lty_lft_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
+    ⊢ ty_lft (lty_fold (SumLty tyl i lt)) ⊑ ty_lft (lty_fold lt).
+  Proof.
+    iPoseProof (lft_intersect_tyl_lfts_lookup_incl (hlist_set tyl i (lty_fold lt)) i) as "H".
+    by rewrite hlookup_hlist_set.
+  Qed.
+
+  Lemma sum_ltype_imp_unblockable κs {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
+    imp_unblockable κs lt -∗ imp_unblockable κs (SumLty tyl i lt).
+  Proof.
+    iIntros "#Ub !>" (k r d g tid l G ?) "#Gk G #Dead H".
+    destruct k as [m|κ ξi];
+      [|iModIntro; iFrame "G"; iExists d, g; by iApply ltype_own_uniq_core].
+    rewrite /ltype_own /ltype_own_core /=.
+    iDestruct (sum_node_inv with "H") as %(r' & pad & ->).
+    rewrite sum_node_sum. iDestruct "H" as "(Tag & C & Pad)".
+    iAssert (G &&{↑NllftG}&&> @[ty_lft (lty_fold lt)])%I as "#Gk'".
+    { iApply (guards_transitive with "Gk"). iApply lty_lft_sum. }
+    iMod ("Ub" $! (Owned m) with "[//] Gk' G Dead C") as "[$ (%d1 & %g1 & C)]".
+    iModIntro. iExists d1, g1. rewrite sum_node_sum. by iFrame.
+  Qed.
+
   Lemma imp_unblockable_blocked_dead {𝔄} (lt: lty 𝔄) :
     ⊢ imp_unblockable (lty_blocked_lfts lt) lt.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α];
-      rewrite /lty_blocked_lfts /=; [| | | | |iApply shr_blocked_imp_unblockable].
+    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH];
+      rewrite /lty_blocked_lfts /=; [| | | | |iApply shr_blocked_imp_unblockable|
+        iApply sum_ltype_imp_unblockable; iApply IH].
     - iApply ofty_imp_unblockable.
     - iApply blocked_imp_unblockable.
     - iApply uniq_ltype_imp_unblockable.
@@ -741,6 +850,49 @@ Section unfold.
       iSplit; iIntros "!>" (d g tid l) "H"; iModIntro;
       by [iApply prod_ofty_unfold_own|iApply prod_ofty_unfold_core|
           iApply (prod_ofty_unfold_own with "H")|iApply (prod_ofty_unfold_core with "H")].
+  Qed.
+
+  (** ** Sums *)
+
+  Lemma xsum_gho_own_pinj {𝔄l} i (tyl: typel 𝔄l) x0 pad d g tid :
+    ty_gho_own (Σ! tyl) (pinj i x0, pad) d g tid ⊣⊢ ty_gho_own (tyl +!! i) x0 d g tid.
+  Proof. rewrite [ty_gho_own (Σ! tyl)]/ty_gho_own /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
+
+  (** The contents of a sum at variant [i]: the tag, the payload and the padding. *)
+  Lemma ofty_owned_xsum m {𝔄l} (tyl: typel 𝔄l) i x pad d g tid l :
+    ofty_owned m (xsum_ty tyl) (pinj i x, pad) d g tid l ⊣⊢
+      cloc_take l 1 #↦∗ [ #i ] ∗
+      ofty_owned m (tyl +!! i) x d g tid (cloc_take (cloc_skip l 1) (ty_size (tyl +!! i))) ∗
+      cloc_skip (cloc_skip l 1) (ty_size (tyl +!! i)) #↦!∗ fmap FVal (vec_to_list
+        (padding_to_vec (max_hlist_with (λ _, ty_size) tyl - ty_size (tyl +!! i)) pad)).
+  Proof.
+    rewrite /ofty_owned split_pt_xsum_cells'' xsum_gho_own_pinj.
+    iSplit; [iIntros "(($ & $ & $) & $)"|iIntros "($ & ($ & $) & $)"].
+  Qed.
+
+  Lemma ofty_owned_xsum_set m {𝔄l} (tyl: typel 𝔄l) i (ty: type (𝔄l !!ₗ i)) x pad d g tid l :
+    ofty_owned m (xsum_ty (hlist_set tyl i ty)) (pinj i x, pad) d g tid l ⊣⊢
+      cloc_take l 1 #↦∗ [ #i ] ∗
+      ofty_owned m ty x d g tid (cloc_take (cloc_skip l 1) (ty_size ty)) ∗
+      cloc_skip (cloc_skip l 1) (ty_size ty) #↦!∗ fmap FVal (vec_to_list
+        (padding_to_vec (max_hlist_set (λ _, ty_size) tyl i (ty_size ty) - ty_size ty) pad)).
+  Proof. by rewrite ofty_owned_xsum hlookup_hlist_set max_hlist_with_hlist_set. Qed.
+
+  (** Unfolding a sum at a known variant [i] into a sum place whose payload is the
+      leaf of the variant, and back. *)
+  Lemma sum_ofty_unfold_own m {𝔄l} (tyl: typel 𝔄l) i (y: ~~ (𝔄l !!ₗ i)) pad d g tid l :
+    ltype_own (Owned m) (OfTy (xsum_ty tyl)) (inl (PlaceIn (𝔄:=Σ! 𝔄l) (pinj i y, pad))) d g tid l ⊣⊢
+    ltype_own (Owned m) (SumLty tyl i (OfTy (tyl +!! i))) (prfn_sum i (inl (PlaceIn y)) pad)
+      d g tid l.
+  Proof.
+    rewrite /ltype_own /= psum_proj_pinj /=.
+    rewrite -{1}(hlist_set_hlookup tyl i) -(max_hlist_with_hlist_set _ tyl i (tyl +!! i))
+      hlist_set_hlookup.
+    iSplit.
+    - iIntros "(%x & -> & O)". rewrite ofty_owned_xsum.
+      iDestruct "O" as "($ & O & $)". iExists y. by iFrame.
+    - iIntros "(Tag & (%x & -> & O) & Pad)". iExists _. iSplit; [done|].
+      rewrite ofty_owned_xsum. by iFrame.
   Qed.
 
   (** ** Owned pointers *)
@@ -889,7 +1041,7 @@ Section cpd.
         ofty_owned m ty x d' g' tid l.
   Proof.
     iIntros (?) "#LFT #Gty #Ok #†κ G #⧖ L".
-    destruct p as [| | | | |α]; try by iApply (leaf_owned_unblock with "LFT Gty Ok †κ G ⧖ L").
+    destruct p as [| | | | |α|]; try by iApply (leaf_owned_unblock with "LFT Gty Ok †κ G ⧖ L").
     iMod (pat_ok_dead with "LFT Ok †κ") as "[†α _]"; [apply lazyE_NllftG|].
     iDestruct "L" as (x) "(Rel & _ & _ & Inh)". iMod ("Inh" with "†α") as "O".
     iModIntro. iFrame "G". iExists x, d, g. iFrame "∗#".
@@ -1095,11 +1247,29 @@ Section cpd.
     | OfTy _ | Blocked _ _ | ShrBlocked _ _ => True
     | OwnPtrLty _ lt => lty_simple lt
     | ProdLty lt1 lt2 => lty_simple lt1 ∧ lty_simple lt2
+    | SumLty _ _ lt => lty_simple lt
     | _ => False
     end.
 
   Lemma pat_ok_own κ p : pat_ok κ p -∗ pat_ok κ (pat_own p).
   Proof. iIntros "Ok". destruct p; simpl; try iApply pat_ok_leaf. done. Qed.
+
+  Lemma pat_ok_sum κ p : pat_ok κ p -∗ pat_ok κ (pat_sum p).
+  Proof. iIntros "Ok". destruct p; simpl; try iApply pat_ok_leaf. done. Qed.
+
+  (** The equalizer of a sum value, from the equalizer of its payload. *)
+  Lemma proph_eqz_sum {𝔄l} i (r: prfn (𝔄l !!ₗ i)) pad (x: ~~ (𝔄l !!ₗ i)) :
+    (prfn_den r :== vπ x) -∗ (prfn_den (prfn_sum i r pad) :== vπ (𝔄:=Σ! 𝔄l) (pinj i x, pad)).
+  Proof.
+    iIntros "Eqz".
+    have ?: Inj (=) (=) (λ a: (𝔄l !!ₗ i), ((pinj i a, pad) : (Σ! 𝔄l)%ST)).
+    { intros ?? [=Heq]. by apply pinj_Inj in Heq. }
+    iDestruct (proph_eqz_constr (λ a: (𝔄l !!ₗ i), ((pinj i a, pad) : (Σ! 𝔄l)%ST)) with "Eqz")
+      as "Eqz".
+    iApply (proph_eqz_eq with "Eqz").
+    - by rewrite prfn_den_sum.
+    - fun_ext=> π /=. by rewrite psum_map1_pinj.
+  Qed.
 
   Lemma ltype_owned_unblock_fold {𝔄} (lt: lty 𝔄) κ m p r d g tid l G :
     lty_simple lt → Timeless G →
@@ -1108,8 +1278,20 @@ Section cpd.
       G ∗ ∃ x d' g', ▷ (prfn_den r :== vπ x) ∗ ⧖((m + S d') `max` g') ∗
         ofty_owned m (lty_fold lt) x d' g' tid l.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α]
+    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH]
       in m, p, r, d, g, l, G |- *; intros Hs ?; try done.
+    6: { iIntros "#LFT #Gty #Ok #†κ G #⧖ N".
+      rewrite ltype_own_cp_sum_owned.
+      iDestruct (sum_node_inv with "N") as %(r' & pad & ->).
+      rewrite sum_node_sum. iDestruct "N" as "(Tag & N & Pad)".
+      iDestruct (pat_ok_sum with "Ok") as "Ok'".
+      iAssert (G &&{↑NllftG}&&> @[ty_lft (lty_fold lt)])%I as "#Gty'".
+      { iApply (guards_transitive with "Gty"). iApply lty_lft_sum. }
+      iMod (IH with "LFT Gty' Ok' †κ G ⧖ N") as "[$ (%x & %d' & %g' & Eqz & #⧖1 & O)]";
+        [done|].
+      iModIntro. iExists (pinj i x, pad), d', g'. iFrame "⧖1".
+      iSplitL "Eqz"; [iNext; by iApply proph_eqz_sum|].
+      rewrite /= ofty_owned_xsum_set -lty_size_fold. iFrame. }
     1,2,5: iIntros "#LFT #Gty #Ok #†κ G #⧖ L"; destruct r as [lr|]; [|done];
       iMod (leaf_owned_s_unblock with "LFT Gty Ok †κ G ⧖ L")
         as "[$ (%x & %d' & %g' & Rel & ⧖' & O)]";
@@ -1159,7 +1341,7 @@ Section cpd.
   Qed.
 
   Definition lty_is_cpd {𝔄} (lt: lty 𝔄) : Prop :=
-    match lt with ProdLty _ _ | OwnPtrLty _ _ | UniqLty _ _ => True | _ => False end.
+    match lt with ProdLty _ _ | OwnPtrLty _ _ | UniqLty _ _ | SumLty _ _ _ => True | _ => False end.
 
   (** The node of a simple compound place is seen as the leaf of its folded type, as in
       [prod_node_leaf]: at a structured refinement, it is blocked at [κp]. *)
@@ -1169,8 +1351,13 @@ Section cpd.
     ltype_own_cp false lt (Owned 0) p r d g tid l -∗ leaf_node κp (lty_fold lt) p r d g tid l.
   Proof.
     iIntros (Hc Hs) "#LFT #Ok #⧖ N".
-    destruct lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ'|𝔄 n lt|𝔄 𝔅 lt1 lt2|𝔄 ty α];
+    destruct lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ'|𝔄 n lt|𝔄 𝔅 lt1 lt2|𝔄 ty α|𝔄l tyl i lt];
       try (by destruct Hc); try done.
+    3: { destruct r as [lr|rs]; [done|].
+      iEval (rewrite /leaf_node /= /blocked_owned). iIntros "#†κ !>" (G ?) "#Gty G".
+      iMod (ltype_owned_unblock_fold (SumLty tyl i lt) _ 0 with "LFT Gty Ok †κ G ⧖ N")
+        as "[$ (%x & %d' & %g' & Eqz & ⧖' & O)]"; [done|].
+      iModIntro. iExists x, d', g'. iFrame. }
     - destruct r as [lr|rs]; [done|].
       iEval (rewrite /leaf_node /= /blocked_owned). iIntros "#†κ !>" (G ?) "#Gty G".
       iMod (ltype_owned_unblock_fold (OwnPtrLty n lt) _ 0 with "LFT Gty Ok †κ G ⧖ N")
@@ -1379,7 +1566,7 @@ Section cpd.
     iAssert (|={lazyE}=> G ∗ ∃ x d1' g1' idx, ▷ (prfn_den r' :== vπ x) ∗
       ⧖(S d1' `max` g1') ∗ uniq_body (lty_fold lt) x ξi d1' g1' idx κ' tid l')%I
       with "[G C ⧗a]" as ">[G (%x & %d1' & %g1' & %idx & Eqz & #⧖1 & Body)]".
-    { destruct lt as [𝔅 ty|𝔅 ty α|𝔅 lt κ''|𝔅 n lt|𝔅 ℭ lt1 lt2|𝔅 ty α]; try done.
+    { destruct lt as [𝔅 ty|𝔅 ty α|𝔅 lt κ''|𝔅 n lt|𝔅 ℭ lt1 lt2|𝔅 ty α|𝔅l tyl i lt]; try done.
       1,2,5: destruct r' as [lr|]; [|done];
         iMod (leaf_uniq_unblock with "LFT Gty' Ok' †κ G [] C")
           as "[$ (%d2 & %g2 & #⧖2 & %x & %idx & Rel & Body)]";
@@ -1389,6 +1576,8 @@ Section cpd.
       - iApply (cpd_own_unblock_fold (OwnPtrLty n lt)
           with "TIME LFT PROPH UNIQ Gκ' Gty' Ok' †κ G ⧗a ⧖ C"); done.
       - iApply (cpd_own_unblock_fold (ProdLty lt1 lt2)
+          with "TIME LFT PROPH UNIQ Gκ' Gty' Ok' †κ G ⧗a ⧖ C"); done.
+      - iApply (cpd_own_unblock_fold (SumLty tyl i lt)
           with "TIME LFT PROPH UNIQ Gκ' Gty' Ok' †κ G ⧗a ⧖ C"); done. }
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗b ⧖1") as "[#⧖1' _]";
       [rewrite /lazyE; solve_ndisj|].

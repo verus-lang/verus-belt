@@ -518,7 +518,7 @@ Section shr_place.
       subplace at the hole of [K] (fields of nested products), at the location of the
       hole. *)
   Lemma shr_pctx_split {𝔅 𝔄} κ (K: pctx 𝔅 𝔄) (lt: lty 𝔅) x (l: cloc) d g k j tid :
-    pctx_noderef K →
+    pctx_fields K →
     (@[κ] &&{↑NllftG; k}&&> l.1 ↦[^ l.2]!∗ ty_phys (lty_fold (pctx_plug K lt)) x tid) -∗
     ty_shr (lty_fold (pctx_plug K lt)) κ x d g tid -∗
     ▷^j ty_gho_pers (lty_fold (pctx_plug K lt)) x d g tid -∗
@@ -527,7 +527,7 @@ Section shr_place.
     ty_shr (lty_fold lt) κ (pctx_get K x) d g tid ∗
     ▷^j ty_gho_pers (lty_fold lt) (pctx_get K x) d g tid.
   Proof.
-    induction K as [|𝔅 𝔄1 𝔄2 K IH lt2|𝔅 𝔄1 𝔄2 lt1 K IH|] in lt, x, l |- *; intros HK; simpl.
+    induction K as [|𝔅 𝔄1 𝔄2 K IH lt2|𝔅 𝔄1 𝔄2 lt1 K IH| |] in lt, x, l |- *; intros HK; simpl.
     - iIntros "$ $ $".
     - iIntros "#Pt [Shr _] Pers". rewrite heap_mapsto_cells_fancy_vec_app.
       iApply (IH with "[] Shr [Pers]"); [done| |by iDestruct "Pers" as "[$ _]"].
@@ -538,13 +538,14 @@ Section shr_place.
       rewrite ty_size_eq -lty_size_fold.
       by iApply (guards_weaken_rhs_sep_r with "Pt").
     - done.
+    - done.
   Qed.
 
   (** A shared reference to the subplace at the hole of [K] (fields of nested products),
       from a shared reference to the place (which is kept, shared references being
       copyable): [&( *p).f₁…fₙ]. *)
   Lemma tctx_shr_place {𝔅 𝔄} E L p κ (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
-    pctx_noderef K →
+    pctx_fields K →
     tctx_incl E L +[p ◁ &shr{κ} (lty_fold (pctx_plug K (OfTy ty)))]
       +[p +ₗ #(pctx_off K) ◁ &shr{κ} ty; p ◁ &shr{κ} (lty_fold (pctx_plug K (OfTy ty)))]
       (λ post '-[x], post -[(pctx_loc K (ty_size ty) x.2 x.1, pctx_get K x.2); x]).
@@ -557,7 +558,8 @@ Section shr_place.
     iModIntro. iExists -[(pctx_loc K (ty_size ty) x l, pctx_get K x); (l, x)]. iFrame "Obs".
     iSplit; [|iSplit; [|done]].
     - iExists #((pctx_loc K (ty_size ty) x l).1), (S d'). iFrame "⧖". iSplit.
-      { iPureIntro. inversion Phys; subst. rewrite /= Hp pctx_loc_fst //. }
+      { iPureIntro. inversion Phys; subst. rewrite /= Hp pctx_loc_fst //.
+        clear -HK. induction K; naive_solver. }
       iSplit; [|done]. iFrame "Pt' Shr' Pers'".
     - iExists v, (S d'). iFrame "⧖ Pt Shr Pers". by iSplit.
   Qed.

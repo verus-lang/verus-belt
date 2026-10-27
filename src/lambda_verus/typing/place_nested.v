@@ -455,8 +455,8 @@ Section typing.
         proph_idx_bor_gen β ζ idx1 (uniq_gbody β ty tid lK))%I
       with "[] [ζtok] [ζVo ToζPc Ghζ' Pt1 Gho1 Rest2 Close' £c Pt' ⧗n Rest1]")
       as "(Own & H1 & H3 & Bor1)".
-    { iPureIntro. intros ζl Hr. eapply pctx_rfn_rsv; [|exact Hr|]; [set_solver|].
-      apply pctx_rfn_rsv_hole in Hr. apply (prfn_rsv_uniq _ _ _ y) in Hr as [Hr Hξ].
+    { iPureIntro. intros ζl. apply pctx_rfn_rsv_mono; [set_solver|]. intros Hr.
+      apply (prfn_rsv_uniq _ _ _ y) in Hr as [Hr Hξ].
       apply (prfn_rsv_uniq _ _ _ y). split.
       - eapply pctx_rfn_rsv; [|exact Hr|]; [set_solver|].
         rewrite prfn_rsv_inl. apply place_ghost_rsv_elem. set_solver.
@@ -598,6 +598,7 @@ Section typing.
     { iApply (guards_transitive with "Gh2 Incl"). }
     rewrite lty_pat_plug lty_rfn_plug ltype_own_plug pctx_mode_noderef // pctx_depth_noderef //.
     iDestruct "N" as "[N1 Rest1]".
+    iDestruct (pctx_own_in with "Rest1") as %Hin1.
     destruct (pctx_get K1 x₀) as [[[[[l' y] ξi'] d1] g1] idx'] eqn:Hm.
     iDestruct "N1" as "(Pt' & ⧗n & #Incl' & #Gpt' & %d1' & %g1' & %Hle1 & C)".
     (* Open the inner borrow. *)
@@ -624,6 +625,7 @@ Section typing.
     rewrite lty_pat_plug lty_rfn_plug ltype_own_plug pctx_mode_noderef //
       pctx_depth_noderef //.
     iDestruct "N2" as "[L1 Rest2]". iSimpl in "L1".
+    iDestruct (pctx_own_in with "Rest2") as %Hin2.
     set yK := pctx_get K2 y. set ζi := blk_lookup ζm (pctx_path K2 q2).
     (* Unblock the leaf: fire the inheritance of the reborrow and settle it. *)
     iAssert ([†β])%I as "#†β". { rewrite llftl_end_inter. by iRight. }
@@ -662,8 +664,8 @@ Section typing.
     iMod ("Close" $! (pctx_pat K1 (PatUniq (pctx_pat K2 PatLeaf)))
       (pctx_rfn K1 x₀ ζm [] (inr (l', pctx_rfn K2 y ζm q2 (inl (PlaceIn y1)), ξi')))
       d'' g'' [] 1%Qp True%I with "[] [] [Pt' ⧗n Rest1 Own2]") as "(Own & H1 & _)".
-    { iPureIntro. intros ζl Hr. eapply pctx_rfn_rsv; [|exact Hr|]; [set_solver|].
-      apply pctx_rfn_rsv_hole in Hr. apply (prfn_rsv_uniq _ _ _ y) in Hr as [Hr Hξ].
+    { iPureIntro. intros ζl. apply pctx_rfn_rsv_mono; [set_solver|]. intros Hr.
+      apply (prfn_rsv_uniq _ _ _ y) in Hr as [Hr Hξ].
       apply (prfn_rsv_uniq _ _ _ y). split.
       - change (prfn_rsv (lty_rfn (pctx_plug K2 (Blocked ty β)) y ζm q2) ζl) in Hr.
         rewrite lty_rfn_plug in Hr. eapply pctx_rfn_rsv; [|exact Hr|apply prfn_rsv_in]. set_solver.
@@ -697,7 +699,7 @@ Section typing.
       iSplit; [done|]. iSplit; [iPureIntro; lia|].
       iSplitR. { iApply (lguards_weaken_later with "PtBase"). lia. }
       rewrite /ltype_own ltype_own_cp_uniq_plug_nest lty_pat_plug lty_rfn_plug_nest /=.
-      rewrite /nest_set pctx_get_set pctx_rfn_set Hm /= pctx_rfn_set.
+      rewrite /nest_set pctx_get_set pctx_rfn_set // Hm /= pctx_rfn_set //.
       rewrite /nest_get pctx_get_set /= pctx_get_set (lty_pat_plug K2) -/q2.
       rewrite (lty_pat_plug K2 (OfTy ty)). iExact "Own". }
     iCombine "Obs1 Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Heq Hf].
