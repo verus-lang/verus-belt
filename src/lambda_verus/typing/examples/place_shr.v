@@ -152,8 +152,7 @@ Section place_shr.
   taken by [tctx_shr_place], the owned pointer is dereferenced through its (structural)
   sharing predicate ([type_deref_shr_own_instr]), and the integer is read ([read_shr]).
   (A unique borrow below a shared reference is dereferenced the same way, with
-  [type_deref_shr_uniq_instr]; the typing derivation goes through, but the kernel check
-  of its [Qed] did not finish within 15 minutes, so it is not included.)
+  [type_deref_shr_uniq_instr]: see [get_uniq_shr] below.)
   *)
 
   Definition get_box_shr : val :=
@@ -215,6 +214,81 @@ Section place_shr.
     intros post [[lx [l [[l0 a] m]]] []] mask π. simpl.
     intros Hspec. rewrite /trans_upper /trans_tail /=.
     intros z _ l2' _ z0 _ l2. apply Hspec.
+    Unshelve. by intros ?.
+  Qed.
+
+  (*
+  Reading below a unique borrow below a shared reference:
+
+  ```
+  fn get_uniq_shr<'a, 'b>(r: &'a (Box<i32>, &'b mut i32)) -> i32 { *( *r).1 }
+  ```
+
+  with the specification `ensures result == *r.1` (the current value of the unique
+  borrow). A shared reference to the field is taken by [tctx_shr_place], the unique
+  borrow is dereferenced through its sharing predicate ([type_deref_shr_uniq_instr], at
+  [α ⊑ β] from the signature), and the integer is read ([read_shr]).
+  *)
+
+  Definition get_uniq_shr : val :=
+    fn: ["x"] :=
+      let: "r" := !"x" in
+      delete [ #1; "x"];;
+      let: "p1" := !("r" +ₗ #1) in       (* &*( *r).1 *)
+      let: "v1" := !"p1" in               (* *( *r).1 *)
+      let: "ret" := new [ #1] in
+      "ret" <- "v1";;
+      return: ["ret"].
+
+  Definition get_uniq_shr_spec :
+      fn_spec [at_clocₛ (at_locₛ Zₛ * uniq_borₛ Zₛ)] Zₛ () :=
+    λ _ post '-[(_, (_, (_, m)))], λ mask π, ∀ (lr: loc),
+      post (lr, uniq_bor_current (𝔄:=Zₛ) m) mask π.
+
+  Lemma get_uniq_shr_type :
+    typed_val get_uniq_shr
+      ((fn<(α, β)>(∅; &shr{α} (box int * &uniq{β} int)) → int) get_uniq_shr_spec)
+      (get_uniq_shr, ()).
+  Proof.
+    unfold get_uniq_shr. unlock.
+    opose proof (@type_fn _ _ _ [at_clocₛ (at_locₛ Zₛ * uniq_borₛ Zₛ)] Zₛ () ()
+      (λ '(α, β), FP ∅ +[&shr{α} (box int * &uniq{β} int)]%T int%T AtomicClosed)
+      get_uniq_shr_spec _ [BNamed "x"] _ _ _) as H.
+    unlock in H. apply H. clear H.
+    intros [α β] ϝ k wl. destruct wl as [vx []]. simpl_subst.
+    iApply (typed_body_impl with "[]"); last first. {
+      iApply (type_let with "[]").
+      { eapply (type_deref_instr (own_ptr 1 (&shr{α} (box int * &uniq{β} int)))
+          (&shr{α} (box int * &uniq{β} int))).
+        - apply shr_stack_okay.
+        - done.
+        - apply (read_own_move (&shr{α} (box int * &uniq{β} int))). }
+      { apply tctx_extract_elt_here_exact. }
+      { reflexivity. }
+      iIntros (vr). simpl_subst.
+      iApply type_delete. { solve_typing. } { done. } { done. }
+      iApply typed_body_tctx_incl.
+      { apply (tctx_shr_place _ _ vr α (PSnd (OfTy (box int)) PHole) (&uniq{β} int)). done. }
+      iApply (type_let with "[]").
+      { apply (type_deref_shr_uniq_instr α β _ int); solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vp1). simpl_subst.
+      iApply (type_let with "[]").
+      { eapply (type_deref_instr (𝔅 := Zₛ) _ int); [apply int_stack_okay|done|].
+        apply (read_shr int α); [apply int_copy|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vv1). simpl_subst.
+      iApply (type_letalloc_1 int). { solve_typing. } 2: { done. }
+      { eapply (_: ∀ x, x ≡ x). } iIntros (vret). simpl_subst.
+      iApply type_jump.
+      { rewrite elem_of_list_singleton. reflexivity. }
+      { solve_typing. }
+      { solve_typing. }
+      { reflexivity. }
+    }
+    intros post [[lx [l [[l0 a] m]]] []] mask π. simpl.
+    intros Hspec. rewrite /trans_upper /trans_tail /=.
+    intros z _ z0 _ z1. apply Hspec.
     Unshelve. by intros ?.
   Qed.
 
@@ -323,4 +397,5 @@ End place_shr.
 
 Print Assumptions share_first_type.
 Print Assumptions get_box_shr_type.
+Print Assumptions get_uniq_shr_type.
 Print Assumptions share_local_type.
