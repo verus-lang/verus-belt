@@ -629,4 +629,94 @@ Section pctx.
   Lemma lty_size_plug_eq {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt lt' :
     lty_size lt = lty_size lt' → lty_size (pctx_plug K lt) = lty_size (pctx_plug K lt').
   Proof. intros Hc. by rewrite !lty_size_plug Hc. Qed.
+
+  (** ** Changing the type of the hole
+
+      [pctx_retype K 𝔅'] is the context [K] with a hole of type [𝔅'] (the same
+      siblings and owned pointers), a context for the root type [pctx_root K 𝔅'].
+      [pctx_reset K x y] replaces the value of the hole of [x] by [y] (of the new
+      type). Used when the type of a subplace changes, e.g. when a value is moved out
+      of it (it becomes uninitialized) or written into it. *)
+  Fixpoint pctx_root {𝔅 𝔄} (K: pctx 𝔅 𝔄) (𝔅': syn_type) : syn_type :=
+    match K with
+    | PHole => 𝔅'
+    | @PFst _ _ 𝔄2 K _ => (pctx_root K 𝔅' * 𝔄2)%ST
+    | @PSnd _ 𝔄1 _ _ K => (𝔄1 * pctx_root K 𝔅')%ST
+    | POwn _ K => at_locₛ (pctx_root K 𝔅')
+    end.
+
+  Fixpoint pctx_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) (𝔅': syn_type) : pctx 𝔅' (pctx_root K 𝔅') :=
+    match K as K0 in pctx _ _ return pctx 𝔅' (pctx_root K0 𝔅') with
+    | PHole => PHole
+    | PFst K lt2 => PFst (pctx_retype K 𝔅') lt2
+    | PSnd lt1 K => PSnd lt1 (pctx_retype K 𝔅')
+    | POwn n K => POwn n (pctx_retype K 𝔅')
+    end.
+
+  Fixpoint pctx_reset {𝔅 𝔄} (K: pctx 𝔅 𝔄) {𝔅'} : ~~𝔄 → ~~𝔅' → ~~(pctx_root K 𝔅') :=
+    match K as K0 in pctx _ 𝔄0 return ~~𝔄0 → ~~𝔅' → ~~(pctx_root K0 𝔅') with
+    | PHole => λ _ y, y
+    | PFst K _ => λ x y, (pctx_reset K x.1 y, x.2)
+    | PSnd _ K => λ x y, (x.1, pctx_reset K x.2 y)
+    | POwn _ K => λ x y, (x.1, pctx_reset K x.2 y)
+    end.
+
+  Lemma pctx_get_reset {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) x (y: ~~𝔅') :
+    pctx_get (pctx_retype K 𝔅') (pctx_reset K x y) = y.
+  Proof. induction K in x |- *; simpl; auto. Qed.
+
+  Lemma pctx_size_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' n : pctx_size (pctx_retype K 𝔅') n = pctx_size K n.
+  Proof. induction K; simpl; by rewrite ?IHK. Qed.
+
+  Lemma pctx_mode_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' m : pctx_mode (pctx_retype K 𝔅') m = pctx_mode K m.
+  Proof. induction K in m |- *; simpl; by rewrite ?IHK. Qed.
+
+  Lemma pctx_depth_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' d : pctx_depth (pctx_retype K 𝔅') d = pctx_depth K d.
+  Proof. induction K in d |- *; simpl; by rewrite ?IHK. Qed.
+
+  Lemma pctx_path_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' q : pctx_path (pctx_retype K 𝔅') q = pctx_path K q.
+  Proof. induction K in q |- *; simpl; by rewrite ?IHK. Qed.
+
+  Lemma pctx_nblk_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' : pctx_nblk (pctx_retype K 𝔅') = pctx_nblk K.
+  Proof. induction K; simpl; by rewrite ?IHK. Qed.
+
+  Lemma pctx_expr_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' e : pctx_expr (pctx_retype K 𝔅') e = pctx_expr K e.
+  Proof. induction K in e |- *; simpl; by rewrite ?IHK. Qed.
+
+  Lemma pctx_loc_reset {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) n x (y: ~~𝔅') l :
+    pctx_loc (pctx_retype K 𝔅') n (pctx_reset K x y) l = pctx_loc K n x l.
+  Proof. induction K in x, l |- *; simpl; by rewrite ?pctx_size_retype ?IHK. Qed.
+
+  Lemma pctx_own_reset {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) n m x (y: ~~𝔅') ζm q d g tid l :
+    pctx_own (pctx_retype K 𝔅') n m (pctx_reset K x y) ζm q d g tid l =
+      pctx_own K n m x ζm q d g tid l.
+  Proof. induction K in m, x, q, d, l |- *; simpl; by rewrite ?pctx_size_retype ?IHK. Qed.
+
+  Lemma lty_size_plug_retype {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (lt': lty 𝔅') :
+    lty_size lt' = lty_size lt →
+    lty_size (pctx_plug (pctx_retype K 𝔅') lt') = lty_size (pctx_plug K lt).
+  Proof. intros Hsz. by rewrite !lty_size_plug pctx_size_retype Hsz. Qed.
+
+  Lemma lty_nblk_plug_retype {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (lt': lty 𝔅') :
+    lty_nblk lt' = lty_nblk lt →
+    lty_nblk (pctx_plug (pctx_retype K 𝔅') lt') = lty_nblk (pctx_plug K lt).
+  Proof. intros Hn. by rewrite !lty_nblk_plug pctx_nblk_retype Hn. Qed.
+
+  (** ** Locations without ghost cells
+
+      A place rooted at an owned location has no ghost cells, nor have its subplaces. *)
+  Lemma take_repeat_add {A} (a: A) n k : take n (repeat a (n + k)) = repeat a n.
+  Proof. induction n; simpl; by f_equal. Qed.
+
+  Lemma drop_repeat_add {A} (a: A) n k : drop n (repeat a (n + k)) = repeat a k.
+  Proof. induction n; simpl; done. Qed.
+
+  Lemma pctx_loc_empty {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x (l: loc) :
+    ∃ l', pctx_loc K n x (l, repeat [] (pctx_size K n)) = (l', repeat [] n).
+  Proof.
+    induction K in x, l |- *; simpl; [by eexists|..].
+    - rewrite /cloc_take /= take_repeat_add. apply IHK.
+    - rewrite /cloc_skip /= drop_repeat_add. apply IHK.
+    - apply IHK.
+  Qed.
 End pctx.
