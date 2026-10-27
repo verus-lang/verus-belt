@@ -173,7 +173,7 @@ Section typing.
     { intros ζl. apply pctx_rfn_rsv_mono; [done|]. intros _. rewrite prfn_rsv_sum.
       apply prfn_rsv_in. }
     { iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖ N".
-      iApply (ltype_owned_leaf_node with "LFT Ok2 ⧖ N"); [by apply pctx_plug_cpd|by apply lty_simple_plug]. }
+      iApply (ltype_owned_leaf_node with "LFT PROPH UNIQ Ok2 ⧖ N"); [by apply pctx_plug_cpd|by apply lty_simple_plug]. }
     { iNext. iApply (pat_ok_plug with "Ok"). by rewrite /pat_ok. }
     { iNext. iApply guarded_upd_intro. iModIntro. iFrame "⧖'".
       rewrite ltype_own_plug pctx_mode_noderef // pctx_depth_noderef // lty_size_sum_ofty.

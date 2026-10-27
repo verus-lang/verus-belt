@@ -171,6 +171,34 @@ Section typing.
       changes: the body of the borrow is switched to the new node ([cpd_rebody]),
       which is why the place must be simple. *)
 
+  Lemma ltype_own_uniq_change_hole_gen {𝔅 𝔄} κ ξi (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅) x₀ ζm q0 d g tid l E G :
+    pctx_nonempty K → pctx_simple K → lty_simple lt' →
+    lty_size lt' = lty_size lt → lty_fold lt' = lty_fold lt →
+    (∀ α, α ∈ pat_blk_lfts (lty_pat lt') → α ∈ pat_blk_lfts (lty_pat lt)) →
+    (∀ y q ζl, prfn_rsv (lty_rfn lt y ζm q) ζl → prfn_rsv (lty_rfn lt' y ζm q) ζl) →
+    (∀ y q d g tid l, ltype_own (Owned (pctx_mode K 0)) lt (lty_rfn lt y ζm q) d g tid l ⊢
+       |={lazyE}=> ltype_own (Owned (pctx_mode K 0)) lt' (lty_rfn lt' y ζm q) d g tid l) →
+    Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
+    ltype_own (Uniq κ ξi) (pctx_plug K lt) (lty_rfn (pctx_plug K lt) x₀ ζm q0) d g tid l ={E}=∗
+    ltype_own (Uniq κ ξi) (pctx_plug K lt') (lty_rfn (pctx_plug K lt') x₀ ζm q0) d g tid l ∗ G.
+  Proof.
+    iIntros (HK HsK Hs' Hsz Hfold Hpat Hrsv Hown ? HE) "#LFT #PROPH #UNIQ #Gκ G Own".
+    rewrite /ltype_own !ltype_own_cp_uniq_plug //.
+    iMod (cpd_rebody with "LFT PROPH UNIQ Gκ G Own") as (κp) "(#Inclp & #Ok & Upd & Close)";
+      [done|].
+    rewrite (lty_fold_plug_eq' K lt' lt) //.
+    iApply ("Close" with "[%] [] [] [Upd]").
+    - intros ζl. rewrite !lty_rfn_plug. apply pctx_rfn_rsv_mono; [done|]. by apply Hrsv.
+    - iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖ N". rewrite -(lty_fold_plug_eq' K lt' lt) //.
+      iApply (ltype_owned_leaf_node with "LFT PROPH UNIQ Ok2 ⧖ N"); [by destruct K|by apply lty_simple_plug].
+    - iNext. rewrite !lty_pat_plug. iApply (pat_ok_plug with "Ok").
+      iApply (pat_ok_incl with "[]"); [done|]. iApply (pat_ok_plug_hole with "Ok").
+    - iNext. iApply (guarded_upd_mono with "[] Upd"). iIntros "[$ N]".
+      rewrite !lty_pat_plug !lty_rfn_plug !ltype_own_plug Hsz. iDestruct "N" as "[H $]".
+      by iApply Hown.
+  Qed.
+
   Lemma ltype_own_uniq_change_hole {𝔅 𝔄} κ ξi (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅) x₀ ζm d g tid l G :
     pctx_nonempty K → pctx_simple K → lty_simple lt' →
     lty_size lt' = lty_size lt → lty_fold lt' = lty_fold lt →
@@ -182,22 +210,7 @@ Section typing.
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
     ltype_own (Uniq κ ξi) (pctx_plug K lt) (lty_rfn (pctx_plug K lt) x₀ ζm []) d g tid l ={⊤}=∗
     ltype_own (Uniq κ ξi) (pctx_plug K lt') (lty_rfn (pctx_plug K lt') x₀ ζm []) d g tid l ∗ G.
-  Proof.
-    iIntros (HK HsK Hs' Hsz Hfold Hpat Hrsv Hown ?) "#LFT #PROPH #UNIQ #Gκ G Own".
-    rewrite /ltype_own !ltype_own_cp_uniq_plug //.
-    iMod (cpd_rebody with "LFT PROPH UNIQ Gκ G Own") as (κp) "(#Inclp & #Ok & Upd & Close)";
-      [solve_ndisj|].
-    rewrite (lty_fold_plug_eq' K lt' lt) //.
-    iApply ("Close" with "[%] [] [] [Upd]").
-    - intros ζl. rewrite !lty_rfn_plug. apply pctx_rfn_rsv_mono; [done|]. by apply Hrsv.
-    - iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖ N". rewrite -(lty_fold_plug_eq' K lt' lt) //.
-      iApply (ltype_owned_leaf_node with "LFT Ok2 ⧖ N"); [by destruct K|by apply lty_simple_plug].
-    - iNext. rewrite !lty_pat_plug. iApply (pat_ok_plug with "Ok").
-      iApply (pat_ok_incl with "[]"); [done|]. iApply (pat_ok_plug_hole with "Ok").
-    - iNext. iApply (guarded_upd_mono with "[] Upd"). iIntros "[$ N]".
-      rewrite !lty_pat_plug !lty_rfn_plug !ltype_own_plug Hsz. iDestruct "N" as "[H $]".
-      by iApply Hown.
-  Qed.
+  Proof. intros. by apply ltype_own_uniq_change_hole_gen; [..|solve_ndisj]. Qed.
 
   (** As [tctx_place_change_hole] below, without the (unused) condition on the
       denotations. *)

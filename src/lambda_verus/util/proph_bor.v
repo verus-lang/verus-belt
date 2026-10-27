@@ -957,6 +957,47 @@ Proof.
 Qed.
 
 
+(** Open a reserved generalized prophetic borrow, closing it with a possibly different
+    payload (as [proph_idx_bor_gen_rsv_acc]) and extending the reservation by [ζl'] (as
+    [proph_idx_bor_gen_rsv_acc_ext]); the tokens for [ζl'] are needed when closing, and
+    are handed to a view shift that produces the new contents. *)
+Lemma proph_idx_bor_gen_rsv_acc_rebody_ext E κ ξ x idx ζl (P: pv_val ξ → pv_proph ξ → iProp Σ) G :
+  Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
+  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  proph_bor_tok_rsv ξ x idx ζl -∗ proph_idx_bor_gen κ ξ idx P -∗ G ={E}=∗ ∃ wπ,
+    ▷ P x wπ ∗
+    (∀ x1 wπ1 ζl' q (Q: pv_val ξ → pv_proph ξ → iProp Σ) (R: iProp Σ),
+       ▷ (∀ x2 wπ2, ▷ Q x2 wπ2 ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P x2 wπ2) -∗
+       q:+[ζl'] -∗ (q:+[ζl'] ={E}=∗ ▷ Q x1 wπ1 ∗ R) ={E}=∗
+       ∃ idx', proph_bor_tok_rsv ξ x1 idx' (ζl ++ ζl') ∗ proph_idx_bor_gen κ ξ idx' Q ∗ G ∗ R).
+Proof.
+  iIntros (??) "#LFT #PROPH #UNIQ #Gk [Vo Tok] #Bor G".
+  iDestruct (llftl_bor_idx_to_full with "Bor Tok") as "Bor'".
+  iMod (llftl_bor_acc_guarded with "LFT Bor' Gk G") as "[Body Back]"; [solve_ndisj|].
+  iMod (bi.later_exist_except_0 with "Body") as (x') "Body".
+  iMod (bi.later_exist_except_0 with "Body") as (wπ') "[Pc P]".
+  iMod (uniq_rsv_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
+  iModIntro. iExists wπ'. iFrame "P".
+  iIntros (x1 wπ1 ζl' q Q R) "W ζl' VS".
+  iMod (uniq_reserve_extend with "UNIQ PROPH Vo Pc ζl'") as "(Vo & Pc & ζl')"; [solve_ndisj|].
+  iMod (uniq_rsv_update ξ (ζl ++ ζl') x1 wπ1 with "UNIQ Vo Pc") as "[Vo Pc]".
+  { pose proof (nclose_subseteq Nllft 0). solve_ndisj. }
+  iMod ("VS" with "ζl'") as "[Q $]".
+  iAssert (▷ (▷ pbor_body_gen ξ Q ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ pbor_body_gen ξ P))%I
+    with "[W]" as "VS'".
+  { iNext. iIntros "Body".
+    iMod (bi.later_exist_except_0 with "Body") as (x2) "Body".
+    iMod (bi.later_exist_except_0 with "Body") as (wπ2) "(Pc2 & Q)".
+    iMod ("W" $! x2 wπ2 with "Q") as "P".
+    iModIntro. iNext. iExists x2, wπ2. iFrame. }
+  iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
+  iMod ("Back" $! (pbor_body_gen ξ Q) with "[VS' Pc Q]") as "[Bor2 G]".
+  { iFrame "VS'". iNext. iExists x1, wπ1. iFrame. }
+  iMod "Upd" as "_".
+  iDestruct (llftl_bor_idx with "Bor2") as (idx') "[IBor' Tok']".
+  iModIntro. iExists idx'. iFrame.
+Qed.
+
 (** Non-expansiveness / properness of generalized prophetic borrows in the payload. *)
 
 Local Lemma pbor_body_gen_proper ξ (P Q: pv_val ξ → pv_proph ξ → iProp Σ) :
