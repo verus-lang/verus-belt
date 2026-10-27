@@ -899,18 +899,21 @@ Section typing.
 
   (** * Dropping the outer borrow while all leaves are blocked *)
 
-  (** The outer borrow is given up while all leaves of the place are blocked: its
-      prophecy variable is pre-resolved (through its reservation, without tokens) to
-      the current value of the place, i.e. the final values of the reborrows of the
-      leaves. The lender gets the body back when [κ] ends, as usual. To drop a place
-      with some unblocked leaves, these are first reborrowed (e.g. at [κ ⊓ κ]). *)
-  Lemma tctx_drop_place {𝔄1 𝔄2} E L p κ (lt1: lty 𝔄1) (lt2: lty 𝔄2) :
-    lctx_lft_alive E L κ → lty_blk_all lt1 → lty_blk_all lt2 →
-    tctx_incl E L +[p ◁ₗ{κ} ProdLty lt1 lt2] +[]
+  (** The outer borrow is given up while all leaves of the (compound) place are blocked
+      (also the leaves of nested places, [UniqLty]): its prophecy variable is
+      pre-resolved (through its reservation, without tokens) to the current value of the
+      place, i.e. the final values of the reborrows of the leaves (and, for a nested
+      place, the final value of the nested borrow, for which the outer one is reserved,
+      see [type_unfold_place_uniq_instr]). The lender gets the body back when [κ] ends,
+      as usual. To drop a place with some unblocked leaves, these are first reborrowed
+      (e.g. at [κ ⊓ κ]). *)
+  Lemma tctx_drop_place_cpd {𝔄} E L p κ (lt: lty 𝔄) :
+    lctx_lft_alive E L κ → lty_is_cpd lt → lty_blk_all lt →
+    tctx_incl E L +[p ◁ₗ{κ} lt] +[]
       (λ post '-[x], λ mask π,
-        uniq_bor_future (place_bor x) π = place_cur (ProdLty lt1 lt2) x π → post -[] mask π).
+        uniq_bor_future (place_bor x) π = place_cur lt x π → post -[] mask π).
   Proof.
-    intros Alv Hb1 Hb2. split.
+    intros Alv Hc Hb. split.
     { intros ?? Eq [? []] ??. split=> H ?; apply Eq, H; done. }
     iIntros (G tid [x []] mask post ?) "#LFT #PROPH #UNIQ #E #GL G [T _] Obs".
     destruct x as [[[[[[l x₀] ξi] d'] g'] idx] ζm].
@@ -918,14 +921,14 @@ Section typing.
     leaf_open "GL" with "G" as "[L back]"; [set_solver|].
     iDestruct (Alv with "L E") as "#Lκ". iMod ("back" with "L") as "G".
     iDestruct (guards_transitive with "GL Lκ") as "#Gκ".
-    rewrite /ltype_own /=.
+    rewrite /ltype_own ltype_own_cp_uniq_cpd //.
     iDestruct "Own" as (x₀' κp γ γf idx' ζl) "(#Inclp & %Hr & Tok & Gh & Tf & ⧗o & #Bor)".
-    set r : prfn (𝔄1 * 𝔄2) := lty_rfn (ProdLty lt1 lt2) x₀ ζm [].
-    set uπ : proph (uniq_cellₛ (𝔄1 * 𝔄2)) :=
+    set r : prfn 𝔄 := lty_rfn lt x₀ ζm [].
+    set uπ : proph (uniq_cellₛ 𝔄) :=
       λ π, (prfn_den r π, (1%positive, (1%positive, 1%positive))).
     have Hdep: uπ ./ ζl.
     { apply (proph_dep_constr (λ a, (a, (1%positive, (1%positive, 1%positive))))).
-      by apply (lty_blk_all_dep (ProdLty lt1 lt2)). }
+      by apply lty_blk_all_dep. }
     iMod (proph_idx_bor_gen_preresolve_rsv ⊤ κ (uniq_prvar x₀' ξi) (uniq_cell x₀' d' g' γ) idx'
       ζl _ uπ G with "LFT PROPH UNIQ Gκ [Gh Tf] G Tok Bor") as "[#Obs' $]";
       [solve_ndisj|done| |].
@@ -938,4 +941,11 @@ Section typing.
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ Heq].
     apply Hπ. rewrite uniq_bor_future_eq (uniq_prvar_app_irrel x₀ x₀') Heq. done.
   Qed.
+
+  Lemma tctx_drop_place {𝔄1 𝔄2} E L p κ (lt1: lty 𝔄1) (lt2: lty 𝔄2) :
+    lctx_lft_alive E L κ → lty_blk_all lt1 → lty_blk_all lt2 →
+    tctx_incl E L +[p ◁ₗ{κ} ProdLty lt1 lt2] +[]
+      (λ post '-[x], λ mask π,
+        uniq_bor_future (place_bor x) π = place_cur (ProdLty lt1 lt2) x π → post -[] mask π).
+  Proof. intros. by apply tctx_drop_place_cpd. Qed.
 End typing.

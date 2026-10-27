@@ -303,6 +303,7 @@ src/lambda_verus/typing/own.v
 src/lambda_verus/typing/ltype.v
 src/lambda_verus/typing/lpath.v
 src/lambda_verus/typing/place.v
+src/lambda_verus/typing/place_nested.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/tracked.v
@@ -327,6 +328,7 @@ src/lambda_verus/typing/examples/list.v
 src/lambda_verus/typing/examples/pcell_example.v
 src/lambda_verus/typing/examples/get_first.v
 src/lambda_verus/typing/examples/place_box.v
+src/lambda_verus/typing/examples/nested_uniq.v
 
 
 -arg -w -arg -argument-scope-delimiter

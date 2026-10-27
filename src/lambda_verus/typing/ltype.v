@@ -71,8 +71,8 @@
   At [Owned m], [ProdLty (OfTy ty1) (OfTy ty2)] is [ltype_eq] to
   [OfTy (prod_ty ty1 ty2)] ([prod_ofty_unfold]); [OwnPtrLty n (OfTy ty)] is
   [ltype_eq] to [OfTy (own_ptr n ty)] at [Owned 0] ([ownptr_ofty_unfold]);
-  and [UniqLty (OfTy ty) κ] is equivalent to [OfTy (&uniq{κ} ty)]
-  ([uniq_ofty_unfold], [uniq_ofty_fold_own]). At [Uniq] mode, a product is
+  and [UniqLty (OfTy ty) κ] is equivalent to [OfTy (&uniq{κ} ty)] together with
+  two cumulative time receipts ([uniq_ofty_unfold_own], [uniq_ofty_fold_own]). At [Uniq] mode, a product is
   unfolded _behind an existing unique borrow_ ([prod_ofty_unfold_uniq]): the body
   of the borrow is switched (with a lifetime guard, without a new borrow and
   without changing the prophecy variable) from the leaf [prod_ty ty1 ty2] to the
@@ -83,11 +83,13 @@
   inheritance unblocks the components (the membership condition [pat_ok κp]
   makes their blocked lifetimes end before [κp]).
 
-  Unfolding [own_ptr] and [&uniq] behind a unique borrow is not supported: the
-  closing view shift would have to rebuild the receipt of an owned pointer
-  ([⧖] of one more than the depth of its unblocked pointee, which needs a program
-  step), resp. a nested membership condition for the blocked places behind the
-  nested borrow. *)
+  Owned pointers behind a unique borrow are folded back with shifted receipts (see
+  [ltype_owned_unblock_fold]). A unique borrow behind a unique borrow is folded back
+  lazily, by folding the nested compound place inside the lazy update of the leaf
+  ([uniq_node_unblock_fold]); this relies on the nested membership condition (the
+  blocked lifetimes of the nested place are included in the pattern lifetime of the
+  outer borrow, see [pat_blk_lfts]) and on the two cumulative time receipts held by
+  the node of [UniqLty]. *)
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
@@ -228,7 +230,7 @@ Section ltype_own.
     match r with
     | inl _ => False
     | inr (l', r', ξi) =>
-        l #↦!∗ [FVal (LitV l'.1)] ∗
+        l #↦!∗ [FVal (LitV l'.1)] ∗ ⧗2 ∗
         ▷^m (κ' ⊑ ty_lft ty ∗ (@[κ'] &&{↑NllftG; g+1}&&> l' #↦∗_) ∗
           ∃ d' g', ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ child ξi r' d' g' tid l')
     end%I.
@@ -350,7 +352,7 @@ Section ltype_lemmas.
     uniq_node m κ' ty c1 r d g tid l ⊢ uniq_node m κ' ty c2 r d g tid l.
   Proof.
     intros Hc. destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /uniq_node.
-    iIntros "[$ H]". iNext. iDestruct "H" as "($ & $ & %d' & %g' & ? & C)".
+    iIntros "($ & $ & H)". iNext. iDestruct "H" as "($ & $ & %d' & %g' & ? & C)".
     iExists d', g'. iFrame. by iApply Hc.
   Qed.
 
@@ -435,7 +437,7 @@ Section ltype_lemmas.
     - by apply leaf_owned_depth_mono.
     - by apply leaf_owned_depth_mono.
     - destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /uniq_node.
-      iIntros "[$ H]". iNext. iDestruct "H" as "($ & #G & %d1 & %g1 & %Hle & C)".
+      iIntros "($ & $ & H)". iNext. iDestruct "H" as "($ & #G & %d1 & %g1 & %Hle & C)".
       iSplitR. { iApply (lguards_weaken_later with "G"). lia. }
       iExists d1, g1. iFrame. iPureIntro. lia.
     - destruct r as [?|[l' r']]; [done|]. rewrite /own_node.
@@ -501,8 +503,9 @@ Section ltype_lemmas.
     iModIntro. iExists d', g', x. iFrame.
   Qed.
 
-  (** Congruence. Unique borrows are trivially unblockable, as blocked
-      places behind a nested borrow belong to that borrow. *)
+  (** Congruence. Unique borrows are trivially unblockable: implicit unblocking does
+      not reach into the nested borrow, whose core interpretation is at any
+      pattern. *)
   Lemma uniq_ltype_imp_unblockable κs {𝔄} (lt: lty 𝔄) κ' :
     ⊢ imp_unblockable κs (UniqLty lt κ').
   Proof.
@@ -711,10 +714,11 @@ Section unfold.
 
   (** ** Unique borrows
 
-      [UniqLty (OfTy ty) κ] is equivalent to [OfTy (&uniq{κ} ty)], up to the
-      depths and the borrow index stored in the [&uniq] value (which the
-      place refinement does not contain, since they change when the borrow
-      is reborrowed). *)
+      [UniqLty (OfTy ty) κ] is equivalent to [OfTy (&uniq{κ} ty)] together with two
+      cumulative time receipts (held by the node, see [uniq_node_unblock_fold]), up to
+      the depths and the borrow index stored in the [&uniq] value (which the place
+      refinement does not contain, since they change when the borrow is
+      reborrowed). *)
 
   Lemma uniq_ofty_den {𝔄} (l': cloc) (x: ~~𝔄) ξi d' g' idx :
     prfn_den (inl (PlaceIn (𝔄:=uniq_borₛ 𝔄) (l', x, ξi, d', g', idx)) : prfn (uniq_borₛ 𝔄)) =
@@ -722,11 +726,12 @@ Section unfold.
   Proof. rewrite /= prfn_den_in prfn_wit_in. done. Qed.
 
   Lemma uniq_ofty_unfold_own m {𝔄} (ty: type 𝔄) κ l' x ξi d' g' idx d g tid l :
-    ltype_own (Owned m) (OfTy (&uniq{κ} ty)) (inl (PlaceIn (𝔄:=uniq_borₛ 𝔄) (l', x, ξi, d', g', idx))) d g tid l ⊢
+    ⧗2 -∗
+    ltype_own (Owned m) (OfTy (&uniq{κ} ty)) (inl (PlaceIn (𝔄:=uniq_borₛ 𝔄) (l', x, ξi, d', g', idx))) d g tid l -∗
     ltype_own (Owned m) (UniqLty (OfTy ty) κ) (inr (l', inl (PlaceIn x), ξi)) d g tid l.
   Proof.
     rewrite /ltype_own /= /ofty_owned /=.
-    iIntros "(%v & -> & Pt & Gho)". iFrame "Pt". iNext.
+    iIntros "⧗ (%v & -> & Pt & Gho)". iFrame "Pt ⧗". iNext.
     iDestruct "Gho" as "(#Incl & %Hle & Body & #G)".
     iSplitR; [done|]. iSplitR; [done|].
     iExists d', g'. iSplit; [done|]. iExists x, idx. iSplit; [done|]. done.
@@ -734,33 +739,24 @@ Section unfold.
 
   Lemma uniq_ofty_fold_own m {𝔄} (ty: type 𝔄) κ l' x ξi d g tid l :
     ltype_own (Owned m) (UniqLty (OfTy ty) κ) (inr (l', inl (PlaceIn x), ξi)) d g tid l ⊢
-    ∃ d' g' idx,
+    ⧗2 ∗ ∃ d' g' idx,
       ltype_own (Owned m) (OfTy (&uniq{κ} ty)) (inl (PlaceIn (𝔄:=uniq_borₛ 𝔄) (l', x, ξi, d', g', idx))) d g tid l.
   Proof.
     rewrite /ltype_own /= /ofty_owned /=.
     have ?: Inhabited (~~𝔄) := populate x. have ?: Inhabited Idx := populate idx_dummy.
-    iIntros "[Pt H]".
+    iIntros "(Pt & $ & H)".
     iDestruct "H" as "(Incl & G & %d' & %g' & Hle & %y & %idx & Hy & Body)".
     iExists d', g', idx, _. iSplit; [done|]. iFrame "Pt". iNext.
     iDestruct "Hy" as %->. iFrame.
   Qed.
 
   Lemma uniq_ofty_unfold_core m {𝔄} (ty: type 𝔄) κ l' x ξi d' g' idx d g tid l :
-    ltype_own_core (Owned m) (OfTy (&uniq{κ} ty)) (inl (PlaceIn (𝔄:=uniq_borₛ 𝔄) (l', x, ξi, d', g', idx))) d g tid l ⊢
+    ⧗2 -∗
+    ltype_own_core (Owned m) (OfTy (&uniq{κ} ty)) (inl (PlaceIn (𝔄:=uniq_borₛ 𝔄) (l', x, ξi, d', g', idx))) d g tid l -∗
     ltype_own_core (Owned m) (UniqLty (OfTy ty) κ) (inr (l', inl (PlaceIn x), ξi)) d g tid l.
   Proof.
-    iIntros "H". iDestruct (uniq_ofty_unfold_own with "H") as "H".
+    iIntros "⧗ H". iDestruct (uniq_ofty_unfold_own with "⧗ H") as "H".
     iApply (uniq_node_mono with "H"). iIntros (????? l'') "H". by iExists _.
-  Qed.
-
-  Lemma uniq_ofty_unfold m {𝔄} (ty: type 𝔄) κ l' (x: ~~𝔄) ξi d' g' idx :
-    ⊢ ltype_incl (Owned m) (inl (PlaceIn (𝔄:=uniq_borₛ 𝔄) (l', x, ξi, d', g', idx)))
-        (inr (l', inl (PlaceIn x), ξi) : prfn (uniq_borₛ 𝔄))
-        (OfTy (&uniq{κ} ty)) (UniqLty (OfTy ty) κ).
-  Proof.
-    iSplit; [iPureIntro; split; [done|apply uniq_ofty_den]|].
-    iSplit; iIntros "!>" (d g tid l) "H"; iModIntro;
-      [iApply (uniq_ofty_unfold_own with "H")|iApply (uniq_ofty_unfold_core with "H")].
   Qed.
 End unfold.
 
@@ -1201,5 +1197,155 @@ Section cpd.
     iApply (uniq_body_from_parts with "Incl [Gh Tok] ⧗ [Bor']").
     - rewrite /uniq_tokγ (uniq_bor_tok_retarget _ x₀). iFrame.
     - by rewrite /uniq_persγ (uniq_idx_bor_gen_retarget _ _ x₀).
+  Qed.
+  (** ** Unique borrows below a unique borrow
+
+      The node of [UniqLty lt κ'] (with a simple [lt]) is folded back into the leaf
+      [&uniq{κ'} (lty_fold lt)] inside a lazy update (with a guard for the lifetime
+      of [&uniq{κ'} …], which includes [κ']), once the pattern lifetime [κ] of the
+      outer borrow has ended: by the nested membership condition ([pat_ok κ p], see
+      [pat_blk_lfts]), the blocked lifetimes of the nested place have ended too. The
+      nested compound place is unreserved, its borrow is opened (and switched back to
+      the body of [&uniq]), its contents are unblocked and folded
+      ([ltype_owned_unblock_fold]), and the borrow is closed at the trivial state. The
+      two cumulative time receipts of the node pay for the later credit needed to
+      open the nested borrow, and for the receipt of the outer leaf, one more than the
+      depth of the (unblocked) nested contents. *)
+
+  Lemma pat_ok_uniq κ p : pat_ok κ p -∗ pat_ok κ (pat_uniq p).
+  Proof. iIntros "Ok". destruct p; simpl; try iApply pat_ok_leaf. done. Qed.
+
+  Lemma leaf_uniq_unblock {𝔄} κ κ' ξi (ty: type 𝔄) p lr d g tid l G :
+    Timeless G →
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ pat_ok κ p -∗ [†κ] -∗ G -∗
+    ⧖(S d `max` g) -∗ leaf_uniq false κ' ξi ty p (inl lr) d g tid l ={lazyE}=∗
+      G ∗ ∃ d' g', ⧖(S d' `max` g') ∗ ofty_uniq κ' ξi ty lr d' g' tid l.
+  Proof.
+    iIntros (?) "#LFT #Gty #Ok #†κ G #⧖ L".
+    destruct p; rewrite /leaf_uniq /=;
+      try (iModIntro; iFrame "G"; iExists d, g; by iFrame "⧖ L").
+    rewrite /blocked_uniq.
+    iMod (pat_ok_dead with "LFT Ok †κ") as "[Dead _]"; [apply lazyE_NllftG|].
+    iMod ("L" with "Dead") as "Upd".
+    by iApply (guarded_upd_run with "Gty G Upd").
+  Qed.
+
+  Lemma cpd_own_unblock_fold {𝔄} (lt: lty 𝔄) κ κ' ξi p r d g m tid l G :
+    lty_simple lt → Timeless G →
+    time_ctx -∗ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗
+    (G &&{↑NllftG}&&> @[κ']) -∗ (G &&{↑NllftG}&&> @[ty_lft (lty_fold lt)]) -∗
+    pat_ok κ p -∗ [†κ] -∗ G -∗ ⧗1 -∗ ⧖m -∗
+    cpd_own κ' ξi (lty_fold lt) p (ltype_own_cp false lt (Owned 0)) r d g tid l ={lazyE}=∗
+      G ∗ ∃ x d' g' idx, ▷ (prfn_den r :== vπ x) ∗ ⧖(S d' `max` g') ∗
+        uniq_body (lty_fold lt) x ξi d' g' idx κ' tid l.
+  Proof.
+    iIntros (Hs ?) "#TIME #LFT #PROPH #UNIQ #Gκ' #Gty #Ok #†κ G ⧗c #⧖m Own".
+    iDestruct "Own" as (x₀ κp γ γf idx ζl) "(#Incl & _ & Tok & Gh & Tf & ⧗ & #Bor)".
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗c ⧖m") as "[_ £]";
+      [rewrite /lazyE; solve_ndisj|].
+    iDestruct (lc_weaken 1 with "£") as "£"; [rewrite /advance_credits; lia|].
+    iMod (proph_idx_bor_gen_unreserve with "LFT PROPH UNIQ Gκ' G Tok Bor") as "[Tok G]";
+      [rewrite /lazyE; solve_ndisj|].
+    iMod (fractional.frac_split_guard_in_half NllftG G G with "G []")
+      as (γh) "[H1 [H2 [#Ghh #Back]]]";
+      [rewrite /lazyE; solve_ndisj|iApply guards_refl|].
+    iDestruct (guards_transitive with "Ghh Gκ'") as "#Hκ'".
+    iDestruct (guards_transitive with "Ghh Gty") as "#Hty".
+    set ty := lty_fold lt.
+    have ?: Inhabited (~~𝔄) := populate x₀.
+    iMod (proph_idx_bor_gen_acc_rebody_guarded lazyE κ' (uniq_prvar x₀ ξi) (uniq_cell x₀ d g γ)
+      idx _ (uniq_gbody κp ty tid l) with "LFT UNIQ Hκ' Tok Bor H1") as (wπ) "[Body Close]";
+      [rewrite /lazyE; solve_ndisj|].
+    iDestruct (bi.later_or with "Body") as "[Body|[>Tf' _]]"; last first.
+    { iDestruct (cpd_tok_excl with "Tf Tf'") as "[]". }
+    rewrite cpd_body_cell.
+    iMod (lc_fupd_elim_later with "£ Body") as (p1 r1) "(_ & _ & Gh' & Upd)".
+    iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
+    iMod (guarded_upd_run with "Hty H2 Upd") as "(H2 & #⧖1 & N)"; [done|].
+    iMod (ltype_owned_unblock_fold lt κ 0 with "LFT Hty Ok †κ H2 [] N")
+      as "[H2 (%x & %d2 & %g2 & Eqz & #⧖2 & Pt & Gho)]"; [done| |].
+    { iApply (persistent_time_receipt_mono with "⧖1"). lia. }
+    iMod (ghost_var_update_halves (lstate_triv x) with "Gh Gh'") as "[Gh Gh']".
+    iSpecialize ("Close" $! (uniq_cell x d2 g2 γ) (vπ (uniq_cell x d2 g2 γ))).
+    iMod (fupd_mask_mono with "(Close [Gh' Pt Gho] [Tf])") as (idx') "(Tok & #Bor' & H1)";
+      [rewrite /lazyE; solve_ndisj| | |].
+    { iApply (uniq_gbody_triv_close with "Gh'"); [done|]. iNext.
+      iApply (uniq_payload_intro with "[] Gho Pt").
+      iApply (persistent_time_receipt_mono with "⧖2"). lia. }
+    { iIntros "!>" (c2 w2) "P". iModIntro. iNext. iRight. iFrame. }
+    iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [rewrite /lazyE; solve_ndisj|].
+    iModIntro. iExists x, d2, g2, idx'. iFrame "Eqz".
+    iSplit; [iApply (persistent_time_receipt_mono with "⧖2"); lia|].
+    iApply (uniq_body_from_parts with "Incl [Gh Tok] ⧗ [Bor']").
+    - rewrite /uniq_tokγ (uniq_bor_tok_retarget _ x₀). iFrame.
+    - by rewrite /uniq_persγ (uniq_idx_bor_gen_retarget _ _ x₀).
+  Qed.
+
+  Lemma uniq_node_unblock_fold {𝔄} (lt: lty 𝔄) κ κ' p r d g tid l G :
+    lty_simple lt → Timeless G →
+    time_ctx -∗ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗
+    (G &&{↑NllftG}&&> @[ty_lft (lty_fold (UniqLty lt κ'))]) -∗ pat_ok κ p -∗ [†κ] -∗ G -∗
+    ⧖(S d `max` g) -∗ ltype_own_cp false (UniqLty lt κ') (Owned 0) p r d g tid l ={lazyE}=∗
+      G ∗ ∃ x d' g', ▷ (prfn_den r :== vπ x) ∗ ⧖(S d' `max` g') ∗
+        ofty_owned 0 (lty_fold (UniqLty lt κ')) x d' g' tid l.
+  Proof.
+    iIntros (Hs ?) "#TIME #LFT #PROPH #UNIQ #Gty #Ok #†κ G #⧖ N".
+    destruct r as [?|[[l' r'] ξi]]; [done|].
+    iDestruct "N" as "(Pt & ⧗ & #Incl' & #Gpt & %d1 & %g1 & %Hle & C)".
+    iDestruct (cumulative_time_receipt_sep 1 1 with "⧗") as "[⧗a ⧗b]".
+    iDestruct (pat_ok_uniq with "Ok") as "#Ok'".
+    iAssert (G &&{↑NllftG}&&> @[κ'])%I as "#Gκ'".
+    { iApply (guards_transitive with "Gty"). iApply llftl_intersect_incl_l. }
+    iAssert (G &&{↑NllftG}&&> @[ty_lft (lty_fold lt)])%I as "#Gty'".
+    { iApply (guards_transitive with "Gty"). iApply llftl_intersect_incl_r. }
+    (* The nested place, folded back into a unique borrow. *)
+    iAssert (|={lazyE}=> G ∗ ∃ x d1' g1' idx, ▷ (prfn_den r' :== vπ x) ∗
+      ⧖(S d1' `max` g1') ∗ uniq_body (lty_fold lt) x ξi d1' g1' idx κ' tid l')%I
+      with "[G C ⧗a]" as ">[G (%x & %d1' & %g1' & %idx & Eqz & #⧖1 & Body)]".
+    { destruct lt as [𝔅 ty|𝔅 ty α|𝔅 lt κ''|𝔅 n lt|𝔅 ℭ lt1 lt2]; try done.
+      - destruct r' as [lr|]; [|done].
+        iMod (leaf_uniq_unblock with "LFT Gty' Ok' †κ G [] C")
+          as "[$ (%d2 & %g2 & #⧖2 & %x & %idx & Rel & Body)]".
+        { iApply (persistent_time_receipt_mono with "⧖"). lia. }
+        iModIntro. iExists x, d2, g2, idx. iFrame "⧖2 Body". rewrite prfn_den_inl.
+        by iApply place_rfn_rel_eqz.
+      - destruct r' as [lr|]; [|done].
+        iMod (leaf_uniq_unblock with "LFT Gty' Ok' †κ G [] C")
+          as "[$ (%d2 & %g2 & #⧖2 & %x & %idx & Rel & Body)]".
+        { iApply (persistent_time_receipt_mono with "⧖"). lia. }
+        iModIntro. iExists x, d2, g2, idx. iFrame "⧖2 Body". rewrite prfn_den_inl.
+        by iApply place_rfn_rel_eqz.
+      - iApply (cpd_own_unblock_fold (OwnPtrLty n lt)
+          with "TIME LFT PROPH UNIQ Gκ' Gty' Ok' †κ G ⧗a ⧖ C"); done.
+      - iApply (cpd_own_unblock_fold (ProdLty lt1 lt2)
+          with "TIME LFT PROPH UNIQ Gκ' Gty' Ok' †κ G ⧗a ⧖ C"); done. }
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗b ⧖1") as "[#⧖1' _]";
+      [rewrite /lazyE; solve_ndisj|].
+    iModIntro. iFrame "G".
+    iExists (l', x, ξi, d1', g1', idx), (S d1' `max` d), (g1' `max` g).
+    iSplitL "Eqz".
+    { iNext. iApply (proph_eqz_prod with "[Eqz] []").
+      - iApply (proph_eqz_eq with "Eqz"); done.
+      - iApply (proph_eqz_eq with "[]"); [done| |iApply proph_eqz_refl].
+        fun_ext=> π /=. apply (uniq_prvar_app_irrel (prfn_wit r') x ξi π). }
+    iSplit. { iCombine "⧖ ⧖1'" as "⧖'". iApply (persistent_time_receipt_mono with "⧖'"). lia. }
+    rewrite /ofty_owned /=. iFrame "Pt Incl' Body". iSplit; [iPureIntro; lia|].
+    iApply (lguards_weaken_later with "Gpt"). lia.
+  Qed.
+
+  (** The node of [UniqLty lt κ'] is seen as the leaf of its folded type, as
+      [ltype_owned_leaf_node]. *)
+  Lemma ltype_owned_leaf_node_uniq {𝔄} (lt: lty 𝔄) κ' κp p r d g tid l :
+    lty_simple lt →
+    time_ctx -∗ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ pat_ok κp p -∗ ⧖(S d `max` g) -∗
+    ltype_own_cp false (UniqLty lt κ') (Owned 0) p r d g tid l -∗
+    leaf_node κp (lty_fold (UniqLty lt κ')) p r d g tid l.
+  Proof.
+    iIntros (Hs) "#TIME #LFT #PROPH #UNIQ #Ok #⧖ N".
+    destruct r as [lr|rs]; [done|].
+    iEval (rewrite /leaf_node /= /blocked_owned). iIntros "#†κ !>" (G ?) "#Gty G".
+    iMod (uniq_node_unblock_fold with "TIME LFT PROPH UNIQ Gty Ok †κ G ⧖ N")
+      as "[$ (%x & %d' & %g' & Eqz & ⧖' & O)]"; [done|].
+    iModIntro. iExists x, d', g'. iFrame.
   Qed.
 End cpd.
