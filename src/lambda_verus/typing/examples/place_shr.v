@@ -299,7 +299,7 @@ Section place_shr.
       iApply type_int. iIntros (v3). simpl_subst.
       iApply type_seq.
       { apply (type_write_oplace_instr _ _ _ vx v3 2 (PFst PHole (OfTy int)) int int
-          (const (const True))); [done|done|apply resolve_just]. }
+          (const (const True))); [done|done|apply resolve_just|done]. }
       { solve_typing. } { reflexivity. }
       (* fold x back, return v, free x *)
       iApply typed_body_tctx_incl.

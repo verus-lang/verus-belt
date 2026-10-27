@@ -77,9 +77,8 @@ Section sum.
     apply length_pad.
   Qed.
   Next Obligation.
-    intros. simpl. f_equal. induction 𝔄l.
-      - dependent destruction tyl. trivial.
-      - dependent destruction tyl. simpl. rewrite <- ty_size_eq2. f_equal. apply IH𝔄l.
+    intros. simpl. f_equal. induction tyl; [done|].
+    simpl. rewrite <- ty_size_eq2. f_equal. apply IHtyl.
   Qed.
   Next Obligation.
     intros 𝔄l tyl [x pad] tid. simpl.
@@ -87,9 +86,8 @@ Section sum.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     simpl. rewrite psum_map1_pinj. rewrite to_xsum_pinj.
       - f_equal. f_equal. f_equal. apply ty_phys_eq2.
-          + f_equal. clear tid. clear x0. clear i. clear pad. clear x. induction 𝔄l.
-            * dependent destruction tyl. trivial.
-            * dependent destruction tyl. simpl. rewrite <- ty_size_eq2. f_equal. apply IH𝔄l.
+          + f_equal. clear tid. clear x0. clear i. clear pad. clear x. induction tyl; [done|].
+            simpl. rewrite <- ty_size_eq2. f_equal. apply IHtyl.
   Qed.
   Next Obligation.
     intros 𝔄l tyl d g d' g' [x pad] tid H1 H2. simpl.

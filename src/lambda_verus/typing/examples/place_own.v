@@ -82,7 +82,7 @@ Section place_own.
       iApply type_int. iIntros (v3). simpl_subst.
       iApply type_seq.
       { apply (type_write_oplace_instr _ _ _ vx v3 2 (PFst PHole (OfTy int)) int int
-          (const (const True))); [done|done|apply resolve_just]. }
+          (const (const True))); [done|done|apply resolve_just|done]. }
       { solve_typing. } { reflexivity. }
       (* x.1 *)
       iApply (type_let with "[]").
@@ -203,13 +203,13 @@ Section place_own.
       (* move ( *b).0 out *)
       iApply (type_let with "[]").
       { apply (type_move_oplace_instr _ _ _ vb 2 (PFst PHole (OfTy int)) (box int));
-          [done|apply own_stack_okay]. }
+          [done|apply own_stack_okay|done]. }
       { solve_typing. } { reflexivity. }
       iIntros (vc). simpl_subst.
       (* re-assign ( *b).0 *)
       iApply type_seq.
       { apply (type_write_oplace_instr _ _ _ vb vc 2 (PFst PHole (OfTy int)) (↯ 1) (box int)
-          (const (const True))); [done|done|apply uninit_resolve]. }
+          (const (const True))); [done|done|apply uninit_resolve|done]. }
       { solve_typing. } { reflexivity. }
       (* fold back, return b *)
       iApply typed_body_tctx_incl.
