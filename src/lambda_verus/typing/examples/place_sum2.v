@@ -143,7 +143,7 @@ Section place_sum2.
       (* resolve b *)
       iApply type_seq.
       { apply (type_resolve_place_instr _ _ _ vb α (ProdLty (OfTy opt) (OfTy int)));
-          [done|done|done]. }
+          [done|done|done|set_solver]. }
       { solve_typing. } { reflexivity. }
       iApply (type_new 1). { lia. } iIntros (vr). simpl_subst.
       iApply type_assign. { solve_typing. } { by apply write_own. }

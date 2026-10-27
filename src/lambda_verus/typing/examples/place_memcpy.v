@@ -169,7 +169,7 @@ Section place_memcpy.
       (* resolve b *)
       iApply type_seq.
       { apply (type_resolve_place_instr _ _ _ vb α (ProdLty (OfTy (int * int)) (OfTy int)));
-          [done|done|done]. }
+          [done|done|done|set_solver]. }
       { solve_typing. } { reflexivity. }
       iApply type_delete. { solve_typing. } { done. } { done. }
       iApply type_jump.

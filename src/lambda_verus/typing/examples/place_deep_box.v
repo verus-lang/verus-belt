@@ -179,7 +179,7 @@ Section place_deep_box.
       iApply type_seq.
       { apply (type_resolve_place_instr _ _ _ vb α
           (ProdLty (OwnPtrLty 1 (OwnPtrLty 1 (Blocked int (α ⊓ α)))) (OfTy int)));
-          [done|done|done]. }
+          [done|done|done|set_solver]. }
       { solve_typing. } { reflexivity. }
       iApply (type_new 1). { lia. } iIntros (vret). simpl_subst.
       iApply type_assign. { solve_typing. } { by apply write_own. }

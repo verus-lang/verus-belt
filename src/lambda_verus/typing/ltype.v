@@ -250,13 +250,15 @@ Section ltype_own.
       its value [x] does not change; the points-to and the ownership predicate are
       lent to [α] (a full borrow, which has been turned into a guard of the points-to
       and the sharing predicate of [ty] at [α]), and the inheritance gives them back
-      once [α] has ended. The sharing information is persistent, so the leaf can still
+      once [α] has ended. The persistent predicate of the value is kept (to get the
+      guards of its prophecy tokens from the sharing predicate, [ty_shr_guard_proph],
+      when the place is resolved while the leaf is shared). The sharing information is persistent, so the leaf can still
       be read while [α] is alive. As in RefinedRust's [ShrBlockedLtype]. *)
   Definition shr_blocked_owned {𝔄} (m: nat) (ty: type 𝔄) (α: lft) (lr: place_rfn 𝔄)
       (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
     ∃ x, place_rfn_rel lr x ∗
       (@[α] &&{↑NllftG; g+1}&&> l #↦!∗ ty.(ty_phys) x tid) ∗ ty.(ty_shr) α x d g tid ∗
-      ([†α] ={lazyE}=∗ ofty_owned m ty x d g tid l).
+      ty.(ty_gho_pers) x d g tid ∗ ([†α] ={lazyE}=∗ ofty_owned m ty x d g tid l).
 
   (** The leaves of place types in [Owned] mode: [leaf_owned], and shared-blocked
       leaves. (The leaf bodies of unique borrows, [leaf_node], do not use shared-blocked
@@ -550,9 +552,10 @@ Section ltype_lemmas.
       iDestruct (ty_gho_own_depth_mono _ d g d' g' with "Gho") as "[$ _]"; done. }
     destruct p; try apply Hofty; destruct c; try apply Hofty.
     - rewrite /= /leaf_owned. iIntros "$".
-    - rewrite /= /shr_blocked_owned. iIntros "(%x & Rel & #Pt & #Shr & Inh)". iExists x.
+    - rewrite /= /shr_blocked_owned. iIntros "(%x & Rel & #Pt & #Shr & #Pers & Inh)". iExists x.
       iFrame "Rel". iSplit; [iApply (lguards_weaken_later with "Pt"); lia|].
       iSplit; [iApply (ty_shr_depth_mono with "Shr"); lia|].
+      iSplit; [iApply (ty_gho_pers_depth_mono with "Pers"); lia|].
       iIntros "†α". iMod ("Inh" with "†α") as "[Pt' Gho]". iModIntro. iFrame "Pt'".
       iNext. iDestruct (ty_gho_own_depth_mono _ d g d' g' with "Gho") as "[$ _]"; done.
   Qed.
@@ -637,7 +640,7 @@ Section ltype_lemmas.
     iIntros "!>" (k r d g tid l G ?) "_ G [#Dead _] H". iFrame "G".
     destruct k as [m|κ ξi]; [|iModIntro; iExists d, g; by iApply ltype_own_uniq_core].
     destruct r as [lr|]; [|done]. rewrite /ltype_own /ltype_own_core /= /shr_blocked_owned.
-    iDestruct "H" as (x) "(Rel & _ & _ & Inh)".
+    iDestruct "H" as (x) "(Rel & _ & _ & _ & Inh)".
     iMod (fupd_mask_mono with "(Inh Dead)") as "O"; [rewrite /lazyE; set_solver|].
     iModIntro. iExists d, g, x. iFrame.
   Qed.
@@ -752,7 +755,7 @@ Section ltype_lemmas.
       ltype_own (Owned m) (OfTy ty) r d g tid l.
   Proof.
     iIntros "Dead H". destruct r as [lr|]; [|done].
-    rewrite /ltype_own /= /shr_blocked_owned. iDestruct "H" as (x) "(Rel & _ & _ & Inh)".
+    rewrite /ltype_own /= /shr_blocked_owned. iDestruct "H" as (x) "(Rel & _ & _ & _ & Inh)".
     iMod ("Inh" with "Dead") as "O". iModIntro. iExists x. iFrame.
   Qed.
 
@@ -1044,7 +1047,7 @@ Section cpd.
     iIntros (?) "#LFT #Gty #Ok #†κ G #⧖ L".
     destruct p as [| | | | |α|]; try by iApply (leaf_owned_unblock with "LFT Gty Ok †κ G ⧖ L").
     iMod (pat_ok_dead with "LFT Ok †κ") as "[†α _]"; [apply lazyE_NllftG|].
-    iDestruct "L" as (x) "(Rel & _ & _ & Inh)". iMod ("Inh" with "†α") as "O".
+    iDestruct "L" as (x) "(Rel & _ & _ & _ & Inh)". iMod ("Inh" with "†α") as "O".
     iModIntro. iFrame "G". iExists x, d, g. iFrame "∗#".
   Qed.
 
