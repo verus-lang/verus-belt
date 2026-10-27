@@ -28,6 +28,7 @@
     ([pctx_mode]) at a depth decreased by [k] ([pctx_depth]). *)
 
 From iris.proofmode Require Import proofmode.
+From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype.
 From lrust.typing Require Import uniq_util freeable_util.
 From lrust.lifetime Require Import lifetime_full.
@@ -428,17 +429,78 @@ Section pctx.
     - iIntros "($ & % & $ & A)". iSplit; [iPureIntro; lia|]. iApply (IHK with "A"); lia.
   Qed.
 
-  (** The location of the hole is part of the location of the place. *)
+  (** The depth of the place is at least the number of owned pointers above the hole. *)
+  Lemma pctx_own_mode_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid l :
+    pctx_own K n m x ζm q d g tid l -∗ ⌜pctx_mode K 0 ≤ d⌝.
+  Proof.
+    induction K in m, x, q, d, l |- *; simpl; [iIntros "_"; iPureIntro; lia| | |].
+    - iIntros "[A _]". by iApply IHK.
+    - iIntros "[_ A]". by iApply IHK.
+    - iIntros "(_ & %Hd & _ & A)". iDestruct (IHK with "A") as %?.
+      rewrite pctx_mode_add. iPureIntro. lia.
+  Qed.
+
+  (** The location of the hole is part of the location of the place (below an owned
+      pointer, its cells are trivially owned). *)
   Lemma pctx_loc_guard {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x l (G: iProp Σ) E k :
-    pctx_noderef K →
     (G &&{E; k}&&> l #↦∗_) -∗ (G &&{E; k}&&> pctx_loc K n x l #↦∗_).
   Proof.
-    induction K in x, l |- *; simpl; [by iIntros "_ $"|..|done]; iIntros (?) "G"; iApply IHK;
-      [done| |done|].
+    induction K in x, l |- *; simpl; [by iIntros "$"|..]; iIntros "G"; iApply IHK.
     - rewrite (heap_cloc_mapsto_emp_vec_app l (pctx_size K n)).
       iApply (guards_weaken_rhs_sep_l with "G").
     - rewrite (heap_cloc_mapsto_emp_vec_app l (lty_size lt1)).
       iApply (guards_weaken_rhs_sep_r with "G").
+    - rewrite -heap_cloc_mapsto_empty. iApply guards_true.
+  Qed.
+
+  (** ** The address of the hole
+
+      [pctx_expr K e] computes the address of the hole, from the address [e] of the
+      place: field offsets, and a load per owned pointer. *)
+  Fixpoint pctx_expr {𝔅 𝔄} (K: pctx 𝔅 𝔄) (e: expr) : expr :=
+    match K with
+    | PHole => e
+    | PFst K _ => pctx_expr K e
+    | PSnd lt1 K => pctx_expr K (e +ₗ #(lty_size lt1))%E
+    | POwn _ K => pctx_expr K (!e)%E
+    end.
+
+  Lemma pctx_expr_closed {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : Closed [] e → Closed [] (pctx_expr K e).
+  Proof. induction K in e |- *; simpl; [done|auto|intros ?; apply IHK; apply _..]. Qed.
+
+  Lemma wp_pctx_expr {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: cloc) (e: expr) (G R: iProp Σ) k :
+    (G &&{↑NllftG; k}&&> l #↦∗_) -∗ £(3 * k * pctx_mode K 0) -∗
+    WP e {{ v, ⌜v = #(l.1)⌝ ∗ R ∗ G }} -∗ pctx_own K n m x ζm q d g tid l -∗
+    WP pctx_expr K e {{ v, ⌜v = #(pctx_loc K n x l).1⌝ ∗ R ∗ G ∗ pctx_own K n m x ζm q d g tid l }}.
+  Proof.
+    induction K in m, x, q, d, l, e, R |- *; simpl.
+    - iIntros "_ _ WP $". iApply (wp_wand with "WP"). iIntros (v) "($ & $ & $)".
+    - iIntros "#Gl £ WP [Own Sib]". iApply (wp_wand with "[- Sib]").
+      { iApply (IHK m x.1 (false :: q) d (cloc_take l (pctx_size K n)) with "[] £ WP Own").
+        rewrite (heap_cloc_mapsto_emp_vec_app l (pctx_size K n)).
+        iApply (guards_weaken_rhs_sep_l with "Gl"). }
+      iIntros (v) "($ & $ & $ & $)". iFrame.
+    - iIntros "#Gl £ WP [Sib Own]". iApply (wp_wand with "[- Sib]").
+      { iApply (IHK m x.2 (true :: q) d (cloc_skip l (lty_size lt1)) _ R with "[] £ [WP] Own").
+        - rewrite (heap_cloc_mapsto_emp_vec_app l (lty_size lt1)).
+          iApply (guards_weaken_rhs_sep_r with "Gl").
+        - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
+          iFrame. done. }
+      iIntros (v) "($ & $ & $ & $)". iFrame.
+    - rewrite pctx_mode_add. iIntros "#Gl £ WP (Pt & %Hd & Fr & Own)".
+      iDestruct (lc_weaken (3 * k + 3 * k * pctx_mode K 0) with "£") as "[£1 £]"; [lia|].
+      iApply (wp_wand with "[- Fr]").
+      { iApply (IHK (m + 1) x.2 (false :: q) (pred d) (x.1, repeat [] (pctx_size K n)) _
+          (R ∗ l #↦!∗ [FVal (LitV x.1)])%I with "[] £ [WP Pt £1] Own").
+        - rewrite -heap_cloc_mapsto_empty. iApply guards_true.
+        - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
+          iApply (wp_read_na_guarded_cells_singleton _ l.1 l.2 (G ∗ l #↦!∗ [FVal (LitV x.1)])
+            #(x.1) k with "[G Pt £1]"); [solve_ndisj| |].
+          + iFrame "G Pt £1". iApply guard_cloc_combine.
+            * by iApply guards_weaken_lhs_sep_l.
+            * iApply (lguards_weaken_later _ _ _ 0); [lia|iApply guards_weaken_sep_r].
+          + iIntros "!> [G Pt]". iFrame. done. }
+      iIntros (v) "($ & [$ $] & $ & $)". by iFrame.
   Qed.
 
   (** ** Patterns *)
