@@ -63,9 +63,9 @@ Section place_shr.
     iMod (llftl_bor_guard with "LFT BorPt") as "#GPt"; [solve_ndisj|].
     iMod (ty_share with "LFT Incl Pers Gα G BorGho") as "Upd"; [done..|].
     iMod (lc_step_fupdN_elim_later with "£d Upd") as ">[$ #Shr]".
-    iModIntro. iFrame "Pers". rewrite /= /shr_blocked_owned. iExists x.
+    iModIntro. iSplitR; [done|]. rewrite /= /shr_blocked_owned. iExists x.
     iSplitR; [done|]. iSplitR; [iApply (lguards_weaken_later with "GPt"); lia|].
-    iFrame "Shr". iIntros "#†α".
+    iFrame "Shr Pers". iIntros "#†α".
     iMod (fupd_mask_mono with "(Inh †α)") as "Pl"; [rewrite /lazyE; solve_ndisj|].
     iMod (lc_fupd_elim_later with "£1 Pl") as "[$ Gho]". iModIntro. by iNext.
   Qed.
@@ -229,7 +229,7 @@ Section typing.
     rewrite lty_pat_plug lty_rfn_plug ltype_own_plug pctx_mode_noderef // pctx_depth_noderef //.
     iDestruct "N" as "[L1 Rest]". iSimpl in "L1".
     set y := pctx_get K x₀. set lK := pctx_loc K (ty_size ty) x₀ l.
-    iDestruct "L1" as (? ->) "(#GPt & #Shr & Inh)".
+    iDestruct "L1" as (? ->) "(#GPt & #Shr & #PersL & Inh)".
     iMod ("Close" $! (pctx_pat K (PatShrBlocked β)) (pctx_rfn K x₀ ζm [] (inl (PlaceIn y)))
       d' g' [] 1%Qp True%I with "[] [] [Inh Rest]") as "(Own & H1 & _)".
     { iPureIntro. intros ζl Hr. by apply prfn_rsv_app_l. }
@@ -237,7 +237,7 @@ Section typing.
     { iIntros "_". iModIntro. iSplitR; [done|]. iSplitL; [|done].
       iNext. iApply guarded_upd_intro. iModIntro. iFrame "⧖'".
       rewrite ltype_own_plug pctx_mode_noderef // pctx_depth_noderef //. iFrame "Rest".
-      iExists y. by iFrame "GPt Shr Inh". }
+      iExists y. by iFrame "GPt Shr PersL Inh". }
     (* The (persistent) ownership predicate of the value, from the sharing predicate. *)
     iDestruct (copy_shr with "Shr") as "#GGho".
     iDestruct (guards_transitive_right with "Hβ GGho") as "#GGho'".
@@ -426,7 +426,7 @@ Section typing.
     { apply pctx_expr_closed. by eapply eval_path_closed. }
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
     iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
-    iDestruct "L1" as (? ->) "(#GPt & #Shr & Inh)".
+    iDestruct "L1" as (? ->) "(#GPt & #Shr & #PersL & Inh)".
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set y := pctx_get K x₀.
     set lr := (l, repeat [] (lty_size (pctx_plug K (ShrBlocked ty α)))).
@@ -477,7 +477,7 @@ Section typing.
     iSplit; [|done]. iExists #l. iSplit; [done|]. iExists D, d, g. iFrame "⧖ ⧗p Fr".
     iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug. iFrame "Rest".
-    iExists y. rewrite Hphys. by iFrame "GPt Shr Inh".
+    iExists y. rewrite Hphys. by iFrame "GPt Shr PersL Inh".
   Qed.
 
   (** * Unblocking a shared-blocked leaf of a place rooted at an owned location *)

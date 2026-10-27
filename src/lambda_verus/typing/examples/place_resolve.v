@@ -93,7 +93,7 @@ Section place_resolve.
       iApply type_seq.
       { apply (type_resolve_place_instr _ _ _ vb α
           (ProdLty (OwnPtrLty 1 (OfTy int)) (ProdLty (OfTy opt) (Blocked int (α ⊓ α)))));
-          [done|done|done]. }
+          [done|done|done|set_solver]. }
       { solve_typing. } { reflexivity. }
       iApply (type_new 1). { lia. } iIntros (vr). simpl_subst.
       iApply type_assign. { solve_typing. } { by apply write_own. }

@@ -574,6 +574,14 @@ Section pctx.
     intros. by rewrite IHK.
   Qed.
 
+  Lemma pctx_loc_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x y l :
+    pctx_in K x → pctx_loc K n (pctx_set K x y) l = pctx_loc K n x l.
+  Proof.
+    induction K in x, y, l |- *; simpl; try (intros; by rewrite ?IHK).
+    rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x.1); [|done].
+    intros. by rewrite IHK.
+  Qed.
+
   Lemma pctx_own_blk_cons {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm ζi q d g tid l :
     pctx_own K n m x ((pctx_path K q, ζi) :: ζm) q d g tid l = pctx_own K n m x ζm q d g tid l.
   Proof.
@@ -659,12 +667,13 @@ Section pctx.
   Lemma pctx_expr_closed {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : Closed [] e → Closed [] (pctx_expr K e).
   Proof. induction K in e |- *; simpl; [done|auto|intros ?; apply IHK; apply _..]. Qed.
 
-  Lemma wp_pctx_expr {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: cloc) (e: expr) (G R: iProp Σ) k :
+  Lemma wp_pctx_expr_mask {𝔅 𝔄} E (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: cloc) (e: expr) (G R: iProp Σ) k :
+    ↑NllftG ⊆ E →
     (G &&{↑NllftG; k}&&> l #↦∗_) -∗ £(3 * k * pctx_mode K 0) -∗
-    WP e {{ v, ⌜v = #(l.1)⌝ ∗ R ∗ G }} -∗ pctx_own K n m x ζm q d g tid l -∗
-    WP pctx_expr K e {{ v, ⌜v = #(pctx_loc K n x l).1⌝ ∗ R ∗ G ∗ pctx_own K n m x ζm q d g tid l }}.
+    WP e @ E {{ v, ⌜v = #(l.1)⌝ ∗ R ∗ G }} -∗ pctx_own K n m x ζm q d g tid l -∗
+    WP pctx_expr K e @ E {{ v, ⌜v = #(pctx_loc K n x l).1⌝ ∗ R ∗ G ∗ pctx_own K n m x ζm q d g tid l }}.
   Proof.
-    induction K in m, x, q, d, l, e, R |- *; simpl.
+    intros HE. induction K in m, x, q, d, l, e, R |- *; simpl.
     - iIntros "_ _ WP $". iApply (wp_wand with "WP"). iIntros (v) "($ & $ & $)".
     - iIntros "#Gl £ WP [Own Sib]". iApply (wp_wand with "[- Sib]").
       { iApply (IHK m x.1 (false :: q) d (cloc_take l (pctx_size K n)) with "[] £ WP Own").
@@ -704,6 +713,12 @@ Section pctx.
           iFrame. done. }
       rewrite /psum_proj_or Hy. iIntros (v) "($ & $ & $ & $)". iFrame.
   Qed.
+
+  Lemma wp_pctx_expr {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: cloc) (e: expr) (G R: iProp Σ) k :
+    (G &&{↑NllftG; k}&&> l #↦∗_) -∗ £(3 * k * pctx_mode K 0) -∗
+    WP e {{ v, ⌜v = #(l.1)⌝ ∗ R ∗ G }} -∗ pctx_own K n m x ζm q d g tid l -∗
+    WP pctx_expr K e {{ v, ⌜v = #(pctx_loc K n x l).1⌝ ∗ R ∗ G ∗ pctx_own K n m x ζm q d g tid l }}.
+  Proof. by apply wp_pctx_expr_mask. Qed.
 
   (** ** Patterns *)
 

@@ -171,6 +171,34 @@ Section typing.
       changes: the body of the borrow is switched to the new node ([cpd_rebody]),
       which is why the place must be simple. *)
 
+  Lemma ltype_own_uniq_change_hole_gen {𝔅 𝔄} κ ξi (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅) x₀ ζm q0 d g tid l E G :
+    pctx_nonempty K → pctx_simple K → lty_simple lt' →
+    lty_size lt' = lty_size lt → lty_fold lt' = lty_fold lt →
+    (∀ α, α ∈ pat_blk_lfts (lty_pat lt') → α ∈ pat_blk_lfts (lty_pat lt)) →
+    (∀ y q ζl, prfn_rsv (lty_rfn lt y ζm q) ζl → prfn_rsv (lty_rfn lt' y ζm q) ζl) →
+    (∀ y q d g tid l, ltype_own (Owned (pctx_mode K 0)) lt (lty_rfn lt y ζm q) d g tid l ⊢
+       |={lazyE}=> ltype_own (Owned (pctx_mode K 0)) lt' (lty_rfn lt' y ζm q) d g tid l) →
+    Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
+    ltype_own (Uniq κ ξi) (pctx_plug K lt) (lty_rfn (pctx_plug K lt) x₀ ζm q0) d g tid l ={E}=∗
+    ltype_own (Uniq κ ξi) (pctx_plug K lt') (lty_rfn (pctx_plug K lt') x₀ ζm q0) d g tid l ∗ G.
+  Proof.
+    iIntros (HK HsK Hs' Hsz Hfold Hpat Hrsv Hown ? HE) "#LFT #PROPH #UNIQ #Gκ G Own".
+    rewrite /ltype_own !ltype_own_cp_uniq_plug //.
+    iMod (cpd_rebody with "LFT PROPH UNIQ Gκ G Own") as (κp) "(#Inclp & #Ok & Upd & Close)";
+      [done|].
+    rewrite (lty_fold_plug_eq' K lt' lt) //.
+    iApply ("Close" with "[%] [] [] [Upd]").
+    - intros ζl. rewrite !lty_rfn_plug. apply pctx_rfn_rsv_mono; [done|]. by apply Hrsv.
+    - iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖ N". rewrite -(lty_fold_plug_eq' K lt' lt) //.
+      iApply (ltype_owned_leaf_node with "LFT PROPH UNIQ Ok2 ⧖ N"); [by destruct K|by apply lty_simple_plug].
+    - iNext. rewrite !lty_pat_plug. iApply (pat_ok_plug with "Ok").
+      iApply (pat_ok_incl with "[]"); [done|]. iApply (pat_ok_plug_hole with "Ok").
+    - iNext. iApply (guarded_upd_mono with "[] Upd"). iIntros "[$ N]".
+      rewrite !lty_pat_plug !lty_rfn_plug !ltype_own_plug Hsz. iDestruct "N" as "[H $]".
+      by iApply Hown.
+  Qed.
+
   Lemma ltype_own_uniq_change_hole {𝔅 𝔄} κ ξi (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅) x₀ ζm d g tid l G :
     pctx_nonempty K → pctx_simple K → lty_simple lt' →
     lty_size lt' = lty_size lt → lty_fold lt' = lty_fold lt →
@@ -182,22 +210,10 @@ Section typing.
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
     ltype_own (Uniq κ ξi) (pctx_plug K lt) (lty_rfn (pctx_plug K lt) x₀ ζm []) d g tid l ={⊤}=∗
     ltype_own (Uniq κ ξi) (pctx_plug K lt') (lty_rfn (pctx_plug K lt') x₀ ζm []) d g tid l ∗ G.
-  Proof.
-    iIntros (HK HsK Hs' Hsz Hfold Hpat Hrsv Hown ?) "#LFT #PROPH #UNIQ #Gκ G Own".
-    rewrite /ltype_own !ltype_own_cp_uniq_plug //.
-    iMod (cpd_rebody with "LFT PROPH UNIQ Gκ G Own") as (κp) "(#Inclp & #Ok & Upd & Close)";
-      [solve_ndisj|].
-    rewrite (lty_fold_plug_eq' K lt' lt) //.
-    iApply ("Close" with "[%] [] [] [Upd]").
-    - intros ζl. rewrite !lty_rfn_plug. apply pctx_rfn_rsv_mono; [done|]. by apply Hrsv.
-    - iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖ N". rewrite -(lty_fold_plug_eq' K lt' lt) //.
-      iApply (ltype_owned_leaf_node with "LFT Ok2 ⧖ N"); [by destruct K|by apply lty_simple_plug].
-    - iNext. rewrite !lty_pat_plug. iApply (pat_ok_plug with "Ok").
-      iApply (pat_ok_incl with "[]"); [done|]. iApply (pat_ok_plug_hole with "Ok").
-    - iNext. iApply (guarded_upd_mono with "[] Upd"). iIntros "[$ N]".
-      rewrite !lty_pat_plug !lty_rfn_plug !ltype_own_plug Hsz. iDestruct "N" as "[H $]".
-      by iApply Hown.
-  Qed.
+  Proof. intros. by apply ltype_own_uniq_change_hole_gen; [..|solve_ndisj]. Qed.
+
+  Lemma lty_is_cpd_plug_ne {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt : pctx_nonempty K → lty_is_cpd (pctx_plug K lt).
+  Proof. by destruct K. Qed.
 
   (** As [tctx_place_change_hole] below, without the (unused) condition on the
       denotations. *)
@@ -327,6 +343,69 @@ Section typing.
       iApply (cpd_fold_uniq (OwnPtrLty n (OfTy ty)) _ _ (l', y) with "LFT PROPH UNIQ Gκ G Own");
         [done| |solve_ndisj].
       iIntros (d' g') "N !>". iDestruct (ownptr_ofty_fold_own 0 with "N") as (? ->) "[$ $]".
+  Qed.
+
+  (** Unfolding an owned pointer at any depth below the root (e.g. a box inside a box):
+      below [k] laters ([pctx_mode K 0 = k]), the points-to of the pointee is stripped of
+      its laters with the later credits of a program step; the body of the borrow is
+      switched to the new node ([cpd_rebody]) at the time of the instruction. *)
+  Lemma type_unfold_place_own_instr {𝔅 𝔄} E L I p κ (K: pctx (at_locₛ 𝔅) 𝔄) n (ty: type 𝔅) :
+    lctx_lft_alive E L κ → pctx_nonempty K → pctx_simple K →
+    typed_instr E L I +[p ◁ₗ{κ} pctx_plug K (OfTy (own_ptr n ty))] (Seq Skip Skip)
+      (const +[p ◁ₗ{κ} pctx_plug K (OwnPtrLty n (OfTy ty))]) (λ post '-[x], post -[x]).
+  Proof.
+    intros Alv HK HKs. apply typed_instr_of_skip_sem; [apply place_uniq_own_receipt|].
+    iIntros ([[[[[[l x₀] ξi] d'] g'] idx] ζm] v d tid post mask iκs)
+      "#LFT #TIME #PROPH #UNIQ #E L $ %Hpath Own _ Obs ⧗a _ _ _".
+    iDestruct "Own" as (d0) "(#⧖0 & ⧗p & -> & %Hle & #Incl & #PtBase & Own)".
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗a ⧖0") as "[_ £]";
+      [solve_ndisj|].
+    iDestruct (Alv with "L E") as "#Alv".
+    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iDestruct (guards_transitive with "Ghalf Alv") as "#Hκ".
+    rewrite /ltype_own !ltype_own_cp_uniq_plug //.
+    iMod (cpd_rebody with "LFT PROPH UNIQ Hκ H1 Own") as (κp) "(#Inclp & #Ok & Upd & Close)";
+      [solve_ndisj|].
+    iDestruct (lc_weaken (1 + (advance_credits d0 - 1)) with "£") as "[£a £]";
+      [rewrite /advance_credits; lia|].
+    iMod (lc_fupd_elim_later with "£a Upd") as "Upd".
+    iMod (guarded_upd_run with "[] H2 Upd") as "(H2 & #⧖' & N)"; [solve_ndisj| |].
+    { iApply (guards_transitive with "Hκ Incl"). }
+    rewrite !lty_pat_plug !lty_rfn_plug !ltype_own_plug.
+    iDestruct "N" as "[L1 Rest]". iSimpl in "L1".
+    iDestruct (pctx_own_mode_le with "Rest") as %Hk.
+    iDestruct "L1" as (? ->) "[Pt Gho]".
+    destruct (pctx_get K x₀) as [l' y] eqn:Hm.
+    iDestruct (lc_weaken (pctx_mode K 0) with "£") as "£"; [rewrite /advance_credits; nia|].
+    iMod (lc_fupd_elim_laterN with "£ Gho") as "Gho".
+    destruct (pctx_depth K d') as [|dh] eqn:Hdh; [done|].
+    iDestruct "Gho" as "(Pt' & Fr' & Gho)".
+    iMod ("Close" $! (pctx_pat K (PatOwn PatLeaf))
+      (pctx_rfn K x₀ ζm [] (inr (l', inl (PlaceIn y)))) d' g'
+      with "[%] [] [] [Pt Pt' Fr' Gho Rest]") as "[Own H1]".
+    { intros ζl. apply pctx_rfn_rsv_mono; [done|]. intros _. apply prfn_rsv_in. }
+    { iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖ N".
+      rewrite -(lty_fold_plug_eq' K (OwnPtrLty n (OfTy ty)) (OfTy (own_ptr n ty))); [|done].
+      iApply (ltype_owned_leaf_node with "LFT PROPH UNIQ Ok2 ⧖ N");
+        [by apply lty_is_cpd_plug_ne|by apply lty_simple_plug]. }
+    { iNext. iApply (pat_ok_plug with "Ok"). by rewrite /pat_ok. }
+    { iNext. iApply guarded_upd_intro. iModIntro. iFrame "⧖'".
+      rewrite ltype_own_plug Hdh /=. iFrame "Rest Pt". iSplit; [done|].
+      iSplitL "Fr'"; [by iApply bi.laterN_intro|].
+      iExists y. iSplit; [done|]. rewrite /ofty_owned.
+      iEval (rewrite (heap_cloc_mapsto_fancy_empty l' (ty_phys ty y tid)) ty_size_eq) in "Pt'".
+      iFrame "Pt'". iApply (bi.laterN_le 1); [lia|]. done. }
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "$"; [solve_ndisj|].
+    iModIntro. iExists -[((l, x₀, ξi, d', g', idx), ζm)].
+    iSplit; [|by iApply (proph_obs_impl with "Obs")]. iSplit; [|done].
+    rewrite /tctx_elt_interp. iExists #(l.1). iSplit; [done|]. iExists d0.
+    iFrame "⧖0 PtBase". iSplitL "⧗p". { by rewrite !lty_nblk_plug /=. }
+    iSplit; [done|]. iSplit; [done|].
+    rewrite (lty_fold_plug_eq' K (OwnPtrLty n (OfTy ty)) (OfTy (own_ptr n ty))) //.
+    iFrame "Incl".
+    rewrite /ltype_own ltype_own_cp_uniq_plug // lty_pat_plug lty_rfn_plug Hm /=.
+    rewrite (lty_fold_plug_eq' K (OwnPtrLty n (OfTy ty)) (OfTy (own_ptr n ty))) //.
   Qed.
 
   (** At the root: unfolding a unique borrow of a pair, and folding back. *)
