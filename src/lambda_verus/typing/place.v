@@ -192,7 +192,7 @@ Section typing.
     - intros ζl. rewrite !lty_rfn_plug. intros Hr. eapply pctx_rfn_rsv; [done|exact Hr|].
       apply Hrsv. by eapply pctx_rfn_rsv_hole.
     - iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖ N". rewrite -(lty_fold_plug_eq' K lt' lt) //.
-      iApply (ltype_owned_leaf_node with "LFT Ok2 ⧖ N"). by apply lty_simple_plug.
+      iApply (ltype_owned_leaf_node with "LFT Ok2 ⧖ N"); [by destruct K|by apply lty_simple_plug].
     - iNext. rewrite !lty_pat_plug. iApply (pat_ok_plug with "Ok").
       iApply (pat_ok_incl with "[]"); [done|]. iApply (pat_ok_plug_hole with "Ok").
     - iNext. iApply (guarded_upd_mono with "[] Upd"). iIntros "[$ N]".

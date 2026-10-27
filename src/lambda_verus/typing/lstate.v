@@ -188,7 +188,10 @@ Inductive lpat :=
 | PatBlocked (α: lft)
 | PatUniq (p: lpat)
 | PatOwn (p: lpat)
-| PatProd (p1 p2: lpat).
+| PatProd (p1 p2: lpat)
+(* A shared-blocked leaf: shared at [α] (its value does not change), see
+   [ShrBlocked] in [typing/ltype.v]. *)
+| PatShrBlocked (α: lft).
 
 Global Instance lpat_inhabited : Inhabited lpat := populate PatLeaf.
 
@@ -210,6 +213,7 @@ Fixpoint pat_blk_lfts (p: lpat) : list lft :=
   | PatBlocked α => [α]
   | PatOwn p' => pat_blk_lfts p'
   | PatProd p1 p2 => pat_blk_lfts p1 ++ pat_blk_lfts p2
+  | PatShrBlocked α => [α]
   end.
 
 (** The pattern of a leaf at a state: a structured refinement (of an unfolded
