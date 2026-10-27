@@ -2,13 +2,16 @@
 
   Access to a subplace of a (nested) place type, in the style of the place
   contexts of RefinedRust (paper §5.3; [typed_place] in [rust_typing/programs.v]
-  of the RefinedRust development). The subplaces are fields of (nested) products
-  and pointees of owned pointers.
+  of the RefinedRust development). The subplaces are fields of (nested) products,
+  pointees of owned pointers and payloads of sums.
 
   - A _place context_ [K : pctx 𝔅 𝔄] is a place type of [𝔄] with a hole of
     type [𝔅]. It is given from the root: [PFst K lt2] is a pair whose field 0 is
     the context [K] and whose field 1 has the place type [lt2] ([PSnd] dually);
-    [POwn n K] is an owned pointer whose pointee is the context [K].
+    [POwn n K] is an owned pointer whose pointee is the context [K]; [PSum tyl i w K] is
+    a sum of variant [i] whose payload is the context [K] (at offset 1, after the tag;
+    [w] is a default payload value, only used by [pctx_get] for values of other
+    variants, which are not owned: see [pctx_in]).
     [pctx_plug K lt] plugs a place type into the hole.
   - The hole has a value ([pctx_get], [pctx_set] on values of the root), a
     _path_ from the root ([pctx_path], a list of field selectors, innermost

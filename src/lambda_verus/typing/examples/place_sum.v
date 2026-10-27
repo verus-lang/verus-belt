@@ -278,9 +278,122 @@ Section place_sum.
       rewrite Hlx Hs' Hfin /oplace_blk_fin /= (uniq_prvar_app_irrel (𝔄:=[unitₛ; Zₛ] !!ₗ 1%fin) _ 7%Z ζi π) Hres.
       by apply (HSome a pad).
   Qed.
+
+  (*
+  Writing the payload of a sum directly, without a reborrow:
+
+  ```
+  fn set_some<'a>(x: &'a mut Option<i32>) {
+      if let Some(v) = x { *v = 5 }
+  }
+  ```
+
+  with the specification `ensures fin(x) == if old(x) == None { None } else { Some(5) }`.
+  In the branch of `Some`, the payload is written in place ([type_write_place_instr] at
+  the context `PSum _ 1 _ PHole`); in both branches, the sum place is folded back and
+  `x` is resolved.
+  *)
+
+  Definition set_some : val :=
+    fn: ["x"] :=
+      let: "b" := !"x" in
+      delete [ #1; "x"];;
+      case: !"b" of
+      [ Skip;;                  (* None: resolve b *)
+        let: "r" := new [ #0] in
+        return: ["r"];
+        let: "five" := #5 in    (* Some(v): *v = 5 *)
+        "b" +ₗ #1 <- "five";;
+        Skip;;                  (* resolve b *)
+        let: "r" := new [ #0] in
+        return: ["r"]].
+
+  Definition set_some_spec : fn_spec [uniq_borₛ opt_intₛ] () () :=
+    λ _ post '-[(_, m)], λ mask π,
+      (∀ pad, uniq_bor_current (𝔄:=opt_intₛ) m = (pinj (Xl:=[unitₛ; Zₛ]) 0%fin (), pad) →
+        uniq_bor_future (𝔄:=opt_intₛ) m π = (pinj (Xl:=[unitₛ; Zₛ]) 0%fin (), pad) →
+        ∀ (lr: loc), post (lr, ()) mask π) ∧
+      (∀ (a: Z) pad, uniq_bor_current (𝔄:=opt_intₛ) m = (pinj (Xl:=[unitₛ; Zₛ]) 1%fin a, pad) →
+        uniq_bor_future (𝔄:=opt_intₛ) m π = (pinj (Xl:=[unitₛ; Zₛ]) 1%fin 5%Z, pad) →
+        ∀ (lr: loc), post (lr, ()) mask π).
+
+  Lemma set_some_type :
+    typed_val set_some ((fn<α>(∅; &uniq{α} opt_int) → ()) set_some_spec) (set_some, ()).
+  Proof.
+    unfold set_some. unlock.
+    opose proof (@type_fn _ _ _ [uniq_borₛ opt_intₛ] () () ()
+      (λ α, FP ∅ +[&uniq{α} opt_int]%T ()%T AtomicClosed)
+      set_some_spec _ [BNamed "x"] _ _ _) as H.
+    unlock in H. apply H. clear H.
+    intros α ϝ k wl. destruct wl as [vx []]. simpl_subst.
+    have Alv: lctx_lft_alive (fp_E (FP ∅ +[&uniq{α} opt_int]%T ()%T AtomicClosed) ϝ)
+      [ϝ ⊑ₗ []] α.
+    { eapply lctx_lft_alive_external; [rewrite /fp_E /=; by left|solve_typing]. }
+    iApply (typed_body_impl with "[]"); last first. {
+      iApply (type_let with "[]").
+      { eapply (type_deref_instr (own_ptr 1 (&uniq{α} opt_int)) (&uniq{α} opt_int)).
+        - apply uniq_stack_okay.
+        - done.
+        - apply (read_own_move (&uniq{α} opt_int)). }
+      { apply tctx_extract_elt_here_exact. }
+      { reflexivity. }
+      iIntros (vb). simpl_subst.
+      iApply type_delete. { solve_typing. } { done. } { done. }
+      (* the referent of b as a place; match *)
+      iApply typed_body_tctx_incl. { apply tctx_uniq_to_place. }
+      iApply (type_case_place_root _ _ _ _ vb α +[(); int]%T _ _ _ -[_; _]); [done|].
+      iSplitL; [|iSplitL; [|done]].
+      - (* None: fold back, resolve b *)
+        iApply typed_body_tctx_incl.
+        { eapply tctx_incl_trans; [apply (tctx_fold_place_sum _ _ vb α PHole +[(); int]%T 0%fin);
+            [done|done]|].
+          apply tctx_place_to_uniq. }
+        iApply type_resolve. { solve_typing. } { by apply uniq_bor.uniq_resolve. }
+        iApply (type_new_subtype () 0). { lia. } { apply uninit_unit_1. }
+        iIntros (vr). simpl_subst.
+        iApply type_jump.
+        { rewrite elem_of_list_singleton. reflexivity. }
+        { solve_typing. }
+        { solve_typing. }
+        { reflexivity. }
+      - (* Some(v): *v = 5 *)
+        simpl.
+        iApply type_int. iIntros (v5). simpl_subst.
+        iApply type_seq.
+        { apply (type_write_place_instr _ _ _ vb v5 α (PSum +[(); int]%T 1%fin 0%Z PHole) int
+            (const (const True))); [done|done|done|done|apply resolve_just]. }
+        { solve_typing. } { reflexivity. }
+        iApply typed_body_tctx_incl.
+        { eapply (tctx_incl_frame_r +[_] +[_]).
+          eapply tctx_incl_trans; [apply (tctx_fold_place_sum _ _ vb α PHole +[(); int]%T 1%fin);
+            [done|done]|].
+          apply tctx_place_to_uniq. }
+        iApply type_resolve. { solve_typing. } { by apply uniq_bor.uniq_resolve. }
+        iApply (type_new_subtype () 0). { lia. } { apply uninit_unit_1. }
+        iIntros (vr). simpl_subst.
+        iApply type_jump.
+        { rewrite elem_of_list_singleton. reflexivity. }
+        { solve_typing. }
+        { solve_typing. }
+        { reflexivity. }
+    }
+    intros post [[lx m] []] mask π. simpl.
+    destruct m as [[[[[l [s pad]] ξi] d] g] idx]. simpl.
+    intros [HNone HSome]. rewrite /trans_upper /trans_tail /=.
+    destruct s as [[]|[a|[]]]; simpl.
+    - intros z _ _ Hres l0 junk. match goal with |- post (_, ?u) _ _ => destruct u end.
+      eapply HNone; [done|by rewrite uniq_bor_future_eq].
+    - intros z _ _ [[[[[[l' [s' pad']] ξi'] d'] g'] idx'] ζm'] Hl' Hcur Hfut _. simpl.
+      intros _ Hres l1 junk. match goal with |- post (_, ?u) _ _ => destruct u end.
+      eapply HSome; [done|].
+      rewrite /place_bor /= in Hfut Hcur. injection Hcur as -> ->.
+      rewrite -Hfut uniq_bor_future_eq. exact Hres.
+    Unshelve. all: eapply (composeₛ empty_prod_to_unitₛ uninit0_to_unitₛ).
+  Qed.
 End place_sum.
 
 Print Assumptions get_some_first_type.
 Print Assumptions bump_type.
+Print Assumptions set_some_type.
 
 

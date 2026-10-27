@@ -19,7 +19,12 @@
   - [ProdLty lt1 lt2]: a pair of places;
   - [ShrBlocked ty κ]: the place is shared until [κ] ends (its value does not change
     and it can still be read), afterwards it contains a value of type [ty] again
-    ([shr_blocked_owned]; RefinedRust's [ShrBlockedLtype]).
+    ([shr_blocked_owned]; RefinedRust's [ShrBlockedLtype]);
+  - [SumLty tyl i lt]: a sum of the variant [i], whose payload has the place type [lt]
+    ([sum_node]: the tag, the payload and the padding; RefinedRust's [EnumLtype]). Its
+    folded type is [Σ! tyl] with the type of variant [i] replaced by the folded type of
+    [lt] ([hlist_set]), so that folding needs no side condition; its refinement is the
+    refinement of the payload and the padding ([prfn_sum]).
   [lty_core] replaces [Blocked ty κ] and [ShrBlocked ty κ] by [OfTy ty] (pointwise
   otherwise), as
   RefinedRust's [lty_core]; [lty_fold] is the type of the place once folded
