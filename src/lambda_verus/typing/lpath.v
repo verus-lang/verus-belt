@@ -79,6 +79,8 @@ Section lty_rfn.
     | OwnPtrLty _ lt => λ x ζm q, inr (x.1, lty_rfn lt x.2 ζm (false :: q))
     | ProdLty lt1 lt2 => λ x ζm q,
         inr (lty_rfn lt1 x.1 ζm (false :: q), lty_rfn lt2 x.2 ζm (true :: q))
+    (* A shared-blocked leaf keeps its value. *)
+    | ShrBlocked _ _ => λ x _ _, inl (PlaceIn x)
     end.
 
   (** The refinement only depends on the entries of the blocking map below [q]. *)
@@ -86,8 +88,8 @@ Section lty_rfn.
     (∀ r, blk_lookup ζm (r ++ q) = blk_lookup ζm' (r ++ q)) →
     lty_rfn lt x ζm q = lty_rfn lt x ζm' q.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2] in x, q |- *;
-      intros Heq; simpl; [done| | | |].
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|] in x, q |- *;
+      intros Heq; simpl; [done| | | | |done].
     - by rewrite (Heq []).
     - rewrite (IH _ (false :: q)); [done|].
       intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
@@ -125,7 +127,7 @@ Section lty_rfn.
   Lemma lty_blk_all_dep {𝔄} (lt: lty 𝔄) x ζm q ζl :
     lty_blk_all lt → prfn_rsv (lty_rfn lt x ζm q) ζl → prfn_den (lty_rfn lt x ζm q) ./ ζl.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2] in x, q |- *;
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|] in x, q |- *;
       intros Hb Hr; try done.
     - simpl in *. rewrite prfn_den_inl. by rewrite prfn_rsv_inl in Hr.
     - destruct Hr as [Hr Hξ]. apply (proph_dep_weaken _ (ζl ++ ζl)); [set_solver|].

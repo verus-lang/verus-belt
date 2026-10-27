@@ -117,7 +117,8 @@ Section lty.
   | Blocked {𝔄} (ty: type 𝔄) (κ: lft) : lty 𝔄
   | UniqLty {𝔄} (lt: lty 𝔄) (κ: lft) : lty (uniq_borₛ 𝔄)
   | OwnPtrLty {𝔄} (n: nat) (lt: lty 𝔄) : lty (at_locₛ 𝔄)
-  | ProdLty {𝔄 𝔅} (lt1: lty 𝔄) (lt2: lty 𝔅) : lty (𝔄 * 𝔅).
+  | ProdLty {𝔄 𝔅} (lt1: lty 𝔄) (lt2: lty 𝔅) : lty (𝔄 * 𝔅)
+  | ShrBlocked {𝔄} (ty: type 𝔄) (κ: lft) : lty 𝔄.
 
   Fixpoint lty_core {𝔄} (lt: lty 𝔄) : lty 𝔄 :=
     match lt in lty 𝔄 return lty 𝔄 with
@@ -126,6 +127,7 @@ Section lty.
     | UniqLty lt κ => UniqLty (lty_core lt) κ
     | OwnPtrLty n lt => OwnPtrLty n (lty_core lt)
     | ProdLty lt1 lt2 => ProdLty (lty_core lt1) (lty_core lt2)
+    | ShrBlocked ty _ => OfTy ty
     end.
 
   Fixpoint lty_pat {𝔄} (lt: lty 𝔄) : lpat :=
@@ -135,6 +137,7 @@ Section lty.
     | UniqLty lt _ => PatUniq (lty_pat lt)
     | OwnPtrLty _ lt => PatOwn (lty_pat lt)
     | ProdLty lt1 lt2 => PatProd (lty_pat lt1) (lty_pat lt2)
+    | ShrBlocked _ κ => PatShrBlocked κ
     end.
 
   (** The type of a place, once folded. *)
@@ -145,18 +148,19 @@ Section lty.
     | UniqLty lt κ => uniq_bor κ (lty_fold lt)
     | OwnPtrLty n lt => own_ptr n (lty_fold lt)
     | ProdLty lt1 lt2 => prod_ty (lty_fold lt1) (lty_fold lt2)
+    | ShrBlocked ty _ => ty
     end.
 
   Fixpoint lty_size {𝔄} (lt: lty 𝔄) : nat :=
     match lt with
-    | OfTy ty | Blocked ty _ => ty.(ty_size)
+    | OfTy ty | Blocked ty _ | ShrBlocked ty _ => ty.(ty_size)
     | UniqLty _ _ | OwnPtrLty _ _ => 1
     | ProdLty lt1 lt2 => lty_size lt1 + lty_size lt2
     end.
 
   Fixpoint lty_lfts {𝔄} (lt: lty 𝔄) : list lft :=
     match lt with
-    | OfTy ty | Blocked ty _ => ty.(ty_lfts)
+    | OfTy ty | Blocked ty _ | ShrBlocked ty _ => ty.(ty_lfts)
     | UniqLty lt κ => κ :: lty_lfts lt
     | OwnPtrLty _ lt => lty_lfts lt
     | ProdLty lt1 lt2 => lty_lfts lt1 ++ lty_lfts lt2
@@ -213,12 +217,42 @@ Section ltype_own.
         end
     end%I.
 
+  (** ** Shared-blocked leaves in [Owned] mode
+
+      A leaf shared at [α] (by a shared borrow of the place, see [typing/place_shr.v]):
+      its value [x] does not change; the points-to and the ownership predicate are
+      lent to [α] (a full borrow, which has been turned into a guard of the points-to
+      and the sharing predicate of [ty] at [α]), and the inheritance gives them back
+      once [α] has ended. The sharing information is persistent, so the leaf can still
+      be read while [α] is alive. As in RefinedRust's [ShrBlockedLtype]. *)
+  Definition shr_blocked_owned {𝔄} (m: nat) (ty: type 𝔄) (α: lft) (lr: place_rfn 𝔄)
+      (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
+    ∃ x, place_rfn_rel lr x ∗
+      (@[α] &&{↑NllftG; g+1}&&> l #↦!∗ ty.(ty_phys) x tid) ∗ ty.(ty_shr) α x d g tid ∗
+      ([†α] ={lazyE}=∗ ofty_owned m ty x d g tid l).
+
+  (** The leaves of place types in [Owned] mode: [leaf_owned], and shared-blocked
+      leaves. (The leaf bodies of unique borrows, [leaf_node], do not use shared-blocked
+      leaves: a shared-blocked leaf is only part of compound places.) *)
+  Definition leaf_owned_s {𝔄} (c: bool) (m: nat) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
+      (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
+    match r with
+    | inr _ => False
+    | inl lr =>
+        match p with
+        | PatShrBlocked α =>
+            if c then ∃ x, place_rfn_rel lr x ∗ ofty_owned m ty x d g tid l
+            else shr_blocked_owned m ty α lr d g tid l
+        | _ => leaf_owned c m ty p (inl lr) d g tid l
+        end
+    end%I.
+
   (** ** Leaves, in both modes ([c] selects the core interpretation) *)
 
   Definition leaf_own {𝔄} (c: bool) (k: bor_kind) (ty: type 𝔄) :
       lpat → prfn 𝔄 → nat → nat → thread_id → cloc → iProp Σ :=
     match k with
-    | Owned m => leaf_owned c m ty
+    | Owned m => leaf_owned_s c m ty
     | Uniq κ ξi => leaf_uniq c κ ξi ty
     end.
 
@@ -295,6 +329,7 @@ Section ltype_own.
     match lt in lty 𝔄 return bor_kind → lpat → prfn 𝔄 → nat → nat → thread_id → cloc → iProp Σ with
     | OfTy ty => λ k, leaf_own c k ty
     | Blocked ty _ => λ k, leaf_own c k ty
+    | ShrBlocked ty _ => λ k, leaf_own c k ty
     | UniqLty lt' κ' => λ k p,
         match k with
         | Owned m => uniq_node m κ' (lty_fold lt') (λ ξi r' d' g' tid l',
@@ -380,7 +415,8 @@ Section ltype_lemmas.
   (** Only the core of a place type matters for [ltype_own_cp]. *)
   Lemma ltype_own_cp_core c {𝔄} (lt: lty 𝔄) : ltype_own_cp c (lty_core lt) = ltype_own_cp c lt.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2] in c |- *; simpl; [done|done| | |].
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|]
+      in c |- *; simpl; [done|done| | | |done].
     - by rewrite lty_fold_core !IH.
     - by rewrite lty_size_core lty_fold_core !IH.
     - by rewrite lty_size_core !lty_fold_core !IH1 !IH2.
@@ -391,13 +427,14 @@ Section ltype_lemmas.
   Lemma ltype_own_cp_true_owned_pat {𝔄} (lt: lty 𝔄) m p p' r d g tid l :
     ltype_own_cp true lt (Owned m) p r d g tid l ⊢ ltype_own_cp true lt (Owned m) p' r d g tid l.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2]
+    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α]
       in m, p, p', r, d, g, tid, l |- *; simpl.
     - destruct r as [lr|]; [|done]. by destruct p, p'.
     - destruct r as [lr|]; [|done]. by destruct p, p'.
     - by apply uniq_node_mono.
     - apply own_node_mono=> *. apply IH.
     - apply prod_node_mono=> *; [apply IH1|apply IH2].
+    - destruct r as [lr|]; [|done]. by destruct p, p'.
   Qed.
 
   (** Core idempotence. *)
@@ -417,25 +454,29 @@ Section ltype_lemmas.
 
   Lemma leaf_owned_depth_mono c {𝔄} (ty: type 𝔄) m p r d g d' g' tid l :
     d ≤ d' → g ≤ g' →
-    leaf_owned c m ty p r d g tid l ⊢ leaf_owned c m ty p r d' g' tid l.
+    leaf_owned_s c m ty p r d g tid l ⊢ leaf_owned_s c m ty p r d' g' tid l.
   Proof.
     intros ??. destruct r as [lr|]; [|done].
     have Hofty: (∃ x, place_rfn_rel lr x ∗ ofty_owned m ty x d g tid l) ⊢
       ∃ x, place_rfn_rel lr x ∗ ofty_owned m ty x d' g' tid l.
     { iIntros "(%x & Rel & Pt & Gho)". iExists x. iFrame. iNext.
       iDestruct (ty_gho_own_depth_mono _ d g d' g' with "Gho") as "[$ _]"; done. }
-    destruct p; try apply Hofty. destruct c; [apply Hofty|]. rewrite /leaf_owned.
-    iIntros "$".
+    destruct p; try apply Hofty; destruct c; try apply Hofty.
+    - rewrite /= /leaf_owned. iIntros "$".
+    - rewrite /= /shr_blocked_owned. iIntros "(%x & Rel & #Pt & #Shr & Inh)". iExists x.
+      iFrame "Rel". iSplit; [iApply (lguards_weaken_later with "Pt"); lia|].
+      iSplit; [iApply (ty_shr_depth_mono with "Shr"); lia|].
+      iIntros "†α". iMod ("Inh" with "†α") as "[Pt' Gho]". iModIntro. iFrame "Pt'".
+      iNext. iDestruct (ty_gho_own_depth_mono _ d g d' g' with "Gho") as "[$ _]"; done.
   Qed.
 
   Lemma ltype_own_cp_owned_depth_mono c {𝔄} (lt: lty 𝔄) m p r d g d' g' tid l :
     d ≤ d' → g ≤ g' →
     ltype_own_cp c lt (Owned m) p r d g tid l ⊢ ltype_own_cp c lt (Owned m) p r d' g' tid l.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2]
-      in m, p, r, d, g, d', g', tid, l |- *; intros Hd Hg; simpl.
-    - by apply leaf_owned_depth_mono.
-    - by apply leaf_owned_depth_mono.
+    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α]
+      in m, p, r, d, g, d', g', tid, l |- *; intros Hd Hg; simpl;
+      try by apply leaf_owned_depth_mono.
     - destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /uniq_node.
       iIntros "($ & $ & H)". iNext. iDestruct "H" as "($ & #G & %d1 & %g1 & %Hle & C)".
       iSplitR. { iApply (lguards_weaken_later with "G"). lia. }
@@ -503,6 +544,16 @@ Section ltype_lemmas.
     iModIntro. iExists d', g', x. iFrame.
   Qed.
 
+  Lemma shr_blocked_imp_unblockable {𝔄} (ty: type 𝔄) α : ⊢ imp_unblockable [α] (ShrBlocked ty α).
+  Proof.
+    iIntros "!>" (k r d g tid l G ?) "_ G [#Dead _] H". iFrame "G".
+    destruct k as [m|κ ξi]; [|iModIntro; iExists d, g; by iApply ltype_own_uniq_core].
+    destruct r as [lr|]; [|done]. rewrite /ltype_own /ltype_own_core /= /shr_blocked_owned.
+    iDestruct "H" as (x) "(Rel & _ & _ & Inh)".
+    iMod (fupd_mask_mono with "(Inh Dead)") as "O"; [rewrite /lazyE; set_solver|].
+    iModIntro. iExists d, g, x. iFrame.
+  Qed.
+
   (** Congruence. Unique borrows are trivially unblockable: implicit unblocking does
       not reach into the nested borrow, whose core interpretation is at any
       pattern. *)
@@ -551,8 +602,8 @@ Section ltype_lemmas.
   Lemma imp_unblockable_blocked_dead {𝔄} (lt: lty 𝔄) :
     ⊢ imp_unblockable (lty_blocked_lfts lt) lt.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2];
-      rewrite /lty_blocked_lfts /=.
+    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α];
+      rewrite /lty_blocked_lfts /=; [| | | | |iApply shr_blocked_imp_unblockable].
     - iApply ofty_imp_unblockable.
     - iApply blocked_imp_unblockable.
     - iApply uniq_ltype_imp_unblockable.
@@ -579,6 +630,17 @@ Section ltype_lemmas.
       [rewrite /lazyE; set_solver|].
     iModIntro. iExists d', g'. iSplit; [iApply (persistent_time_receipt_mono with "⧖"); lia|].
     iExists x. iFrame.
+  Qed.
+
+  (** Explicit unblocking of a shared-blocked place in [Owned] mode: the value and the
+      depths do not change. *)
+  Lemma unblock_shr_blocked_owned m {𝔄} (ty: type 𝔄) α r d g tid l :
+    [†α] -∗ ltype_own (Owned m) (ShrBlocked ty α) r d g tid l ={lazyE}=∗
+      ltype_own (Owned m) (OfTy ty) r d g tid l.
+  Proof.
+    iIntros "Dead H". destruct r as [lr|]; [|done].
+    rewrite /ltype_own /= /shr_blocked_owned. iDestruct "H" as (x) "(Rel & _ & _ & Inh)".
+    iMod ("Inh" with "Dead") as "O". iModIntro. iExists x. iFrame.
   Qed.
 
   Lemma unblock_blocked_uniq κ ξi {𝔄} (ty: type 𝔄) α r d g tid l G :
@@ -812,14 +874,31 @@ Section cpd.
     rewrite /pat_ok /= big_sepL_app. done.
   Qed.
 
+  (** Unblocking a leaf in [Owned] mode inside a lazy update, as [leaf_owned_unblock]; a
+      shared-blocked leaf is unblocked by its inheritance (its value and depths do not
+      change). *)
+  Lemma leaf_owned_s_unblock {𝔄} κ m (ty: type 𝔄) p lr d g tid l G :
+    Timeless G →
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ pat_ok κ p -∗ [†κ] -∗ G -∗
+    ⧖((m + S d) `max` g) -∗ leaf_owned_s false m ty p (inl lr) d g tid l ={lazyE}=∗
+      G ∗ ∃ x d' g', place_rfn_rel lr x ∗ ⧖((m + S d') `max` g') ∗
+        ofty_owned m ty x d' g' tid l.
+  Proof.
+    iIntros (?) "#LFT #Gty #Ok #†κ G #⧖ L".
+    destruct p as [| | | | |α]; try by iApply (leaf_owned_unblock with "LFT Gty Ok †κ G ⧖ L").
+    iMod (pat_ok_dead with "LFT Ok †κ") as "[†α _]"; [apply lazyE_NllftG|].
+    iDestruct "L" as (x) "(Rel & _ & _ & Inh)". iMod ("Inh" with "†α") as "O".
+    iModIntro. iFrame "G". iExists x, d, g. iFrame "∗#".
+  Qed.
+
   (** The node of [ProdLty (OfTy ty1) (OfTy ty2)] is seen as the leaf
       [prod_ty ty1 ty2] (by the closing view shift of [prod_ofty_unfold_uniq]): at
       a structured refinement, it is blocked at [κp]; once [κp] is dead, the
       components are unblocked. *)
   Lemma prod_node_leaf {𝔄 𝔅} κp (ty1: type 𝔄) (ty2: type 𝔅) p r d g tid l :
     llft_ctx -∗ pat_ok κp p -∗ ⧖(S d `max` g) -∗
-    prod_node (ty_size ty1) (leaf_owned false 0 ty1 (pat_l p))
-      (leaf_owned false 0 ty2 (pat_r p)) r d g tid l -∗
+    prod_node (ty_size ty1) (leaf_owned_s false 0 ty1 (pat_l p))
+      (leaf_owned_s false 0 ty2 (pat_r p)) r d g tid l -∗
     leaf_node κp (prod_ty ty1 ty2) p r d g tid l.
   Proof.
     iIntros "#LFT #Ok #⧖ N". destruct r as [lr|[r1 r2]]; [done|].
@@ -835,9 +914,9 @@ Section cpd.
     iAssert (G &&{↑NllftG}&&> @[ty_lft ty2])%I as "#Gty2".
     { iApply (guards_transitive with "Gty"). simpl. rewrite lft_intersect_list_app.
       iApply llftl_intersect_incl_r. }
-    iMod (leaf_owned_unblock _ 0 with "LFT Gty1 Ok1 †κ G ⧖ N1")
+    iMod (leaf_owned_s_unblock _ 0 with "LFT Gty1 Ok1 †κ G ⧖ N1")
       as "[G (%x1 & %d1 & %g1 & Rel1 & #⧖1 & Pt1 & Gho1)]".
-    iMod (leaf_owned_unblock _ 0 with "LFT Gty2 Ok2 †κ G ⧖ N2")
+    iMod (leaf_owned_s_unblock _ 0 with "LFT Gty2 Ok2 †κ G ⧖ N2")
       as "[$ (%x2 & %d2 & %g2 & Rel2 & #⧖2 & Pt2 & Gho2)]".
     iModIntro. iExists (x1, x2), (d1 `max` d2), (g1 `max` g2).
     iDestruct (place_rfn_rel_eqz with "Rel1") as "Eqz1".
@@ -871,7 +950,7 @@ Section cpd.
     iDestruct "H" as (x idx ->) "(%κp & %γ & #Incl & (Gh & Tok) & ⧗ & #Bor)".
     iMod (ghost_var_alloc (lstate_triv (𝔄:=unitₛ) ())) as (γf) "Tf".
     set node := (λ p', prod_node (ty_size ty1)
-      (leaf_owned false 0 ty1 (pat_l p')) (leaf_owned false 0 ty2 (pat_r p'))).
+      (leaf_owned_s false 0 ty1 (pat_l p')) (leaf_owned_s false 0 ty2 (pat_r p'))).
     set ty := prod_ty ty1 ty2.
     iMod (proph_idx_bor_gen_acc_rebody_guarded E κ (uniq_prvar (𝔄:=𝔄 * 𝔅) (x1, x2) ξi)
       (uniq_cell (𝔄:=𝔄 * 𝔅) (x1, x2) d g γ) idx (uniq_gbody κp ty tid l)
@@ -1009,7 +1088,7 @@ Section cpd.
       which needs one more receipt per pointer. *)
   Fixpoint lty_simple {𝔄} (lt: lty 𝔄) : Prop :=
     match lt with
-    | OfTy _ | Blocked _ _ => True
+    | OfTy _ | Blocked _ _ | ShrBlocked _ _ => True
     | OwnPtrLty _ lt => lty_simple lt
     | ProdLty lt1 lt2 => lty_simple lt1 ∧ lty_simple lt2
     | _ => False
@@ -1025,17 +1104,12 @@ Section cpd.
       G ∗ ∃ x d' g', ▷ (prfn_den r :== vπ x) ∗ ⧖((m + S d') `max` g') ∗
         ofty_owned m (lty_fold lt) x d' g' tid l.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2]
+    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α]
       in m, p, r, d, g, l, G |- *; intros Hs ?; try done.
-    - iIntros "#LFT #Gty #Ok #†κ G #⧖ L". destruct r as [lr|]; [|done].
-      iMod (leaf_owned_unblock with "LFT Gty Ok †κ G ⧖ L")
-        as "[$ (%x & %d' & %g' & Rel & ⧖' & O)]".
-      iModIntro. iExists x, d', g'. iFrame. rewrite prfn_den_inl.
-      by iApply place_rfn_rel_eqz.
-    - iIntros "#LFT #Gty #Ok #†κ G #⧖ L". destruct r as [lr|]; [|done].
-      iMod (leaf_owned_unblock with "LFT Gty Ok †κ G ⧖ L")
-        as "[$ (%x & %d' & %g' & Rel & ⧖' & O)]".
-      iModIntro. iExists x, d', g'. iFrame. rewrite prfn_den_inl.
+    1,2,5: iIntros "#LFT #Gty #Ok #†κ G #⧖ L"; destruct r as [lr|]; [|done];
+      iMod (leaf_owned_s_unblock with "LFT Gty Ok †κ G ⧖ L")
+        as "[$ (%x & %d' & %g' & Rel & ⧖' & O)]";
+      iModIntro; iExists x, d', g'; iFrame; rewrite prfn_den_inl;
       by iApply place_rfn_rel_eqz.
     - iIntros "#LFT #Gty #Ok #†κ G #⧖ N".
       destruct r as [lr|[l' r']]; [done|]. iDestruct "N" as "(Pt & %Hd & Fr & N)".
@@ -1080,17 +1154,19 @@ Section cpd.
           as "[$ _]"; lia.
   Qed.
 
-  (** The node of a simple place is seen as the leaf of its folded type, as in
+  Definition lty_is_cpd {𝔄} (lt: lty 𝔄) : Prop :=
+    match lt with ProdLty _ _ | OwnPtrLty _ _ | UniqLty _ _ => True | _ => False end.
+
+  (** The node of a simple compound place is seen as the leaf of its folded type, as in
       [prod_node_leaf]: at a structured refinement, it is blocked at [κp]. *)
   Lemma ltype_owned_leaf_node {𝔄} (lt: lty 𝔄) κp p r d g tid l :
-    lty_simple lt →
+    lty_is_cpd lt → lty_simple lt →
     llft_ctx -∗ pat_ok κp p -∗ ⧖(S d `max` g) -∗
     ltype_own_cp false lt (Owned 0) p r d g tid l -∗ leaf_node κp (lty_fold lt) p r d g tid l.
   Proof.
-    iIntros (Hs) "#LFT #Ok #⧖ N".
-    destruct lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ'|𝔄 n lt|𝔄 𝔅 lt1 lt2]; try done.
-    - destruct r as [lr|]; [done|done].
-    - destruct r as [lr|]; [done|done].
+    iIntros (Hc Hs) "#LFT #Ok #⧖ N".
+    destruct lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ'|𝔄 n lt|𝔄 𝔅 lt1 lt2|𝔄 ty α];
+      try (by destruct Hc); try done.
     - destruct r as [lr|rs]; [done|].
       iEval (rewrite /leaf_node /= /blocked_owned). iIntros "#†κ !>" (G ?) "#Gty G".
       iMod (ltype_owned_unblock_fold (OwnPtrLty n lt) _ 0 with "LFT Gty Ok †κ G ⧖ N")
@@ -1104,9 +1180,6 @@ Section cpd.
   Qed.
 
   (** ** Unfolding and folding the root, generically *)
-
-  Definition lty_is_cpd {𝔄} (lt: lty 𝔄) : Prop :=
-    match lt with ProdLty _ _ | OwnPtrLty _ _ | UniqLty _ _ => True | _ => False end.
 
   (** In [Uniq] mode, a compound place is a compound place whose node is the
       [Owned 0] interpretation. *)
@@ -1302,18 +1375,12 @@ Section cpd.
     iAssert (|={lazyE}=> G ∗ ∃ x d1' g1' idx, ▷ (prfn_den r' :== vπ x) ∗
       ⧖(S d1' `max` g1') ∗ uniq_body (lty_fold lt) x ξi d1' g1' idx κ' tid l')%I
       with "[G C ⧗a]" as ">[G (%x & %d1' & %g1' & %idx & Eqz & #⧖1 & Body)]".
-    { destruct lt as [𝔅 ty|𝔅 ty α|𝔅 lt κ''|𝔅 n lt|𝔅 ℭ lt1 lt2]; try done.
-      - destruct r' as [lr|]; [|done].
+    { destruct lt as [𝔅 ty|𝔅 ty α|𝔅 lt κ''|𝔅 n lt|𝔅 ℭ lt1 lt2|𝔅 ty α]; try done.
+      1,2,5: destruct r' as [lr|]; [|done];
         iMod (leaf_uniq_unblock with "LFT Gty' Ok' †κ G [] C")
-          as "[$ (%d2 & %g2 & #⧖2 & %x & %idx & Rel & Body)]".
-        { iApply (persistent_time_receipt_mono with "⧖"). lia. }
-        iModIntro. iExists x, d2, g2, idx. iFrame "⧖2 Body". rewrite prfn_den_inl.
-        by iApply place_rfn_rel_eqz.
-      - destruct r' as [lr|]; [|done].
-        iMod (leaf_uniq_unblock with "LFT Gty' Ok' †κ G [] C")
-          as "[$ (%d2 & %g2 & #⧖2 & %x & %idx & Rel & Body)]".
-        { iApply (persistent_time_receipt_mono with "⧖"). lia. }
-        iModIntro. iExists x, d2, g2, idx. iFrame "⧖2 Body". rewrite prfn_den_inl.
+          as "[$ (%d2 & %g2 & #⧖2 & %x & %idx & Rel & Body)]";
+        [iApply (persistent_time_receipt_mono with "⧖"); lia|];
+        iModIntro; iExists x, d2, g2, idx; iFrame "⧖2 Body"; rewrite prfn_den_inl;
         by iApply place_rfn_rel_eqz.
       - iApply (cpd_own_unblock_fold (OwnPtrLty n lt)
           with "TIME LFT PROPH UNIQ Gκ' Gty' Ok' †κ G ⧗a ⧖ C"); done.
