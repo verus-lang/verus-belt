@@ -87,12 +87,12 @@ Section get_first.
       (* &mut ( *b).0, at α ⊓ α *)
       iApply type_seq.
       { apply (type_reborrow_place_instr _ _ _ vb α α (PFst PHole (OfTy int)) int);
-          [solve_typing|done]. }
+          [solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       (* &mut ( *b).1, at α ⊓ α *)
       iApply type_seq.
       { apply (type_reborrow_place_instr _ _ _ vb α α (PSnd (Blocked int (α ⊓ α)) PHole) int);
-          [solve_typing|done]. }
+          [solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       (* resolve the borrow of field 1 *)
       iApply type_resolve. { solve_typing. } { apply uniq_bor.uniq_resolve. solve_typing. }
@@ -188,17 +188,17 @@ Section get_first.
       (* &mut ( *b).0.1, at α ⊓ α *)
       iApply type_seq.
       { apply (type_reborrow_place_instr _ _ _ vb α α
-          (PFst (PSnd (OfTy int) PHole) (OfTy int)) int); [solve_typing|done]. }
+          (PFst (PSnd (OfTy int) PHole) (OfTy int)) int); [solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       (* &mut ( *b).0.0 and &mut ( *b).1 *)
       iApply type_seq.
       { apply (type_reborrow_place_instr _ _ _ vb α α
-          (PFst (PFst PHole (Blocked int (α ⊓ α))) (OfTy int)) int); [solve_typing|done]. }
+          (PFst (PFst PHole (Blocked int (α ⊓ α))) (OfTy int)) int); [solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
       { apply (type_reborrow_place_instr _ _ _ vb α α
           (PSnd (ProdLty (Blocked int (α ⊓ α)) (Blocked int (α ⊓ α))) PHole) int);
-          [solve_typing|done]. }
+          [solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       (* resolve them, and drop b *)
       iApply type_resolve. { solve_typing. } { apply uniq_bor.uniq_resolve. solve_typing. }
@@ -291,7 +291,7 @@ Section get_first.
       (* &mut ( *b).0, at α ⊓ β *)
       iApply type_seq.
       { apply (type_reborrow_place_instr _ _ _ vb α β (PFst PHole (OfTy int)) int);
-          [solve_typing|done]. }
+          [solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       (* write through the reborrow *)
       iApply type_int. iIntros (v5). simpl_subst.
@@ -329,6 +329,81 @@ Section get_first.
     destruct z0 as [[[[[l2 w2] ζi'] d2] g2] idx2].
     destruct Hupd as (_ & -> & ->). simpl in Hres0 |- *. rewrite -Hres0.
     apply (uniq_prvar_app_irrel x1 5%Z ζi π).
+    Unshelve. eapply (composeₛ empty_prod_to_unitₛ uninit0_to_unitₛ).
+  Qed.
+
+  (*
+  Writing a field directly, without a reborrow:
+
+  ```
+  fn set_first_direct<'a>(x: &'a mut (i32, i32)) { x.0 = 5; }
+  ```
+
+  with the specification `ensures fin(x) == (5, old(x).1)`. The referent is unfolded,
+  field 0 is written in place ([type_write_place_instr]), and the place is folded back.
+  *)
+
+  Definition set_first_direct : val :=
+    fn: ["x"] :=
+      let: "b" := !"x" in
+      delete [ #1; "x"];;
+      let: "five" := #5 in
+      "b" +ₗ #0 <- "five";;
+      Skip;;                    (* resolve b *)
+      let: "r" := new [ #0] in
+      return: ["r"].
+
+  Lemma set_first_direct_type :
+    typed_val set_first_direct
+      ((fn<α>(∅; &uniq{α} (int * int)) → ()) set_first_spec)
+      (set_first_direct, ()).
+  Proof.
+    unfold set_first_direct. unlock.
+    opose proof (@type_fn _ _ _ [uniq_borₛ (Zₛ * Zₛ)] () () ()
+      (λ α, FP ∅ +[&uniq{α} (int * int)]%T ()%T AtomicClosed)
+      set_first_spec _ [BNamed "x"] _ _ _) as H.
+    unlock in H. apply H. clear H.
+    intros α ϝ k wl. destruct wl as [vx []]. simpl_subst.
+    iApply (typed_body_impl with "[]"); last first. {
+      iApply (type_let with "[]").
+      { eapply (type_deref_instr (own_ptr 1 (&uniq{α} (int * int)))
+          (&uniq{α} (int * int))).
+        - apply uniq_stack_okay.
+        - done.
+        - apply (read_own_move (&uniq{α} (int * int))). }
+      { apply tctx_extract_elt_here_exact. }
+      { reflexivity. }
+      iIntros (vb). simpl_subst.
+      iApply type_delete. { solve_typing. } { done. } { done. }
+      iApply typed_body_tctx_incl.
+      { apply (tctx_unfold_uniq_prod _ _ vb α int int). solve_typing. }
+      iApply type_int. iIntros (v5). simpl_subst.
+      (* ( *b).0 = 5 *)
+      iApply type_seq.
+      { apply (type_write_place_instr _ _ _ vb v5 α (PFst PHole (OfTy int)) int
+          (const (const True))); [solve_typing|done|done|done|apply resolve_just]. }
+      { solve_typing. } { reflexivity. }
+      iApply typed_body_tctx_incl.
+      { eapply (tctx_incl_frame_r +[_] +[_]). apply (tctx_fold_uniq_prod _ _ vb α int int).
+        solve_typing. }
+      iApply type_resolve. { solve_typing. } { apply uniq_bor.uniq_resolve. solve_typing. }
+      iApply (type_new_subtype () 0). { lia. } { apply uninit_unit_1. }
+      iIntros (vr). simpl_subst.
+      iApply type_jump.
+      { rewrite elem_of_list_singleton. reflexivity. }
+      { solve_typing. }
+      { solve_typing. }
+      { reflexivity. }
+    }
+    intros post [[lx m] []] mask π. simpl.
+    destruct m as [[[[[l [x1 x2]] ξi] d] g] idx]. simpl.
+    intros Hspec. rewrite /trans_upper /trans_tail /=.
+    intros z _ _ x' Hl' Hcur Hfut _.
+    destruct x' as [[[[[[l' [y1 y2]] ξi'] d'] g'] idx'] ζis']. simpl.
+    intros _ Hres l1 junk. apply Hspec.
+    rewrite /place_bor /= in Hfut Hcur. rewrite -Hfut uniq_bor_future_eq.
+    rewrite (_: (π (uniq_prvar (𝔄:=Zₛ * Zₛ) (y1, y2) ξi')).1 = (y1, y2)); [|exact Hres].
+    by injection Hcur as -> ->.
     Unshelve. eapply (composeₛ empty_prod_to_unitₛ uninit0_to_unitₛ).
   Qed.
 End get_first.

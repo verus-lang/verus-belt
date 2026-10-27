@@ -239,7 +239,7 @@ Section ltype_own.
     match r with
     | inl _ => False
     | inr (l', r') =>
-        l #↦!∗ [FVal (LitV l')] ∗ ▷^m (⌜d ≠ 0%nat⌝ ∗ freeable_sz n sz l') ∗
+        l #↦!∗ [FVal (LitV l')] ∗ ⌜d ≠ 0%nat⌝ ∗ ▷^m (freeable_sz n sz l') ∗
         child r' (pred d) g tid (l', repeat [] sz)
     end%I.
 
@@ -360,7 +360,7 @@ Section ltype_lemmas.
     own_node m n sz c1 r d g tid l ⊢ own_node m n sz c2 r d g tid l.
   Proof.
     intros Hc. destruct r as [?|[l' r']]; [done|]. rewrite /own_node.
-    iIntros "($ & $ & C)". by iApply Hc.
+    iIntros "($ & $ & $ & C)". by iApply Hc.
   Qed.
 
   Lemma prod_node_mono {𝔅 ℭ} sz1 (c1 c1': prfn 𝔅 → nat → nat → thread_id → cloc → iProp Σ)
@@ -439,8 +439,7 @@ Section ltype_lemmas.
       iSplitR. { iApply (lguards_weaken_later with "G"). lia. }
       iExists d1, g1. iFrame. iPureIntro. lia.
     - destruct r as [?|[l' r']]; [done|]. rewrite /own_node.
-      iIntros "($ & H & C)". iSplitL "H".
-      { iNext. iDestruct "H" as "[% $]". iPureIntro. lia. }
+      iIntros "($ & % & $ & C)". iSplit; [iPureIntro; lia|].
       iApply (IH with "C"); lia.
     - destruct r as [?|[r1 r2]]; [done|]. rewrite /prod_node.
       iIntros "[A B]". iSplitL "A"; [iApply (IH1 with "A")|iApply (IH2 with "B")]; done.
@@ -520,9 +519,9 @@ Section ltype_lemmas.
     destruct k as [m|κ ξi];
       [|iModIntro; iFrame "G"; iExists d, g; by iApply ltype_own_uniq_core].
     destruct r as [?|[l' r']]; [done|]. rewrite /ltype_own /ltype_own_core /=.
-    iDestruct "H" as "(Pt & Fr & C)".
+    iDestruct "H" as "(Pt & % & Fr & C)".
     iMod ("Ub" $! (Owned (m + 1)) with "[//] Gk G Dead C") as "[$ (%d1 & %g1 & C)]".
-    iModIntro. iExists (S d1), g1. iFrame. iNext. iDestruct "Fr" as "[_ $]". done.
+    iModIntro. iExists (S d1), g1. by iFrame.
   Qed.
 
   Lemma prod_ltype_imp_unblockable κs {𝔄 𝔅} (lt1: lty 𝔄) (lt2: lty 𝔅) :
@@ -573,9 +572,10 @@ Section ltype_lemmas.
     iIntros (?) "#Gk G Dead H". destruct r as [lr|]; [|done].
     rewrite /ltype_own /= /blocked_owned.
     iMod (fupd_mask_mono with "(H Dead)") as "Upd"; [rewrite /lazyE; set_solver|].
-    iMod (guarded_upd_run with "Gk G Upd") as "[$ (%x & %d' & %g' & Rel & ⧖ & In)]";
+    iMod (guarded_upd_run with "Gk G Upd") as "[$ (%x & %d' & %g' & Rel & #⧖ & In)]";
       [rewrite /lazyE; set_solver|].
-    iModIntro. iExists d', g'. iFrame "⧖". iExists x. iFrame.
+    iModIntro. iExists d', g'. iSplit; [iApply (persistent_time_receipt_mono with "⧖"); lia|].
+    iExists x. iFrame.
   Qed.
 
   Lemma unblock_blocked_uniq κ ξi {𝔄} (ty: type 𝔄) α r d g tid l G :
@@ -681,8 +681,8 @@ Section unfold.
     ltype_own (Owned m) (OfTy (own_ptr n ty)) (inl (PlaceIn (𝔄:=at_locₛ 𝔄) (l', x))) d g tid l.
   Proof.
     rewrite /ltype_own /= /ofty_owned /=.
-    iIntros "(Pt & Fr & %y & -> & Pt' & Gho)". iExists (l', x). iSplit; [done|]. iFrame "Pt".
-    iNext. iDestruct "Fr" as "[% Fr]". destruct d as [|d]; [done|]. simpl.
+    iIntros "(Pt & % & Fr & %y & -> & Pt' & Gho)". iExists (l', x). iSplit; [done|]. iFrame "Pt".
+    iNext. destruct d as [|d]; [done|]. simpl.
     rewrite (heap_cloc_mapsto_fancy_empty l' (ty_phys ty x tid)) ty_size_eq. iFrame.
   Qed.
 
@@ -839,9 +839,9 @@ Section cpd.
     iAssert (G &&{↑NllftG}&&> @[ty_lft ty2])%I as "#Gty2".
     { iApply (guards_transitive with "Gty"). simpl. rewrite lft_intersect_list_app.
       iApply llftl_intersect_incl_r. }
-    iMod (leaf_owned_unblock with "LFT Gty1 Ok1 †κ G ⧖ N1")
+    iMod (leaf_owned_unblock _ 0 with "LFT Gty1 Ok1 †κ G ⧖ N1")
       as "[G (%x1 & %d1 & %g1 & Rel1 & #⧖1 & Pt1 & Gho1)]".
-    iMod (leaf_owned_unblock with "LFT Gty2 Ok2 †κ G ⧖ N2")
+    iMod (leaf_owned_unblock _ 0 with "LFT Gty2 Ok2 †κ G ⧖ N2")
       as "[$ (%x2 & %d2 & %g2 & Rel2 & #⧖2 & Pt2 & Gho2)]".
     iModIntro. iExists (x1, x2), (d1 `max` d2), (g1 `max` g2).
     iDestruct (place_rfn_rel_eqz with "Rel1") as "Eqz1".
@@ -1005,25 +1005,32 @@ Section cpd.
 
   (** ** Simple place types
 
-      Place types built from leaves and products. In [Owned] mode, such a place can be
-      unblocked and folded inside a lazy update, once all its blocked lifetimes are
-      dead (via the membership condition). *)
+      Place types built from leaves, products and owned pointers. In [Owned] mode,
+      such a place can be unblocked and folded inside a lazy update, once all its
+      blocked lifetimes are dead (via the membership condition). Under [m] owned
+      pointers, the time receipts are shifted by [m] (see [blocked_owned]): the owned
+      pointers above a leaf are folded back at depths increased by one per pointer,
+      which needs one more receipt per pointer. *)
   Fixpoint lty_simple {𝔄} (lt: lty 𝔄) : Prop :=
     match lt with
     | OfTy _ | Blocked _ _ => True
+    | OwnPtrLty _ lt => lty_simple lt
     | ProdLty lt1 lt2 => lty_simple lt1 ∧ lty_simple lt2
     | _ => False
     end.
 
+  Lemma pat_ok_own κ p : pat_ok κ p -∗ pat_ok κ (pat_own p).
+  Proof. iIntros "Ok". destruct p; simpl; try iApply pat_ok_leaf. done. Qed.
+
   Lemma ltype_owned_unblock_fold {𝔄} (lt: lty 𝔄) κ m p r d g tid l G :
     lty_simple lt → Timeless G →
     llft_ctx -∗ (G &&{↑NllftG}&&> @[ty_lft (lty_fold lt)]) -∗ pat_ok κ p -∗ [†κ] -∗ G -∗
-    ⧖(S d `max` g) -∗ ltype_own_cp false lt (Owned m) p r d g tid l ={lazyE}=∗
-      G ∗ ∃ x d' g', ▷ (prfn_den r :== vπ x) ∗ ⧖(S d' `max` g') ∗
+    ⧖((m + S d) `max` g) -∗ ltype_own_cp false lt (Owned m) p r d g tid l ={lazyE}=∗
+      G ∗ ∃ x d' g', ▷ (prfn_den r :== vπ x) ∗ ⧖((m + S d') `max` g') ∗
         ofty_owned m (lty_fold lt) x d' g' tid l.
   Proof.
     induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2]
-      in p, r, d, g, l, G |- *; intros Hs ?; try done.
+      in m, p, r, d, g, l, G |- *; intros Hs ?; try done.
     - iIntros "#LFT #Gty #Ok #†κ G #⧖ L". destruct r as [lr|]; [|done].
       iMod (leaf_owned_unblock with "LFT Gty Ok †κ G ⧖ L")
         as "[$ (%x & %d' & %g' & Rel & ⧖' & O)]".
@@ -1034,6 +1041,22 @@ Section cpd.
         as "[$ (%x & %d' & %g' & Rel & ⧖' & O)]".
       iModIntro. iExists x, d', g'. iFrame. rewrite prfn_den_inl.
       by iApply place_rfn_rel_eqz.
+    - iIntros "#LFT #Gty #Ok #†κ G #⧖ N".
+      destruct r as [lr|[l' r']]; [done|]. iDestruct "N" as "(Pt & %Hd & Fr & N)".
+      iDestruct (pat_ok_own with "Ok") as "Ok'".
+      iAssert (⧖((m + 1 + S (pred d)) `max` g))%I as "#⧖'".
+      { iApply (persistent_time_receipt_mono with "⧖"). lia. }
+      iMod (IH with "LFT Gty Ok' †κ G ⧖' N") as "[$ (%x & %d' & %g' & Eqz & #⧖1 & Pt' & Gho)]";
+        [done|].
+      iModIntro. iExists (l', x), (S d'), g'.
+      iSplitL "Eqz". { iNext. iApply (proph_eqz_prod with "[] [Eqz]").
+        - iApply proph_eqz_refl.
+        - iApply (proph_eqz_eq with "Eqz"); [|done]. by fun_ext=> π /=. }
+      iSplit. { iApply (persistent_time_receipt_mono with "⧖1"). lia. }
+      rewrite /ofty_owned /=. iFrame "Pt".
+      rewrite (heap_cloc_mapsto_fancy_empty l' (ty_phys (lty_fold lt) x tid)) ty_size_eq
+        -lty_size_fold.
+      iNext. iFrame "Pt' Fr". by rewrite (Nat.add_1_r m).
     - destruct Hs as [Hs1 Hs2]. iIntros "#LFT #Gty #Ok #†κ G #⧖ N".
       destruct r as [lr|[r1 r2]]; [done|]. iDestruct "N" as "[N1 N2]".
       iDestruct (pat_ok_prod with "Ok") as "[Ok1 Ok2]".
@@ -1074,8 +1097,109 @@ Section cpd.
     - destruct r as [lr|]; [done|done].
     - destruct r as [lr|rs]; [done|].
       iEval (rewrite /leaf_node /= /blocked_owned). iIntros "#†κ !>" (G ?) "#Gty G".
-      iMod (ltype_owned_unblock_fold (ProdLty lt1 lt2) with "LFT Gty Ok †κ G ⧖ N")
+      iMod (ltype_owned_unblock_fold (OwnPtrLty n lt) _ 0 with "LFT Gty Ok †κ G ⧖ N")
         as "[$ (%x & %d' & %g' & Eqz & ⧖' & O)]"; [done|].
       iModIntro. iExists x, d', g'. iFrame.
+    - destruct r as [lr|rs]; [done|].
+      iEval (rewrite /leaf_node /= /blocked_owned). iIntros "#†κ !>" (G ?) "#Gty G".
+      iMod (ltype_owned_unblock_fold (ProdLty lt1 lt2) _ 0 with "LFT Gty Ok †κ G ⧖ N")
+        as "[$ (%x & %d' & %g' & Eqz & ⧖' & O)]"; [done|].
+      iModIntro. iExists x, d', g'. iFrame.
+  Qed.
+
+  (** ** Unfolding and folding the root, generically *)
+
+  Definition lty_is_cpd {𝔄} (lt: lty 𝔄) : Prop :=
+    match lt with ProdLty _ _ | OwnPtrLty _ _ | UniqLty _ _ => True | _ => False end.
+
+  (** In [Uniq] mode, a compound place is a compound place whose node is the
+      [Owned 0] interpretation. *)
+  Lemma ltype_own_cp_uniq_cpd {𝔄} (lt: lty 𝔄) κ ξi p :
+    lty_is_cpd lt →
+    ltype_own_cp false lt (Uniq κ ξi) p =
+      cpd_own κ ξi (lty_fold lt) p (ltype_own_cp false lt (Owned 0)).
+  Proof. by destruct lt. Qed.
+
+  (** Unfolding a unique borrow of [lty_fold lt] into the compound place [lt] (with
+      no blocked leaves), given a conversion of the payload into the node of [lt]; as
+      [prod_ofty_unfold_uniq]. *)
+  Lemma cpd_unfold_uniq {𝔄} (lt: lty 𝔄) κ ξi x (r: prfn 𝔄) d g tid l E G :
+    lty_is_cpd lt → lty_simple lt → pat_blk_lfts (lty_pat lt) = [] →
+    prfn_rsv r [] → (∀ π, prfn_den r π = vπ x π) →
+    (∀ d g, ty_gho_own (lty_fold lt) x d g tid ∗ l #↦!∗ ty_phys (lty_fold lt) x tid ⊢
+       |={lazyE}=> ltype_own_cp false lt (Owned 0) (lty_pat lt) r d g tid l) →
+    Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
+    ltype_own (Uniq κ ξi) (OfTy (lty_fold lt)) (inl (PlaceIn x)) d g tid l ={E}=∗
+    ltype_own (Uniq κ ξi) lt r d g tid l ∗ G.
+  Proof.
+    iIntros (Hc Hs Hp Hr Hden Hconv ??) "#LFT #PROPH #UNIQ #Gk G H".
+    rewrite /ltype_own (ltype_own_cp_uniq_cpd lt) //=.
+    iDestruct "H" as (x' idx ->) "(%κp & %γ & #Incl & (Gh & Tok) & ⧗ & #Bor)".
+    iMod (ghost_var_alloc (lstate_triv (𝔄:=unitₛ) ())) as (γf) "Tf".
+    set node := ltype_own_cp false lt (Owned 0).
+    set ty := lty_fold lt.
+    iMod (proph_idx_bor_gen_acc_rebody_guarded E κ (uniq_prvar x ξi) (uniq_cell x d g γ) idx
+      (uniq_gbody κp ty tid l) (cpd_gbody κp γf ty node tid l) with "LFT UNIQ Gk Tok Bor G")
+      as (wπ) "[Body Close]"; [solve_ndisj|].
+    iMod (uniq_gbody_triv_open with "Gh Body") as "(%Hw & Gh & Gh' & Pl)".
+    iMod (ghost_var_update_halves (lstate (lty_pat lt) r) with "Gh Gh'") as "[Gh Gh']".
+    iSpecialize ("Close" $! (uniq_cell x d g γ) wπ).
+    iMod (fupd_mask_mono with "(Close [Gh' Pl] [])") as (idx') "(Tok & #Bor' & G)";
+      [solve_ndisj| | |].
+    { iNext. iLeft. rewrite cpd_body_cell. iExists (lty_pat lt), r.
+      iFrame "Gh'". iSplit; [by rewrite /pat_ok Hp|]. iSplit.
+      { iPureIntro. intros π. by rewrite Hw Hden. }
+      rewrite uniq_payload_cell. iApply (guarded_upd_mono with "[] Pl").
+      iIntros "($ & Gho & Pt)". iApply Hconv. iFrame. }
+    { iIntros "!>" (c2 w2) "Q". iModIntro. iNext.
+      iDestruct "Q" as "[Q|[_ $]]". rewrite /cpd_body /uniq_gbody /cpd_body.
+      iDestruct "Q" as (p2 r2) "(#Ok & % & Gh & Upd)". iExists p2, r2. iFrame "Ok Gh".
+      iSplit; [done|]. iApply (guarded_upd_mono with "[] Upd").
+      iIntros "[#⧖ N] !>". iFrame "⧖". by iApply (ltype_owned_leaf_node with "LFT Ok ⧖ N"). }
+    iMod (proph_idx_bor_gen_reserve E κ _ _ idx' [] 1%Qp with "LFT PROPH UNIQ Gk G [] Tok Bor'")
+      as "(Tok & _ & $)"; [solve_ndisj|done|].
+    iModIntro. iExists x, κp, γ, γf, idx', []. by iFrame "∗#".
+  Qed.
+
+  (** Folding back, given a conversion of the node into the payload; as
+      [prod_ofty_fold_uniq]. *)
+  Lemma cpd_fold_uniq {𝔄} (lt: lty 𝔄) κ ξi x (r: prfn 𝔄) d g tid l E G :
+    lty_is_cpd lt →
+    (∀ d g, ltype_own_cp false lt (Owned 0) (lty_pat lt) r d g tid l ⊢ |={lazyE}=>
+       ty_gho_own (lty_fold lt) x d g tid ∗ l #↦!∗ ty_phys (lty_fold lt) x tid) →
+    Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
+    ltype_own (Uniq κ ξi) lt r d g tid l ={E}=∗
+    ltype_own (Uniq κ ξi) (OfTy (lty_fold lt)) (inl (PlaceIn x)) d g tid l ∗ G.
+  Proof.
+    iIntros (Hc Hconv ??) "#LFT #PROPH #UNIQ #Gk G H".
+    rewrite /ltype_own (ltype_own_cp_uniq_cpd lt) //=.
+    iDestruct "H" as (x₀ κp γ γf idx ζl) "(#Incl & _ & Tok & Gh & Tf & ⧗ & #Bor)".
+    iMod (proph_idx_bor_gen_unreserve with "LFT PROPH UNIQ Gk G Tok Bor") as "[Tok G]";
+      [solve_ndisj|].
+    set ty := lty_fold lt.
+    have ?: Inhabited (~~𝔄) := populate x.
+    iMod (proph_idx_bor_gen_acc_rebody_guarded E κ (uniq_prvar x₀ ξi) (uniq_cell x₀ d g γ) idx
+      _ (uniq_gbody κp ty tid l)
+      with "LFT UNIQ Gk Tok Bor G") as (wπ) "[Body Close]"; [solve_ndisj|].
+    iDestruct (bi.later_or with "Body") as "[Body|[>Tf' _]]"; last first.
+    { iDestruct (cpd_tok_excl with "Tf Tf'") as "[]". }
+    rewrite cpd_body_cell.
+    iMod (bi.later_exist_except_0 with "Body") as (p) "Body".
+    iMod (bi.later_exist_except_0 with "Body") as (r1) "(_ & _ & >Gh' & Upd)".
+    iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
+    iMod (ghost_var_update_halves (lstate_triv x) with "Gh Gh'") as "[Gh Gh']".
+    iSpecialize ("Close" $! (uniq_cell x d g γ) (vπ (uniq_cell x d g γ))).
+    iMod (fupd_mask_mono with "(Close [Gh' Upd] [Tf])") as (idx') "(Tok & #Bor' & $)";
+      [solve_ndisj| | |].
+    { iApply (uniq_gbody_triv_close with "Gh'"); [done|]. iNext.
+      rewrite uniq_payload_cell. iApply (guarded_upd_mono with "[] Upd").
+      iIntros "[$ N]". iMod (Hconv with "N") as "[$ $]". done. }
+    { iIntros "!>" (c2 w2) "P". iModIntro. iNext. iRight. iFrame. }
+    iModIntro. iExists x, idx'. iSplit; [done|].
+    iApply (uniq_body_from_parts with "Incl [Gh Tok] ⧗ [Bor']").
+    - rewrite /uniq_tokγ (uniq_bor_tok_retarget _ x₀). iFrame.
+    - by rewrite /uniq_persγ (uniq_idx_bor_gen_retarget _ _ x₀).
   Qed.
 End cpd.

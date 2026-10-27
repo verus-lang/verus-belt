@@ -2,17 +2,19 @@
 
   Access to a subplace of a (nested) place type, in the style of the place
   contexts of RefinedRust (paper §5.3; [typed_place] in [rust_typing/programs.v]
-  of the RefinedRust development). For now, the subplaces are fields of (nested)
-  products.
+  of the RefinedRust development). The subplaces are fields of (nested) products
+  and pointees of owned pointers.
 
   - A _place context_ [K : pctx 𝔅 𝔄] is a place type of [𝔄] with a hole of
     type [𝔅]. It is given from the root: [PFst K lt2] is a pair whose field 0 is
-    the context [K] and whose field 1 has the place type [lt2] ([PSnd] dually).
+    the context [K] and whose field 1 has the place type [lt2] ([PSnd] dually);
+    [POwn n K] is an owned pointer whose pointee is the context [K].
     [pctx_plug K lt] plugs a place type into the hole.
   - The hole has a value ([pctx_get], [pctx_set] on values of the root), a
     _path_ from the root ([pctx_path], a list of field selectors, innermost
-    first), an offset from the root ([pctx_off]) and a location ([pctx_loc]),
-    which depends on the size of the hole.
+    first), an offset from the root ([pctx_off], below no owned pointer) and a
+    location ([pctx_loc]), which depends on the size of the hole and (below an owned
+    pointer) on the value of the root.
   - The refinement of a place is computed from the current value of the root and
     a _blocking map_ [ζm] from the paths of blocked leaves to the prophecy ids of
     their reborrows ([lty_rfn]); a blocked leaf is refined by the final value of
@@ -22,11 +24,13 @@
     hole does not change the refinements of the rest ([pctx_rfn_blk_cons]).
   - In [Owned] mode, the ownership of a plugged place splits into the ownership
     of the hole and of the rest ([ltype_own_plug]); the rest does not depend on
-    the hole. *)
+    the hole. Below [k] owned pointers, the hole is owned with [k] more laters
+    ([pctx_mode]) at a depth decreased by [k] ([pctx_depth]). *)
 
 From iris.proofmode Require Import proofmode.
+From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype.
-From lrust.typing Require Import uniq_util.
+From lrust.typing Require Import uniq_util freeable_util.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -68,9 +72,9 @@ Section lty_rfn.
     match lt in lty 𝔄 return ~~𝔄 → blk_map → lpath → prfn 𝔄 with
     | OfTy _ => λ x _ _, inl (PlaceIn x)
     | Blocked _ _ => λ x ζm q, inl (PlaceGhost x (blk_lookup ζm q))
-    (* Unfolded borrows and owned pointers are not supported yet. *)
+    (* Unfolded borrows are not supported yet. *)
     | UniqLty _ _ => λ x _ _, inl (PlaceIn x)
-    | OwnPtrLty _ _ => λ x _ _, inl (PlaceIn x)
+    | OwnPtrLty _ lt => λ x ζm q, inr (x.1, lty_rfn lt x.2 ζm (false :: q))
     | ProdLty lt1 lt2 => λ x ζm q,
         inr (lty_rfn lt1 x.1 ζm (false :: q), lty_rfn lt2 x.2 ζm (true :: q))
     end.
@@ -81,8 +85,11 @@ Section lty_rfn.
     lty_rfn lt x ζm q = lty_rfn lt x ζm' q.
   Proof.
     induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2] in x, q |- *;
-      intros Heq; simpl; [done| |done|done|].
+      intros Heq; simpl; [done| |done| |].
     - by rewrite (Heq []).
+    - rewrite (IH _ (false :: q)); [done|].
+      intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
+      by rewrite -app_assoc.
     - rewrite (IH1 _ (false :: q)); [rewrite (IH2 _ (true :: q)); [done|]|].
       + intros r. rewrite (_: r ++ true :: q = (r ++ [true]) ++ q); [apply Heq|].
         by rewrite -app_assoc.
@@ -94,6 +101,7 @@ Section lty_rfn.
   Fixpoint lty_nblk {𝔄} (lt: lty 𝔄) : nat :=
     match lt with
     | Blocked _ _ => 1
+    | OwnPtrLty _ lt => lty_nblk lt
     | ProdLty lt1 lt2 => lty_nblk lt1 + lty_nblk lt2
     | _ => 0
     end.
@@ -102,6 +110,7 @@ Section lty_rfn.
   Fixpoint lty_blk_all {𝔄} (lt: lty 𝔄) : Prop :=
     match lt with
     | Blocked _ _ => True
+    | OwnPtrLty _ lt => lty_blk_all lt
     | ProdLty lt1 lt2 => lty_blk_all lt1 ∧ lty_blk_all lt2
     | _ => False
     end.
@@ -114,6 +123,7 @@ Section lty_rfn.
     induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2] in x, q |- *;
       intros Hb Hr; try done.
     - simpl in *. rewrite prfn_den_inl. by rewrite prfn_rsv_inl in Hr.
+    - apply (proph_dep_constr (pair x.1)). by apply IH.
     - destruct Hb as [Hb1 Hb2]. destruct Hr as [Hr1 Hr2].
       apply (proph_dep_weaken _ (ζl ++ ζl)); [set_solver|].
       apply (proph_dep_constr2 pair); [by apply IH1|by apply IH2].
@@ -128,7 +138,8 @@ Section pctx.
   Inductive pctx : syn_type → syn_type → Type :=
   | PHole {𝔅} : pctx 𝔅 𝔅
   | PFst {𝔅 𝔄1 𝔄2} (K: pctx 𝔅 𝔄1) (lt2: lty 𝔄2) : pctx 𝔅 (𝔄1 * 𝔄2)
-  | PSnd {𝔅 𝔄1 𝔄2} (lt1: lty 𝔄1) (K: pctx 𝔅 𝔄2) : pctx 𝔅 (𝔄1 * 𝔄2).
+  | PSnd {𝔅 𝔄1 𝔄2} (lt1: lty 𝔄1) (K: pctx 𝔅 𝔄2) : pctx 𝔅 (𝔄1 * 𝔄2)
+  | POwn {𝔅 𝔄'} (n: nat) (K: pctx 𝔅 𝔄') : pctx 𝔅 (at_locₛ 𝔄').
 
   Definition pctx_nonempty {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
     match K with PHole => False | _ => True end.
@@ -138,6 +149,7 @@ Section pctx.
     | PHole => λ lt, lt
     | PFst K lt2 => λ lt, ProdLty (pctx_plug K lt) lt2
     | PSnd lt1 K => λ lt, ProdLty lt1 (pctx_plug K lt)
+    | POwn n K => λ lt, OwnPtrLty n (pctx_plug K lt)
     end.
 
   Fixpoint pctx_get {𝔅 𝔄} (K: pctx 𝔅 𝔄) : ~~𝔄 → ~~𝔅 :=
@@ -145,6 +157,7 @@ Section pctx.
     | PHole => λ x, x
     | PFst K _ => λ x, pctx_get K x.1
     | PSnd _ K => λ x, pctx_get K x.2
+    | POwn _ K => λ x, pctx_get K x.2
     end.
 
   Fixpoint pctx_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) : ~~𝔄 → ~~𝔅 → ~~𝔄 :=
@@ -152,6 +165,7 @@ Section pctx.
     | PHole => λ _ y, y
     | PFst K _ => λ x y, (pctx_set K x.1 y, x.2)
     | PSnd _ K => λ x y, (x.1, pctx_set K x.2 y)
+    | POwn _ K => λ x y, (x.1, pctx_set K x.2 y)
     end.
 
   (** The path of the hole, from a place at path [q]. *)
@@ -160,6 +174,7 @@ Section pctx.
     | PHole => q
     | PFst K _ => pctx_path K (false :: q)
     | PSnd _ K => pctx_path K (true :: q)
+    | POwn _ K => pctx_path K (false :: q)
     end.
 
   (** The size of the place, for a hole of size [n]. *)
@@ -168,22 +183,49 @@ Section pctx.
     | PHole => n
     | PFst K lt2 => pctx_size K n + lty_size lt2
     | PSnd lt1 K => lty_size lt1 + pctx_size K n
+    | POwn _ _ => 1
     end.
 
-  (** The offset of the hole. *)
+  (** The hole is not below an owned pointer. *)
+  Fixpoint pctx_noderef {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
+    match K with
+    | PHole => True
+    | PFst K _ | PSnd _ K => pctx_noderef K
+    | POwn _ _ => False
+    end.
+
+  (** The offset of the hole (if it is not below an owned pointer). *)
   Fixpoint pctx_off {𝔅 𝔄} (K: pctx 𝔅 𝔄) : nat :=
     match K with
     | PHole => 0
     | PFst K _ => pctx_off K
     | PSnd lt1 K => lty_size lt1 + pctx_off K
+    | POwn _ _ => 0
     end.
 
-  (** The location of the hole (of size [n]), in a place at [l]. *)
-  Fixpoint pctx_loc {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) (l: cloc) : cloc :=
+  (** The location of the hole (of size [n]), in a place at [l] with value [x]. *)
+  Fixpoint pctx_loc {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) : ~~𝔄 → cloc → cloc :=
+    match K in pctx 𝔅 𝔄 return ~~𝔄 → cloc → cloc with
+    | PHole => λ _ l, l
+    | PFst K _ => λ x l, pctx_loc K n x.1 (cloc_take l (pctx_size K n))
+    | PSnd lt1 K => λ x l, pctx_loc K n x.2 (cloc_skip l (lty_size lt1))
+    | POwn _ K => λ x _, pctx_loc K n x.2 (x.1, repeat [] (pctx_size K n))
+    end.
+
+  (** The number of laters of the hole, in a place with [m] laters. *)
+  Fixpoint pctx_mode {𝔅 𝔄} (K: pctx 𝔅 𝔄) (m: nat) : nat :=
     match K with
-    | PHole => l
-    | PFst K _ => pctx_loc K n (cloc_take l (pctx_size K n))
-    | PSnd lt1 K => pctx_loc K n (cloc_skip l (lty_size lt1))
+    | PHole => m
+    | PFst K _ | PSnd _ K => pctx_mode K m
+    | POwn _ K => pctx_mode K (m + 1)
+    end.
+
+  (** The depth of the hole, in a place at depth [d]. *)
+  Fixpoint pctx_depth {𝔅 𝔄} (K: pctx 𝔅 𝔄) (d: nat) : nat :=
+    match K with
+    | PHole => d
+    | PFst K _ | PSnd _ K => pctx_depth K d
+    | POwn _ K => pctx_depth K (pred d)
     end.
 
   (** The pattern of the place, with pattern [p] at the hole. *)
@@ -192,6 +234,7 @@ Section pctx.
     | PHole => p
     | PFst K lt2 => PatProd (pctx_pat K p) (lty_pat lt2)
     | PSnd lt1 K => PatProd (lty_pat lt1) (pctx_pat K p)
+    | POwn _ K => PatOwn (pctx_pat K p)
     end.
 
   (** The refinement of the place (at path [q], with current value [x] and blocking
@@ -203,6 +246,7 @@ Section pctx.
         inr (pctx_rfn K x.1 ζm (false :: q) r, lty_rfn lt2 x.2 ζm (true :: q))
     | PSnd lt1 K => λ x ζm q r,
         inr (lty_rfn lt1 x.1 ζm (false :: q), pctx_rfn K x.2 ζm (true :: q) r)
+    | POwn _ K => λ x ζm q r, inr (x.1, pctx_rfn K x.2 ζm (false :: q) r)
     end.
 
   (** The number of blocked leaves outside the hole. *)
@@ -211,6 +255,7 @@ Section pctx.
     | PHole => 0
     | PFst K lt2 => pctx_nblk K + lty_nblk lt2
     | PSnd lt1 K => lty_nblk lt1 + pctx_nblk K
+    | POwn _ K => pctx_nblk K
     end.
 
   (** The core of the context. *)
@@ -219,6 +264,7 @@ Section pctx.
     | PHole => PHole
     | PFst K lt2 => PFst (pctx_core K) (lty_core lt2)
     | PSnd lt1 K => PSnd (lty_core lt1) (pctx_core K)
+    | POwn n K => POwn n (pctx_core K)
     end.
 
   (** ** Basic laws *)
@@ -229,11 +275,33 @@ Section pctx.
   Lemma pctx_set_get {𝔅 𝔄} (K: pctx 𝔅 𝔄) x : pctx_set K x (pctx_get K x) = x.
   Proof. induction K in x |- *; simpl; [done|by rewrite IHK -surjective_pairing..]. Qed.
 
+  Lemma pctx_mode_add {𝔅 𝔄} (K: pctx 𝔅 𝔄) m : pctx_mode K m = m + pctx_mode K 0.
+  Proof.
+    induction K in m |- *; simpl; [lia|done|done|]. rewrite IHK (IHK (0 + 1)). lia.
+  Qed.
+
+  Lemma pctx_mode_noderef {𝔅 𝔄} (K: pctx 𝔅 𝔄) m : pctx_noderef K → pctx_mode K m = m.
+  Proof. induction K; simpl; naive_solver. Qed.
+
+  Lemma pctx_depth_noderef {𝔅 𝔄} (K: pctx 𝔅 𝔄) d : pctx_noderef K → pctx_depth K d = d.
+  Proof. induction K in d |- *; simpl; naive_solver. Qed.
+
+  Lemma pctx_depth_mono {𝔅 𝔄} (K: pctx 𝔅 𝔄) d d' : d ≤ d' → pctx_depth K d ≤ pctx_depth K d'.
+  Proof. induction K in d, d' |- *; simpl; [done|auto|auto|]. intros. apply IHK. lia. Qed.
+
+  (** The depth of the hole decreases by one per owned pointer. *)
+  Lemma pctx_depth_sub {𝔅 𝔄} (K: pctx 𝔅 𝔄) d : pctx_depth K d = d - pctx_mode K 0.
+  Proof.
+    induction K in d |- *; simpl; [lia|done|done|].
+    rewrite IHK (pctx_mode_add K (0 + 1)). lia.
+  Qed.
+
   Lemma pctx_path_app {𝔅 𝔄} (K: pctx 𝔅 𝔄) q : pctx_path K q = pctx_path K [] ++ q.
   Proof.
-    induction K in q |- *; simpl; [done| |].
+    induction K in q |- *; simpl; [done| | |].
     - rewrite IHK (IHK [false]) -app_assoc. done.
     - rewrite IHK (IHK [true]) -app_assoc. done.
+    - rewrite IHK (IHK [false]) -app_assoc. done.
   Qed.
 
   Lemma lty_size_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt : lty_size (pctx_plug K lt) = pctx_size K (lty_size lt).
@@ -267,7 +335,7 @@ Section pctx.
   Lemma pctx_rfn_blk_cons {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm ζi q r :
     pctx_rfn K x ((pctx_path K q, ζi) :: ζm) q r = pctx_rfn K x ζm q r.
   Proof.
-    induction K in x, q, r |- *; simpl; [done| |].
+    induction K in x, q, r |- *; simpl; [done| | |by rewrite IHK].
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
@@ -278,19 +346,23 @@ Section pctx.
     (∀ ζ, ζ ∈ ζl → ζ ∈ ζl') →
     prfn_rsv (pctx_rfn K x ζm q r) ζl → prfn_rsv r' ζl' → prfn_rsv (pctx_rfn K x ζm q r') ζl'.
   Proof.
-    intros Hin. induction K in x, q, r, r' |- *; simpl; [done| |].
+    intros Hin. induction K in x, q, r, r' |- *; simpl; [done| | |].
     - intros [H1 H2] H'. split; [by eapply IHK|]. by eapply prfn_rsv_weaken.
     - intros [H1 H2] H'. split; [by eapply prfn_rsv_weaken|]. by eapply IHK.
+    - intros H H'. by eapply IHK.
   Qed.
 
   Lemma pctx_rfn_rsv_hole {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm q (r: prfn 𝔅) ζl :
     prfn_rsv (pctx_rfn K x ζm q r) ζl → prfn_rsv r ζl.
-  Proof. induction K in x, q, r |- *; simpl; [done|intros [? _]|intros [_ ?]]; by eapply IHK. Qed.
-
-  Lemma pctx_loc_fst {𝔅 𝔄} (K: pctx 𝔅 𝔄) n l : (pctx_loc K n l).1 = l.1 +ₗ pctx_off K.
   Proof.
-    induction K in l |- *; simpl; [by rewrite shift_loc_0|by rewrite IHK|].
-    rewrite IHK /= shift_loc_assoc. f_equal. lia.
+    induction K in x, q, r |- *; simpl; [done|intros [? _]|intros [_ ?]|intros ?]; by eapply IHK.
+  Qed.
+
+  Lemma pctx_loc_fst {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x l :
+    pctx_noderef K → (pctx_loc K n x l).1 = l.1 +ₗ pctx_off K.
+  Proof.
+    induction K in x, l |- *; simpl; [by rewrite shift_loc_0|intros ?; by rewrite IHK| |done].
+    intros ?. rewrite IHK // /= shift_loc_assoc. f_equal. lia.
   Qed.
 
   (** ** Ownership in [Owned] mode *)
@@ -309,29 +381,36 @@ Section pctx.
         ltype_own (Owned m) lt1 (lty_rfn lt1 x.1 ζm (false :: q)) d g tid
           (cloc_take l (lty_size lt1)) ∗
         pctx_own K n m x.2 ζm (true :: q) d g tid (cloc_skip l (lty_size lt1))
+    | POwn n' K => λ x ζm q d g tid l,
+        l #↦!∗ [FVal (LitV x.1)] ∗ ⌜d ≠ 0%nat⌝ ∗ ▷^m (freeable_sz n' (pctx_size K n) x.1) ∗
+        pctx_own K n (m + 1) x.2 ζm (false :: q) (pred d) g tid (x.1, repeat [] (pctx_size K n))
     end%I.
 
   Lemma ltype_own_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) m p r x ζm q d g tid l :
     ltype_own_cp false (pctx_plug K lt) (Owned m) (pctx_pat K p) (pctx_rfn K x ζm q r)
       d g tid l ⊣⊢
-    ltype_own_cp false lt (Owned m) p r d g tid (pctx_loc K (lty_size lt) l) ∗
+    ltype_own_cp false lt (Owned (pctx_mode K m)) p r (pctx_depth K d) g tid
+      (pctx_loc K (lty_size lt) x l) ∗
     pctx_own K (lty_size lt) m x ζm q d g tid l.
   Proof.
-    induction K in lt, r, x, q, l |- *; simpl.
+    induction K in lt, r, m, x, q, d, l |- *; simpl.
     - by rewrite right_id.
     - rewrite lty_size_plug IHK. rewrite /ltype_own. by rewrite assoc.
     - rewrite IHK. rewrite /ltype_own. rewrite assoc (comm _ (ltype_own_cp _ _ _ _ _ _ _ _ _)).
       by rewrite -assoc.
+    - rewrite /own_node lty_size_plug IHK. iSplit.
+      + iIntros "($ & $ & $ & $ & $)".
+      + iIntros "($ & $ & $ & $ & $)".
   Qed.
 
   Lemma pctx_own_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x y ζm q d g tid l :
     pctx_own K n m (pctx_set K x y) ζm q d g tid l = pctx_own K n m x ζm q d g tid l.
-  Proof. induction K in x, y, q, l |- *; simpl; by rewrite ?IHK. Qed.
+  Proof. induction K in m, x, y, q, d, l |- *; simpl; by rewrite ?IHK. Qed.
 
   Lemma pctx_own_blk_cons {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm ζi q d g tid l :
     pctx_own K n m x ((pctx_path K q, ζi) :: ζm) q d g tid l = pctx_own K n m x ζm q d g tid l.
   Proof.
-    induction K in x, q, l |- *; simpl; [done| |].
+    induction K in m, x, q, d, l |- *; simpl; [done| | |by rewrite IHK].
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
@@ -342,22 +421,86 @@ Section pctx.
     d ≤ d' → g ≤ g' →
     pctx_own K n m x ζm q d g tid l ⊢ pctx_own K n m x ζm q d' g' tid l.
   Proof.
-    intros ??. induction K in x, q, l |- *; simpl; [done| |].
+    induction K in m, x, q, d, d', l |- *; intros ??; simpl; [done| | |].
     - iIntros "[A B]". iSplitL "A"; [by iApply IHK|].
       by iApply (ltype_own_owned_depth_mono with "B").
     - iIntros "[A B]". iSplitL "A"; [by iApply (ltype_own_owned_depth_mono with "A")|].
       by iApply IHK.
+    - iIntros "($ & % & $ & A)". iSplit; [iPureIntro; lia|]. iApply (IHK with "A"); lia.
   Qed.
 
-  (** The location of the hole is part of the location of the place. *)
-  Lemma pctx_loc_guard {𝔅 𝔄} (K: pctx 𝔅 𝔄) n l (G: iProp Σ) E k :
-    (G &&{E; k}&&> l #↦∗_) -∗ (G &&{E; k}&&> pctx_loc K n l #↦∗_).
+  (** The depth of the place is at least the number of owned pointers above the hole. *)
+  Lemma pctx_own_mode_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid l :
+    pctx_own K n m x ζm q d g tid l -∗ ⌜pctx_mode K 0 ≤ d⌝.
   Proof.
-    induction K in l |- *; simpl; [by iIntros "$"|..]; iIntros "G"; iApply IHK.
+    induction K in m, x, q, d, l |- *; simpl; [iIntros "_"; iPureIntro; lia| | |].
+    - iIntros "[A _]". by iApply IHK.
+    - iIntros "[_ A]". by iApply IHK.
+    - iIntros "(_ & %Hd & _ & A)". iDestruct (IHK with "A") as %?.
+      rewrite pctx_mode_add. iPureIntro. lia.
+  Qed.
+
+  (** The location of the hole is part of the location of the place (below an owned
+      pointer, its cells are trivially owned). *)
+  Lemma pctx_loc_guard {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x l (G: iProp Σ) E k :
+    (G &&{E; k}&&> l #↦∗_) -∗ (G &&{E; k}&&> pctx_loc K n x l #↦∗_).
+  Proof.
+    induction K in x, l |- *; simpl; [by iIntros "$"|..]; iIntros "G"; iApply IHK.
     - rewrite (heap_cloc_mapsto_emp_vec_app l (pctx_size K n)).
       iApply (guards_weaken_rhs_sep_l with "G").
     - rewrite (heap_cloc_mapsto_emp_vec_app l (lty_size lt1)).
       iApply (guards_weaken_rhs_sep_r with "G").
+    - rewrite -heap_cloc_mapsto_empty. iApply guards_true.
+  Qed.
+
+  (** ** The address of the hole
+
+      [pctx_expr K e] computes the address of the hole, from the address [e] of the
+      place: field offsets, and a load per owned pointer. *)
+  Fixpoint pctx_expr {𝔅 𝔄} (K: pctx 𝔅 𝔄) (e: expr) : expr :=
+    match K with
+    | PHole => e
+    | PFst K _ => pctx_expr K e
+    | PSnd lt1 K => pctx_expr K (e +ₗ #(lty_size lt1))%E
+    | POwn _ K => pctx_expr K (!e)%E
+    end.
+
+  Lemma pctx_expr_closed {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : Closed [] e → Closed [] (pctx_expr K e).
+  Proof. induction K in e |- *; simpl; [done|auto|intros ?; apply IHK; apply _..]. Qed.
+
+  Lemma wp_pctx_expr {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: cloc) (e: expr) (G R: iProp Σ) k :
+    (G &&{↑NllftG; k}&&> l #↦∗_) -∗ £(3 * k * pctx_mode K 0) -∗
+    WP e {{ v, ⌜v = #(l.1)⌝ ∗ R ∗ G }} -∗ pctx_own K n m x ζm q d g tid l -∗
+    WP pctx_expr K e {{ v, ⌜v = #(pctx_loc K n x l).1⌝ ∗ R ∗ G ∗ pctx_own K n m x ζm q d g tid l }}.
+  Proof.
+    induction K in m, x, q, d, l, e, R |- *; simpl.
+    - iIntros "_ _ WP $". iApply (wp_wand with "WP"). iIntros (v) "($ & $ & $)".
+    - iIntros "#Gl £ WP [Own Sib]". iApply (wp_wand with "[- Sib]").
+      { iApply (IHK m x.1 (false :: q) d (cloc_take l (pctx_size K n)) with "[] £ WP Own").
+        rewrite (heap_cloc_mapsto_emp_vec_app l (pctx_size K n)).
+        iApply (guards_weaken_rhs_sep_l with "Gl"). }
+      iIntros (v) "($ & $ & $ & $)". iFrame.
+    - iIntros "#Gl £ WP [Sib Own]". iApply (wp_wand with "[- Sib]").
+      { iApply (IHK m x.2 (true :: q) d (cloc_skip l (lty_size lt1)) _ R with "[] £ [WP] Own").
+        - rewrite (heap_cloc_mapsto_emp_vec_app l (lty_size lt1)).
+          iApply (guards_weaken_rhs_sep_r with "Gl").
+        - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
+          iFrame. done. }
+      iIntros (v) "($ & $ & $ & $)". iFrame.
+    - rewrite pctx_mode_add. iIntros "#Gl £ WP (Pt & %Hd & Fr & Own)".
+      iDestruct (lc_weaken (3 * k + 3 * k * pctx_mode K 0) with "£") as "[£1 £]"; [lia|].
+      iApply (wp_wand with "[- Fr]").
+      { iApply (IHK (m + 1) x.2 (false :: q) (pred d) (x.1, repeat [] (pctx_size K n)) _
+          (R ∗ l #↦!∗ [FVal (LitV x.1)])%I with "[] £ [WP Pt £1] Own").
+        - rewrite -heap_cloc_mapsto_empty. iApply guards_true.
+        - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
+          iApply (wp_read_na_guarded_cells_singleton _ l.1 l.2 (G ∗ l #↦!∗ [FVal (LitV x.1)])
+            #(x.1) k with "[G Pt £1]"); [solve_ndisj| |].
+          + iFrame "G Pt £1". iApply guard_cloc_combine.
+            * by iApply guards_weaken_lhs_sep_l.
+            * iApply (lguards_weaken_later _ _ _ 0); [lia|iApply guards_weaken_sep_r].
+          + iIntros "!> [G Pt]". iFrame. done. }
+      iIntros (v) "($ & [$ $] & $ & $)". by iFrame.
   Qed.
 
   (** ** Patterns *)
@@ -365,7 +508,7 @@ Section pctx.
   Lemma pat_blk_lfts_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) p p' α :
     α ∈ pat_blk_lfts (pctx_pat K p') → α ∈ pat_blk_lfts p' ∨ α ∈ pat_blk_lfts (pctx_pat K p).
   Proof.
-    induction K; simpl; [by left|..]; rewrite !elem_of_app.
+    induction K; simpl; [by left| | |done]; rewrite !elem_of_app.
     - intros [Hα|Hα]; [destruct (IHK Hα); [by left|by right; left]|by right; right].
     - intros [Hα|Hα]; [by right; left|destruct (IHK Hα); [by left|by right; right]].
   Qed.
@@ -382,7 +525,7 @@ Section pctx.
   Lemma pat_ok_plug_hole κ {𝔅 𝔄} (K: pctx 𝔅 𝔄) p :
     pat_ok κ (pctx_pat K p) -∗ pat_ok κ p.
   Proof.
-    rewrite /pat_ok. induction K; simpl; [by iIntros "$"|..]; rewrite big_sepL_app.
+    rewrite /pat_ok. induction K; simpl; [by iIntros "$"| | |done]; rewrite big_sepL_app.
     - iIntros "[A _]". by iApply IHK.
     - iIntros "[_ A]". by iApply IHK.
   Qed.
@@ -403,7 +546,7 @@ Section pctx.
   Lemma lty_lft_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
     ⊢ ty_lft (lty_fold (pctx_plug K lt)) ⊑ ty_lft (lty_fold lt).
   Proof.
-    induction K in lt |- *; simpl; [iApply guards_refl|..];
+    induction K in lt |- *; simpl; [iApply guards_refl| | |iApply IHK];
       (iApply llftl_incl_trans; [|iApply IHK]); rewrite lft_intersect_list_app;
       [iApply llftl_intersect_incl_l|iApply llftl_intersect_incl_r].
   Qed.
@@ -420,6 +563,7 @@ Section pctx.
     | PHole => True
     | PFst K lt2 => pctx_simple K ∧ lty_simple lt2
     | PSnd lt1 K => lty_simple lt1 ∧ pctx_simple K
+    | POwn _ K => pctx_simple K
     end.
 
   Lemma lty_simple_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
