@@ -16,8 +16,12 @@
     referent has place type [lt];
   - [OwnPtrLty n lt]: the place contains an owned pointer ([own_ptr n]) whose
     pointee has place type [lt];
-  - [ProdLty lt1 lt2]: a pair of places.
-  [lty_core] replaces [Blocked ty κ] by [OfTy ty] (pointwise otherwise), as
+  - [ProdLty lt1 lt2]: a pair of places;
+  - [ShrBlocked ty κ]: the place is shared until [κ] ends (its value does not change
+    and it can still be read), afterwards it contains a value of type [ty] again
+    ([shr_blocked_owned]; RefinedRust's [ShrBlockedLtype]).
+  [lty_core] replaces [Blocked ty κ] and [ShrBlocked ty κ] by [OfTy ty] (pointwise
+  otherwise), as
   RefinedRust's [lty_core]; [lty_fold] is the type of the place once folded
   ([OfTy]/[Blocked] leaves are their type, the constructors are [&uniq],
   [own_ptr] and [prod_ty]).

@@ -332,6 +332,7 @@ src/lambda_verus/typing/examples/get_first.v
 src/lambda_verus/typing/examples/place_box.v
 src/lambda_verus/typing/examples/nested_uniq.v
 src/lambda_verus/typing/examples/place_own.v
+src/lambda_verus/typing/examples/place_shr.v
 
 
 -arg -w -arg -argument-scope-delimiter
