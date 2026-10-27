@@ -398,6 +398,71 @@ Section typing.
     iExists y. iSplit; [done|]. rewrite /ofty_owned Hphys. by iFrame "Pt1 Gho1".
   Qed.
 
+  (** Moving a value of size 1 out of the leaf at the hole of [K]: the leaf becomes
+      uninitialized (its type is [↯ 1], its value is the old contents). *)
+  Lemma type_move_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+    ty_size ty = 1%nat → StackOkay ty →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (!(pctx_expr K p))
+      (λ v, +[v ◁ ty; p ◁ₗown{n} pctx_plug (pctx_retype K (uninitₛ 1)) (OfTy (↯ 1))])
+      (λ post '-[x], λ mask π, ∀ junk: ~~ (uninitₛ 1),
+        post -[pctx_get K x.1.2; ((x.1.1, pctx_reset K x.1.2 junk), x.2)] mask π).
+  Proof.
+    iIntros (Hsz Hok tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
+    destruct x as [[l x₀] ζm].
+    rewrite /tctx_elt_interp.
+    iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
+    have ?: Closed [] (pctx_expr K p).
+    { apply pctx_expr_closed. by eapply eval_path_closed. }
+    rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
+    iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
+    iDestruct "L1" as (? ->) "[Pt1 Gho1]".
+    iDestruct (pctx_own_mode_le with "Rest") as %Hk.
+    set y := pctx_get K x₀.
+    set lr := (l, repeat [] (lty_size (pctx_plug K (OfTy ty)))).
+    set lK := pctx_loc K (ty_size ty) x₀ lr.
+    set dh := pctx_depth K d.
+    have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
+    (* The address of the hole. *)
+    iMod lc_zero as "£0".
+    wp_bind (pctx_expr K p).
+    iApply (wp_wand with "[Rest £0]").
+    { iApply (wp_pctx_expr K (ty_size ty) 1 x₀ ζm [] d g tid lr p True True 0
+        with "[] £0 [] Rest").
+      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+      - iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
+    iIntros (w) "(-> & _ & _ & Rest)".
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
+    iIntros "£ #⧖S". iApply wp_fupd.
+    iDestruct (lc_weaken (pctx_mode K 1) with "£") as "£";
+      [rewrite /advance_credits pctx_mode_add; nia|].
+    iMod (lc_fupd_elim_laterN with "£ Gho1") as "Gho1".
+    have Hlen: length (ty_phys ty y tid) = 1%nat by rewrite ty_size_eq.
+    have Hconc := Hok y tid.
+    destruct (ty_phys ty y tid) as [|fv [|]] eqn:Hphys; [done| |done].
+    destruct fv as [w|]; [|by destruct Hconc].
+    iMod lc_zero as "£0".
+    iApply (wp_read_na_guarded_cells_singleton _ lK.1 lK.2 (lK #↦!∗ [FVal w]) w 0
+      with "[Pt1 £0]"); [solve_ndisj| |].
+    { iFrame "Pt1 £0". iApply guard_cloc_combine; [iApply (oplace_loc_guard K (OfTy ty))|].
+      iApply guards_refl. }
+    iIntros "!> Pt1". iModIntro.
+    iExists -[y; ((l, pctx_reset (𝔅':=uninitₛ 1) K x₀ [# w]), ζm)]. iFrame "L I".
+    iSplitR "Obs"; last first.
+    { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
+    iSplitR "Pt1 Rest ⧗p Fr".
+    { iExists w, D. iSplit; [by rewrite eval_path_of_val|]. iFrame "⧖".
+      iSplit; [|done].
+      iDestruct (ty_gho_own_depth_mono _ dh g D D with "Gho1") as "[$ _]"; lia. }
+    iSplit; [|done]. iExists #l. iSplit; [done|]. iExists D, d, g. iFrame "⧖".
+    rewrite (lty_nblk_plug_retype K (OfTy ty) (OfTy (↯ 1))) //.
+    rewrite (lty_size_plug_retype K (OfTy ty) (OfTy (↯ 1))) /=; [|done].
+    iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
+    rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset
+      pctx_loc_reset pctx_mode_retype pctx_depth_retype /=.
+    iEval (rewrite Hsz) in "Rest". iEval (rewrite /lK Hsz) in "Pt1". iFrame "Rest".
+    iExists [# w]. iSplit; [done|]. rewrite /ofty_owned /=. by iFrame "Pt1".
+  Qed.
+
   (** Writing a value of size 1 into the leaf at the hole of [K] (initialized, or
       uninitialized after a move): the old value is resolved, and the type of the leaf
       becomes the type of the new value. *)

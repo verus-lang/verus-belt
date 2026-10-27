@@ -111,4 +111,132 @@ Section place_own.
     rewrite Hfin /oplace_blk_fin /= (uniq_prvar_app_irrel b 5%Z ζi π) Hres. apply Hspec.
   Qed.
 
+  (*
+  Borrowing, moving out of and re-assigning a field of a local box:
+
+  ```
+  fn box_pair(mut b: Box<(Box<i32>, i32)>) -> Box<(Box<i32>, i32)> {
+      { let r = &mut b.0; **r = 7; }   // the borrow ends here
+      let c = b.0;                     // move out: b.0 is uninitialized
+      b.0 = c;                         // re-assign
+      b
+  }
+  ```
+
+  with the specification `ensures *result == (Box(7), old(b).1)` (the inner box keeps its
+  address). The pointee of `b` is an owned place; field 0 is borrowed at a fresh
+  lifetime and unblocked after it has ended, then moved out
+  ([type_move_oplace_instr]), which leaves an uninitialized leaf [OfTy (↯ 1)], and
+  re-assigned ([type_write_oplace_instr]); the place is folded back into
+  `Box<(Box<i32>, i32)>`.
+  *)
+
+  Definition box_pair : val :=
+    fn: ["x"] :=
+      let: "b" := !"x" in
+      delete [ #1; "x"];;
+      Newlft;;
+      let: "r" := ReBor;; "b" in          (* &mut ( *b).0 *)
+      let: "r'" := !"r" in                 (* &mut **( *b).0 *)
+      let: "seven" := #7 in
+      "r'" <- "seven";;
+      Skip;;                               (* resolve r' *)
+      Endlft;;                             (* unblock ( *b).0 *)
+      let: "c" := !"b" in                  (* move ( *b).0 out *)
+      "b" <- "c";;                         (* re-assign ( *b).0 *)
+      let: "ret" := new [ #1] in
+      "ret" <- "b";;
+      return: ["ret"].
+
+  Notation box_pairₛ := (at_locₛ (at_locₛ Zₛ * Zₛ))%ST.
+
+  Definition box_pair_spec : fn_spec [box_pairₛ] box_pairₛ () :=
+    λ _ post '-[(_, (l, ((lb, _), w)))], λ mask π,
+      ∀ (lr: loc), post (lr, (l, ((lb, 7%Z), w))) mask π.
+
+  Lemma box_pair_type :
+    typed_val box_pair ((fn(∅; box (box int * int)) → box (box int * int)) box_pair_spec)
+      (box_pair, ()).
+  Proof.
+    unfold box_pair. unlock.
+    opose proof (@type_fn _ _ _ [box_pairₛ] box_pairₛ () ()
+      (λ _: (), FP ∅ +[box (box int * int)] (box (box int * int)) AtomicClosed)
+      box_pair_spec _ [BNamed "x"] _ _ _) as H.
+    unlock in H. apply H. clear H.
+    intros c ϝ k wl. destruct wl as [vx []]. simpl_subst.
+    iApply (typed_body_impl with "[]"); last first. {
+      iApply (type_let with "[]").
+      { eapply (type_deref_instr (own_ptr 1 (box (box int * int))) (box (box int * int))).
+        - apply own_stack_okay.
+        - done.
+        - apply (read_own_move (box (box int * int))). }
+      { apply tctx_extract_elt_here_exact. }
+      { reflexivity. }
+      iIntros (vb). simpl_subst.
+      iApply type_delete. { solve_typing. } { done. } { done. }
+      (* the pointee of b as an owned place, unfolded *)
+      iApply typed_body_tctx_incl.
+      { eapply tctx_incl_trans; [apply tctx_own_to_oplace|].
+        apply (tctx_unfold_oplace_prod _ _ _ _ PHole (box int) int). }
+      iApply (type_newlft []). iIntros (β).
+      (* &mut ( *b).0 *)
+      iApply (type_let with "[]").
+      { eapply (type_borrow_oplace_instr _ _ _ vb _ β (PFst PHole (OfTy int)) (box int)).
+        solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vr). simpl_subst.
+      (* **r = 7, resolve *)
+      iApply (type_let with "[]").
+      { apply (type_deref_uniq_own_instr β vr 1 int). solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vr'). simpl_subst.
+      iApply type_int. iIntros (v7). simpl_subst.
+      iApply type_assign. { solve_typing. } { apply write_uniq. solve_typing. }
+      { apply (resolve'_just _ _ _ (const True)). apply resolve_just. }
+      iApply type_resolve. { solve_typing. } { apply uniq_bor.uniq_resolve. solve_typing. }
+      (* end β: unblock ( *b).0 *)
+      iApply (type_endlft _ _ _ _ β).
+      { solve_typing. }
+      { apply unblock_tctx_cons_just_hasty.
+        apply (unblock_tctx_oplace _ _ _ (PFst PHole (OfTy int)) (box int)); [solve_typing|].
+        apply unblock_tctx_nil. }
+      (* move ( *b).0 out *)
+      iApply (type_let with "[]").
+      { apply (type_move_oplace_instr _ _ _ vb 2 (PFst PHole (OfTy int)) (box int));
+          [done|apply own_stack_okay]. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vc). simpl_subst.
+      (* re-assign ( *b).0 *)
+      iApply type_seq.
+      { apply (type_write_oplace_instr _ _ _ vb vc 2 (PFst PHole (OfTy int)) (↯ 1) (box int)
+          (const (const True))); [done|done|apply uninit_resolve]. }
+      { solve_typing. } { reflexivity. }
+      (* fold back, return b *)
+      iApply typed_body_tctx_incl.
+      { eapply (tctx_incl_frame_r +[_] +[_]).
+        eapply tctx_incl_trans; [apply (tctx_fold_oplace_prod _ _ _ _ PHole (box int) int)|].
+        apply tctx_oplace_to_own. }
+      iApply (type_new 1). { lia. } iIntros (vret). simpl_subst.
+      iApply type_assign. { solve_typing. } { by apply write_own. }
+      { apply (resolve'_just _ _ _ (const True)). apply resolve_just. }
+      iApply type_jump.
+      { rewrite elem_of_list_singleton. reflexivity. }
+      { solve_typing. }
+      { solve_typing. }
+      { reflexivity. }
+    }
+    intros post [[lx [l [[lb v0] w]]] []] mask π Hspec. rewrite /trans_upper /trans_tail /=.
+    intros _ _ [[[[[l1 [lb1 v1]] ζi] d1] g1] idx1] Hc1
+      [[[[[l2 w2] ξ2] d2] g2] idx2] Hc2 Hf2 Hl2 Hl2' [[[[[l3 w3] ξ3] d3] g3] idx3] Hupd Hres
+      [? [[[l' [[lb' v'] w']] ζm'] []]] (_ & -> & Hw' & _ & Hfin & _) _ _ l0 _ z ->.
+    destruct Hupd as (_ & -> & ->). simpl in *. injection Hc1 as -> ->. subst w2.
+    injection Hw' as ->.
+    rewrite !uniq_bor_future_eq in Hf2 Hl2'.
+    rewrite /oplace_blk_fin /= in Hfin.
+    have Hv: v' = 7%Z.
+    { rewrite (_: v' = (lb', v').2) // Hfin -Hf2 (uniq_prvar_app_irrel (𝔄:=Zₛ) v0 7%Z ξ2 π). exact Hres. }
+    have Hlb: lb' = lb.
+    { rewrite (_: lb' = (lb', v').1) // Hfin -Hl2'. done. }
+    subst v' lb'. apply Hspec.
+  Qed.
 End place_own.
