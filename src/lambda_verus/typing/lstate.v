@@ -115,7 +115,8 @@ Proof. destruct r; [by rewrite prfn_den_inl|done]. Qed.
 (** * Reservations
 
   [prfn_rsv r ζl]: the denotations of the prophetic leaves ([PlaceProph]) of [r]
-  depend only on [ζl]. A compound place behind a unique borrow holds a reservation
+  depend only on [ζl]; so do the final values of the nested unique borrows with a
+  structured refinement (which are part of the denotation of [r]). A compound place behind a unique borrow holds a reservation
   of the borrow's prophecy variable for such a [ζl] (see [cpd_own] in
   [typing/ltype.v]), so that it can be resolved while some of its leaves are
   blocked. *)
@@ -127,7 +128,8 @@ Fixpoint prfn_rsv {𝔄} : prfn 𝔄 → list proph_var → Prop :=
   match 𝔄 return prfn 𝔄 → list proph_var → Prop with
   | uniq_borₛ 𝔅 => λ r ζl, match r with
       | inl lr => place_rfn_rsv lr ζl
-      | inr (_, r', _) => prfn_rsv r' ζl
+      | inr (_, r', ξi) => prfn_rsv r' ζl ∧
+          (λ π, (π (uniq_prvar (prfn_wit r') ξi)).1) ./ ζl
       end
   | at_locₛ 𝔅 => λ r ζl, match r with
       | inl lr => place_rfn_rsv lr ζl
@@ -159,7 +161,8 @@ Proof.
   induction 𝔄; destruct r as [lr|r]; simpl; try apply Hl; try (destruct r; fail).
   - destruct r as [r1 r2]. move=> [??]. split; [by apply IH𝔄1|by apply IH𝔄2].
   - destruct r as [l' r']. apply IH𝔄.
-  - destruct r as [[l' r'] ξi]. apply IH𝔄.
+  - destruct r as [[l' r'] ξi]. move=> [??]. split; [by apply IH𝔄|].
+    by eapply proph_dep_weaken.
 Qed.
 
 Lemma prfn_rsv_app_l {𝔄} (r: prfn 𝔄) ζl ζl' : prfn_rsv r ζl → prfn_rsv r (ζl ++ ζl').
@@ -194,13 +197,16 @@ Definition pat_own (p: lpat) : lpat := match p with PatOwn p' => p' | _ => PatLe
 Definition pat_l (p: lpat) : lpat := match p with PatProd p1 _ => p1 | _ => PatLeaf end.
 Definition pat_r (p: lpat) : lpat := match p with PatProd _ p2 => p2 | _ => PatLeaf end.
 
-(** The blocked lifetimes of a pattern that have to be dead to get back to
-    the core in [Owned] mode. Blocked places behind a nested unique borrow
-    (also the borrow's referent itself) are not included: those belong to
-    the nested borrow. *)
+(** The blocked lifetimes of a pattern. Blocked places behind a nested unique
+    borrow are included: this is the _nested membership condition_ (the pinned body
+    of a borrow only admits states whose blocked lifetimes, also behind nested
+    unique borrows, are included in its pattern lifetime, so that a nested borrow
+    can be folded back once the outer one has ended; see [uniq_node_unblock_fold]
+    in [typing/ltype.v]). *)
 Fixpoint pat_blk_lfts (p: lpat) : list lft :=
   match p with
-  | PatLeaf | PatUniq _ => []
+  | PatLeaf => []
+  | PatUniq p' => pat_blk_lfts p'
   | PatBlocked α => [α]
   | PatOwn p' => pat_blk_lfts p'
   | PatProd p1 p2 => pat_blk_lfts p1 ++ pat_blk_lfts p2

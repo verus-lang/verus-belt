@@ -30,7 +30,7 @@
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype.
-From lrust.typing Require Import uniq_util freeable_util.
+From lrust.typing Require Import uniq_util uniq_bor freeable_util.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -72,8 +72,10 @@ Section lty_rfn.
     match lt in lty 𝔄 return ~~𝔄 → blk_map → lpath → prfn 𝔄 with
     | OfTy _ => λ x _ _, inl (PlaceIn x)
     | Blocked _ _ => λ x ζm q, inl (PlaceGhost x (blk_lookup ζm q))
-    (* Unfolded borrows are not supported yet. *)
-    | UniqLty _ _ => λ x _ _, inl (PlaceIn x)
+    (* A nested unique borrow: the referent location, the refinement of the
+       referent (below the path [false :: q]) and the prophecy variable id. *)
+    | UniqLty lt _ => λ x ζm q,
+        inr (uniq_bor_loc x, lty_rfn lt (uniq_bor_current x) ζm (false :: q), uniq_bor_ξi x)
     | OwnPtrLty _ lt => λ x ζm q, inr (x.1, lty_rfn lt x.2 ζm (false :: q))
     | ProdLty lt1 lt2 => λ x ζm q,
         inr (lty_rfn lt1 x.1 ζm (false :: q), lty_rfn lt2 x.2 ζm (true :: q))
@@ -85,8 +87,11 @@ Section lty_rfn.
     lty_rfn lt x ζm q = lty_rfn lt x ζm' q.
   Proof.
     induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2] in x, q |- *;
-      intros Heq; simpl; [done| |done| |].
+      intros Heq; simpl; [done| | | |].
     - by rewrite (Heq []).
+    - rewrite (IH _ (false :: q)); [done|].
+      intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
+      by rewrite -app_assoc.
     - rewrite (IH _ (false :: q)); [done|].
       intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
       by rewrite -app_assoc.
@@ -101,7 +106,7 @@ Section lty_rfn.
   Fixpoint lty_nblk {𝔄} (lt: lty 𝔄) : nat :=
     match lt with
     | Blocked _ _ => 1
-    | OwnPtrLty _ lt => lty_nblk lt
+    | UniqLty lt _ | OwnPtrLty _ lt => lty_nblk lt
     | ProdLty lt1 lt2 => lty_nblk lt1 + lty_nblk lt2
     | _ => 0
     end.
@@ -110,7 +115,7 @@ Section lty_rfn.
   Fixpoint lty_blk_all {𝔄} (lt: lty 𝔄) : Prop :=
     match lt with
     | Blocked _ _ => True
-    | OwnPtrLty _ lt => lty_blk_all lt
+    | UniqLty lt _ | OwnPtrLty _ lt => lty_blk_all lt
     | ProdLty lt1 lt2 => lty_blk_all lt1 ∧ lty_blk_all lt2
     | _ => False
     end.
@@ -123,6 +128,8 @@ Section lty_rfn.
     induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2] in x, q |- *;
       intros Hb Hr; try done.
     - simpl in *. rewrite prfn_den_inl. by rewrite prfn_rsv_inl in Hr.
+    - destruct Hr as [Hr Hξ]. apply (proph_dep_weaken _ (ζl ++ ζl)); [set_solver|].
+      apply (proph_dep_constr2 pair); [by apply IH|exact Hξ].
     - apply (proph_dep_constr (pair x.1)). by apply IH.
     - destruct Hb as [Hb1 Hb2]. destruct Hr as [Hr1 Hr2].
       apply (proph_dep_weaken _ (ζl ++ ζl)); [set_solver|].
@@ -342,6 +349,20 @@ Section pctx.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
   Qed.
 
+  (** More generally, adding an entry for a path below the hole. *)
+  Lemma pctx_rfn_blk_cons_below {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm ζi q s r :
+    pctx_rfn K x ((s ++ pctx_path K q, ζi) :: ζm) q r = pctx_rfn K x ζm q r.
+  Proof.
+    induction K in x, q, r |- *; simpl; [done| | |].
+    - rewrite IHK.
+      f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
+      rewrite decide_False; [done|]. rewrite pctx_path_app app_assoc. by apply lpath_app_cons_ne.
+    - rewrite IHK.
+      f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
+      rewrite decide_False; [done|]. rewrite pctx_path_app app_assoc. by apply lpath_app_cons_ne.
+    - by rewrite IHK.
+  Qed.
+
   Lemma pctx_rfn_rsv {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm q (r r': prfn 𝔅) ζl ζl' :
     (∀ ζ, ζ ∈ ζl → ζ ∈ ζl') →
     prfn_rsv (pctx_rfn K x ζm q r) ζl → prfn_rsv r' ζl' → prfn_rsv (pctx_rfn K x ζm q r') ζl'.
@@ -415,6 +436,20 @@ Section pctx.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
+  Qed.
+
+  Lemma pctx_own_blk_cons_below {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm ζi q s d g tid l :
+    pctx_own K n m x ((s ++ pctx_path K q, ζi) :: ζm) q d g tid l =
+      pctx_own K n m x ζm q d g tid l.
+  Proof.
+    induction K in m, x, q, d, l |- *; simpl; [done| | |].
+    - rewrite IHK.
+      f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
+      rewrite decide_False; [done|]. rewrite pctx_path_app app_assoc. by apply lpath_app_cons_ne.
+    - rewrite IHK.
+      f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
+      rewrite decide_False; [done|]. rewrite pctx_path_app app_assoc. by apply lpath_app_cons_ne.
+    - by rewrite IHK.
   Qed.
 
   Lemma pctx_own_depth_mono {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g d' g' tid l :
