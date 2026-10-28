@@ -403,3 +403,24 @@ Section unblock.
     split; [done|]. split; [done|]. split; [done|]. split; [|done]. symmetry. exact Heq.
   Qed.
 End unblock.
+
+(** * Dropping a resolved place *)
+
+Section drop.
+  Context `{!typeG Σ}.
+
+  (** A resolved place (or any place) is dropped without further resolution: the boxes of
+      its owned part are freed ([drop_boxes]), the resolved and shared leaves are forgotten
+      (the views of the resolved unique borrows go with them, their referents stay with
+      their lenders), then the memory of the place is freed. *)
+  Lemma type_drop_oplace_res_instr {𝔄} E L I p n (nz: Z) (lt: lty 𝔄) :
+    lty_freeb lt = true → n = lty_size lt → nz = Z.of_nat n →
+    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt p;; new_delete.delete [ #nz; p ])%E
+      (λ _, +[]) (λ post '-[x], post -[]).
+  Proof.
+    intros Hf Hn Hnz. eapply typed_instr_tr_impl;
+      [|apply (type_drop_oplace_deep_instr _ _ _ _ _ _ lt (λ _ _ _ _, True)); [done..|]].
+    - intros post [x []] mask π Hp _. done.
+    - apply (lty_rslv_of _ _ _ (λ _ _, True)), lty_resolve_just.
+  Qed.
+End drop.
