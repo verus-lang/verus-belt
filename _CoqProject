@@ -358,6 +358,7 @@ src/lambda_verus/typing/examples/place_pshr.v
 src/lambda_verus/typing/examples/place_deep.v
 src/lambda_verus/typing/examples/place_deep_sum.v
 src/lambda_verus/typing/examples/place_res_gen.v
+src/lambda_verus/typing/examples/place_res.v
 
 
 -arg -w -arg -argument-scope-delimiter
