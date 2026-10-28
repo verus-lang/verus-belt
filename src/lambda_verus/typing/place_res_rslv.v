@@ -107,6 +107,17 @@ Section lty_res.
     by iApply proph_obs_true.
   Qed.
 
+  Lemma lty_res_impl {𝔄} E L (lt lt': lty 𝔄) k Φ Φ' :
+    lty_res E L lt lt' k Φ → (∀ x ζm q π, Φ x ζm q π → Φ' x ζm q π) →
+    lty_res E L lt lt' k Φ'.
+  Proof.
+    intros (Hs & Hn & Rslv) Himp. split; [done|]. split; [done|].
+    iIntros (G m x ζm q d g D tid l ???) "LFT PROPH UNIQ TIME E L G ⧖ Own".
+    iDestruct (Rslv with "LFT PROPH UNIQ TIME E L G ⧖ Own") as "T"; [done..|].
+    iApply (ctask_mono with "[] T"). iIntros "(Obs & $ & $) !>".
+    iApply (proph_obs_impl with "Obs"). apply Himp.
+  Qed.
+
   (** A leaf is resolved by [resolve_keep] of its type. *)
   Lemma lty_res_ofty {𝔄} E L (ty: type 𝔄) Φ :
     resolve_keep E L ty Φ → lty_res E L (OfTy ty) (OfRes ty) 1 (λ x _ _, Φ x).
