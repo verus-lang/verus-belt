@@ -242,12 +242,13 @@ Section typing.
     have Hrsv' := λ y q ζl, Hrsv y ζm q ζl. have Hown' := λ y q, Hown y ζm q.
     iAssert (|={⊤}=> ltype_own (Uniq κ ξi) (pctx_plug K lt') (lty_rfn (pctx_plug K lt') x₀ ζm [])
       d' g' tid l ∗ G)%I with "[Own G]" as ">[Own G]".
-    { destruct K as [|? ? ? K lt2|? ? ? lt1 K|? ? n K|? ? tyl i w K|? ? κ' K].
+    { destruct K as [|? ? ? K lt2|? ? ? lt1 K|? ? n K|? ? tyl i w K|? ? κ' K|? ? κ' K].
       - by iApply (Hroot with "LFT PROPH UNIQ Gκ G Own").
       - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
       - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
       - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
       - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
+      - pctx_no_uniq_contra.
       - pctx_no_uniq_contra. }
     iModIntro. iExists -[((l, x₀, ξi, d', g', idx), ζm)]. iFrame "G Obs".
     iSplit; [|done]. iExists #(l.1). iSplit; [done|]. iExists d.

@@ -46,14 +46,14 @@ Section puniq.
 
   Lemma pctx_uend_ulfts {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ : pctx_uend K = Some κ → κ ∈ pctx_ulfts K.
   Proof.
-    induction K; simpl; try done; [auto..|].
+    induction K; simpl; try done.
     destruct K; [intros [= ->]; set_solver|..]; intros; apply elem_of_cons; right; by apply IHK.
   Qed.
 
   Lemma pctx_hmode_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) m : pctx_hmode K m ≤ m + pctx_dlev K.
   Proof.
-    induction K in m |- *; simpl; [lia|apply IHK|apply IHK| |apply IHK|];
-      [specialize (IHK (m + 1))|specialize (IHK 0)]; lia.
+    induction K in m |- *; simpl; [lia|apply IHK|apply IHK| |apply IHK| |];
+      [specialize (IHK (m + 1))|specialize (IHK 0)|specialize (IHK (m + 1))]; lia.
   Qed.
 
   Lemma typed_instr_tr_impl {𝔄l 𝔅l} E L I (T: tctx 𝔄l) e (T': val → tctx 𝔅l) tr tr' :
@@ -92,7 +92,7 @@ Section puniq.
           ltype_own_cp false lt' (pctx_kind K (Owned 1) x) (lty_pat lt')
             (lty_rfn lt' y' ζm (pctx_path K [])) dh gh tid lh ∗ G).
 
-  Lemma type_change_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅) f :
+  Lemma type_change_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (lt lt': lty 𝔅) f :
     lctx_lft_alive E L (pctx_ulft K lt ⊓ ty_lft (lty_fold lt)) →
     lty_fold lt' = lty_fold lt → lty_size lt' = lty_size lt → lty_nrc lt' = lty_nrc lt →
     pat_blk_lfts (lty_pat lt') = [] → oplace_conv K lt lt' f →
@@ -179,7 +179,7 @@ Section puniq.
     - rewrite (pctx_kind_owned K) //. iModIntro. iFrame "G". by iApply prod_ofty_unfold_own.
   Qed.
 
-  Lemma type_unfold_oplace_prod_instr {𝔅1 𝔅2 𝔄} E L I p n (K: pctx (𝔅1 * 𝔅2) 𝔄)
+  Lemma type_unfold_oplace_prod_instr {𝔅1 𝔅2 𝔄} E L I p n (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoShr K}
       (ty1: type 𝔅1) (ty2: type 𝔅2) :
     lctx_lft_alive E L (pctx_ulft K (OfTy (ty1 * ty2)) ⊓ ty_lft (prod_ty ty1 ty2)) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (ty1 * ty2))] (Seq Skip Skip)
@@ -192,7 +192,7 @@ Section puniq.
     simpl in *. subst. by rewrite pctx_set_get.
   Qed.
 
-  Lemma type_fold_oplace_prod_instr {𝔅1 𝔅2 𝔄} E L I p n (K: pctx (𝔅1 * 𝔅2) 𝔄)
+  Lemma type_fold_oplace_prod_instr {𝔅1 𝔅2 𝔄} E L I p n (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoShr K}
       (ty1: type 𝔅1) (ty2: type 𝔅2) :
     lctx_lft_alive E L (pctx_ulft K (ProdLty (OfTy ty1) (OfTy ty2)) ⊓ ty_lft (prod_ty ty1 ty2)) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ProdLty (OfTy ty1) (OfTy ty2))] (Seq Skip Skip)
@@ -404,7 +404,7 @@ Section puniq.
 
   (** Unfolding the unique borrow at the hole of [K] (at any path, also below other unique
       borrows) into a nested place. *)
-  Lemma type_unfold_oplace_uniq_instr {𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄) (ty: type 𝔅) κ' :
+  Lemma type_unfold_oplace_uniq_instr {𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄) `{!PctxNoShr K} (ty: type 𝔅) κ' :
     lctx_lft_alive E L (pctx_ulft K (OfTy (&uniq{κ'} ty)) ⊓ ty_lft (uniq_bor κ' ty)) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (&uniq{κ'} ty))] (Seq Skip Skip)
       (const +[p ◁ₗown{n} pctx_plug K (UniqLty (OfTy ty) κ')])
@@ -417,7 +417,7 @@ Section puniq.
   Qed.
 
   (** Folding it back. *)
-  Lemma type_fold_oplace_uniq_instr {𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄) (ty: type 𝔅) κ' :
+  Lemma type_fold_oplace_uniq_instr {𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄) `{!PctxNoShr K} (ty: type 𝔅) κ' :
     lctx_lft_alive E L (pctx_ulft K (UniqLty (OfTy ty) κ') ⊓ ty_lft (uniq_bor κ' ty)) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (UniqLty (OfTy ty) κ')] (Seq Skip Skip)
       (const +[p ◁ₗown{n} pctx_plug K (OfTy (&uniq{κ'} ty))])
@@ -465,7 +465,7 @@ Section puniq.
     iFrame "G". by iApply (ownptr_ofty_fold_own with "H").
   Qed.
 
-  Lemma type_unfold_oplace_own_deep_instr {𝔅 𝔄} E L I p n' (K: pctx (at_locₛ 𝔅) 𝔄) n (ty: type 𝔅) :
+  Lemma type_unfold_oplace_own_deep_instr {𝔅 𝔄} E L I p n' (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K} n (ty: type 𝔅) :
     pctx_uend K = None →
     lctx_lft_alive E L (pctx_ulft K (OfTy (own_ptr n ty)) ⊓ ty_lft (own_ptr n ty)) →
     typed_instr E L I +[p ◁ₗown{n'} pctx_plug K (OfTy (own_ptr n ty))] (Seq Skip Skip)
@@ -478,7 +478,7 @@ Section puniq.
     simpl in *. subst. by rewrite pctx_set_get.
   Qed.
 
-  Lemma type_fold_oplace_own_deep_instr {𝔅 𝔄} E L I p n' (K: pctx (at_locₛ 𝔅) 𝔄) n (ty: type 𝔅) :
+  Lemma type_fold_oplace_own_deep_instr {𝔅 𝔄} E L I p n' (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K} n (ty: type 𝔅) :
     pctx_uend K = None →
     lctx_lft_alive E L (pctx_ulft K (OwnPtrLty n (OfTy ty)) ⊓ ty_lft (own_ptr n ty)) →
     typed_instr E L I +[p ◁ₗown{n'} pctx_plug K (OwnPtrLty n (OfTy ty))] (Seq Skip Skip)
@@ -496,7 +496,8 @@ Section puniq.
     pctx_hmode K m + pctx_ne K e mm =
       pctx_dlev K + e + (match pctx_ulfts K with [] => m | _ => mm end).
   Proof.
-    induction K in m, e, mm |- *; simpl; [lia|auto|auto| |auto|].
+    induction K in m, e, mm |- *; simpl; [lia|auto|auto| |auto| |].
+    - rewrite IHK. destruct (pctx_ulfts K); lia.
     - rewrite IHK. destruct (pctx_ulfts K); lia.
     - rewrite IHK. destruct (pctx_ulfts K); lia.
   Qed.
@@ -506,7 +507,7 @@ Section puniq.
       The new borrow is at [pctx_blft K α], the intersection of the enclosing borrow
       lifetimes and [α] ([α] if there is none, as [type_borrow_oplace_instr]); its fresh
       prophecy variable extends the reservations of all enclosing borrows. *)
-  Lemma type_borrow_oplace_deep_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_borrow_oplace_deep_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (ty: type 𝔅) :
     pctx_uend K = None →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) → elctx_sat E L (ty_outlives_E ty α) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Seq (Seq Skip Skip) (pctx_expr K p))
@@ -627,11 +628,14 @@ Section puniq.
   (** * Unblocking a leaf below unique borrows *)
 
   Lemma pctx_ne_ge {𝔅 𝔄} (K: pctx 𝔅 𝔄) e mm : e ≤ pctx_ne K e mm.
-  Proof. induction K in e, mm |- *; simpl; [lia|auto..|]. specialize (IHK (e + mm + 1) 0). lia. Qed.
+  Proof.
+    induction K in e, mm |- *; simpl; [lia|auto|auto|auto|auto| |auto].
+    specialize (IHK (e + mm + 1) 0). lia.
+  Qed.
 
   Lemma pctx_ne_ulfts {𝔅 𝔄} (K: pctx 𝔅 𝔄) e mm : pctx_ne K e mm = e → pctx_ulfts K = [].
   Proof.
-    induction K in e, mm |- *; simpl; [done|eauto..|].
+    induction K in e, mm |- *; simpl; [done|eauto|eauto|eauto|eauto| |eauto].
     have := pctx_ne_ge K (e + mm + 1) 0. lia.
   Qed.
 
@@ -640,7 +644,7 @@ Section puniq.
       if there are any), the inheritance of the borrow is fired and settled, the
       borrows are closed at the new value of the leaf, at depths raised by the other
       receipts of the leaf ([lty_nrc]). *)
-  Lemma unblock_tctx_oplace_deep {𝔅 𝔄 𝔄l 𝔄l'} p n α (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma unblock_tctx_oplace_deep {𝔅 𝔄 𝔄l 𝔄l'} p n α (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (ty: type 𝔅)
       (T: tctx 𝔄l) (T': tctx 𝔄l') E L f :
     pctx_uend K = None →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty) ⊓ ty_lft ty) → unblock_tctx E L α T T' f →
@@ -740,7 +744,8 @@ Section puniq.
 
   Lemma pctx_ulft_hlft {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt b : ⊢ pctx_ulft K lt ⊓ b ⊑ pctx_hlft K b.
   Proof.
-    induction K in lt, b |- *; simpl; [iApply llftl_intersect_incl_r|iApply IHK..|].
+    induction K in lt, b |- *; simpl; [iApply llftl_intersect_incl_r|iApply IHK|iApply IHK|
+      iApply IHK|iApply IHK| |iApply IHK].
     iApply llftl_incl_trans; [|iApply IHK]. iApply llftl_incl_glb.
     - iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
       iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply pctx_ulft_incl.
@@ -765,7 +770,7 @@ Section puniq.
   Lemma pctx_ulft_fold {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
     pctx_ulfts K ≠ [] → ⊢ pctx_ulft K lt ⊑ ty_lft (lty_fold lt).
   Proof.
-    induction K in lt |- *; simpl; try done; [auto..|]. intros _.
+    induction K in lt |- *; simpl; try done; [auto|auto|auto|auto| |auto]. intros _.
     iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply lty_lft_plug.
   Qed.
 
@@ -776,7 +781,7 @@ Section puniq.
       the innermost borrow, e.g. [**x = v] for [x: &mut &mut T]), without reborrowing. The
       first step gives the credits to open the enclosing borrows; the old value is
       resolved. *)
-  Lemma type_write_oplace_deep_instr {𝔅 𝔄} E L I p pb n (K: pctx 𝔅 𝔄) (ty: type 𝔅) Φ :
+  Lemma type_write_oplace_deep_instr {𝔅 𝔄} E L I p pb n (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (ty: type 𝔅) Φ :
     ty_size ty = 1%nat → resolve E L ty Φ →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty); pb ◁ ty] (Seq (Seq Skip Skip) (pctx_expr K p <- pb))%E
@@ -944,7 +949,7 @@ Section puniq.
   Qed.
   (** Copying a value of size 1 out of the leaf at the hole of [K] (below any number of
       unique borrows, in [Owned] or [Uniq] mode). *)
-  Lemma type_read_oplace_deep_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_read_oplace_deep_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (ty: type 𝔅) :
     ty_size ty = 1%nat → Copy ty →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Seq Skip (!(pctx_expr K p)))%E
@@ -1076,7 +1081,8 @@ Section puniq.
 
   Lemma pctx_ulft_blft {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt α : ⊢ pctx_ulft K lt ⊓ α ⊑ pctx_blft K α.
   Proof.
-    induction K in lt |- *; simpl; [iApply llftl_intersect_incl_r|iApply IHK..|].
+    induction K in lt |- *; simpl; [iApply llftl_intersect_incl_r|iApply IHK|iApply IHK|
+      iApply IHK|iApply IHK| |iApply IHK].
     iApply llftl_incl_glb.
     - iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|]. iApply llftl_intersect_incl_l.
     - iApply llftl_incl_trans; [|iApply IHK]. iApply llftl_incl_glb.
@@ -1087,7 +1093,7 @@ Section puniq.
 
   Lemma pctx_hmode_uend {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ m : pctx_uend K = Some κ → pctx_hmode K m = 0%nat.
   Proof.
-    induction K in m |- *; simpl; [done|auto..|].
+    induction K in m |- *; simpl; [done|auto|auto|auto|auto| |auto].
     destruct K; [done|..]; intros; by apply IHK.
   Qed.
 
@@ -1137,7 +1143,7 @@ Section puniq.
     iApply (proph_eqz_eq with "Eqz"); [|done]. fun_ext=> π /=. by rewrite Hw.
   Qed.
   (** The reborrow of the whole referent of the innermost borrow (in [Uniq κ] mode). *)
-  Lemma type_borrow_oplace_uniq_instr {𝔅 𝔄} E L I p n α κ (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_borrow_oplace_uniq_instr {𝔅 𝔄} E L I p n α κ (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (ty: type 𝔅) :
     pctx_uend K = Some κ →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty) ⊓ α) → elctx_sat E L (ty_outlives_E ty α) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Seq (Seq Skip Skip) (pctx_expr K p))
@@ -1250,7 +1256,7 @@ Section puniq.
       enclosing borrows are opened, the restored borrow is settled
       ([uniq_restored_settle'], in the inheritance of [blocked_uniq]), and the final value
       of the reborrow is observed by sharing the contents of the restored borrow. *)
-  Lemma unblock_tctx_oplace_uniq {𝔅 𝔄 𝔄l 𝔄l'} p n α κ (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma unblock_tctx_oplace_uniq {𝔅 𝔄 𝔄l 𝔄l'} p n α κ (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (ty: type 𝔅)
       (T: tctx 𝔄l) (T': tctx 𝔄l') E L f :
     pctx_uend K = Some κ →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) → unblock_tctx E L α T T' f →
@@ -1361,7 +1367,7 @@ Section puniq.
   (** A shared borrow of the leaf at the hole of [K] (in [Owned] mode, below any number of
       unique borrows) at [pctx_blft K α] (as [type_share_oplace_instr]): the leaf becomes
       shared-blocked; its value does not change, so no reservation is extended. *)
-  Lemma type_share_oplace_deep_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_share_oplace_deep_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (ty: type 𝔅) :
     pctx_uend K = None →
     elctx_sat E L (ty_outlives_E ty α) → lctx_lft_alive E L (pctx_ulft K (OfTy ty) ⊓ α) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Share;; pctx_expr K p)
@@ -1467,7 +1473,7 @@ Section puniq.
   (** Unblocking a shared leaf below unique borrows, once [α] has ended (as
       [unblock_tctx_oplace_shr]): the value and the depths do not change; the receipt of
       the leaf (if it is below a unique borrow) pays for opening the enclosing borrows. *)
-  Lemma unblock_tctx_oplace_shr_deep {𝔅 𝔄 𝔄l 𝔄l'} p n α (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma unblock_tctx_oplace_shr_deep {𝔅 𝔄 𝔄l 𝔄l'} p n α (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (ty: type 𝔅)
       (T: tctx 𝔄l) (T': tctx 𝔄l') E L f :
     pctx_uend K = None →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) → unblock_tctx E L α T T' f →

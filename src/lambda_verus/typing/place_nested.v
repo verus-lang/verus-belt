@@ -85,20 +85,24 @@ Section nest.
         (uniq_prvar_app_irrel (prfn_wit r) x ξi π'). by apply Hd.
   Qed.
 
-  Lemma lty_is_cpd_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt : lty_is_cpd lt → lty_is_cpd (pctx_plug K lt).
-  Proof. by destruct K. Qed.
+  Lemma lty_is_cpd_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoShr K} lt :
+    lty_is_cpd lt → lty_is_cpd (pctx_plug K lt).
+  Proof. rename select (PctxNoShr K) into HK. by destruct K. Qed.
 
   Lemma lty_is_cpd_plug_nonempty {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
     pctx_nonempty K → lty_is_cpd (pctx_plug K lt).
   Proof. by destruct K. Qed.
 
-  Lemma ltype_own_cp_uniq_plug_cpd {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt κ ξi p :
+  Lemma ltype_own_cp_uniq_plug_cpd {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoShr K} lt κ ξi p :
     lty_is_cpd lt →
     ltype_own_cp false (pctx_plug K lt) (Uniq κ ξi) p =
       cpd_own κ ξi (lty_fold (pctx_plug K lt)) p (ltype_own_cp false (pctx_plug K lt) (Owned 0)).
-  Proof. intros. destruct K; [by apply ltype_own_cp_uniq_cpd|done..]. Qed.
+  Proof.
+    rename select (PctxNoShr K) into HK. intros.
+    destruct K; [by apply ltype_own_cp_uniq_cpd|done..|done].
+  Qed.
 
-  Lemma ltype_own_cp_uniq_plug_nest {𝔄' 𝔄} (K1: pctx (uniq_borₛ 𝔄') 𝔄) lt κ' κ ξi p :
+  Lemma ltype_own_cp_uniq_plug_nest {𝔄' 𝔄} (K1: pctx (uniq_borₛ 𝔄') 𝔄) `{!PctxNoShr K1} lt κ' κ ξi p :
     ltype_own_cp false (pctx_plug K1 (UniqLty lt κ')) (Uniq κ ξi) p =
       cpd_own κ ξi (lty_fold (pctx_plug K1 (UniqLty lt κ'))) p
         (ltype_own_cp false (pctx_plug K1 (UniqLty lt κ')) (Owned 0)).
@@ -394,7 +398,7 @@ Section typing.
     { iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖ N".
       rewrite -(lty_fold_plug_eq' K1 (UniqLty lt κ') (OfTy (&uniq{κ'} ty))); [|done].
       iApply (ltype_owned_leaf_node with "LFT PROPH UNIQ Ok2 ⧖ N");
-        [by apply lty_is_cpd_plug|by apply lty_simple_plug]. }
+        [apply lty_is_cpd_plug; [apply _|done]|by apply lty_simple_plug]. }
     { by rewrite big_sepL_singleton. }
     { iIntros "ξ'tok". rewrite big_sepL_singleton.
       iMod ("ξ'back" with "ξ'tok") as "[Tok1 H2]".
@@ -545,7 +549,7 @@ Section typing.
       by apply Hrsv.
     - iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖ N". rewrite -(lty_fold_plug_eq' K1 _ _ Hfold').
       iApply (ltype_owned_leaf_node with "LFT PROPH UNIQ Ok2 ⧖ N");
-        [by apply lty_is_cpd_plug|apply lty_simple_plug; [done|by apply lty_simple_plug]].
+        [apply lty_is_cpd_plug; [apply _|done]|apply lty_simple_plug; [done|by apply lty_simple_plug]].
     - iNext. rewrite !lty_pat_plug /=. iApply (pat_ok_plug with "Ok"). rewrite pat_ok_uniq_iff.
       iDestruct (pat_ok_plug_hole with "Ok") as "Ok1". rewrite pat_ok_uniq_iff.
       iEval (rewrite lty_pat_plug) in "Ok1". rewrite (lty_pat_plug K2 lt').

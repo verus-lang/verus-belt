@@ -140,6 +140,8 @@ Section rslv.
     | UniqLty lt _ => lty_blk_all lt
     | OwnPtrLty _ lt | SumLty _ _ lt => lty_uniq_rslv lt
     | ProdLty lt1 lt2 => lty_uniq_rslv lt1 ∧ lty_uniq_rslv lt2
+    (* Not supported (fold the shared reference back first). *)
+    | ShrLty _ _ => False
     end.
 
   (** The lifetimes of the shared-blocked leaves. *)
@@ -193,7 +195,7 @@ Section rslv.
            ltype_own (Owned m) lt r' d g tid l)).
   Proof.
     induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH] in x, q |- *; intros Hr; iIntros "#PROPH"; simpl in Hr; try done.
+      𝔄l tyl i lt IH|𝔄 lt IH κ'] in x, q |- *; intros Hr; iIntros "#PROPH"; simpl in Hr; try done.
     - (* An unblocked leaf: a fresh variable. *)
       iMod (proph_intro (uniq_cell_tyi x) ∅ with "PROPH") as (ηi) "[_ η]"; [solve_ndisj|].
       set η := uniq_prvar x ηi.
@@ -514,7 +516,7 @@ Section lty_mem.
       leaf is blocked or shared. *)
   Fixpoint lty_freeb {𝔄} (lt: lty 𝔄) : bool :=
     match lt with
-    | OfTy _ | OwnPtrLty _ _ | UniqLty _ _ => true
+    | OfTy _ | OwnPtrLty _ _ | UniqLty _ _ | ShrLty _ _ => true
     | ProdLty lt1 lt2 => lty_freeb lt1 && lty_freeb lt2
     | SumLty _ _ lt => lty_freeb lt
     | Blocked _ _ | ShrBlocked _ _ => false
@@ -532,7 +534,7 @@ Section lty_mem.
   Fixpoint lty_omem {𝔄} (m: nat) (lt: lty 𝔄) : cloc → iProp Σ :=
     match lt in lty 𝔄 return cloc → iProp Σ with
     | OfTy ty => λ l, ∃ vl, l #↦!∗ vl ∗ ⌜length vl = ty_size ty⌝
-    | UniqLty _ _ => λ l, ∃ v, l #↦!∗ [v]
+    | UniqLty _ _ | ShrLty _ _ => λ l, ∃ v, l #↦!∗ [v]
     | OwnPtrLty n lt' => λ l, ∃ l': loc, l #↦!∗ [FVal #l'] ∗
         if own_freeb n lt' then
           ▷^m freeable_sz n (lty_size lt') l' ∗
@@ -553,7 +555,10 @@ Section lty_mem.
     ltype_own (Owned m) lt r d g tid l ⊢ lty_omem m lt l.
   Proof.
     induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH] in m, r, d, g, l |- *; rewrite /ltype_own /=; try by iIntros.
+      𝔄l tyl i lt IH|𝔄 lt IH κ'] in m, r, d, g, l |- *; rewrite /ltype_own /=;
+      [..|rewrite /leaf_owned_s /leaf_owned;
+        destruct r as [lr|]; [|by iIntros "[[] _]"]; iIntros "[(%x & _ & Pt & _) _]";
+        iExists _; by iFrame "Pt"]; try by iIntros.
     - rewrite /leaf_owned_s /leaf_owned.
       destruct r as [lr|]; [|by iIntros "[]"]. iIntros "(%x & _ & Pt & _)".
       iExists _. iFrame "Pt". by rewrite ty_size_eq.
@@ -679,7 +684,7 @@ Section drop_boxes.
   Global Instance drop_boxes_closed {𝔄} (lt: lty 𝔄) e :
     Closed [] e → Closed [] (drop_boxes lt e).
   Proof.
-    induction lt as [| | | 𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH] in e |- *;
+    induction lt as [| | | 𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|] in e |- *;
       intros ?; simpl; try done.
     - destruct (own_freeb n lt); [|done]. have ?: Closed [] (drop_boxes lt (!e)%E).
       { apply IH. apply _. }
@@ -733,9 +738,10 @@ Section drop_boxes.
       Φ #☠) -∗
     WP drop_boxes lt e @ E {{ Φ }}.
   Proof.
-    intros ?. induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH]
+    intros ?. induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ']
       in m, k, l, e, R, Φ |- *; intros Hf ? Hm Hev; simpl in Hf; try done; cbn [drop_boxes];
       iIntros "R M HΦ".
+    6: { iDestruct "M" as (v) "Pt". iApply wp_value. by iApply ("HΦ" with "R Pt"). }
     - iDestruct "M" as (vl) "[Pt %Hl]". iApply wp_value. by iApply ("HΦ" with "R Pt").
     - iDestruct "M" as (v) "Pt". iApply wp_value. by iApply ("HΦ" with "R Pt").
     - simpl. iDestruct "M" as (l') "[Pt M]". destruct (own_freeb n lt) eqn:Hfb; last first.
