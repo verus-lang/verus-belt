@@ -765,3 +765,17 @@ Section typing.
     by iFrame "⧗p Fr Own".
   Qed.
 End typing.
+
+(** * (e) Resolving and dropping places with shared references *)
+
+Section rslv.
+  Context `{!typeG Σ}.
+
+  (** A shared reference (with any view of its referent) is a leaf: it is forgotten (its
+      ownership is persistent; nothing below it is owned), and its memory, the pointer
+      cell, is given back ([lty_omem]). With [type_drop_oplace_deep_instr] and
+      [resolve_tctx_cons_oplace_deep], owned places containing shared references are
+      dropped and resolved. *)
+  Lemma lty_rslv_shr {𝔄} E L (lt: lty 𝔄) κ : lty_rslv E L (ShrLty lt κ) (λ _ _ _ _, True).
+  Proof. apply (lty_rslv_of _ _ _ (λ _ _, True)), lty_resolve_just. Qed.
+End rslv.
