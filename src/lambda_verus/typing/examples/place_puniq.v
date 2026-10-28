@@ -333,8 +333,119 @@ Section place_puniq.
     exact (uniq_prvar_app_irrel (𝔄:=Zₛ * Zₛ) (v, x2) (x1, x2) ξb π).
     Unshelve. eapply (composeₛ empty_prod_to_unitₛ uninit0_to_unitₛ).
   Qed.
+  (*
+  A mutable reference in a box, reborrowed and written through the box:
+
+  ```
+  fn box_uniq<'a>(mut b: Box<&'a mut i32>) {
+      { let r = &mut **b; *r = 5; }   // the reborrow ends here
+      **b = 7;
+  }
+  ```
+
+  with the specification `ensures fin( *old(b)) == 7`. The argument slot is an owned
+  place; the box and the reference are unfolded; `**b` is the whole referent of the
+  reference, in [Uniq] mode below the box: it is reborrowed at a fresh lifetime
+  ([type_borrow_oplace_uniq_instr]), unblocked after it has ended
+  ([unblock_tctx_oplace_uniq]) and written ([type_write_oplace_deep_instr]); the
+  reference is folded back, and the box and the slot are freed, resolving the reference.
+  *)
+
+  Definition box_uniq : val :=
+    fn: ["x"] :=
+      ReBor;;                                       (* unfold * *b *)
+      Newlft;;
+      let: "r" := ReBor;; !(!"x") in                (* &mut **b *)
+      let: "five" := #5 in
+      "r" <- "five";;
+      Skip;;                                        (* resolve r *)
+      Endlft;;                                      (* unblock **b *)
+      let: "seven" := #7 in
+      (ReBor;; !(!"x") <- "seven");;                (* **b = 7 *)
+      ReBor;;                                       (* fold * *b *)
+      ((#☠;; delete [ #1; !"x"]);; delete [ #1; "x"]);;   (* drop b, resolving *b *)
+      let: "ret" := new [ #0] in
+      return: ["ret"].
+
+  Definition box_uniq_spec : fn_spec [at_locₛ (uniq_borₛ Zₛ)] () () :=
+    λ _ post '-[(_, (_, m))], λ mask π,
+      uniq_bor_future (𝔄:=Zₛ) m π = 7%Z → ∀ ret, post ret mask π.
+
+  Lemma box_uniq_type :
+    typed_val box_uniq ((fn<α>(∅; box (&uniq{α} int)) → ()) box_uniq_spec) (box_uniq, ()).
+  Proof.
+    unfold box_uniq. unlock.
+    opose proof (@type_fn _ _ _ [at_locₛ (uniq_borₛ Zₛ)] () () ()
+      (λ α, FP ∅ +[box (&uniq{α} int)]%T ()%T AtomicClosed)
+      box_uniq_spec _ [BNamed "x"] _ _ _) as H.
+    unlock in H. apply H. clear H.
+    intros α ϝ k wl. destruct wl as [vx []]. simpl_subst.
+    iApply (typed_body_impl with "[]"); last first. {
+      iApply typed_body_tctx_incl.
+      { eapply tctx_incl_trans; [apply tctx_own_to_oplace|].
+        by apply (tctx_unfold_oplace_own _ _ _ _ PHole 1 (&uniq{α} int)). }
+      (* unfold * *b *)
+      iApply type_seq.
+      { apply (type_unfold_oplace_uniq_instr _ _ _ vx 1 (POwn 1 PHole) int α). solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iApply (type_newlft []). iIntros (γ).
+      (* &mut **b, at α ⊓ γ *)
+      iApply (type_let with "[]").
+      { apply (type_borrow_oplace_uniq_instr _ _ _ vx 1 γ α (POwn 1 (PUniq α PHole)) int);
+          [done|solve_typing|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vr). simpl_subst.
+      (* write through the reborrow, resolve it *)
+      iApply type_int. iIntros (v5). simpl_subst.
+      iApply type_assign. { solve_typing. } { apply write_uniq. solve_typing. }
+      { apply (resolve'_just _ _ _ (const True)). apply resolve_just. }
+      iApply type_resolve. { solve_typing. } { apply uniq_bor.uniq_resolve. solve_typing. }
+      (* end γ: unblock **b *)
+      iApply (type_endlft _ _ _ _ γ).
+      { solve_typing. }
+      { apply unblock_tctx_cons_just_hasty.
+        apply (unblock_tctx_oplace_uniq _ _ _ α (POwn 1 (PUniq α PHole)) int);
+          [done|solve_typing|].
+        apply unblock_tctx_nil. }
+      (* **b = 7 *)
+      iApply type_int. iIntros (v7). simpl_subst.
+      iApply type_seq.
+      { apply (type_write_oplace_deep_instr _ _ _ vx v7 1 (POwn 1 (PUniq α PHole)) int
+          (const (const True))); [done|apply resolve_just|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      (* fold * *b *)
+      iApply type_seq.
+      { apply (type_fold_oplace_uniq_instr _ _ _ vx 1 (POwn 1 PHole) int α). solve_typing. }
+      { solve_typing. } { reflexivity. }
+      (* drop b, freeing the box, resolving *b *)
+      iApply type_seq.
+      { apply (type_drop_oplace_deep_instr _ _ _ vx 1 1 (OwnPtrLty 1 (OfTy (&uniq{α} int))));
+          [done|done|done|].
+        apply lty_rslv_own, lty_rslv_of, lty_resolve_ofty, uniq_bor.uniq_resolve. solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iApply (type_new_subtype () 0). { lia. } { apply uninit_unit_1. }
+      iIntros (vret). simpl_subst.
+      iApply type_jump.
+      { rewrite elem_of_list_singleton. reflexivity. }
+      { solve_typing. }
+      { solve_typing. }
+      { reflexivity. }
+    }
+    intros post [[lx [lb m]] []] mask π. simpl.
+    destruct m as [[[[[l z] ξ] d] g] idx].
+    simpl. intros Hspec. rewrite /trans_upper /trans_tail /=.
+    intros m1 Hc1 z0 Hupd Hres [? [[[lx' [lb' m']] ζm'] []]] (_ & _ & Hx & _ & _ & _) _ d0 g0 idx0
+      Hres' l0 junk. apply Hspec.
+    simpl in Hx. injection Hx as -> Hm'.
+    destruct m' as [[[[[l1 z1] ξ1] d1] g1] idx1]. simpl in Hm'.
+    injection Hm' as -> -> -> -> ->. simpl in Hres'.
+    rewrite uniq_bor_future_eq. etrans; [|exact Hres'].
+    exact (uniq_prvar_app_irrel (𝔄:=Zₛ) z 7%Z ξ π).
+    Unshelve. eapply (composeₛ empty_prod_to_unitₛ uninit0_to_unitₛ).
+  Qed.
 End place_puniq.
 
 Print Assumptions get_inner_first_own_type.
 Print Assumptions write_deep_type.
 Print Assumptions assign_two_type.
+Print Assumptions box_uniq_type.
