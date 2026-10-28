@@ -938,4 +938,183 @@ Section sum_deep.
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
     by apply Hπ.
   Qed.
+  Lemma xsum_phys_pinj_vec {𝔄l} (tyl: typel 𝔄l) i u pad tid :
+    length pad = (max_ty_size tyl - ty_size (tyl +!! i))%nat →
+    ty_phys (Σ! tyl) (pinj i u, pad) tid =
+      FVal #i :: ty_phys (tyl +!! i) u tid ++ fmap FVal pad.
+  Proof.
+    intros Hlen. have := max_hlist_with_ge (λ _, ty_size) tyl i. simpl. intros ?.
+    rewrite /ty_phys /xsum_ty /= to_xsum_pinj /=. rewrite pad_length'; [done|].
+    rewrite /= length_app length_fmap Hlen ty_size_eq. f_equal. rewrite Nat.add_comm Nat.sub_add //.
+  Qed.
+
+  (** Assigning a variant [i] with a payload of any size, copied from a path [pr] that can
+      be read ([e1 <-{n,Σ i} !e2]), to the leaf at the hole of [K] (a sum, below any number
+      of unique borrows, in both modes), keeping the type of the leaf: the old value is
+      resolved, the tag is written and the payload copied, the cells after the payload are
+      the padding. *)
+  Lemma type_sum_memcpy_oplace_deep_instr {𝔄l 𝔄 𝔅 𝔅'} E L I p pr n (K: pctx (Σ! 𝔄l) 𝔄)
+      `{!PctxNoShr K} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (tyr: type 𝔅) (tyr': type 𝔅')
+      gtr str Φ (sz: Z) :
+    resolve E L (Σ! tyl) Φ → typed_read E L tyr (tyl +!! i) tyr' gtr str →
+    sz = ty_size (tyl +!! i) → lctx_lft_alive E L (pctx_ulft K (OfTy (Σ! tyl))) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)); pr ◁ tyr]
+      (pctx_expr K p <-{sz,Σ i} !pr)
+      (λ _, +[p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)); pr ◁ tyr'])
+      (λ post '-[x; b], λ mask π, Φ (pctx_get K x.1.2) π → ∀ pad zr, str b zr →
+        post -[((x.1.1, pctx_set K x.1.2 (pinj i (gtr b), pad)), x.2); zr] mask π).
+  Proof.
+    iIntros (Rslv Rd -> Alv tid post mask iκs [x [b []]])
+      "#LFT #TIME #PROPH #UNIQ #E L I (Tp & Tr & _) Obs".
+    destruct x as [[l x₀] ζm].
+    rewrite /tctx_elt_interp.
+    iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
+    iDestruct "Tr" as (vr dr Hpr) "(#⧖r & Tr)".
+    have ?: Closed [] (pctx_expr K p).
+    { apply pctx_expr_closed. by eapply eval_path_closed. }
+    have ?: Closed [] pr by eapply eval_path_closed.
+    have HMi := max_hlist_with_ge (λ _, ty_size) tyl i. simpl in HMi.
+    set sz := ty_size (tyl +!! i).
+    iDestruct (Alv with "L E") as "#Alv".
+    (* The first step gives credits and cumulative time receipts. *)
+    iCombine "⧖ ⧖r" as "⧖m".
+    iApply (wp_cumulative_time_receipt_linear with "TIME ⧖m"); [solve_ndisj|].
+    iIntros "⧗". iApply wp_fupd.
+    set M := D `max` dr.
+    iDestruct (cumulative_time_receipt_sep 1 (S M) with "⧗") as "[⧗c1 ⧗]".
+    iDestruct (cumulative_time_receipt_sep 1 M with "⧗") as "[⧗c2 ⧗k]".
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗c1 ⧖m") as "[#⧖S £]";
+      [solve_ndisj|].
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗c2 ⧖m") as "[_ £']";
+      [solve_ndisj|].
+    iCombine "£ £'" as "£".
+    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (OfTy (Σ! tyl))])%I as "#Hu".
+    { iApply (guards_transitive with "Ghalf Alv"). }
+    set lr := (l, repeat [] (lty_size (pctx_plug K (OfTy (Σ! tyl))))).
+    have HM: S d ≤ M ∧ g ≤ M ∧ dr ≤ M by rewrite /M; lia.
+    iDestruct (lc_weaken ((d + 2) * (d + 3) + (3 * (g + 1) * M + (3 * (g + 1) * M +
+      ((1 + (1 + M * (g + 1))) + (3 * (g + 1) + ((dr + 1) + (1 + (6 * (M + 1) +
+      (1 + (M + 1)))))))))) with "£")
+      as "[£a [£w [£w' [[£r £s] [£t1 [£d [£b [£m [£o £o']]]]]]]]]";
+      [rewrite /advance_credits; nia|].
+    iMod (oplace_leaf_acc K (Σ! tyl) x₀ ζm d g tid l (⊤ ∖ ↑advN)
+      with "LFT PROPH UNIQ Hu H1 £a Own")
+      as (G' dh gh) "(% & G' & %Hdh & #G'u & #Gw & Pt1 & Gho1 & P & #Gs & Cl)"; [solve_ndisj|].
+    destruct Hdh as (Hdh & Hgh & Hin).
+    (* The address of the hole. *)
+    wp_bind (pctx_expr K p).
+    iApply (wp_wand with "[P G' £w]").
+    { iApply (wp_pctx_ptrs _ K (ty_size (Σ! tyl)) (g + 1) G' x₀ lr p True%I
+        with "[] Gs [£w] [G'] P"); [solve_ndisj| | |].
+      - iEval (rewrite /lr -heap_cloc_mapsto_empty). iApply guards_true.
+      - iApply (lc_weaken with "£w"). nia.
+      - iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
+    iIntros (w) "(-> & _ & G' & P)".
+    (* Resolve the old value. *)
+    iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN))
+      with "LFT PROPH UNIQ TIME E Ghalf H2 Gho1") as "ToObs"; [set_solver|].
+    iMod (lc_fupd_elim_later with "£r ToObs") as "ToObs".
+    iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
+    iDestruct (lc_step_fupdN_elim_later with "[£s] ToObs") as "ToObs".
+    { iApply (lc_weaken with "£s"). nia. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
+    iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
+    (* Split the cells: tag, payload, padding. *)
+    set lK := pctx_loc K (ty_size (Σ! tyl)) x₀ lr.
+    have Hlen: length (ty_phys (Σ! tyl) (pctx_get K x₀) tid) = S (max_ty_size tyl)
+      by rewrite ty_size_eq.
+    destruct (ty_phys (Σ! tyl) (pctx_get K x₀) tid) as [|fv1 fvs] eqn:Hph; [done|].
+    simpl in Hlen.
+    iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Pt1") as %HlenK.
+    destruct lK as [lK1 [|c1 cs]] eqn:HlK; [done|].
+    iEval (rewrite !heap_mapsto_cloc_fancy_vec_cons) in "Pt1".
+    iDestruct "Pt1" as "(Pt1 & Pt2)".
+    iEval (rewrite !heap_mapsto_cloc_emp_cons) in "Gw".
+    iMod (mapsto_vec_untether_singleton (lK1, [c1]) fv1 _ ∅ with "[Pt1]")
+      as (v₁ l₁ c₁) "[%Hl1 [Pt1 _]]".
+    { by rewrite heap_complete_mapsto_fancy_singleton. }
+    injection Hl1 as <- <-.
+    (* Write the tag. *)
+    wp_bind (_ <- _)%E.
+    iApply (wp_write_na_guarded _ lK1 c1 _ #i v₁ (g + 1) G' with "[G' Pt1 £t1]");
+      [solve_ndisj| |].
+    { iFrame "G' Pt1 £t1". iApply (guards_weaken_rhs_sep_l with "Gw"). }
+    iIntros "!> [Pt1 G']". wp_seq.
+    (* The address of the payload. *)
+    wp_bind (pctx_expr K p).
+    iApply (wp_wand with "[P G' £w']").
+    { iApply (wp_pctx_ptrs _ K (ty_size (Σ! tyl)) (g + 1) G' x₀ lr p True%I
+        with "[] Gs [£w'] [G'] P"); [solve_ndisj| | |].
+      - iEval (rewrite /lr -heap_cloc_mapsto_empty). iApply guards_true.
+      - iApply (lc_weaken with "£w'"). nia.
+      - iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
+    iIntros (w) "(-> & _ & G' & P)". rewrite -/lK HlK /=. wp_op.
+    wp_bind pr. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
+    (* Read the source. *)
+    iMod (Rd with "LFT E Ghalf H2 Tr £d")
+      as (lb vlb_c vlb HR Hvr Hlenc) "(Hr & #Hrpt & Retether & _ & Own' & Totyr')".
+    iDestruct "Own'" as "[Gb #>%Phys]".
+    iMod (lc_fupd_elim_later with "£b Gb") as "Gb".
+    have Hlenb: length vlb = sz by rewrite -Phys ty_size_eq.
+    injection Hvr as ->.
+    (* Split the payload cells from the padding. *)
+    have Hfvs: sz ≤ length fvs. { rewrite /sz. etrans; [apply HMi|]. lia. }
+    have Htk: length (take sz fvs) = sz by rewrite length_take; lia.
+    iAssert (cloc_take (lK1 +ₗ 1, cs) (length (take sz fvs)) #↦!∗ take sz fvs ∗
+      cloc_skip (lK1 +ₗ 1, cs) (length (take sz fvs)) #↦!∗ drop sz fvs)%I
+      with "[Pt2]" as "[Pt2 Pt3]".
+    { rewrite -heap_cloc_mapsto_fancy_vec_app take_drop. iExact "Pt2". }
+    rewrite Htk.
+    iMod (mapsto_vec_untether _ _ _ ∅ with "Pt2") as (vl2) "[Pt2 [%Hvl2 _]]".
+    iMod (mapsto_vec_untether _ _ _ ∅ with "Pt3") as (vl3) "[Pt3 [%Hvl3 _]]".
+    iAssert (G' &&{↑NllftG; M + 1}&&> cloc_take (lK1 +ₗ 1, cs) sz #↦∗_)%I as "#Gw2".
+    { iApply (lguards_weaken_later _ _ _ (g + 1)); [lia|].
+      iDestruct (guards_weaken_rhs_sep_r with "Gw") as "Gw'".
+      iEval (rewrite (heap_cloc_mapsto_emp_vec_app _ sz)) in "Gw'".
+      iApply (guards_weaken_rhs_sep_l with "Gw'"). }
+    iApply (wp_memcpy_guarded _ (cloc_take (lK1 +ₗ 1, cs) sz) lb vl2 vlb_c G' HR _ (M + 1)
+      with "TIME [Pt2 Hr G' £m]"); [solve_ndisj| |lia| |].
+    { rewrite Hvl2 length_take. lia. }
+    { iFrame "Pt2 Hr G' ⧖S £m". iSplit; [iApply "Gw2"|].
+      iApply (lguards_weaken_later with "Hrpt"). lia. }
+    iIntros "!> (Pt2 & G' & Hr)".
+    (* Put the contents (with their ghost cells) into the payload cells. *)
+    leaf_open_laters "Gw2" with "G'" as "A"; [solve_ndisj|].
+    iMod (lc_fupd_elim_later with "£o A") as "A".
+    iMod (lc_fupd_elim_laterN with "£o' A") as "A". iMod "A" as "[Pre back]".
+    iDestruct ("Retether" $! (cloc_take (lK1 +ₗ 1, cs) sz).1 (cloc_take (lK1 +ₗ 1, cs) sz).2
+      with "[Pre Pt2]") as "Ret"; [by iFrame|].
+    iMod (fupd_mask_mono with "Ret") as "[Pre Pt2]"; [set_solver|].
+    iMod ("back" with "Pre") as "G'".
+    iMod (fupd_mask_mono with "(Totyr' Hr)") as (zr Hzr) "(H2 & Tr)"; [solve_ndisj|].
+    (* Close the place at the new value. *)
+    iDestruct (cumulative_time_receipt_mono (S (pctx_dlev K)) with "⧗k") as "⧗k"; [lia|].
+    iMod (cumulative_persistent_time_receipt with "TIME ⧗k ⧖r") as "#⧖k"; [solve_ndisj|].
+    set dn := (dr + pctx_dlev K) `max` d. set gn := dr `max` g.
+    iCombine "⧖ ⧖k" as "⧖D".
+    have Hlen3: length vl3 = (max_ty_size tyl - sz)%nat.
+    { rewrite Hvl3 length_drop. lia. }
+    iMod ("Cl" $! (pinj i (gtr b), vl3) dr dr dn gn with "[%] [] G' P [Pt1 Pt2 Pt3] [Gb]")
+      as "[Own H1]".
+    { lia. }
+    { iApply (persistent_time_receipt_mono with "⧖D"). lia. }
+    { rewrite (xsum_phys_pinj_vec _ _ _ vl3) //.
+      rewrite (_: pctx_loc K (ty_size (Σ! tyl)) x₀ lr = (lK1, c1 :: cs)); [|exact HlK].
+      rewrite heap_mapsto_cloc_fancy_vec_cons heap_cloc_mapsto_fancy_vec_app Phys Hlenb.
+      iFrame "Pt1 Pt2".
+      rewrite -heap_complete_mapsto_fancy_fmap_eq. iFrame "Pt3". }
+    { by rewrite xsum_gho_own_pinj. }
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    iModIntro. iExists -[((l, pctx_set K x₀ (pinj i (gtr b), vl3)), ζm); zr]. iFrame "L I".
+    iSplitR "Obs Obs'".
+    { iSplitR "Tr"; [|iSplitL; [|done]].
+      - rewrite /tctx_elt_interp. iExists #l. iSplit; [done|].
+        iExists (D `max` (S (pctx_dlev K) + dr)), dn, gn. iFrame "⧖D ⧗p Fr Own".
+        iSplit; [done|]. iPureIntro; lia.
+      - iExists #lb.1, dr. iFrame "⧖r Tr". by rewrite Hpr. }
+    iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
+    by apply Hπ.
+  Qed.
 End sum_deep.
