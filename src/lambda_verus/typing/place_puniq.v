@@ -610,4 +610,116 @@ Section puniq.
     iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_rfn_blk_cons /= decide_True //.
   Qed.
+  (** * Unblocking a leaf below unique borrows *)
+
+  Lemma pctx_ne_ge {𝔅 𝔄} (K: pctx 𝔅 𝔄) e mm : e ≤ pctx_ne K e mm.
+  Proof. induction K in e, mm |- *; simpl; [lia|auto..|]. specialize (IHK (e + mm + 1) 0). lia. Qed.
+
+  Lemma pctx_ne_ulfts {𝔅 𝔄} (K: pctx 𝔅 𝔄) e mm : pctx_ne K e mm = e → pctx_ulfts K = [].
+  Proof.
+    induction K in e, mm |- *; simpl; [done|eauto..|].
+    have := pctx_ne_ge K (e + mm + 1) 0. lia.
+  Qed.
+
+  (** Once [α] has ended, the leaf at the hole of [K] is unblocked (as [unblock_tctx_oplace]):
+      the enclosing borrows are opened (with the credits of one of the receipts of the leaf,
+      if there are any), the inheritance of the borrow is fired and settled, the
+      borrows are closed at the new value of the leaf, at depths raised by the other
+      receipts of the leaf ([lty_nrc]). *)
+  Lemma unblock_tctx_oplace_deep {𝔅 𝔄 𝔄l 𝔄l'} p n α (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+      (T: tctx 𝔄l) (T': tctx 𝔄l') E L f :
+    pctx_uend K = None →
+    lctx_lft_alive E L (pctx_ulft K (OfTy ty) ⊓ ty_lft ty) → unblock_tctx E L α T T' f →
+    unblock_tctx E L α (p ◁ₗown{n} pctx_plug K (Blocked ty (pctx_blft K α)) +:: T)
+      (p ◁ₗown{n} pctx_plug K (OfTy ty) +:: T')
+      (λ π '(x -:: xl), λ '(x' -:: xl'),
+        x'.1.1 = x.1.1 ∧ x'.1.2 = pctx_set K x.1.2 (pctx_get K x'.1.2) ∧ x'.2 = x.2 ∧
+        vπ (pctx_get K x'.1.2) π = oplace_blk_fin K x π ∧ f π xl xl').
+  Proof.
+    iIntros (Hu Alv Un G tid [x xl] ?) "#LFT #TIME #PROPH #UNIQ #E #L G #†α /=[(%v & %Hp & Own) T]".
+    destruct x as [[l x₀] ζm].
+    set β := pctx_blft K α.
+    iDestruct "Own" as (D d g) "(#⧖0 & ⧗ & -> & %Hle & Fr & Own)".
+    rewrite (lty_nrc_plug K (Blocked ty β)) /=.
+    iDestruct (cumulative_time_receipt_sep with "⧗") as "[⧗r ⧗]".
+    have Hhn := pctx_hmode_ne K 1 0 0. have Hm := pctx_hmode_le K 1.
+    set mh := pctx_hmode K 1. set ne := pctx_ne K 0 0.
+    leaf_open "L" with "G" as "[L1 back]"; [set_solver|].
+    iDestruct (Alv with "L1 E") as "#Lα". iMod ("back" with "L1") as "G".
+    (* Half of [G] for the rest of the context, the other half for the place. *)
+    iMod (fractional.frac_split_guard_in_half with "G L") as (γ1) "[GT [GP [#GhT #BackT]]]";
+      [solve_ndisj|].
+    iMod (Un with "LFT TIME PROPH UNIQ E GhT GT †α T") as (dT xl') "[#⧖T ToT']".
+    iMod (fractional.frac_split_guard_in_half NllftG (fractional.half γ1) (fractional.half γ1)
+      with "GP []") as (γ2) "[H1 [H2 [#Gh2 #Back2]]]"; [solve_ndisj|iApply guards_refl|].
+    iAssert (fractional.half γ2 &&{↑NllftG}&&> @[pctx_ulft K (Blocked ty β)])%I as "#Hu".
+    { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "GhT").
+      iApply (guards_transitive with "Lα"). rewrite (pctx_ulft_eq K (Blocked ty β) (OfTy ty)) //.
+      iApply llftl_intersect_incl_l. }
+    iAssert (fractional.half γ2 &&{↑NllftG}&&> @[ty_lft ty])%I as "#Hty".
+    { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "GhT").
+      iApply (guards_transitive with "Lα"). iApply llftl_intersect_incl_r. }
+    (* The credits for the access: none below no unique borrow, otherwise from one receipt. *)
+    iAssert (|={⊤}=> £(pctx_acc_cred K 1 d) ∗ ⧗1 ∗ ⧗(ne - 1))%I with "[⧗]" as ">(£a & ⧗b & ⧗e)".
+    { destruct ne as [|ne'] eqn:Hne.
+      - rewrite /pctx_acc_cred (pctx_ne_ulfts K 0 0 Hne). iMod lc_zero as "$". iFrame "⧗".
+        iMod cumulative_time_receipt_0 as "$". done.
+      - iDestruct (cumulative_time_receipt_sep 1 (S ne') with "⧗") as "[⧗a ⧗]".
+        iDestruct (cumulative_time_receipt_sep 1 ne' with "⧗") as "[$ ⧗e]".
+        iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗a ⧖0") as "[_ £]";
+          [solve_ndisj|].
+        iModIntro. iSplitL "£".
+        + iApply (lc_weaken with "£"). have := pctx_acc_cred_le K 1 d.
+          rewrite /advance_credits. nia.
+        + iApply (cumulative_time_receipt_mono with "⧗e"). lia. }
+    rewrite /ltype_own lty_pat_plug lty_rfn_plug.
+    iMod (pctx_acc K (Blocked ty β) 1 with "LFT PROPH UNIQ Hu H1 £a Own")
+      as (G' dh gh) "(% & G' & #G'G & %Hdh & Hb & P & #Gs & #HG & Cl)"; [solve_ndisj|].
+    destruct Hdh as (Hdh & Hgh & Hin).
+    iEval (rewrite (pctx_kind_owned K) //) in "Hb".
+    set y := pctx_get K x₀. set ζi := blk_lookup ζm (pctx_path K []).
+    (* Unblock the leaf: fire the inheritance of the borrow and settle it. *)
+    iMod (fupd_mask_mono with "(Hb [])") as "Upd1"; [rewrite /lazyE; solve_ndisj| |].
+    { by iApply pctx_blft_dead. }
+    iMod (guarded_upd_run with "Hty H2 Upd1") as "(H2 & %y1 & %d1 & %g1 & Eqz & #⧖1 & O1)";
+      [rewrite /lazyE; solve_ndisj|].
+    iDestruct "O1" as "[Pt1 Gho1]".
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗b ⧖1") as "[#⧖1' £]";
+      [solve_ndisj|].
+    iDestruct (lc_weaken (mh + (1 + (d1 + d1*(g1+2) + (0 + (d1+1)*(g1+1)) + 1 + 1)))
+      with "£") as "[£k [£e £]]"; [rewrite /advance_credits; nia|].
+    iMod (lc_fupd_elim_laterN with "£k Gho1") as "Gho1".
+    iSimpl in "Eqz". iMod (lc_fupd_elim_later with "£e Eqz") as "Eqz".
+    iMod (proph_eqz_obs_by_share ty with "LFT Hty H2 £ Eqz Gho1") as "(#Obs1 & H2 & Gho1)".
+    iMod (cumulative_persistent_time_receipt with "TIME ⧗e ⧖1'") as "#⧖2"; [solve_ndisj|].
+    (* Close the place at the unblocked state, at the maximal depths. *)
+    set dn := (d1 + pctx_dlev K) `max` d. set gn := g1 `max` g.
+    iCombine "⧖0 ⧖2" as "⧖D".
+    iMod ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn y1)) d1 g1 dn gn [] 1%Qp True%I
+      with "[//] [//] [%] [%] [] [] G' P [] [Pt1 Gho1]") as "(Own & H1 & _)".
+    { intros ??. apply prfn_rsv_in. }
+    { lia. }
+    { iApply pat_ok_ulfts_leaf. }
+    { iApply (persistent_time_receipt_mono with "⧖D").
+      destruct (pctx_ulfts K); simpl in *; lia. }
+    { done. }
+    { iIntros "_ !>". iSplit; [|done]. rewrite (pctx_kind_owned K) //. iExists y1.
+      iSplit; [done|]. rewrite /ofty_owned. iFrame "Pt1". by iApply bi.laterN_intro. }
+    iMod (fupd_mask_mono with "(Back2 H1 H2)") as "GP"; [solve_ndisj|].
+    iModIntro. iExists dT, (((l, pctx_set K x₀ y1), ζm) -:: xl').
+    iSplitR; [done|].
+    iMod "ToT'". iModIntro. iNext. iMod "ToT'". iModIntro.
+    iApply (step_fupdN_wand with "ToT'"). iIntros ">(GT & T' & #Obs')".
+    iMod (fupd_mask_mono with "(BackT GT GP)") as "$"; [solve_ndisj|].
+    iModIntro. iSplitR "Obs'".
+    { iFrame "T'". rewrite /tctx_elt_interp. iExists #l. iSplit; [done|].
+      iExists (D `max` (ne - 1 + ((mh + S d1) `max` g1 + 1))), dn, gn. iFrame "⧖D".
+      rewrite (lty_size_plug_eq K (OfTy ty) (Blocked ty β)) //. iFrame "Fr".
+      iSplitL "⧗r". { rewrite (lty_nrc_plug K (OfTy ty)) /=. iApply (cumulative_time_receipt_mono with "⧗r"). lia. }
+      iSplit; [done|]. iSplit; [iPureIntro; destruct (pctx_ulfts K); simpl in *; lia|].
+      rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_set pctx_rfn_set //. }
+    iCombine "Obs1 Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Heq Hf].
+    split; [done|]. split; [by rewrite /= pctx_get_set|]. split; [done|]. split; [|done].
+    rewrite /oplace_blk_fin /= pctx_get_set. symmetry. exact Heq.
+  Qed.
 End puniq.
