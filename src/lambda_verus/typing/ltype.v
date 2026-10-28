@@ -226,10 +226,12 @@ Section ltype_own.
     ∃ x idx, place_rfn_rel lr x ∗ uniq_body ty x ξi d g idx κ tid l.
 
   (** A blocked leaf in [Uniq] mode: the borrow itself is blocked; its inheritance
-      gives back _pending_ ownership of the borrow, as [blocked_owned]. *)
+      gives back _pending_ ownership of the borrow, as [blocked_owned]. Settling the
+      restored borrow needs the borrow lifetime [κ] alive, hence the guard for
+      [κ ⊓ ty_lft ty]. *)
   Definition blocked_uniq {𝔄} (κ: lft) (ξi: positive) (ty: type 𝔄) (α: lft)
       (lr: place_rfn 𝔄) (tid: thread_id) (l: cloc) : iProp Σ :=
-    [†α] ={lazyE}=∗ guarded_upd lazyE @[ty_lft ty]
+    [†α] ={lazyE}=∗ guarded_upd lazyE @[κ ⊓ ty_lft ty]
       (∃ d' g', ⧖(S d' `max` g') ∗ ofty_uniq κ ξi ty lr d' g' tid l).
 
   Definition leaf_uniq {𝔄} (c: bool) (κ: lft) (ξi: positive) (ty: type 𝔄) (p: lpat)
@@ -733,6 +735,14 @@ Section ltype_lemmas.
 
   (** Explicit unblocking of a blocked place. In [Owned] mode, the pending ownership
       is settled with a guard for the lifetime of the type. *)
+  (** A guard of two lifetimes is a guard of their intersection. *)
+  Lemma guards_lft_meet (G: iProp Σ) N κ κ' :
+    (G &&{N}&&> @[κ]) -∗ (G &&{N}&&> @[κ']) -∗ (G &&{N}&&> @[κ ⊓ κ']).
+  Proof.
+    iIntros "A B". iApply (guards_and_point with "A B"); [exact: point_prop_llft_alive|].
+    by rewrite llftl_tok_inter_and.
+  Qed.
+
   Lemma unblock_blocked_owned m {𝔄} (ty: type 𝔄) α r d g tid l G :
     Timeless G →
     (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ G -∗
@@ -761,7 +771,7 @@ Section ltype_lemmas.
 
   Lemma unblock_blocked_uniq κ ξi {𝔄} (ty: type 𝔄) α r d g tid l G :
     Timeless G →
-    (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ G -∗
+    (G &&{↑NllftG}&&> @[κ ⊓ ty_lft ty]) -∗ G -∗
     [†α] -∗ ltype_own (Uniq κ ξi) (Blocked ty α) r d g tid l ={⊤}=∗
       G ∗ ∃ d' g', ⧖(S d' `max` g') ∗ ltype_own (Uniq κ ξi) (OfTy ty) r d' g' tid l.
   Proof.
@@ -1365,11 +1375,13 @@ Section cpd.
 
   Lemma leaf_uniq_unblock {𝔄} κ κ' ξi (ty: type 𝔄) p lr d g tid l G :
     Timeless G →
-    llft_ctx -∗ (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ pat_ok κ p -∗ [†κ] -∗ G -∗
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[κ']) -∗ (G &&{↑NllftG}&&> @[ty_lft ty]) -∗
+    pat_ok κ p -∗ [†κ] -∗ G -∗
     ⧖(S d `max` g) -∗ leaf_uniq false κ' ξi ty p (inl lr) d g tid l ={lazyE}=∗
       G ∗ ∃ d' g', ⧖(S d' `max` g') ∗ ofty_uniq κ' ξi ty lr d' g' tid l.
   Proof.
-    iIntros (?) "#LFT #Gty #Ok #†κ G #⧖ L".
+    iIntros (?) "#LFT #Gκ' #Gty' #Ok #†κ G #⧖ L".
+    iDestruct (guards_lft_meet with "Gκ' Gty'") as "#Gty".
     destruct p; rewrite /leaf_uniq /=;
       try (iModIntro; iFrame "G"; iExists d, g; by iFrame "⧖ L").
     rewrite /blocked_uniq.
@@ -1439,7 +1451,7 @@ Section cpd.
     iIntros (Hfold ?) "#LFT #PROPH #UNIQ #Gκ' #Gty #Ok #†κ G £ #⧖ C".
     destruct lt as [𝔅 ty|𝔅 ty α|𝔅 lt κ''|𝔅 n lt|𝔅 ℭ lt1 lt2|𝔅 ty α|𝔅l tyl i lt];
       try (destruct r as [lr|]; [|done];
-        iMod (leaf_uniq_unblock with "LFT Gty Ok †κ G ⧖ C")
+        iMod (leaf_uniq_unblock with "LFT Gκ' Gty Ok †κ G ⧖ C")
           as "[$ (%d2 & %g2 & #⧖2 & %x & %idx & Rel & Body)]";
         iModIntro; iExists x, d2, g2, idx; iFrame "⧖2 Body"; rewrite prfn_den_inl;
         by iApply place_rfn_rel_eqz);
