@@ -210,6 +210,12 @@ Section uniq_bor_val.
   Definition uniq_bor_set_current {𝔄} (m: ~~ (uniq_borₛ 𝔄)) (y: ~~𝔄) : ~~ (uniq_borₛ 𝔄) :=
     match m with (l, _, ξi, d, g, idx) => (l, y, ξi, d, g, idx) end.
 
+  (** The depths and the index of the value of a unique borrow (which are not part of the
+      refinement of a nested place, see [lty_rfn]). *)
+  Definition uniq_bor_set_meta {𝔄} (m: ~~ (uniq_borₛ 𝔄)) (d g: nat) (idx: Idx) :
+      ~~ (uniq_borₛ 𝔄) :=
+    match m with (l, y, ξi, _, _, _) => (l, y, ξi, d, g, idx) end.
+
   (** The same, with a current value of another type. *)
   Definition uniq_bor_retype {𝔄 𝔅} (m: ~~ (uniq_borₛ 𝔄)) (y: ~~𝔅) : ~~ (uniq_borₛ 𝔅) :=
     match m with (l, _, ξi, d, g, idx) => (l, y, ξi, d, g, idx) end.

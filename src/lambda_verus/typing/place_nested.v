@@ -45,12 +45,6 @@ Implicit Type 𝔄 𝔅: syn_type.
 Section nest.
   Context `{!typeG Σ}.
 
-  (** The depths and the index of the value of a unique borrow (which are not part of the
-      refinement of a nested place, see [lty_rfn]). *)
-  Definition uniq_bor_set_meta {𝔄} (m: ~~ (uniq_borₛ 𝔄)) (d g: nat) (idx: Idx) :
-      ~~ (uniq_borₛ 𝔄) :=
-    match m with (l, y, ξi, _, _, _) => (l, y, ξi, d, g, idx) end.
-
   Definition nest_get {𝔅 𝔄' 𝔄} (K1: pctx (uniq_borₛ 𝔄') 𝔄) (K2: pctx 𝔅 𝔄') (x: ~~𝔄) : ~~𝔅 :=
     pctx_get K2 (uniq_bor_current (pctx_get K1 x)).
 
