@@ -45,9 +45,6 @@ Implicit Type 𝔄 𝔅: syn_type.
 Section nest.
   Context `{!typeG Σ}.
 
-  Definition uniq_bor_set_current {𝔄} (m: ~~ (uniq_borₛ 𝔄)) (y: ~~𝔄) : ~~ (uniq_borₛ 𝔄) :=
-    match m with (l, _, ξi, d, g, idx) => (l, y, ξi, d, g, idx) end.
-
   (** The depths and the index of the value of a unique borrow (which are not part of the
       refinement of a nested place, see [lty_rfn]). *)
   Definition uniq_bor_set_meta {𝔄} (m: ~~ (uniq_borₛ 𝔄)) (d g: nat) (idx: Idx) :
@@ -338,7 +335,7 @@ Section typing.
       [m] owned pointers, the node of [UniqLty] holds [2 + m] cumulative time receipts
       (from the second program step) and the contents of the inner borrow are under [m]
       laters (stripped with the credits of the first step). *)
-  Lemma type_unfold_place_uniq_deep_instr {𝔄' 𝔄} E L I p κ κ' (K1: pctx (uniq_borₛ 𝔄') 𝔄)
+  Lemma type_unfold_place_uniq_deep_instr {𝔄' 𝔄} E L I p κ κ' (K1: pctx (uniq_borₛ 𝔄') 𝔄) `{!PctxNoUniq K1}
       (lt: lty 𝔄') :
     lctx_lft_alive E L κ → pctx_nonempty K1 → pctx_simple K1 →
     lty_is_cpd lt → lty_simple lt → pat_blk_lfts (lty_pat lt) = [] → lty_nblk lt = 0%nat →
@@ -434,7 +431,7 @@ Section typing.
       to the node with the leaf [&uniq{κ'} (lty_fold lt)] ([cpd_rebody]; the
       reservation is kept, it may over-approximate), the nested place is folded back into
       the inner borrow ([cpd_fold_uniq]), which gets new depths and a new index. *)
-  Lemma type_fold_place_uniq_deep_instr {𝔄' 𝔄} E L I p κ κ' (K1: pctx (uniq_borₛ 𝔄') 𝔄)
+  Lemma type_fold_place_uniq_deep_instr {𝔄' 𝔄} E L I p κ κ' (K1: pctx (uniq_borₛ 𝔄') 𝔄) `{!PctxNoUniq K1}
       (lt: lty 𝔄') :
     lctx_lft_alive E L κ → pctx_nonempty K1 → pctx_simple K1 → lty_is_cpd lt →
     (∀ y ζm q d g tid l, ltype_own_cp false lt (Owned 0) (lty_pat lt) (lty_rfn lt y ζm q) d g tid l ⊢
@@ -516,8 +513,8 @@ Section typing.
       nodes ([cpd_rebody]), the inner one inside the lazy update of the contents of the
       outer one (so no program step is needed). This allows unfolding the nested place
       further after the nested unfold. *)
-  Lemma tctx_place_nested_change_hole {𝔅 𝔄' 𝔄} E L p κ κ' (K1: pctx (uniq_borₛ 𝔄') 𝔄)
-      (K2: pctx 𝔅 𝔄') (lt lt': lty 𝔅) :
+  Lemma tctx_place_nested_change_hole {𝔅 𝔄' 𝔄} E L p κ κ' (K1: pctx (uniq_borₛ 𝔄') 𝔄) `{!PctxNoUniq K1}
+      (K2: pctx 𝔅 𝔄') `{!PctxNoUniq K2} (lt lt': lty 𝔅) :
     lctx_lft_alive E L κ → pctx_noderef K1 → pctx_simple K1 → pctx_nonempty K2 →
     pctx_simple K2 → lty_simple lt' →
     lty_size lt' = lty_size lt → lty_fold lt' = lty_fold lt → lty_nblk lt' = lty_nblk lt →
@@ -586,7 +583,7 @@ Section typing.
 
   (** Unfolding a unique borrow of a pair below the root. *)
   Lemma type_unfold_place_uniq_prod_deep_instr {𝔄1 𝔄2 𝔄} E L I p κ κ'
-      (K1: pctx (uniq_borₛ (𝔄1 * 𝔄2)) 𝔄) (ty1: type 𝔄1) (ty2: type 𝔄2) :
+      (K1: pctx (uniq_borₛ (𝔄1 * 𝔄2)) 𝔄) `{!PctxNoUniq K1} (ty1: type 𝔄1) (ty2: type 𝔄2) :
     lctx_lft_alive E L κ → pctx_nonempty K1 → pctx_simple K1 →
     typed_instr E L I +[p ◁ₗ{κ} pctx_plug K1 (OfTy (&uniq{κ'} (ty1 * ty2)))] (Seq Skip Skip)
       (const +[p ◁ₗ{κ} pctx_plug K1 (UniqLty (ProdLty (OfTy ty1) (OfTy ty2)) κ')])
@@ -602,7 +599,7 @@ Section typing.
   Qed.
 
   Lemma type_fold_place_uniq_prod_deep_instr {𝔄1 𝔄2 𝔄} E L I p κ κ'
-      (K1: pctx (uniq_borₛ (𝔄1 * 𝔄2)) 𝔄) (ty1: type 𝔄1) (ty2: type 𝔄2) :
+      (K1: pctx (uniq_borₛ (𝔄1 * 𝔄2)) 𝔄) `{!PctxNoUniq K1} (ty1: type 𝔄1) (ty2: type 𝔄2) :
     lctx_lft_alive E L κ → pctx_nonempty K1 → pctx_simple K1 →
     typed_instr E L I +[p ◁ₗ{κ} pctx_plug K1 (UniqLty (ProdLty (OfTy ty1) (OfTy ty2)) κ')]
       (Seq Skip Skip) (const +[p ◁ₗ{κ} pctx_plug K1 (OfTy (&uniq{κ'} (ty1 * ty2)))])
@@ -620,8 +617,8 @@ Section typing.
   Qed.
 
   (** Unfolding and folding a pair inside a nested place. *)
-  Lemma tctx_unfold_place_nested_prod {𝔅1 𝔅2 𝔄' 𝔄} E L p κ κ' (K1: pctx (uniq_borₛ 𝔄') 𝔄)
-      (K2: pctx (𝔅1 * 𝔅2) 𝔄') (ty1: type 𝔅1) (ty2: type 𝔅2) :
+  Lemma tctx_unfold_place_nested_prod {𝔅1 𝔅2 𝔄' 𝔄} E L p κ κ' (K1: pctx (uniq_borₛ 𝔄') 𝔄) `{!PctxNoUniq K1}
+      (K2: pctx (𝔅1 * 𝔅2) 𝔄') `{!PctxNoUniq K2} (ty1: type 𝔅1) (ty2: type 𝔅2) :
     lctx_lft_alive E L κ → pctx_noderef K1 → pctx_simple K1 → pctx_nonempty K2 →
     pctx_simple K2 →
     tctx_incl E L +[p ◁ₗ{κ} pctx_plug K1 (UniqLty (pctx_plug K2 (OfTy (ty1 * ty2))) κ')]
@@ -634,8 +631,8 @@ Section typing.
     - intros [y1 y2] ??????. iIntros "H !>". by iApply prod_ofty_unfold_own.
   Qed.
 
-  Lemma tctx_fold_place_nested_prod {𝔅1 𝔅2 𝔄' 𝔄} E L p κ κ' (K1: pctx (uniq_borₛ 𝔄') 𝔄)
-      (K2: pctx (𝔅1 * 𝔅2) 𝔄') (ty1: type 𝔅1) (ty2: type 𝔅2) :
+  Lemma tctx_fold_place_nested_prod {𝔅1 𝔅2 𝔄' 𝔄} E L p κ κ' (K1: pctx (uniq_borₛ 𝔄') 𝔄) `{!PctxNoUniq K1}
+      (K2: pctx (𝔅1 * 𝔅2) 𝔄') `{!PctxNoUniq K2} (ty1: type 𝔅1) (ty2: type 𝔅2) :
     lctx_lft_alive E L κ → pctx_noderef K1 → pctx_simple K1 → pctx_nonempty K2 →
     pctx_simple K2 →
     tctx_incl E L +[p ◁ₗ{κ} pctx_plug K1 (UniqLty (pctx_plug K2 (ProdLty (OfTy ty1) (OfTy ty2))) κ')]
@@ -683,7 +680,7 @@ Section typing.
       borrow, which extends the inner reservation, and is finally put back into the loan
       of [ζ], borrowed at [κ ⊓ α]. *)
   Lemma type_reborrow_place_nested_instr {𝔅 𝔄' 𝔄} E L I p κ κ' α
-      (K1: pctx (uniq_borₛ 𝔄') 𝔄) (K2: pctx 𝔅 𝔄') (ty: type 𝔅) :
+      (K1: pctx (uniq_borₛ 𝔄') 𝔄) `{!PctxNoUniq K1} (K2: pctx 𝔅 𝔄') `{!PctxNoUniq K2} (ty: type 𝔅) :
     lctx_lft_alive E L κ → pctx_noderef K1 → pctx_nonempty K2 → pctx_noderef K2 →
     typed_instr E L I +[p ◁ₗ{κ} pctx_plug K1 (UniqLty (pctx_plug K2 (OfTy ty)) κ')]
       (Seq (Seq Skip Skip) (!(p +ₗ #(pctx_off K1)) +ₗ #(pctx_off K2)))%E
@@ -873,7 +870,7 @@ Section typing.
       contents; it comes from the second cumulative time receipt of the blocked leaf, which
       also pays for the credits of the observation of the final value. *)
   Lemma unblock_tctx_place_nested {𝔅 𝔄' 𝔄 𝔄l 𝔄l'} p κ κ' α
-      (K1: pctx (uniq_borₛ 𝔄') 𝔄) (K2: pctx 𝔅 𝔄') (ty: type 𝔅)
+      (K1: pctx (uniq_borₛ 𝔄') 𝔄) `{!PctxNoUniq K1} (K2: pctx 𝔅 𝔄') `{!PctxNoUniq K2} (ty: type 𝔅)
       (T: tctx 𝔄l) (T': tctx 𝔄l') E L f :
     lctx_lft_alive E L κ → pctx_noderef K1 → pctx_nonempty K2 → pctx_noderef K2 →
     unblock_tctx E L α T T' f →

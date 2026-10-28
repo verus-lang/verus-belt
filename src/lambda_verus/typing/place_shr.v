@@ -97,7 +97,7 @@ Section typing.
       address of the leaf ([pctx_expr], a load per owned pointer above it), with the
       borrow of the place open. The leaf is shared-blocked until [κ ⊓ α] ends; the value
       of the place does not change. *)
-  Lemma type_share_place_instr {𝔅 𝔄} E L I p κ α (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_share_place_instr {𝔅 𝔄} E L I p κ α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
     lctx_lft_alive E L (κ ⊓ α) → pctx_nonempty K →
     typed_instr E L I +[p ◁ₗ{κ} pctx_plug K (OfTy ty)] (Share;; pctx_expr K p)
       (λ w, +[w ◁ &shr{κ ⊓ α} ty; p ◁ₗ{κ} pctx_plug K (ShrBlocked ty (κ ⊓ α))])
@@ -195,7 +195,7 @@ Section typing.
       below an owned pointer), while [β] is alive: the borrow of the place is opened to
       get the (persistent) guard of the points-to and the sharing predicate of the leaf,
       and closed again at the same state. *)
-  Lemma type_read_place_shr_instr {𝔅 𝔄} E L I p κ β (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_read_place_shr_instr {𝔅 𝔄} E L I p κ β (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
     lctx_lft_alive E L κ → lctx_lft_alive E L β → pctx_nonempty K → pctx_noderef K →
     ty_size ty = 1%nat → Copy ty →
     typed_instr E L I +[p ◁ₗ{κ} pctx_plug K (ShrBlocked ty β)] (!(p +ₗ #(pctx_off K)))
@@ -278,7 +278,7 @@ Section typing.
       gets back its contents (the inheritance of its borrow); the value of the place does
       not change. The borrow of the place is opened before the step of [unblock_tctx],
       which pays for the later in front of its contents. *)
-  Lemma unblock_tctx_place_shr {𝔅 𝔄 𝔄l 𝔄l'} p κ α (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma unblock_tctx_place_shr {𝔅 𝔄 𝔄l 𝔄l'} p κ α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅)
       (T: tctx 𝔄l) (T': tctx 𝔄l') E L f :
     lctx_lft_alive E L κ → pctx_nonempty K → unblock_tctx E L α T T' f →
     unblock_tctx E L α (p ◁ₗ{κ} pctx_plug K (ShrBlocked ty (κ ⊓ α)) +:: T)
@@ -340,7 +340,7 @@ Section typing.
   (** A shared borrow of the leaf at the hole of [K], at a lifetime [α] that the type of
       the leaf outlives. The leaf is shared-blocked until [α] ends; the value of the
       place does not change. *)
-  Lemma type_share_oplace_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_share_oplace_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
     elctx_sat E L (ty_outlives_E ty α) → lctx_lft_alive E L α →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Share;; pctx_expr K p)
       (λ w, +[w ◁ &shr{α} ty; p ◁ₗown{n} pctx_plug K (ShrBlocked ty α)])
@@ -412,7 +412,7 @@ Section typing.
 
   (** * Reading a shared-blocked leaf of a place rooted at an owned location *)
 
-  Lemma type_read_oplace_shr_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_read_oplace_shr_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
     lctx_lft_alive E L α → ty_size ty = 1%nat → Copy ty →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrBlocked ty α)] (!(pctx_expr K p))
       (λ v, +[v ◁ ty; p ◁ₗown{n} pctx_plug K (ShrBlocked ty α)])
@@ -482,7 +482,7 @@ Section typing.
 
   (** * Unblocking a shared-blocked leaf of a place rooted at an owned location *)
 
-  Lemma unblock_tctx_oplace_shr {𝔅 𝔄 𝔄l 𝔄l'} p n α (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma unblock_tctx_oplace_shr {𝔅 𝔄 𝔄l 𝔄l'} p n α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅)
       (T: tctx 𝔄l) (T': tctx 𝔄l') E L f :
     unblock_tctx E L α T T' f →
     unblock_tctx E L α (p ◁ₗown{n} pctx_plug K (ShrBlocked ty α) +:: T)
@@ -527,7 +527,7 @@ Section shr_place.
     ty_shr (lty_fold lt) κ (pctx_get K x) d g tid ∗
     ▷^j ty_gho_pers (lty_fold lt) (pctx_get K x) d g tid.
   Proof.
-    induction K as [|𝔅 𝔄1 𝔄2 K IH lt2|𝔅 𝔄1 𝔄2 lt1 K IH| |] in lt, x, l |- *; intros HK; simpl.
+    induction K as [|𝔅 𝔄1 𝔄2 K IH lt2|𝔅 𝔄1 𝔄2 lt1 K IH| | |] in lt, x, l |- *; intros HK; simpl.
     - iIntros "$ $ $".
     - iIntros "#Pt [Shr _] Pers". rewrite heap_mapsto_cells_fancy_vec_app.
       iApply (IH with "[] Shr [Pers]"); [done| |by iDestruct "Pers" as "[$ _]"].
@@ -537,6 +537,7 @@ Section shr_place.
       iApply (IH with "[] Shr [Pers]"); [done| |by iDestruct "Pers" as "[_ $]"].
       rewrite ty_size_eq -lty_size_fold.
       by iApply (guards_weaken_rhs_sep_r with "Pt").
+    - done.
     - done.
     - done.
   Qed.

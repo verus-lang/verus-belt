@@ -37,7 +37,7 @@ Section typing.
   (** Copying a value of any size into the leaf at the hole of [K] of an owned place,
       from a path [pr] that can be read: the old value of the leaf is resolved, and the
       type of the leaf becomes the type of the new value. *)
-  Lemma type_memcpy_oplace_instr {𝔅 𝔅' 𝔄 ℭ ℭ'} E L I p pr n (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma type_memcpy_oplace_instr {𝔅 𝔅' 𝔄 ℭ ℭ'} E L I p pr n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅)
       (tyr: type ℭ) (tyr': type ℭ') (tyb: type 𝔅') gtr str Φ (sz: Z) :
     ty_size ty = ty_size tyb → resolve E L ty Φ → typed_read E L tyr tyb tyr' gtr str →
     sz = ty_size tyb → pctx_nosum K →
@@ -142,7 +142,7 @@ Section typing.
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
     by apply Hπ.
   Qed.
-  Lemma type_memcpy_oplace_same_instr {𝔅 𝔄 ℭ ℭ'} E L I p pr n (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma type_memcpy_oplace_same_instr {𝔅 𝔄 ℭ ℭ'} E L I p pr n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅)
       (tyr: type ℭ) (tyr': type ℭ') gtr str Φ (sz: Z) :
     resolve E L ty Φ → typed_read E L tyr ty tyr' gtr str → sz = ty_size ty →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty); pr ◁ tyr] (pctx_expr K p <-{sz} !pr)
@@ -252,7 +252,7 @@ Section typing.
       into a path [pw] that can be written: the leaf becomes uninitialized (its type is
       [↯ n], its value is the old contents of the cells), the old value of the
       destination is resolved. *)
-  Lemma type_memcpy_from_oplace_instr {𝔅 𝔄 ℭ ℭ' 𝔇} E L I pw p n (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma type_memcpy_from_oplace_instr {𝔅 𝔄 ℭ ℭ' 𝔇} E L I pw p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅)
       (tyw: type ℭ) (tyw': type ℭ') (tyb: type 𝔇) gtw stw Φ (sz: Z) :
     typed_write E L tyw tyb tyw' ty gtw stw → resolve' E L tyb Φ →
     sz = ty_size ty → pctx_nosum K →
@@ -364,7 +364,7 @@ Section typing.
   (** Copying a value of any size of a [Copy] type out of the leaf at the hole of [K] of
       an owned place, into a path [pw] that can be written. The leaf does not change (so
       any [K] is allowed, also through sums). *)
-  Lemma type_memcpy_copy_from_oplace_instr {𝔅 𝔄 ℭ ℭ' 𝔇} E L I pw p n (K: pctx 𝔅 𝔄)
+  Lemma type_memcpy_copy_from_oplace_instr {𝔅 𝔄 ℭ ℭ' 𝔇} E L I pw p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K}
       (ty: type 𝔅) (tyw: type ℭ) (tyw': type ℭ') (tyb: type 𝔇) gtw stw Φ (sz: Z) :
     Copy ty → typed_write E L tyw tyb tyw' ty gtw stw → resolve' E L tyb Φ →
     sz = ty_size ty →
@@ -464,7 +464,7 @@ Section typing.
       path, also below owned pointers) of a place rooted at a unique borrow, from a path
       [pr] that can be read, keeping the type of the leaf. The old value is resolved.
       The borrow of the place is opened around the address computation and the copy. *)
-  Lemma type_memcpy_place_instr {𝔅 𝔄 ℭ ℭ'} E L I p pr κ (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma type_memcpy_place_instr {𝔅 𝔄 ℭ ℭ'} E L I p pr κ (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅)
       (tyr: type ℭ) (tyr': type ℭ') gtr str Φ (sz: Z) :
     lctx_lft_alive E L κ → pctx_nonempty K → resolve E L ty Φ →
     typed_read E L tyr ty tyr' gtr str → sz = ty_size ty →
@@ -613,7 +613,7 @@ Section typing.
   (** Copying a value of any size of a [Copy] type out of the leaf at the hole of [K]
       (nonempty, at any path) of a place rooted at a unique borrow, into a path [pw] that
       can be written. The place does not change. *)
-  Lemma type_memcpy_from_place_instr {𝔅 𝔄 ℭ ℭ' 𝔇} E L I pw p κ (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma type_memcpy_from_place_instr {𝔅 𝔄 ℭ ℭ' 𝔇} E L I pw p κ (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅)
       (tyw: type ℭ) (tyw': type ℭ') (tyb: type 𝔇) gtw stw Φ (sz: Z) :
     lctx_lft_alive E L κ → pctx_nonempty K → Copy ty →
     typed_write E L tyw tyb tyw' ty gtw stw → resolve' E L tyb Φ → sz = ty_size ty →

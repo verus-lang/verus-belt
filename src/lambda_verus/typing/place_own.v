@@ -97,7 +97,7 @@ Section typing.
 
   (** * Changing the place type of a subplace *)
 
-  Lemma tctx_oplace_change_hole {𝔅 𝔄} E L p n (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅) :
+  Lemma tctx_oplace_change_hole {𝔅 𝔄} E L p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (lt lt': lty 𝔅) :
     lty_size lt' = lty_size lt → lty_nblk lt' = lty_nblk lt →
     (∀ y ζm q d g tid l, ltype_own (Owned (pctx_mode K 1)) lt (lty_rfn lt y ζm q) d g tid l ={⊤}=∗
        ltype_own (Owned (pctx_mode K 1)) lt' (lty_rfn lt' y ζm q) d g tid l) →
@@ -119,21 +119,21 @@ Section typing.
 
   (** ** Products *)
 
-  Lemma tctx_unfold_oplace_prod {𝔅1 𝔅2 𝔄} E L p n (K: pctx (𝔅1 * 𝔅2) 𝔄)
+  Lemma tctx_unfold_oplace_prod {𝔅1 𝔅2 𝔄} E L p n (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoUniq K}
       (ty1: type 𝔅1) (ty2: type 𝔅2) :
     tctx_incl E L +[p ◁ₗown{n} pctx_plug K (OfTy (ty1 * ty2))]
       +[p ◁ₗown{n} pctx_plug K (ProdLty (OfTy ty1) (OfTy ty2))] (λ post '-[x], post -[x]).
   Proof.
-    apply tctx_oplace_change_hole; [done|done|].
+    apply (tctx_oplace_change_hole _ _ _ _ K); [done|done|].
     iIntros ([y1 y2] ??????) "H !>". by iApply prod_ofty_unfold_own.
   Qed.
 
-  Lemma tctx_fold_oplace_prod {𝔅1 𝔅2 𝔄} E L p n (K: pctx (𝔅1 * 𝔅2) 𝔄)
+  Lemma tctx_fold_oplace_prod {𝔅1 𝔅2 𝔄} E L p n (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoUniq K}
       (ty1: type 𝔅1) (ty2: type 𝔅2) :
     tctx_incl E L +[p ◁ₗown{n} pctx_plug K (ProdLty (OfTy ty1) (OfTy ty2))]
       +[p ◁ₗown{n} pctx_plug K (OfTy (ty1 * ty2))] (λ post '-[x], post -[x]).
   Proof.
-    apply tctx_oplace_change_hole; [done|done|].
+    apply (tctx_oplace_change_hole _ _ _ _ K); [done|done|].
     iIntros ([y1 y2] ??????) "H !>". by iApply (prod_ofty_unfold_own with "H").
   Qed.
 
@@ -146,7 +146,7 @@ Section typing.
       fields of an n-ary product (a struct) one by one. (Not for places rooted at a unique
       borrow: the folded type of the place would change.) *)
 
-  Lemma tctx_unfold_oplace_xprod {𝔅 𝔅l 𝔄} E L p n (K: pctx (Π! (𝔅 :: 𝔅l)) 𝔄)
+  Lemma tctx_unfold_oplace_xprod {𝔅 𝔅l 𝔄} E L p n (K: pctx (Π! (𝔅 :: 𝔅l)) 𝔄) `{!PctxNoUniq K}
       (ty: type 𝔅) (tyl: typel 𝔅l) :
     pctx_nosum K →
     tctx_incl E L +[p ◁ₗown{n} pctx_plug K (OfTy (Π! (ty +:: tyl)))]
@@ -180,7 +180,7 @@ Section typing.
     iSplitL "Pt1 Gho1"; [iExists y1|iExists y2]; by iFrame.
   Qed.
 
-  Lemma tctx_fold_oplace_xprod {𝔅 𝔅l 𝔄} E L p n (K: pctx (𝔅 * Π! 𝔅l) 𝔄)
+  Lemma tctx_fold_oplace_xprod {𝔅 𝔅l 𝔄} E L p n (K: pctx (𝔅 * Π! 𝔅l) 𝔄) `{!PctxNoUniq K}
       (ty: type 𝔅) (tyl: typel 𝔅l) :
     pctx_nosum K →
     tctx_incl E L +[p ◁ₗown{n} pctx_plug K (ProdLty (OfTy ty) (OfTy (Π! tyl)))]
@@ -230,27 +230,27 @@ Section typing.
     iFrame.
   Qed.
 
-  Lemma tctx_unfold_oplace_own {𝔅 𝔄} E L p n' (K: pctx (at_locₛ 𝔅) 𝔄) n (ty: type 𝔅) :
+  Lemma tctx_unfold_oplace_own {𝔅 𝔄} E L p n' (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoUniq K} n (ty: type 𝔅) :
     pctx_mode K 1 = 1%nat →
     tctx_incl E L +[p ◁ₗown{n'} pctx_plug K (OfTy (own_ptr n ty))]
       +[p ◁ₗown{n'} pctx_plug K (OwnPtrLty n (OfTy ty))] (λ post '-[x], post -[x]).
   Proof.
-    intros Hm. apply tctx_oplace_change_hole; [done|done|].
+    intros Hm. apply (tctx_oplace_change_hole _ _ _ _ K); [done|done|].
     iIntros ([l' y] ??????) "H". rewrite Hm. by iApply ownptr_ofty_unfold_own1.
   Qed.
 
-  Lemma tctx_fold_oplace_own {𝔅 𝔄} E L p n' (K: pctx (at_locₛ 𝔅) 𝔄) n (ty: type 𝔅) :
+  Lemma tctx_fold_oplace_own {𝔅 𝔄} E L p n' (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoUniq K} n (ty: type 𝔅) :
     tctx_incl E L +[p ◁ₗown{n'} pctx_plug K (OwnPtrLty n (OfTy ty))]
       +[p ◁ₗown{n'} pctx_plug K (OfTy (own_ptr n ty))] (λ post '-[x], post -[x]).
   Proof.
-    apply tctx_oplace_change_hole; [done|done|].
+    apply (tctx_oplace_change_hole _ _ _ _ K); [done|done|].
     iIntros ([l' y] ??????) "H !>". by iApply (ownptr_ofty_fold_own with "H").
   Qed.
 
   (** Unfolding an owned pointer at any depth (e.g. a box inside a box inside the root):
       below [k] laters ([pctx_mode K 1 = k]), the points-to of the pointee is stripped of
       its laters with the later credits of a program step. *)
-  Lemma type_unfold_oplace_own_instr {𝔅 𝔄} E L I p n' (K: pctx (at_locₛ 𝔅) 𝔄) n (ty: type 𝔅) :
+  Lemma type_unfold_oplace_own_instr {𝔅 𝔄} E L I p n' (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoUniq K} n (ty: type 𝔅) :
     typed_instr E L I +[p ◁ₗown{n'} pctx_plug K (OfTy (own_ptr n ty))] Skip
       (λ _, +[p ◁ₗown{n'} pctx_plug K (OwnPtrLty n (OfTy ty))]) (λ post '-[x], post -[x]).
   Proof.
@@ -284,12 +284,12 @@ Section typing.
   (** * Mutable borrow of a leaf *)
 
   (** Some facts about the location of the hole of an owned place. *)
-  Lemma oplace_loc_empty {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) x (l: loc) :
+  Lemma oplace_loc_empty {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (lt: lty 𝔅) x (l: loc) :
     ∃ l', pctx_loc K (lty_size lt) x (l, repeat [] (lty_size (pctx_plug K lt))) =
       (l', repeat [] (lty_size lt)).
-  Proof. rewrite lty_size_plug. apply pctx_loc_empty. Qed.
+  Proof. rewrite lty_size_plug. apply (pctx_loc_empty K). Qed.
 
-  Lemma oplace_loc_guard {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) x (l: loc) (G: iProp Σ) E k :
+  Lemma oplace_loc_guard {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (lt: lty 𝔅) x (l: loc) (G: iProp Σ) E k :
     ⊢ G &&{E; k}&&> pctx_loc K (lty_size lt) x (l, repeat [] (lty_size (pctx_plug K lt))) #↦∗_.
   Proof.
     destruct (oplace_loc_empty K lt x l) as [l' ->]. rewrite -heap_cloc_mapsto_empty.
@@ -301,7 +301,7 @@ Section typing.
       per owned pointer above it). The leaf is blocked until [α] ends, refined by the
       final value of the new borrow (the blocking map gets an entry for the path of the
       hole). *)
-  Lemma type_borrow_oplace_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_borrow_oplace_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
     elctx_sat E L (ty_outlives_E ty α) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Seq (Seq Skip Skip) (pctx_expr K p))
       (λ w, +[w ◁ &uniq{α} ty; p ◁ₗown{n} pctx_plug K (Blocked ty α)])
@@ -387,7 +387,7 @@ Section typing.
       contents of its borrow, whose value is the final value of the borrow. The current
       value of the place only changes at the hole. Unblocking pays with the cumulative
       time receipt of the blocked leaf. *)
-  Lemma unblock_tctx_oplace {𝔅 𝔄 𝔄l 𝔄l'} p n α (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma unblock_tctx_oplace {𝔅 𝔄 𝔄l 𝔄l'} p n α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅)
       (T: tctx 𝔄l) (T': tctx 𝔄l') E L f :
     lctx_lft_alive E L (ty_lft ty) → unblock_tctx E L α T T' f →
     unblock_tctx E L α (p ◁ₗown{n} pctx_plug K (Blocked ty α) +:: T)
@@ -453,7 +453,7 @@ Section typing.
   (** * Reading, moving out of and writing a leaf *)
 
   (** Copying a value of size 1 out of the leaf at the hole of [K]. *)
-  Lemma type_read_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_read_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
     ty_size ty = 1%nat → Copy ty →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (!(pctx_expr K p))
       (λ v, +[v ◁ ty; p ◁ₗown{n} pctx_plug K (OfTy ty)])
@@ -511,7 +511,7 @@ Section typing.
 
   (** Moving a value of size 1 out of the leaf at the hole of [K]: the leaf becomes
       uninitialized (its type is [↯ 1], its value is the old contents). *)
-  Lemma type_move_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_move_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
     ty_size ty = 1%nat → StackOkay ty → pctx_nosum K →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (!(pctx_expr K p))
       (λ v, +[v ◁ ty; p ◁ₗown{n} pctx_plug (pctx_retype K (uninitₛ 1)) (OfTy (↯ 1))])
@@ -577,7 +577,7 @@ Section typing.
   (** Writing a value of size 1 into the leaf at the hole of [K] (initialized, or
       uninitialized after a move): the old value is resolved, and the type of the leaf
       becomes the type of the new value. *)
-  Lemma type_write_oplace_instr {𝔅 𝔅' 𝔄} E L I p pb n (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma type_write_oplace_instr {𝔅 𝔅' 𝔄} E L I p pb n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅)
       (ty': type 𝔅') Φ :
     ty_size ty = 1%nat → ty_size ty' = 1%nat → resolve E L ty Φ → pctx_nosum K →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty); pb ◁ ty'] (pctx_expr K p <- pb)

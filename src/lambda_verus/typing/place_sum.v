@@ -72,12 +72,12 @@ Section typing.
   (** A sum place whose payload is the leaf of its variant is folded back into a leaf
       holding the sum. (The converse is done by reading the discriminant,
       [type_case_place].) *)
-  Lemma tctx_fold_place_sum {𝔄l 𝔄} E L p κ (K: pctx (Σ! 𝔄l) 𝔄) (tyl: typel 𝔄l) i :
+  Lemma tctx_fold_place_sum {𝔄l 𝔄} E L p κ (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoUniq K} (tyl: typel 𝔄l) i :
     lctx_lft_alive E L κ → pctx_simple K →
     tctx_incl E L +[p ◁ₗ{κ} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i)))]
       +[p ◁ₗ{κ} pctx_plug K (OfTy (Σ! tyl))] (λ post '-[x], post -[x]).
   Proof.
-    intros Alv HsK. apply tctx_place_change_hole'; [done|done|done| | |done| | | |].
+    intros Alv HsK. apply (tctx_place_change_hole' _ _ _ _ K); [done|done|done| | |done| | | |].
     - by rewrite lty_size_sum_ofty.
     - by rewrite lty_fold_sum_ofty.
     - intros ?; simpl; set_solver.
