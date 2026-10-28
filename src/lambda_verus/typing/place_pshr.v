@@ -326,27 +326,31 @@ Section pshr_addr.
       an owned place: the access to the hole of [K1] ([pctx_acc]), the load of the pointer
       of the shared reference (in [Owned] or [Uniq] mode), and the loads on the path of
       [K2] ([wp_pctx_sexpr]); the place is unchanged, and the postcondition gets the
-      shared view of the hole at [pctx_slft K2 κ]. *)
+      shared view of the hole at [pctx_slft K2 κ]. The view of the referent may be changed
+      to [lt''], of the same folded type, if the referent is of its variants (e.g. after
+      reading the tag of a sum, [type_case_oplace_pshr]). *)
   Lemma wp_pshr_addr {𝔅 𝔄 𝔄'} (K1: pctx (at_clocₛ 𝔄') 𝔄) `{!PctxNoShr K1} κ
-      (K2: pctx 𝔅 𝔄') (lt: lty 𝔅) x₀ ζm d g D tid (l: loc) (e: expr) (G: iProp Σ)
-      (Φ: val → iProp Σ) :
-    Timeless G → S d ≤ D → g ≤ D →
+      (K2: pctx 𝔅 𝔄') (lt: lty 𝔅) (lt'': lty 𝔄') x₀ ζm d g D tid (l: loc) (e: expr)
+      (G: iProp Σ) (Φ: val → iProp Σ) :
+    Timeless G → S d ≤ D → g ≤ D → lty_fold lt'' = lty_fold (pctx_plug K2 lt) →
     let lt1 := ShrLty (pctx_plug K2 lt) κ in
+    let lt1' := ShrLty lt'' κ in
     let lr := (l, repeat [] (lty_size (pctx_plug K1 lt1))) in
     let y := pctx_get K1 x₀ in
+    (lty_vin (pctx_plug K2 lt) y.2 → lty_vin lt'' y.2) →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗
     (G &&{↑NllftG}&&> @[pctx_ulft K1 lt1]) -∗ (G &&{↑NllftG}&&> @[pctx_salv K2 κ]) -∗
     G -∗ £(pshr_cred D) -∗ ⧖D -∗ WP e {{ v, ⌜v = #l⌝ }} -∗
     ltype_own (Owned 1) (pctx_plug K1 lt1) (lty_rfn (pctx_plug K1 lt1) x₀ ζm []) d g tid lr -∗
     (∀ dh, ⌜dh < d⌝ -∗ ⌜pctx_in K1 x₀ ∧ pctx_vin K2 y.2 ∧ lty_vin lt (pctx_get K2 y.2)⌝ -∗
       G -∗
-      ltype_own (Owned 1) (pctx_plug K1 lt1) (lty_rfn (pctx_plug K1 lt1) x₀ ζm []) d g tid lr -∗
+      ltype_own (Owned 1) (pctx_plug K1 lt1') (lty_rfn (pctx_plug K1 lt1') x₀ ζm []) d g tid lr -∗
       shr_view (pctx_slft K2 κ) (lty_fold lt) (pctx_get K2 y.2) dh g tid
         (pctx_loc K2 (lty_size lt) y.2 y.1) -∗
       Φ #(pctx_loc K2 (lty_size lt) y.2 y.1).1) -∗
     WP pctx_expr K2 (!(pctx_expr K1 e)) {{ Φ }}.
   Proof.
-    iIntros (? Hd Hg lt1 lr y) "#LFT #PROPH #UNIQ #Gu #Gs G £ #⧖ WPe Own HΦ".
+    iIntros (? Hd Hg Hfold lt1 lt1' lr y Hv) "#LFT #PROPH #UNIQ #Gu #Gs G £ #⧖ WPe Own HΦ".
     set T := lty_fold (pctx_plug K2 lt).
     have ?: Copy (shr_bor κ T) := shr_copy κ T.
     rewrite /ltype_own lty_pat_plug lty_rfn_plug.
@@ -380,8 +384,8 @@ Section pshr_addr.
     iDestruct (lc_weaken _ Hrest with "£") as "(£m & £r & £p & £t & £s)".
     (* The (persistent) ownership of the shared reference, and the closed access. *)
     iAssert (WP ! #lK.1 {{ v, ⌜v = #y.1.1⌝ ∗ G ∗
-      ltype_own_cp false (pctx_plug K1 lt1) (Owned 1) (pctx_pat K1 (lty_pat lt1))
-        (pctx_rfn K1 x₀ ζm [] (lty_rfn lt1 y ζm (pctx_path K1 []))) d g tid lr ∗
+      ltype_own_cp false (pctx_plug K1 lt1') (Owned 1) (pctx_pat K1 (lty_pat lt1'))
+        (pctx_rfn K1 x₀ ζm [] (lty_rfn lt1' y ζm (pctx_path K1 []))) d g tid lr ∗
       ⌜lty_vin (pctx_plug K2 lt) y.2⌝ ∗ (shr_bor κ T).(ty_gho_own) y dh1 gh1 tid }})%I
       with "[H Cl P G' £m £r]" as "WPr".
     { iApply wp_fupd. destruct (pctx_uend K1) as [κ1|] eqn:Hu.
@@ -410,14 +414,16 @@ Section pshr_addr.
         iSpecialize ("CloseB" $! y dh1 gh1 with "[Pt1] ⧗1"); [by iFrame "⧖' Gho1"|].
         iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [solve_ndisj|].
         iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [solve_ndisj|].
-        iMod ("Cl" $! lt1 PatLeaf (inl (PlaceIn y)) dh1 gh1 d g [] 1%Qp True%I
-          with "[//] [//] [%] [%] [] [] G' P [] [Body]") as "(Own & G & _)".
+        iMod ("Cl" $! lt1' PatLeaf (inl (PlaceIn y)) dh1 gh1 d g [] 1%Qp True%I
+          with "[%] [//] [%] [%] [] [] G' P [] [Body]") as "(Own & G & _)".
+        { by rewrite /= Hfold. }
         { intros ??. apply prfn_rsv_in. }
         { lia. }
         { iApply pat_ok_ulfts_leaf. }
         { iApply (persistent_time_receipt_mono with "⧖"). lia. }
         { done. }
-        { iIntros "_ !>". iSplit; [|done]. iSplit; [|done]. iExists y, idx. by iFrame. }
+        { iIntros "_ !>". iSplit; [|done]. iSplit; [|iPureIntro; by apply Hv].
+          rewrite /= Hfold. iExists y, idx. by iFrame. }
         iModIntro. iSplit; [done|]. by iFrame "G Own Gho1".
       - iEval (rewrite (pctx_kind_owned K1) //) in "H".
         iEval (rewrite /pctx_closer (pctx_kind_owned K1) //) in "Cl".
@@ -431,14 +437,16 @@ Section pshr_addr.
           - iApply guards_weaken_lhs_sep_l. iApply "Gw".
           - iApply (lguards_weaken_later _ _ _ 0); [lia|iApply guards_weaken_sep_r]. }
         iIntros "!> [G' Pt1]".
-        iMod ("Cl" $! lt1 PatLeaf (inl (PlaceIn y)) dh1 gh1 d g [] 1%Qp True%I
-          with "[//] [//] [%] [%] [] [] G' P [] [Pt1]") as "(Own & G & _)".
+        iMod ("Cl" $! lt1' PatLeaf (inl (PlaceIn y)) dh1 gh1 d g [] 1%Qp True%I
+          with "[%] [//] [%] [%] [] [] G' P [] [Pt1]") as "(Own & G & _)".
+        { by rewrite /= Hfold. }
         { intros ??. apply prfn_rsv_in. }
         { lia. }
         { iApply pat_ok_ulfts_leaf. }
         { iApply (persistent_time_receipt_mono with "⧖"). lia. }
         { done. }
-        { iIntros "_ !>". iSplit; [|done]. iSplit; [|done]. iExists y. iSplit; [done|].
+        { iIntros "_ !>". iSplit; [|done]. iSplit; [|iPureIntro; by apply Hv].
+          rewrite /= Hfold. iExists y. iSplit; [done|].
           rewrite /ofty_owned. by iFrame "Pt1 Gho1". }
         iModIntro. iSplit; [done|]. by iFrame "G Own Gho1'". }
     iApply (wp_wand with "WPr"). iIntros (v) "(-> & G & Own & %Hvin & #Gho)".
@@ -452,6 +460,172 @@ Section pshr_addr.
       as "[#Gs2 (%dh & %Hdh & #Vh)]"; [by apply pctx_vin_in|].
     iModIntro. iSplit; [done|]. iFrame "Gs2 G". iSplitL "£s".
     { iApply (lc_weaken with "£s"). nia. }
-    iIntros "G". iApply ("HΦ" with "[%] [%] G Own Vh"); [lia|done].
+    iIntros "G". iApply ("HΦ" with "[%] [%] G [Own] Vh"); [lia|done|].
+    by rewrite /ltype_own lty_pat_plug lty_rfn_plug.
   Qed.
 End pshr_addr.
+
+(** * Rules *)
+
+Section typing.
+  Context `{!typeG Σ}.
+
+  (** ** (a) Unfolding and folding a shared reference, and changing the view of its
+      referent *)
+
+  (** The interpretation of [ShrLty lt κ] is the leaf of its folded type and the variants
+      (in both modes), so the view of the referent can be changed for one with the same
+      folded type and fewer variant constraints. *)
+  Lemma oplace_conv_shr {ℭ 𝔄} (K: pctx (at_clocₛ ℭ) 𝔄) κ (lt lt': lty ℭ) :
+    lty_fold lt' = lty_fold lt → (∀ y, lty_vin lt y → lty_vin lt' y) →
+    oplace_conv K (ShrLty lt κ) (ShrLty lt' κ) (=).
+  Proof.
+    iIntros (Hf Hv x ζm dh gh D tid lh G E ? HE HdK ?) "_ _ _ _ _ G _ _ _ H".
+    iDestruct "H" as "[H %Hin]".
+    iModIntro. iExists (pctx_get K x), [], 1%Qp. iSplit; [done|].
+    iSplit; [iPureIntro; intros ??; apply prfn_rsv_in|]. iSplitR; [done|]. iIntros "_ !>".
+    iFrame "G". rewrite /= Hf. iFrame "H". iPureIntro. by apply Hv.
+  Qed.
+
+  Lemma oplace_conv_shr_unfold {𝔅 𝔄} (K: pctx (at_clocₛ 𝔅) 𝔄) κ (ty: type 𝔅) :
+    oplace_conv K (OfTy (&shr{κ} ty)%T) (ShrLty (OfTy ty) κ) (=).
+  Proof.
+    iIntros (x ζm dh gh D tid lh G E ? HE HdK ?) "_ _ _ _ _ G _ _ _ H".
+    iModIntro. iExists (pctx_get K x), [], 1%Qp. iSplit; [done|].
+    iSplit; [iPureIntro; intros ??; apply prfn_rsv_in|]. iSplitR; [done|]. iIntros "_ !>".
+    by iFrame "G H".
+  Qed.
+
+  Lemma oplace_conv_shr_fold {𝔅 𝔄} (K: pctx (at_clocₛ 𝔅) 𝔄) κ (ty: type 𝔅) :
+    oplace_conv K (ShrLty (OfTy ty) κ) (OfTy (&shr{κ} ty)%T) (=).
+  Proof.
+    iIntros (x ζm dh gh D tid lh G E ? HE HdK ?) "_ _ _ _ _ G _ _ _ H".
+    iDestruct "H" as "[H _]".
+    iModIntro. iExists (pctx_get K x), [], 1%Qp. iSplit; [done|].
+    iSplit; [iPureIntro; intros ??; apply prfn_rsv_in|]. iSplitR; [done|]. iIntros "_ !>".
+    by iFrame "G H".
+  Qed.
+
+  Lemma type_unfold_oplace_shr_instr {𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
+      κ (ty: type 𝔅) :
+    lctx_lft_alive E L (pctx_ulft K (OfTy (&shr{κ} ty)%T) ⊓ ty_lft (&shr{κ} ty)%T) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (&shr{κ} ty)%T)] (Seq Skip Skip)
+      (const +[p ◁ₗown{n} pctx_plug K (ShrLty (OfTy ty) κ)])
+      (λ post '-[x], post -[x]).
+  Proof.
+    intros Alv. eapply typed_instr_tr_impl;
+      [|apply (type_change_oplace_instr _ _ _ _ _ K _ _ (=)); [done..|apply oplace_conv_shr_unfold]].
+    intros post [[[l x₀] ζm] []] mask π Hπ [[l' x₀'] ζm'] Hl Hζ Hin (y' & <- & Hx).
+    simpl in *. subst. by rewrite pctx_set_get.
+  Qed.
+
+  Lemma type_fold_oplace_shr_instr {𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
+      κ (ty: type 𝔅) :
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (OfTy ty) κ) ⊓ ty_lft (&shr{κ} ty)%T) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrLty (OfTy ty) κ)] (Seq Skip Skip)
+      (const +[p ◁ₗown{n} pctx_plug K (OfTy (&shr{κ} ty)%T)])
+      (λ post '-[x], post -[x]).
+  Proof.
+    intros Alv. eapply typed_instr_tr_impl;
+      [|apply (type_change_oplace_instr _ _ _ _ _ K _ _ (=)); [done..|apply oplace_conv_shr_fold]].
+    intros post [[[l x₀] ζm] []] mask π Hπ [[l' x₀'] ζm'] Hl Hζ Hin (y' & <- & Hx).
+    simpl in *. subst. by rewrite pctx_set_get.
+  Qed.
+
+  (** Changing the view of the hole of [K2] below the shared reference at the hole of [K]
+      (at any depth below it): e.g. unfolding a pair, an owned pointer, a unique borrow or
+      a shared reference ([ShrLty] again) below [PShr]. *)
+  Lemma type_change_oplace_shr_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
+      κ (K2: pctx ℭ 𝔅) (lt lt': lty ℭ) :
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ) ⊓
+      ty_lft (&shr{κ} (lty_fold (pctx_plug K2 lt)))%T) →
+    lty_fold lt' = lty_fold lt → lty_nrc lt' = lty_nrc lt →
+    (∀ y, lty_vin lt y → lty_vin lt' y) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 lt) κ)] (Seq Skip Skip)
+      (const +[p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 lt') κ)])
+      (λ post '-[x], post -[x]).
+  Proof.
+    intros Alv Hf Hn Hv.
+    have Hf': lty_fold (pctx_plug K2 lt') = lty_fold (pctx_plug K2 lt) by apply lty_fold_plug_eq'.
+    eapply typed_instr_tr_impl; [|apply (type_change_oplace_instr _ _ _ _ _ K _ _ (=));
+      [done|by rewrite /= Hf'|done|..|apply oplace_conv_shr; [done|]]].
+    - intros post [[[l x₀] ζm] []] mask π Hπ [[l' x₀'] ζm'] Hl Hζ Hin (y' & <- & Hx).
+      simpl in *. subst. by rewrite pctx_set_get.
+    - fun_ext=> e. fun_ext=> mm. rewrite /= !lty_nrc_plug. by rewrite Hn.
+    - done.
+    - intros y. rewrite !lty_vin_plug. intros [? ?]. split; [done|]. by apply Hv.
+  Qed.
+
+  (** ** (b) Reading a leaf below a shared reference *)
+
+  (** Copying a value of size 1 out of the hole of [K2], below the shared reference at
+      the hole of [K] (both at any path: below owned pointers, unique borrows, and
+      further shared references), as [read_shr]. The place is unchanged. *)
+  Lemma type_read_oplace_pshr_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
+      κ (K2: pctx ℭ 𝔅) (lt: lty ℭ) :
+    ty_size (lty_fold lt) = 1%nat → Copy (lty_fold lt) →
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
+    lctx_lft_alive E L (pctx_salv K2 κ) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 lt) κ)]
+      (Seq Skip (!(pctx_expr K2 (!(pctx_expr K p)))))%E
+      (λ v, +[v ◁ lty_fold lt; p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 lt) κ)])
+      (λ post '-[x], post -[pctx_get K2 (pctx_get K x.1.2).2; x]).
+  Proof.
+    iIntros (Hsz Hcopy Alv1 Alv2 tid post mask iκs [x []])
+      "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
+    destruct x as [[l x₀] ζm].
+    rewrite /tctx_elt_interp.
+    iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
+    have ?: Closed [] (pctx_expr K p).
+    { apply pctx_expr_closed. by eapply eval_path_closed. }
+    have ?: Closed [] (pctx_expr K2 (!(pctx_expr K p))%E).
+    { apply pctx_expr_closed. apply _. }
+    iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
+    (* A step, for the credits. *)
+    wp_bind Skip. iApply wp_fupd.
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [set_solver|].
+    iIntros "£ #⧖S". wp_let. iModIntro. wp_let.
+    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)])%I
+      as "#Hu". { iApply (guards_transitive with "Ghalf Alv1"). }
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
+    { iApply (guards_transitive with "Ghalf Alv2"). }
+    iDestruct (lc_weaken (pshr_cred D + ((g + 1) + 3 * (g + 1))) with "£") as "[£a [£g £r]]";
+      [rewrite /pshr_cred /advance_credits; nia|].
+    set y := pctx_get K x₀.
+    wp_bind (pctx_expr K2 (!(pctx_expr K p))%E).
+    iApply (wp_pshr_addr K κ K2 lt (pctx_plug K2 lt) x₀ ζm d g D tid l p (fractional.half γh)
+      with "LFT PROPH UNIQ Hu Hs H1 £a ⧖ [] Own"); [lia|lia|done|done|..].
+    { iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
+    iIntros (dh Hdh [Hin1 [Hin2 Hvin]]) "H1 Own #(Pt & Shr & Pers)".
+    set z := pctx_get K2 y.2.
+    set lK := pctx_loc K2 (lty_size lt) y.2 y.1.
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
+    { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
+    (* The (persistent) ownership of the value, from the sharing predicate. *)
+    iDestruct (copy_shr with "Shr") as "#GGho".
+    iDestruct (guards_transitive_right with "Hsl GGho") as "#GGho'".
+    iAssert (|={⊤}=> ty_gho_own (lty_fold lt) z dh g tid ∗ fractional.half γh)%I
+      with "[H1 £g]" as ">[#Gho H1]".
+    { leaf_open_laters "GGho'" with "H1" as "Gho1"; [solve_ndisj|].
+      iMod (lc_fupd_add_laterN with "£g Gho1") as "[#Gho1 Hclose]".
+      iMod ("Hclose" with "Gho1") as "$". by iModIntro. }
+    iDestruct (copy_concrete with "Gho") as %Hconc.
+    have Hlen: length (ty_phys (lty_fold lt) z tid) = 1%nat by rewrite ty_size_eq.
+    destruct (ty_phys (lty_fold lt) z tid) as [|fv [|]] eqn:Hphys; [done| |done].
+    destruct fv as [w|]; [|by destruct Hconc].
+    iApply wp_fupd.
+    iApply (wp_read_na_guarded_cells_singleton _ lK.1 lK.2 (fractional.half γh) w (g + 1)
+      with "[H1 £r]"); [solve_ndisj| |].
+    { iFrame "H1 £r". iApply (guards_transitive_right with "Hsl Pt"). }
+    iIntros "!> H1".
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    iModIntro. iExists -[z; ((l, x₀), ζm)]. iFrame "L I Obs".
+    iSplitR "Own ⧗p Fr".
+    { iExists w, D. iSplit; [by rewrite eval_path_of_val|]. iFrame "⧖".
+      iSplit; [|done].
+      iDestruct (ty_gho_own_depth_mono _ dh g D D with "Gho") as "[$ _]"; lia. }
+    iSplit; [|done]. iExists #l. iSplit; [done|]. iExists D, d, g. by iFrame "⧖ ⧗p Fr Own".
+  Qed.
+End typing.
