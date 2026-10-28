@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type function product programs own cont uninit int
+From lrust.typing Require Export type function product programs own cont uninit int sum type_sum
   uniq_bor shr_bor borrow place place_own place_resolve place_puniq place_pshr.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
@@ -274,4 +274,119 @@ Section place_pshr.
     intros post [[lx [lb [l1 [z [lb' w]]]]] []] mask π. simpl.
     intros Hspec. rewrite /trans_upper /trans_tail /=. intros _ l0 junk z' ->. apply Hspec.
   Qed.
+
+  (*
+  Case analysis on a sum below a shared reference, below a box:
+
+  ```
+  fn get_or_zero(b: Box<&'a Option<i32>>) -> i32 {
+      match **b { Some(v) => v, None => 0 }
+  }
+  ```
+
+  The argument slot is the owned place [own (box (&shr{'a} opt_int))]; the box and the
+  shared reference are unfolded; the tag of `**b` is read through the shared reference
+  ([type_case_oplace_pshr], [K = POwn 1 PHole], [K2 = PHole]); in the branch of `Some`, the
+  view of the referent is the sum place [SumLty _ 1 (OfTy int)] and its payload is read
+  ([type_read_oplace_pshr_instr], [K2 = PSum _ 1 _ PHole], offset 1).
+  *)
+
+  Notation opt_int := (Σ! +[(); int])%T.
+  Notation opt_intₛ := (Σ! [unitₛ; Zₛ])%ST.
+
+  Definition get_or_zero : val :=
+    fn: ["b"] :=
+      ReBor;;                                       (* unfold the box *)
+      ReBor;;                                       (* unfold *b *)
+      case: (Skip;; !(!(!"b"))) of
+      [ ((#☠;; delete [ #1; !"b"]);; delete [ #1; "b"]);; (* None: drop b *)
+        let: "z" := #0 in
+        let: "ret" := new [ #1] in
+        "ret" <- "z";;
+        return: ["ret"];
+        let: "v" := Skip;; !(!(!"b") +ₗ #1) in     (* Some(v): read v *)
+        ((#☠;; delete [ #1; !"b"]);; delete [ #1; "b"]);; (* drop b *)
+        let: "ret" := new [ #1] in
+        "ret" <- "v";;
+        return: ["ret"]].
+
+  Definition get_or_zero_spec : fn_spec [at_locₛ (at_clocₛ opt_intₛ)] Zₛ () :=
+    λ _ post '-[(_, m)], λ mask π,
+      (∀ pad, m.2.2 = (pinj (Xl:=[unitₛ; Zₛ]) 0%fin (), pad) → ∀ (lr: loc), post (lr, 0%Z) mask π) ∧
+      (∀ v pad, m.2.2 = (pinj (Xl:=[unitₛ; Zₛ]) 1%fin v, pad) → ∀ (lr: loc), post (lr, v) mask π).
+
+  Lemma get_or_zero_type :
+    typed_val get_or_zero
+      ((fn<α>(∅; box (&shr{α} opt_int)) → int) get_or_zero_spec)
+      (get_or_zero, ()).
+  Proof.
+    unfold get_or_zero. unlock.
+    opose proof (@type_fn _ _ _ [at_locₛ (at_clocₛ opt_intₛ)] Zₛ () ()
+      (λ α, FP ∅ +[box (&shr{α} opt_int)]%T int%T AtomicClosed)
+      get_or_zero_spec _ [BNamed "b"] _ _ _) as H.
+    unlock in H. apply H. clear H.
+    intros α ϝ k wl. destruct wl as [vb []]. simpl_subst.
+    iApply (typed_body_impl with "[]"); last first. {
+      iApply typed_body_tctx_incl; [apply tctx_own_to_oplace|].
+      (* unfold the box and *b *)
+      iApply type_seq.
+      { apply (type_unfold_oplace_own_deep_instr _ _ _ vb 1 PHole 1 (&shr{α} opt_int));
+          [done|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      iApply type_seq.
+      { apply (type_unfold_oplace_shr_instr _ _ _ vb 1 (POwn 1 PHole) α opt_int).
+        solve_typing. }
+      { solve_typing. } { reflexivity. }
+      (* match **b *)
+      iApply (type_case_oplace_pshr _ _ _ _ vb 1 (POwn 1 PHole) α PHole +[(); int]%T _ _ _
+        -[_; _]); [solve_typing|solve_typing|].
+      iSplitL; [|iSplitL; [|done]].
+      - (* None: drop b *)
+        iApply type_seq.
+        { apply (type_drop_oplace_deep_instr _ _ _ vb 1 1
+            (OwnPtrLty 1 (ShrLty (SumLty +[(); int]%T 0%fin (OfTy ())) α)));
+            [done|done|done|].
+          apply lty_rslv_own, lty_rslv_shr. }
+        { solve_typing. } { simpl. reflexivity. }
+        iApply type_int. iIntros (vz). simpl_subst.
+        iApply (type_new 1). { lia. } iIntros (vret). simpl_subst.
+        iApply type_assign. { solve_typing. } { by apply write_own. }
+        { apply (resolve'_just _ _ _ (const True)). apply resolve_just. }
+        iApply type_jump.
+        { rewrite elem_of_list_singleton. reflexivity. }
+        { solve_typing. }
+        { solve_typing. }
+        { reflexivity. }
+      - (* Some(v): read v *)
+        iApply (type_let with "[]").
+        { apply (type_read_oplace_pshr_instr _ _ _ vb 1 (POwn 1 PHole) α
+            (PSum +[(); int]%T 1%fin 0%Z PHole) (OfTy int));
+            [done|apply _|solve_typing|solve_typing]. }
+        { solve_typing. } { simpl. reflexivity. }
+        iIntros (vv). simpl_subst.
+        iApply type_seq.
+        { apply (type_drop_oplace_deep_instr _ _ _ vb 1 1
+            (OwnPtrLty 1 (ShrLty (SumLty +[(); int]%T 1%fin (OfTy int)) α)));
+            [done|done|done|].
+          apply lty_rslv_own, lty_rslv_shr. }
+        { solve_typing. } { reflexivity. }
+        iApply (type_new 1). { lia. } iIntros (vret). simpl_subst.
+        iApply type_assign. { solve_typing. } { by apply write_own. }
+        { apply (resolve'_just _ _ _ (const True)). apply resolve_just. }
+        iApply type_jump.
+        { rewrite elem_of_list_singleton. reflexivity. }
+        { solve_typing. }
+        { solve_typing. }
+        { reflexivity. }
+    }
+    intros post [[lx [lb [l1 [s pad]]]] []] mask π. simpl.
+    intros [Hnone Hsome]. destruct s as [[]|[v|[]]]; simpl.
+    - intros _ l0 junk z' ->. by eapply Hnone.
+    - intros _ l0 junk z' ->. by eapply Hsome.
+  Qed.
 End place_pshr.
+
+Print Assumptions get_snd_type.
+Print Assumptions first_ref_type.
+Print Assumptions get_boxed_type.
+Print Assumptions get_or_zero_type.
