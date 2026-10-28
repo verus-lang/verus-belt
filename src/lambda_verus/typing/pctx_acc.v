@@ -105,6 +105,14 @@ Section pctx_fun.
     | POwn _ K | PUniq _ K => S (pctx_dlev K)
     end.
 
+  (** The later credits for an access ([pctx_acc]), at a depth [d] and with [m] laters:
+      none below no unique borrow. *)
+  Definition pctx_acc_cred {𝔅 𝔄} (K: pctx 𝔅 𝔄) (m d: nat) : nat :=
+    match pctx_ulfts K with [] => 0 | _ => (d + 1) * (m + d + 2) end.
+
+  Lemma pctx_acc_cred_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) m d : pctx_acc_cred K m d ≤ (d + 1) * (m + d + 2).
+  Proof. rewrite /pctx_acc_cred. destruct (pctx_ulfts K); lia. Qed.
+
   (** The context ends with [PUniq κ PHole] (the hole is the whole referent of the
       innermost unique borrow, in [Uniq] mode). *)
   Fixpoint pctx_uend {𝔅 𝔄} (K: pctx 𝔅 𝔄) : option lft :=
@@ -491,7 +499,7 @@ Section pctx_acc.
   Definition pctx_acc_stmt {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) : Prop :=
     ∀ m p r x ζm q d g tid l E G, lazyE ⊆ E → Timeless G →
     ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_ulft K lt]) -∗ G -∗
-      £((d + 1) * (m + d + 2)) -∗
+      £(pctx_acc_cred K m d) -∗
       ltype_own_cp false (pctx_plug K lt) (Owned m) (pctx_pat K p) (pctx_rfn K x ζm q r)
         d g tid l ={E}=∗ pctx_acc_res K lt m p r x ζm q d g tid l E G.
 
@@ -551,7 +559,8 @@ Section pctx_acc.
   Proof.
     iIntros (IH m p r x ζm q d g tid l E G ??) "#LFT #PROPH #UNIQ #Gk G £ /= (Pt & %Hd & Fr & Own)".
     rewrite lty_size_plug.
-    iDestruct (lc_weaken ((pred d + 1) * (m + 1 + pred d + 2)) with "£") as "£"; [nia|].
+    iDestruct (lc_weaken (pctx_acc_cred K (m + 1) (pred d)) with "£") as "£";
+      [rewrite /pctx_acc_cred /=; destruct (pctx_ulfts K); nia|].
     iMod (IH with "LFT PROPH UNIQ Gk G £ Own") as (G' dh gh) "(% & G' & #G'G & % & H & P & #Gs & #HG & Cl)";
       [done..|].
     iModIntro. iExists G', dh, gh. iSplitR; [done|]. iSplitL "G'"; [done|]. iSplitR; [done|].
@@ -591,7 +600,7 @@ Section pctx_acc.
   Lemma pctx_acc_uniq_hole {𝔅} κ (lt: lty 𝔅) : pctx_acc_stmt (PUniq κ PHole) lt.
   Proof.
     iIntros (m p r x ζm q d g tid l E G ??) "_ _ _ #Gk G £ /= (Pt & ⧗ & #TIME & N)".
-    iDestruct (lc_weaken m with "£") as "£"; [lia|].
+    iDestruct (lc_weaken m with "£") as "£"; [rewrite /pctx_acc_cred /=; nia|].
     iMod (lc_fupd_elim_laterN with "£ N") as "(#Incl & #Gpt & %d' & %g' & %Hle & C)".
     iModIntro. iExists G, d', g'. iSplitR; [done|]. iSplitL "G"; [done|].
     iSplitR; [iApply guards_refl|]. iSplitR; [iPureIntro; simpl in *; destruct_and!; split_and!; try lia; done|].
@@ -614,9 +623,10 @@ Section pctx_acc.
     iIntros (HK IH m p r x ζm q d g tid l E G HE ?) "#LFT #PROPH #UNIQ #Gk G £ /=".
     iIntros "(Pt & ⧗ & #TIME & N)".
     iDestruct (lc_weaken (m + (1 + ((d + 1) * (m + d + 2) - m - 1))) with "£") as "[£m [£1 £]]";
-      [nia|].
+      [rewrite /pctx_acc_cred /=; nia|].
     iMod (lc_fupd_elim_laterN with "£m N") as "(#Incl & #Gpt & %d' & %g' & %Hle & C)".
-    iDestruct (lc_weaken ((d' + 1) * (0 + d' + 2)) with "£") as "£"; [nia|].
+    iDestruct (lc_weaken (pctx_acc_cred K 0 d') with "£") as "£";
+      [have := pctx_acc_cred_le K 0 d'; nia|].
     rewrite ltype_own_cp_uniq_plug //.
     have ?: ↑NllftG ⊆ E. { trans lazyE; [apply lazyE_NllftG|done]. }
     have ?: ↑Nllft ∪ ↑prophN ⊆ E. { trans lazyE; [rewrite /lazyE; solve_ndisj|done]. }
