@@ -5,14 +5,27 @@
   with fields, owned pointers and sums), through the access of [pctx_acc.v]: the enclosing
   borrows are opened (with the credits of a program step, bounded by the depth of the
   place) and closed again with the new hole, extending their reservations by the new
-  prophecy variables of the hole.
+  prophecy variables of the hole. The hole is in [Owned] mode ([pctx_uend K = None]) or, if
+  it is the whole referent of the innermost borrow ([pctx_uend K = Some κ], e.g. [**x] for
+  [x: &mut &mut i32]), in [Uniq κ] mode.
 
   - [type_change_oplace_instr]: change the place type at the hole by a conversion
-    ([oplace_conv]) at the mode of the hole ([pctx_kind]: [Owned], or [Uniq] if the hole is
-    the whole referent of the innermost borrow). Instances: unfolding and folding a unique
-    borrow ([OfTy (&uniq{κ'} ty)] ↔ [UniqLty (OfTy ty) κ']) and a pair, at both modes.
+    ([oplace_conv]) at the mode of the hole. Instances: unfolding and folding a unique
+    borrow ([OfTy (&uniq{κ'} ty)] ↔ [UniqLty (OfTy ty) κ']) and a pair (both modes), and an
+    owned pointer ([Owned] mode).
+  - [type_borrow_oplace_deep_instr] ([Owned] mode), [type_borrow_oplace_uniq_instr]
+    ([Uniq] mode): mutable borrow of the hole at [pctx_blft K α], the intersection of all
+    enclosing borrow lifetimes and [α]; [unblock_tctx_oplace_deep],
+    [unblock_tctx_oplace_uniq]: unblocking.
+  - [type_write_oplace_deep_instr], [type_read_oplace_deep_instr]: writing and copying a
+    value of size 1 (both modes).
+  - [lty_rslv], [type_resolve_oplace_deep_instr], [type_drop_oplace_deep_instr]: resolving
+    and dropping an owned place with nested unique borrows whose leaves are blocked
+    ([lty_rslv_uniq_blk]).
+  - [type_share_oplace_deep_instr], [unblock_tctx_oplace_shr_deep]: shared borrow of the
+    hole ([Owned] mode) and unblocking.
 
-  See [~/verus-belt-phase3-design.md], section "PUniq". *)
+  See [~/verus-belt-phase3-design.md], section "PUniq", and [examples/place_puniq.v]. *)
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.

@@ -11,7 +11,8 @@
     [POwn n K] is an owned pointer whose pointee is the context [K]; [PSum tyl i w K] is
     a sum of variant [i] whose payload is the context [K] (at offset 1, after the tag;
     [w] is a default payload value, only used by [pctx_get] for values of other
-    variants, which are not owned: see [pctx_in]).
+    variants, which are not owned: see [pctx_in]); [PUniq κ K] is a unique borrow at [κ]
+    whose referent is the context [K] (a nested place, [UniqLty]).
     [pctx_plug K lt] plugs a place type into the hole.
   - The hole has a value ([pctx_get], [pctx_set] on values of the root), a
     _path_ from the root ([pctx_path], a list of field selectors, innermost
@@ -28,7 +29,9 @@
   - In [Owned] mode, the ownership of a plugged place splits into the ownership
     of the hole and of the rest ([ltype_own_plug]); the rest does not depend on
     the hole. Below [k] owned pointers, the hole is owned with [k] more laters
-    ([pctx_mode]) at a depth decreased by [k] ([pctx_depth]). *)
+    ([pctx_mode]) at a depth decreased by [k] ([pctx_depth]). This needs the hole to be
+    below no unique borrow ([PctxNoUniq]): below [PUniq] the hole is inside the borrow,
+    which has to be opened ([pctx_acc] in [pctx_acc.v]). *)
 
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
