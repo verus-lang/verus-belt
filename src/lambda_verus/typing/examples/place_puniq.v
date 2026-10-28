@@ -334,3 +334,7 @@ Section place_puniq.
     Unshelve. eapply (composeₛ empty_prod_to_unitₛ uninit0_to_unitₛ).
   Qed.
 End place_puniq.
+
+Print Assumptions get_inner_first_own_type.
+Print Assumptions write_deep_type.
+Print Assumptions assign_two_type.
