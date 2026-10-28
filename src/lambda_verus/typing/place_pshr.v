@@ -36,6 +36,8 @@
   - (d) [type_case_oplace_pshr]: case analysis on a sum below [PShr], recording the
     variant in the place type;
   - (e) resolve/drop: a [ShrLty] is a leaf ([lty_resolve_just], [lty_rslv_shr]).
+  - [type_read_oplace_shr_deep_instr]: reading a shared-blocked leaf below unique borrows
+    (the leaf of [type_share_oplace_deep_instr]).
 
   See [~/verus-belt-phase3-design.md], section "PShr". *)
 
@@ -779,3 +781,110 @@ Section rslv.
   Lemma lty_rslv_shr {𝔄} E L (lt: lty 𝔄) κ : lty_rslv E L (ShrLty lt κ) (λ _ _ _ _, True).
   Proof. apply (lty_rslv_of _ _ _ (λ _ _, True)), lty_resolve_just. Qed.
 End rslv.
+
+(** * Reading a shared-blocked leaf below unique borrows *)
+
+Section shr_blocked_deep.
+  Context `{!typeG Σ}.
+
+  (** Copying a value of size 1 out of a shared-blocked leaf at the hole of [K] (in
+      [Owned] mode, below any number of unique borrows; the leaf of
+      [type_share_oplace_deep_instr]), while the shared lifetime is alive, as
+      [type_read_oplace_shr_instr]: the enclosing borrows are opened for the persistent
+      sharing information of the leaf, and closed at the same state. *)
+  Lemma type_read_oplace_shr_deep_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoShr K}
+      (ty: type 𝔅) :
+    pctx_uend K = None → ty_size ty = 1%nat → Copy ty →
+    lctx_lft_alive E L (pctx_ulft K (ShrBlocked ty (pctx_blft K α))) →
+    lctx_lft_alive E L (pctx_blft K α) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrBlocked ty (pctx_blft K α))]
+      (Seq Skip (!(pctx_expr K p)))%E
+      (λ v, +[v ◁ ty; p ◁ₗown{n} pctx_plug K (ShrBlocked ty (pctx_blft K α))])
+      (λ post '-[x], post -[pctx_get K x.1.2; x]).
+  Proof.
+    iIntros (Hu Hsz Hcopy Alv1 Alv2 tid post mask iκs [x []])
+      "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
+    destruct x as [[l x₀] ζm].
+    rewrite /tctx_elt_interp.
+    iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
+    have ?: Closed [] (pctx_expr K p).
+    { apply pctx_expr_closed. by eapply eval_path_closed. }
+    iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
+    set β := pctx_blft K α.
+    set lt := ShrBlocked ty β.
+    (* A step, for the credits. *)
+    wp_bind Skip. iApply wp_fupd.
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [set_solver|].
+    iIntros "£ #⧖S". wp_let. iModIntro. wp_let.
+    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K lt])%I as "#Hu".
+    { iApply (guards_transitive with "Ghalf Alv1"). }
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[β])%I as "#Hβ".
+    { iApply (guards_transitive with "Ghalf Alv2"). }
+    rewrite /ltype_own lty_pat_plug lty_rfn_plug.
+    set lr := (l, repeat [] (lty_size (pctx_plug K lt))).
+    set y := pctx_get K x₀.
+    iDestruct (lc_weaken (pctx_acc_cred K 1 d + (3 * (g + 1) * D + ((g + 1) + 3 * (g + 1))))
+      with "£") as "[£a [£w [£g £r]]]";
+      [have := pctx_acc_cred_le K 1 d; rewrite /advance_credits; nia|].
+    iMod (pctx_acc K lt 1 with "LFT PROPH UNIQ Hu H1 £a Own")
+      as (G' dh gh) "(% & G' & #G'G & %Hdh & H & P & #Gs & #HG & Cl)"; [solve_ndisj|].
+    destruct Hdh as (Hdh & Hgh & Hin).
+    set lK := pctx_loc K (ty_size ty) x₀ lr.
+    iAssert (G' &&{↑NllftG}&&> @[pctx_ulft K lt])%I as "#G'u".
+    { iApply (guards_transitive with "G'G Hu"). }
+    iDestruct (pctx_hguard K lt (ty_size ty) x₀ l G' g with "G'u HG") as "#Gw".
+    (* The address of the hole. *)
+    wp_bind (pctx_expr K p).
+    iApply (wp_wand with "[P G' £w]").
+    { iApply (wp_pctx_ptrs ⊤ K (ty_size ty) (g + 1) G' x₀ lr p True%I with "[] Gs [£w] [G'] P");
+        [solve_ndisj| | |].
+      - iEval (rewrite /lr -heap_cloc_mapsto_empty). iApply guards_true.
+      - iApply (lc_weaken with "£w"). nia.
+      - iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
+    iIntros (w) "(-> & _ & G' & P)".
+    iApply wp_fupd.
+    iEval (rewrite (pctx_kind_owned K) //) in "H".
+    iEval (rewrite /pctx_closer (pctx_kind_owned K) //) in "Cl".
+    iDestruct "H" as (? ->) "(#GPt & #Shr & #PersL & Inh)".
+    (* The (persistent) ownership predicate of the value, from the sharing predicate. *)
+    iDestruct (copy_shr with "Shr") as "#GGho".
+    iDestruct (guards_transitive_right with "Hβ GGho") as "#GGho'".
+    iAssert (|={⊤}=> ty.(ty_gho_own) y dh gh tid ∗ fractional.half γh)%I
+      with "[H2 £g]" as ">[#Gho1 H2]".
+    { leaf_open_laters "GGho'" with "H2" as "Gho1"; [solve_ndisj|].
+      iDestruct (lc_weaken (gh + 1) with "£g") as "£g"; [lia|].
+      iMod (lc_fupd_add_laterN with "£g Gho1") as "[#Gho1 Hclose]".
+      iMod ("Hclose" with "Gho1") as "$". by iModIntro. }
+    iDestruct (copy_concrete with "Gho1") as %Hconc.
+    have Hlen: length (ty_phys ty y tid) = 1%nat by rewrite ty_size_eq.
+    destruct (ty_phys ty y tid) as [|fv [|]] eqn:Hphys; [done| |done].
+    destruct fv as [wv|]; [|by destruct Hconc].
+    iApply (wp_read_na_guarded_cells_singleton _ lK.1 lK.2 (G' ∗ fractional.half γh) wv (g + 1)
+      with "[G' H2 £r]"); [solve_ndisj| |].
+    { iFrame "G' H2 £r". iApply guard_cloc_combine_fancy.
+      - iApply guards_weaken_lhs_sep_l. iApply "Gw".
+      - iApply guards_weaken_lhs_sep_r. iApply (lguards_weaken_later with "[]"); last first.
+        { iApply (guards_transitive_right with "Hβ GPt"). } lia. }
+    iIntros "!> [G' H2]".
+    iMod ("Cl" $! lt (PatShrBlocked β) (inl (PlaceIn y)) dh gh d g [] 1%Qp True%I
+      with "[//] [//] [%] [%] [] [] G' P [] [Inh]") as "(Own & H1 & _)".
+    { intros ??. apply prfn_rsv_in. }
+    { lia. }
+    { iApply big_sepL_intro. iIntros "!>" (i κ Hi). iApply pat_ok_shr_blocked.
+      iApply pctx_blft_incl. by eapply elem_of_list_lookup_2. }
+    { iApply (persistent_time_receipt_mono with "⧖"). lia. }
+    { done. }
+    { iIntros "_ !>". iSplit; [|done]. iExists y. rewrite Hphys. by iFrame "GPt Shr PersL Inh". }
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    iModIntro. iExists -[y; ((l, x₀), ζm)]. iFrame "L I Obs".
+    iSplitR "Own ⧗p Fr".
+    { iExists wv, D. iSplit; [by rewrite eval_path_of_val|]. iFrame "⧖".
+      iSplit; [|done].
+      iDestruct (ty_gho_own_depth_mono _ dh gh D D with "Gho1") as "[$ _]"; lia. }
+    iSplit; [|done]. iExists #l. iSplit; [done|]. iExists D, d, g. iFrame "⧖ ⧗p Fr".
+    iSplit; [done|]. iSplit; [done|].
+    by rewrite /ltype_own lty_pat_plug lty_rfn_plug.
+  Qed.
+End shr_blocked_deep.
