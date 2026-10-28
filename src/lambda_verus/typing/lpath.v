@@ -11,7 +11,8 @@
     [POwn n K] is an owned pointer whose pointee is the context [K]; [PSum tyl i w K] is
     a sum of variant [i] whose payload is the context [K] (at offset 1, after the tag;
     [w] is a default payload value, only used by [pctx_get] for values of other
-    variants, which are not owned: see [pctx_in]).
+    variants, which are not owned: see [pctx_in]); [PUniq κ K] is a unique borrow at [κ]
+    whose referent is the context [K] (a nested place, [UniqLty]).
     [pctx_plug K lt] plugs a place type into the hole.
   - The hole has a value ([pctx_get], [pctx_set] on values of the root), a
     _path_ from the root ([pctx_path], a list of field selectors, innermost
@@ -28,7 +29,9 @@
   - In [Owned] mode, the ownership of a plugged place splits into the ownership
     of the hole and of the rest ([ltype_own_plug]); the rest does not depend on
     the hole. Below [k] owned pointers, the hole is owned with [k] more laters
-    ([pctx_mode]) at a depth decreased by [k] ([pctx_depth]). *)
+    ([pctx_mode]) at a depth decreased by [k] ([pctx_depth]). This needs the hole to be
+    below no unique borrow ([PctxNoUniq]): below [PUniq] the hole is inside the borrow,
+    which has to be opened ([pctx_acc] in [pctx_acc.v]). *)
 
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
@@ -151,11 +154,14 @@ Section lty_rfn.
       after the last unique borrow. Unblocking such a leaf opens the enclosing borrows
       (later credits) and raises the depths of all levels above it, while the receipt of
       its inheritance is only shifted by the owned pointers after the last unique borrow
-      (see [blocked_owned]). [e] is the number of such levels so far, [mm] the number of
-      owned pointers since the last unique borrow. *)
+      (see [blocked_owned]). A shared-blocked leaf below a unique borrow holds one receipt,
+      for the credits to open the enclosing borrows when it is unblocked (its depths do not
+      change). [e] is the number of such levels so far, [mm] the number of owned pointers
+      since the last unique borrow. *)
   Fixpoint lty_nrc {𝔄} (lt: lty 𝔄) (e mm: nat) : nat :=
     match lt with
     | Blocked _ _ => S e
+    | ShrBlocked _ _ => match e with O => 0 | S _ => 1 end
     | UniqLty lt _ => lty_nrc lt (e + mm + 1) 0
     | OwnPtrLty _ lt => lty_nrc lt e (S mm)
     | SumLty _ _ lt => lty_nrc lt e mm
@@ -672,6 +678,11 @@ Section pctx.
     rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
     induction K in HK, e, mm |- *; simpl; simpl in HK; auto. done.
   Qed.
+
+  (** Sharing a leaf below no unique borrow adds no receipt. *)
+  Lemma lty_nrc_plug_shr_nouniq {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) α :
+    lty_nrc (pctx_plug K (ShrBlocked ty α)) 0 0 = lty_nrc (pctx_plug K (OfTy ty)) 0 0.
+  Proof. rewrite !lty_nrc_plug /= pctx_ne_nouniq. lia. Qed.
 
   (** Blocking a leaf below no unique borrow adds one receipt. *)
   Lemma lty_nrc_plug_blocked {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) α :
