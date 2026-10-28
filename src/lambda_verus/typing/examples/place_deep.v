@@ -394,4 +394,113 @@ Section place_deep.
       exact (uniq_prvar_app_irrel (𝔄:=opt_pairₛ) (inr (inl (1%Z, b2)), pad) (inr (inl (a1, b2)), pad) ξb π).
     Unshelve. all: eapply (composeₛ empty_prod_to_unitₛ uninit0_to_unitₛ).
   Qed.
+  (*
+  Assigning variants through two levels of mutable references:
+
+  ```
+  fn reset<'a, 'b>(x: &'a mut &'b mut Option<(i32, i32)>, y: (i32, i32)) {
+      **x = None;
+      **x = Some(y);   // the payload has two cells
+  }
+  ```
+
+  with the specification `ensures fin(x) == (Some(y), fin( *old(x)))` (up to the padding).
+  `**x` is the whole referent of the inner borrow ([Uniq] mode); it gets the unit variant
+  ([type_sum_unit_oplace_deep_instr], only the tag is written), then the variant `Some`
+  with a payload of two cells copied from `y` ([type_sum_memcpy_oplace_deep_instr]).
+  *)
+
+  Definition reset : val :=
+    fn: ["x"; "y"] :=
+      ReBor;; ReBor;;                               (* unfold *x, **x *)
+      (!(!"x") <-{Σ 0} ());;                        (* **x = None *)
+      (!(!"x") <-{2,Σ 1} !"y");;                    (* **x = Some(y) *)
+      ReBor;; ReBor;;                               (* fold back *)
+      (#☠;; delete [ #1; "x"]);;                     (* drop x, resolving it *)
+      delete [ #2; "y"];;
+      let: "ret" := new [ #0] in
+      return: ["ret"].
+
+  Definition reset_spec :
+      fn_spec [uniq_borₛ (uniq_borₛ opt_pairₛ); (Zₛ * Zₛ)%ST] () () :=
+    λ _ post '-[(_, m); (_, y)], λ mask π,
+      let b := uniq_bor_current (𝔄:=uniq_borₛ opt_pairₛ) m in
+      ∀ pad, uniq_bor_future (𝔄:=uniq_borₛ opt_pairₛ) m π =
+        ((pinj (Xl:=[unitₛ; (Zₛ * Zₛ)%ST]) 1%fin y, pad), uniq_bor_future (𝔄:=opt_pairₛ) b π) →
+      ∀ ret, post ret mask π.
+
+  Lemma reset_type :
+    typed_val reset
+      ((fn<(α, β)>(∅; &uniq{α} (&uniq{β} opt_pair), int * int) → ()) reset_spec)
+      (reset, ()).
+  Proof.
+    unfold reset. unlock.
+    opose proof (@type_fn _ _ _ [uniq_borₛ (uniq_borₛ opt_pairₛ); (Zₛ * Zₛ)%ST] () () ()
+      (λ '(α, β), FP ∅ +[&uniq{α} (&uniq{β} opt_pair); (int * int)%T]%T ()%T AtomicClosed)
+      reset_spec _ [BNamed "x"; BNamed "y"] _ _ _) as H.
+    unlock in H. apply H. clear H.
+    intros [α β] ϝ k wl. destruct wl as [vx [vy []]]. simpl_subst.
+    iApply (typed_body_impl with "[]"); last first. {
+      iApply typed_body_tctx_incl.
+      { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_own_to_oplace. }
+      (* unfold *x, **x *)
+      iApply type_seq.
+      { apply (type_unfold_oplace_uniq_instr _ _ _ vx 1 PHole (&uniq{β} opt_pair) α).
+        solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iApply type_seq.
+      { apply (type_unfold_oplace_uniq_instr _ _ _ vx 1 (PUniq α PHole) opt_pair β).
+        solve_typing. }
+      { solve_typing. } { reflexivity. }
+      (* **x = None *)
+      iApply type_seq.
+      { apply (type_sum_unit_oplace_deep_instr _ _ _ vx 1 (PUniq α (PUniq β PHole))
+          +[(); int * int]%T 0%fin idₛ (const (const True)));
+          [apply subtype_refl|apply resolve_just|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      (* **x = Some(y) *)
+      iApply type_seq.
+      { apply (type_sum_memcpy_oplace_deep_instr _ _ _ vx vy 1 (PUniq α (PUniq β PHole))
+          +[(); int * int]%T 1%fin (own_ptr 2 (int * int)) (own_ptr 2 (↯ (ty_size (int * int)))));
+          [apply resolve_just|apply (read_own_move (int * int))|done|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      (* fold back, drop x *)
+      iApply type_seq.
+      { apply (type_fold_oplace_uniq_instr _ _ _ vx 1 (PUniq α PHole) opt_pair β).
+        solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iApply type_seq.
+      { apply (type_fold_oplace_uniq_instr _ _ _ vx 1 PHole (&uniq{β} opt_pair) α).
+        solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iApply type_seq.
+      { apply (type_drop_oplace_deep_instr _ _ _ vx 1 1 (OfTy (&uniq{α} (&uniq{β} opt_pair))));
+          [done|done|done|].
+        apply lty_rslv_of, lty_resolve_ofty, uniq_bor.uniq_resolve. solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iApply type_delete. { solve_typing. } { done. } { done. }
+      iApply (type_new_subtype () 0). { lia. } { apply uninit_unit_1. }
+      iIntros (vret). simpl_subst.
+      iApply type_jump.
+      { rewrite elem_of_list_singleton. reflexivity. }
+      { solve_typing. }
+      { solve_typing. }
+      { reflexivity. }
+    }
+    intros post [[lx m] [[ly [y1 y2]] []]] mask π. simpl.
+    destruct m as [[[[[l [[[[[l' [s pad]] ξb] db] gb] idxb]] ξa] da] ga] idxa]. simpl.
+    intros Hspec. rewrite /trans_upper /trans_tail /=.
+    intros _ pad1 _ pad0 zr _ d g idx d0 g0 idx0 Hres l0 junk. apply (Hspec pad0).
+    rewrite !uniq_bor_future_eq /=.
+    rewrite (uniq_prvar_app_irrel (𝔄:=uniq_borₛ opt_pairₛ) _
+      (l', (inr (inl (y1, y2)), pad0), ξb, d, g, idx) ξa π).
+    etrans; [exact Hres|]. f_equal.
+    exact (uniq_prvar_app_irrel (𝔄:=opt_pairₛ) (inr (inl (y1, y2)), pad0) (s, pad) ξb π).
+    Unshelve. all: eapply (composeₛ empty_prod_to_unitₛ uninit0_to_unitₛ).
+  Qed.
 End place_deep.
+
+Print Assumptions swap_snd_type.
+Print Assumptions get_pair_type.
+Print Assumptions set_some_first_type.
+Print Assumptions reset_type.
