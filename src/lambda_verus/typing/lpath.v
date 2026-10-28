@@ -12,7 +12,9 @@
     a sum of variant [i] whose payload is the context [K] (at offset 1, after the tag;
     [w] is a default payload value, only used by [pctx_get] for values of other
     variants, which are not owned: see [pctx_in]); [PUniq κ K] is a unique borrow at [κ]
-    whose referent is the context [K] (a nested place, [UniqLty]).
+    whose referent is the context [K] (a nested place, [UniqLty]); [PShr κ K] is a shared
+    reference at [κ] whose referent is the context [K] (a read-only view, [ShrLty]: the
+    plugged place is a leaf, nothing below it is owned, see [place_pshr.v]).
     [pctx_plug K lt] plugs a place type into the hole.
   - The hole has a value ([pctx_get], [pctx_set] on values of the root), a
     _path_ from the root ([pctx_path], a list of field selectors, innermost
@@ -30,8 +32,9 @@
     of the hole and of the rest ([ltype_own_plug]); the rest does not depend on
     the hole. Below [k] owned pointers, the hole is owned with [k] more laters
     ([pctx_mode]) at a depth decreased by [k] ([pctx_depth]). This needs the hole to be
-    below no unique borrow ([PctxNoUniq]): below [PUniq] the hole is inside the borrow,
-    which has to be opened ([pctx_acc] in [pctx_acc.v]). *)
+    below no unique borrow and no shared reference ([PctxNoUniq]): below [PUniq] the hole
+    is inside the borrow, which has to be opened ([pctx_acc] in [pctx_acc.v]); below
+    [PShr] it is not owned ([PctxNoShr], needed by [pctx_acc] and [pctx_rfn_set]). *)
 
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
@@ -104,6 +107,8 @@ Section lty_rfn.
         | Some y => prfn_sum i (lty_rfn lt y ζm (false :: q)) x.2
         | None => prfn_dummy x
         end
+    (* A shared reference (whose referent does not change) keeps its value. *)
+    | ShrLty _ _ => λ x _ _, inl (PlaceIn x)
     end.
 
   Lemma lty_rfn_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) x ζm q :
@@ -119,8 +124,8 @@ Section lty_rfn.
     (∀ r, blk_lookup ζm (r ++ q) = blk_lookup ζm' (r ++ q)) →
     lty_rfn lt x ζm q = lty_rfn lt x ζm' q.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH] in x, q |- *;
-      intros Heq; simpl; [done| | | | |done|].
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|] in x, q |- *;
+      intros Heq; simpl; [done| | | | |done| |done].
     5: { destruct (psum_proj i x.1); [|done].
       rewrite (IH _ (false :: q)); [done|].
       intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
@@ -143,7 +148,7 @@ Section lty_rfn.
   Fixpoint lty_nblk {𝔄} (lt: lty 𝔄) : nat :=
     match lt with
     | Blocked _ _ => 1
-    | UniqLty lt _ | OwnPtrLty _ lt | SumLty _ _ lt => lty_nblk lt
+    | UniqLty lt _ | OwnPtrLty _ lt | SumLty _ _ lt | ShrLty lt _ => lty_nblk lt
     | ProdLty lt1 lt2 => lty_nblk lt1 + lty_nblk lt2
     | _ => 0
     end.
@@ -157,7 +162,8 @@ Section lty_rfn.
       (see [blocked_owned]). A shared-blocked leaf below a unique borrow holds one receipt,
       for the credits to open the enclosing borrows when it is unblocked (its depths do not
       change). [e] is the number of such levels so far, [mm] the number of owned pointers
-      since the last unique borrow. *)
+      since the last unique borrow. (Nothing is blocked below a shared reference; the
+      count passes through [ShrLty] only so that the laws of [pctx_plug] hold.) *)
   Fixpoint lty_nrc {𝔄} (lt: lty 𝔄) (e mm: nat) : nat :=
     match lt with
     | Blocked _ _ => S e
@@ -165,6 +171,7 @@ Section lty_rfn.
     | UniqLty lt _ => lty_nrc lt (e + mm + 1) 0
     | OwnPtrLty _ lt => lty_nrc lt e (S mm)
     | SumLty _ _ lt => lty_nrc lt e mm
+    | ShrLty lt _ => lty_nrc lt e (S mm)
     | ProdLty lt1 lt2 => lty_nrc lt1 e mm + lty_nrc lt2 e mm
     | _ => 0
     end.
@@ -192,7 +199,7 @@ Section lty_rfn.
   Lemma lty_blk_all_dep {𝔄} (lt: lty 𝔄) x ζm q ζl :
     lty_blk_all lt → prfn_rsv (lty_rfn lt x ζm q) ζl → prfn_den (lty_rfn lt x ζm q) ./ ζl.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH] in x, q |- *;
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|] in x, q |- *;
       intros Hb Hr; try done.
     5: { revert Hr. rewrite lty_rfn_sum. destruct (psum_proj i x.1) as [y|];
         [|intros; apply prfn_dummy_dep].
@@ -261,10 +268,14 @@ Section pctx.
   | PSum {𝔅 𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (w: ~~ (𝔄l !!ₗ i))
       (K: pctx 𝔅 (𝔄l !!ₗ i)) : pctx 𝔅 (Σ! 𝔄l)
   (* The referent of a unique borrow at [κ] (a nested place, see [UniqLty]). *)
-  | PUniq {𝔅 𝔄'} (κ: lft) (K: pctx 𝔅 𝔄') : pctx 𝔅 (uniq_borₛ 𝔄').
+  | PUniq {𝔅 𝔄'} (κ: lft) (K: pctx 𝔅 𝔄') : pctx 𝔅 (uniq_borₛ 𝔄')
+  (* The referent of a shared reference at [κ] (a read-only view, see [ShrLty]). *)
+  | PShr {𝔅 𝔄'} (κ: lft) (K: pctx 𝔅 𝔄') : pctx 𝔅 (at_clocₛ 𝔄').
 
+  (** The plugged place is compound (the referent of a shared reference is a view, the
+      plugged place is a leaf). *)
   Definition pctx_nonempty {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
-    match K with PHole => False | _ => True end.
+    match K with PHole | PShr _ _ => False | _ => True end.
 
   Fixpoint pctx_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) : lty 𝔅 → lty 𝔄 :=
     match K in pctx 𝔅 𝔄 return lty 𝔅 → lty 𝔄 with
@@ -274,6 +285,7 @@ Section pctx.
     | POwn n K => λ lt, OwnPtrLty n (pctx_plug K lt)
     | PSum tyl i _ K => λ lt, SumLty tyl i (pctx_plug K lt)
     | PUniq κ K => λ lt, UniqLty (pctx_plug K lt) κ
+    | PShr κ K => λ lt, ShrLty (pctx_plug K lt) κ
     end.
 
   Fixpoint pctx_get {𝔅 𝔄} (K: pctx 𝔅 𝔄) : ~~𝔄 → ~~𝔅 :=
@@ -284,6 +296,7 @@ Section pctx.
     | POwn _ K => λ x, pctx_get K x.2
     | PSum _ i w K => λ x, pctx_get K (psum_proj_or i x.1 w)
     | PUniq _ K => λ x, pctx_get K (uniq_bor_current x)
+    | PShr _ K => λ x, pctx_get K x.2
     end.
 
   Fixpoint pctx_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) : ~~𝔄 → ~~𝔅 → ~~𝔄 :=
@@ -294,6 +307,7 @@ Section pctx.
     | POwn _ K => λ x y, (x.1, pctx_set K x.2 y)
     | PSum _ i w K => λ x y, (pinj i (pctx_set K (psum_proj_or i x.1 w) y), x.2)
     | PUniq _ K => λ x y, uniq_bor_set_current x (pctx_set K (uniq_bor_current x) y)
+    | PShr _ K => λ x y, (x.1, pctx_set K x.2 y)
     end.
 
   (** The path of the hole, from a place at path [q]. *)
@@ -304,7 +318,7 @@ Section pctx.
     | PSnd _ K => pctx_path K (true :: q)
     | POwn _ K => pctx_path K (false :: q)
     | PSum _ _ _ K => pctx_path K (false :: q)
-    | PUniq _ K => pctx_path K (false :: q)
+    | PUniq _ K | PShr _ K => pctx_path K (false :: q)
     end.
 
   (** The size of the place, for a hole of size [n]. *)
@@ -315,7 +329,7 @@ Section pctx.
     | PSnd lt1 K => lty_size lt1 + pctx_size K n
     | POwn _ _ => 1
     | PSum tyl i _ K => S (max_hlist_set (λ _, ty_size) tyl i (pctx_size K n))
-    | PUniq _ _ => 1
+    | PUniq _ _ | PShr _ _ => 1
     end.
 
   (** The hole is not below an owned pointer. *)
@@ -323,14 +337,14 @@ Section pctx.
     match K with
     | PHole => True
     | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_noderef K
-    | POwn _ _ | PUniq _ _ => False
+    | POwn _ _ | PUniq _ _ | PShr _ _ => False
     end.
 
   (** The hole is not in the payload of a sum. *)
   Fixpoint pctx_nosum {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
     match K with
     | PHole => True
-    | PFst K _ | PSnd _ K | POwn _ K | PUniq _ K => pctx_nosum K
+    | PFst K _ | PSnd _ K | POwn _ K | PUniq _ K | PShr _ K => pctx_nosum K
     | PSum _ _ _ _ => False
     end.
 
@@ -339,16 +353,24 @@ Section pctx.
     match K with
     | PHole => True
     | PFst K _ | PSnd _ K => pctx_fields K
-    | POwn _ _ | PSum _ _ _ _ | PUniq _ _ => False
+    | POwn _ _ | PSum _ _ _ _ | PUniq _ _ | PShr _ _ => False
     end.
 
-  (** The hole is below no unique borrow (a context of the place of a single borrow
-      or owned location; see [PctxNoUniq]). *)
+  (** The hole is below no unique borrow and no shared reference (a context of the place
+      of a single borrow or owned location; see [PctxNoUniq]). *)
   Fixpoint pctx_nouniq {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
     match K with
     | PHole => True
     | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_nouniq K
-    | PUniq _ _ => False
+    | PUniq _ _ | PShr _ _ => False
+    end.
+
+  (** The hole is below no shared reference (it is owned; see [PctxNoShr]). *)
+  Fixpoint pctx_noshr {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
+    match K with
+    | PHole => True
+    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_noshr K
+    | PShr _ _ => False
     end.
 
   (** The value [x] is of the variants of the sums of [K]. *)
@@ -356,7 +378,7 @@ Section pctx.
     match K in pctx 𝔅 𝔄 return ~~𝔄 → Prop with
     | PHole => λ _, True
     | PFst K _ => λ x, pctx_in K x.1
-    | PSnd _ K | POwn _ K => λ x, pctx_in K x.2
+    | PSnd _ K | POwn _ K | PShr _ K => λ x, pctx_in K x.2
     | PSum _ i _ K => λ x, match psum_proj i x.1 with Some y => pctx_in K y | None => False end
     | PUniq _ K => λ x, pctx_in K (uniq_bor_current x)
     end.
@@ -369,7 +391,7 @@ Section pctx.
     | PSnd lt1 K => lty_size lt1 + pctx_off K
     | POwn _ _ => 0
     | PSum _ _ _ K => S (pctx_off K)
-    | PUniq _ _ => 0
+    | PUniq _ _ | PShr _ _ => 0
     end.
 
   (** The location of the hole (of size [n]), in a place at [l] with value [x]. *)
@@ -382,6 +404,7 @@ Section pctx.
     | PSum _ i w K => λ x l,
         pctx_loc K n (psum_proj_or i x.1 w) (cloc_take (cloc_skip l 1) (pctx_size K n))
     | PUniq _ K => λ x _, pctx_loc K n (uniq_bor_current x) (uniq_bor_loc x)
+    | PShr _ K => λ x _, pctx_loc K n x.2 x.1
     end.
 
   (** The number of laters of the hole, in a place with [m] laters. (Only meaningful
@@ -390,7 +413,7 @@ Section pctx.
     match K with
     | PHole => m
     | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_mode K m
-    | POwn _ K | PUniq _ K => pctx_mode K (m + 1)
+    | POwn _ K | PUniq _ K | PShr _ K => pctx_mode K (m + 1)
     end.
 
   (** The depth of the hole, in a place at depth [d]. *)
@@ -398,7 +421,7 @@ Section pctx.
     match K with
     | PHole => d
     | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_depth K d
-    | POwn _ K | PUniq _ K => pctx_depth K (pred d)
+    | POwn _ K | PUniq _ K | PShr _ K => pctx_depth K (pred d)
     end.
 
   (** The pattern of the place, with pattern [p] at the hole. *)
@@ -410,6 +433,7 @@ Section pctx.
     | POwn _ K => PatOwn (pctx_pat K p)
     | PSum _ _ _ K => PatSum (pctx_pat K p)
     | PUniq _ K => PatUniq (pctx_pat K p)
+    | PShr _ _ => PatLeaf
     end.
 
   (** The refinement of the place (at path [q], with current value [x] and blocking
@@ -429,6 +453,7 @@ Section pctx.
         end
     | PUniq _ K => λ x ζm q r,
         inr (uniq_bor_loc x, pctx_rfn K (uniq_bor_current x) ζm (false :: q) r, uniq_bor_ξi x)
+    | PShr _ _ => λ x _ _ _, inl (PlaceIn x)
     end.
 
   (** The number of blocked leaves outside the hole. *)
@@ -437,7 +462,7 @@ Section pctx.
     | PHole => 0
     | PFst K lt2 => pctx_nblk K + lty_nblk lt2
     | PSnd lt1 K => lty_nblk lt1 + pctx_nblk K
-    | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_nblk K
+    | POwn _ K | PSum _ _ _ K | PUniq _ K | PShr _ K => pctx_nblk K
     end.
 
   (** The receipts of the blocked leaves outside the hole ([lty_nrc]), and the values of
@@ -449,6 +474,7 @@ Section pctx.
     | PSnd lt1 K => lty_nrc lt1 e mm + pctx_nrc K e mm
     | POwn _ K => pctx_nrc K e (S mm)
     | PSum _ _ _ K => pctx_nrc K e mm
+    | PShr _ K => pctx_nrc K e (S mm)
     | PUniq _ K => pctx_nrc K (e + mm + 1) 0
     end.
 
@@ -456,7 +482,7 @@ Section pctx.
     match K with
     | PHole => e
     | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_ne K e mm
-    | POwn _ K => pctx_ne K e (S mm)
+    | POwn _ K | PShr _ K => pctx_ne K e (S mm)
     | PUniq _ K => pctx_ne K (e + mm + 1) 0
     end.
 
@@ -464,7 +490,7 @@ Section pctx.
     match K with
     | PHole => mm
     | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_nmm K e mm
-    | POwn _ K => pctx_nmm K e (S mm)
+    | POwn _ K | PShr _ K => pctx_nmm K e (S mm)
     | PUniq _ K => pctx_nmm K (e + mm + 1) 0
     end.
 
@@ -477,7 +503,33 @@ Section pctx.
     | POwn n K => POwn n (pctx_core K)
     | PSum tyl i w K => PSum tyl i w (pctx_core K)
     | PUniq κ K => PUniq κ (pctx_core K)
+    | PShr κ K => PShr κ (pctx_core K)
     end.
+
+  (** The hole is below no shared reference (it is owned): a type class, solved by the
+      structure of the context (or from [PctxNoUniq]). *)
+  Class PctxNoShr {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop := pctx_no_shr : pctx_noshr K.
+
+  Global Instance pctx_no_shr_hole {𝔅} : PctxNoShr (PHole (𝔅:=𝔅)).
+  Proof. done. Qed.
+  Global Instance pctx_no_shr_fst {𝔅 𝔄1 𝔄2} (K: pctx 𝔅 𝔄1) (lt2: lty 𝔄2) :
+    PctxNoShr K → PctxNoShr (PFst K lt2).
+  Proof. done. Qed.
+  Global Instance pctx_no_shr_snd {𝔅 𝔄1 𝔄2} (lt1: lty 𝔄1) (K: pctx 𝔅 𝔄2) :
+    PctxNoShr K → PctxNoShr (PSnd lt1 K).
+  Proof. done. Qed.
+  Global Instance pctx_no_shr_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') :
+    PctxNoShr K → PctxNoShr (POwn n K).
+  Proof. done. Qed.
+  Global Instance pctx_no_shr_sum {𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) :
+    PctxNoShr K → PctxNoShr (PSum tyl i w K).
+  Proof. done. Qed.
+  Global Instance pctx_no_shr_uniq {𝔅 𝔄'} κ (K: pctx 𝔅 𝔄') :
+    PctxNoShr K → PctxNoShr (PUniq κ K).
+  Proof. done. Qed.
+  Global Instance pctx_no_shr_core {𝔅 𝔄} (K: pctx 𝔅 𝔄) :
+    PctxNoShr K → PctxNoShr (pctx_core K).
+  Proof. rewrite /PctxNoShr. induction K; simpl; auto. Qed.
 
   (** ** Basic laws *)
 
@@ -489,7 +541,9 @@ Section pctx.
 
   Lemma pctx_set_get {𝔅 𝔄} (K: pctx 𝔅 𝔄) x : pctx_in K x → pctx_set K x (pctx_get K x) = x.
   Proof.
-    induction K in x |- *; simpl; [by intros|intros; by rewrite IHK // -surjective_pairing..| |].
+    induction K in x |- *; simpl;
+      [by intros|intros; by rewrite IHK // -surjective_pairing..| | |
+       intros; by rewrite IHK // -surjective_pairing].
     - rewrite /psum_proj_or. destruct x as [s pad]. simpl.
       case_match eqn:Hs; [|intros []]. intros Hin.
       rewrite IHK //. by rewrite -(psum_proj_Some _ _ _ Hs).
@@ -498,7 +552,7 @@ Section pctx.
 
   Lemma pctx_mode_add {𝔅 𝔄} (K: pctx 𝔅 𝔄) m : pctx_mode K m = m + pctx_mode K 0.
   Proof.
-    induction K in m |- *; simpl; [lia|done|done| |apply IHK|];
+    induction K in m |- *; simpl; [lia|done|done| |apply IHK| |];
       rewrite IHK (IHK (0 + 1)); lia.
   Qed.
 
@@ -509,20 +563,21 @@ Section pctx.
   Proof. induction K in d |- *; simpl; naive_solver. Qed.
 
   Lemma pctx_depth_mono {𝔅 𝔄} (K: pctx 𝔅 𝔄) d d' : d ≤ d' → pctx_depth K d ≤ pctx_depth K d'.
-  Proof. induction K in d, d' |- *; simpl; [done|auto|auto| |auto|]; intros; apply IHK; lia. Qed.
+  Proof. induction K in d, d' |- *; simpl; [done|auto|auto| |auto| |]; intros; apply IHK; lia. Qed.
 
   (** The depth of the hole decreases by one per owned pointer. *)
   Lemma pctx_depth_sub {𝔅 𝔄} (K: pctx 𝔅 𝔄) d : pctx_depth K d = d - pctx_mode K 0.
   Proof.
-    induction K in d |- *; simpl; [lia|done|done| |apply IHK|];
+    induction K in d |- *; simpl; [lia|done|done| |apply IHK| |];
       rewrite IHK (pctx_mode_add K (0 + 1)); lia.
   Qed.
 
   Lemma pctx_path_app {𝔅 𝔄} (K: pctx 𝔅 𝔄) q : pctx_path K q = pctx_path K [] ++ q.
   Proof.
-    induction K in q |- *; simpl; [done| | | | |].
+    induction K in q |- *; simpl; [done| | | | | |].
     - rewrite IHK (IHK [false]) -app_assoc. done.
     - rewrite IHK (IHK [true]) -app_assoc. done.
+    - rewrite IHK (IHK [false]) -app_assoc. done.
     - rewrite IHK (IHK [false]) -app_assoc. done.
     - rewrite IHK (IHK [false]) -app_assoc. done.
     - rewrite IHK (IHK [false]) -app_assoc. done.
@@ -562,10 +617,12 @@ Section pctx.
     rewrite /psum_proj_or. destruct (psum_proj i x.1); [by rewrite IHK|done].
   Qed.
 
-  Lemma pctx_rfn_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) x y ζm q r :
+  Lemma pctx_rfn_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoShr K} x y ζm q r :
     pctx_in K x → pctx_rfn K (pctx_set K x y) ζm q r = pctx_rfn K x ζm q r.
   Proof.
-    induction K in x, y, q, r |- *; simpl; try (intros; by rewrite ?IHK).
+    rename select (PctxNoShr K) into HK. rewrite /PctxNoShr in HK.
+    induction K in HK, x, y, q, r |- *; simpl; simpl in HK; try done;
+      try (intros; by rewrite ?IHK).
     - rewrite psum_proj_pinj /psum_proj_or. destruct (psum_proj i x.1); [|done].
       intros. by rewrite IHK.
     - intros. by rewrite uniq_bor_loc_set uniq_bor_current_set uniq_bor_ξi_set IHK.
@@ -573,7 +630,7 @@ Section pctx.
 
   Lemma pctx_in_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) x y : pctx_in K x → pctx_in K (pctx_set K x y).
   Proof.
-    induction K in x, y |- *; simpl; [by intros|apply IHK|apply IHK|apply IHK| |].
+    induction K in x, y |- *; simpl; [by intros|apply IHK|apply IHK|apply IHK| | |apply IHK].
     - rewrite psum_proj_pinj /psum_proj_or. case_match; [apply IHK|intros []].
     - rewrite uniq_bor_current_set. apply IHK.
   Qed.
@@ -583,7 +640,7 @@ Section pctx.
   Lemma pctx_rfn_blk_cons {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm ζi q r :
     pctx_rfn K x ((pctx_path K q, ζi) :: ζm) q r = pctx_rfn K x ζm q r.
   Proof.
-    induction K in x, q, r |- *; simpl; [done| | |by rewrite IHK| |by rewrite IHK].
+    induction K in x, q, r |- *; simpl; [done| | |by rewrite IHK| |by rewrite IHK|done].
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
@@ -595,7 +652,7 @@ Section pctx.
   Lemma pctx_rfn_blk_cons_below {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm ζi q s r :
     pctx_rfn K x ((s ++ pctx_path K q, ζi) :: ζm) q r = pctx_rfn K x ζm q r.
   Proof.
-    induction K in x, q, r |- *; simpl; [done| | | | |by rewrite IHK].
+    induction K in x, q, r |- *; simpl; [done| | | | |by rewrite IHK|done].
     - rewrite IHK.
       f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app app_assoc. by apply lpath_app_cons_ne.
@@ -610,7 +667,7 @@ Section pctx.
     (∀ ζ, ζ ∈ ζl → ζ ∈ ζl') →
     prfn_rsv (pctx_rfn K x ζm q r) ζl → prfn_rsv r' ζl' → prfn_rsv (pctx_rfn K x ζm q r') ζl'.
   Proof.
-    intros Hin. induction K in x, q, r, r' |- *; simpl; [done| | | | |].
+    intros Hin. induction K in x, q, r, r' |- *; simpl; [done| | | | | |].
     - intros [H1 H2] H'. split; [by eapply IHK|]. by eapply prfn_rsv_weaken.
     - intros [H1 H2] H'. split; [by eapply prfn_rsv_weaken|]. by eapply IHK.
     - intros H H'. by eapply IHK.
@@ -618,6 +675,7 @@ Section pctx.
       rewrite !(prfn_rsv_sum' _ _ x.2). intros H H'. by eapply IHK.
     - intros [H1 H2] H'. split; [by eapply IHK|].
       eapply uniq_prvar_dep_irrel, proph_dep_weaken; [|exact H2]. done.
+    - intros _ _. exact (prfn_rsv_in (𝔄:=at_clocₛ 𝔄') x ζl').
   Qed.
 
   (** If a new hole refinement [r'] depends on what [r] depends on (and [ζl']), so does
@@ -626,7 +684,7 @@ Section pctx.
     (∀ ζ, ζ ∈ ζl → ζ ∈ ζl') → (prfn_rsv r ζl → prfn_rsv r' ζl') →
     prfn_rsv (pctx_rfn K x ζm q r) ζl → prfn_rsv (pctx_rfn K x ζm q r') ζl'.
   Proof.
-    intros Hin. induction K in x, q, r, r' |- *; simpl; [done| | | | |].
+    intros Hin. induction K in x, q, r, r' |- *; simpl; [done| | | | | |].
     - intros H [H1 H2]. split; [by eapply IHK|]. by eapply prfn_rsv_weaken.
     - intros H [H1 H2]. split; [by eapply prfn_rsv_weaken|]. by eapply IHK.
     - intros H H'. by eapply IHK.
@@ -634,12 +692,13 @@ Section pctx.
       rewrite !(prfn_rsv_sum' _ _ x.2). intros H H'. by eapply IHK.
     - intros H [H1 H2]. split; [by eapply IHK|].
       eapply uniq_prvar_dep_irrel, proph_dep_weaken; [|exact H2]. done.
+    - intros _ _. exact (prfn_rsv_in (𝔄:=at_clocₛ 𝔄') x ζl').
   Qed.
 
   Lemma pctx_loc_fst {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x l :
     pctx_noderef K → (pctx_loc K n x l).1 = l.1 +ₗ pctx_off K.
   Proof.
-    induction K in x, l |- *; simpl; [by rewrite shift_loc_0|intros ?; by rewrite IHK| |done| |done].
+    induction K in x, l |- *; simpl; [by rewrite shift_loc_0|intros ?; by rewrite IHK| |done| |done|done].
     - intros ?. rewrite IHK // /= shift_loc_assoc. f_equal. lia.
     - intros ?. rewrite IHK // /= shift_loc_assoc. f_equal. lia.
   Qed.
@@ -670,13 +729,18 @@ Section pctx.
     PctxNoUniq K → PctxNoUniq (pctx_core K).
   Proof. rewrite /PctxNoUniq. induction K; simpl; auto. Qed.
 
+  (** Below no unique borrow and no shared reference, in particular below no shared
+      reference. *)
+  Global Instance pctx_no_uniq_no_shr {𝔅 𝔄} (K: pctx 𝔅 𝔄) : PctxNoUniq K → PctxNoShr K.
+  Proof. rewrite /PctxNoUniq /PctxNoShr. induction K; simpl; tauto. Qed.
+
   Lemma pctx_no_uniq_noderef {𝔅 𝔄} (K: pctx 𝔅 𝔄) : pctx_noderef K → PctxNoUniq K.
   Proof. rewrite /PctxNoUniq. induction K; simpl; tauto. Qed.
 
   Lemma pctx_ne_nouniq {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} e mm : pctx_ne K e mm = e.
   Proof.
     rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
-    induction K in HK, e, mm |- *; simpl; simpl in HK; auto. done.
+    induction K in HK, e, mm |- *; simpl; simpl in HK; auto; done.
   Qed.
 
   (** Sharing a leaf below no unique borrow adds no receipt. *)
@@ -718,8 +782,9 @@ Section pctx.
                 pctx_size K n) x.2))
         | None => False
         end
-    (* Below a unique borrow, the ownership does not split (see [pctx_acc.v]). *)
-    | PUniq _ _ => λ _ _ _ _ _ _ _, False
+    (* Below a unique borrow, the ownership does not split (see [pctx_acc.v]); below a
+       shared reference, nothing is owned. *)
+    | PUniq _ _ | PShr _ _ => λ _ _ _ _ _ _ _, False
     end%I.
 
   Lemma ltype_own_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (lt: lty 𝔅) m p r x ζm q d g tid l :
@@ -730,7 +795,7 @@ Section pctx.
     pctx_own K (lty_size lt) m x ζm q d g tid l.
   Proof.
     rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
-    induction K in HK, lt, r, m, x, q, d, l |- *; simpl; simpl in HK; [|..|done].
+    induction K in HK, lt, r, m, x, q, d, l |- *; simpl; simpl in HK; [|..|done|done].
     - by rewrite right_id.
     - rewrite lty_size_plug IHK //. rewrite /ltype_own. by rewrite assoc.
     - rewrite IHK //. rewrite /ltype_own. rewrite assoc (comm _ (ltype_own_cp _ _ _ _ _ _ _ _ _)).
@@ -750,7 +815,7 @@ Section pctx.
   Lemma pctx_own_in {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid l :
     pctx_own K n m x ζm q d g tid l -∗ ⌜pctx_in K x⌝.
   Proof.
-    induction K in m, x, q, d, l |- *; simpl; [by iIntros| | | | |by iIntros "[]"].
+    induction K in m, x, q, d, l |- *; simpl; [by iIntros| | | | |by iIntros "[]"|by iIntros "[]"].
     - iIntros "[A _]". by iApply IHK.
     - iIntros "[_ A]". by iApply IHK.
     - iIntros "(_ & _ & _ & A)". by iApply IHK.
@@ -778,7 +843,7 @@ Section pctx.
   Lemma pctx_own_blk_cons {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm ζi q d g tid l :
     pctx_own K n m x ((pctx_path K q, ζi) :: ζm) q d g tid l = pctx_own K n m x ζm q d g tid l.
   Proof.
-    induction K in m, x, q, d, l |- *; simpl; [done| | |by rewrite IHK| |done].
+    induction K in m, x, q, d, l |- *; simpl; [done| | |by rewrite IHK| |done|done].
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
@@ -790,7 +855,7 @@ Section pctx.
     pctx_own K n m x ((s ++ pctx_path K q, ζi) :: ζm) q d g tid l =
       pctx_own K n m x ζm q d g tid l.
   Proof.
-    induction K in m, x, q, d, l |- *; simpl; [done| | | | |done].
+    induction K in m, x, q, d, l |- *; simpl; [done| | | | |done|done].
     - rewrite IHK.
       f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app app_assoc. by apply lpath_app_cons_ne.
@@ -805,7 +870,7 @@ Section pctx.
     d ≤ d' → g ≤ g' →
     pctx_own K n m x ζm q d g tid l ⊢ pctx_own K n m x ζm q d' g' tid l.
   Proof.
-    induction K in m, x, q, d, d', l |- *; intros ??; simpl; [done| | | | |done].
+    induction K in m, x, q, d, d', l |- *; intros ??; simpl; [done| | | | |done|done].
     - iIntros "[A B]". iSplitL "A"; [by iApply IHK|].
       by iApply (ltype_own_owned_depth_mono with "B").
     - iIntros "[A B]". iSplitL "A"; [by iApply (ltype_own_owned_depth_mono with "A")|].
@@ -819,7 +884,7 @@ Section pctx.
   Lemma pctx_own_mode_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid l :
     pctx_own K n m x ζm q d g tid l -∗ ⌜pctx_mode K 0 ≤ d⌝.
   Proof.
-    induction K in m, x, q, d, l |- *; simpl; [iIntros "_"; iPureIntro; lia| | | | |by iIntros "[]"].
+    induction K in m, x, q, d, l |- *; simpl; [iIntros "_"; iPureIntro; lia| | | | |by iIntros "[]"|by iIntros "[]"].
     - iIntros "[A _]". by iApply IHK.
     - iIntros "[_ A]". by iApply IHK.
     - iIntros "(_ & %Hd & _ & A)". iDestruct (IHK with "A") as %?.
@@ -833,7 +898,7 @@ Section pctx.
     (G &&{E; k}&&> l #↦∗_) -∗ (G &&{E; k}&&> pctx_loc K n x l #↦∗_).
   Proof.
     rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
-    induction K in HK, x, l |- *; simpl; simpl in HK; [by iIntros "$"| | | | |done];
+    induction K in HK, x, l |- *; simpl; simpl in HK; [by iIntros "$"| | | | |done|done];
       iIntros "G"; (iApply IHK; [done|]).
     - rewrite (heap_cloc_mapsto_emp_vec_app l (pctx_size K n)).
       iApply (guards_weaken_rhs_sep_l with "G").
@@ -857,7 +922,7 @@ Section pctx.
     | PSnd lt1 K => pctx_expr K (e +ₗ #(lty_size lt1))%E
     | POwn _ K => pctx_expr K (!e)%E
     | PSum _ _ _ K => pctx_expr K (e +ₗ #1)%E
-    | PUniq _ K => pctx_expr K (!e)%E
+    | PUniq _ K | PShr _ K => pctx_expr K (!e)%E
     end.
 
   Lemma pctx_expr_closed {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : Closed [] e → Closed [] (pctx_expr K e).
@@ -909,6 +974,7 @@ Section pctx.
           iFrame. done. }
       rewrite /psum_proj_or Hy. iIntros (v) "($ & $ & $ & $)". iFrame.
     - by iIntros "_ _ _ []".
+    - by iIntros "_ _ _ []".
   Qed.
 
   Lemma wp_pctx_expr {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: cloc) (e: expr) (G R: iProp Σ) k :
@@ -922,7 +988,7 @@ Section pctx.
   Lemma pat_blk_lfts_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) p p' α :
     α ∈ pat_blk_lfts (pctx_pat K p') → α ∈ pat_blk_lfts p' ∨ α ∈ pat_blk_lfts (pctx_pat K p).
   Proof.
-    induction K; simpl; [by left| | |done|done|done]; rewrite !elem_of_app.
+    induction K; simpl; [by left| | |done|done|done|by intros ?%not_elem_of_nil]; rewrite !elem_of_app.
     - intros [Hα|Hα]; [destruct (IHK Hα); [by left|by right; left]|by right; right].
     - intros [Hα|Hα]; [by right; left|destruct (IHK Hα); [by left|by right; right]].
   Qed.
@@ -936,10 +1002,12 @@ Section pctx.
     - by iApply (big_sepL_elem_of with "Ok").
   Qed.
 
-  Lemma pat_ok_plug_hole κ {𝔅 𝔄} (K: pctx 𝔅 𝔄) p :
+  Lemma pat_ok_plug_hole κ {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoShr K} p :
     pat_ok κ (pctx_pat K p) -∗ pat_ok κ p.
   Proof.
-    rewrite /pat_ok. induction K; simpl; [by iIntros "$"| | |done|done|done]; rewrite big_sepL_app.
+    rename select (PctxNoShr K) into HK. rewrite /PctxNoShr in HK.
+    rewrite /pat_ok. induction K; simpl; simpl in HK; [by iIntros "$"| | |auto|auto|auto|done];
+      rewrite big_sepL_app.
     - iIntros "[A _]". by iApply IHK.
     - iIntros "[_ A]". by iApply IHK.
   Qed.
@@ -962,6 +1030,7 @@ Section pctx.
   Proof.
     induction K in lt |- *; simpl; [iApply guards_refl| | |iApply IHK|
       iApply llftl_incl_trans; [iApply (lty_lft_sum _ _ (pctx_plug K lt))|iApply IHK]|
+      iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply IHK]|
       iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply IHK]];
       (iApply llftl_incl_trans; [|iApply IHK]); rewrite lft_intersect_list_app;
       [iApply llftl_intersect_incl_l|iApply llftl_intersect_incl_r].
@@ -984,7 +1053,7 @@ Section pctx.
     | PHole => True
     | PFst K lt2 => pctx_simple K ∧ lty_simple lt2
     | PSnd lt1 K => lty_simple lt1 ∧ pctx_simple K
-    | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_simple K
+    | POwn _ K | PSum _ _ _ K | PUniq _ K | PShr _ K => pctx_simple K
     end.
 
   Lemma lty_simple_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
@@ -1033,6 +1102,7 @@ Section pctx.
        dropped, see [pctx_nosum]). *)
     | PSum _ _ _ K => pctx_root K 𝔅'
     | PUniq _ K => uniq_borₛ (pctx_root K 𝔅')
+    | PShr _ K => at_clocₛ (pctx_root K 𝔅')
     end.
 
   Fixpoint pctx_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) (𝔅': syn_type) : pctx 𝔅' (pctx_root K 𝔅') :=
@@ -1043,6 +1113,7 @@ Section pctx.
     | POwn n K => POwn n (pctx_retype K 𝔅')
     | PSum _ _ _ K => pctx_retype K 𝔅'
     | PUniq κ K => PUniq κ (pctx_retype K 𝔅')
+    | PShr κ K => PShr κ (pctx_retype K 𝔅')
     end.
 
   Fixpoint pctx_reset {𝔅 𝔄} (K: pctx 𝔅 𝔄) {𝔅'} : ~~𝔄 → ~~𝔅' → ~~(pctx_root K 𝔅') :=
@@ -1053,6 +1124,7 @@ Section pctx.
     | POwn _ K => λ x y, (x.1, pctx_reset K x.2 y)
     | PSum _ i w K => λ x y, pctx_reset K (psum_proj_or i x.1 w) y
     | PUniq _ K => λ x y, uniq_bor_retype x (pctx_reset K (uniq_bor_current x) y)
+    | PShr _ K => λ x y, (x.1, pctx_reset K x.2 y)
     end.
 
   Lemma pctx_get_reset {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) x (y: ~~𝔅') :
@@ -1136,7 +1208,7 @@ Section pctx.
     ∃ l', pctx_loc K n x (l, repeat [] (pctx_size K n)) = (l', repeat [] n).
   Proof.
     rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
-    induction K in HK, x, l |- *; simpl; simpl in HK; [by eexists|..|done].
+    induction K in HK, x, l |- *; simpl; simpl in HK; [by eexists|..|done|done].
     - rewrite /cloc_take /= take_repeat_add. by apply IHK.
     - rewrite /cloc_skip /= drop_repeat_add. by apply IHK.
     - by apply IHK.
@@ -1149,8 +1221,16 @@ Section pctx.
   Global Instance pctx_no_uniq_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' :
     PctxNoUniq K → PctxNoUniq (pctx_retype K 𝔅').
   Proof. rewrite /PctxNoUniq. induction K; simpl; auto. Qed.
+
+  Global Instance pctx_no_shr_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' :
+    PctxNoShr K → PctxNoShr (pctx_retype K 𝔅').
+  Proof. rewrite /PctxNoShr. induction K; simpl; auto. Qed.
 End pctx.
 
 (** A context with a [PUniq] step is not [PctxNoUniq]. *)
 Ltac pctx_no_uniq_contra :=
-  match goal with H : PctxNoUniq (PUniq _ _) |- _ => exfalso; exact H end.
+  match goal with
+  | H : PctxNoUniq (PUniq _ _) |- _ => exfalso; exact H
+  | H : PctxNoUniq (PShr _ _) |- _ => exfalso; exact H
+  | H : PctxNoShr (PShr _ _) |- _ => exfalso; exact H
+  end.

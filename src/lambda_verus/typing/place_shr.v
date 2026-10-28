@@ -529,7 +529,7 @@ Section shr_place.
     ty_shr (lty_fold lt) κ (pctx_get K x) d g tid ∗
     ▷^j ty_gho_pers (lty_fold lt) (pctx_get K x) d g tid.
   Proof.
-    induction K as [|𝔅 𝔄1 𝔄2 K IH lt2|𝔅 𝔄1 𝔄2 lt1 K IH| | |] in lt, x, l |- *; intros HK; simpl.
+    induction K as [|𝔅 𝔄1 𝔄2 K IH lt2|𝔅 𝔄1 𝔄2 lt1 K IH| | | |] in lt, x, l |- *; intros HK; simpl.
     - iIntros "$ $ $".
     - iIntros "#Pt [Shr _] Pers". rewrite heap_mapsto_cells_fancy_vec_app.
       iApply (IH with "[] Shr [Pers]"); [done| |by iDestruct "Pers" as "[$ _]"].
@@ -539,6 +539,7 @@ Section shr_place.
       iApply (IH with "[] Shr [Pers]"); [done| |by iDestruct "Pers" as "[_ $]"].
       rewrite ty_size_eq -lty_size_fold.
       by iApply (guards_weaken_rhs_sep_r with "Pt").
+    - done.
     - done.
     - done.
     - done.
