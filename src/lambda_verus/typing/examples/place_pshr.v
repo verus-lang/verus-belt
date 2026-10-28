@@ -189,4 +189,89 @@ Section place_pshr.
     intros d' g' idx' Hres l0 junk z ->. apply Hspec; [done|].
     by rewrite uniq_bor_future_eq.
   Qed.
+
+  (*
+  Reading through a shared reference stored in a box, and a box below it:
+
+  ```
+  fn get_boxed(b: Box<&'a (i32, Box<i32>)>) -> i32 { *( *b).1 }
+  ```
+
+  with the specification `ensures result == *( **b).1`. The argument slot is the owned
+  place [own (box (&shr{'a} (int * box int)))]: the box is unfolded (an owned pointer),
+  the shared reference below it ([K = POwn 1 PHole]) and the view of its referent as
+  [ProdLty (OfTy int) (OwnPtrLty 1 (OfTy int))]; the leaf is read below [PShr] through the
+  inner box ([K2 = PSnd _ (POwn 1 PHole)]). Dropping the slot frees the outer box (the
+  inner one belongs to the referent of the shared reference).
+  *)
+
+  Definition get_boxed : val :=
+    fn: ["b"] :=
+      ReBor;;                                       (* unfold the box *)
+      ReBor;;                                       (* unfold *b *)
+      ReBor;;                                       (* view **b as a pair with a box *)
+      let: "v" := Skip;; !(!(!(!"b") +ₗ #1)) in     (* *( **b).1 *)
+      ((#☠;; delete [ #1; !"b"]);; delete [ #1; "b"]);; (* drop b *)
+      let: "ret" := new [ #1] in
+      "ret" <- "v";;
+      return: ["ret"].
+
+  Definition get_boxed_spec :
+      fn_spec [at_locₛ (at_clocₛ (Zₛ * at_locₛ Zₛ))] Zₛ () :=
+    λ _ post '-[(_, m)], λ mask π, ∀ (lr: loc), post (lr, m.2.2.2.2) mask π.
+
+  Lemma get_boxed_type :
+    typed_val get_boxed
+      ((fn<α>(∅; box (&shr{α} (int * box int))) → int) get_boxed_spec)
+      (get_boxed, ()).
+  Proof.
+    unfold get_boxed. unlock.
+    opose proof (@type_fn _ _ _ [at_locₛ (at_clocₛ (Zₛ * at_locₛ Zₛ))] Zₛ () ()
+      (λ α, FP ∅ +[box (&shr{α} (int * box int))]%T int%T AtomicClosed)
+      get_boxed_spec _ [BNamed "b"] _ _ _) as H.
+    unlock in H. apply H. clear H.
+    intros α ϝ k wl. destruct wl as [vb []]. simpl_subst.
+    iApply (typed_body_impl with "[]"); last first. {
+      iApply typed_body_tctx_incl; [apply tctx_own_to_oplace|].
+      (* unfold the box *)
+      iApply type_seq.
+      { apply (type_unfold_oplace_own_deep_instr _ _ _ vb 1 PHole 1 (&shr{α} (int * box int)));
+          [done|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      (* unfold *b *)
+      iApply type_seq.
+      { apply (type_unfold_oplace_shr_instr _ _ _ vb 1 (POwn 1 PHole) α (int * box int)).
+        solve_typing. }
+      { solve_typing. } { reflexivity. }
+      (* view **b as a pair with a box *)
+      iApply type_seq.
+      { apply (type_change_oplace_shr_instr _ _ _ vb 1 (POwn 1 PHole) α PHole
+          (OfTy (int * box int)) (ProdLty (OfTy int) (OwnPtrLty 1 (OfTy int))));
+          [solve_typing|done|done|done]. }
+      { solve_typing. } { reflexivity. }
+      (* *( **b).1 *)
+      iApply (type_let with "[]").
+      { apply (type_read_oplace_pshr_instr _ _ _ vb 1 (POwn 1 PHole) α
+          (PSnd (OfTy int) (POwn 1 PHole)) (OfTy int)); [done|apply _|solve_typing|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vv). simpl_subst.
+      (* drop b *)
+      iApply type_seq.
+      { apply (type_drop_oplace_deep_instr _ _ _ vb 1 1
+          (OwnPtrLty 1 (ShrLty (ProdLty (OfTy int) (OwnPtrLty 1 (OfTy int))) α)));
+          [done|done|done|].
+        apply lty_rslv_own, lty_rslv_shr. }
+      { solve_typing. } { reflexivity. }
+      iApply (type_new 1). { lia. } iIntros (vret). simpl_subst.
+      iApply type_assign. { solve_typing. } { by apply write_own. }
+      { apply (resolve'_just _ _ _ (const True)). apply resolve_just. }
+      iApply type_jump.
+      { rewrite elem_of_list_singleton. reflexivity. }
+      { solve_typing. }
+      { solve_typing. }
+      { reflexivity. }
+    }
+    intros post [[lx [lb [l1 [z [lb' w]]]]] []] mask π. simpl.
+    intros Hspec. rewrite /trans_upper /trans_tail /=. intros _ l0 junk z' ->. apply Hspec.
+  Qed.
 End place_pshr.
