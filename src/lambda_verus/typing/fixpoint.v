@@ -115,7 +115,7 @@ Section S.
 
   Program Definition Tn' n : type 𝔄 := {|
     ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
-    ty_gho_own := (Tn n).(ty_gho_own);  ty_gho_pers := (Tn n).(ty_gho_pers);
+    ty_gho_own := (Tn n).(ty_gho_own);  ty_gho_res := (Tn n).(ty_gho_res);  ty_gho_pers := (Tn n).(ty_gho_pers);
     ty_phys := (Tn 0).(ty_phys);
     ty_shr := (Tn n).(ty_shr);
   |}.
@@ -141,7 +141,7 @@ Section S.
 
   Program Definition fix_ty: type 𝔄 := {|
     ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
-    ty_gho_own := (compl gho_chain).1.1;  ty_gho_pers := (compl gho_chain).1.2;
+    ty_gho_own := (compl gho_chain).1.1;  ty_gho_res := (compl gho_chain).1.1;  ty_gho_pers := (compl gho_chain).1.2;
     ty_phys := (Tn 0).(ty_phys);
     ty_shr := (compl gho_chain).2;
   |}.
@@ -390,6 +390,11 @@ Section fix_ty.
         * do 2 (rewrite <- ty_phys_eq2). done.
         * apply sync_change_tid.
   Qed.
+
+  (** The resolved ownership of [fix_ty] is its ownership (it is not computed as a limit;
+      see [ty_gho_res]). *)
+  Global Instance fix_res_own : ResOwn (fix_ty T).
+  Proof. done. Qed.
 
   Lemma fix_resolve E L Φ :
     (∀ty, resolve E L ty Φ → resolve E L (T ty) Φ) → resolve E L (fix_ty T) Φ.

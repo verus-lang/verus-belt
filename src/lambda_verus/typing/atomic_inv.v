@@ -48,6 +48,11 @@ Section atomic_invariants.
               *)
               ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')⌝)
     end;
+    ty_gho_res x d g tid := match x with (N, γ, c) =>
+        Active γ ∗ external_na_inv γ ATOMIC_POOL N
+          (∃ x' d' g' tid' , ⧖(S d' `max` g') ∗ ty.(ty_gho_own) x' d' g' tid'
+              ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')⌝)
+    end;
     ty_phys x tid := [];
     ty_shr := default_shr (λ (x: ~~(invₛ ℭ)) d g tid, match x with (N, γ, c) =>
           Active γ ∗ external_na_inv γ ATOMIC_POOL N
@@ -76,6 +81,11 @@ Section atomic_invariants.
         atomic_closer γ N (∃ x' d' g' tid' , ⧖(S d' `max` g') ∗ ty.(ty_gho_own) x' d' g' tid'
               ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')⌝)
     end;
+    ty_gho_res x d g tid := match x with (N, γ, c) =>
+        atomic_lock_handle atomic_lock_ctr_name (↑N) ∗
+        atomic_closer γ N (∃ x' d' g' tid' , ⧖(S d' `max` g') ∗ ty.(ty_gho_own) x' d' g' tid'
+              ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')⌝)
+    end;
     ty_phys x tid := [];
     ty_shr := default_shr (λ (x: ~~(invₛ ℭ)) d g tid, match x with (N, γ, c) =>
           atomic_lock_handle atomic_lock_ctr_name (↑N) ∗
@@ -94,6 +104,13 @@ Section atomic_invariants.
   Lemma atomic_inv_ty_resolve E L {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → proph_asn → Prop)
       : resolve E L (atomic_inv_ty ty pred) (const (const True)).
   Proof. apply resolve_just. Qed.
+
+  Global Instance atomic_inv_ty_res_own {𝔄 ℭ} (ty: type 𝔄) pred :
+    ResOwn (atomic_inv_ty (ℭ:=ℭ) ty pred).
+  Proof. done. Qed.
+  Global Instance atomic_closer_ty_res_own {𝔄 ℭ} κ (ty: type 𝔄) pred :
+    ResOwn (atomic_closer_ty (ℭ:=ℭ) κ ty pred).
+  Proof. done. Qed.
   
   Local Lemma gho_equiv_of_send {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → proph_asn → Prop) x d g tid tid'
       : Send ty →

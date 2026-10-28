@@ -55,6 +55,7 @@ Section points_to.
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
     ty_gho_own x d g tid := P ∗ (ty.(ty_gho_own) x d g tid) ;
+    ty_gho_res x d g tid := P ∗ (ty.(ty_gho_res) x d g tid) ;
     ty_gho_pers x d g tid := (ty.(ty_gho_pers) x d g tid) ;
     ty_phys x tid := [];
     ty_shr κ x d g tid := (@[κ] &&{↑NllftG; g+1}&&> P) ∗ ty.(ty_shr) κ x d g tid;
@@ -117,6 +118,10 @@ Section points_to.
 
   Global Instance points_to_sync {𝔄} (ty: type 𝔄) : Sync ty → Sync (points_to_ty ty).
   Proof. exact _. Qed.
+
+  Global Instance tracked_ty_with_prop_res_own {𝔄} (ty: type 𝔄) P :
+    ResOwn ty → ResOwn (tracked_ty_with_prop ty P).
+  Proof. move=> ? x d g tid /=. by rewrite res_own. Qed.
 
   Lemma points_to_resolve {𝔄} E L (ty: type 𝔄) Φ :
     resolve E L ty Φ → resolve E L (points_to_ty ty) (λ '(l, s), Φ s) .

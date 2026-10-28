@@ -15,6 +15,7 @@ Section pcell.
   Program Definition pcell_ty n : type (pcellₛ n) :=
     {| ty_size := n;
       ty_gho_own x _ _ _ := ⌜ length x = n ⌝;
+      ty_gho_res x _ _ _ := ⌜ length x = n ⌝;
       ty_gho_pers  x _ _ _ := ⌜ length x = n ⌝;
       ty_phys (cell_ids: ~~ (pcellₛ n)) _ := pad (FCell <$> cell_ids) n ;
       ty_lfts := [];
@@ -29,6 +30,9 @@ Section pcell.
   Next Obligation. move => *. by iIntros "?". Qed.
   Solve All Obligations with solve_default_shr.
   
+  Global Instance pcell_res_own n : ResOwn (pcell_ty n).
+  Proof. done. Qed.
+
   Global Instance pcell_send n: Send (pcell_ty n).
   Proof.
     intros. split; trivial.
@@ -52,6 +56,8 @@ Section points_to.
       ty_E := ty.(ty_E);
       ty_gho_own x d g tid := 
         [S(d') := d] (cells_points_to_fancy_value_vec x.1 (ty.(ty_phys) x.2 tid))%I ∗ ▷ (ty.(ty_gho_own) x.2 d' g tid) ;
+      ty_gho_res x d g tid := 
+        [S(d') := d] (cells_points_to_fancy_value_vec x.1 (ty.(ty_phys) x.2 tid))%I ∗ ▷ (ty.(ty_gho_res) x.2 d' g tid) ;
       ty_gho_pers x d g tid := 
         [S(d') := d] ⌜ length x.1 = ty_size ty ⌝ ∗ ▷ (ty.(ty_gho_pers) (snd x) d' g tid) ;
       ty_phys _ _ := [];
@@ -129,6 +135,10 @@ Section points_to.
     iNext. iIntros "#Rκ".
     leaf_goal laters to (n0 + (d'+1)*(g+1)). { lia. } by iApply "GP".
   Qed.
+
+  Global Instance cell_points_to_res_own {𝔄} (ty: type 𝔄) :
+    ResOwn ty → ResOwn (cell_points_to_ty ty).
+  Proof. move=> ? x [|d] g tid //=. by rewrite res_own. Qed.
 
   Global Instance cell_points_to_send {𝔄} (ty: type 𝔄) :
       Send ty → Send (cell_points_to_ty ty).

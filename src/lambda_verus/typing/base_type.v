@@ -17,6 +17,7 @@ Section base.
     ty_E := [];
     ty_gho_pers x d g tid := False;
     ty_gho_own x d g tid := False;
+    ty_gho_res x d g tid := False;
     ty_phys x tid := @syn_phys 𝔄 x;
     ty_shr := default_shr (λ x d g tid, False);
   |}%I.
@@ -47,6 +48,9 @@ Section base.
 
   Lemma base_resolve {𝔄} E L Φ : resolve E L (@base 𝔄) Φ.
   Proof. by iIntros. Qed.
+
+  Global Instance base_res_own {𝔄} : ResOwn (@base 𝔄).
+  Proof. done. Qed.
 
   Lemma base_subtype {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) E L :
     (∀ x, ξl x = ξl ((~~!ₛ) f x)) →

@@ -88,6 +88,16 @@ Section local_invariants.
             £(d' - d1) ∗
             ty.(ty_gho_own) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
     end;
+    ty_gho_res x d g tid := match x with (N, (γ, γt, d1), c) =>
+        cna_active γ
+          ∗ (⌜d1 < d⌝ ∗ dg_tok γt d1)
+          ∗ cna_inv γ tid N (∃ x' d' g' d1 ,
+            dg_tok γt d1 ∗
+            ⧖(S d' `max` g') ∗
+            ⧗(d' - d1) ∗
+            £(d' - d1) ∗
+            ty.(ty_gho_own) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
+    end;
     ty_phys x tid := [];
     ty_shr := default_shr (λ (x: ~~(local_invₛ ℭ)) d g tid, match x with (N, (γ, γt, d1), c) =>
           cna_active γ
@@ -119,6 +129,15 @@ Section local_invariants.
     ty_E := [];
     ty_gho_pers x d g tid := True%I ;
     ty_gho_own x d g tid := match x with (N, (γ, γt, d1), c) =>
+        dg_tok γt d1 ∗
+        cna_closer κ tid N (∃ x' d' g' d1 ,
+            dg_tok γt d1 ∗
+            ⧖(S d' `max` g') ∗
+            ⧗(d' - d1) ∗
+            £(d' - d1) ∗
+            ty.(ty_gho_own) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
+    end;
+    ty_gho_res x d g tid := match x with (N, (γ, γt, d1), c) =>
         dg_tok γt d1 ∗
         cna_closer κ tid N (∃ x' d' g' d1 ,
             dg_tok γt d1 ∗
@@ -191,6 +210,13 @@ Section local_invariants.
   Lemma local_inv_ty_resolve E L {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop)
       : resolve E L (local_inv_ty ty pred) (const (const True)).
   Proof. apply resolve_just. Qed.
+
+  Global Instance local_inv_ty_res_own {𝔄 ℭ} (ty: type 𝔄) pred :
+    ResOwn (local_inv_ty (ℭ:=ℭ) ty pred).
+  Proof. done. Qed.
+  Global Instance local_closer_ty_res_own {𝔄 ℭ} κ (ty: type 𝔄) pred :
+    ResOwn (local_closer_ty (ℭ:=ℭ) κ ty pred).
+  Proof. done. Qed.
   
   Lemma typed_local_inv_alloc {𝔄 ℭ} (p1 p2 : path) (ty : type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop) (tyCN : type (ℭ * namespaceₛ)) E L I :
     typed_inv_instr E L I

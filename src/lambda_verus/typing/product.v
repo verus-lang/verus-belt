@@ -17,6 +17,7 @@ Section product.
        ty_lfts := [];
        ty_E := [];
        ty_gho_own x d g tid := True%I;
+       ty_gho_res x d g tid := True%I;
        ty_gho_pers x d g tid := True%I;
        ty_phys x tid := [];
        ty_shr κ x d g tid := True%I;
@@ -58,6 +59,7 @@ Section product.
     ty_lfts := ty.(ty_lfts) ++ ty'.(ty_lfts);
     ty_E := ty.(ty_E) ++ ty'.(ty_E);
     ty_gho_own x d g tid := ty.(ty_gho_own) (fst x) d g tid ∗ ty'.(ty_gho_own) (snd x) d g tid;
+    ty_gho_res x d g tid := ty.(ty_gho_res) (fst x) d g tid ∗ ty'.(ty_gho_res) (snd x) d g tid;
     ty_gho_pers x d g tid := ty.(ty_gho_pers) (fst x) d g tid ∗ ty'.(ty_gho_pers) (snd x) d g tid;
     ty_phys x tid := ty.(ty_phys) (fst x) tid ++ ty'.(ty_phys) (snd x) tid;
     ty_shr κ x d g tid := ty.(ty_shr) κ (fst x) d g tid ∗ ty'.(ty_shr) κ (snd x) d g tid;
@@ -315,6 +317,30 @@ Section typing.
     resolve E L ty (const (const True)) → resolve E L ty' (const (const True)) →
     resolve E L (ty * ty') (const (const True)).
   Proof. move=> ??. apply resolve_just. Qed.
+
+
+  Global Instance unit0_res_own : ResOwn unit0.
+  Proof. done. Qed.
+  Global Instance prod_res_own {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) :
+    ResOwn ty → ResOwn ty' → ResOwn (ty * ty').
+  Proof. move=> ?? x d g tid /=. by rewrite !res_own. Qed.
+
+  Lemma prod_resolve_keep {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) Φ Φ' E L :
+    resolve_keep E L ty Φ → resolve_keep E L ty' Φ' →
+    resolve_keep E L (ty * ty') (λ '(a, b), λ π , Φ a π ∧ Φ' b π).
+  Proof.
+    iIntros (Rslv Rslv' ? vπ ???? Ti Ma) "#LFT #PROPH #UNIQ #TIME #E #L G [T1 T2]".
+    iMod (fractional.frac_split_guard_in_half NllftG with "G L")
+      as (hγ) "[F1 [F2 [#Ghalf #back]]]"; [solve_ndisj|].
+    iMod (Rslv with "LFT PROPH UNIQ TIME E Ghalf F1 T1") as "ToObs"; [done|].
+    iMod (Rslv' with "LFT PROPH UNIQ TIME E Ghalf F2 T2") as "ToObs'"; [done|].
+    iCombine "ToObs ToObs'" as "ToObs". iModIntro.
+    iApply (step_fupdN_wand with "ToObs").
+    iIntros "[>(A & F1 & R1) >(B & F2 & R2)]".
+    iMod (fupd_mask_mono with "(back F1 F2)") as "$"; [solve_ndisj|].
+    iFrame "R1 R2". iCombine "A B" as "C".
+    iModIntro. iApply proph_obs_eq; [|done]=>/= π. destruct x; trivial.
+  Qed.
 
   Hint Resolve prod_resolve : lrust_typing.
   

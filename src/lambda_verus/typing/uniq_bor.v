@@ -21,6 +21,19 @@ Section uniq_bor.
           ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ uniq_body ty x0 ξi d' g' idx κ tid l
             ∗ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_)
       end;
+
+    (* The resolved ownership: the prophecy variable has been resolved, and the referent
+       has been shared at κ ([resolve_uniq_body]): a guard of its cells, its sharing
+       predicate and its persistent predicate, i.e. the ownership of [&shr{κ} ty] at the
+       current value of the referent (see [uniq_res_shr]). *)
+    ty_gho_res (x : ~~ (uniq_borₛ 𝔄)) d g tid :=
+      κ ⊑ ty_lft ty ∗
+      match x with
+        (l, x0, ξi, d', g', idx) =>
+          ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_) ∗
+            (@[κ] &&{↑NllftG; 1}&&> l #↦!∗ ty.(ty_phys) x0 tid) ∗
+            ty.(ty_shr) κ x0 d' g' tid ∗ ty.(ty_gho_pers) x0 d' g' tid
+      end;
     
     (* The persistent predicate does not contain the persistent predicate of the
        referent: the referent can change while [&uniq] is reborrowed, and the
@@ -364,6 +377,34 @@ Section typing.
     iModIntro. iModIntro. iFrame "G".
     iApply proph_obs_eq; last by done. intros π. simpl.
     f_equal.
+  Qed.
+
+  (** As [uniq_resolve], keeping the shared view of the referent ([ty_gho_res]). *)
+  Lemma uniq_resolve_keep {𝔄} E L κ (ty: type 𝔄) :
+    lctx_lft_alive E L κ →
+    resolve_keep E L (&uniq{κ} ty) (λ x π, snd (vπ x π) = fst (vπ x π)).
+  Proof.
+    intros Alive G F x d g tid TimelessRes Hmask.
+    iIntros "#LFT PROPH UNIQ TIME E #Lguard G [#In uniq]".
+    destruct x as [[[[[l x0] ξi] d'] g'] idx].
+    iDestruct "uniq" as "[%Hle [uniq #PtBase]]".
+    leaf_open "Lguard" with "G" as "[L Back]". { solve_ndisj. }
+    iDestruct (Alive with "L E") as "#Alv".
+    iMod ("Back" with "L") as "G".
+    iDestruct (guards_transitive with "Lguard Alv") as "#Gk".
+    destruct d as [|d0]; [lia|].
+    replace (S d0 * (g + 1)) with (S (d0 * (g + 1) + g)) by lia.
+    iModIntro. simpl.
+    iMod (uniq_body_settle_step _ _ _ _ _ _ _ _ _ F G with "LFT Gk In uniq G") as "Upd";
+      [rewrite /lazyE; solve_ndisj|].
+    iModIntro. iNext. iMod "Upd" as "(#⧖ & uniq & G)".
+    iMod (resolve_uniq_body with "LFT PROPH UNIQ TIME In E Lguard G ⧖ uniq")
+      as "(X & G & #Shr & #PtG & #Pers)"; [done|set_solver|].
+    iModIntro.
+    iApply step_fupdN_intro. { set_solver. }
+    iModIntro. iModIntro. iFrame "G In PtBase Shr PtG Pers". iSplit.
+    - iApply proph_obs_eq; last by done. intros π. simpl. f_equal.
+    - iPureIntro. lia.
   Qed.
 
   Lemma uniq_subtype {𝔄} E L κ κ' (ty ty': type 𝔄) :
