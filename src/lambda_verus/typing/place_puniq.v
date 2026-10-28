@@ -18,8 +18,9 @@ From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath pctx_acc place_own.
+From lrust.lang.lib Require Import new_delete.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
-  uniq_util uniq_bor product own place.
+  uniq_util uniq_bor product own freeable_util place place_resolve.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -1054,3 +1055,192 @@ Section puniq.
       by rewrite /ltype_own lty_pat_plug lty_rfn_plug.
   Qed.
 End puniq.
+
+(** * Resolving and dropping owned places with nested unique borrows
+
+    [lty_rslv E L lt Φ] generalizes [lty_resolve] (of [place_resolve.v]): the property [Φ]
+    may also depend on the blocking map and the path of the place (the denotation of a
+    blocked leaf is the final value of its reborrow, recorded in the blocking map). A
+    nested unique borrow whose referent has only blocked leaves is resolved by
+    pre-resolving its prophecy variable to the denotation of its referent, through its
+    reservation ([lty_rslv_uniq_blk], as [tctx_drop_place_cpd]); its inner borrows and
+    the reborrows of its leaves are kept by their lenders. *)
+
+Definition lty_rslv `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (lt: lty 𝔄)
+    (Φ: ~~𝔄 → blk_map → lpath → proph_asn → Prop) : Prop :=
+  ∀ G F m x ζm q d g tid l, Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
+    (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗
+    ltype_own (Owned m) lt (lty_rfn lt x ζm q) d g tid l ={F}=∗
+      lty_omem m lt l ∗ |={F}▷=>^(m + d*(g+1)) |={F}=> ⟨π, Φ x ζm q π⟩ ∗ G.
+
+Section lty_rslv.
+  Context `{!typeG Σ}.
+
+  Lemma lty_rslv_of {𝔄} E L (lt: lty 𝔄) Φ :
+    lty_resolve E L lt Φ → lty_rslv E L lt (λ x _ _, Φ x).
+  Proof. intros Rslv ??????????. apply Rslv. Qed.
+
+  Lemma lty_rslv_prod {𝔄1 𝔄2} E L (lt1: lty 𝔄1) (lt2: lty 𝔄2) Φ1 Φ2 :
+    lty_rslv E L lt1 Φ1 → lty_rslv E L lt2 Φ2 →
+    lty_rslv E L (ProdLty lt1 lt2)
+      (λ x ζm q π, Φ1 x.1 ζm (false :: q) π ∧ Φ2 x.2 ζm (true :: q) π).
+  Proof.
+    iIntros (Rslv1 Rslv2 G F m x ζm q d g tid l ??) "#LFT #PROPH #UNIQ #TIME #E #L G Own".
+    rewrite /ltype_own /=. iDestruct "Own" as "[Own1 Own2]".
+    iMod (fractional.frac_split_guard_in_half with "G L") as (γ) "[H1 [H2 [#Gh #Back]]]";
+      [solve_ndisj|].
+    iMod (Rslv1 with "LFT PROPH UNIQ TIME E Gh H1 Own1") as "[M1 Upd1]"; [done..|].
+    iMod (Rslv2 with "LFT PROPH UNIQ TIME E Gh H2 Own2") as "[M2 Upd2]"; [done..|].
+    iSplitL "M1 M2". { iModIntro. iFrame. }
+    iCombine "Upd1 Upd2" as "Upd". iModIntro.
+    iApply (step_fupdN_wand with "Upd"). iIntros "[>[Obs1 H1] >[Obs2 H2]]".
+    iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
+    iModIntro. by iCombine "Obs1 Obs2" as "?".
+  Qed.
+
+  Lemma lty_rslv_own {𝔄} E L n (lt: lty 𝔄) Φ :
+    lty_rslv E L lt Φ → lty_rslv E L (OwnPtrLty n lt) (λ x ζm q π, Φ x.2 ζm (false :: q) π).
+  Proof.
+    iIntros (Rslv G F m x ζm q d g tid l ??) "LFT PROPH UNIQ TIME E L G Own".
+    rewrite /ltype_own /=. destruct x as [l' x]. iDestruct "Own" as "(Pt & %Hd & Fr & Own)".
+    iMod (Rslv with "LFT PROPH UNIQ TIME E L G Own") as "[M Upd]"; [done..|].
+    iSplitL "Pt Fr M".
+    { iModIntro. iExists l'. iFrame "Pt". destruct (own_freeb n lt); [|done]. iFrame. }
+    iModIntro. iApply (step_fupdN_nmono with "Upd"). destruct d; [done|]. simpl. nia.
+  Qed.
+
+  (** A nested unique borrow whose referent (compound) has only blocked leaves: its
+      prophecy variable is pre-resolved through its reservation. *)
+  Lemma lty_rslv_uniq_blk {𝔄} E L κ (lt: lty 𝔄) :
+    lctx_lft_alive E L κ → lty_is_cpd lt → lty_blk_all lt →
+    lty_rslv E L (UniqLty lt κ) (λ x ζm q π,
+      (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
+        prfn_den (lty_rfn lt (uniq_bor_current x) ζm (false :: q)) π).
+  Proof.
+    iIntros (Alv Hc Hb G F m x ζm q d g tid l ? HF) "#LFT #PROPH #UNIQ #TIME #E #GL G Own".
+    rewrite /ltype_own /= /uniq_node.
+    iDestruct "Own" as "(Pt & ⧗ & _ & N)".
+    iSplitL "Pt". { iModIntro. by iExists _. }
+    iModIntro. iApply step_fupdN_add.
+    iApply (step_fupdN_wand with "[N]"); [iApply step_fupdN_intro; [done|]; iExact "N"|].
+    iIntros "(_ & _ & %d' & %g' & _ & C)". iApply fupd_step_fupdN_front.
+    leaf_open "GL" with "G" as "[L back]"; [solve_ndisj|].
+    iDestruct (Alv with "L E") as "#Lκ". iMod ("back" with "L") as "G".
+    iDestruct (guards_transitive with "GL Lκ") as "#Gκ".
+    rewrite ltype_own_cp_uniq_cpd //.
+    iDestruct "C" as (x₀' κp γ γf idx' ζl) "(#Inclp & %Hr & Tok & Gh & Tf & ⧗o & #Bor)".
+    set r : prfn 𝔄 := lty_rfn lt (uniq_bor_current x) ζm (false :: q).
+    set uπ : proph (uniq_cellₛ 𝔄) :=
+      λ π, (prfn_den r π, (1%positive, (1%positive, 1%positive))).
+    have Hdep: uπ ./ ζl.
+    { apply (proph_dep_constr (λ a, (a, (1%positive, (1%positive, 1%positive))))).
+      by apply lty_blk_all_dep. }
+    iMod (proph_idx_bor_gen_preresolve_rsv F κ (uniq_prvar x₀' (uniq_bor_ξi x))
+      (uniq_cell x₀' d' g' γ) idx' ζl _ uπ G with "LFT PROPH UNIQ Gκ [Gh Tf] G Tok Bor")
+      as "[#Obs' G]"; [solve_ndisj|done| |].
+    { iIntros (wπ) "Body". iNext.
+      iDestruct "Body" as "[Body|[Tf' _]]"; [|iDestruct (cpd_tok_excl with "Tf Tf'") as "[]"].
+      iLeft. rewrite !cpd_body_cell. iDestruct "Body" as (p1 r1) "(Ok & % & Gh' & Upd)".
+      iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
+      iExists _, _. by iFrame. }
+    iModIntro. iApply step_fupdN_full_intro. iModIntro. iFrame "G".
+    iApply (proph_obs_impl with "Obs'")=> π Heq.
+    by rewrite (uniq_prvar_app_irrel (uniq_bor_current x) x₀') Heq.
+  Qed.
+End lty_rslv.
+
+Section oplace_rslv.
+  Context `{!typeG Σ}.
+
+  Lemma oplace_rslv_steps {𝔄} E L n (lt: lty 𝔄) Φ x tid v :
+    lty_rslv E L lt Φ →
+    oplace_own n lt x tid v -∗ ∃ D, ⧖D ∗ ∀ G F, ⌜Timeless G⌝ -∗
+      ⌜↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F⌝ -∗
+      llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
+      (G &&{↑NllftG}&&> llctx_interp L) -∗ G ={F}=∗
+        |={F}▷=>^(D*(D+1)) |={F}=> ⟨π, Φ x.1.2 x.2 [] π⟩ ∗ G.
+  Proof.
+    iIntros (Rslv) "Own". destruct x as [[l x₀] ζm].
+    iDestruct "Own" as (D d g) "(⧖ & _ & _ & %Hle & _ & Own)".
+    iExists D. iFrame "⧖". iIntros (G F ??) "LFT PROPH UNIQ TIME E L G".
+    iMod (Rslv with "LFT PROPH UNIQ TIME E L G Own") as "[_ Upd]"; [done..|].
+    iModIntro. iApply (step_fupdN_nmono with "Upd"). nia.
+  Qed.
+
+  Lemma resolve_tctx_cons_oplace_deep {𝔄 𝔅l} E L p n (lt: lty 𝔄) Φ (T: tctx 𝔅l) Ψ :
+    lty_rslv E L lt Φ → resolve_tctx E L T Ψ →
+    resolve_tctx E L (p ◁ₗown{n} lt +:: T) (λ '(x -:: bl) π φ, Φ x.1.2 x.2 [] π → Ψ bl π φ).
+  Proof.
+    iIntros (Rslv Rslv' G F tid [x xl] ? HF).
+    iIntros "#LFT #PROPH #UNIQ #TIME #E #L G /=[(%v & _ & Own) T]".
+    iMod (fractional.frac_split_guard_in_half NllftG with "G L")
+      as (γ) "[F1 [F2 [#guards #back]]]"; [solve_ndisj|].
+    iDestruct (oplace_rslv_steps with "Own") as (D) "[⧖ ToObs]"; [done|].
+    iMod ("ToObs" $! _ F with "[%] [//] LFT PROPH UNIQ TIME E guards F1") as "ToObs";
+      [apply _|].
+    iMod (Rslv' with "LFT PROPH UNIQ TIME E guards F2 T") as (?) "[⧖' ToObs']"; [done|].
+    iCombine "⧖ ⧖'" as "⧖". iCombine "ToObs ToObs'" as "ToObs".
+    iModIntro. iExists _. iFrame "⧖". rewrite lemma_max_mul.
+    iApply (step_fupdN_wand with "ToObs"). iIntros "[>[Obs F1] >[Obs' F2]]".
+    iMod (fupd_mask_mono with "(back F1 F2)") as "$"; [solve_ndisj|].
+    iCombine "Obs Obs'" as "Obs". iModIntro.
+    iApply (proph_obs_impl with "Obs")=>/= ?[? Imp]? Imp'. by apply Imp, Imp'.
+  Qed.
+
+  Lemma type_resolve_oplace_deep_instr {𝔄} E L I p n (lt: lty 𝔄) Φ :
+    lty_rslv E L lt Φ →
+    typed_instr E L I +[p ◁ₗown{n} lt] Skip (λ _, +[])
+      (λ post '-[x], λ mask π, Φ x.1.2 x.2 [] π → post -[] mask π).
+  Proof.
+    iIntros (Rslv tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I [(%v & _ & Own) _] Obs".
+    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iDestruct (oplace_rslv_steps with "Own") as (D) "[#⧖ Upd]"; [done|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|]. iIntros "£ _".
+    iMod ("Upd" $! _ (⊤∖↑advN) with "[%] [%] LFT PROPH UNIQ TIME E Ghalf H1") as "Upd";
+      [apply _|solve_ndisj|].
+    iMod (lc_step_fupdN_elim_later with "[£] Upd") as "Upd".
+    { iApply (lc_weaken with "£"). rewrite /advance_credits. nia. }
+    iMod "Upd" as "[Obs' H1]".
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    wp_seq. iExists -[]. iFrame "L I". iSplit; [done|].
+    iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?]. by apply Imp.
+  Qed.
+
+  Lemma type_drop_oplace_deep_instr {𝔄} E L I p n (nz: Z) (lt: lty 𝔄) Φ :
+    lty_freeb lt = true → n = lty_size lt → nz = Z.of_nat n → lty_rslv E L lt Φ →
+    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt p;; new_delete.delete [ #nz; p ])%E
+      (λ _, +[]) (λ post '-[x], λ mask π, Φ x.1.2 x.2 [] π → post -[] mask π).
+  Proof.
+    iIntros (Hf -> -> Rslv tid post mask iκs [x []])
+      "#LFT #TIME #PROPH #UNIQ #E L I [(%v & %Hp & Own) _] Obs".
+    destruct x as [[l x₀] ζm].
+    iDestruct "Own" as (D d g) "(#⧖ & _ & -> & %Hle & Fr & Own)".
+    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|]. iIntros "£ _".
+    iMod (Rslv _ (⊤∖↑advN) with "LFT PROPH UNIQ TIME E Ghalf H1 Own") as "[M Upd]";
+      [solve_ndisj|].
+    iMod (lc_step_fupdN_elim_later with "[£] Upd") as "Upd".
+    { iApply (lc_weaken with "£"). rewrite /advance_credits. nia. }
+    iMod "Upd" as "[Obs' H1]".
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    have ?: Closed [] p by eapply eval_path_closed.
+    wp_bind (drop_boxes lt p).
+    have Hev: ⊢ ∀ Ψ (P: iProp Σ), True -∗ ▷^0 P -∗ (True -∗ P -∗ Ψ #l) -∗
+      WP p @ ⊤∖↑advN {{ Ψ }}.
+    { iIntros (Ψ P) "_ P HΨ". iApply wp_wand; [by iApply wp_eval_path|].
+      iIntros (?) "->". by iApply ("HΨ" with "[//] P"). }
+    iApply (wp_drop_boxes lt 1 0 l p True%I (⊤∖↑advN) _ ltac:(solve_ndisj) Hf _ ltac:(lia) Hev
+      with "[//] M").
+    iIntros (vl) "_ Pt %Hl". wp_seq.
+    wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
+    iMod (mapsto_vec_untether_emp _ _ _ ∅ with "[Pt]") as (vl') "[Pt [%Hl' _]]".
+    { by rewrite -Hl -heap_cloc_mapsto_fancy_empty. }
+    iApply (wp_delete vl' with "[Pt Fr]"); [solve_ndisj|by rewrite Hl' Hl| |].
+    { iFrame "Pt". rewrite Hl' Hl. by iApply freeable_sz_full. }
+    iIntros "!> _". iExists -[]. iFrame "L I". iSplit; [done|].
+    iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?]. by apply Imp.
+  Qed.
+End oplace_rslv.
