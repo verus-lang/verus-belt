@@ -678,4 +678,264 @@ Section sum_deep.
       iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
       rewrite /ltype_own lty_pat_plug lty_rfn_plug Hy lty_rfn_sum_in. iExact "Own".
   Qed.
+  (** Folding back a sum place whose payload is the leaf of its variant (both modes). *)
+  Lemma oplace_conv_sum_fold {𝔄l 𝔄} (K: pctx (Σ! 𝔄l) 𝔄) (tyl: typel 𝔄l) i :
+    oplace_conv K (SumLty tyl i (OfTy (tyl +!! i))) (OfTy (Σ! tyl)) (=).
+  Proof.
+    iIntros (x ζm dh gh D tid lh G E ? HE ??) "#LFT #PROPH #UNIQ _ #Gk G _ _ _ H".
+    iModIntro. iExists (pctx_get K x), [], 1%Qp. iSplit; [done|]. iSplit.
+    { iPureIntro. intros ??. apply prfn_rsv_in. }
+    iSplitR; [done|]. iIntros "_".
+    destruct (pctx_uend K) as [κ|] eqn:Hu.
+    - rewrite (pctx_kind_uniq K κ) //. rewrite -(lty_fold_sum_ofty tyl i).
+      iApply (cpd_fold_uniq (SumLty tyl i (OfTy (tyl +!! i))) with "LFT PROPH UNIQ [] G H");
+        [done| |trans lazyE; [rewrite /lazyE; solve_ndisj|set_solver]|].
+      + iIntros (d' g') "N". iDestruct (sum_ofty_own_rfn 0 with "N") as "N".
+        rewrite lty_fold_sum_ofty /ltype_own /= /ofty_owned. iDestruct "N" as (? ->) "[$ $]".
+        done.
+      + iApply (guards_transitive with "Gk"). iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
+        by iApply pctx_ulft_uend.
+    - rewrite (pctx_kind_owned K) //. iModIntro. iFrame "G". by iApply sum_ofty_own_rfn.
+  Qed.
+
+  Lemma type_fold_oplace_sum_deep_instr {𝔄l 𝔄} E L I p n (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoShr K}
+      (tyl: typel 𝔄l) i :
+    lctx_lft_alive E L (pctx_ulft K (SumLty tyl i (OfTy (tyl +!! i))) ⊓ ty_lft (Σ! tyl)%T) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i)))] (Seq Skip Skip)
+      (const +[p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl))])
+      (λ post '-[x], post -[x]).
+  Proof.
+    intros Alv. eapply typed_instr_tr_impl; [|apply (type_change_oplace_instr _ _ _ _ _ K _ _ (=));
+      [by rewrite lty_fold_sum_ofty|by rewrite lty_fold_sum_ofty|by rewrite lty_size_sum_ofty|
+       done|done|apply oplace_conv_sum_fold]].
+    intros post [[[l x₀] ζm] []] mask π Hπ [[l' x₀'] ζm'] Hl Hζ Hin (y' & <- & Hx).
+    simpl in *. subst. by rewrite pctx_set_get.
+  Qed.
+  (** Assigning a variant [i] with a payload of size 1 to the leaf at the hole of [K] (a
+      sum, below any number of unique borrows, in both modes), keeping the type of the
+      leaf: the old value is resolved, the tag and the payload are written (the address
+      is computed twice), the padding keeps its contents. *)
+  Lemma type_sum_assign_oplace_deep_instr {𝔄l 𝔄} E L I p q n (K: pctx (Σ! 𝔄l) 𝔄)
+      `{!PctxNoShr K} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) Φ :
+    ty_size (tyl +!! i) = 1%nat → resolve E L (Σ! tyl) Φ →
+    lctx_lft_alive E L (pctx_ulft K (OfTy (Σ! tyl))) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)); q ◁ tyl +!! i]
+      (pctx_expr K p <-{Σ i} q)
+      (λ _, +[p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl))])
+      (λ post '-[x; b], λ mask π, Φ (pctx_get K x.1.2) π → ∀ pad,
+        post -[((x.1.1, pctx_set K x.1.2 (pinj i b, pad)), x.2)] mask π).
+  Proof.
+    iIntros (Hsz Rslv Alv tid post mask iκs [x [b []]])
+      "#LFT #TIME #PROPH #UNIQ #E L I (Tp & Tb & _) Obs".
+    destruct x as [[l x₀] ζm].
+    rewrite /tctx_elt_interp.
+    iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
+    iDestruct "Tb" as (vb db Hpb) "(#⧖b & Gb & %Phys)".
+    have ?: Closed [] (pctx_expr K p).
+    { apply pctx_expr_closed. by eapply eval_path_closed. }
+    have ?: Closed [] q by eapply eval_path_closed.
+    have HM1: 1 ≤ max_ty_size tyl.
+    { rewrite -Hsz. apply (max_hlist_with_ge (λ _, ty_size) tyl i). }
+    iDestruct (Alv with "L E") as "#Alv".
+    (* The first step gives credits and cumulative time receipts. *)
+    iCombine "⧖ ⧖b" as "⧖m".
+    iApply (wp_cumulative_time_receipt_linear with "TIME ⧖m"); [solve_ndisj|].
+    iIntros "⧗". iApply wp_fupd.
+    set M := D `max` db.
+    iDestruct (cumulative_time_receipt_sep 1 (S M) with "⧗") as "[⧗c1 ⧗]".
+    iDestruct (cumulative_time_receipt_sep 1 M with "⧗") as "[⧗c2 ⧗k]".
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗c1 ⧖m") as "[_ £]";
+      [solve_ndisj|].
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗c2 ⧖m") as "[_ £']";
+      [solve_ndisj|].
+    iCombine "£ £'" as "£".
+    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (OfTy (Σ! tyl))])%I as "#Hu".
+    { iApply (guards_transitive with "Ghalf Alv"). }
+    set lr := (l, repeat [] (lty_size (pctx_plug K (OfTy (Σ! tyl))))).
+    set y := pctx_get K x₀.
+    have HM: S d ≤ M ∧ g ≤ M ∧ db ≤ M by rewrite /M; lia.
+    iDestruct (lc_weaken ((d + 2) * (d + 3) + (3 * (g + 1) * M + (3 * (g + 1) * M +
+      ((1 + (1 + M * (g + 1))) + (3 * (g + 1) + 3 * (g + 1)))))) with "£")
+      as "[£a [£w [£w' [[£r £s] [£t1 £t2]]]]]"; [rewrite /advance_credits; nia|].
+    iMod (oplace_leaf_acc K (Σ! tyl) x₀ ζm d g tid l (⊤ ∖ ↑advN)
+      with "LFT PROPH UNIQ Hu H1 £a Own")
+      as (G' dh gh) "(% & G' & %Hdh & #G'u & #Gw & Pt1 & Gho1 & P & #Gs & Cl)"; [solve_ndisj|].
+    destruct Hdh as (Hdh & Hgh & Hin).
+    (* The address of the hole. *)
+    wp_bind (pctx_expr K p).
+    iApply (wp_wand with "[P G' £w]").
+    { iApply (wp_pctx_ptrs _ K (ty_size (Σ! tyl)) (g + 1) G' x₀ lr p True%I
+        with "[] Gs [£w] [G'] P"); [solve_ndisj| | |].
+      - iEval (rewrite /lr -heap_cloc_mapsto_empty). iApply guards_true.
+      - iApply (lc_weaken with "£w"). nia.
+      - iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
+    iIntros (w) "(-> & _ & G' & P)".
+    (* Resolve the old value. *)
+    iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN))
+      with "LFT PROPH UNIQ TIME E Ghalf H2 Gho1") as "ToObs"; [set_solver|].
+    iMod (lc_fupd_elim_later with "£r ToObs") as "ToObs".
+    iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
+    iDestruct (lc_step_fupdN_elim_later with "[£s] ToObs") as "ToObs".
+    { iApply (lc_weaken with "£s"). nia. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
+    iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
+    (* Split the cells: tag, payload, padding. *)
+    set lK := pctx_loc K (ty_size (Σ! tyl)) x₀ lr.
+    have Hlen: length (ty_phys (Σ! tyl) (pctx_get K x₀) tid) = S (max_ty_size tyl) by rewrite ty_size_eq.
+    destruct (ty_phys (Σ! tyl) (pctx_get K x₀) tid) as [|fv1 [|fv2 fvs]] eqn:Hph; [done|simpl in Hlen; lia|].
+    simpl in Hlen.
+    iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Pt1") as %HlenK.
+    destruct lK as [lK1 [|c1 [|c2 cs]]] eqn:HlK; [done|done|].
+    iEval (rewrite !heap_mapsto_cloc_fancy_vec_cons) in "Pt1".
+    iDestruct "Pt1" as "(Pt1 & Pt2 & Pt3)".
+    iEval (rewrite !heap_mapsto_cloc_emp_cons) in "Gw".
+    iMod (mapsto_vec_untether_singleton (lK1, [c1]) fv1 _ ∅ with "[Pt1]")
+      as (v₁ l₁ c₁) "[%Hl1 [Pt1 _]]".
+    { by rewrite heap_complete_mapsto_fancy_singleton. }
+    injection Hl1 as <- <-.
+    (* Write the tag. *)
+    wp_bind (_ <- _)%E.
+    iApply (wp_write_na_guarded _ lK1 c1 _ #i v₁ (g + 1) G' with "[G' Pt1 £t1]");
+      [solve_ndisj| |].
+    { iFrame "G' Pt1 £t1". iApply (guards_weaken_rhs_sep_l with "Gw"). }
+    iIntros "!> [Pt1 G']". wp_seq.
+    (* Write the payload. *)
+    wp_bind (pctx_expr K p).
+    iApply (wp_wand with "[P G' £w']").
+    { iApply (wp_pctx_ptrs _ K (ty_size (Σ! tyl)) (g + 1) G' x₀ lr p True%I
+        with "[] Gs [£w'] [G'] P"); [solve_ndisj| | |].
+      - iEval (rewrite /lr -heap_cloc_mapsto_empty). iApply guards_true.
+      - iApply (lc_weaken with "£w'"). nia.
+      - iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
+    iIntros (w) "(-> & _ & G' & P)". rewrite -/lK HlK /=. wp_op.
+    wp_bind q. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
+    iMod (mapsto_vec_untether_singleton (lK1 +ₗ 1, [c2]) fv2 _ ∅ with "[Pt2]")
+      as (v₂ l₂ c₂) "[%Hl2 [Pt2 _]]".
+    { by rewrite heap_complete_mapsto_fancy_singleton. }
+    injection Hl2 as <- <-.
+    iApply (wp_write_na_guarded _ (lK1 +ₗ 1) c2 _ vb v₂ (g + 1) G'
+      with "[G' Pt2 £t2]"); [solve_ndisj| |].
+    { iFrame "G' Pt2 £t2". iDestruct (guards_weaken_rhs_sep_r with "Gw") as "Gw2".
+      iApply (guards_weaken_rhs_sep_l with "Gw2"). }
+    iIntros "!> [Pt2 G']".
+    iMod (mapsto_vec_untether _ _ _ ∅ with "Pt3") as (vlc) "[Pt3 [%Hlen3 _]]".
+    (* Close the place at the new value. *)
+    iDestruct (cumulative_time_receipt_mono (S (pctx_dlev K)) with "⧗k") as "⧗k"; [lia|].
+    iMod (cumulative_persistent_time_receipt with "TIME ⧗k ⧖b") as "#⧖k"; [solve_ndisj|].
+    set dn := (db + pctx_dlev K) `max` d. set gn := db `max` g.
+    iCombine "⧖ ⧖k" as "⧖D".
+    iMod ("Cl" $! (pinj i b, vlc) db db dn gn with "[%] [] G' P [Pt1 Pt2 Pt3] [Gb]")
+      as "[Own H1]".
+    { lia. }
+    { iApply (persistent_time_receipt_mono with "⧖D"). lia. }
+    { rewrite (xsum_phys_pinj_1 _ _ _ vb); [|done|lia|lia].
+      rewrite (_: pctx_loc K (ty_size (Σ! tyl)) x₀ lr = (lK1, c1 :: c2 :: cs)); [|exact HlK].
+      rewrite !heap_mapsto_cloc_fancy_vec_cons. iFrame "Pt1 Pt2 Pt3". }
+    { by rewrite xsum_gho_own_pinj. }
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    iModIntro. iExists -[((l, pctx_set K x₀ (pinj i b, vlc)), ζm)]. iFrame "L I".
+    iSplitR "Obs Obs'".
+    { iSplit; [|done]. rewrite /tctx_elt_interp. iExists #l. iSplit; [done|].
+      iExists (D `max` (S (pctx_dlev K) + db)), dn, gn. iFrame "⧖D ⧗p Fr Own".
+      iSplit; [done|]. iPureIntro; lia. }
+    iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
+    by apply Hπ.
+  Qed.
+
+  (** Assigning a unit variant [i] (a variant whose type is a subtype of [()]) to the leaf
+      at the hole of [K] (a sum, below any number of unique borrows, in both modes): the
+      old value is resolved and the tag is written. *)
+  Lemma type_sum_unit_oplace_deep_instr {𝔄l 𝔄} E L I p n (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoShr K}
+      (tyl: typel 𝔄l) (i: fin (length 𝔄l)) f Φ :
+    subtype E L () (tyl +!! i) f → resolve E L (Σ! tyl) Φ →
+    lctx_lft_alive E L (pctx_ulft K (OfTy (Σ! tyl))) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl))]
+      (pctx_expr K p <-{Σ i} ())
+      (λ _, +[p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl))])
+      (λ post '-[x], λ mask π, Φ (pctx_get K x.1.2) π → ∀ pad,
+        post -[((x.1.1, pctx_set K x.1.2 (pinj i (f ~~$ₛ ()), pad)), x.2)] mask π).
+  Proof.
+    iIntros (Subtype Rslv Alv tid post mask iκs [x []])
+      "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
+    iDestruct (Subtype with "L E") as "#(%Ssz & _ & #Sgho & _ & %Sphys & _)".
+    destruct x as [[l x₀] ζm].
+    rewrite /tctx_elt_interp.
+    iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
+    have ?: Closed [] (pctx_expr K p).
+    { apply pctx_expr_closed. by eapply eval_path_closed. }
+    iDestruct (Alv with "L E") as "#Alv".
+    iApply wp_fupd. iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
+    iIntros "£ _".
+    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (OfTy (Σ! tyl))])%I as "#Hu".
+    { iApply (guards_transitive with "Ghalf Alv"). }
+    set lr := (l, repeat [] (lty_size (pctx_plug K (OfTy (Σ! tyl))))).
+    set y := pctx_get K x₀.
+    iDestruct (lc_weaken ((d + 2) * (d + 3) + (3 * (g + 1) * D +
+      ((1 + (1 + D * (g + 1))) + 3 * (g + 1)))) with "£")
+      as "[£a [£w [[£r £s] £t1]]]"; [rewrite /advance_credits; nia|].
+    iMod (oplace_leaf_acc K (Σ! tyl) x₀ ζm d g tid l (⊤ ∖ ↑advN)
+      with "LFT PROPH UNIQ Hu H1 £a Own")
+      as (G' dh gh) "(% & G' & %Hdh & #G'u & #Gw & Pt1 & Gho1 & P & #Gs & Cl)"; [solve_ndisj|].
+    destruct Hdh as (Hdh & Hgh & Hin).
+    (* The address of the hole. *)
+    wp_bind (pctx_expr K p).
+    iApply (wp_wand with "[P G' £w]").
+    { iApply (wp_pctx_ptrs _ K (ty_size (Σ! tyl)) (g + 1) G' x₀ lr p True%I
+        with "[] Gs [£w] [G'] P"); [solve_ndisj| | |].
+      - iEval (rewrite /lr -heap_cloc_mapsto_empty). iApply guards_true.
+      - iApply (lc_weaken with "£w"). nia.
+      - iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
+    iIntros (w) "(-> & _ & G' & P)".
+    (* Resolve the old value. *)
+    iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN))
+      with "LFT PROPH UNIQ TIME E Ghalf H2 Gho1") as "ToObs"; [set_solver|].
+    iMod (lc_fupd_elim_later with "£r ToObs") as "ToObs".
+    iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
+    iDestruct (lc_step_fupdN_elim_later with "[£s] ToObs") as "ToObs".
+    { iApply (lc_weaken with "£s"). nia. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
+    iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
+    (* Write the tag. *)
+    set lK := pctx_loc K (ty_size (Σ! tyl)) x₀ lr.
+    have Hlen: length (ty_phys (Σ! tyl) (pctx_get K x₀) tid) = S (max_ty_size tyl) by rewrite ty_size_eq.
+    destruct (ty_phys (Σ! tyl) (pctx_get K x₀) tid) as [|fv1 fvs] eqn:Hph; [done|]. simpl in Hlen.
+    iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Pt1") as %HlenK.
+    destruct lK as [lK1 [|c1 cs]] eqn:HlK; [done|].
+    iEval (rewrite !heap_mapsto_cloc_fancy_vec_cons) in "Pt1".
+    iDestruct "Pt1" as "(Pt1 & Pt2)".
+    iEval (rewrite !heap_mapsto_cloc_emp_cons) in "Gw".
+    iMod (mapsto_vec_untether_singleton (lK1, [c1]) fv1 _ ∅ with "[Pt1]")
+      as (v₁ l₁ c₁) "[%Hl1 [Pt1 _]]".
+    { by rewrite heap_complete_mapsto_fancy_singleton. }
+    injection Hl1 as <- <-.
+    wp_bind (_ <- _)%E.
+    iApply (wp_write_na_guarded _ lK1 c1 _ #i v₁ (g + 1) G' with "[G' Pt1 £t1]");
+      [solve_ndisj| |].
+    { iFrame "G' Pt1 £t1". iApply (guards_weaken_rhs_sep_l with "Gw"). }
+    iIntros "!> [Pt1 G']". wp_seq.
+    iMod (mapsto_vec_untether _ _ _ ∅ with "Pt2") as (vlc) "[Pt2 [%Hlen2 _]]".
+    have Hph0: ty_phys (tyl +!! i) (f ~~$ₛ ()) tid = [].
+    { by rewrite -Sphys. }
+    (* Close the place at the new value. *)
+    iMod ("Cl" $! (pinj i (f ~~$ₛ ()), vlc) dh gh d g with "[%] [] G' P [Pt1 Pt2] []")
+      as "[Own H1]".
+    { lia. }
+    { iApply (persistent_time_receipt_mono with "⧖"). lia. }
+    { rewrite (xsum_phys_pinj_0 _ _ _ vlc); [|done|lia].
+      rewrite (_: pctx_loc K (ty_size (Σ! tyl)) x₀ lr = (lK1, c1 :: cs)); [|exact HlK].
+      rewrite /= heap_mapsto_cloc_fancy_vec_cons. iFrame "Pt1 Pt2". }
+    { rewrite xsum_gho_own_pinj. iDestruct ("Sgho" $! () dh gh tid with "[]") as "[$ _]"; done. }
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    wp_seq. iModIntro.
+    iExists -[((l, pctx_set K x₀ (pinj i (f ~~$ₛ ()), vlc)), ζm)]. iFrame "L I".
+    iSplitR "Obs Obs'".
+    { iSplit; [|done]. rewrite /tctx_elt_interp. iExists #l. iSplit; [done|].
+      iExists D, d, g. iFrame "⧖ ⧗p Fr Own". done. }
+    iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
+    by apply Hπ.
+  Qed.
 End sum_deep.
