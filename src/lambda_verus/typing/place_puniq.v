@@ -95,13 +95,13 @@ Section puniq.
   Lemma type_change_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (lt lt': lty 𝔅) f :
     lctx_lft_alive E L (pctx_ulft K lt ⊓ ty_lft (lty_fold lt)) →
     lty_fold lt' = lty_fold lt → lty_size lt' = lty_size lt → lty_nrc lt' = lty_nrc lt →
-    pat_blk_lfts (lty_pat lt') = [] → oplace_conv K lt lt' f →
+    pat_blk_lfts (lty_pat lt') = [] → lty_simple lt' → oplace_conv K lt lt' f →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K lt] (Seq Skip Skip)
       (const +[p ◁ₗown{n} pctx_plug K lt'])
       (λ post '-[x], λ mask π, ∀ x', x'.1.1 = x.1.1 → x'.2 = x.2 → pctx_in K x.1.2 →
         (∃ y', f (pctx_get K x.1.2) y' ∧ x'.1.2 = pctx_set K x.1.2 y') → post -[x'] mask π).
   Proof.
-    intros Alv Hf Hsz Hnrc Hp Hconv tid post mask iκs [x []].
+    intros Alv Hf Hsz Hnrc Hp Hs Hconv tid post mask iκs [x []].
     iIntros "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
     destruct x as [[l x₀] ζm].
     rewrite /tctx_elt_interp.
@@ -129,7 +129,7 @@ Section puniq.
     iMod (Hconv x₀ ζm dh gh D tid _ (fractional.half γh) with "LFT PROPH UNIQ TIME Hα H2 ⧖ £c ⧗ H")
       as (y' ζl' q Hfy Hrsv) "[toks VS]"; [solve_ndisj|lia|lia|].
     iMod ("Cl" $! lt' (lty_pat lt') (lty_rfn lt' y' ζm (pctx_path K [])) dh gh d g ζl' q
-      (fractional.half γh) with "[//] [//] [//] [%] [] [] G' P toks VS") as "(Own & H1 & H2)".
+      (fractional.half γh) with "[//] [//] [//] [//] [%] [] [] G' P toks VS") as "(Own & H1 & H2)".
     { lia. }
     { by iApply big_sepL_pat_ok_nil. }
     { iApply (persistent_time_receipt_mono with "⧖"). lia. }
@@ -576,7 +576,7 @@ Section puniq.
     iMod ("Cl" $! (Blocked ty β) (PatBlocked β) (inl (PlaceGhost y ζi)) dh gh d g [ζ] 1%Qp
       (∃ idx1, proph_bor_tok ζ (uniq_cell y dh gh γζ) idx1 ∗
         proph_idx_bor_gen β ζ idx1 (uniq_gbody β ty tid lK))%I
-      with "[//] [//] [%] [%] [] [] G' P [ζtok] [ζVo ToζPc Ghζ' Pt1 Gho1 £c ⧗k]")
+      with "[//] [//] [//] [%] [%] [] [] G' P [ζtok] [ζVo ToζPc Ghζ' Pt1 Gho1 £c ⧗k]")
       as "(Own & H1 & Bor1)".
     { intros ζl _. rewrite prfn_rsv_inl. apply place_ghost_rsv_elem. set_solver. }
     { lia. }
@@ -714,7 +714,7 @@ Section puniq.
     set dn := (d1 + pctx_dlev K) `max` d. set gn := g1 `max` g.
     iCombine "⧖0 ⧖2" as "⧖D".
     iMod ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn y1)) d1 g1 dn gn [] 1%Qp True%I
-      with "[//] [//] [%] [%] [] [] G' P [] [Pt1 Gho1]") as "(Own & H1 & _)".
+      with "[//] [//] [//] [%] [%] [] [] G' P [] [Pt1 Gho1]") as "(Own & H1 & _)".
     { intros ??. apply prfn_rsv_in. }
     { lia. }
     { iApply pat_ok_ulfts_leaf. }
@@ -884,7 +884,7 @@ Section puniq.
       set dn := (db + pctx_dlev K) `max` d. set gn := db `max` g.
       iCombine "⧖ ⧖k" as "⧖D".
       iMod ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn b)) db db dn gn [] 1%Qp True%I
-        with "[//] [//] [%] [%] [] [] G' P [] [Body]") as "(Own & H1 & _)".
+        with "[//] [//] [//] [%] [%] [] [] G' P [] [Body]") as "(Own & H1 & _)".
       { intros ??. apply prfn_rsv_in. }
       { lia. }
       { iApply pat_ok_ulfts_leaf. }
@@ -928,7 +928,7 @@ Section puniq.
       set dn := (db + pctx_dlev K) `max` d. set gn := db `max` g.
       iCombine "⧖ ⧖k" as "⧖D".
       iMod ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn b)) db db dn gn [] 1%Qp True%I
-        with "[//] [//] [%] [%] [] [] G' P [] [Pt1 Gb]") as "(Own & H1 & _)".
+        with "[//] [//] [//] [%] [%] [] [] G' P [] [Pt1 Gb]") as "(Own & H1 & _)".
       { intros ??. apply prfn_rsv_in. }
       { lia. }
       { iApply pat_ok_ulfts_leaf. }
@@ -1023,7 +1023,7 @@ Section puniq.
       iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [solve_ndisj|].
       iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [solve_ndisj|].
       iMod ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn y)) dh gh d g [] 1%Qp True%I
-        with "[//] [//] [%] [%] [] [] G' P [] [Body]") as "(Own & H1 & _)".
+        with "[//] [//] [//] [%] [%] [] [] G' P [] [Body]") as "(Own & H1 & _)".
       { intros ??. apply prfn_rsv_in. }
       { lia. }
       { iApply pat_ok_ulfts_leaf. }
@@ -1054,7 +1054,7 @@ Section puniq.
         - iApply (lguards_weaken_later _ _ _ 0); [lia|iApply guards_weaken_sep_r]. }
       iIntros "!> [G' Pt1]".
       iMod ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn y)) dh gh d g [] 1%Qp True%I
-        with "[//] [//] [%] [%] [] [] G' P [] [Pt1]") as "(Own & H1 & _)".
+        with "[//] [//] [//] [%] [%] [] [] G' P [] [Pt1]") as "(Own & H1 & _)".
       { intros ??. apply prfn_rsv_in. }
       { lia. }
       { iApply pat_ok_ulfts_leaf. }
@@ -1213,7 +1213,7 @@ Section puniq.
       [solve_ndisj|].
     iMod ("Cl" $! (Blocked ty β) (PatBlocked β) (inl (PlaceGhost y ζi)) dh gh d g [ζ] 1%Qp
       (proph_bor_tok ζ (uniq_cell y dh gh γ') idx' ∗ fractional.half γh)%I
-      with "[//] [//] [%] [%] [] [] G' P [ζtok] [ζback Inh £c1 £c2]")
+      with "[//] [//] [//] [%] [%] [] [] G' P [ζtok] [ζback Inh £c1 £c2]")
       as "(Own & H1 & Tok' & H2)".
     { intros ζl _. rewrite prfn_rsv_inl. apply place_ghost_rsv_elem. set_solver. }
     { lia. }
@@ -1337,7 +1337,7 @@ Section puniq.
     set dn := (d1 + pctx_dlev K) `max` d. set gn := g1 `max` g.
     iCombine "⧖0 ⧖2" as "⧖D".
     iMod ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn y1)) d1 g1 dn gn [] 1%Qp True%I
-      with "[//] [//] [%] [%] [] [] G' P [] [Body]") as "(Own & H1 & _)".
+      with "[//] [//] [//] [%] [%] [] [] G' P [] [Body]") as "(Own & H1 & _)".
     { intros ??. apply prfn_rsv_in. }
     { lia. }
     { iApply pat_ok_ulfts_leaf. }
@@ -1437,7 +1437,7 @@ Section puniq.
       ty.(ty_shr) β y dh gh tid)%I as "#[GPt Shr]".
     { by iDestruct "Leaf" as (? ->) "(#$ & #$ & _)". }
     iMod ("Cl" $! (ShrBlocked ty β) (PatShrBlocked β) (inl (PlaceIn y)) dh gh d g [] 1%Qp True%I
-      with "[//] [//] [%] [%] [] [] G' P [] [Leaf]") as "(Own & H1 & _)".
+      with "[//] [//] [//] [%] [%] [] [] G' P [] [Leaf]") as "(Own & H1 & _)".
     { intros ??. apply prfn_rsv_in. }
     { lia. }
     { iApply big_sepL_intro. iIntros "!>" (i κ Hi). rewrite /pat_ok /=. iSplit; [|done].
@@ -1514,7 +1514,7 @@ Section puniq.
     { by iApply pctx_blft_dead. }
     iMod (fupd_mask_mono with "Hb") as "Hb"; [rewrite /lazyE; solve_ndisj|].
     iMod ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn (pctx_get K x₀))) dh gh d g [] 1%Qp True%I
-      with "[//] [//] [%] [%] [] [] G' P [] [Hb]") as "(Own & GP & _)".
+      with "[//] [//] [//] [%] [%] [] [] G' P [] [Hb]") as "(Own & GP & _)".
     { intros ??. apply prfn_rsv_in. }
     { lia. }
     { iApply pat_ok_ulfts_leaf. }

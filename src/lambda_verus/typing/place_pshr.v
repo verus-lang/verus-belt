@@ -417,7 +417,7 @@ Section pshr_addr.
         iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [solve_ndisj|].
         iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [solve_ndisj|].
         iMod ("Cl" $! lt1' PatLeaf (inl (PlaceIn y)) dh1 gh1 d g [] 1%Qp True%I
-          with "[%] [//] [%] [%] [] [] G' P [] [Body]") as "(Own & G & _)".
+          with "[//] [%] [//] [%] [%] [] [] G' P [] [Body]") as "(Own & G & _)".
         { by rewrite /= Hfold. }
         { intros ??. apply prfn_rsv_in. }
         { lia. }
@@ -440,7 +440,7 @@ Section pshr_addr.
           - iApply (lguards_weaken_later _ _ _ 0); [lia|iApply guards_weaken_sep_r]. }
         iIntros "!> [G' Pt1]".
         iMod ("Cl" $! lt1' PatLeaf (inl (PlaceIn y)) dh1 gh1 d g [] 1%Qp True%I
-          with "[%] [//] [%] [%] [] [] G' P [] [Pt1]") as "(Own & G & _)".
+          with "[//] [%] [//] [%] [%] [] [] G' P [] [Pt1]") as "(Own & G & _)".
         { by rewrite /= Hfold. }
         { intros ??. apply prfn_rsv_in. }
         { lia. }
@@ -554,6 +554,7 @@ Section typing.
     - intros post [[[l x₀] ζm] []] mask π Hπ [[l' x₀'] ζm'] Hl Hζ Hin (y' & <- & Hx).
       simpl in *. subst. by rewrite pctx_set_get.
     - fun_ext=> e. fun_ext=> mm. rewrite /= !lty_nrc_plug. by rewrite Hn.
+    - done.
     - done.
     - intros y. rewrite !lty_vin_plug. intros [? ?]. split; [done|]. by apply Hv.
   Qed.
@@ -869,7 +870,7 @@ Section shr_blocked_deep.
         { iApply (guards_transitive_right with "Hβ GPt"). } lia. }
     iIntros "!> [G' H2]".
     iMod ("Cl" $! lt (PatShrBlocked β) (inl (PlaceIn y)) dh gh d g [] 1%Qp True%I
-      with "[//] [//] [%] [%] [] [] G' P [] [Inh]") as "(Own & H1 & _)".
+      with "[//] [//] [//] [%] [%] [] [] G' P [] [Inh]") as "(Own & H1 & _)".
     { intros ??. apply prfn_rsv_in. }
     { lia. }
     { iApply big_sepL_intro. iIntros "!>" (i κ Hi). iApply pat_ok_shr_blocked.

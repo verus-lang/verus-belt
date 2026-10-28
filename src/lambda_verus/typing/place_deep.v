@@ -126,7 +126,7 @@ Section leaf_acc.
       iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [done|].
       iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [done|].
       iMod ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn y')) dh' gh' dn gn [] 1%Qp True%I
-        with "[//] [//] [%] [%] [] ⧖ G' P [] [Body]") as "(Own & G & _)".
+        with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Body]") as "(Own & G & _)".
       { intros ??. apply prfn_rsv_in. }
       { lia. }
       { iApply pat_ok_ulfts_leaf. }
@@ -145,7 +145,7 @@ Section leaf_acc.
       iSplit; [done|]. iSplitR; [done|]. iSplitR; [done|]. iSplitR; [done|].
       iIntros (y' dh' gh' dn gn (? & ? & ? & ?)) "#⧖ G' P Pt Gho".
       iMod ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn y')) dh' gh' dn gn [] 1%Qp True%I
-        with "[//] [//] [%] [%] [] ⧖ G' P [] [Pt Gho]") as "(Own & G & _)".
+        with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Pt Gho]") as "(Own & G & _)".
       { intros ??. apply prfn_rsv_in. }
       { lia. }
       { iApply pat_ok_ulfts_leaf. }
@@ -628,7 +628,7 @@ Section sum_deep.
         iExists _. by iFrame. }
       { rewrite Hf /ltype_own /=. iExists _, idx. by iFrame. }
       iMod ("Cl" $! lt' (PatSum PatLeaf) r' dh gh d g [] 1%Qp True%I
-        with "[//] [//] [%] [%] [] [] G' P [] [Own]") as "(Own & H1 & _)".
+        with "[//] [//] [//] [%] [%] [] [] G' P [] [Own]") as "(Own & H1 & _)".
       { exact Hr'. }
       { lia. }
       { by iApply big_sepL_pat_ok_nil. }
@@ -658,7 +658,7 @@ Section sum_deep.
         - iApply (lguards_weaken_later _ _ _ 0); [lia|iApply guards_weaken_sep_r]. }
       iIntros "!> [G' Tag]".
       iMod ("Cl" $! lt' (PatSum PatLeaf) r' dh gh d g [] 1%Qp True%I
-        with "[//] [//] [%] [%] [] [] G' P [] [Tag Pay Pad Gho1]") as "(Own & H1 & _)".
+        with "[//] [//] [//] [%] [%] [] [] G' P [] [Tag Pay Pad Gho1]") as "(Own & H1 & _)".
       { exact Hr'. }
       { lia. }
       { by iApply big_sepL_pat_ok_nil. }
@@ -707,7 +707,7 @@ Section sum_deep.
   Proof.
     intros Alv. eapply typed_instr_tr_impl; [|apply (type_change_oplace_instr _ _ _ _ _ K _ _ (=));
       [by rewrite lty_fold_sum_ofty|by rewrite lty_fold_sum_ofty|by rewrite lty_size_sum_ofty|
-       done|done|apply oplace_conv_sum_fold]].
+       done|done|done|apply oplace_conv_sum_fold]].
     intros post [[[l x₀] ζm] []] mask π Hπ [[l' x₀'] ζm'] Hl Hζ Hin (y' & <- & Hx).
     simpl in *. subst. by rewrite pctx_set_get.
   Qed.

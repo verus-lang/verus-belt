@@ -109,6 +109,11 @@ Section lty_rfn.
         end
     (* A shared reference (whose referent does not change) keeps its value. *)
     | ShrLty _ _ => λ x _ _, inl (PlaceIn x)
+    (* A resolved leaf keeps its value; a resolved unique borrow is refined as a nested
+       unique borrow. *)
+    | OfRes _ => λ x _ _, inl (PlaceIn x)
+    | ResUniqLty lt _ => λ x ζm q,
+        inr (uniq_bor_loc x, lty_rfn lt (uniq_bor_current x) ζm (false :: q), uniq_bor_ξi x)
     end.
 
   Lemma lty_rfn_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) x ζm q :
@@ -124,8 +129,11 @@ Section lty_rfn.
     (∀ r, blk_lookup ζm (r ++ q) = blk_lookup ζm' (r ++ q)) →
     lty_rfn lt x ζm q = lty_rfn lt x ζm' q.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|] in x, q |- *;
-      intros Heq; simpl; [done| | | | |done| |done].
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | |𝔄 lt IH κ]
+      in x, q |- *; intros Heq; simpl; [done| | | | |done| |done|done|].
+    6: { rewrite (IH _ (false :: q)); [done|].
+      intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
+      by rewrite -app_assoc. }
     5: { destruct (psum_proj i x.1); [|done].
       rewrite (IH _ (false :: q)); [done|].
       intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
@@ -148,7 +156,7 @@ Section lty_rfn.
   Fixpoint lty_nblk {𝔄} (lt: lty 𝔄) : nat :=
     match lt with
     | Blocked _ _ => 1
-    | UniqLty lt _ | OwnPtrLty _ lt | SumLty _ _ lt | ShrLty lt _ => lty_nblk lt
+    | UniqLty lt _ | OwnPtrLty _ lt | SumLty _ _ lt | ShrLty lt _ | ResUniqLty lt _ => lty_nblk lt
     | ProdLty lt1 lt2 => lty_nblk lt1 + lty_nblk lt2
     | _ => 0
     end.
@@ -168,7 +176,7 @@ Section lty_rfn.
     match lt with
     | Blocked _ _ => S e
     | ShrBlocked _ _ => match e with O => 0 | S _ => 1 end
-    | UniqLty lt _ => lty_nrc lt (e + mm + 1) 0
+    | UniqLty lt _ | ResUniqLty lt _ => lty_nrc lt (e + mm + 1) 0
     | OwnPtrLty _ lt => lty_nrc lt e (S mm)
     | SumLty _ _ lt => lty_nrc lt e mm
     | ShrLty lt _ => lty_nrc lt e (S mm)
@@ -199,7 +207,7 @@ Section lty_rfn.
   Lemma lty_blk_all_dep {𝔄} (lt: lty 𝔄) x ζm q ζl :
     lty_blk_all lt → prfn_rsv (lty_rfn lt x ζm q) ζl → prfn_den (lty_rfn lt x ζm q) ./ ζl.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|] in x, q |- *;
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | |] in x, q |- *;
       intros Hb Hr; try done.
     5: { revert Hr. rewrite lty_rfn_sum. destruct (psum_proj i x.1) as [y|];
         [|intros; apply prfn_dummy_dep].
@@ -365,11 +373,23 @@ Section pctx.
     | PUniq _ _ | PShr _ _ => False
     end.
 
-  (** The hole is below no shared reference (it is owned; see [PctxNoShr]). *)
+  (** The siblings on the path are simple ([lty_simple]). *)
+  Fixpoint pctx_simple {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
+    match K with
+    | PHole => True
+    | PFst K lt2 => pctx_simple K ∧ lty_simple lt2
+    | PSnd lt1 K => lty_simple lt1 ∧ pctx_simple K
+    | POwn _ K | PSum _ _ _ K | PUniq _ K | PShr _ K => pctx_simple K
+    end.
+
+  (** The hole is below no shared reference (it is owned; see [PctxNoShr]), and the
+      siblings below a unique borrow are simple (they are folded back for its lender, see
+      [pctx_acc] of [typing/pctx_acc.v]; resolved places are not simple). *)
   Fixpoint pctx_noshr {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
     match K with
     | PHole => True
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_noshr K
+    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_noshr K
+    | PUniq _ K => pctx_simple K ∧ pctx_noshr K
     | PShr _ _ => False
     end.
 
@@ -524,12 +544,61 @@ Section pctx.
   Global Instance pctx_no_shr_sum {𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) :
     PctxNoShr K → PctxNoShr (PSum tyl i w K).
   Proof. done. Qed.
+  (** Simple place types and contexts, as type classes (solved by the structure). *)
+  Class LtySimple {𝔄} (lt: lty 𝔄) : Prop := lty_simple_c : lty_simple lt.
+  Global Instance lty_simple_ofty {𝔄} (ty: type 𝔄) : LtySimple (OfTy ty).
+  Proof. done. Qed.
+  Global Instance lty_simple_blocked {𝔄} (ty: type 𝔄) α : LtySimple (Blocked ty α).
+  Proof. done. Qed.
+  Global Instance lty_simple_shr_blocked {𝔄} (ty: type 𝔄) α : LtySimple (ShrBlocked ty α).
+  Proof. done. Qed.
+  Global Instance lty_simple_shr {𝔄} (lt: lty 𝔄) κ : LtySimple (ShrLty lt κ).
+  Proof. done. Qed.
+  Global Instance lty_simple_uniq {𝔄} (lt: lty 𝔄) κ : LtySimple lt → LtySimple (UniqLty lt κ).
+  Proof. done. Qed.
+  Global Instance lty_simple_own {𝔄} n (lt: lty 𝔄) : LtySimple lt → LtySimple (OwnPtrLty n lt).
+  Proof. done. Qed.
+  Global Instance lty_simple_prod {𝔄 𝔅} (lt1: lty 𝔄) (lt2: lty 𝔅) :
+    LtySimple lt1 → LtySimple lt2 → LtySimple (ProdLty lt1 lt2).
+  Proof. done. Qed.
+  Global Instance lty_simple_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
+    LtySimple lt → LtySimple (SumLty tyl i lt).
+  Proof. done. Qed.
+
+  Class PctxSimple {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop := pctx_simple_c : pctx_simple K.
+  Global Instance pctx_simple_hole {𝔅} : PctxSimple (PHole (𝔅:=𝔅)).
+  Proof. done. Qed.
+  Global Instance pctx_simple_fst {𝔅 𝔄1 𝔄2} (K: pctx 𝔅 𝔄1) (lt2: lty 𝔄2) :
+    PctxSimple K → LtySimple lt2 → PctxSimple (PFst K lt2).
+  Proof. done. Qed.
+  Global Instance pctx_simple_snd {𝔅 𝔄1 𝔄2} (lt1: lty 𝔄1) (K: pctx 𝔅 𝔄2) :
+    LtySimple lt1 → PctxSimple K → PctxSimple (PSnd lt1 K).
+  Proof. done. Qed.
+  Global Instance pctx_simple_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') :
+    PctxSimple K → PctxSimple (POwn n K).
+  Proof. done. Qed.
+  Global Instance pctx_simple_sum {𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) :
+    PctxSimple K → PctxSimple (PSum tyl i w K).
+  Proof. done. Qed.
+  Global Instance pctx_simple_uniq {𝔅 𝔄'} κ (K: pctx 𝔅 𝔄') :
+    PctxSimple K → PctxSimple (PUniq κ K).
+  Proof. done. Qed.
+  Global Instance pctx_simple_pshr {𝔅 𝔄'} κ (K: pctx 𝔅 𝔄') :
+    PctxSimple K → PctxSimple (PShr κ K).
+  Proof. done. Qed.
+
+  Lemma lty_simple_core {𝔄} (lt: lty 𝔄) : lty_simple (lty_core lt) ↔ lty_simple lt.
+  Proof. induction lt; simpl; naive_solver. Qed.
+
+  Lemma pctx_simple_core {𝔅 𝔄} (K: pctx 𝔅 𝔄) : pctx_simple (pctx_core K) ↔ pctx_simple K.
+  Proof. induction K; simpl; rewrite ?lty_simple_core; naive_solver. Qed.
+
   Global Instance pctx_no_shr_uniq {𝔅 𝔄'} κ (K: pctx 𝔅 𝔄') :
-    PctxNoShr K → PctxNoShr (PUniq κ K).
+    PctxSimple K → PctxNoShr K → PctxNoShr (PUniq κ K).
   Proof. done. Qed.
   Global Instance pctx_no_shr_core {𝔅 𝔄} (K: pctx 𝔅 𝔄) :
     PctxNoShr K → PctxNoShr (pctx_core K).
-  Proof. rewrite /PctxNoShr. induction K; simpl; auto. Qed.
+  Proof. rewrite /PctxNoShr. induction K; simpl; rewrite ?pctx_simple_core; naive_solver. Qed.
 
   (** ** Basic laws *)
 
@@ -625,7 +694,8 @@ Section pctx.
       try (intros; by rewrite ?IHK).
     - rewrite psum_proj_pinj /psum_proj_or. destruct (psum_proj i x.1); [|done].
       intros. by rewrite IHK.
-    - intros. by rewrite uniq_bor_loc_set uniq_bor_current_set uniq_bor_ξi_set IHK.
+    - destruct HK as [_ HK].
+      intros. by rewrite uniq_bor_loc_set uniq_bor_current_set uniq_bor_ξi_set IHK.
   Qed.
 
   Lemma pctx_in_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) x y : pctx_in K x → pctx_in K (pctx_set K x y).
@@ -1006,8 +1076,8 @@ Section pctx.
     pat_ok κ (pctx_pat K p) -∗ pat_ok κ p.
   Proof.
     rename select (PctxNoShr K) into HK. rewrite /PctxNoShr in HK.
-    rewrite /pat_ok. induction K; simpl; simpl in HK; [by iIntros "$"| | |auto|auto|auto|done];
-      rewrite big_sepL_app.
+    rewrite /pat_ok. induction K; simpl; simpl in HK; [by iIntros "$"| | |auto|auto|
+      destruct HK; auto|done]; rewrite big_sepL_app.
     - iIntros "[A _]". by iApply IHK.
     - iIntros "[_ A]". by iApply IHK.
   Qed.
@@ -1048,13 +1118,6 @@ Section pctx.
 
   (** ** Simple places and compound places *)
 
-  Fixpoint pctx_simple {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
-    match K with
-    | PHole => True
-    | PFst K lt2 => pctx_simple K ∧ lty_simple lt2
-    | PSnd lt1 K => lty_simple lt1 ∧ pctx_simple K
-    | POwn _ K | PSum _ _ _ K | PUniq _ K | PShr _ K => pctx_simple K
-    end.
 
   Lemma lty_simple_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
     pctx_simple K → lty_simple lt → lty_simple (pctx_plug K lt).
@@ -1222,9 +1285,14 @@ Section pctx.
     PctxNoUniq K → PctxNoUniq (pctx_retype K 𝔅').
   Proof. rewrite /PctxNoUniq. induction K; simpl; auto. Qed.
 
+  Lemma pctx_simple_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' : pctx_simple (pctx_retype K 𝔅') ↔ pctx_simple K.
+  Proof. induction K; simpl; naive_solver. Qed.
+
   Global Instance pctx_no_shr_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' :
     PctxNoShr K → PctxNoShr (pctx_retype K 𝔅').
-  Proof. rewrite /PctxNoShr. induction K; simpl; auto. Qed.
+  Proof.
+    rewrite /PctxNoShr. induction K; simpl; rewrite ?pctx_simple_retype; naive_solver.
+  Qed.
 End pctx.
 
 (** A context with a [PUniq] step is not [PctxNoUniq]. *)
