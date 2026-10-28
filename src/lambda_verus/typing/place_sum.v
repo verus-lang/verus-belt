@@ -72,12 +72,12 @@ Section typing.
   (** A sum place whose payload is the leaf of its variant is folded back into a leaf
       holding the sum. (The converse is done by reading the discriminant,
       [type_case_place].) *)
-  Lemma tctx_fold_place_sum {𝔄l 𝔄} E L p κ (K: pctx (Σ! 𝔄l) 𝔄) (tyl: typel 𝔄l) i :
+  Lemma tctx_fold_place_sum {𝔄l 𝔄} E L p κ (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoUniq K} (tyl: typel 𝔄l) i :
     lctx_lft_alive E L κ → pctx_simple K →
     tctx_incl E L +[p ◁ₗ{κ} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i)))]
       +[p ◁ₗ{κ} pctx_plug K (OfTy (Σ! tyl))] (λ post '-[x], post -[x]).
   Proof.
-    intros Alv HsK. apply tctx_place_change_hole'; [done|done|done| | |done| | | |].
+    intros Alv HsK. apply (tctx_place_change_hole' _ _ _ _ K); [done|done|done| | |done| | | |].
     - by rewrite lty_size_sum_ofty.
     - by rewrite lty_fold_sum_ofty.
     - intros ?; simpl; set_solver.
@@ -107,7 +107,7 @@ Section typing.
       the new node, [cpd_rebody]); the program continues with branch [i]. At the root of
       a place, the rules for unique borrows of sums apply ([type_case_uniq], after
       [tctx_place_to_uniq]). *)
-  Lemma type_case_place {𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p κ (K: pctx (Σ! 𝔄l) 𝔄)
+  Lemma type_case_place {𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p κ (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoUniq K}
       (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
     IntoPlistc el el' → lctx_lft_alive E L κ → pctx_nonempty K → pctx_noderef K →
     pctx_simple K →
@@ -274,18 +274,18 @@ Section typing.
 
   (** * Places rooted at an owned location *)
 
-  Lemma tctx_fold_oplace_sum {𝔄l 𝔄} E L p n (K: pctx (Σ! 𝔄l) 𝔄) (tyl: typel 𝔄l) i :
+  Lemma tctx_fold_oplace_sum {𝔄l 𝔄} E L p n (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoUniq K} (tyl: typel 𝔄l) i :
     tctx_incl E L +[p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i)))]
       +[p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl))] (λ post '-[x], post -[x]).
   Proof.
-    apply tctx_oplace_change_hole; [by rewrite lty_size_sum_ofty|done|].
+    apply (tctx_oplace_change_hole _ _ _ _ K); [by rewrite lty_size_sum_ofty|done|].
     iIntros (y ζm q d g tid l) "H !>". by iApply sum_ofty_own_rfn.
   Qed.
 
   (** Reading the discriminant of the leaf at the hole of [K] (a sum, at any path): the
       leaf is unfolded into a sum place at the variant [i] of its value, and the program
       continues with branch [i]. *)
-  Lemma type_case_oplace {𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (Σ! 𝔄l) 𝔄)
+  Lemma type_case_oplace {𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoUniq K}
       (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
     IntoPlistc el el' →
     ([∗ nat] i < length 𝔄l, typed_body E L I C
@@ -338,7 +338,8 @@ Section typing.
       with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
     { iApply proph_obs_impl; [|done]=>/= ?. by rewrite -Hy /= to_xsum_pinj. }
     iFrame "T". iExists #l. iSplit; [done|]. iExists D, d, g. iFrame "⧖".
-    rewrite !lty_nblk_plug /= (lty_size_plug_eq K _ (OfTy (Σ! tyl))); [|apply lty_size_sum_ofty].
+    rewrite (lty_nrc_plug_eq K (OfTy (Σ! tyl)) (SumLty tyl j (OfTy (tyl +!! j)))) //
+      (lty_size_plug_eq K _ (OfTy (Σ! tyl))); [|apply lty_size_sum_ofty].
     iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug -Hy lty_rfn_sum_in ltype_own_plug
       lty_size_sum_ofty. iFrame "Rest".
@@ -360,7 +361,7 @@ Section typing.
   (** Assigning a variant [i] with a payload of size 1 to the leaf at the hole of [K]
       (a sum, at any path), as [type_sum_assign_instr]: the old value is resolved, the
       tag and the payload are written, the padding keeps its (arbitrary) contents. *)
-  Lemma type_sum_assign_oplace_instr {𝔄l 𝔄} E L I p q n (K: pctx (Σ! 𝔄l) 𝔄)
+  Lemma type_sum_assign_oplace_instr {𝔄l 𝔄} E L I p q n (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoUniq K}
       (tyl: typel 𝔄l) (i: fin (length 𝔄l)) Φ :
     ty_size (tyl +!! i) = 1%nat → resolve E L (Σ! tyl) Φ →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)); q ◁ tyl +!! i]
@@ -498,7 +499,7 @@ Section typing.
       to the leaf at the hole of [K] (a sum, at any path), as [type_sum_unit_instr]: the
       old value is resolved and the tag is written; the rest of the cells is the padding,
       which keeps its contents. *)
-  Lemma type_sum_unit_oplace_instr {𝔄l 𝔄} E L I p n (K: pctx (Σ! 𝔄l) 𝔄)
+  Lemma type_sum_unit_oplace_instr {𝔄l 𝔄} E L I p n (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoUniq K}
       (tyl: typel 𝔄l) (i: fin (length 𝔄l)) f Φ :
     subtype E L () (tyl +!! i) f → resolve E L (Σ! tyl) Φ →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl))]
@@ -589,7 +590,7 @@ Section typing.
       does not change. The borrow of the place is opened ([cpd_acc]) for the whole
       instruction (the address of the leaf is computed twice); the old value is resolved;
       the cells after the payload are the padding, which keeps its contents. *)
-  Lemma type_sum_assign_place_instr {𝔄l 𝔄} E L I p q κ (K: pctx (Σ! 𝔄l) 𝔄)
+  Lemma type_sum_assign_place_instr {𝔄l 𝔄} E L I p q κ (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoUniq K}
       (tyl: typel 𝔄l) (i: fin (length 𝔄l)) Φ :
     lctx_lft_alive E L κ → pctx_nonempty K → ty_size (tyl +!! i) = 1%nat →
     resolve E L (Σ! tyl) Φ →

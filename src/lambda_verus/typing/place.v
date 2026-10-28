@@ -171,7 +171,7 @@ Section typing.
       changes: the body of the borrow is switched to the new node ([cpd_rebody]),
       which is why the place must be simple. *)
 
-  Lemma ltype_own_uniq_change_hole_gen {𝔅 𝔄} κ ξi (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅) x₀ ζm q0 d g tid l E G :
+  Lemma ltype_own_uniq_change_hole_gen {𝔅 𝔄} κ ξi (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (lt lt': lty 𝔅) x₀ ζm q0 d g tid l E G :
     pctx_nonempty K → pctx_simple K → lty_simple lt' →
     lty_size lt' = lty_size lt → lty_fold lt' = lty_fold lt →
     (∀ α, α ∈ pat_blk_lfts (lty_pat lt') → α ∈ pat_blk_lfts (lty_pat lt)) →
@@ -199,7 +199,7 @@ Section typing.
       by iApply Hown.
   Qed.
 
-  Lemma ltype_own_uniq_change_hole {𝔅 𝔄} κ ξi (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅) x₀ ζm d g tid l G :
+  Lemma ltype_own_uniq_change_hole {𝔅 𝔄} κ ξi (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (lt lt': lty 𝔅) x₀ ζm d g tid l G :
     pctx_nonempty K → pctx_simple K → lty_simple lt' →
     lty_size lt' = lty_size lt → lty_fold lt' = lty_fold lt →
     (∀ α, α ∈ pat_blk_lfts (lty_pat lt') → α ∈ pat_blk_lfts (lty_pat lt)) →
@@ -217,7 +217,7 @@ Section typing.
 
   (** As [tctx_place_change_hole] below, without the (unused) condition on the
       denotations. *)
-  Lemma tctx_place_change_hole' {𝔅 𝔄} E L p κ (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅) :
+  Lemma tctx_place_change_hole' {𝔅 𝔄} E L p κ (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (lt lt': lty 𝔅) :
     lctx_lft_alive E L κ → pctx_simple K → lty_simple lt' →
     lty_size lt' = lty_size lt → lty_fold lt' = lty_fold lt → lty_nblk lt' = lty_nblk lt →
     (∀ α, α ∈ pat_blk_lfts (lty_pat lt') → α ∈ pat_blk_lfts (lty_pat lt)) →
@@ -242,18 +242,19 @@ Section typing.
     have Hrsv' := λ y q ζl, Hrsv y ζm q ζl. have Hown' := λ y q, Hown y ζm q.
     iAssert (|={⊤}=> ltype_own (Uniq κ ξi) (pctx_plug K lt') (lty_rfn (pctx_plug K lt') x₀ ζm [])
       d' g' tid l ∗ G)%I with "[Own G]" as ">[Own G]".
-    { destruct K as [|? ? ? K lt2|? ? ? lt1 K|? ? n K|? ? tyl i w K].
+    { destruct K as [|? ? ? K lt2|? ? ? lt1 K|? ? n K|? ? tyl i w K|? ? κ' K].
       - by iApply (Hroot with "LFT PROPH UNIQ Gκ G Own").
       - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
       - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
       - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
-      - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own"). }
+      - by iApply (ltype_own_uniq_change_hole with "LFT PROPH UNIQ Gκ G Own").
+      - pctx_no_uniq_contra. }
     iModIntro. iExists -[((l, x₀, ξi, d', g', idx), ζm)]. iFrame "G Obs".
     iSplit; [|done]. iExists #(l.1). iSplit; [done|]. iExists d.
     rewrite !lty_nblk_plug Hnb (lty_fold_plug_eq' K lt' lt) //. by iFrame "∗#".
   Qed.
 
-  Lemma tctx_place_change_hole {𝔅 𝔄} E L p κ (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅) :
+  Lemma tctx_place_change_hole {𝔅 𝔄} E L p κ (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (lt lt': lty 𝔅) :
     lctx_lft_alive E L κ → pctx_simple K → lty_simple lt' →
     lty_size lt' = lty_size lt → lty_fold lt' = lty_fold lt → lty_nblk lt' = lty_nblk lt →
     (∀ α, α ∈ pat_blk_lfts (lty_pat lt') → α ∈ pat_blk_lfts (lty_pat lt)) →
@@ -268,18 +269,18 @@ Section typing.
     tctx_incl E L +[p ◁ₗ{κ} pctx_plug K lt] +[p ◁ₗ{κ} pctx_plug K lt']
       (λ post '-[x], post -[x]).
   Proof.
-    intros Alv HsK Hs' Hsz Hfold Hnb Hpat Hden. by apply tctx_place_change_hole'.
+    intros Alv HsK Hs' Hsz Hfold Hnb Hpat Hden. by apply (tctx_place_change_hole' _ _ _ _ K).
   Qed.
 
   (** ** Unfolding and folding products *)
 
-  Lemma tctx_unfold_place_prod {𝔅1 𝔅2 𝔄} E L p κ (K: pctx (𝔅1 * 𝔅2) 𝔄)
+  Lemma tctx_unfold_place_prod {𝔅1 𝔅2 𝔄} E L p κ (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoUniq K}
       (ty1: type 𝔅1) (ty2: type 𝔅2) :
     lctx_lft_alive E L κ → pctx_simple K →
     tctx_incl E L +[p ◁ₗ{κ} pctx_plug K (OfTy (ty1 * ty2))]
       +[p ◁ₗ{κ} pctx_plug K (ProdLty (OfTy ty1) (OfTy ty2))] (λ post '-[x], post -[x]).
   Proof.
-    intros Alv HsK. apply tctx_place_change_hole; [done|done|done|done|done|done|..].
+    intros Alv HsK. apply (tctx_place_change_hole _ _ _ _ K); [done|done|done|done|done|done|..].
     - intros ?; simpl; set_solver.
     - intros [y1 y2] ??. fun_ext=> π. by rewrite /= !prfn_den_in.
     - intros ?????. split; apply prfn_rsv_in.
@@ -288,13 +289,13 @@ Section typing.
       iApply (prod_ofty_unfold_uniq with "LFT PROPH UNIQ Gκ G Own"). solve_ndisj.
   Qed.
 
-  Lemma tctx_fold_place_prod {𝔅1 𝔅2 𝔄} E L p κ (K: pctx (𝔅1 * 𝔅2) 𝔄)
+  Lemma tctx_fold_place_prod {𝔅1 𝔅2 𝔄} E L p κ (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoUniq K}
       (ty1: type 𝔅1) (ty2: type 𝔅2) :
     lctx_lft_alive E L κ → pctx_simple K →
     tctx_incl E L +[p ◁ₗ{κ} pctx_plug K (ProdLty (OfTy ty1) (OfTy ty2))]
       +[p ◁ₗ{κ} pctx_plug K (OfTy (ty1 * ty2))] (λ post '-[x], post -[x]).
   Proof.
-    intros Alv HsK. apply tctx_place_change_hole; [done|done|done|done|done|done|..].
+    intros Alv HsK. apply (tctx_place_change_hole _ _ _ _ K); [done|done|done|done|done|done|..].
     - intros ?; simpl; set_solver.
     - intros [y1 y2] ??. fun_ext=> π. by rewrite /= !prfn_den_in.
     - intros ?????. apply prfn_rsv_in.
@@ -312,12 +313,12 @@ Section typing.
       increased by one, which is paid for by the shifted time receipts of the leaves
       below it (see [blocked_owned] and [ltype_owned_unblock_fold]). *)
 
-  Lemma tctx_unfold_place_own {𝔅 𝔄} E L p κ (K: pctx (at_locₛ 𝔅) 𝔄) n (ty: type 𝔅) :
+  Lemma tctx_unfold_place_own {𝔅 𝔄} E L p κ (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoUniq K} n (ty: type 𝔅) :
     lctx_lft_alive E L κ → pctx_simple K → pctx_mode K 0 = 0 →
     tctx_incl E L +[p ◁ₗ{κ} pctx_plug K (OfTy (own_ptr n ty))]
       +[p ◁ₗ{κ} pctx_plug K (OwnPtrLty n (OfTy ty))] (λ post '-[x], post -[x]).
   Proof.
-    intros Alv HsK Hm. apply tctx_place_change_hole; [done|done|done|done|done|done|..].
+    intros Alv HsK Hm. apply (tctx_place_change_hole _ _ _ _ K); [done|done|done|done|done|done|..].
     - intros ?; simpl; set_solver.
     - intros [l' y] ??. fun_ext=> π. by rewrite /= !prfn_den_in.
     - intros ?????. apply prfn_rsv_in.
@@ -329,12 +330,12 @@ Section typing.
       by iFrame.
   Qed.
 
-  Lemma tctx_fold_place_own {𝔅 𝔄} E L p κ (K: pctx (at_locₛ 𝔅) 𝔄) n (ty: type 𝔅) :
+  Lemma tctx_fold_place_own {𝔅 𝔄} E L p κ (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoUniq K} n (ty: type 𝔅) :
     lctx_lft_alive E L κ → pctx_simple K →
     tctx_incl E L +[p ◁ₗ{κ} pctx_plug K (OwnPtrLty n (OfTy ty))]
       +[p ◁ₗ{κ} pctx_plug K (OfTy (own_ptr n ty))] (λ post '-[x], post -[x]).
   Proof.
-    intros Alv HsK. apply tctx_place_change_hole; [done|done|done|done|done|done|..].
+    intros Alv HsK. apply (tctx_place_change_hole _ _ _ _ K); [done|done|done|done|done|done|..].
     - intros ?; simpl; set_solver.
     - intros [l' y] ??. fun_ext=> π. by rewrite /= !prfn_den_in.
     - intros ?????. apply prfn_rsv_in.
@@ -349,7 +350,7 @@ Section typing.
       below [k] laters ([pctx_mode K 0 = k]), the points-to of the pointee is stripped of
       its laters with the later credits of a program step; the body of the borrow is
       switched to the new node ([cpd_rebody]) at the time of the instruction. *)
-  Lemma type_unfold_place_own_instr {𝔅 𝔄} E L I p κ (K: pctx (at_locₛ 𝔅) 𝔄) n (ty: type 𝔅) :
+  Lemma type_unfold_place_own_instr {𝔅 𝔄} E L I p κ (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoUniq K} n (ty: type 𝔅) :
     lctx_lft_alive E L κ → pctx_nonempty K → pctx_simple K →
     typed_instr E L I +[p ◁ₗ{κ} pctx_plug K (OfTy (own_ptr n ty))] (Seq Skip Skip)
       (const +[p ◁ₗ{κ} pctx_plug K (OwnPtrLty n (OfTy ty))]) (λ post '-[x], post -[x]).
@@ -445,7 +446,7 @@ Section typing.
       ends, refined by the final value of the reborrow (the blocking map gets an entry
       for the path of the hole). The prophecy variable of the outer borrow is
       reserved for the reborrow's. *)
-  Lemma type_reborrow_place_instr {𝔅 𝔄} E L I p κ α (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_reborrow_place_instr {𝔅 𝔄} E L I p κ α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
     lctx_lft_alive E L κ → pctx_nonempty K → pctx_noderef K →
     typed_instr E L I +[p ◁ₗ{κ} pctx_plug K (OfTy ty)] ReBor
       (const +[p +ₗ #(pctx_off K) ◁ &uniq{κ ⊓ α} ty;
@@ -545,7 +546,7 @@ Section typing.
       the program ([pctx_expr], a load per owned pointer), with the borrow of the place
       open. The blocked leaf below [k] owned pointers holds [k] cumulative time receipts,
       to shift the receipt of the contents it gives back (see [blocked_owned]). *)
-  Lemma type_reborrow_place_deref_instr {𝔅 𝔄} E L I p κ α (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_reborrow_place_deref_instr {𝔅 𝔄} E L I p κ α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
     lctx_lft_alive E L κ → pctx_nonempty K →
     typed_instr E L I +[p ◁ₗ{κ} pctx_plug K (OfTy ty)] (Seq (Seq Skip Skip) (pctx_expr K p))
       (λ w, +[w ◁ &uniq{κ ⊓ α} ty; p ◁ₗ{κ} pctx_plug K (Blocked ty (κ ⊓ α))])
@@ -675,7 +676,7 @@ Section typing.
   (** Writing a value of size 1 to the leaf at the hole of [K] (not below an owned
       pointer), without reborrowing: the borrow of the place is opened around the
       write, the old value is resolved, and the place is closed at the new value. *)
-  Lemma type_write_place_instr {𝔅 𝔄} E L I p pb κ (K: pctx 𝔅 𝔄) (ty: type 𝔅) Φ :
+  Lemma type_write_place_instr {𝔅 𝔄} E L I p pb κ (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) Φ :
     lctx_lft_alive E L κ → pctx_nonempty K → pctx_noderef K → ty_size ty = 1%nat →
     resolve E L ty Φ →
     typed_instr E L I +[p ◁ₗ{κ} pctx_plug K (OfTy ty); pb ◁ ty] (p +ₗ #(pctx_off K) <- pb)
@@ -778,7 +779,7 @@ Section typing.
 
   (** Reading (copying) a value of size 1 out of the leaf at the hole of [K] (not below an
       owned pointer), without reborrowing. *)
-  Lemma type_read_place_instr {𝔅 𝔄} E L I p κ (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+  Lemma type_read_place_instr {𝔅 𝔄} E L I p κ (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
     lctx_lft_alive E L κ → pctx_nonempty K → pctx_noderef K → ty_size ty = 1%nat → Copy ty →
     typed_instr E L I +[p ◁ₗ{κ} pctx_plug K (OfTy ty)] (!(p +ₗ #(pctx_off K)))
       (λ v, +[v ◁ ty; p ◁ₗ{κ} pctx_plug K (OfTy ty)])
@@ -893,7 +894,7 @@ Section typing.
       it gets the final contents of its reborrow, whose value is the final value of the
       reborrow. The current value of the place only changes at the hole. Unblocking pays
       with the two cumulative time receipts of the blocked leaf. *)
-  Lemma unblock_tctx_place {𝔅 𝔄 𝔄l 𝔄l'} p κ α (K: pctx 𝔅 𝔄) (ty: type 𝔅)
+  Lemma unblock_tctx_place {𝔅 𝔄 𝔄l 𝔄l'} p κ α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅)
       (T: tctx 𝔄l) (T': tctx 𝔄l') E L f :
     lctx_lft_alive E L κ → pctx_nonempty K → unblock_tctx E L α T T' f →
     unblock_tctx E L α (p ◁ₗ{κ} pctx_plug K (Blocked ty (κ ⊓ α)) +:: T)

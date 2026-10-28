@@ -302,6 +302,7 @@ src/lambda_verus/typing/freeable_util.v
 src/lambda_verus/typing/own.v
 src/lambda_verus/typing/ltype.v
 src/lambda_verus/typing/lpath.v
+src/lambda_verus/typing/pctx_acc.v
 src/lambda_verus/typing/place.v
 src/lambda_verus/typing/place_nested.v
 src/lambda_verus/typing/place_own.v
@@ -309,6 +310,7 @@ src/lambda_verus/typing/place_shr.v
 src/lambda_verus/typing/place_sum.v
 src/lambda_verus/typing/place_resolve.v
 src/lambda_verus/typing/place_memcpy.v
+src/lambda_verus/typing/place_puniq.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/tracked.v
@@ -345,6 +347,7 @@ src/lambda_verus/typing/examples/place_resolve.v
 src/lambda_verus/typing/examples/place_memcpy.v
 src/lambda_verus/typing/examples/place_deep_box.v
 src/lambda_verus/typing/examples/place_struct.v
+src/lambda_verus/typing/examples/place_puniq.v
 
 
 -arg -w -arg -argument-scope-delimiter
