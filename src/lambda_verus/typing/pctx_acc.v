@@ -677,7 +677,7 @@ Section pctx_acc.
     iModIntro. rewrite /= /uniq_node Hf'. iFrame "Pt ⧗ TIME". iApply bi.laterN_intro.
     iFrame "Incl". iSplit; [iApply (lguards_weaken_later with "Gpt"); lia|].
     iExists (pred dn), gn. iSplit; [iPureIntro; lia|].
-    rewrite ltype_own_cp_uniq_plug // Hf'. done.
+    iEval (rewrite (ltype_own_cp_uniq_plug K) // Hf'). iExact "C'".
   Qed.
 
   Lemma pctx_acc {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) : pctx_acc_stmt K lt.
