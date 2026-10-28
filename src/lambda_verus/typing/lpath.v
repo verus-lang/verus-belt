@@ -145,6 +145,24 @@ Section lty_rfn.
     | _ => 0
     end.
 
+  (** The number of cumulative time receipts held by an owned place for its blocked
+      leaves ([place_own.v]): one per blocked leaf, plus, for a leaf below unique borrows,
+      one per level (owned pointer or unique borrow) above it that is not an owned pointer
+      after the last unique borrow. Unblocking such a leaf opens the enclosing borrows
+      (later credits) and raises the depths of all levels above it, while the receipt of
+      its inheritance is only shifted by the owned pointers after the last unique borrow
+      (see [blocked_owned]). [e] is the number of such levels so far, [mm] the number of
+      owned pointers since the last unique borrow. *)
+  Fixpoint lty_nrc {𝔄} (lt: lty 𝔄) (e mm: nat) : nat :=
+    match lt with
+    | Blocked _ _ => S e
+    | UniqLty lt _ => lty_nrc lt (e + mm + 1) 0
+    | OwnPtrLty _ lt => lty_nrc lt e (S mm)
+    | SumLty _ _ lt => lty_nrc lt e mm
+    | ProdLty lt1 lt2 => lty_nrc lt1 e mm + lty_nrc lt2 e mm
+    | _ => 0
+    end.
+
   (** All leaves are blocked. *)
   Fixpoint lty_blk_all {𝔄} (lt: lty 𝔄) : Prop :=
     match lt with
@@ -410,6 +428,34 @@ Section pctx.
     | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_nblk K
     end.
 
+  (** The receipts of the blocked leaves outside the hole ([lty_nrc]), and the values of
+      [e] and [mm] at the hole. *)
+  Fixpoint pctx_nrc {𝔅 𝔄} (K: pctx 𝔅 𝔄) (e mm: nat) : nat :=
+    match K with
+    | PHole => 0
+    | PFst K lt2 => pctx_nrc K e mm + lty_nrc lt2 e mm
+    | PSnd lt1 K => lty_nrc lt1 e mm + pctx_nrc K e mm
+    | POwn _ K => pctx_nrc K e (S mm)
+    | PSum _ _ _ K => pctx_nrc K e mm
+    | PUniq _ K => pctx_nrc K (e + mm + 1) 0
+    end.
+
+  Fixpoint pctx_ne {𝔅 𝔄} (K: pctx 𝔅 𝔄) (e mm: nat) : nat :=
+    match K with
+    | PHole => e
+    | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_ne K e mm
+    | POwn _ K => pctx_ne K e (S mm)
+    | PUniq _ K => pctx_ne K (e + mm + 1) 0
+    end.
+
+  Fixpoint pctx_nmm {𝔅 𝔄} (K: pctx 𝔅 𝔄) (e mm: nat) : nat :=
+    match K with
+    | PHole => mm
+    | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_nmm K e mm
+    | POwn _ K => pctx_nmm K e (S mm)
+    | PUniq _ K => pctx_nmm K (e + mm + 1) 0
+    end.
+
   (** The core of the context. *)
   Fixpoint pctx_core {𝔅 𝔄} (K: pctx 𝔅 𝔄) : pctx 𝔅 𝔄 :=
     match K with
@@ -478,6 +524,15 @@ Section pctx.
 
   Lemma lty_nblk_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt : lty_nblk (pctx_plug K lt) = pctx_nblk K + lty_nblk lt.
   Proof. induction K in lt |- *; simpl; rewrite ?IHK; lia. Qed.
+
+  Lemma lty_nrc_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt e mm :
+    lty_nrc (pctx_plug K lt) e mm = pctx_nrc K e mm + lty_nrc lt (pctx_ne K e mm) (pctx_nmm K e mm).
+  Proof. induction K in lt, e, mm |- *; simpl; rewrite ?IHK; lia. Qed.
+
+  (** Changing the hole for one with the same receipts. *)
+  Lemma lty_nrc_plug_eq {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt lt' :
+    lty_nrc lt' = lty_nrc lt → lty_nrc (pctx_plug K lt') = lty_nrc (pctx_plug K lt).
+  Proof. intros Heq. fun_ext=> e. fun_ext=> mm. by rewrite !lty_nrc_plug Heq. Qed.
 
   Lemma lty_core_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
     lty_core (pctx_plug K lt) = pctx_plug (pctx_core K) (lty_core lt).
@@ -605,6 +660,17 @@ Section pctx.
 
   Lemma pctx_no_uniq_noderef {𝔅 𝔄} (K: pctx 𝔅 𝔄) : pctx_noderef K → PctxNoUniq K.
   Proof. rewrite /PctxNoUniq. induction K; simpl; tauto. Qed.
+
+  Lemma pctx_ne_nouniq {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} e mm : pctx_ne K e mm = e.
+  Proof.
+    rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
+    induction K in HK, e, mm |- *; simpl; simpl in HK; auto. done.
+  Qed.
+
+  (** Blocking a leaf below no unique borrow adds one receipt. *)
+  Lemma lty_nrc_plug_blocked {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) α :
+    lty_nrc (pctx_plug K (Blocked ty α)) 0 0 = lty_nrc (pctx_plug K (OfTy ty)) 0 0 + 1.
+  Proof. rewrite !lty_nrc_plug /= pctx_ne_nouniq. lia. Qed.
 
   (** ** Ownership in [Owned] mode *)
 
@@ -1016,6 +1082,24 @@ Section pctx.
     pctx_nosum K → lty_size lt' = lty_size lt →
     lty_size (pctx_plug (pctx_retype K 𝔅') lt') = lty_size (pctx_plug K lt).
   Proof. intros ? Hsz. by rewrite !lty_size_plug pctx_size_retype // Hsz. Qed.
+
+  Lemma pctx_nrc_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' e mm :
+    pctx_nrc (pctx_retype K 𝔅') e mm = pctx_nrc K e mm.
+  Proof. induction K in e, mm |- *; simpl; by rewrite ?IHK. Qed.
+  Lemma pctx_ne_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' e mm :
+    pctx_ne (pctx_retype K 𝔅') e mm = pctx_ne K e mm.
+  Proof. induction K in e, mm |- *; simpl; by rewrite ?IHK. Qed.
+  Lemma pctx_nmm_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' e mm :
+    pctx_nmm (pctx_retype K 𝔅') e mm = pctx_nmm K e mm.
+  Proof. induction K in e, mm |- *; simpl; by rewrite ?IHK. Qed.
+
+  Lemma lty_nrc_plug_retype {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (lt': lty 𝔅') :
+    (∀ e mm, lty_nrc lt' e mm = lty_nrc lt e mm) →
+    lty_nrc (pctx_plug (pctx_retype K 𝔅') lt') = lty_nrc (pctx_plug K lt).
+  Proof.
+    intros Hn. fun_ext=> e. fun_ext=> mm.
+    by rewrite !lty_nrc_plug pctx_nrc_retype pctx_ne_retype pctx_nmm_retype Hn.
+  Qed.
 
   Lemma lty_nblk_plug_retype {𝔅 𝔄 𝔅'} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (lt': lty 𝔅') :
     lty_nblk lt' = lty_nblk lt →

@@ -338,7 +338,8 @@ Section typing.
       with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
     { iApply proph_obs_impl; [|done]=>/= ?. by rewrite -Hy /= to_xsum_pinj. }
     iFrame "T". iExists #l. iSplit; [done|]. iExists D, d, g. iFrame "⧖".
-    rewrite !lty_nblk_plug /= (lty_size_plug_eq K _ (OfTy (Σ! tyl))); [|apply lty_size_sum_ofty].
+    rewrite (lty_nrc_plug_eq K (OfTy (Σ! tyl)) (SumLty tyl j (OfTy (tyl +!! j)))) //
+      (lty_size_plug_eq K _ (OfTy (Σ! tyl))); [|apply lty_size_sum_ofty].
     iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug -Hy lty_rfn_sum_in ltype_own_plug
       lty_size_sum_ofty. iFrame "Rest".

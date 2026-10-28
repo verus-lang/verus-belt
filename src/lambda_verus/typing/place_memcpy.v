@@ -130,7 +130,7 @@ Section typing.
     { iSplitR "Tr"; [|iSplitL; [|done]].
       - rewrite /tctx_elt_interp. iExists #l. iSplit; [done|].
         iExists (D `max` (S k0 + dr)), d'', g''. iFrame "⧖D".
-        rewrite (lty_nblk_plug_retype K (OfTy ty) (OfTy tyb)) //.
+        rewrite (lty_nrc_plug_retype K (OfTy ty) (OfTy tyb)) //.
         rewrite (lty_size_plug_retype K (OfTy ty) (OfTy tyb)) /=; [|done|lia].
         iFrame "⧗p Fr". iSplit; [done|]. iSplit; [iPureIntro; lia|].
         rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug
@@ -348,7 +348,7 @@ Section typing.
         iDestruct (ty_gho_own_depth_mono with "Gw") as "[$ _]"; lia.
       - rewrite /tctx_elt_interp. iExists #l. iSplit; [done|].
         iExists D, d, g. iFrame "⧖".
-        rewrite (lty_nblk_plug_retype K (OfTy ty) (OfTy (↯ (ty_size ty)))) //.
+        rewrite (lty_nrc_plug_retype K (OfTy ty) (OfTy (↯ (ty_size ty)))) //.
         rewrite (lty_size_plug_retype K (OfTy ty) (OfTy (↯ (ty_size ty)))) /=; [|done|done].
         iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
         rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug

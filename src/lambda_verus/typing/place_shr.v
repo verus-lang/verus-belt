@@ -405,7 +405,8 @@ Section typing.
       - iApply (lguards_weaken_later with "GPt"). lia. }
     iSplit; [|done]. rewrite /tctx_elt_interp. iExists #l. iSplit; [done|].
     iExists D, d, g. iFrame "⧖".
-    rewrite (lty_size_plug_eq K (ShrBlocked ty α) (OfTy ty)) // !lty_nblk_plug /=.
+    rewrite (lty_size_plug_eq K (ShrBlocked ty α) (OfTy ty)) //
+      (lty_nrc_plug_eq K (OfTy ty) (ShrBlocked ty α)) //.
     iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug /=. iFrame "Rest Leaf".
   Qed.
@@ -502,7 +503,8 @@ Section typing.
     iApply (step_fupdN_wand with "ToT'"). iIntros ">(G & T' & #Obs')".
     iModIntro. iFrame "G T'". iSplitR "Obs'".
     { rewrite /tctx_elt_interp. iExists #l. iSplit; [done|]. iExists D, d, g.
-      iFrame "⧖0". rewrite (lty_size_plug_eq K (OfTy ty) (ShrBlocked ty α)) // !lty_nblk_plug /=.
+      iFrame "⧖0". rewrite (lty_size_plug_eq K (OfTy ty) (ShrBlocked ty α)) //
+        (lty_nrc_plug_eq K (ShrBlocked ty α) (OfTy ty)) //.
       iFrame "⧗ Fr". iSplit; [done|]. iSplit; [done|].
       rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug /=. iFrame "Rest L1". }
     iApply (proph_obs_impl with "Obs'")=> π Hf. by split.

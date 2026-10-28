@@ -43,7 +43,7 @@ Section oplace.
   Definition oplace_own {𝔄} (n: nat) (lt: lty 𝔄) (x: ~~ (oplaceₛ 𝔄))
       (tid: thread_id) (v: val) : iProp Σ :=
     match x with ((l, x₀), ζm) =>
-      ∃ D d g, ⧖D ∗ ⧗(lty_nblk lt) ∗ ⌜v = #l⌝ ∗ ⌜S d ≤ D ∧ g ≤ D⌝ ∗
+      ∃ D d g, ⧖D ∗ ⧗(lty_nrc lt 0 0) ∗ ⌜v = #l⌝ ∗ ⌜S d ≤ D ∧ g ≤ D⌝ ∗
         freeable_sz n (lty_size lt) l ∗
         ltype_own (Owned 1) lt (lty_rfn lt x₀ ζm []) d g tid (l, repeat [] (lty_size lt))
     end%I.
@@ -98,7 +98,7 @@ Section typing.
   (** * Changing the place type of a subplace *)
 
   Lemma tctx_oplace_change_hole {𝔅 𝔄} E L p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (lt lt': lty 𝔅) :
-    lty_size lt' = lty_size lt → lty_nblk lt' = lty_nblk lt →
+    lty_size lt' = lty_size lt → lty_nrc lt' = lty_nrc lt →
     (∀ y ζm q d g tid l, ltype_own (Owned (pctx_mode K 1)) lt (lty_rfn lt y ζm q) d g tid l ={⊤}=∗
        ltype_own (Owned (pctx_mode K 1)) lt' (lty_rfn lt' y ζm q) d g tid l) →
     tctx_incl E L +[p ◁ₗown{n} pctx_plug K lt] +[p ◁ₗown{n} pctx_plug K lt']
@@ -112,7 +112,7 @@ Section typing.
     iMod (Hown with "H") as "H".
     iModIntro. iExists -[((l, x₀), ζm)]. iFrame "Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists #l. iSplit; [done|]. iExists D, d, g.
-    rewrite !lty_nblk_plug Hnb (lty_size_plug_eq K lt' lt) //. iFrame "⧖ ⧗ Fr".
+    rewrite (lty_nrc_plug_eq K lt lt' Hnb) (lty_size_plug_eq K lt' lt) //. iFrame "⧖ ⧗ Fr".
     iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own !lty_pat_plug !lty_rfn_plug !ltype_own_plug Hsz. iFrame.
   Qed.
@@ -163,7 +163,7 @@ Section typing.
     set y' := (of_cons_prodₛ ~~$ₛ y : ~~ (𝔅 * Π! 𝔅l)).
     iModIntro. iExists -[((l, pctx_reset K x₀ y'), ζm)]. iFrame "Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists #l. iSplit; [done|]. iExists D, d, g.
-    rewrite (lty_nblk_plug_retype K (OfTy (Π! (ty +:: tyl))) (ProdLty (OfTy ty) (OfTy (Π! tyl))))
+    rewrite (lty_nrc_plug_retype K (OfTy (Π! (ty +:: tyl))) (ProdLty (OfTy ty) (OfTy (Π! tyl))))
       //.
     rewrite (lty_size_plug_retype K (OfTy (Π! (ty +:: tyl))) (ProdLty (OfTy ty) (OfTy (Π! tyl))));
       [|done|done].
@@ -197,7 +197,7 @@ Section typing.
     set y' := (to_cons_prodₛ ~~$ₛ y : ~~ (Π! (𝔅 :: 𝔅l))).
     iModIntro. iExists -[((l, pctx_reset K x₀ y'), ζm)]. iFrame "Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists #l. iSplit; [done|]. iExists D, d, g.
-    rewrite (lty_nblk_plug_retype K (ProdLty (OfTy ty) (OfTy (Π! tyl))) (OfTy (Π! (ty +:: tyl))))
+    rewrite (lty_nrc_plug_retype K (ProdLty (OfTy ty) (OfTy (Π! tyl))) (OfTy (Π! (ty +:: tyl))))
       //.
     rewrite (lty_size_plug_retype K (ProdLty (OfTy ty) (OfTy (Π! tyl))) (OfTy (Π! (ty +:: tyl))));
       [|done|done].
@@ -271,7 +271,7 @@ Section typing.
     iDestruct "Gho" as "(Pt' & Fr' & Gho)".
     wp_seq. iExists -[((l, x₀), ζm)]. iFrame "L I Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists #l. iSplit; [done|]. iExists D, d, g. iFrame "⧖".
-    rewrite !lty_nblk_plug /=. iFrame "⧗p".
+    rewrite (lty_nrc_plug_eq K (OfTy (own_ptr n ty)) (OwnPtrLty n (OfTy ty))) //. iFrame "⧗p".
     rewrite (lty_size_plug_eq K (OwnPtrLty n (OfTy ty)) (OfTy (own_ptr n ty))) //.
     iFrame "Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own !lty_pat_plug !lty_rfn_plug !ltype_own_plug Hm Hdh /=.
@@ -364,8 +364,8 @@ Section typing.
     iExists D, d, g. iFrame "⧖".
     rewrite (lty_size_plug_eq K (Blocked ty α) (OfTy ty)) //. iFrame "Fr".
     iSplitL "⧗p ⧗b".
-    { iApply (cumulative_time_receipt_mono _ (lty_nblk (pctx_plug K (OfTy ty)) + 1)
-        with "[⧗p ⧗b]"); [rewrite !lty_nblk_plug /=; lia|].
+    { iApply (cumulative_time_receipt_mono _ (lty_nrc (pctx_plug K (OfTy ty)) 0 0 + 1)
+        with "[⧗p ⧗b]"); [rewrite lty_nrc_plug_blocked; lia|].
       rewrite cumulative_time_receipt_sep. iFrame. }
     iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug pctx_own_blk_cons. iFrame "Rest".
@@ -399,8 +399,8 @@ Section typing.
     iIntros (Alv Un G tid [x xl] ?) "#LFT #TIME #PROPH #UNIQ #E #L G #†α /=[(%v & %Hp & Own) T]".
     destruct x as [[l x₀] ζm].
     iDestruct "Own" as (D d g) "(#⧖0 & ⧗ & -> & %Hle & Fr & Own)".
-    iDestruct (cumulative_time_receipt_mono (lty_nblk (pctx_plug K (OfTy ty)) + 1)
-      with "⧗") as "⧗"; [rewrite !lty_nblk_plug /=; lia|].
+    iDestruct (cumulative_time_receipt_mono (lty_nrc (pctx_plug K (OfTy ty)) 0 0 + 1)
+      with "⧗") as "⧗"; [rewrite lty_nrc_plug_blocked; lia|].
     iDestruct (cumulative_time_receipt_sep with "⧗") as "[⧗r ⧗b]".
     leaf_open "L" with "G" as "[L1 back]"; [set_solver|].
     iDestruct (Alv with "L1 E") as "#Lty". iMod ("back" with "L1") as "G".
@@ -565,7 +565,7 @@ Section typing.
       iSplit; [|done].
       iDestruct (ty_gho_own_depth_mono _ dh g D D with "Gho1") as "[$ _]"; lia. }
     iSplit; [|done]. iExists #l. iSplit; [done|]. iExists D, d, g. iFrame "⧖".
-    rewrite (lty_nblk_plug_retype K (OfTy ty) (OfTy (↯ 1))) //.
+    rewrite (lty_nrc_plug_retype K (OfTy ty) (OfTy (↯ 1))) //.
     rewrite (lty_size_plug_retype K (OfTy ty) (OfTy (↯ 1))) /=; [|done|done].
     iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //
@@ -658,7 +658,7 @@ Section typing.
     iSplitR "Obs Obs'".
     { iSplit; [|done]. rewrite /tctx_elt_interp. iExists #l. iSplit; [done|].
       iExists (D `max` (S k0 + db)), d'', g''. iFrame "⧖D".
-      rewrite (lty_nblk_plug_retype K (OfTy ty) (OfTy ty')) //.
+      rewrite (lty_nrc_plug_retype K (OfTy ty) (OfTy ty')) //.
       rewrite (lty_size_plug_retype K (OfTy ty) (OfTy ty')) /=; [|done|lia].
       iFrame "⧗p Fr". iSplit; [done|]. iSplit; [iPureIntro; lia|].
       rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //

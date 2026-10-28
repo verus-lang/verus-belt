@@ -13,7 +13,8 @@
     with [PUniq κ PHole] (the hole is the whole referent of the innermost borrow);
   - the enclosing borrows are opened one after the other ([cpd_rebody_gen], each with half
     of the remaining lifetime token), their lazy contents are run, and the laters in front
-    of the nodes of [UniqLty] are stripped with later credits ([pctx_acc_cost]);
+    of the nodes of [UniqLty] are stripped with later credits (a number bounded by the
+    depth of the place, [pctx_acc_stmt]);
   - the pointer cells on the path ([pctx_ptrs]) and the guards of the cells of the
     referents ([pctx_pguards]) are handed out, so that the address of the hole can be
     computed ([wp_pctx_ptrs], one load per owned pointer or unique borrow, as [pctx_expr]);
@@ -92,17 +93,6 @@ Section pctx_fun.
     | PHole => 0
     | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_dlev K
     | POwn _ K | PUniq _ K => S (pctx_dlev K)
-    end.
-
-  (** The later credits needed to reach the hole, in a place with [m] laters: the laters
-      in front of the contents of each node of [UniqLty], and one for the lazy contents of
-      each opened borrow. *)
-  Fixpoint pctx_acc_cost {𝔅 𝔄} (K: pctx 𝔅 𝔄) (m: nat) : nat :=
-    match K with
-    | PHole => 0
-    | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_acc_cost K m
-    | POwn _ K => pctx_acc_cost K (m + 1)
-    | PUniq _ K => m + 1 + pctx_acc_cost K 0
     end.
 
   (** The context ends with [PUniq κ PHole] (the hole is the whole referent of the
@@ -308,17 +298,6 @@ Section pctx_fun.
     rewrite IHK // (pctx_mode_add K (0 + 1)). lia.
   Qed.
 
-  Lemma pctx_acc_cost_nouniq {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} m : pctx_acc_cost K m = 0%nat.
-  Proof.
-    rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
-    induction K in HK, m |- *; simpl; simpl in HK; auto. done.
-  Qed.
-
-  (** A bound on the credits, by the number of levels. *)
-  Lemma pctx_acc_cost_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) m :
-    pctx_acc_cost K m ≤ pctx_dlev K * (m + pctx_dlev K + 1).
-  Proof. induction K in m |- *; simpl; [lia|auto|auto|..|auto|]; [specialize (IHK (m + 1))|specialize (IHK 0)]; nia. Qed.
-
   Lemma pctx_ptrs_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x y l :
     pctx_in K x → pctx_ptrs K n (pctx_set K x y) l = pctx_ptrs K n x l.
   Proof.
@@ -489,7 +468,7 @@ Section pctx_acc.
   Definition pctx_acc_stmt {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) : Prop :=
     ∀ m p r x ζm q d g tid l E G, lazyE ⊆ E → Timeless G →
     ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_ulft K lt]) -∗ G -∗
-      £(pctx_acc_cost K m) -∗
+      £((d + 1) * (m + d + 2)) -∗
       ltype_own_cp false (pctx_plug K lt) (Owned m) (pctx_pat K p) (pctx_rfn K x ζm q r)
         d g tid l ={E}=∗ pctx_acc_res K lt m p r x ζm q d g tid l E G.
 
@@ -542,6 +521,7 @@ Section pctx_acc.
   Proof.
     iIntros (IH m p r x ζm q d g tid l E G ??) "#LFT #PROPH #UNIQ #Gk G £ /= (Pt & %Hd & Fr & Own)".
     rewrite lty_size_plug.
+    iDestruct (lc_weaken ((pred d + 1) * (m + 1 + pred d + 2)) with "£") as "£"; [nia|].
     iMod (IH with "LFT PROPH UNIQ Gk G £ Own") as (G' dh gh) "(% & G' & #G'G & % & H & P & #Gs & Cl)";
       [done..|].
     iModIntro. iExists G', dh, gh. iSplitR; [done|]. iSplitL "G'"; [done|]. iSplitR; [done|].
@@ -596,8 +576,10 @@ Section pctx_acc.
   Proof.
     iIntros (HK IH m p r x ζm q d g tid l E G HE ?) "#LFT #PROPH #UNIQ #Gk G £ /=".
     iIntros "(Pt & ⧗ & #TIME & N)".
-    iDestruct (lc_weaken (m + (1 + pctx_acc_cost K 0)) with "£") as "[£m [£1 £]]"; [lia|].
+    iDestruct (lc_weaken (m + (1 + ((d + 1) * (m + d + 2) - m - 1))) with "£") as "[£m [£1 £]]";
+      [nia|].
     iMod (lc_fupd_elim_laterN with "£m N") as "(#Incl & #Gpt & %d' & %g' & %Hle & C)".
+    iDestruct (lc_weaken ((d' + 1) * (0 + d' + 2)) with "£") as "£"; [nia|].
     rewrite ltype_own_cp_uniq_plug //.
     have ?: ↑NllftG ⊆ E. { trans lazyE; [apply lazyE_NllftG|done]. }
     have ?: ↑Nllft ∪ ↑prophN ⊆ E. { trans lazyE; [rewrite /lazyE; solve_ndisj|done]. }
