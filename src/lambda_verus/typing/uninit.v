@@ -12,6 +12,7 @@ Section uninit.
     ty_lfts := [];
     ty_E := [];
     ty_gho_own vπ _ _ _ := True;
+    ty_gho_res vπ _ _ _ := True;
     ty_gho_pers vπ _ _ _ := True;
     ty_phys x _ := fmap FVal (vec_to_list x);
     ty_shr := default_shr (λ vπ _ _ _, True);
@@ -50,6 +51,9 @@ Section typing.
 
   Lemma uninit_resolve n E L : resolve E L (↯ n) (const (const True)).
   Proof. apply resolve_just. Qed.
+
+  Global Instance uninit_res_own n : ResOwn (↯ n).
+  Proof. done. Qed.
 
   Notation "()" := unit0 : lrust_type_scope.
   

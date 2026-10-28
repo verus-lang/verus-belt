@@ -13,6 +13,7 @@ Section tracked.
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
     ty_gho_own x d g tid := (ty.(ty_gho_own) x d g tid) ;
+    ty_gho_res x d g tid := (ty.(ty_gho_res) x d g tid) ;
     ty_gho_pers x d g tid := (ty.(ty_gho_pers) x d g tid) ;
     ty_phys x tid := [];
     ty_shr κ x d g tid := ty.(ty_shr) κ x d g tid;
@@ -46,6 +47,13 @@ Section tracked.
   Qed.
 
   Lemma tracked_resolve {𝔄} (ty: type 𝔄) E L f : resolve E L ty f → resolve E L (tracked_ty ty) f.
+  Proof. intros Hresolve. apply Hresolve. Qed.
+
+  Global Instance tracked_res_own {𝔄} (ty: type 𝔄) : ResOwn ty → ResOwn (tracked_ty ty).
+  Proof. move=> ? x d g tid /=. by rewrite res_own. Qed.
+
+  Lemma tracked_resolve_keep {𝔄} (ty: type 𝔄) E L f :
+    resolve_keep E L ty f → resolve_keep E L (tracked_ty ty) f.
   Proof. intros Hresolve. apply Hresolve. Qed.
   
   (* subtyping *)

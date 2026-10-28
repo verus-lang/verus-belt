@@ -397,6 +397,16 @@ Record type `{!typeG Σ} 𝔄 := {
   
   ty_gho_pers: ~~𝔄 → nat → nat → thread_id → iProp Σ;
   ty_gho_own: ~~𝔄 → nat → nat → thread_id → iProp Σ;
+  (* The resolved ownership: what remains of the ownership of a value once it has been
+     resolved ([resolve_keep]), and can still be read (see the place type [OfRes] of
+     [typing/ltype.v]). For [&uniq{κ} ty] it is the shared view of the referent at κ
+     (as produced by [resolve_uniq_body]); it is structural for [own_ptr], products,
+     sums, [mod_ty] and [tracked]; for the other types it is [ty_gho_own]. There is no
+     law about it in the record: its relation to [ty_gho_own] is given by [resolve_keep]
+     (per type) and by [ResOwn] (types where it is [ty_gho_own]); it is not part of
+     the OFE structure of types (it is not used for fixpoints: [fix_ty] takes its
+     [ty_gho_own]). *)
+  ty_gho_res: ~~𝔄 → nat → nat → thread_id → iProp Σ;
   (* TODO: no type has actually phys depending on tid, we should remove it *)
   ty_phys: ~~𝔄 → thread_id → list fancy_val;
   
@@ -513,12 +523,14 @@ Global Instance: Params (@ty_lfts) 3 := {}.
 Global Instance: Params (@ty_E) 3 := {}.
 Global Instance: Params (@ty_gho_own) 3 := {}.
 Global Instance: Params (@ty_gho_pers) 3 := {}.
+Global Instance: Params (@ty_gho_res) 3 := {}.
 Global Instance: Params (@ty_phys) 3 := {}.
 Arguments ty_size {_ _ _} _ / : simpl nomatch.
 Arguments ty_lfts {_ _ _} _ / : simpl nomatch.
 Arguments ty_E {_ _ _} _ / : simpl nomatch.
 Arguments ty_gho_own {_ _ _} _ _ _ _ / : simpl nomatch.
 Arguments ty_gho_pers {_ _ _} _ _ _ _ / : simpl nomatch.
+Arguments ty_gho_res {_ _ _} _ _ _ _ / : simpl nomatch.
 Arguments ty_phys {_ _ _} _ _ _ / : simpl nomatch.
 Arguments ty_size_eq {_ _ _}.
 Arguments ty_gho_own_depth_mono {_ _ _}.
@@ -696,6 +708,7 @@ Program Definition ty_of_st `{!typeG Σ} {𝔄} (st: simple_type 𝔄) : type �
   ty_lfts := st.(st_lfts);
   ty_E := st.(st_E);
   ty_gho_own := st.(st_gho);
+  ty_gho_res := st.(st_gho);
   ty_gho_pers := st.(st_gho);
   ty_phys := st.(st_phys);
   ty_shr := default_shr st.(st_gho);
@@ -777,6 +790,7 @@ Program Definition ty_of_gt `{!typeG Σ} {𝔄} (gt: ghost_type 𝔄) : type �
   ty_lfts := [];
   ty_E := [];
   ty_gho_own x d g tid := gt.(gt_gho) x tid;
+  ty_gho_res x d g tid := gt.(gt_gho) x tid;
   ty_gho_pers x d g tid := True%I;
   ty_phys x tid := [];
   ty_shr := default_shr (λ x d g tid, gt.(gt_gho) x tid);
@@ -1557,6 +1571,57 @@ Definition resolve' `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (ty: type 𝔄)
                  (Φ: ~~ 𝔄 → proph_asn → Prop → Prop) :=
   resolve E L ty (λ a π, ∀φ, Φ a π φ → φ).
 
+(** Resolution that keeps the resolved ownership [ty_gho_res] (see the place type [OfRes]
+    of [typing/ltype.v]): as [resolve], and in addition the resolved ownership of the
+    value is left. *)
+Definition resolve_keep `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (ty: type 𝔄)
+    (Φ: ~~ 𝔄 → proph_asn → Prop) : Prop :=
+  ∀G F x d g tid, Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗ (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗
+    ty.(ty_gho_own) x d g tid ={F}=∗ |={F}▷=>^(d*(g+1)) |={F}=>
+      ⟨π, Φ x π⟩ ∗ G ∗ ty.(ty_gho_res) x d g tid.
+Global Instance: Params (@resolve_keep) 3 := {}.
+
+(** The types whose resolved ownership is their ownership (no unique borrow is reachable
+    from their values). *)
+Class ResOwn `{!typeG Σ} {𝔄} (ty: type 𝔄) :=
+  res_own x d g tid : ty.(ty_gho_res) x d g tid ⊣⊢ ty.(ty_gho_own) x d g tid.
+Global Instance: Params (@ResOwn) 3 := {}.
+
+Section resolve.
+  Context `{!typeG Σ}.
+
+  Global Instance simple_type_res_own {𝔄} (st: simple_type 𝔄) : ResOwn st.
+  Proof. done. Qed.
+  Global Instance ghost_type_res_own {𝔄} (gt: ghost_type 𝔄) : ResOwn gt.
+  Proof. done. Qed.
+
+  Lemma resolve_keep_resolve {𝔄} (ty: type 𝔄) E L Φ :
+    resolve_keep E L ty Φ → resolve E L ty Φ.
+  Proof.
+    move=> Rslv > ?. iIntros "LFT PROPH UNIQ TIME E L G ty".
+    iMod (Rslv with "LFT PROPH UNIQ TIME E L G ty") as "Upd"; [done..|].
+    iApply (step_fupdN_wand with "Upd"). iIntros "!> >($ & $ & _)". done.
+  Qed.
+
+  Lemma resolve_keep_impl {𝔄} (ty: type 𝔄) E L (Φ Φ': ~~𝔄 → proph_asn → Prop) :
+    resolve_keep E L ty Φ → (∀a π, Φ a π → Φ' a π) → resolve_keep E L ty Φ'.
+  Proof.
+    move=> Rslv Imp > ?. iIntros "LFT PROPH UNIQ TIME E L G ty".
+    iMod (Rslv with "LFT PROPH UNIQ TIME E L G ty") as "Upd"; [done..|].
+    iApply (step_fupdN_wand with "Upd"). iIntros "!> >(Obs & $ & $) !>".
+    iApply proph_obs_impl; [|done]=>/= ?. apply Imp.
+  Qed.
+
+  (** Nothing is learnt from a type whose resolved ownership is its ownership. *)
+  Lemma resolve_keep_just {𝔄} (ty: type 𝔄) `{!ResOwn ty} E L :
+    resolve_keep E L ty (const (const True)).
+  Proof.
+    move=> > ?. iIntros "_ _ _ _ _ _ $ ty !>". iApply step_fupdN_full_intro.
+    rewrite res_own. iFrame. by iApply proph_obs_true.
+  Qed.
+End resolve.
+
 Section resolve.
   Context `{!typeG Σ}.
 
@@ -1588,6 +1653,15 @@ Section resolve.
   Lemma resolve'_just {𝔄} (ty: type 𝔄) E L Φ :
     resolve E L ty (const Φ) → resolve' E L ty (const (const id)).
   Proof. move=> _. by eapply resolve_impl; [apply resolve_just|]=>/=. Qed.
+
+  (** A [Copy] type is resolved from a copy of its (persistent) ownership. *)
+  Lemma resolve_keep_copy {𝔄} (ty: type 𝔄) `{!Copy ty, !ResOwn ty} E L Φ :
+    resolve E L ty Φ → resolve_keep E L ty Φ.
+  Proof.
+    move=> Rslv > ?. iIntros "LFT PROPH UNIQ TIME E L G #ty".
+    iMod (Rslv with "LFT PROPH UNIQ TIME E L G ty") as "Upd"; [done..|].
+    iApply (step_fupdN_wand with "Upd"). iIntros "!> >[$ $] !>". by rewrite res_own.
+  Qed.
 End resolve.
 
 (** * Subtyping *)

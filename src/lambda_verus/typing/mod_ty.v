@@ -26,6 +26,7 @@ Section mod_ty.
     ty_E := ty.(ty_E);
     ty_gho_pers x d g tid := ty.(ty_gho_pers) (fⁱ ~~$ₛ x) d g tid ;
     ty_gho_own x d g tid := ty.(ty_gho_own) (fⁱ ~~$ₛ x) d g tid ;
+    ty_gho_res x d g tid := ty.(ty_gho_res) (fⁱ ~~$ₛ x) d g tid ;
     ty_phys x tid := ty.(ty_phys) (fⁱ ~~$ₛ  x) tid ;
     ty_shr κ x d g tid := ty.(ty_shr) κ (fⁱ ~~$ₛ x) d g tid;
   |}%I.
@@ -105,6 +106,17 @@ Section typing.
 
   Lemma mod_ty_resolve {𝔄 𝔅} E L `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty Φ :
     resolve E L ty Φ → resolve E L (<{f;fⁱ}> ty) (λ b, Φ (fⁱ ~~$ₛ b)).
+  Proof.
+    intros Hres G F x d g tid Htimeless Hmask. iIntros "#LFT #PROPH #E #GuardsL G Gho".
+    iApply (Hres with "LFT PROPH E GuardsL G Gho"). trivial.
+  Qed.
+
+  Global Instance mod_ty_res_own {𝔄 𝔅} `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty :
+    ResOwn ty → ResOwn (<{f;fⁱ}> ty).
+  Proof. move=> ? x d g tid /=. by rewrite res_own. Qed.
+
+  Lemma mod_ty_resolve_keep {𝔄 𝔅} E L `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty Φ :
+    resolve_keep E L ty Φ → resolve_keep E L (<{f;fⁱ}> ty) (λ b, Φ (fⁱ ~~$ₛ b)).
   Proof.
     intros Hres G F x d g tid Htimeless Hmask. iIntros "#LFT #PROPH #E #GuardsL G Gho".
     iApply (Hres with "LFT PROPH E GuardsL G Gho"). trivial.

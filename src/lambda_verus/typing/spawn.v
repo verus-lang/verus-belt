@@ -29,6 +29,8 @@ Section spawn.
       ty_E := ty.(ty_E);
       ty_gho_own (x : ~~ (at_locₛ ℭ)) d g tid :=
         join_handle spawnN x.1 (join_future ty (spec x.2));
+      ty_gho_res (x : ~~ (at_locₛ ℭ)) d g tid :=
+        join_handle spawnN x.1 (join_future ty (spec x.2));
       ty_gho_pers (x : ~~ (at_locₛ ℭ)) d g tid :=
         True;
       ty_phys (x : ~~ (at_locₛ ℭ)) tid := 
@@ -70,6 +72,10 @@ Section spawn.
   Lemma join_handle_resolve {𝔄 ℭ} (spec: (~~ℭ) → pred' (~~𝔄)) (ty: type 𝔄) E L :
     resolve E L (join_handle spec ty) (const (const True)).
   Proof. apply resolve_just. Qed.
+
+  Global Instance join_handle_res_own {𝔄 ℭ} (spec: (~~ℭ) → pred' (~~𝔄)) (ty: type 𝔄) :
+    ResOwn (join_handle spec ty).
+  Proof. done. Qed.
 
   (* Definition forward_pred {A B} (f: A → B) (Φ: pred' A) (b: B) : Prop := *)
   (*   ∃a, b = f a ∧ Φ a. *)

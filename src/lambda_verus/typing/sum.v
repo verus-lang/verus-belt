@@ -58,6 +58,10 @@ Section sum.
         match to_xsum (x.1) return iProp Σ with
           xinj i x0 => @ty_gho_own _ _ (𝔄l !!ₗ i) (tyl +!! i) x0 d g tid
         end ;
+    ty_gho_res x d g tid :=
+        match to_xsum (x.1) return iProp Σ with
+          xinj i x0 => @ty_gho_res _ _ (𝔄l !!ₗ i) (tyl +!! i) x0 d g tid
+        end ;
     ty_gho_pers x d g tid :=
         match to_xsum (x.1) return iProp Σ with
           xinj i x0 => @ty_gho_pers _ _ (𝔄l !!ₗ i) (tyl +!! i) x0 d g tid
@@ -360,6 +364,26 @@ Section typing.
   Proof.
     iIntros (Rslv G vπ [x pad] ??? Ti Ma) "#LFT #PROPH #E #L G T".
     unfold ty_gho_own, xsum_ty.
+    refine (match (to_xsum x) with | xinj i x0 => _ end).
+    eapply HForall_1_lookup in Rslv.
+    instantiate (1 := i) in Rslv.
+    iApply (Rslv with "[] [] [] [] G T"); trivial.
+  Qed.
+
+  Global Instance xsum_res_own {𝔄l} (tyl: typel 𝔄l) :
+    TCHForall (λ 𝔄, @ResOwn _ _ 𝔄) tyl → ResOwn (Σ! tyl).
+  Proof.
+    move=> Hres [x pad] d g tid. rewrite /ty_gho_res /ty_gho_own /=.
+    refine (match (to_xsum x) with | xinj i x0 => _ end).
+    have ?: ResOwn (tyl +!! i) by apply TCHForall_lookup. by rewrite res_own.
+  Qed.
+
+  Lemma xsum_resolve_keep {𝔄l} E L (tyl: typel 𝔄l) Φl :
+    HForall_1 (λ _, resolve_keep E L) tyl Φl →
+    resolve_keep E L (Σ! tyl) (λ s, let 'xinj i x := to_xsum (s.1) in (Φl -!! i) x).
+  Proof.
+    iIntros (Rslv G vπ [x pad] ??? Ti Ma) "#LFT #PROPH #E #L G T".
+    unfold ty_gho_own, ty_gho_res, xsum_ty.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     eapply HForall_1_lookup in Rslv.
     instantiate (1 := i) in Rslv.

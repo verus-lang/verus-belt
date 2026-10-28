@@ -22,6 +22,11 @@ Section own.
       ((fst x) ↦!∗ ty.(ty_phys) (snd x) tid) ∗
       freeable_sz n ty.(ty_size) (fst x) ∗
       ▷ (ty.(ty_gho_own) (snd x) d' g tid) ;
+
+    ty_gho_res x d g tid := [S(d') := d]
+      ((fst x) ↦!∗ ty.(ty_phys) (snd x) tid) ∗
+      freeable_sz n ty.(ty_size) (fst x) ∗
+      ▷ (ty.(ty_gho_res) (snd x) d' g tid) ;
       
     ty_gho_pers x d g tid := [S(d') := d]
       ▷ (ty.(ty_gho_pers) (snd x) d' g tid) ;
@@ -166,6 +171,28 @@ Section own.
        iApply (proph_obs_impl with "Obs").
        intros π Ha. destruct x. apply Ha.
      - lia.
+  Qed.
+
+  Global Instance own_res_own {𝔄} n (ty: type 𝔄) : ResOwn ty → ResOwn (own_ptr n ty).
+  Proof. move=> ? x [|d] g tid //=. by rewrite res_own. Qed.
+
+  Lemma own_resolve_keep {𝔄} E L n (ty: type 𝔄) Φ :
+    resolve_keep E L ty Φ → resolve_keep E L (own_ptr n ty) (λ '(l, v), Φ v).
+  Proof.
+    iIntros (Rslv G F x d g tid ??) "LFT PROPH UNIQ TIME E L G Hgho".
+    destruct d as [|d] => //=.
+    iDestruct "Hgho" as "(Hown & Hfree & Hgho)".
+    iModIntro.
+    replace (g + 1 + d * (g + 1)) with (S (g + d * (g + 1))) by lia.
+    simpl. iModIntro. iNext.
+    iMod (Rslv G F (snd x) d g tid with "LFT PROPH UNIQ TIME E L G Hgho") as "Hrslv";
+      [done..|].
+    iModIntro.
+    iDestruct (step_fupdN_nmono with "Hrslv") as "Hrslv"; last first.
+    - iApply (step_fupdN_wand with "Hrslv"). iIntros ">(Obs & $ & Res) !>".
+      iFrame "Hown Hfree Res". iApply (proph_obs_impl with "Obs").
+      intros π Ha. destruct x. apply Ha.
+    - lia.
   Qed.
 
   Lemma own_type_incl {𝔄 𝔅} n (f: 𝔄 →ₛ 𝔅) ty1 ty2 :
