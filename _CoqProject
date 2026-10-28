@@ -314,6 +314,9 @@ src/lambda_verus/typing/place_puniq.v
 src/lambda_verus/typing/place_pshr.v
 src/lambda_verus/typing/place_deep.v
 src/lambda_verus/typing/place_res.v
+src/lambda_verus/typing/place_res_view.v
+src/lambda_verus/typing/place_res_rslv.v
+src/lambda_verus/typing/place_res_ops.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/tracked.v
