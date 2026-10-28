@@ -45,7 +45,7 @@ From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath pctx_acc place_own.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
   uniq_util uniq_bor product own shr_bor sum type_sum freeable_util place place_shr
-  place_resolve place_puniq.
+  place_resolve place_puniq place_sum.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -627,5 +627,141 @@ Section typing.
       iSplit; [|done].
       iDestruct (ty_gho_own_depth_mono _ dh g D D with "Gho") as "[$ _]"; lia. }
     iSplit; [|done]. iExists #l. iSplit; [done|]. iExists D, d, g. by iFrame "⧖ ⧗p Fr Own".
+  Qed.
+
+  (** ** (c) Shared borrow of a sub-place below a shared reference *)
+
+  (** A shared reference to the hole of [K2] below the shared reference at the hole of [K]
+      ([&( *r).f] for [r: &T], [&( **x).0] for [x: &mut &(T, U)], …), at the lifetime of
+      the view of the hole ([pctx_slft K2 κ]: the innermost shared reference, intersected
+      with the unique borrows below it). The place is unchanged; [K]'s borrows need only
+      be alive during the instruction. *)
+  Lemma type_share_oplace_pshr_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄)
+      `{!PctxNoShr K} κ (K2: pctx ℭ 𝔅) (lt: lty ℭ) :
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
+    lctx_lft_alive E L (pctx_salv K2 κ) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 lt) κ)]
+      (Seq Skip (pctx_expr K2 (!(pctx_expr K p))))%E
+      (λ v, +[v ◁ &shr{pctx_slft K2 κ} (lty_fold lt);
+        p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 lt) κ)])
+      (λ post '-[x], post -[(pctx_loc K2 (lty_size lt) (pctx_get K x.1.2).2 (pctx_get K x.1.2).1,
+        pctx_get K2 (pctx_get K x.1.2).2); x]).
+  Proof.
+    iIntros (Alv1 Alv2 tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
+    destruct x as [[l x₀] ζm].
+    rewrite /tctx_elt_interp.
+    iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
+    have ?: Closed [] (pctx_expr K p).
+    { apply pctx_expr_closed. by eapply eval_path_closed. }
+    have ?: Closed [] (pctx_expr K2 (!(pctx_expr K p))%E).
+    { apply pctx_expr_closed. apply _. }
+    iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
+    (* A step, for the credits. *)
+    wp_bind Skip. iApply wp_fupd.
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [set_solver|].
+    iIntros "£ #⧖S". wp_let. iModIntro. wp_let.
+    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)])%I
+      as "#Hu". { iApply (guards_transitive with "Ghalf Alv1"). }
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
+    { iApply (guards_transitive with "Ghalf Alv2"). }
+    iDestruct (lc_weaken (pshr_cred D) with "£") as "£a";
+      [rewrite /pshr_cred /advance_credits; nia|].
+    set y := pctx_get K x₀.
+    iApply wp_fupd.
+    iApply (wp_pshr_addr K κ K2 lt (pctx_plug K2 lt) x₀ ζm d g D tid l p (fractional.half γh)
+      with "LFT PROPH UNIQ Hu Hs H1 £a ⧖ [] Own"); [lia|lia|done|done|..].
+    { iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
+    iIntros (dh Hdh [Hin1 [Hin2 Hvin]]) "H1 Own #V".
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    iModIntro. iExists -[(pctx_loc K2 (lty_size lt) y.2 y.1, pctx_get K2 y.2); ((l, x₀), ζm)].
+    iFrame "L I Obs". iSplitR "Own ⧗p Fr".
+    { iExists _, D. iSplit; [by rewrite eval_path_of_val|]. iFrame "⧖". iSplit; [|done].
+      destruct D as [|D']; [lia|].
+      iDestruct (shr_view_depth_mono _ _ _ _ _ D' (S D') with "V") as "#V'"; [lia|lia|].
+      iApply (shr_bor_gho_of_view with "V'"). }
+    iSplit; [|done]. iExists #l. iSplit; [done|]. iExists D, d, g. by iFrame "⧖ ⧗p Fr Own".
+  Qed.
+
+  (** ** (d) Case analysis on a sum below a shared reference *)
+
+  (** Case analysis on the sum at the hole of [K2], below the shared reference at the hole
+      of [K]: the tag is read through the view, and the branch of the variant [i] gets the
+      place with the view [SumLty tyl i (OfTy (tyl +!! i))] at the hole (the referent does
+      not change, so the variant is recorded in the place type, [lty_vin]). The [Skip]
+      gives the credits of the access. *)
+  Lemma type_case_oplace_pshr {𝔄l 𝔅 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (at_clocₛ 𝔅) 𝔄)
+      `{!PctxNoShr K} κ (K2: pctx (Σ! 𝔄l) 𝔅) (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
+    IntoPlistc el el' →
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)) →
+    lctx_lft_alive E L (pctx_salv K2 κ) →
+    ([∗ nat] i < length 𝔄l, typed_body E L I C
+      (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ) +:: T)
+      (el' -!! i) (trl -!! i)) -∗
+    typed_body E L I C (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
+      (case: (Skip;; !(pctx_expr K2 (!(pctx_expr K p)))) of el)
+      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1.2).2).1 in
+        (trl -!! i) post (x -:: cl))%type.
+  Proof.
+    move=> -> Alv1 Alv2. iIntros "el".
+    iIntros (tid [x xl] mask post iκs) "#LFT #TIME #PROPH #UNIQ #E L I C /=[Tp T] #Obs".
+    destruct x as [[l x₀] ζm].
+    rewrite /tctx_elt_interp.
+    iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
+    have ?: Closed [] (pctx_expr K p).
+    { apply pctx_expr_closed. by eapply eval_path_closed. }
+    have ?: Closed [] (pctx_expr K2 (!(pctx_expr K p))%E).
+    { apply pctx_expr_closed. apply _. }
+    iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
+    set y := pctx_get K x₀.
+    remember (pctx_get K2 y.2) as z eqn:Hz. destruct z as [s pad].
+    destruct (to_xsum s) as [j a] eqn:Hj.
+    have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
+    subst s.
+    (* A step, for the credits. *)
+    wp_bind Skip. iApply wp_fupd.
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [set_solver|].
+    iIntros "£ #⧖S". wp_let. iModIntro. wp_let.
+    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iAssert (fractional.half γh &&{↑NllftG}&&>
+      @[pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)])%I
+      as "#Hu". { iApply (guards_transitive with "Ghalf Alv1"). }
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
+    { iApply (guards_transitive with "Ghalf Alv2"). }
+    iDestruct (lc_weaken (pshr_cred D + 3 * (g + 1)) with "£") as "[£a £r]";
+      [rewrite /pshr_cred /advance_credits; nia|].
+    set lt'' := pctx_plug K2 (SumLty tyl j (OfTy (tyl +!! j))).
+    wp_bind (pctx_expr K2 (!(pctx_expr K p))%E).
+    iApply (wp_pshr_addr K κ K2 (OfTy (Σ! tyl)) lt'' x₀ ζm d g D tid l p (fractional.half γh)
+      with "LFT PROPH UNIQ Hu Hs H1 £a ⧖ [] Own"); [lia|lia| |..].
+    { apply lty_fold_plug_eq'. by rewrite lty_fold_sum_ofty. }
+    { rewrite !lty_vin_plug -/y -Hz /= psum_proj_pinj. naive_solver. }
+    { iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
+    iIntros (dh Hdh [Hin1 [Hin2 Hvin]]) "H1 Own #(Pt & _ & _)".
+    set lK := pctx_loc K2 (lty_size (OfTy (Σ! tyl))) y.2 y.1.
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
+    { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
+    (* Read the discriminant. *)
+    rewrite -Hz.
+    iEval (rewrite split_pt_xsum_cells) in "Pt".
+    wp_bind (!(LitV _))%E.
+    iApply (wp_read_na_guarded_cells_singleton _ lK.1 (take 1 lK.2) (fractional.half γh) #j (g + 1)
+      with "[H1 £r]"); [solve_ndisj| |].
+    { iFrame "H1 £r". iApply (guards_transitive_right with "Hsl").
+      iApply (guards_weaken_rhs_sep_l with "Pt"). }
+    iIntros "!> H1".
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
+    iDestruct (big_sepN_lookup _ _ j with "el") as "el".
+    iApply ("el" $! _ (((l, x₀), ζm) -:: xl)
+      with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
+    { iApply proph_obs_impl; [|done]=>/= ?. by rewrite to_xsum_pinj. }
+    iFrame "T". iExists #l. iSplit; [done|]. iExists D, d, g. iFrame "⧖".
+    rewrite (lty_nrc_plug_eq K (ShrLty lt'' κ) (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ));
+      [|by rewrite /= /lt'' (lty_nrc_plug_eq K2 (SumLty tyl j (OfTy (tyl +!! j))) (OfTy (Σ! tyl)))].
+    rewrite (lty_size_plug_eq K (ShrLty lt'' κ) (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)) //.
+    by iFrame "⧗p Fr Own".
   Qed.
 End typing.
