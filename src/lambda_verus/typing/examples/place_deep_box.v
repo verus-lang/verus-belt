@@ -1,6 +1,6 @@
 From iris.proofmode Require Import proofmode.
 From lrust.typing Require Export type function product programs own cont uninit int
-  uniq_bor borrow place place_own place_resolve.
+  uniq_bor borrow vplace place_own place_resolve place_puniq.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -106,10 +106,11 @@ Section place_deep_box.
 
   with the specification `ensures *result == ***old(x).0,
   fin(x) == ((old(x).0 with ***.0 = *fin(result)), old(x).1)` (the boxes keep their
-  addresses). The referent of `x` is unfolded into a pair; the box in field 0 is
-  unfolded by [tctx_unfold_place_own] (it is below no owned pointer), the box inside it
-  by [type_unfold_place_own_instr] (one later deep); the integer is reborrowed
-  ([type_reborrow_place_deref_instr], address `!(!b)`); `x` is resolved.
+  addresses). The borrow `x` is a place rooted at its value ([type_uniq_to_vplace_instr]);
+  its referent is unfolded into a pair, the box in field 0 and the box inside it are
+  unfolded ([type_unfold_vplace_own_deep_instr]); the integer is reborrowed
+  ([type_borrow_vplace_deep_instr], address `!(!b)`); `x` is resolved
+  ([type_resolve_vplace_uniq_instr]).
   *)
 
   Notation deep_getₛ := (at_locₛ (at_locₛ Zₛ) * Zₛ)%ST.
@@ -118,7 +119,8 @@ Section place_deep_box.
     fn: ["x"] :=
       let: "b" := !"x" in
       delete [ #1; "x"];;
-      ReBor;;                                   (* unfold **( *b).0 *)
+      Skip;;                                    (* b as a place *)
+      ReBor;; ReBor;; ReBor;;                   (* unfold *b, *( *b).0 and **( *b).0 *)
       let: "r" := (Skip;; Skip);; !(!"b") in    (* &mut ***( *b).0 *)
       (Skip;; Skip;; #☠);;                      (* resolve b *)
       let: "ret" := new [ #1] in
@@ -159,25 +161,31 @@ Section place_deep_box.
       iIntros (vb). simpl_subst.
       iApply type_delete. { solve_typing. } { done. } { done. }
       (* unfold the referent of b, and the box in field 0 *)
-      iApply typed_body_tctx_incl.
-      { apply (tctx_unfold_uniq_prod _ _ vb α (box (box int)) int). done. }
-      iApply typed_body_tctx_incl.
-      { apply (tctx_unfold_place_own _ _ vb α (PFst PHole (OfTy int)) 1 (box int));
-          [done|done|done]. }
-      (* unfold the box inside it, one later deep *)
+      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vb α (box (box int) * int)). }
+      { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { apply (type_unfold_place_own_instr _ _ _ vb α (PFst (POwn 1 PHole) (OfTy int)) 1 int);
-          [done|done|done]. }
+      { apply (type_unfold_vplace_prod_instr _ _ _ vb (PUniq α PHole) (box (box int)) int).
+        simpl. solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iApply type_seq.
+      { apply (type_unfold_vplace_own_deep_instr _ _ _ vb (PUniq α (PFst PHole (OfTy int))) 1
+          (box int)); [done|simpl; solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      (* unfold the box inside it *)
+      iApply type_seq.
+      { apply (type_unfold_vplace_own_deep_instr _ _ _ vb
+          (PUniq α (PFst (POwn 1 PHole) (OfTy int))) 1 int); [done|simpl; solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* &mut ***( *b).0, at α ⊓ α *)
       iApply (type_let with "[]").
-      { apply (type_reborrow_place_deref_instr _ _ _ vb α α
-          (PFst (POwn 1 (POwn 1 PHole)) (OfTy int)) int); [done|done]. }
+      { apply (type_borrow_vplace_deep_instr _ _ _ vb α
+          (PUniq α (PFst (POwn 1 (POwn 1 PHole)) (OfTy int))) int);
+          [done|simpl; solve_typing|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       (* resolve b *)
       iApply type_seq.
-      { apply (type_resolve_place_instr _ _ _ vb α
+      { apply (type_resolve_vplace_uniq_instr _ _ _ vb α
           (ProdLty (OwnPtrLty 1 (OwnPtrLty 1 (Blocked int (α ⊓ α)))) (OfTy int)));
           [done|done|done|set_solver]. }
       { solve_typing. } { reflexivity. }
@@ -193,10 +201,10 @@ Section place_deep_box.
     intros post [[lx m] []] mask π. simpl.
     destruct m as [[[[[l [[l1 [l2 a]] b]] ξi] d] g] idx]. simpl.
     intros Hspec. rewrite /trans_upper /trans_tail /=.
-    intros z _ m1 Hl1 Hc1 Hres lr junk w ->.
+    intros z _ m1 Hc1 Hres lr junk w ->.
     apply Hspec; [done|]. rewrite Hres.
     destruct m1 as [[[[[l1' y1] ζi1] d1] g1] idx1]. simpl in Hc1. subst y1.
-    by rewrite /place_cur /place_rfn /= !uniq_bor_future_eq.
+    by rewrite /= !uniq_bor_future_eq.
   Qed.
 End place_deep_box.
 

@@ -1,6 +1,6 @@
 From iris.proofmode Require Import proofmode.
 From lrust.typing Require Export type function product programs own cont uninit int
-  uniq_bor borrow place place_own place_resolve place_memcpy.
+  uniq_bor borrow vplace place_own place_resolve place_memcpy place_puniq place_deep.
 From lrust.lang Require Import lang notation memcpy new_delete.
 Set Default Proof Using "Type".
 
@@ -98,15 +98,17 @@ Section place_memcpy.
   ```
 
   with the specification `ensures result == old( *x).0, fin(x) == (y, old( *x).1)`. The
-  referent of `x` is unfolded into `ProdLty (OfTy (int * int)) (OfTy int)`; `x.0` is
-  copied into the new local `c` ([type_memcpy_from_place_instr]) and assigned
-  ([type_memcpy_place_instr]); `x` is resolved ([type_resolve_place_instr]).
+  value of `x` becomes a place rooted at it ([type_uniq_to_vplace_instr]), whose referent is
+  unfolded into `ProdLty (OfTy (int * int)) (OfTy int)`; `x.0` is copied into the new local
+  `c` ([type_memcpy_copy_from_vplace_deep_instr]) and assigned
+  ([type_memcpy_vplace_deep_instr]); `x` is resolved ([type_resolve_vplace_uniq_instr]).
   *)
 
   Definition set_first_pair : val :=
     fn: ["x"; "y"] :=
       let: "b" := !"x" in
       delete [ #1; "x"];;
+      Skip;; ReBor;;                      (* b as a place, unfold *b *)
       let: "c" := new [ #2] in
       "c" <-{2} !"b";;                    (* c = x.0 *)
       "b" <-{2} !"y";;                    (* x.0 = y *)
@@ -148,27 +150,31 @@ Section place_memcpy.
       { reflexivity. }
       iIntros (vb). simpl_subst.
       iApply type_delete. { solve_typing. } { done. } { done. }
-      (* unfold the referent of b *)
-      iApply typed_body_tctx_incl.
-      { eapply (tctx_incl_frame_r +[_] +[_]).
-        apply (tctx_unfold_uniq_prod _ _ vb α (int * int) int). done. }
+      (* b as a place rooted at its value, and its referent unfolded *)
+      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vb α ((int * int) * int)). }
+      { solve_typing. } { reflexivity. }
+      iApply type_seq.
+      { apply (type_unfold_vplace_prod_instr _ _ _ vb (PUniq α PHole) (int * int) int).
+        simpl. solve_typing. }
+      { solve_typing. } { reflexivity. }
       iApply (type_new 2). { lia. } iIntros (vc). simpl_subst.
       (* c = x.0 *)
       iApply type_seq.
-      { apply (type_memcpy_from_place_instr _ _ _ vc vb α (PFst PHole (OfTy int)) (int * int)
+      { apply (type_memcpy_copy_from_vplace_deep_instr _ _ _ vc vb
+          (PUniq α (PFst PHole (OfTy int))) (int * int)
           (own_ptr 2 (↯ 2)) (own_ptr 2 (int * int)) (↯ 2));
-          [done|done|apply _|by apply write_own| |done].
+          [apply _|by apply write_own| |done|simpl; solve_typing].
         apply (resolve'_just _ _ _ (const True)). apply resolve_just. }
       { solve_typing. } { reflexivity. }
       (* x.0 = y *)
       iApply type_seq.
-      { apply (type_memcpy_place_instr _ _ _ vb vy α (PFst PHole (OfTy int)) (int * int)
-          (own_ptr 2 (int * int)) (own_ptr 2 (↯ (ty_size (int * int)))));
-          [done|done|apply resolve_just|apply (read_own_move (int * int))|done]. }
+      { apply (type_memcpy_vplace_deep_instr _ _ _ vb vy (PUniq α (PFst PHole (OfTy int)))
+          (int * int) (own_ptr 2 (int * int)) (own_ptr 2 (↯ (ty_size (int * int)))));
+          [apply resolve_just|apply (read_own_move (int * int))|done|simpl; solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* resolve b *)
       iApply type_seq.
-      { apply (type_resolve_place_instr _ _ _ vb α (ProdLty (OfTy (int * int)) (OfTy int)));
+      { apply (type_resolve_vplace_uniq_instr _ _ _ vb α (ProdLty (OfTy (int * int)) (OfTy int)));
           [done|done|done|set_solver]. }
       { solve_typing. } { reflexivity. }
       iApply type_delete. { solve_typing. } { done. } { done. }
@@ -181,9 +187,9 @@ Section place_memcpy.
     intros post [[lx m] [[ly y] []]] mask π. simpl.
     destruct m as [[[[[l [[x1 x2] x3]] ξi] d] g] idx]. simpl.
     intros Hspec. rewrite /trans_upper /trans_tail /=.
-    intros z _ l0 _ zw -> _ x' zr _ Hc Hf _ _ Hres. apply Hspec. rewrite -Hf Hres.
-    destruct x' as [[[[[[l' w] ξi'] d'] g'] idx'] ζm']. simpl in Hc. subst w.
-    rewrite /place_cur /place_rfn /=. by destruct y.
+    intros z _ l0 _ zw -> _ zr _ Hres. apply Hspec.
+    rewrite !uniq_bor_future_eq in Hres |- *.
+    rewrite (uniq_prvar_app_irrel (𝔄:=(Zₛ * Zₛ) * Zₛ) _ (y, x3)) Hres. by destruct y.
   Qed.
 
   (*

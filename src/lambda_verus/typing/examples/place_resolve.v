@@ -1,6 +1,6 @@
 From iris.proofmode Require Import proofmode.
 From lrust.typing Require Export type function product programs own cont uninit int sum type_sum
-  uniq_bor borrow place place_own place_sum place_resolve.
+  uniq_bor borrow vplace place_own place_sum place_resolve place_puniq.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -20,10 +20,11 @@ Section place_resolve.
   ```
 
   with the specification `ensures *result == old(x).1.1,
-  fin(x) == (old(x).0, (old(x).1.0, *fin(result)))`. The referent of `x` is unfolded into
+  fin(x) == (old(x).0, (old(x).1.0, *fin(result)))`. The value of `x` becomes a place
+  rooted at it ([type_uniq_to_vplace_instr]); its referent is unfolded into
   the place `ProdLty (OwnPtrLty 1 (OfTy int)) (ProdLty (OfTy opt) (OfTy int))` (the box is
-  unfolded, the sum is a leaf); `.1.1` is reborrowed; `x` is then resolved
-  ([type_resolve_place_instr], two program steps for the two unblocked leaves `*x.0` and
+  unfolded, the sum is a leaf); `.1.1` is reborrowed ([type_borrow_vplace_deep_instr]);
+  `x` is then resolved ([type_resolve_vplace_uniq_instr], two program steps for the two unblocked leaves `*x.0` and
   `x.1.0`, and one to open the borrow) while `.1.1` is blocked, without reborrowing
   the other leaves.
   *)
@@ -32,10 +33,12 @@ Section place_resolve.
     fn: ["x"] :=
       let: "b" := !"x" in
       delete [ #1; "x"];;
-      ReBor;;                       (* &mut ( *b).1.1 *)
+      Skip;;                        (* b as a place *)
+      ReBor;; ReBor;; ReBor;;       (* unfold *b, ( *b).1 and the box *)
+      let: "r0" := ReBor;; "b" +ₗ #1 +ₗ #2 in   (* &mut ( *b).1.1 *)
       (Skip;; Skip;; Skip;; #☠);;   (* resolve b *)
       let: "r" := new [ #1] in
-      "r" <- "b" +ₗ #3;;
+      "r" <- "r0";;
       return: ["r"].
 
   Definition get_last_spec :
@@ -75,23 +78,32 @@ Section place_resolve.
       { reflexivity. }
       iIntros (vb). simpl_subst.
       iApply type_delete. { solve_typing. } { done. } { done. }
-      (* unfold the referent of b, its field 1, and the box *)
-      iApply typed_body_tctx_incl.
-      { apply (tctx_unfold_uniq_prod _ _ vb α (own_ptr 1 int) (opt * int)). done. }
-      iApply typed_body_tctx_incl.
-      { apply (tctx_unfold_place_prod _ _ vb α (PSnd (OfTy (own_ptr 1 int)) PHole) opt int);
-          [done|done]. }
-      iApply typed_body_tctx_incl.
-      { apply (tctx_unfold_place_own _ _ vb α
-          (PFst PHole (ProdLty (OfTy opt) (OfTy int))) 1 int); [done|done|done]. }
-      (* &mut ( *b).1.1, at α ⊓ α *)
+      (* b as a place rooted at its value; unfold its referent, its field 1, and the box *)
       iApply type_seq.
-      { apply (type_reborrow_place_instr _ _ _ vb α α
-          (PSnd (OwnPtrLty 1 (OfTy int)) (PSnd (OfTy opt) PHole)) int); [done|done|done]. }
+      { apply (type_uniq_to_vplace_instr _ _ _ vb α (own_ptr 1 int * (opt * int))). }
       { solve_typing. } { reflexivity. }
+      iApply type_seq.
+      { apply (type_unfold_vplace_prod_instr _ _ _ vb (PUniq α PHole) (own_ptr 1 int) (opt * int)).
+        simpl. solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iApply type_seq.
+      { apply (type_unfold_vplace_prod_instr _ _ _ vb
+          (PUniq α (PSnd (OfTy (own_ptr 1 int)) PHole)) opt int). simpl. solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iApply type_seq.
+      { apply (type_unfold_vplace_own_deep_instr _ _ _ vb
+          (PUniq α (PFst PHole (ProdLty (OfTy opt) (OfTy int)))) 1 int); [done|simpl; solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      (* &mut ( *b).1.1, at α ⊓ α *)
+      iApply (type_let with "[]").
+      { apply (type_borrow_vplace_deep_instr _ _ _ vb α
+          (PUniq α (PSnd (OwnPtrLty 1 (OfTy int)) (PSnd (OfTy opt) PHole))) int);
+          [done|simpl; solve_typing|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vr0). simpl_subst.
       (* resolve b, with the leaf .1.1 blocked *)
       iApply type_seq.
-      { apply (type_resolve_place_instr _ _ _ vb α
+      { apply (type_resolve_vplace_uniq_instr _ _ _ vb α
           (ProdLty (OwnPtrLty 1 (OfTy int)) (ProdLty (OfTy opt) (Blocked int (α ⊓ α)))));
           [done|done|done|set_solver]. }
       { solve_typing. } { reflexivity. }
@@ -107,10 +119,9 @@ Section place_resolve.
     intros post [[lx m] []] mask π. simpl.
     destruct m as [[[[[l [[lb x1] [x2 x3]]] ξi] d] g] idx]. simpl.
     intros Hspec. rewrite /trans_upper /trans_tail /=.
-    intros z _ m1 Hl1 Hc1 Hres lr junk w ->.
+    intros z _ m1 Hc1 Hres lr junk w ->.
     apply Hspec; [done|]. rewrite Hres.
-    destruct m1 as [[[[[l1 y1] ζi1] d1] g1] idx1]. simpl in Hc1. subst y1.
-    rewrite /place_cur /place_rfn /=. done.
+    destruct m1 as [[[[[l1 y1] ζi1] d1] g1] idx1]. simpl in Hc1. subst y1. done.
   Qed.
 
   (*
