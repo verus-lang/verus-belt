@@ -2234,6 +2234,16 @@ Section bytes.
     split; [done|]. intros i. by rewrite -Hdom.
   Qed.
 
+  Lemma is_Some_mem_write' (σ : state') l bs l' :
+    (∀ i : nat, (i < length bs)%nat → is_Some (σ !! (l +ₗ i))) →
+    is_Some (mem_write l bs σ !! l') ↔ is_Some (σ !! l').
+  Proof.
+    intros Hbs. destruct (loc_range_dec l (length bs) l') as [[i [Hi ->]]|Hout].
+    - destruct (lookup_lt_is_Some_2 bs i) as [b' Hb']; [lia|].
+      rewrite (lookup_mem_write_in _ _ _ _ b') //. split; [intros _; by apply Hbs|eauto].
+    - by rewrite lookup_mem_write_out.
+  Qed.
+
   Lemma is_Some_mem_write P (σ : state') l bs0 bs l' :
     mem_range P σ l bs0 → length bs = length bs0 →
     is_Some (mem_write l bs σ !! l') ↔ is_Some (σ !! l').

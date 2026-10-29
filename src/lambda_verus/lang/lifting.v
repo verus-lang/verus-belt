@@ -1119,11 +1119,11 @@ Proof.
   iNext; iIntros (e2 σ2 efs Hstep); inv_head_step. iMod "Hclose" as "_".
   iMod (time_interp_step with "Ht") as "$". iIntros "credit !>".
   iSplitR "HΦ Hbs1 Hbs2".
-  { iExists hF. rewrite Hlen2 in Hr1. iFrame. iPureIntro. split; [done|].
+  { rewrite Hlen2 in Hr1. rewrite Hlen2. iExists hF. iFrame. iPureIntro. split; [done|].
     eapply heap_freeable_rel_dom; [|done]. intros ?. by rewrite !is_Some_mem_alter. }
   iSplit; last done.
   clear dependent σ1 σL σB hF. iApply wp_lift_atomic_base_step_no_fork; auto.
-  iIntros (σ1 stepcnt' κ' κs' n') "[Hσ Ht]".
+  iIntros (σ1 stepcnt' κ' κs' n'') "[Hσ Ht]".
   iMod (time_interp_step with "Ht") as "$". heap_split.
   iDestruct (heap_st_vec_lookup_reading with "HB Hbs2") as %Hrange2.
   have Hrange2' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange2.
@@ -1140,9 +1140,11 @@ Proof.
   match goal with H : mem_range is_reading_S _ l2 ?bs' |- _ =>
     have Heq := mem_range_det _ _ _ _ _ _ Hrange2' H ltac:(lia) end. subst.
   iSplit; [done|]. iSplitR "HΦ Hbs1 Hbs2".
-  { iExists hF. rewrite Hlen2 in Hr1. iFrame. iPureIntro. split; [done|].
+  { rewrite Hlen2 in Hr1. rewrite Hlen2. iExists hF. iFrame. iPureIntro. split; [done|].
     eapply heap_freeable_rel_dom; [|done]. intros ?.
-    simpl. rewrite (is_Some_mem_write _ _ _ _ _ _ Hrange1' Hlen'). by rewrite !is_Some_mem_alter. }
+    simpl. rewrite is_Some_mem_write'; [by rewrite !is_Some_mem_alter|].
+    intros i Hi. rewrite is_Some_mem_alter.
+    destruct (mem_range_lookup_1 _ _ _ _ i Hrange1') as (?&?&Hl&_); [lia|]. eexists. exact Hl. }
   iApply "HΦ". iFrame.
 Qed.
 
