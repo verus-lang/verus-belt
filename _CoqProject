@@ -360,6 +360,7 @@ src/lambda_verus/typing/examples/place_deep_sum.v
 src/lambda_verus/typing/examples/place_res_gen.v
 src/lambda_verus/typing/examples/place_res.v
 src/lambda_verus/typing/examples/place_res_sum.v
+src/lambda_verus/typing/examples/place_res_fold.v
 
 
 -arg -w -arg -argument-scope-delimiter

@@ -1407,6 +1407,67 @@ Section heap.
       - apply point_prop_heap_mapsto_cells_fancy_vec. - apply and_cloc_combine_fancy.
   Qed.
 
+  Lemma heap_mapsto_cells_fancy_vec_length_eq l cells fvl :
+      l ↦[^ cells]!∗ fvl ⊢ ⌜length cells = length fvl⌝.
+  Proof.
+    induction cells as [|c cells IH] in l, fvl |- *; destruct fvl as [|fv fvl];
+      simpl; [by iIntros|by iIntros "[]"|by iIntros "[]"|].
+    iIntros "[_ H]". by iDestruct (IH with "H") as %->.
+  Qed.
+
+  (** A point of a sequence of points. *)
+  Lemma heap_mapsto_cells_fancy_vec_lookup l cells fvl (i: nat) cs fv :
+      cells !! i = Some cs → fvl !! i = Some fv →
+      l ↦[^ cells]!∗ fvl ⊢ inl (l +ₗ i) @↦[heap_name][^ cs] (fv2sum fv).
+  Proof.
+    induction cells as [|c cells IH] in l, fvl, i |- *; [done|].
+    destruct fvl as [|f fvl]; [done|]. destruct i as [|i]; simpl.
+    - intros [= ->] [= ->]. rewrite shift_loc_0. iIntros "[$ _]".
+    - intros ??. iIntros "[_ H]". iDestruct (IH with "H") as "H"; [done|done|].
+      rewrite shift_loc_assoc. by replace (1 + i)%Z with (Z.of_nat (S i)) by lia.
+  Qed.
+
+  (** The points of two disjoint consecutive ranges, in a conjunction, are the points of
+      their union (as [and_cloc_combine_fancy]; used to combine guards of the two ranges,
+      [guard_cells_app_combine_fancy]). *)
+  Lemma and_cells_app_combine_fancy l cells (vl1 vl2: list fancy_val) :
+      l ↦[^ take (length vl1) cells]!∗ vl1 ∧
+        (l +ₗ length vl1) ↦[^ drop (length vl1) cells]!∗ vl2 ⊢
+      l ↦[^ cells]!∗ (vl1 ++ vl2).
+  Proof using heapGS0 invGS0 Σ.
+    iIntros "And".
+    iAssert ⌜length (take (length vl1) cells) = length vl1⌝%I as %H1.
+    { iDestruct "And" as "[A _]". by iApply heap_mapsto_cells_fancy_vec_length_eq. }
+    iAssert ⌜length (drop (length vl1) cells) = length vl2⌝%I as %H2.
+    { iDestruct "And" as "[_ A]". by iApply heap_mapsto_cells_fancy_vec_length_eq. }
+    rewrite length_take in H1. rewrite length_drop in H2.
+    iApply sepM_entails_mapsto_cells_fancy_vec; first by (rewrite length_app; lia).
+    iApply pt_seq_andM_sepM. iApply big_andM_intro. iIntros (l0 [cs cv]) "%IsSome".
+    destruct (lookup_loc_cells_fv_map l cells (vl1 ++ vl2) l0 cs cv IsSome)
+      as [i [-> [Hc Hv]]].
+    rewrite (_: cv = fv2sum (sum2fv cv)); [|by destruct cv].
+    destruct (decide (i < length vl1)%nat) as [Hi|Hi].
+    - iDestruct "And" as "[A _]". iApply (heap_mapsto_cells_fancy_vec_lookup with "A").
+      + rewrite lookup_take; [done|lia].
+      + rewrite -Hv lookup_app_l; [done|lia].
+    - iDestruct "And" as "[_ A]".
+      iDestruct (heap_mapsto_cells_fancy_vec_lookup _ _ _ (i - length vl1) cs (sum2fv cv)
+        with "A") as "A".
+      + rewrite lookup_drop. rewrite -Hc. f_equal. lia.
+      + rewrite -Hv lookup_app_r; [done|lia].
+      + rewrite shift_loc_assoc. by replace (length vl1 + (i - length vl1)%nat)%Z
+          with (Z.of_nat i) by lia.
+  Qed.
+
+  Lemma guard_cells_app_combine_fancy G E n l cells (vl1 vl2: list fancy_val) :
+      ⊢ (G &&{E;n}&&> l ↦[^ take (length vl1) cells]!∗ vl1) -∗
+        (G &&{E;n}&&> (l +ₗ length vl1) ↦[^ drop (length vl1) cells]!∗ vl2) -∗
+        (G &&{E;n}&&> l ↦[^ cells]!∗ (vl1 ++ vl2)).
+  Proof.
+    iApply guards_and_point.
+    - apply point_prop_heap_mapsto_cells_fancy_vec. - apply and_cells_app_combine_fancy.
+  Qed.
+
   Lemma cloc_take_app_length' n l cs1 cs2 :
     n = length cs1 →
     cloc_take (l, cs1 ++ cs2) n = (l, cs1).
