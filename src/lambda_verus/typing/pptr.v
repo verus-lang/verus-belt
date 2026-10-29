@@ -95,6 +95,7 @@ Section points_to.
   Next Obligation.
     intros. iIntros "LFT Incl Pers [_ Shr]". by iApply (ty_shr_guard_proph with "LFT Incl Pers Shr").
   Qed.
+  Next Obligation. intros. iIntros "[$ A]". by iApply (ty_gho_res_of_own ty with "A"). Qed.
 
   Definition points_to_ty {𝔄} ty := tracked_ty (@own_ptr _ _ 𝔄 (ty_size ty) ty).
 

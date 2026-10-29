@@ -43,6 +43,7 @@ Section mod_ty.
   Next Obligation.
     intros. apply ty_shr_guard_proph. by rewrite <- syn_type_morphism_ξl.
   Qed.
+  Next Obligation. intros. apply ty_gho_res_of_own. Qed.
 
   Global Instance mod_ty_ne {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) (fⁱ: 𝔅 →ₛ 𝔄) `{!Isoₛ f fⁱ} : NonExpansive (mod_ty f fⁱ).
   Proof. solve_ne_type. Qed.

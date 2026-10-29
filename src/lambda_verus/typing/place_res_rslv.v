@@ -5,7 +5,9 @@
   [lt'] (at the same value and blocking map), learning [Φ]. Instances per constructor
   (the mappings [R] and [S_κ] of the design):
   - [lty_res_id]: any place is unchanged (nothing learnt);
-  - [lty_res_ofty]: a leaf [OfTy ty] becomes [OfRes ty], with [Φ] from [resolve_keep];
+  - [lty_res_ofty]: a leaf [OfTy ty] becomes [OfRes ty], with [Φ] from [resolve_keep]
+    (for any type, with nothing learnt, by [resolve_keep_just]);
+  - [lty_res_copy]: a [Copy] leaf is kept as it is, with [Φ] from [resolve];
   - [lty_res_prod], [lty_res_own], [lty_res_sum]: structural;
   - [lty_res_uniq_leaf], [lty_res_uniq_cpd]: an unfolded unique borrow [UniqLty lt κ]
     becomes [ResUniqLty lt κ]: its prophecy variable is resolved to the denotation of its
@@ -133,6 +135,23 @@ Section lty_res.
     iMod (lc_step_fupdN_elim_later with "£r Upd") as ">(Obs & $ & Res)".
     iModIntro. iFrame "Obs". rewrite /res_leaf. iExists x. iSplit; [done|]. iFrame "Pt".
     iApply bi.laterN_intro. iExists d, g. by iFrame.
+  Qed.
+
+  (** A [Copy] leaf is resolved from a copy of its (persistent) ownership, and kept as it
+      is: it stays readable by the rules for [OfTy] (no [ResOwn] needed). *)
+  Lemma lty_res_copy {𝔄} E L (ty: type 𝔄) `{!Copy ty} Φ :
+    resolve E L ty Φ → lty_res E L (OfTy ty) (OfTy ty) 1 (λ x _ _, Φ x).
+  Proof.
+    intros Rslv. split; [done|]. split; [done|].
+    iIntros (G m x ζm q d g D tid l ? Hd Hg) "LFT PROPH UNIQ TIME E L G _ Own".
+    rewrite /ltype_own /= /leaf_owned_s /leaf_owned /ofty_owned /=.
+    iDestruct "Own" as (x' ->) "[Pt #Gho]". iModIntro. iIntros "£".
+    iDestruct (lc_weaken (m + d * (g + 1)) with "£") as "[£m £r]";
+      [rewrite /advance_credits; nia|].
+    iMod (lc_fupd_elim_laterN with "£m Gho") as "#Gho'".
+    iMod (Rslv _ ⊤ with "LFT PROPH UNIQ TIME E L G Gho'") as "Upd"; [solve_ndisj|].
+    iMod (lc_step_fupdN_elim_later with "£r Upd") as ">(Obs & $)".
+    iModIntro. iFrame "Obs". iExists x. iSplit; [done|]. by iFrame "Pt Gho".
   Qed.
 
   Lemma lty_res_prod {𝔄1 𝔄2} E L (lt1 lt1': lty 𝔄1) (lt2 lt2': lty 𝔄2) k1 k2 Φ1 Φ2 :
