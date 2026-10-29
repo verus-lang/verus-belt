@@ -1293,6 +1293,146 @@ Section pctx.
   Proof.
     rewrite /PctxNoShr. induction K; simpl; rewrite ?pctx_simple_retype; naive_solver.
   Qed.
+
+  (** ** Places rooted at a value
+
+      A place rooted at a value ([typing/vplace.v]) is a value [x] (not in memory) with a
+      place type [lt], whose root is a pointer ([OwnPtrLty], [UniqLty], [ResUniqLty]) or a
+      leaf of size 1. Its refinement ([lty_vrfn]) is computed from the paths _below_ the
+      root pointer, so that a place [p ◁ₗ OwnPtrLty n lt'] has the blocking map of the place
+      rooted at the owned location [p] ([typing/place_own.v]), and a place
+      [p ◁ₗ UniqLty lt' κ] the one of the place rooted at the unique borrow [p].
+
+      For a context [K] whose first step is the root pointer ([POwn] or [PUniq],
+      [PctxVRoot]), the address of the hole is computed from the value itself, without a
+      load ([pctx_vexpr]); the path, the refinement, the receipts and the location of the
+      hole are [pctx_vpath], [pctx_vrfn], [pctx_vnrc]/[pctx_vne]/[pctx_vnmm] and
+      [pctx_vloc]. *)
+  Class PctxVRoot {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
+    pctx_vroot : match K with POwn _ _ | PUniq _ _ => True | _ => False end.
+  Global Instance pctx_vroot_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') : PctxVRoot (POwn n K).
+  Proof. done. Qed.
+  Global Instance pctx_vroot_uniq {𝔅 𝔄'} κ (K: pctx 𝔅 𝔄') : PctxVRoot (PUniq κ K).
+  Proof. done. Qed.
+
+  Definition lty_vrfn {𝔄} (lt: lty 𝔄) : ~~𝔄 → blk_map → prfn 𝔄 :=
+    match lt in lty 𝔄 return ~~𝔄 → blk_map → prfn 𝔄 with
+    | OwnPtrLty _ lt' => λ x ζm, inr (x.1, lty_rfn lt' x.2 ζm [])
+    | UniqLty lt' _ => λ x ζm,
+        inr (uniq_bor_loc x, lty_rfn lt' (uniq_bor_current x) ζm [], uniq_bor_ξi x)
+    | ResUniqLty lt' _ => λ x ζm,
+        inr (uniq_bor_loc x, lty_rfn lt' (uniq_bor_current x) ζm [], uniq_bor_ξi x)
+    | lt' => λ x ζm, lty_rfn lt' x ζm []
+    end.
+
+  Definition pctx_vpath {𝔅 𝔄} (K: pctx 𝔅 𝔄) : lpath :=
+    match K with
+    | POwn _ K' => pctx_path K' []
+    | PUniq _ K' => pctx_path K' []
+    | PShr _ K' => pctx_path K' []
+    | K' => pctx_path K' []
+    end.
+
+  Definition pctx_vrfn {𝔅 𝔄} (K: pctx 𝔅 𝔄) : ~~𝔄 → blk_map → prfn 𝔅 → prfn 𝔄 :=
+    match K in pctx 𝔅 𝔄 return ~~𝔄 → blk_map → prfn 𝔅 → prfn 𝔄 with
+    | POwn _ K' => λ x ζm r, inr (x.1, pctx_rfn K' x.2 ζm [] r)
+    | PUniq _ K' => λ x ζm r,
+        inr (uniq_bor_loc x, pctx_rfn K' (uniq_bor_current x) ζm [] r, uniq_bor_ξi x)
+    | K' => λ x ζm r, pctx_rfn K' x ζm [] r
+    end.
+
+  Lemma lty_vrfn_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} lt x ζm :
+    lty_vrfn (pctx_plug K lt) x ζm =
+      pctx_vrfn K x ζm (lty_rfn lt (pctx_get K x) ζm (pctx_vpath K)).
+  Proof.
+    rename select (PctxVRoot K) into HK. destruct K; try done; simpl; by rewrite lty_rfn_plug.
+  Qed.
+
+  Lemma pctx_vrfn_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} x y ζm r :
+    pctx_in K x → pctx_vrfn K (pctx_set K x y) ζm r = pctx_vrfn K x ζm r.
+  Proof.
+    rename select (PctxVRoot K) into HR. rename select (PctxNoShr K) into HK.
+    destruct K; try done; simpl in *.
+    - intros. rewrite pctx_rfn_set //.
+    - destruct HK as [_ HK]. intros.
+      by rewrite uniq_bor_loc_set uniq_bor_current_set uniq_bor_ξi_set pctx_rfn_set.
+  Qed.
+
+  Lemma pctx_vrfn_blk_cons {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} x ζm ζi r :
+    pctx_vrfn K x ((pctx_vpath K, ζi) :: ζm) r = pctx_vrfn K x ζm r.
+  Proof.
+    rename select (PctxVRoot K) into HR. destruct K; try done; simpl; by rewrite pctx_rfn_blk_cons.
+  Qed.
+
+  Lemma pctx_vrfn_blk_cons_below {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} x ζm ζi s r :
+    pctx_vrfn K x ((s ++ pctx_vpath K, ζi) :: ζm) r = pctx_vrfn K x ζm r.
+  Proof.
+    rename select (PctxVRoot K) into HR.
+    destruct K; try done; simpl; by rewrite pctx_rfn_blk_cons_below.
+  Qed.
+
+  Lemma pctx_vrfn_rsv_mono {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} x ζm (r r': prfn 𝔅) ζl ζl' :
+    (∀ ζ, ζ ∈ ζl → ζ ∈ ζl') → (prfn_rsv r ζl → prfn_rsv r' ζl') →
+    prfn_rsv (pctx_vrfn K x ζm r) ζl → prfn_rsv (pctx_vrfn K x ζm r') ζl'.
+  Proof.
+    rename select (PctxVRoot K) into HR. intros Hin Hr.
+    destruct K; try done; simpl.
+    - by apply pctx_rfn_rsv_mono.
+    - intros [H1 H2]. split; [by eapply pctx_rfn_rsv_mono|].
+      eapply uniq_prvar_dep_irrel, proph_dep_weaken; [|exact H2]. done.
+  Qed.
+
+  (** The receipts of a place rooted at a value: as for a place rooted at the pointee of
+      an owned pointer, the root pointer is not a level ([lty_nrc]). *)
+  Definition lty_vnrc {𝔄} (lt: lty 𝔄) : nat :=
+    match lt with OwnPtrLty _ lt' => lty_nrc lt' 0 0 | lt' => lty_nrc lt' 0 0 end.
+
+  Definition pctx_vnrc {𝔅 𝔄} (K: pctx 𝔅 𝔄) : nat :=
+    match K with POwn _ K' => pctx_nrc K' 0 0 | K' => pctx_nrc K' 0 0 end.
+  Definition pctx_vne {𝔅 𝔄} (K: pctx 𝔅 𝔄) : nat :=
+    match K with POwn _ K' => pctx_ne K' 0 0 | K' => pctx_ne K' 0 0 end.
+  Definition pctx_vnmm {𝔅 𝔄} (K: pctx 𝔅 𝔄) : nat :=
+    match K with POwn _ K' => pctx_nmm K' 0 0 | K' => pctx_nmm K' 0 0 end.
+
+  Lemma lty_vnrc_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} lt :
+    lty_vnrc (pctx_plug K lt) = pctx_vnrc K + lty_nrc lt (pctx_vne K) (pctx_vnmm K).
+  Proof.
+    rename select (PctxVRoot K) into HR. destruct K; try done; simpl; by rewrite lty_nrc_plug.
+  Qed.
+
+  Lemma lty_vnrc_plug_eq {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} lt lt' :
+    lty_nrc lt' = lty_nrc lt → lty_vnrc (pctx_plug K lt') = lty_vnrc (pctx_plug K lt).
+  Proof. intros Heq. by rewrite !lty_vnrc_plug Heq. Qed.
+
+  (** The address of the hole, from the value [e] of the root pointer. *)
+  Definition pctx_vexpr {𝔅 𝔄} (K: pctx 𝔅 𝔄) (e: expr) : expr :=
+    match K with
+    | POwn _ K' => pctx_expr K' e
+    | PUniq _ K' => pctx_expr K' e
+    | PShr _ K' => pctx_expr K' e
+    | _ => e
+    end.
+
+  Lemma pctx_vexpr_closed {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : Closed [] e → Closed [] (pctx_vexpr K e).
+  Proof. destruct K; simpl; try done; apply pctx_expr_closed. Qed.
+
+  (** The location of the referent of the root pointer, and of the hole. *)
+  Definition cloc_dummy : cloc := ((1%positive, 0%Z), []).
+
+  Definition pctx_vrloc {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) : ~~𝔄 → cloc :=
+    match K in pctx 𝔅 𝔄 return ~~𝔄 → cloc with
+    | POwn _ K' => λ x, (x.1, repeat [] (pctx_size K' n))
+    | PUniq _ K' => λ x, uniq_bor_loc x
+    | PShr _ K' => λ x, x.1
+    | _ => λ _, cloc_dummy
+    end.
+
+  Definition pctx_vloc {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) (x: ~~𝔄) : cloc :=
+    pctx_loc K n x cloc_dummy.
+
+  Lemma pctx_vloc_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x y :
+    pctx_in K x → pctx_vloc K n (pctx_set K x y) = pctx_vloc K n x.
+  Proof. apply pctx_loc_set. Qed.
 End pctx.
 
 (** A context with a [PUniq] step is not [PctxNoUniq]. *)
