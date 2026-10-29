@@ -769,7 +769,7 @@ Section vroot.
   Lemma wp_pctx_vptrs {𝔅 𝔄} E (K: pctx 𝔅 𝔄) `{!PctxVRoot K} n k (G: iProp Σ) x (e: expr)
       (R: iProp Σ) :
     ↑NllftG ⊆ E →
-    pctx_vpguards K n k G x -∗ £(3 * k * pctx_dlev K) -∗
+    pctx_vpguards K n k G x -∗ £(3 * k * pred (pctx_dlev K)) -∗
     WP e @ E {{ v, ⌜v = #(pctx_vrloc K n x).1⌝ ∗ R ∗ G }} -∗ pctx_vptrs K n x -∗
     WP pctx_vexpr K e @ E {{ v, ⌜v = #(pctx_vloc K n x).1⌝ ∗ R ∗ G ∗ pctx_vptrs K n x }}.
   Proof.
@@ -785,11 +785,17 @@ Section vroot.
         with "Gl Gs [£] WP P"); [done|]. iApply (lc_weaken with "£"). nia.
   Qed.
 
+  Lemma pctx_vroot_dlev {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} : 1 ≤ pctx_dlev K.
+  Proof. rename select (PctxVRoot K) into HR. destruct K; try done; simpl; lia. Qed.
+
+  Lemma pctx_vroot_nonempty {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} : pctx_nonempty K.
+  Proof. rename select (PctxVRoot K) into HR. by destruct K. Qed.
+
   (** The later credits for an access to the hole below a root pointer, at a depth [D]. *)
   Definition pctx_vacc_cred {𝔅 𝔄} (K: pctx 𝔅 𝔄) (D: nat) : nat :=
-    match pctx_ulfts K with [] => 0 | _ => (D + 1) * (D + 3) end.
+    match pctx_ulfts K with [] => 0 | _ => (D + 1) * (D + 1) end.
 
-  Lemma pctx_vacc_cred_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) D : pctx_vacc_cred K D ≤ (D + 1) * (D + 3).
+  Lemma pctx_vacc_cred_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) D : pctx_vacc_cred K D ≤ (D + 1) * (D + 1).
   Proof. rewrite /pctx_vacc_cred. destruct (pctx_ulfts K); lia. Qed.
 
   (** The closer of an access to the hole below a root pointer: as [pctx_closer], the root

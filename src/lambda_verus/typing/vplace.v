@@ -84,6 +84,20 @@ Section vplace.
 
   Lemma vplace_own_receipt {𝔄} (lt: lty 𝔄) x tid v : vplace_own lt x tid v -∗ ∃ D, ⧖D.
   Proof. rewrite vplace_own_eq. iIntros "(%D & ⧖ & _)". by iExists D. Qed.
+
+  (** A place [p ◁ₗ pctx_plug K lt] whose root is the first step of [K]. *)
+  Lemma vplace_own_open {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} (lt: lty 𝔅) x ζm tid v :
+    vplace_own (pctx_plug K lt) (x, ζm) tid v ⊣⊢ ∃ D, ⧖D ∗ ⧗(lty_vnrc (pctx_plug K lt)) ∗
+      vroot_own (pctx_plug K lt) (pctx_vrfn K x ζm (lty_rfn lt (pctx_get K x) ζm (pctx_vpath K)))
+        D tid v.
+  Proof. by rewrite vplace_own_eq /= lty_vrfn_plug. Qed.
+
+  Lemma vplace_own_close {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} (lt: lty 𝔅) x ζm D tid v :
+    ⧖D -∗ ⧗(lty_vnrc (pctx_plug K lt)) -∗
+    vroot_own (pctx_plug K lt) (pctx_vrfn K x ζm (lty_rfn lt (pctx_get K x) ζm (pctx_vpath K)))
+      D tid v -∗
+    vplace_own (pctx_plug K lt) (x, ζm) tid v.
+  Proof. rewrite vplace_own_open. iIntros "⧖ ⧗ R". iExists D. iFrame. Qed.
 End vplace.
 
 Notation "p ◁ₗ lt" := (TCtx_sem _ p (vplace_own lt))
