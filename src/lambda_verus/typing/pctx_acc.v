@@ -25,7 +25,7 @@
     all enclosing borrows (each extends its reservation), from the outermost to the
     innermost, to a view shift that produces the new hole. The root may get larger depths.
 
-  See [~/verus-belt-phase3-design.md], section "PUniq". *)
+  See [design_docs/verus-belt-phase3-design.md], section "PUniq". *)
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.

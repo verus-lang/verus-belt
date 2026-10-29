@@ -3,7 +3,7 @@
   Resolving a place ([p ◁ₗown{n} lt], [place_own.v]) gives up the unique borrows of its
   owned part (the part below no unique borrow: fields, sums, owned pointers) and learns
   the observations of its leaves, but keeps the place readable: the result is a place
-  that can be read (and shared) but not written. See [~/verus-belt-phase3-design.md],
+  that can be read (and shared) but not written. See [design_docs/verus-belt-phase3-design.md],
   section "Resolve to a readable state".
 
   ** Resolved place types ([typing/ltype.v])

@@ -10,7 +10,7 @@
   Resolved leaves [OfRes ty] are copied after their conversion to [OfTy ty] ([ResOwn],
   [tctx_oplace_res_to_ofty]) or to a shared reference ([OfRes (&uniq{κ} ty)],
   [type_oplace_res_uniq_to_shr_instr]), with the rules of [typing/place_deep.v]. See
-  [~/verus-belt-phase3-design.md], section "Resolve to a readable state". *)
+  [design_docs/verus-belt-phase3-design.md], section "Resolve to a readable state". *)
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.

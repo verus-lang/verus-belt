@@ -17,7 +17,7 @@
     ([lty_share_view]).
 
   The rule [type_resolve_oplace_res_instr] takes [k] program steps ([skipn k]). See
-  [~/verus-belt-phase3-design.md], section "Resolve to a readable state". *)
+  [design_docs/verus-belt-phase3-design.md], section "Resolve to a readable state". *)
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.

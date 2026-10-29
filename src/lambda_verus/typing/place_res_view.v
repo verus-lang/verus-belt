@@ -6,7 +6,7 @@
   views at [κ ⊓ κ']. This file: laws of views (depth monotonicity, the guards of the
   prophecy tokens of the values of the unblocked leaves), and the sharing of a place in a
   borrow at [κ] into its view ([lty_share_view]), which is how a unique borrow is
-  resolved ([typing/place_res_rslv.v]). See [~/verus-belt-phase3-design.md], section
+  resolved ([typing/place_res_rslv.v]). See [design_docs/verus-belt-phase3-design.md], section
   "Resolve to a readable state". *)
 
 From iris.proofmode Require Import proofmode.

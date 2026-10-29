@@ -25,7 +25,7 @@
   - [type_share_oplace_deep_instr], [unblock_tctx_oplace_shr_deep]: shared borrow of the
     hole ([Owned] mode) and unblocking.
 
-  See [~/verus-belt-phase3-design.md], section "PUniq", and [examples/place_puniq.v]. *)
+  See [design_docs/verus-belt-phase3-design.md], section "PUniq", and [examples/place_puniq.v]. *)
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.

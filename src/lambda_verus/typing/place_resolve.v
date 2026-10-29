@@ -1,7 +1,7 @@
 (** * Resolving and dropping places
 
   This file adds general rules for giving up a place element (see
-  [~/verus-belt-phase3-design.md], section "Resolve and drop").
+  [design_docs/verus-belt-phase3-design.md], section "Resolve and drop").
 
   ** Places rooted at a unique borrow
 

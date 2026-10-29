@@ -39,7 +39,7 @@
   - [type_read_oplace_shr_deep_instr]: reading a shared-blocked leaf below unique borrows
     (the leaf of [type_share_oplace_deep_instr]).
 
-  See [~/verus-belt-phase3-design.md], section "PShr". *)
+  See [design_docs/verus-belt-phase3-design.md], section "PShr". *)
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.

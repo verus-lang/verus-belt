@@ -26,7 +26,7 @@
     [type_sum_memcpy_oplace_deep_instr]: assigning a variant (payload of size 1, unit
     variant, payload of any size).
 
-  See [~/verus-belt-phase3-design.md], section "Any size and sums below PUniq". *)
+  See [design_docs/verus-belt-phase3-design.md], section "Any size and sums below PUniq". *)
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
