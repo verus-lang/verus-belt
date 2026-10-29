@@ -58,6 +58,8 @@ Section vplace.
     | lt' => λ x tid v, (∃ D, ⧖D ∗ ⧗(lty_vnrc lt') ∗ vroot_own lt' (lty_vrfn lt' x.1 x.2) D tid v)%I
     end.
 
+  Global Arguments vplace_own : simpl never.
+
   Lemma vplace_own_eq {𝔄} (lt: lty 𝔄) x tid v :
     vplace_own lt x tid v ⊣⊢ ∃ D, ⧖D ∗ ⧗(lty_vnrc lt) ∗ vroot_own lt (lty_vrfn lt x.1 x.2) D tid v.
   Proof.
