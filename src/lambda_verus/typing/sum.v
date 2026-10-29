@@ -144,6 +144,10 @@ Section sum.
     iApply (guards_transitive with "Incl []").
     iApply lft_intersect_tyl_lfts_lookup_incl.
   Qed.
+  Next Obligation.
+    intros 𝔄l tyl [x pad] d g tid. simpl.
+    refine (match (to_xsum x) with | xinj i x0 => _ end). apply ty_gho_res_of_own.
+  Qed.
 
   Global Instance xsum_ty_ne {𝔄l} : NonExpansive (@xsum_ty 𝔄l).
   Proof.

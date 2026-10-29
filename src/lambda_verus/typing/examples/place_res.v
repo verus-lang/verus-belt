@@ -28,7 +28,7 @@ Section place_res.
     * [OfRes (box int)] is converted back to [OfTy (box int)] ([tctx_oplace_res_to_ofty]),
       unfolded and read ([type_read_oplace_instr]);
     * [OfRes (&uniq{'a} (int * int))] is re-read as a shared reference to its referent
-      at ['a] ([tctx_oplace_res_uniq_to_shr]), viewed as a pair and read below it
+      at ['a] ([type_oplace_res_uniq_to_shr_instr], one step), viewed as a pair and read below it
       ([type_read_oplace_pshr_instr]);
     * the slot is dropped ([type_drop_oplace_res_instr]), freeing the box.
   *)
@@ -37,6 +37,7 @@ Section place_res.
     fn: ["x"] :=
       (Skip;; Skip;; #☠);;                          (* resolve x *)
       let: "a" := !(!"x") in                        (* *x.0 *)
+      (Skip;; #☠);;                                 (* *x.1 as a shared reference *)
       ReBor;;                                       (* view *x.1 as a pair *)
       let: "b" := Skip;; !(!("x" +ₗ #1)) in         (* ( *x.1).0 *)
       (((#☠;; delete [ #1; !"x"]);; #☠);; delete [ #2; "x"]);; (* drop x *)
@@ -76,7 +77,7 @@ Section place_res.
           (ProdLty (OfTy (box int)) (OfTy (&uniq{α} (int * int))))
           (ProdLty (OfRes (box int)) (OfRes (&uniq{α} (int * int)))) (1 + 1)).
         apply lty_res_prod; apply lty_res_ofty.
-        - apply resolve_keep_just. apply _.
+        - apply resolve_keep_just.
         - by apply uniq_resolve_keep. }
       { solve_typing. } { reflexivity. }
       (* *x.0: the box is unresolved again, unfolded and read *)
@@ -92,10 +93,10 @@ Section place_res.
       { solve_typing. } { reflexivity. }
       iIntros (va). simpl_subst.
       (* ( *x.1).0: the resolved unique borrow is a shared reference to its referent *)
-      iApply typed_body_tctx_incl.
-      { eapply tctx_incl_tail.
-        apply (tctx_oplace_res_uniq_to_shr _ _ _ _ (PSnd (OwnPtrLty 1 (OfTy int)) PHole) α
-          (int * int)). done. }
+      iApply type_seq.
+      { apply (type_oplace_res_uniq_to_shr_instr _ _ _ vx 2 (PSnd (OwnPtrLty 1 (OfTy int)) PHole) α
+          (int * int)); done. }
+      { solve_typing. } { reflexivity. }
       iApply type_seq.
       { apply (type_change_oplace_shr_instr _ _ _ vx 2 (PSnd (OwnPtrLty 1 (OfTy int)) PHole) α
           PHole (OfTy (int * int)) (ProdLty (OfTy int) (OfTy int))); [solve_typing|done|done|done]. }
@@ -230,7 +231,7 @@ Section place_res_nested.
           (λ x ζm q π, (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
             prfn_den (lty_rfn (UniqLty (ProdLty (Blocked int static) (OfTy int)) β)
               (uniq_bor_current x) ζm (false :: q)) π)).
-        eapply lty_res_impl; [apply lty_res_uniq_cpd; [solve_typing|done|done]|].
+        eapply lty_res_impl; [apply lty_res_uniq_cpd; [solve_typing|solve_typing|done|done]|].
         intros ????. done. }
       { solve_typing. } { reflexivity. }
       (* ( **x).1 *)

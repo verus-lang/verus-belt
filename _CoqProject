@@ -317,6 +317,7 @@ src/lambda_verus/typing/place_res.v
 src/lambda_verus/typing/place_res_view.v
 src/lambda_verus/typing/place_res_rslv.v
 src/lambda_verus/typing/place_res_ops.v
+src/lambda_verus/typing/place_res_copy.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/tracked.v
@@ -359,6 +360,10 @@ src/lambda_verus/typing/examples/place_deep.v
 src/lambda_verus/typing/examples/place_deep_sum.v
 src/lambda_verus/typing/examples/place_res_gen.v
 src/lambda_verus/typing/examples/place_res.v
+src/lambda_verus/typing/examples/place_res_sum.v
+src/lambda_verus/typing/examples/place_res_fold.v
+src/lambda_verus/typing/examples/place_res_shr.v
+src/lambda_verus/typing/examples/place_res_copy.v
 
 
 -arg -w -arg -argument-scope-delimiter

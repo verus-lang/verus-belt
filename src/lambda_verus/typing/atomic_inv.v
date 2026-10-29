@@ -67,6 +67,7 @@ Section atomic_invariants.
   Next Obligation. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.
   Solve All Obligations with solve_default_shr.
+  Next Obligation. intros. iIntros "H". iExact "H". Qed.
   
   Definition atomic_closer γ N P : iProp Σ :=
       (∀ E, (▷ (P ∨ Active γ)) ∗ na_invariants_fork.na_own ATOMIC_POOL E ={⊤}=∗ na_invariants_fork.na_own ATOMIC_POOL (E ∪ ↑N)).
@@ -100,6 +101,7 @@ Section atomic_invariants.
   Next Obligation. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.
   Solve All Obligations with solve_default_shr.
+  Next Obligation. intros. iIntros "H". iExact "H". Qed.
 
   Lemma atomic_inv_ty_resolve E L {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → proph_asn → Prop)
       : resolve E L (atomic_inv_ty ty pred) (const (const True)).

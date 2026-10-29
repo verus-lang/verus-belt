@@ -9,26 +9,91 @@ Section place_res_gen.
   Context `{!typeG Σ}.
 
   (*
-  Resolving a leaf of a generic type, keeping it readable:
+  Resolving a leaf of an arbitrary generic type, then dropping it:
 
   ```
-  fn res_gen<T: Copy>(x: T) -> T { /* resolve x */ x }
+  fn res_gen<T>(x: T) { /* resolve x */ }   // x is dropped
   ```
 
-  for an abstract type [T] (of size 1) whose resolution is [resolve E L T ΦT], with the
-  specification `ensures result == x` and the observation `ΦT x`, learnt when [x] is
-  resolved. The argument slot [x] is an owned place [own (OfTy T)]; it is resolved
-  ([type_resolve_oplace_res_instr], [lty_res_ofty], from [resolve] by [resolve_keep_copy])
-  to [own (OfRes T)], which is still readable: it is converted back to [OfTy T]
-  ([tctx_oplace_res_to_ofty], [ResOwn T]) and read; the slot is then dropped
-  ([type_drop_oplace_res_instr]).
+  for an abstract type [T] (of size 1), with no assumption on it (in particular no
+  [ResOwn T], no [Copy T]). The argument slot [x] is an owned place [own (OfTy T)]; it is
+  resolved ([type_resolve_oplace_res_instr], [lty_res_ofty] with the generic
+  [resolve_keep_just], nothing learnt, no lifetime needs to be alive) to [own (OfRes T)],
+  and the slot is dropped ([type_drop_oplace_res_instr]).
+
+  For an abstract [T] the resolved leaf [OfRes T] cannot be read: its resolved ownership
+  [ty_gho_res T] is only known to follow from the ownership ([ty_gho_res_of_own]), not to
+  give it back ([ResOwn]); a [Copy] type is instead resolved from a copy of its
+  ownership and kept readable ([res_gen_copy] below).
   *)
 
-  Context {𝔄} (T: type 𝔄) `{!Copy T} `{!ResOwn T} (ΦT: ~~𝔄 → proph_asn → Prop).
+  Context {𝔄} (T: type 𝔄).
   Hypothesis (HsT: ty_size T = 1%nat).
-  Hypothesis (HrT: ∀ E L, resolve E L T ΦT).
 
   Definition res_gen : val :=
+    fn: ["x"] :=
+      (Skip;; #☠);;                                  (* resolve x *)
+      (#☠;; delete [ #1; "x"]);;                     (* drop x *)
+      let: "ret" := new [ #0] in
+      return: ["ret"].
+
+  Definition res_gen_spec : fn_spec [𝔄] () () :=
+    λ _ post '-[(_, x)], λ mask π, ∀ ret, post ret mask π.
+
+  Lemma res_gen_type :
+    typed_val res_gen ((fn(∅; T) → ()) res_gen_spec) (res_gen, ()).
+  Proof using HsT T typeG0 Σ 𝔄.
+    unfold res_gen. unlock.
+    opose proof (@type_fn _ _ _ [𝔄] () () ()
+      (λ _: (), FP ∅ +[T] () AtomicClosed)
+      res_gen_spec _ [BNamed "x"] _ _ _) as H.
+    unlock in H. apply H. clear H.
+    intros c ϝ k wl. destruct wl as [vx []]. simpl_subst.
+    iApply (typed_body_impl with "[]"); last first. {
+      iApply typed_body_tctx_incl; [apply tctx_own_to_oplace|].
+      rewrite HsT.
+      (* resolve x, for an arbitrary T *)
+      iApply type_seq.
+      { apply (type_resolve_oplace_res_instr _ _ _ vx 1 (OfTy T) (OfRes T) 1
+          (λ x _ _, const (const True) x)).
+        apply lty_res_ofty, resolve_keep_just. }
+      { solve_typing. } { reflexivity. }
+      (* drop x *)
+      iApply type_seq.
+      { apply (type_drop_oplace_res_instr _ _ _ vx 1 1 (OfRes T)); [done|by rewrite /= HsT|done]. }
+      { solve_typing. } { reflexivity. }
+      iApply (type_new_subtype () 0). { lia. } { apply uninit_unit_1. }
+      iIntros (vret). simpl_subst.
+      iApply type_jump.
+      { rewrite elem_of_list_singleton. reflexivity. }
+      { solve_typing. }
+      { solve_typing. }
+      { reflexivity. }
+    }
+    intros post [[lx x] []] mask π. simpl.
+    intros Hspec. rewrite /trans_upper /trans_tail /=.
+    intros _ l0 junk. apply Hspec.
+    Unshelve. eapply (composeₛ empty_prod_to_unitₛ uninit0_to_unitₛ).
+  Qed.
+
+  (*
+  Resolving a leaf of a generic [Copy] type, keeping it readable:
+
+  ```
+  fn res_gen_copy<T: Copy>(x: T) -> T { /* resolve x */ x }
+  ```
+
+  for an abstract [Copy] type [T] (of size 1, no [ResOwn T]) whose resolution is
+  [resolve E L T ΦT], with the specification `ensures result == x` and the observation
+  `ΦT x`, learnt when [x] is resolved. The slot [x] is resolved from a copy of the
+  ownership of its value ([lty_res_copy]), so it stays [own (OfTy T)]; it is read and
+  dropped.
+  *)
+
+  Context `{!Copy T} (ΦT: ~~𝔄 → proph_asn → Prop).
+  Hypothesis (HrT: ∀ E L, resolve E L T ΦT).
+
+  Definition res_gen_copy : val :=
     fn: ["x"] :=
       (Skip;; #☠);;                                  (* resolve x *)
       let: "v" := !"x" in
@@ -37,28 +102,27 @@ Section place_res_gen.
       "ret" <- "v";;
       return: ["ret"].
 
-  Definition res_gen_spec : fn_spec [𝔄] 𝔄 () :=
+  Definition res_gen_copy_spec : fn_spec [𝔄] 𝔄 () :=
     λ _ post '-[(_, x)], λ mask π, ΦT x π → ∀ (lr: loc), post (lr, x) mask π.
 
-  Lemma res_gen_type :
-    typed_val res_gen ((fn(∅; T) → T) res_gen_spec) (res_gen, ()).
-  Proof using Copy0 HrT HsT ResOwn0 T typeG0 Σ ΦT 𝔄.
-    unfold res_gen. unlock.
+  Lemma res_gen_copy_type :
+    typed_val res_gen_copy ((fn(∅; T) → T) res_gen_copy_spec) (res_gen_copy, ()).
+  Proof using Copy0 HrT HsT T typeG0 Σ ΦT 𝔄.
+    unfold res_gen_copy. unlock.
     opose proof (@type_fn _ _ _ [𝔄] 𝔄 () ()
       (λ _: (), FP ∅ +[T] T AtomicClosed)
-      res_gen_spec _ [BNamed "x"] _ _ _) as H.
+      res_gen_copy_spec _ [BNamed "x"] _ _ _) as H.
     unlock in H. apply H. clear H.
     intros c ϝ k wl. destruct wl as [vx []]. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
       iApply typed_body_tctx_incl; [apply tctx_own_to_oplace|].
       rewrite HsT.
-      (* resolve x *)
+      (* resolve x, keeping it as it is *)
       iApply type_seq.
-      { apply (type_resolve_oplace_res_instr _ _ _ vx 1 (OfTy T) (OfRes T) 1 (λ x _ _, ΦT x)).
-        apply lty_res_ofty, resolve_keep_copy; [apply _|apply _|apply HrT]. }
+      { apply (type_resolve_oplace_res_instr _ _ _ vx 1 (OfTy T) (OfTy T) 1 (λ x _ _, ΦT x)).
+        apply lty_res_copy; [apply _|apply HrT]. }
       { solve_typing. } { reflexivity. }
       (* it is still readable *)
-      iApply typed_body_tctx_incl; [apply (tctx_oplace_res_to_ofty _ _ _ _ PHole T)|].
       iApply (type_let with "[]").
       { apply (type_read_oplace_instr _ _ _ vx 1 PHole T); [done|apply _]. }
       { solve_typing. } { reflexivity. }
@@ -84,3 +148,4 @@ Section place_res_gen.
 End place_res_gen.
 
 Print Assumptions res_gen_type.
+Print Assumptions res_gen_copy_type.

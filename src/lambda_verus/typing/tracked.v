@@ -28,6 +28,7 @@ Section tracked.
   Next Obligation. intros. by apply ty_shr_depth_mono. Qed.
   Next Obligation. intros. by apply ty_share. Qed.
   Next Obligation. intros. by apply ty_shr_guard_proph. Qed.
+  Next Obligation. intros. apply (ty_gho_res_of_own ty). Qed.
   
   Global Instance tracked_ne {𝔄} : NonExpansive (@tracked_ty 𝔄).
   Proof. solve_ne_type. Qed.

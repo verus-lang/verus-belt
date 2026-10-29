@@ -22,17 +22,21 @@ Section uniq_bor.
             ∗ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_)
       end;
 
-    (* The resolved ownership: the prophecy variable has been resolved, and the referent
-       has been shared at κ ([resolve_uniq_body]): a guard of its cells, its sharing
-       predicate and its persistent predicate, i.e. the ownership of [&shr{κ} ty] at the
-       current value of the referent (see [uniq_res_shr]). *)
+    (* The resolved ownership: either the borrow has not been resolved (its body is
+       kept: resolving needs κ to be alive, which is not known when an arbitrary value
+       is resolved by [resolve_keep_just], e.g. at a dead κ), or the prophecy variable
+       has been resolved, and the referent has been shared at κ ([resolve_uniq_body]):
+       a guard of its cells, its sharing predicate and its persistent predicate, i.e.
+       the ownership of [&shr{κ} ty] at the current value of the referent (see
+       [res_leaf_uniq_to_shr]). *)
     ty_gho_res (x : ~~ (uniq_borₛ 𝔄)) d g tid :=
       κ ⊑ ty_lft ty ∗
       match x with
         (l, x0, ξi, d', g', idx) =>
           ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_) ∗
-            (@[κ] &&{↑NllftG; 1}&&> l #↦!∗ ty.(ty_phys) x0 tid) ∗
-            ty.(ty_shr) κ x0 d' g' tid ∗ ty.(ty_gho_pers) x0 d' g' tid
+            (uniq_body ty x0 ξi d' g' idx κ tid l ∨
+             (@[κ] &&{↑NllftG; 1}&&> l #↦!∗ ty.(ty_phys) x0 tid) ∗
+             ty.(ty_shr) κ x0 d' g' tid ∗ ty.(ty_gho_pers) x0 d' g' tid)
       end;
     
     (* The persistent predicate does not contain the persistent predicate of the
@@ -222,6 +226,10 @@ Section uniq_bor.
       iApply "GP". iApply guards_llft_glb; [done|].
       iApply (guards_transitive_left with "Rκ Hκ0κ").
   Qed.
+  Next Obligation.
+    intros 𝔄 κ ty x d g tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
+    iIntros "($ & $ & Body & $)". by iLeft.
+  Qed.
   
   Global Instance uniq_bor_ne {𝔄} κ : NonExpansive (@uniq_bor 𝔄 κ).
   Proof. 
@@ -402,9 +410,9 @@ Section typing.
       as "(X & G & #Shr & #PtG & #Pers)"; [done|set_solver|].
     iModIntro.
     iApply step_fupdN_intro. { set_solver. }
-    iModIntro. iModIntro. iFrame "G In PtBase Shr PtG Pers". iSplit.
+    iModIntro. iModIntro. iFrame "G In PtBase". iSplit.
     - iApply proph_obs_eq; last by done. intros π. simpl. f_equal.
-    - iPureIntro. lia.
+    - iSplit; [iPureIntro; lia|]. iRight. by iFrame "Shr PtG Pers".
   Qed.
 
   Lemma uniq_subtype {𝔄} E L κ κ' (ty ty': type 𝔄) :

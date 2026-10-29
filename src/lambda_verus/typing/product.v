@@ -35,6 +35,7 @@ Section product.
     by iApply bi.laterN_intro.
   Qed.
   Next Obligation. intros. set_solver. Qed.
+  Next Obligation. by iIntros. Qed.
 
   Global Instance unit0_copy : Copy unit0.
   Proof.
@@ -113,6 +114,10 @@ Section product.
       iApply (llftl_incl_trans with "Incl"). iApply llftl_intersect_incl_l.
     - iApply (ty_shr_guard_proph with "LFT [] P2 S2"); [done|].
       iApply (llftl_incl_trans with "Incl"). iApply llftl_intersect_incl_r.
+  Qed.
+  Next Obligation.
+    intros. iIntros "[A B]".
+    iSplitL "A"; by iApply ty_gho_res_of_own.
   Qed.
 
   Global Instance prod_ty_ne {𝔄 𝔅} : NonExpansive2 (@prod_ty 𝔄 𝔅).

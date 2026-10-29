@@ -29,6 +29,7 @@ Section base.
   Next Obligation. iIntros. done. Qed.
   Solve All Obligations with solve_default_shr.
   Next Obligation. iIntros "* _ _ _ []". Qed.
+  Next Obligation. by iIntros. Qed.
   
   Global Instance base_copy {𝔄} : Copy (@base 𝔄).
   Proof. split=>//.

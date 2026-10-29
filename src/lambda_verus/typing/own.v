@@ -95,6 +95,10 @@ Section own.
     iNext. iIntros "#Rκ".
     leaf_goal laters to (n0 + (d'+1)*(g+1)). { lia. } by iApply "GP".
   Qed.
+  Next Obligation.
+    intros 𝔄 n ty x [|d] g tid; [by iIntros|]. iIntros "($ & $ & A)".
+    iNext. by iApply ty_gho_res_of_own.
+  Qed.
   
   Global Instance own_ne {𝔄} n : NonExpansive (@own_ptr 𝔄 n).
   Proof. solve_ne_type. Qed.

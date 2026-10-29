@@ -24,6 +24,7 @@ Section uninit.
   Next Obligation. set_solver. Qed.
   Next Obligation. by iIntros. Qed.
   Solve All Obligations with solve_default_shr.
+  Next Obligation. by iIntros. Qed.
 End uninit.
 
 Notation "↯" := uninit : lrust_type_scope.

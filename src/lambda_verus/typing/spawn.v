@@ -45,6 +45,7 @@ Section spawn.
   Next Obligation. iIntros (????????????) "$". Qed.
   Next Obligation. iIntros (𝔄 ty x ) "**". done. Qed.
   Solve All Obligations with solve_default_shr.
+  Next Obligation. intros. iIntros "H". iExact "H". Qed.
 
   Global Instance join_handle_ne {𝔄 ℭ} spec : NonExpansive (@join_handle 𝔄 ℭ spec).
   Proof. rewrite /join_handle /join_future. solve_ne_type. Qed.

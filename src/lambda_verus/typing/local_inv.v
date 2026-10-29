@@ -122,6 +122,7 @@ Section local_invariants.
   Next Obligation. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.
   Solve All Obligations with solve_default_shr.
+  Next Obligation. intros. iIntros "H". iExact "H". Qed.
   
   Program Definition local_closer_ty {𝔄 ℭ} (κ: lft) (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop) : type (local_invₛ ℭ) := ({|
     ty_size := 0;
@@ -164,6 +165,7 @@ Section local_invariants.
   Next Obligation. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.
   Solve All Obligations with solve_default_shr.
+  Next Obligation. intros. iIntros "H". iExact "H". Qed.
   
   Lemma local_inv_ty_send {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop)
       : Send ty → Send (local_inv_ty ty pred).

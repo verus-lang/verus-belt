@@ -138,6 +138,7 @@ Section S.
     move=> n *. iIntros "#LFT #?". iApply (ty_shr_guard_proph with "LFT"); [done|].
     iApply llftl_incl_trans; [done|]. iDestruct (Tn_ty_lft_const n 0) as "[_ $]".
   Qed.
+  Next Obligation. move=> >. apply ty_gho_res_of_own. Qed.
 
   Program Definition fix_ty: type 𝔄 := {|
     ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
@@ -189,6 +190,7 @@ Section S.
     apply limit_preserving_entails; [done|]=> ??? Eq.
     repeat (apply Eq || f_equiv).
   Qed.
+  Next Obligation. intros. iIntros "H". iExact "H". Qed.
 
   Lemma fix_ty_Tn'_dist n : fix_ty ≡{n}≡ Tn' (3 + n).
   Proof. split=>// *; apply conv_compl. Qed.

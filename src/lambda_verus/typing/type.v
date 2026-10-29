@@ -399,13 +399,15 @@ Record type `{!typeG Σ} 𝔄 := {
   ty_gho_own: ~~𝔄 → nat → nat → thread_id → iProp Σ;
   (* The resolved ownership: what remains of the ownership of a value once it has been
      resolved ([resolve_keep]), and can still be read (see the place type [OfRes] of
-     [typing/ltype.v]). For [&uniq{κ} ty] it is the shared view of the referent at κ
-     (as produced by [resolve_uniq_body]); it is structural for [own_ptr], products,
-     sums, [mod_ty] and [tracked]; for the other types it is [ty_gho_own]. There is no
-     law about it in the record: its relation to [ty_gho_own] is given by [resolve_keep]
-     (per type) and by [ResOwn] (types where it is [ty_gho_own]); it is not part of
-     the OFE structure of types (it is not used for fixpoints: [fix_ty] takes its
-     [ty_gho_own]). *)
+     [typing/ltype.v]). For [&uniq{κ} ty] it is either the ownership (not resolved,
+     e.g. at a dead κ) or the shared view of the referent at κ (as produced by
+     [resolve_uniq_body]); it is structural for [own_ptr], products,
+     sums, [mod_ty] and [tracked]; for the other types it is [ty_gho_own]. The only law
+     about it in the record is [ty_gho_res_of_own] (the ownership gives the resolved
+     ownership, without resolving anything); its other relations to [ty_gho_own] are
+     given by [resolve_keep] (per type) and by [ResOwn] (types where it is
+     [ty_gho_own]); it is not part of the OFE structure of types (it is not used for
+     fixpoints: [fix_ty] takes its [ty_gho_own]). *)
   ty_gho_res: ~~𝔄 → nat → nat → thread_id → iProp Σ;
   (* TODO: no type has actually phys depending on tid, we should remove it *)
   ty_phys: ~~𝔄 → thread_id → list fancy_val;
@@ -463,6 +465,13 @@ Record type `{!typeG Σ} 𝔄 := {
           (R &&{↑NllftG; n}&&> @[κ]) -∗
           (R &&{↑NllftG; n + (d+1)*(g+1)}&&> 1:[ξ])
       );
+
+  (* The resolved ownership is weaker than the ownership: any value can be "resolved" by
+     forgetting (part of) its ownership, without any knowledge about its lifetimes (for
+     [&uniq{κ} ty], the unresolved disjunct of its [ty_gho_res]). So every type is
+     resolved by [resolve_keep_just]. This is the last field, so that its obligation is
+     the last one of each definition. *)
+  ty_gho_res_of_own x d g tid : ty_gho_own x d g tid -∗ ty_gho_res x d g tid;
   
  (* ty_gho_own_depth_mono d g d' g' vπ tid :
     (d ≤ d')%nat → (g ≤ g')%nat → ty_gho_own vπ d g tid -∗ ty_gho_own vπ d' g' tid;
@@ -543,6 +552,7 @@ Arguments ty_shr_lft_mono {_ _ _}.
 Arguments ty_shr_depth_mono {_ _ _}.
 Arguments ty_share {_ _ _}.
 Arguments ty_shr_guard_proph {_ _ _}.
+Arguments ty_gho_res_of_own {_ _ _}.
 
 Notation ty_lft ty := (lft_intersect_list ty.(ty_lfts)).
 
@@ -727,6 +737,7 @@ Next Obligation.
   - move=> > ??. iIntros "#A". iSplit; [by iApply st_gho_depth_mono|]. by iIntros "_".
   - move=> >. apply st_guard_proph.
 Qed.
+Next Obligation. by iIntros. Qed.
 
 Coercion ty_of_st: simple_type >-> type.
 
@@ -806,6 +817,7 @@ Next Obligation.
   intros. exfalso.
   match goal with H : _ ∈ ξl _ |- _ => rewrite gt_non_prophetic in H; set_solver end.
 Qed.
+Next Obligation. by iIntros. Qed.
 
 Coercion ty_of_gt: ghost_type >-> type.
 
@@ -1613,12 +1625,13 @@ Section resolve.
     iApply proph_obs_impl; [|done]=>/= ?. apply Imp.
   Qed.
 
-  (** Nothing is learnt from a type whose resolved ownership is its ownership. *)
-  Lemma resolve_keep_just {𝔄} (ty: type 𝔄) `{!ResOwn ty} E L :
+  (** Every type is resolved, learning nothing, by forgetting the part of its ownership
+      that is not resolved ([ty_gho_res_of_own]; no lifetime needs to be alive). *)
+  Lemma resolve_keep_just {𝔄} (ty: type 𝔄) E L :
     resolve_keep E L ty (const (const True)).
   Proof.
     move=> > ?. iIntros "_ _ _ _ _ _ $ ty !>". iApply step_fupdN_full_intro.
-    rewrite res_own. iFrame. by iApply proph_obs_true.
+    iDestruct (ty_gho_res_of_own with "ty") as "$". by iApply proph_obs_true.
   Qed.
 End resolve.
 

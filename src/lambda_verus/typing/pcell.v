@@ -29,6 +29,7 @@ Section pcell.
   Next Obligation. move => *. iIntros "?". auto. Qed.
   Next Obligation. move => *. by iIntros "?". Qed.
   Solve All Obligations with solve_default_shr.
+  Next Obligation. intros. iIntros "H". iExact "H". Qed.
   
   Global Instance pcell_res_own n : ResOwn (pcell_ty n).
   Proof. done. Qed.
@@ -134,6 +135,10 @@ Section points_to.
       as "GP".
     iNext. iIntros "#Rκ".
     leaf_goal laters to (n0 + (d'+1)*(g+1)). { lia. } by iApply "GP".
+  Qed.
+  Next Obligation.
+    intros 𝔄 ty x [|d] g tid; [by iIntros|]. iIntros "[$ A]". iNext.
+    by iApply ty_gho_res_of_own.
   Qed.
 
   Global Instance cell_points_to_res_own {𝔄} (ty: type 𝔄) :
