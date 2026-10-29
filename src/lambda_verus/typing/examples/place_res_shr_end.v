@@ -1,0 +1,146 @@
+From iris.proofmode Require Import proofmode.
+From lrust.typing Require Export type function product programs own cont uninit int
+  uniq_bor shr_bor borrow place place_own place_resolve place_puniq place_pshr place_res
+  place_res_rslv place_res_ops.
+From lrust.lang Require Import lang notation new_delete.
+Set Default Proof Using "Type".
+
+Section place_res_shr_end.
+  Context `{!typeG Σ}.
+
+  (*
+  Resolving a unique borrow while a leaf of its referent is shared, and reading the leaf
+  after the shared borrow has ended:
+
+  ```
+  fn res_shr_end<'a>(x: &'a mut (i32, i32)) -> i32 {
+      let c;
+      { let r = &( *x).0;         // at a local lifetime
+        /* resolve x */           // ( *x).0 is shared-blocked
+        c = *r; }                 // the local lifetime ends
+      let a = ( *x).0;            // read the leaf, shared at 'a
+      let b = ( *x).1;
+      a + b + c                   // x is dropped
+  }
+  ```
+
+  with the specification `ensures result == 2 * ( *x).0 + ( *x).1, fin(x) == cur(x)`. As
+  [res_shr], `( *x).0` is shared at the local lifetime `'l` (the shared-blocked leaf
+  [ShrBlocked int ('a ⊓ 'l)]) and `x` is resolved ([lty_res_uniq_cpd], with `'a ⊓ 'l`
+  alive); `*r` is read; when `'l` ends, the shared-blocked leaf of the view is unblocked
+  ([unblock_tctx_oplace_res_shr]: the inheritance kept in the view is fired, and the leaf
+  is shared at `'a`); it is then read as an ordinary leaf of the view
+  ([type_read_oplace_res_instr]), as is `( *x).1`; the slot is dropped.
+  *)
+
+  Definition res_shr_end : val :=
+    fn: ["x"] :=
+      ReBor;; ReBor;;                               (* unfold *x, *x as a pair *)
+      Newlft;;
+      let: "r" := Share;; !"x" in                   (* r = &( *x).0 *)
+      (Skip;; #☠);;                                  (* resolve x *)
+      let: "c" := !"r" in                           (* *r *)
+      Endlft;;                                      (* unblock ( *x).0 in the view *)
+      let: "a" := Skip;; !(!"x") in                 (* ( *x).0 *)
+      let: "b" := Skip;; !(!"x" +ₗ #1) in           (* ( *x).1 *)
+      (#☠;; delete [ #1; "x"]);;                     (* drop x *)
+      let: "s" := "a" + "b" in
+      let: "t" := "s" + "c" in
+      let: "ret" := new [ #1] in
+      "ret" <- "t";;
+      return: ["ret"].
+
+  Definition res_shr_end_spec : fn_spec [uniq_borₛ (Zₛ * Zₛ)] Zₛ () :=
+    λ _ post '-[(_, m)], λ mask π,
+      let c := uniq_bor_current (𝔄:=Zₛ * Zₛ) m in
+      uniq_bor_future (𝔄:=Zₛ * Zₛ) m π = c →
+      ∀ (lr: loc), post (lr, c.1 + c.2 + c.1)%Z mask π.
+
+  Lemma res_shr_end_type :
+    typed_val res_shr_end ((fn<α>(∅; &uniq{α} (int * int)) → int) res_shr_end_spec) (res_shr_end, ()).
+  Proof.
+    unfold res_shr_end. unlock.
+    opose proof (@type_fn _ _ _ [uniq_borₛ (Zₛ * Zₛ)] Zₛ () ()
+      (λ α, FP ∅ +[&uniq{α} (int * int)]%T int%T AtomicClosed)
+      res_shr_end_spec _ [BNamed "x"] _ _ _) as H.
+    unlock in H. apply H. clear H.
+    intros α ϝ k wl. destruct wl as [vx []]. simpl_subst.
+    iApply (typed_body_impl with "[]"); last first. {
+      iApply typed_body_tctx_incl; [apply tctx_own_to_oplace|].
+      (* unfold *x, *x as a pair *)
+      iApply type_seq.
+      { apply (type_unfold_oplace_uniq_instr _ _ _ vx 1 PHole (int * int) α). solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iApply type_seq.
+      { apply (type_unfold_oplace_prod_instr _ _ _ vx 1 (PUniq α PHole) int int).
+        solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iApply (type_newlft []). iIntros (γ).
+      (* r = &( *x).0, at α ⊓ γ *)
+      iApply (type_let with "[]").
+      { apply (type_share_oplace_deep_instr _ _ _ vx 1 γ (PUniq α (PFst PHole (OfTy int))) int);
+          [done|solve_typing|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vr). simpl_subst.
+      (* resolve x *)
+      iApply type_seq.
+      { apply (type_resolve_oplace_res_instr _ _ _ vx 1
+          (UniqLty (ProdLty (ShrBlocked int (α ⊓ γ)) (OfTy int)) α)
+          (ResUniqLty (ProdLty (ShrBlocked int (α ⊓ γ)) (OfTy int)) α) 1
+          (λ x ζm q π, (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
+            vπ (uniq_bor_current x) π)).
+        eapply lty_res_impl; [apply lty_res_uniq_cpd; [solve_typing|solve_typing|done|done]|].
+        intros [[[[[l' [c1 c2]] ξi] d] g] idx] ζm q π. done. }
+      { solve_typing. } { reflexivity. }
+      (* *r *)
+      iApply (type_let with "[]").
+      { eapply (type_deref_instr (𝔅 := Zₛ) _ int); [apply int_stack_okay|done|].
+        apply (read_shr int (α ⊓ γ)); [apply int_copy|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vc). simpl_subst.
+      (* end γ: unblock ( *x).0 in the view *)
+      iApply (type_endlft _ _ _ _ γ).
+      { solve_typing. }
+      { apply unblock_tctx_cons_just_hasty. apply unblock_tctx_cons_just_hasty.
+        eapply (unblock_tctx_oplace_res_shr vx 1 γ PHole α (PFst PHole (OfTy int)) int);
+          [solve_typing|solve_typing|].
+        apply unblock_tctx_cons_just_hasty. apply unblock_tctx_nil. }
+      (* ( *x).0 *)
+      iApply (type_let with "[]").
+      { apply (type_read_oplace_res_instr _ _ _ vx 1 PHole α
+          (PFst PHole (OfTy int)) int); [done|apply _|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      iIntros (va). simpl_subst.
+      (* ( *x).1 *)
+      iApply (type_let with "[]").
+      { apply (type_read_oplace_res_instr _ _ _ vx 1 PHole α
+          (PSnd (OfTy int) PHole) int); [done|apply _|solve_typing]. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vb). simpl_subst.
+      (* drop x *)
+      iApply type_seq.
+      { apply (type_drop_oplace_res_instr _ _ _ vx 1 1
+          (ResUniqLty (ProdLty (OfTy int) (OfTy int)) α)); [done|done|done]. }
+      { solve_typing. } { reflexivity. }
+      iApply (type_plus va vb). { solve_typing. }
+      iIntros (vs). simpl_subst.
+      iApply (type_plus vs vc). { solve_typing. }
+      iIntros (vt). simpl_subst.
+      iApply (type_new 1). { lia. } iIntros (vret). simpl_subst.
+      iApply type_assign. { solve_typing. } { by apply write_own. }
+      { apply (resolve'_just _ _ _ (const True)). apply resolve_just. }
+      iApply type_jump.
+      { rewrite elem_of_list_singleton. reflexivity. }
+      { solve_typing. }
+      { solve_typing. }
+      { reflexivity. }
+    }
+    intros post [[lx m] []] mask π. simpl.
+    intros Hspec. rewrite /trans_upper /trans_tail /=.
+    intros Hres z <- [c [z' [x' [z'' []]]]] (<- & <- & -> & <- & _) l _ z0 ->.
+    apply Hspec. destruct m as [[[[[l' [c1 c2]] ξi] d] g] idx]. simpl in *.
+    rewrite uniq_bor_future_eq. exact Hres.
+  Qed.
+End place_res_shr_end.
+
+Print Assumptions res_shr_end_type.

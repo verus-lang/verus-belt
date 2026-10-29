@@ -182,7 +182,7 @@ Section memcpy_res.
         iExists d', g'. iSplit; [done|]. rewrite lty_pat_plug lty_rfn_plug.
         rewrite (view_rleaf_rfn _ _ _ _ _ _ Hl).
         iApply ("Cl" $! lt0 (lty_pat lt0) (inl (PlaceIn zh)) dh gh d' g'
-          with "[%] [//] [%] Vh"); [by rewrite (view_rleaf_size _ _ _ Hl)|lia]. }
+          with "[%] [//] [//] [%] Vh"); [by rewrite (view_rleaf_size _ _ _ Hl)|lia]. }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
     apply HΦ in Hπ. by apply Hπ.
   Qed.

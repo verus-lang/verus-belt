@@ -200,6 +200,11 @@ Section lty.
 
   Definition lty_blocked_lfts {𝔄} (lt: lty 𝔄) : list lft := pat_blk_lfts (lty_pat lt).
 
+  (** Leaves (unblocked, blocked or shared-blocked). The view of a nested unique borrow
+      whose referent is a leaf keeps what its folding needs ([view_uniq]). *)
+  Definition lty_leafb {𝔄} (lt: lty 𝔄) : bool :=
+    match lt with OfTy _ | Blocked _ _ | ShrBlocked _ _ => true | _ => false end.
+
   Lemma lty_core_idemp {𝔄} (lt: lty 𝔄) : lty_core (lty_core lt) = lty_core lt.
   Proof. induction lt; simpl; rewrite ?IHlt ?IHlt1 ?IHlt2; done. Qed.
 
@@ -433,8 +438,10 @@ Section ltype_own.
       - a blocked leaf keeps its inheritance, in a borrow at [κ] (it is shared at [κ] once
         it has been unblocked), with a guard of the cells of its location;
       - a shared-blocked leaf (at [α]) is shared at [κ ⊓ α]: its value does not change,
-        and it is shared at [α] already (it is readable while [α] is alive; it is not
-        unblocked in the view). *)
+        and it is shared at [α] already (it is readable while [α] is alive); it also keeps
+        its inheritance, in a borrow at [κ] (at some smaller depths), with a guard of the
+        cells of its location, so that it is shared at [κ] once [α] has ended
+        ([unblock_tctx_oplace_res_shr] of [typing/place_res_ops.v]). *)
   Definition view_leaf {𝔄} (κ: lft) (m: nat) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
       (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
     match r with
@@ -445,7 +452,9 @@ Section ltype_own.
             (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_) ∗ &{κ} (blocked_owned m ty α lr tid l)
         | PatShrBlocked α => ∃ x, place_rfn_rel lr x ∗
             (@[κ ⊓ α] &&{↑NllftG; g+1}&&> l.1 ↦[^ l.2]!∗ ty.(ty_phys) x tid) ∗
-            ty.(ty_shr) (κ ⊓ α) x d g tid ∗ ty.(ty_gho_pers) x d g tid
+            ty.(ty_shr) (κ ⊓ α) x d g tid ∗ ty.(ty_gho_pers) x d g tid ∗
+            (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_) ∗
+            ∃ d' g', ⌜d' ≤ d ∧ g' ≤ g⌝ ∗ &{κ} ([†α] ={lazyE}=∗ ofty_owned m ty x d' g' tid l)
         | _ => ∃ x, place_rfn_rel lr x ∗
             (@[κ] &&{↑NllftG; g+1}&&> l.1 ↦[^ l.2]!∗ ty.(ty_phys) x tid) ∗
             ty.(ty_shr) κ x d g tid ∗ ty.(ty_gho_pers) x d g tid
@@ -454,15 +463,24 @@ Section ltype_own.
 
   (** The view of a nested unique borrow (at [κ'], viewed at [κ]): a guard of its pointer
       cell, and the view of its referent at [κ ⊓ κ'] (the referent itself stays with the
-      lender of [κ'], its prophecy variable is not resolved). *)
-  Definition view_uniq {𝔅} (κ κ': lft) (ty: type 𝔅)
+      lender of [κ'], its prophecy variable is not resolved). If its referent is a leaf
+      ([b], [lty_leafb]), the view also keeps a guard of the token of its prophecy
+      variable at [κ ⊓ κ'] and the persistent component of its body, at some index (both
+      from the sharing of [&uniq{κ'} ty] at [κ]), so that it can be folded to the sharing
+      of [&uniq{κ'} ty] ([lty_view_fold] of [typing/place_res_ops.v]). (A compound
+      referent has a reserved prophecy variable, whose token is not available.) *)
+  Definition view_uniq {𝔅} (κ κ': lft) (ty: type 𝔅) (b: bool)
       (child: prfn 𝔅 → nat → nat → thread_id → cloc → iProp Σ)
       (r: prfn (uniq_borₛ 𝔅)) (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
     match r with
     | inl _ => False
     | inr (l', r', ξi) =>
         (@[κ] &&{↑NllftG; g+1}&&> l.1 ↦[^ l.2]∗ [ #l'.1]) ∗ κ' ⊑ ty_lft ty ∗
-        ∃ d' g', ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ child r' d' g' tid l'
+        ∃ d' g', ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ child r' d' g' tid l' ∗
+          (if b then ∃ (x0: ~~𝔅) idx,
+             (@[κ ⊓ κ'] &&{↑NllftG; g+1}&&> 1:[uniq_prvar x0 ξi]) ∗
+             uniq_body_pers_component ty x0 ξi d' g' idx κ' tid l'
+           else True)
     end%I.
 
   (** The view of an owned pointer: a guard of its pointer cell, and the view of its
@@ -505,7 +523,7 @@ Section ltype_own.
     match lt in lty 𝔄 return nat → lpat → prfn 𝔄 → nat → nat → thread_id → cloc → iProp Σ with
     | OfTy ty | Blocked ty _ | ShrBlocked ty _ => λ m, view_leaf κ m ty
     | UniqLty lt' κ' => λ m p,
-        view_uniq κ κ' (lty_fold lt') (lty_view lt' (κ ⊓ κ') 0 (pat_uniq p))
+        view_uniq κ κ' (lty_fold lt') (lty_leafb lt') (lty_view lt' (κ ⊓ κ') 0 (pat_uniq p))
     | OwnPtrLty n lt' => λ m p,
         view_own κ (lty_size lt') (lty_view lt' κ (m + 1) (pat_own p))
     | ProdLty lt1 lt2 => λ m p,
@@ -690,12 +708,15 @@ Section ltype_lemmas.
 
   (** ** The core *)
 
+  Lemma lty_leafb_core {𝔄} (lt: lty 𝔄) : lty_leafb (lty_core lt) = lty_leafb lt.
+  Proof. by destruct lt. Qed.
+
   (** Only the core of a place type matters for its view. *)
   Lemma lty_view_core {𝔄} (lt: lty 𝔄) : lty_view (lty_core lt) = lty_view lt.
   Proof.
     induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ| |];
       simpl; [done|done| | | |done| | |done|done].
-    - by rewrite lty_fold_core IH.
+    - by rewrite lty_fold_core lty_leafb_core IH.
     - by rewrite lty_size_core IH.
     - by rewrite lty_size_core IH1 IH2.
     - by rewrite lty_size_core IH.
