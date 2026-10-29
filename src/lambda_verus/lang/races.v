@@ -15,16 +15,29 @@ Inductive next_access_head : expr → state → access_kind * order → loc → 
     next_access_head (Write ord (Lit $ LitLoc l) e) σ (WriteAcc, ord) l
 | Access_cas_fail l st e1 lit1 e2 lit2 litl σ :
     to_val e1 = Some (LitV lit1) → to_val e2 = Some (LitV lit2) →
-    lit_neq lit1 litl → σ.1 !! l = Some (st, LitV litl) →
+    lit_neq lit1 litl → σ.1 !! l = Some (st, word_to_byte (LitV litl)) →
     next_access_head (CAS (Lit $ LitLoc l) e1 e2) σ (ReadAcc, ScOrd) l
 | Access_cas_suc l st e1 lit1 e2 lit2 litl σ :
     to_val e1 = Some (LitV lit1) → to_val e2 = Some (LitV lit2) →
-    lit_eq σ lit1 litl → σ.1 !! l = Some (st, LitV litl) →
+    lit_eq σ lit1 litl → σ.1 !! l = Some (st, word_to_byte (LitV litl)) →
     next_access_head (CAS (Lit $ LitLoc l) e1 e2) σ (WriteAcc, ScOrd) l
 | Access_free n l σ i :
     0 ≤ i < n →
     next_access_head (Free (Lit $ LitInt n) (Lit $ LitLoc l))
-                     σ (FreeAcc, Na2Ord) (l +ₗ i).
+                     σ (FreeAcc, Na2Ord) (l +ₗ i)
+(* The MiniRust layer: accesses to every byte of the range *)
+| Access_load ord m l (i : nat) σ :
+    (i < mty_size m)%nat →
+    next_access_head (Load ord m (Lit $ LitLoc l)) σ (ReadAcc, ord) (l +ₗ i)
+| Access_store ord m l e (i : nat) σ :
+    is_Some (to_val e) → (i < mty_size m)%nat →
+    next_access_head (Store ord m (Lit $ LitLoc l) e) σ (WriteAcc, ord) (l +ₗ i)
+| Access_memcopy_dst ord n l1 l2 (i : nat) σ :
+    (i < n)%nat →
+    next_access_head (MemCopy ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2)) σ (WriteAcc, ord) (l1 +ₗ i)
+| Access_memcopy_src ord n l1 l2 (i : nat) σ :
+    (i < n)%nat →
+    next_access_head (MemCopy ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2)) σ (ReadAcc, ord) (l2 +ₗ i).
 
 (* Some sanity checks to make sure the definition above is not entirely insensible. *)
 Goal ∀ e1 e2 e3 σ, base_reducible (CAS e1 e2 e3) σ →
@@ -48,6 +61,23 @@ Goal ∀ e1 e2 σ, base_reducible (Free e1 e2) σ →
               ∃ a l, next_access_head (Free e1 e2) σ a l.
 Proof.
   intros ?? σ (?&?&?&?&?). inversion H; do 2 eexists; eapply Access_free; done.
+Qed.
+
+Goal ∀ o m e σ, base_reducible (Load o m e) σ → (0 < mty_size m)%nat →
+              ∃ a l, next_access_head (Load o m e) σ a l.
+Proof.
+  intros ??? σ (?&?&?&?&?) ?. inversion H; do 2 eexists; by eapply (Access_load _ _ _ 0).
+Qed.
+Goal ∀ o m e1 e2 σ, base_reducible (Store o m e1 e2) σ → (0 < mty_size m)%nat →
+              ∃ a l, next_access_head (Store o m e1 e2) σ a l.
+Proof.
+  intros ???? σ (?&?&?&?&?) ?. inversion H; do 2 eexists;
+    (eapply (Access_store _ _ _ _ 0); [by eexists|done]).
+Qed.
+Goal ∀ o n e1 e2 σ, base_reducible (MemCopy o n e1 e2) σ → (0 < n)%nat →
+              ∃ a l, next_access_head (MemCopy o n e1 e2) σ a l.
+Proof.
+  intros ???? σ (?&?&?&?&?) ?. inversion H; do 2 eexists; by eapply (Access_memcopy_dst _ _ _ _ 0).
 Qed.
 
 Definition next_access_thread (e: expr) (σ : state)
@@ -92,7 +122,16 @@ Lemma next_access_base_reducible_state e σ a l :
   | (FreeAcc, _) => ∃ v ls, σ.1 !! l = Some (ls, v)
   end.
 Proof.
-  intros Ha (κ&e'&σ'&ef&Hstep) Hrednonstuck. destruct Ha; inv_head_step; eauto.
+  intros Ha (κ&e'&σ'&ef&Hstep) Hrednonstuck. destruct Ha; inv_head_step; eauto;
+    try match goal with
+    | H : mem_range ?P _ ?l ?bs |- context [?l +ₗ Z.of_nat ?i] =>
+        let ls := fresh "ls" in let b := fresh "b" in let Hl := fresh "Hl" in
+        let HP := fresh "HP" in
+        destruct (mem_range_lookup_1 _ _ _ _ i H) as (ls & b & Hl & HP & _); [lia|];
+        try unfold is_reading in HP; try unfold is_reading_S in HP; simpl in HP;
+        repeat match type of HP with ∃ _, _ => destruct HP as [? HP] end;
+        subst; by eauto
+    end.
   - destruct n; first by eexists. exfalso. eapply Hrednonstuck; last done.
     by eapply CasStuckS.
   - exfalso. eapply Hrednonstuck; last done.
@@ -100,12 +139,83 @@ Proof.
   - match goal with H : ∀ m, _ |- _ => destruct (H i) as [_ [[]?]] end; eauto.
 Qed.
 
+(** An access needs its location to be allocated. *)
+Lemma next_access_head_is_Some e σ0 σ a l :
+  next_access_head e σ0 a l → base_reducible e σ → is_Some (σ.1 !! l).
+Proof.
+  intros Ha (κ&e'&σ'&ef&Hstep). destruct Ha; inv_head_step; eauto;
+    try match goal with
+    | H : mem_range ?P _ ?l ?bs |- context [?l +ₗ Z.of_nat ?i] =>
+        let ls := fresh "ls" in let b := fresh "b" in let Hl := fresh "Hl" in
+        destruct (mem_range_lookup_1 _ _ _ _ i H) as (ls & b & Hl & _); [lia|];
+        by rewrite Hl
+    end.
+  match goal with H : ∀ m, _ |- _ => by apply (H i) end.
+Qed.
+
+(** Accesses that are not atomic do not depend on the state. *)
+Lemma next_access_head_state_indep e σ σ' a l :
+  next_access_head e σ a l → a.2 ≠ ScOrd → next_access_head e σ' a l.
+Proof. destruct 1; simpl; intros ?; try done; by econstructor. Qed.
+
+(** Accesses only depend on the bytes and the domain of the state, not on the lock
+    states. *)
+Lemma next_access_head_bytes e σ σ' a l :
+  next_access_head e σ a l →
+  (∀ l', snd <$> σ.1 !! l' = snd <$> σ'.1 !! l') →
+  next_access_head e σ' a l.
+Proof.
+  intros Ha Hσ. assert (Hdom : ∀ l', σ.1 !! l' = None ↔ σ'.1 !! l' = None).
+  { intros l'. specialize (Hσ l'). rewrite -!fmap_None. by rewrite Hσ. }
+  destruct Ha; try by econstructor.
+  - specialize (Hσ l). rewrite H2 /= in Hσ.
+    destruct (σ'.1 !! l) as [[st' b]|] eqn:?; simplify_eq/=.
+    econstructor; done.
+  - specialize (Hσ l). rewrite H2 /= in Hσ.
+    destruct (σ'.1 !! l) as [[st' b]|] eqn:?; simplify_eq/=.
+    eapply Access_cas_suc; [done|done| |done]. by eapply lit_eq_state.
+Qed.
+
+Lemma lookup_mem_alter_snd f l n (σ : state') l' :
+  snd <$> mem_alter f l n σ !! l' = snd <$> σ !! l'.
+Proof.
+  revert l. induction n as [|n IH]; intros l; simpl; [done|].
+  destruct (decide (l = l')) as [<-|].
+  - rewrite lookup_alter. rewrite -IH. by destruct (mem_alter f (l +ₗ 1) n σ !! l).
+  - by rewrite lookup_alter_ne.
+Qed.
+
+Lemma next_access_head_Na1Ord_bytes e1 e2 ef σ1 σ2 κ a l :
+  next_access_head e1 σ1 (a, Na1Ord) l →
+  base_step e1 σ1 κ e2 σ2 ef →
+  ∀ l', snd <$> σ1.1 !! l' = snd <$> σ2.1 !! l'.
+Proof.
+  intros Ha Hstep l'. inversion Ha; subst; clear Ha; inv_head_step; simpl;
+    rewrite ?lookup_mem_alter_snd //.
+  all: destruct (decide (l0 = l')) as [<-|]; [by rewrite lookup_insert; simplify_map_eq|];
+    by rewrite lookup_insert_ne.
+Qed.
+
+(** After the second phase of a non-atomic write, the location is not locked. *)
+Lemma next_access_head_Na2Ord_write_step e1 e2 ef σ1 σ2 κ l :
+  next_access_head e1 σ1 (WriteAcc, Na2Ord) l →
+  base_step e1 σ1 κ e2 σ2 ef →
+  ∃ b, σ2.1 !! l = Some (RSt 0, b).
+Proof.
+  intros Ha Hstep. inversion Ha; subst; clear Ha; inv_head_step; simpl; eauto.
+  - destruct (lookup_lt_is_Some_2 (encode_value m v) i) as [b Hb]; [by rewrite length_encode_value|].
+    exists b. by apply lookup_mem_write_in.
+  - destruct (lookup_lt_is_Some_2 bs2 i) as [b Hb]; [lia|].
+    exists b. by apply lookup_mem_write_in.
+Qed.
+
 Lemma next_access_head_Na1Ord_step e1 e2 ef σ1 σ2 κ a l :
   next_access_head e1 σ1 (a, Na1Ord) l →
   base_step e1 σ1 κ e2 σ2 ef →
   next_access_head e2 σ2 (a, Na2Ord) l.
 Proof.
-  intros Ha Hstep. inversion Ha; subst; clear Ha; inv_head_step; constructor; by rewrite to_of_val.
+  intros Ha Hstep. inversion Ha; subst; clear Ha; inv_head_step; econstructor;
+    rewrite ?to_of_val; eauto.
 Qed.
 
 Lemma next_access_head_Na1Ord_concurent_step e1 e1' e2 e'f σ σ' κ a1 a2 l :
@@ -114,15 +224,8 @@ Lemma next_access_head_Na1Ord_concurent_step e1 e1' e2 e'f σ σ' κ a1 a2 l :
   next_access_head e2 σ a2 l →
   next_access_head e2 σ' a2 l.
 Proof.
-  intros Ha1 Hstep Ha2. inversion Ha1; subst; clear Ha1; inv_head_step;
-  destruct Ha2; simplify_eq; econstructor; eauto; try apply lookup_insert.
-  (* Oh my. FIXME. *)
-  - eapply lit_eq_state; last done.
-    setoid_rewrite <-(not_elem_of_dom (D:=gset loc)). rewrite dom_insert_L.
-    cut (is_Some (σ.1 !! l)); last by eexists. rewrite -(elem_of_dom (D:=gset loc)). set_solver+.
-  - eapply lit_eq_state; last done.
-    setoid_rewrite <-(not_elem_of_dom (D:=gset loc)). rewrite dom_insert_L.
-    cut (is_Some (σ.1 !! l)); last by eexists. rewrite -(elem_of_dom (D:=gset loc)). set_solver+.
+  intros Ha1 Hstep Ha2. eapply next_access_head_bytes; [done|].
+  by eapply next_access_head_Na1Ord_bytes.
 Qed.
 
 Lemma next_access_head_Free_concurent_step e1 e1' e2 e'f σ σ' κ o1 a2 l :
@@ -142,9 +245,8 @@ Proof.
       destruct l; intros [= ?]. lia. }
   assert (FREE' : σ'.1 !! l = None).
   { inversion Ha1; clear Ha1; inv_head_step. auto. }
-  destruct Hred2 as (κ'&e2'&σ''&ef&?).
-  inversion Ha2; clear Ha2; inv_head_step.
-  eapply (@is_Some_None (lock_state * val)). rewrite -FREE'. naive_solver.
+  destruct (next_access_head_is_Some _ _ _ _ _ Ha2 Hred2) as [? Hl].
+  by rewrite FREE' in Hl.
 Qed.
 
 Lemma safe_step_not_reduce_to_stuck el σ K e e' σ' ef κ :
@@ -271,20 +373,25 @@ Proof.
   { destruct a2 as [[]?]; inversion 1.
     eauto using next_access_head_Free_concurent_step. }
 
-  destruct Ha1 as [[]|[]| | |], Ha2 as [[]|[]| | |]=>//=; simpl in *;
+  (* Two second phases of non-atomic writes: the first one unlocks the location,
+     but the second one still needs it locked. *)
+  assert (Hw1 : a1 = (WriteAcc, Na2Ord) → ∃ b, σ1'.1 !! l = Some (RSt 0, b)).
+  { intros ->. by eapply next_access_head_Na2Ord_write_step. }
+  assert (Hw2 : a2 = (WriteAcc, Na2Ord) → ∃ b, σ1'.1 !! l = Some (WSt, b)).
+  { intros ->.
+    have := next_access_base_reducible_state _ _ _ _
+      (next_access_head_state_indep _ _ σ1' _ _ Ha2 ltac:(done)) Hrede1_2 Hnse1_2.
+    done. }
+
+  destruct Ha1 as [[]|[]| | | |[]|[]|[]|[]], Ha2 as [[]|[]| | | |[]|[]|[]|[]]=>//=; simpl in *;
     repeat match goal with
     | H : _ = Na1Ord → _ |- _ => specialize (H (eq_refl Na1Ord)) || clear H
+    | H : (WriteAcc, Na2Ord) = (WriteAcc, Na2Ord) → _ |- _ => specialize (H eq_refl)
+    | H : _ = (WriteAcc, Na2Ord) → _ |- _ => clear H
     | H : False |- _ => destruct H
     | H : ∃ _, _ |- _ => destruct H
     end;
     try congruence.
-
-  clear κ2' e2' Hnse2' Hnse2_1 Hstep2 σ2' Hrtc_step2 Hrede2_1.
-  destruct Hrede1_2 as (κ2'&e2'&σ'&ef&?).
-  inv_head_step.
-  (*match goal with
-  | H : <[l:=_]> σ.1 !! l = _ |- _ => by rewrite lookup_insert in H
-  end.*)
 Qed.
 
 Corollary adequate_nonracing e1 t2 σ1 σ2 φ :

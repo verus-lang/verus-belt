@@ -12,11 +12,28 @@ From lrust.lang Require Export lang.
 From iris.prelude Require Import options.
 Import uPred.
 
+(** * The heap
+
+Physical memory holds abstract bytes ([state' = gmap loc (lock_state * abyte)]).
+Its ghost state has two regions, with disjoint domains (see [phys_rel]):
+- the legacy region, a [non_atomic_map] of [val]s (with cells), which backs the
+  legacy points-to [l ↦ v] and all its fancy and cell variants: a location of
+  this region holding [v] holds the byte [word_to_byte v] physically;
+- the byte region, a lambda-Rust-style fractional heap of [abyte]s (no cells),
+  which backs the byte points-to [l ↦b{q} bs].
+The legacy layer cannot simply be defined on top of the byte region: its
+untethering lemmas (e.g. [mapsto_vec_untether1]) return the contents of a cell
+as a [val], so the cell map must hold [val]s; and multi-byte non-atomic reads
+through the cell map would need one later per byte. A location moves between the
+regions with [heap_word_to_bytes] and [heap_bytes_to_word] (no physical step). *)
+
 Definition lock_stateR : cmra :=
   csumR (exclR unitO) natR.
 
+Canonical Structure abyteO := leibnizO abyte.
+
 Definition heapUR : ucmra :=
-  gmapUR loc (prodR (prodR fracR lock_stateR) (agreeR valO)).
+  gmapUR loc (prodR (prodR fracR lock_stateR) (agreeR abyteO)).
 
 Definition heap_freeableUR : ucmra :=
   gmapUR block (prodR fracR (gmapR Z (exclR unitO))).
@@ -26,6 +43,7 @@ Class heapGS Σ := HeapGS {
   #[global] heap_freeable_inG :: inG Σ (authR heap_freeableUR);
   #[global] heap_na_logicG :: na_logicG loc val Σ;
   heap_name : gname;
+  heap_bytes_name : gname;
   heap_freeable_name : gname;
   atomic_threadpool: gname;
   atomic_lock_ctr_name: gname
@@ -64,8 +82,28 @@ Section definitions.
   Definition heap_ato_ctx : iProp Σ := 
       na_invariants_fork.na_own atomic_threadpool ⊤ ∗ atomic_lock_ctr atomic_lock_ctr_name 0 ⊤.
 
+  Definition to_lock_stateR (x : lock_state) : lock_stateR :=
+    match x with RSt n => Cinr n | WSt => Cinl (Excl ()) end.
+  Definition to_heap : gmap loc (lock_state * abyte) → heapUR :=
+    fmap (λ p, (1%Qp, to_lock_stateR (p.1), to_agree (p.2))).
+
+  (** The physical memory [σ] is the union of the legacy region [σL] (whose
+      words are stored as [word_to_byte]) and the byte region [σB]. *)
+  Definition phys_rel (σ : state') (σL : gmap loc (lock_state * val))
+      (σB : gmap loc (lock_state * abyte)) : Prop :=
+    ∀ l, match σL !! l, σB !! l with
+         | Some (ls, v), None => σ !! l = Some (ls, word_to_byte v)
+         | None, Some p => σ !! l = Some p
+         | None, None => σ !! l = None
+         | Some _, Some _ => False
+         end.
+
+  Definition heap_maps_ctx (σ : state') : iProp Σ :=
+    ∃ σL σB, ⌜phys_rel σ σL σB⌝ ∗ non_atomic_map heap_name σL
+           ∗ own heap_bytes_name (● to_heap σB).
+
   Definition heap_ctx (σ:state) : iProp Σ :=
-    (∃ hF, non_atomic_map heap_name σ.1
+    (∃ hF, heap_maps_ctx σ.1
          ∗ own heap_freeable_name (● hF)
          ∗ ⌜heap_freeable_rel σ hF⌝
          ∗ (match σ.2 with true => True | false => heap_ato_ctx end))%I.
@@ -253,6 +291,108 @@ Section kmap_lemmas.
   Qed.
 
 End kmap_lemmas.
+
+
+(** ** The physical relation *)
+Section phys_rel.
+  Implicit Types σ : state'.
+
+  Lemma phys_rel_lookup_L σ σL σB l ls v :
+    phys_rel σ σL σB → σL !! l = Some (ls, v) → σ !! l = Some (ls, word_to_byte v).
+  Proof. intros Hr Hl. specialize (Hr l). rewrite Hl in Hr. by destruct (σB !! l). Qed.
+
+  Lemma phys_rel_lookup_B σ σL σB l p :
+    phys_rel σ σL σB → σB !! l = Some p → σ !! l = Some p.
+  Proof.
+    intros Hr Hl. specialize (Hr l). rewrite Hl in Hr. by destruct (σL !! l) as [[]|].
+  Qed.
+
+  Lemma phys_rel_B_not_L σ σL σB l :
+    phys_rel σ σL σB → is_Some (σB !! l) → σL !! l = None.
+  Proof.
+    intros Hr [p Hl]. specialize (Hr l). rewrite Hl in Hr. by destruct (σL !! l) as [[]|].
+  Qed.
+
+  Lemma phys_rel_L_not_B σ σL σB l :
+    phys_rel σ σL σB → is_Some (σL !! l) → σB !! l = None.
+  Proof.
+    intros Hr [[ls v] Hl]. specialize (Hr l). rewrite Hl in Hr. by destruct (σB !! l).
+  Qed.
+
+  Lemma phys_rel_None σ σL σB l :
+    phys_rel σ σL σB → σ !! l = None → σL !! l = None ∧ σB !! l = None.
+  Proof.
+    intros Hr Hl. specialize (Hr l).
+    destruct (σL !! l) as [[]|], (σB !! l); simplify_eq; done.
+  Qed.
+
+  (** An update of the byte region, at locations of the byte region. *)
+  Lemma phys_rel_B_update σ σ' σL σB σB' :
+    phys_rel σ σL σB →
+    (∀ l, (σ' !! l = σ !! l ∧ σB' !! l = σB !! l) ∨
+          (is_Some (σB !! l) ∧ is_Some (σB' !! l) ∧ σ' !! l = σB' !! l)) →
+    phys_rel σ' σL σB'.
+  Proof.
+    intros Hr Hupd l. specialize (Hr l). destruct (Hupd l) as [[-> ->]|(HB&[p Hp]&->)]; [done|].
+    destruct HB as [p0 Hp0]. rewrite Hp0 in Hr. rewrite Hp.
+    destruct (σL !! l) as [[]|]; done.
+  Qed.
+
+  Lemma phys_rel_L_insert σ σL σB l ls v :
+    phys_rel σ σL σB → σB !! l = None →
+    phys_rel (<[l:=(ls, word_to_byte v)]> σ) (<[l:=(ls, v)]> σL) σB.
+  Proof.
+    intros Hr HB l'. destruct (decide (l = l')) as [<-|].
+    - by rewrite !lookup_insert HB.
+    - rewrite !lookup_insert_ne //. apply Hr.
+  Qed.
+
+  Lemma phys_rel_B_insert σ σL σB l p :
+    phys_rel σ σL σB → σL !! l = None →
+    phys_rel (<[l:=p]> σ) σL (<[l:=p]> σB).
+  Proof.
+    intros Hr HL l'. destruct (decide (l = l')) as [<-|].
+    - by rewrite !lookup_insert HL.
+    - rewrite !lookup_insert_ne //. apply Hr.
+  Qed.
+
+  Lemma phys_rel_L_delete σ σL σB l :
+    phys_rel σ σL σB → σB !! l = None → phys_rel (delete l σ) (delete l σL) σB.
+  Proof.
+    intros Hr HB l'. destruct (decide (l = l')) as [<-|].
+    - by rewrite !lookup_delete HB.
+    - rewrite !lookup_delete_ne //. apply Hr.
+  Qed.
+
+  Lemma phys_rel_B_delete σ σL σB l :
+    phys_rel σ σL σB → σL !! l = None → phys_rel (delete l σ) σL (delete l σB).
+  Proof.
+    intros Hr HL l'. destruct (decide (l = l')) as [<-|].
+    - by rewrite !lookup_delete HL.
+    - rewrite !lookup_delete_ne //. apply Hr.
+  Qed.
+
+  Lemma phys_rel_L_to_B σ σL σB l ls v :
+    phys_rel σ σL σB → σL !! l = Some (ls, v) →
+    phys_rel σ (delete l σL) (<[l:=(ls, word_to_byte v)]> σB).
+  Proof.
+    intros Hr HL l'. destruct (decide (l = l')) as [<-|].
+    - rewrite lookup_delete lookup_insert. by eapply phys_rel_lookup_L.
+    - rewrite lookup_delete_ne // lookup_insert_ne //. apply Hr.
+  Qed.
+
+  Lemma phys_rel_B_to_L σ σL σB l ls v :
+    phys_rel σ σL σB → σB !! l = Some (ls, word_to_byte v) →
+    phys_rel σ (<[l:=(ls, v)]> σL) (delete l σB).
+  Proof.
+    intros Hr HB l'. destruct (decide (l = l')) as [<-|].
+    - rewrite lookup_delete lookup_insert. by eapply phys_rel_lookup_B.
+    - rewrite lookup_delete_ne // lookup_insert_ne //. apply Hr.
+  Qed.
+
+  Lemma phys_rel_empty : phys_rel ∅ ∅ ∅.
+  Proof. intros l. by rewrite !lookup_empty. Qed.
+End phys_rel.
 
 Section heap.
   Context `{!heapGS Σ}.
@@ -482,19 +622,24 @@ Section heap.
   Qed.
 
   (** Weakest precondition *)
-  Lemma heap_alloc_vs σ l n :
-    (∀ m : Z, σ.1 !! (l +ₗ m) = None) →
-    non_atomic_map heap_name (σ.1) ⊢
-    |==> non_atomic_map heap_name ((init_mem l n σ.1))
+  Lemma heap_alloc_vs (σ : state') l n :
+    (∀ m : Z, σ !! (l +ₗ m) = None) →
+    heap_maps_ctx σ ⊢
+    |==> heap_maps_ctx (init_mem l n σ)
        ∗ l ↦∗ (repeat (LitV LitPoison) n).
   Proof.
     generalize l. clear l. induction n.
      - iIntros. iFrame. iModIntro. by rewrite /heap_mapsto_vec.
      - iIntros (l all) "σ". iMod (IHn (l +ₗ 1) with "σ") as "[σ rep]".
         + intros m. rewrite shift_loc_assoc. apply all.
-        + iMod (non_atomic_map_insert _ l (LitV LitPoison) with "σ") as "[pt σ]".
-           * rewrite lookup_init_mem_prev. rewrite <- (shift_loc_0 l). apply all.
-           * iFrame. rewrite /heap_mapsto_vec. simpl. rewrite shift_loc_0.
+        + iDestruct "σ" as (σL σB) "(%Hr & σ & σB)".
+          have Hfresh : init_mem (l +ₗ 1) n σ !! l = None.
+          { rewrite lookup_init_mem_ne /=; last lia. rewrite -(shift_loc_0 l). apply all. }
+          destruct (phys_rel_None _ _ _ _ Hr Hfresh) as [HL HB].
+          iMod (non_atomic_map_insert _ l (LitV LitPoison) with "σ") as "[pt σ]"; first done.
+           * iFrame. iSplitR.
+             { iPureIntro. by apply (phys_rel_L_insert _ _ _ _ _ (LitV LitPoison)). }
+             rewrite /heap_mapsto_vec. simpl. rewrite shift_loc_0.
              rewrite /heap_mapsto. iFrame. setoid_rewrite shift_loc_assoc.
              assert (∀ (i: nat) , (1 + i) = (S i)) as Hi by lia. setoid_rewrite Hi.
              iFrame. done.
@@ -521,10 +666,10 @@ Section heap.
     rewrite heap_freeable_eq /heap_freeable_def //. iFrame.
   Qed.
 
-  Lemma heap_free_vs σ l vl E :
+  Lemma heap_free_vs (σ : state') l vl E :
     ↑naN ⊆ E →
-    non_atomic_map heap_name σ.1 ∗ l ↦∗ vl
-    ⊢ |={E}=> non_atomic_map heap_name (free_mem l (length vl) σ.1).
+    heap_maps_ctx σ ∗ l ↦∗ vl
+    ⊢ |={E}=> heap_maps_ctx (free_mem l (length vl) σ).
   Proof.
       intros Hmask. generalize l. clear l. induction vl.
      - iIntros (l) "[σ pt]". iFrame. iModIntro. by rewrite /heap_mapsto_vec.
@@ -536,7 +681,10 @@ Section heap.
           setoid_rewrite Hi. iFrame.
         }
        simpl. rewrite shift_loc_0 /heap_mapsto.
-       iMod (non_atomic_map_delete with "pt σ") as "[%Hst σ]"; done.
+       iDestruct "σ" as (σL σB) "(%Hr & σ & σB)".
+       iMod (non_atomic_map_delete with "pt σ") as "[%Hst σ]"; first done.
+       iModIntro. iFrame. iPureIntro. apply phys_rel_L_delete; [done|].
+       by eapply phys_rel_L_not_B.
   Qed.
 
   Lemma heap_free σ l vl (n : Z) E :
@@ -562,6 +710,43 @@ Section heap.
     iModIntro; subst. repeat iSplit;  eauto using heap_freeable_is_Some.
     iExists _. subst. rewrite Nat2Z.id. iFrame.
     eauto using heap_freeable_rel_free_mem.
+  Qed.
+
+  (** Legacy operations, through the physical relation *)
+  Lemma heap_atomic_read (σ : state') l cells v E G d :
+    ↑naN ⊆ E →
+    £(d) -∗ (G &&{↑naN;d}&&> (l ↦[^ cells] v)) -∗ G -∗ heap_maps_ctx σ ={E}=∗
+      ∃ n, ⌜σ !! l = Some (RSt n, word_to_byte v)⌝ ∗ G ∗ heap_maps_ctx σ.
+  Proof.
+    iIntros (Hmask) "£ #Gv G (%σL & %σB & %Hr & σ & σB)".
+    iMod (atomic_read with "£ [Gv] G σ") as (n) "[%Heq [G σ]]"; [done|by iFrame "Gv"|].
+    iModIntro. iExists n. iFrame. iPureIntro. split; [|done]. by eapply phys_rel_lookup_L.
+  Qed.
+
+  Lemma heap_na_read_begin (σ : state') l cells v E G d :
+    ↑naN ⊆ E →
+    £(3*d) -∗ (G &&{↑naN;d}&&> (l ↦[^ cells] v)) -∗ G -∗ heap_maps_ctx σ ={E}=∗
+      ∃ n, ⌜σ !! l = Some (RSt n, word_to_byte v)⌝
+        ∗ points_to_r_intermediate heap_name l cells v G
+        ∗ heap_maps_ctx (<[l := (RSt (n + 1), word_to_byte v)]> σ).
+  Proof.
+    iIntros (Hmask) "£ #Gv G (%σL & %σB & %Hr & σ & σB)".
+    iMod (na_read_begin with "£ [Gv] G σ") as (n) "[%Heq [rim σ]]"; [done|by iFrame "Gv"|].
+    iModIntro. iExists n. iFrame. iPureIntro. split; [by eapply phys_rel_lookup_L|].
+    apply phys_rel_L_insert; [done|]. by eapply phys_rel_L_not_B.
+  Qed.
+
+  Lemma heap_na_read_end (σ : state') l cells v E G :
+    ↑naN ⊆ E →
+    points_to_r_intermediate heap_name l cells v G -∗ heap_maps_ctx σ -∗ ▷ |={E}=>
+      ∃ n, ⌜σ !! l = Some (RSt n, word_to_byte v) ∧ n ≥ 1⌝ ∗ G
+        ∗ heap_maps_ctx (<[l := (RSt (n - 1), word_to_byte v)]> σ).
+  Proof.
+    iIntros (Hmask) "rim (%σL & %σB & %Hr & σ & σB)".
+    iDestruct (na_read_end with "rim σ") as "A"; [done|]. iNext.
+    iMod "A" as (n) "([%Heq %Hn] & G & σ)". iModIntro. iExists n. iFrame.
+    iPureIntro. split; [split; [by eapply phys_rel_lookup_L|done]|].
+    apply phys_rel_L_insert; [done|]. by eapply phys_rel_L_not_B.
   Qed.
 
 (*
@@ -607,8 +792,10 @@ Section heap.
     -∗ |==> non_atomic_map heap_name (<[l:=(RSt (n2 + nf), v)]> σ)
         ∗ heap_mapsto_st (RSt n2) l q v.
   Proof.
-    intros Hσv. apply wand_intro_r. rewrite -!own_op to_heap_insert.
-    eapply own_update, auth_update, singleton_local_update.
+    intros Hσv. iIntros "H● H◯".
+    iMod (own_update_2 _ _ _ (● to_heap (<[l:=(RSt (n2 + nf), b)]> σB) ⋅
+      ◯ {[l := (q, to_lock_stateR (RSt n2), to_agree b)]}) with "H● H◯") as "[$ $]"; [|done].
+    rewrite to_heap_insert. eapply auth_update, singleton_local_update.
     { by rewrite /to_heap lookup_fmap Hσv. }
     apply prod_local_update_1, prod_local_update_2, csum_local_update_r.
     apply nat_local_update; lia.
@@ -618,11 +805,11 @@ Section heap.
   Lemma heap_read σ l cells v E :
     ↑naN ⊆ E →
     heap_ctx σ -∗ l ↦[^ cells] v ={E}=∗
-    heap_ctx σ ∗ l ↦[^ cells] v ∗ ∃ n, ⌜σ.1 !! l = Some (RSt n, v)⌝.
+    heap_ctx σ ∗ l ↦[^ cells] v ∗ ∃ n, ⌜σ.1 !! l = Some (RSt n, word_to_byte v)⌝.
   Proof.
     iDestruct 1 as (hF) "(Hσ & HhF & REL)". iIntros "Hmt".
     iMod (lc_zero) as "£0".
-    iMod (atomic_read with "£0 [] Hmt Hσ") as (n) "[X [Hmt Hσ]]"; first by set_solver.
+    iMod (heap_atomic_read with "£0 [] Hmt Hσ") as (n) "[X [Hmt Hσ]]"; first by set_solver.
       { iApply guards_refl. }
     iModIntro. iFrame.
   Qed.
@@ -664,8 +851,10 @@ Section heap.
     ==∗ own heap_name (● to_heap (<[l:=(st2, v')]> σ))
         ∗ heap_mapsto_st st2 l 1%Qp v'.
   Proof.
-    intros Hσv. apply wand_intro_r. rewrite -!own_op to_heap_insert.
-    eapply own_update, auth_update, singleton_local_update.
+    intros Hσv. iIntros "H● H◯".
+    iMod (own_update_2 _ _ _ (● to_heap (<[l:=(st2, b')]> σB) ⋅
+      ◯ {[l := (1%Qp, to_lock_stateR st2, to_agree b')]}) with "H● H◯") as "[$ $]"; [|done].
+    rewrite to_heap_insert. eapply auth_update, singleton_local_update.
     { by rewrite /to_heap lookup_fmap Hσv. }
     apply exclusive_local_update. by destruct st2.
   Qed.
@@ -1674,46 +1863,561 @@ Section heap.
     ↑naN ⊆ E →
     £(3*d+1) -∗
     heap_ctx σ -∗ (G &&{↑naN;d}&&> l #↦_) -∗ G -∗ l #↦ v ={E}=∗
-      ⌜σ.1 !! l.1 = Some (RSt 0, v)⌝ ∗
-    heap_ctx (<[l.1 := (RSt 0, v')]> σ.1, σ.2) ∗ G ∗ l #↦ v'.
+      ⌜σ.1 !! l.1 = Some (RSt 0, word_to_byte v)⌝ ∗
+    heap_ctx (<[l.1 := (RSt 0, word_to_byte v')]> σ.1, σ.2) ∗ G ∗ l #↦ v'.
   Proof.
     iIntros (Hmask) "[£ £1] ctx #guards G pt". iDestruct "ctx" as (hF) "(Hσ & HhF & % & ato)".
+    iDestruct "Hσ" as (σL σB) "(%Hr & Hσ & σB)".
     unfold heap_complete_mapsto, heap_complete_mapsto_fancy.
     destruct (split_at_last (snd l)) as [[cells c]|] eqn:Heq.
      - iMod (atomic_write_guarded_cells with "£ guards G pt Hσ") as "A". { apply Hmask. }
        iMod (lc_fupd_elim_later with "£1 A") as "A".
        iMod "A" as "[%res [G [pt Hσ]]]".
-       iModIntro. iFrame. iPureIntro. eauto using heap_freeable_rel_stable.
+       iModIntro. iFrame. iPureIntro.
+       have ? := phys_rel_lookup_L _ _ _ _ _ _ Hr res.
+       split; [done|]. split; [|eauto using heap_freeable_rel_stable].
+       apply phys_rel_L_insert; [done|]. by eapply phys_rel_L_not_B.
      - iMod (atomic_write with "pt Hσ") as "[%res [pt Hσ]]". { trivial. }
-       iModIntro. iFrame. iPureIntro. eauto using heap_freeable_rel_stable.
+       iModIntro. iFrame. iPureIntro.
+       have ? := phys_rel_lookup_L _ _ _ _ _ _ Hr res.
+       split; [done|]. split; [|eauto using heap_freeable_rel_stable].
+       apply phys_rel_L_insert; [done|]. by eapply phys_rel_L_not_B.
   Qed.
 
   Lemma heap_write_na σ (l: cloc1) v v' E G d :
     ↑naN ⊆ E →
     £(3*d) -∗
     heap_ctx σ -∗ (G &&{↑naN;d}&&> l #↦_) -∗ G -∗ l #↦ v ={E}=∗
-      ⌜σ.1 !! l.1 = Some (RSt 0, v)⌝ ∗
-      heap_ctx (<[l.1:=(WSt, v)]> σ.1, σ.2) ∗
-      ∀ σ', £1 -∗ heap_ctx σ' ={E}=∗ ⌜∃v0, σ'.1 !! l.1 = Some (WSt, v0)⌝ ∗
-        heap_ctx (<[l.1:=(RSt 0, v')]> σ'.1, σ'.2) ∗ G ∗ l #↦ v'.
+      ⌜σ.1 !! l.1 = Some (RSt 0, word_to_byte v)⌝ ∗
+      heap_ctx (<[l.1:=(WSt, word_to_byte v)]> σ.1, σ.2) ∗
+      ∀ σ', £1 -∗ heap_ctx σ' ={E}=∗ ⌜∃b0, σ'.1 !! l.1 = Some (WSt, b0)⌝ ∗
+        heap_ctx (<[l.1:=(RSt 0, word_to_byte v')]> σ'.1, σ'.2) ∗ G ∗ l #↦ v'.
   Proof.
     iIntros (Hmask) "£ ctx #guards G pt". iDestruct "ctx" as (hF) "(Hσ & HhF & % & ato)".
+    iDestruct "Hσ" as (σL σB) "(%Hr & Hσ & σB)".
     unfold heap_complete_mapsto, heap_complete_mapsto_fancy.
     destruct (split_at_last (snd l)) as [[cells c]|] eqn:Heq.
      - iMod (na_write_begin_guarded_cells with "£ guards G pt Hσ") as "[%Hres [wim Hσ]]"; first by trivial.
-       iModIntro. iFrame "%". iSplitR "wim". { iFrame. { iPureIntro. eauto using heap_freeable_rel_stable. } }
+       have ? := phys_rel_lookup_L _ _ _ _ _ _ Hr Hres.
+       iModIntro. iFrame "%". iSplitR "wim".
+       { iFrame. iPureIntro. split; [|eauto using heap_freeable_rel_stable].
+         apply phys_rel_L_insert; [done|]. by eapply phys_rel_L_not_B. }
        iIntros (x) "£1 ctx". iDestruct "ctx" as (hF') "(Hσ & HhF & % & ato)".
+       iDestruct "Hσ" as (σL' σB') "(%Hr' & Hσ & σB)".
        iDestruct (na_write_finish_guarded_cells with "wim Hσ") as "A"; first by apply Hmask.
        iMod (lc_fupd_elim_later with "£1 A") as "A".
        iMod "A" as "[%Hres2 [G [pt Hσ]]]".
-       iModIntro. iFrame "%". iFrame. iPureIntro. destruct Hres2 as [v0 Hres2]. eauto using heap_freeable_rel_stable.
+       destruct Hres2 as [v0 Hres2]. have ? := phys_rel_lookup_L _ _ _ _ _ _ Hr' Hres2.
+       iModIntro. iFrame. iPureIntro. split; [by eexists|].
+       split; [|eauto using heap_freeable_rel_stable].
+       apply phys_rel_L_insert; [done|]. by eapply phys_rel_L_not_B.
      - iMod (na_write_begin with "pt Hσ") as "[%Hres [wim Hσ]]"; first by trivial.
-       iModIntro. iFrame "%". iSplitR "G wim". { iFrame. { iPureIntro. eauto using heap_freeable_rel_stable. } }
+       have ? := phys_rel_lookup_L _ _ _ _ _ _ Hr Hres.
+       iModIntro. iFrame "%". iSplitR "G wim".
+       { iFrame. iPureIntro. split; [|eauto using heap_freeable_rel_stable].
+         apply phys_rel_L_insert; [done|]. by eapply phys_rel_L_not_B. }
        iIntros (x) "£1 ctx". iDestruct "ctx" as (hF') "(Hσ & HhF & % & ato)".
+       iDestruct "Hσ" as (σL' σB') "(%Hr' & Hσ & σB)".
        iMod (na_write_finish with "wim Hσ") as "[%Hres2 [pt Hσ]]"; first by trivial.
-       iModIntro. iFrame "%". iFrame. iPureIntro.
-       destruct Hres2 as [v0 Hres2].
-       eauto using heap_freeable_rel_stable.
+       destruct Hres2 as [v0 Hres2]. have ? := phys_rel_lookup_L _ _ _ _ _ _ Hr' Hres2.
+       iModIntro. iFrame. iPureIntro. split; [by eexists|].
+       split; [|eauto using heap_freeable_rel_stable].
+       apply phys_rel_L_insert; [done|]. by eapply phys_rel_L_not_B.
   Qed.
 
 End heap.
+
+(** * The byte region *)
+Section byte_defs.
+  Context `{!heapGS Σ}.
+
+  Definition heap_mapsto_st (st : lock_state) (l : loc) (q : Qp) (b : abyte) : iProp Σ :=
+    own heap_bytes_name (◯ {[ l := (q, to_lock_stateR st, to_agree b) ]}).
+
+  Definition heap_mapsto_st_vec (st : lock_state) (l : loc) (q : Qp) (bs : list abyte) : iProp Σ :=
+    [∗ list] i ↦ b ∈ bs, heap_mapsto_st st (l +ₗ i) q b.
+
+  (** The byte points-to: [l ↦b{q} bs] owns the fraction [q] of the bytes [bs] at
+      [l], [l +ₗ 1], ... *)
+  Definition heap_mapsto_bytes_def (l : loc) (q : Qp) (bs : list abyte) : iProp Σ :=
+    heap_mapsto_st_vec (RSt 0) l q bs.
+  Definition heap_mapsto_bytes_aux : seal (@heap_mapsto_bytes_def). Proof. by eexists. Qed.
+  Definition heap_mapsto_bytes := unseal heap_mapsto_bytes_aux.
+  Definition heap_mapsto_bytes_eq : @heap_mapsto_bytes = @heap_mapsto_bytes_def :=
+    seal_eq heap_mapsto_bytes_aux.
+End byte_defs.
+
+Global Instance: Params (@heap_mapsto_bytes) 4 := {}.
+
+Notation "l ↦b{ q } bs" := (heap_mapsto_bytes l q bs)
+  (at level 20, q at level 50, format "l  ↦b{ q }  bs") : bi_scope.
+Notation "l ↦b bs" := (heap_mapsto_bytes l 1%Qp bs) (at level 20) : bi_scope.
+
+Section bytes.
+  Context `{!heapGS Σ}.
+  Implicit Types σB : gmap loc (lock_state * abyte).
+  Implicit Types bs : list abyte.
+
+  (** ** Structural lemmas *)
+  Global Instance heap_mapsto_bytes_timeless l q bs : Timeless (l ↦b{q} bs).
+  Proof. rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec. apply _. Qed.
+
+  Lemma heap_mapsto_bytes_nil l q : l ↦b{q} [] ⊣⊢ True.
+  Proof. by rewrite heap_mapsto_bytes_eq. Qed.
+
+  Lemma heap_mapsto_st_vec_app st l q bs1 bs2 :
+    heap_mapsto_st_vec st l q (bs1 ++ bs2) ⊣⊢
+    heap_mapsto_st_vec st l q bs1 ∗ heap_mapsto_st_vec st (l +ₗ length bs1) q bs2.
+  Proof.
+    rewrite /heap_mapsto_st_vec big_sepL_app.
+    do 2 f_equiv. intros k b. by rewrite shift_loc_assoc_nat.
+  Qed.
+
+  Lemma heap_mapsto_st_vec_cons st l q b bs :
+    heap_mapsto_st_vec st l q (b :: bs) ⊣⊢
+    heap_mapsto_st st l q b ∗ heap_mapsto_st_vec st (l +ₗ 1) q bs.
+  Proof.
+    rewrite (heap_mapsto_st_vec_app _ _ _ [b] bs) /heap_mapsto_st_vec /=.
+    by rewrite shift_loc_0 right_id.
+  Qed.
+
+  Lemma heap_mapsto_bytes_app l q bs1 bs2 :
+    l ↦b{q} (bs1 ++ bs2) ⊣⊢ l ↦b{q} bs1 ∗ (l +ₗ length bs1) ↦b{q} bs2.
+  Proof. rewrite heap_mapsto_bytes_eq. apply heap_mapsto_st_vec_app. Qed.
+
+  Lemma heap_mapsto_bytes_cons l q b bs :
+    l ↦b{q} (b :: bs) ⊣⊢ l ↦b{q} [b] ∗ (l +ₗ 1) ↦b{q} bs.
+  Proof. by rewrite (heap_mapsto_bytes_app l q [b] bs). Qed.
+
+  Global Instance heap_mapsto_bytes_fractional l bs : Fractional (λ q, l ↦b{q} bs)%I.
+  Proof.
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec.
+    intros q1 q2. rewrite -big_sepL_sep. f_equiv. intros i b.
+    rewrite /heap_mapsto_st -own_op -auth_frag_op singleton_op -!pair_op.
+    by rewrite /= -Cinr_op agree_idemp.
+  Qed.
+  Global Instance heap_mapsto_bytes_as_fractional l q bs :
+    AsFractional (l ↦b{q} bs) (λ q, l ↦b{q} bs)%I q.
+  Proof. split; [done|apply _]. Qed.
+
+  (** ** Single locations (as in lambda-Rust) *)
+  Lemma to_heap_insert σB l x b :
+    to_heap (<[l:=(x, b)]> σB) = <[l:=(1%Qp, to_lock_stateR x, to_agree b)]> (to_heap σB).
+  Proof. by rewrite /to_heap fmap_insert. Qed.
+
+  Lemma heap_mapsto_st_lookup σB l ls q b :
+    own heap_bytes_name (● to_heap σB) -∗ heap_mapsto_st ls l q b -∗
+    ⌜∃ n' : nat, σB !! l = Some (match ls with RSt n => RSt (n+n') | WSt => WSt end, b)⌝.
+  Proof.
+    iIntros "H● H◯".
+    iDestruct (own_valid_2 with "H● H◯") as %[Hl?]%auth_both_valid_discrete.
+    iPureIntro. move: Hl=> /singleton_included_l [[[q' ls'] dv]].
+    rewrite /to_heap lookup_fmap fmap_Some_equiv.
+    move=> [[[ls'' v'] [?[[/=??]->]]]]; simplify_eq.
+    move=> /Some_pair_included_total_2
+      [/Some_pair_included [_ Hincl] /to_agree_included->].
+    destruct ls as [|n], ls'' as [|n''],
+       Hincl as [[[|n'|]|] [=]%leibniz_equiv]; subst.
+    - by exists O.
+    - eauto.
+    - exists O. by rewrite Nat.add_0_r.
+  Qed.
+
+  Lemma heap_mapsto_st_lookup_1 σB l ls b :
+    own heap_bytes_name (● to_heap σB) -∗ heap_mapsto_st ls l 1%Qp b -∗
+    ⌜σB !! l = Some (ls, b)⌝.
+  Proof.
+    iIntros "H● H◯".
+    iDestruct (own_valid_2 with "H● H◯") as %[Hl?]%auth_both_valid_discrete.
+    iPureIntro. move: Hl=> /singleton_included_l [[[q' ls'] dv]].
+    rewrite /to_heap lookup_fmap fmap_Some_equiv.
+    move=> [[[ls'' v'] [?[[/=??]->]]] Hincl]; simplify_eq.
+    apply (Some_included_exclusive _ _) in Hincl as [? Hval]; last by destruct ls''.
+    apply (inj to_agree) in Hval. fold_leibniz. subst.
+    destruct ls, ls''; rewrite ?Nat.add_0_r; naive_solver.
+  Qed.
+
+  Lemma heap_read_vs σB n1 n2 nf l q b :
+    σB !! l = Some (RSt (n1 + nf), b) →
+    own heap_bytes_name (● to_heap σB) -∗ heap_mapsto_st (RSt n1) l q b
+    ==∗ own heap_bytes_name (● to_heap (<[l:=(RSt (n2 + nf), b)]> σB))
+        ∗ heap_mapsto_st (RSt n2) l q b.
+  Proof.
+    intros Hσv. iIntros "H● H◯".
+    iMod (own_update_2 _ _ _ (● to_heap (<[l:=(RSt (n2 + nf), b)]> σB) ⋅
+      ◯ {[l := (q, to_lock_stateR (RSt n2), to_agree b)]}) with "H● H◯") as "[$ $]"; [|done].
+    rewrite to_heap_insert. eapply auth_update, singleton_local_update.
+    { by rewrite /to_heap lookup_fmap Hσv. }
+    apply prod_local_update_1, prod_local_update_2, csum_local_update_r.
+    apply nat_local_update; lia.
+  Qed.
+
+  Lemma heap_write_vs σB st1 st2 l b b' :
+    σB !! l = Some (st1, b) →
+    own heap_bytes_name (● to_heap σB) -∗ heap_mapsto_st st1 l 1%Qp b
+    ==∗ own heap_bytes_name (● to_heap (<[l:=(st2, b')]> σB))
+        ∗ heap_mapsto_st st2 l 1%Qp b'.
+  Proof.
+    intros Hσv. iIntros "H● H◯".
+    iMod (own_update_2 _ _ _ (● to_heap (<[l:=(st2, b')]> σB) ⋅
+      ◯ {[l := (1%Qp, to_lock_stateR st2, to_agree b')]}) with "H● H◯") as "[$ $]"; [|done].
+    rewrite to_heap_insert. eapply auth_update, singleton_local_update.
+    { by rewrite /to_heap lookup_fmap Hσv. }
+    apply exclusive_local_update. by destruct st2.
+  Qed.
+
+  Lemma heap_bytes_alloc_vs σB l b :
+    σB !! l = None →
+    own heap_bytes_name (● to_heap σB) ==∗
+    own heap_bytes_name (● to_heap (<[l:=(RSt 0, b)]> σB)) ∗ heap_mapsto_st (RSt 0) l 1%Qp b.
+  Proof.
+    intros Hl. iIntros "H●".
+    iMod (own_update _ _ (● to_heap (<[l:=(RSt 0, b)]> σB) ⋅
+      ◯ {[l := (1%Qp, to_lock_stateR (RSt 0), to_agree b)]}) with "H●") as "[$ $]"; [|done].
+    rewrite to_heap_insert. apply auth_update_alloc, alloc_singleton_local_update.
+    - by rewrite /to_heap lookup_fmap Hl.
+    - split; [split|]; done.
+  Qed.
+
+  Lemma heap_bytes_dealloc_vs σB l b :
+    own heap_bytes_name (● to_heap σB) -∗ heap_mapsto_st (RSt 0) l 1%Qp b ==∗
+    ⌜σB !! l = Some (RSt 0, b)⌝ ∗ own heap_bytes_name (● to_heap (delete l σB)).
+  Proof.
+    iIntros "H● H◯". iDestruct (heap_mapsto_st_lookup_1 with "H● H◯") as %Hl.
+    iMod (own_update_2 with "H● H◯") as "$"; [|done].
+    rewrite /to_heap fmap_delete.
+    apply auth_update_dealloc, (delete_singleton_local_update _ _ _).
+  Qed.
+
+  Lemma alter_insert_Some {A} (m : gmap loc A) l (f : A → A) x :
+    m !! l = Some x → alter f l m = <[l := f x]> m.
+  Proof.
+    intros Hl. apply map_eq. intros l'. destruct (decide (l = l')) as [<-|].
+    - by rewrite lookup_alter lookup_insert Hl.
+    - by rewrite lookup_alter_ne // lookup_insert_ne.
+  Qed.
+
+  (** ** Ranges *)
+  Lemma heap_bytes_lookup σB l q bs :
+    own heap_bytes_name (● to_heap σB) -∗ l ↦b{q} bs -∗ ⌜mem_range is_reading σB l bs⌝.
+  Proof.
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def.
+    iInduction bs as [|b bs] "IH" forall (l); iIntros "H● Hbs"; [done|].
+    rewrite heap_mapsto_st_vec_cons. iDestruct "Hbs" as "[Hb Hbs]".
+    iDestruct (heap_mapsto_st_lookup with "H● Hb") as %[n Hl].
+    iDestruct ("IH" with "H● Hbs") as %?. iPureIntro. split; [|done].
+    eexists. split; [done|]. by eexists.
+  Qed.
+
+  Lemma heap_bytes_lookup_1 σB l bs :
+    own heap_bytes_name (● to_heap σB) -∗ l ↦b bs -∗ ⌜mem_range (.= RSt 0) σB l bs⌝.
+  Proof.
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def.
+    iInduction bs as [|b bs] "IH" forall (l); iIntros "H● Hbs"; [done|].
+    rewrite heap_mapsto_st_vec_cons. iDestruct "Hbs" as "[Hb Hbs]".
+    iDestruct (heap_mapsto_st_lookup_1 with "H● Hb") as %Hl.
+    iDestruct ("IH" with "H● Hbs") as %?. iPureIntro. split; [|done]. by eexists.
+  Qed.
+
+  Lemma heap_bytes_read_begin σB l q bs :
+    own heap_bytes_name (● to_heap σB) -∗ l ↦b{q} bs ==∗
+    own heap_bytes_name (● to_heap (mem_alter ls_inc l (length bs) σB))
+      ∗ heap_mapsto_st_vec (RSt 1) l q bs.
+  Proof.
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def.
+    iInduction bs as [|b bs] "IH" forall (l); iIntros "H● Hbs"; [by iFrame|].
+    rewrite !heap_mapsto_st_vec_cons. iDestruct "Hbs" as "[Hb Hbs]".
+    iDestruct (heap_mapsto_st_lookup with "H● Hb") as %[n Hl].
+    iMod ("IH" with "H● Hbs") as "[H● $]".
+    iMod (heap_read_vs _ 0 1 n with "H● Hb") as "[H● $]".
+    { rewrite lookup_mem_alter_out //. intros ??; apply shift_loc_ne_S. }
+    iModIntro. rewrite /= (alter_insert_Some _ _ _ (RSt n, b)) //.
+    rewrite lookup_mem_alter_out //. intros ??; apply shift_loc_ne_S.
+  Qed.
+
+  Lemma heap_bytes_read_end σB l q bs :
+    own heap_bytes_name (● to_heap σB) -∗ heap_mapsto_st_vec (RSt 1) l q bs ==∗
+    ⌜mem_range is_reading_S σB l bs⌝
+      ∗ own heap_bytes_name (● to_heap (mem_alter ls_dec l (length bs) σB)) ∗ l ↦b{q} bs.
+  Proof.
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def.
+    iInduction bs as [|b bs] "IH" forall (l); iIntros "H● Hbs"; [by iFrame|].
+    rewrite !heap_mapsto_st_vec_cons. iDestruct "Hbs" as "[Hb Hbs]".
+    iDestruct (heap_mapsto_st_lookup with "H● Hb") as %[n Hl].
+    iMod ("IH" with "H● Hbs") as "[%Hr [H● $]]".
+    iMod (heap_read_vs _ 1 0 n with "H● Hb") as "[H● $]".
+    { rewrite lookup_mem_alter_out //. intros ??; apply shift_loc_ne_S. }
+    iModIntro. iSplit.
+    { iPureIntro. split; [|done]. eexists. split; [done|]. by eexists. }
+    rewrite /= (alter_insert_Some _ _ _ (RSt (1 + n), b)) //.
+    rewrite lookup_mem_alter_out //. intros ??; apply shift_loc_ne_S.
+  Qed.
+
+  Lemma heap_bytes_write_begin σB l bs :
+    own heap_bytes_name (● to_heap σB) -∗ l ↦b bs ==∗
+    ⌜mem_range (.= RSt 0) σB l bs⌝
+      ∗ own heap_bytes_name (● to_heap (mem_alter (λ _, WSt) l (length bs) σB))
+      ∗ heap_mapsto_st_vec WSt l 1%Qp bs.
+  Proof.
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def.
+    iInduction bs as [|b bs] "IH" forall (l); iIntros "H● Hbs"; [by iFrame|].
+    rewrite !heap_mapsto_st_vec_cons. iDestruct "Hbs" as "[Hb Hbs]".
+    iDestruct (heap_mapsto_st_lookup_1 with "H● Hb") as %Hl.
+    iMod ("IH" with "H● Hbs") as "[%Hr [H● $]]".
+    iMod (heap_write_vs _ _ WSt _ _ b with "H● Hb") as "[H● $]".
+    { rewrite lookup_mem_alter_out //. intros ??; apply shift_loc_ne_S. }
+    iModIntro. iSplit; [by iPureIntro; split; [eexists|]|].
+    rewrite /= (alter_insert_Some _ _ _ (RSt 0, b)) //.
+    rewrite lookup_mem_alter_out //. intros ??; apply shift_loc_ne_S.
+  Qed.
+
+  Lemma heap_bytes_write_end σB l bs bs' :
+    length bs' = length bs →
+    own heap_bytes_name (● to_heap σB) -∗ heap_mapsto_st_vec WSt l 1%Qp bs ==∗
+    ⌜mem_range (.= WSt) σB l bs⌝
+      ∗ own heap_bytes_name (● to_heap (mem_write l bs' σB)) ∗ l ↦b bs'.
+  Proof.
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def.
+    iInduction bs as [|b bs] "IH" forall (l bs'); iIntros (Hlen) "H● Hbs";
+      destruct bs' as [|b' bs']; try done; [by iFrame|].
+    rewrite !heap_mapsto_st_vec_cons. iDestruct "Hbs" as "[Hb Hbs]".
+    iDestruct (heap_mapsto_st_lookup_1 with "H● Hb") as %Hl.
+    iMod ("IH" $! _ bs' with "[] H● Hbs") as "[%Hr [H● $]]"; [by simplify_eq/=|].
+    iMod (heap_write_vs _ _ (RSt 0) _ _ b' with "H● Hb") as "[H● $]".
+    { rewrite lookup_mem_write_out //. intros ??; apply shift_loc_ne_S. }
+    iModIntro. by iSplit; [iPureIntro; split; [eexists|]|].
+  Qed.
+
+  Lemma heap_bytes_write σB l bs bs' :
+    length bs' = length bs →
+    own heap_bytes_name (● to_heap σB) -∗ l ↦b bs ==∗
+    ⌜mem_range (.= RSt 0) σB l bs⌝
+      ∗ own heap_bytes_name (● to_heap (mem_write l bs' σB)) ∗ l ↦b bs'.
+  Proof.
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def.
+    iInduction bs as [|b bs] "IH" forall (l bs'); iIntros (Hlen) "H● Hbs";
+      destruct bs' as [|b' bs']; try done; [by iFrame|].
+    rewrite !heap_mapsto_st_vec_cons. iDestruct "Hbs" as "[Hb Hbs]".
+    iDestruct (heap_mapsto_st_lookup_1 with "H● Hb") as %Hl.
+    iMod ("IH" $! _ bs' with "[] H● Hbs") as "[%Hr [H● $]]"; [by simplify_eq/=|].
+    iMod (heap_write_vs _ _ (RSt 0) _ _ b' with "H● Hb") as "[H● $]".
+    { rewrite lookup_mem_write_out //. intros ??; apply shift_loc_ne_S. }
+    iModIntro. by iSplit; [iPureIntro; split; [eexists|]|].
+  Qed.
+
+  Lemma heap_st_vec_lookup_1 σB st l bs :
+    own heap_bytes_name (● to_heap σB) -∗ heap_mapsto_st_vec st l 1%Qp bs -∗
+    ⌜mem_range (.= st) σB l bs⌝.
+  Proof.
+    iInduction bs as [|b bs] "IH" forall (l); iIntros "H● Hbs"; [done|].
+    rewrite heap_mapsto_st_vec_cons. iDestruct "Hbs" as "[Hb Hbs]".
+    iDestruct (heap_mapsto_st_lookup_1 with "H● Hb") as %Hl.
+    iDestruct ("IH" with "H● Hbs") as %?. iPureIntro. split; [|done]. by eexists.
+  Qed.
+
+  Lemma heap_st_vec_lookup_reading σB l q bs :
+    own heap_bytes_name (● to_heap σB) -∗ heap_mapsto_st_vec (RSt 1) l q bs -∗
+    ⌜mem_range is_reading_S σB l bs⌝.
+  Proof.
+    iInduction bs as [|b bs] "IH" forall (l); iIntros "H● Hbs"; [done|].
+    rewrite heap_mapsto_st_vec_cons. iDestruct "Hbs" as "[Hb Hbs]".
+    iDestruct (heap_mapsto_st_lookup with "H● Hb") as %[n Hl].
+    iDestruct ("IH" with "H● Hbs") as %?. iPureIntro. split; [|done].
+    eexists. split; [done|]. by eexists.
+  Qed.
+
+  Lemma heap_freeable_rel_dom (σ σ' : state) hF :
+    (∀ l, is_Some (σ.1 !! l) ↔ is_Some (σ'.1 !! l)) →
+    heap_freeable_rel σ hF → heap_freeable_rel σ' hF.
+  Proof.
+    intros Hdom REL blk qs Hqs. destruct (REL blk qs Hqs) as [? REL'].
+    split; [done|]. intros i. by rewrite -Hdom.
+  Qed.
+
+  Lemma is_Some_mem_write P (σ : state') l bs0 bs l' :
+    mem_range P σ l bs0 → length bs = length bs0 →
+    is_Some (mem_write l bs σ !! l') ↔ is_Some (σ !! l').
+  Proof.
+    intros Hbs Hlen. destruct (loc_range_dec l (length bs0) l') as [[i [Hi ->]]|Hout].
+    - destruct (mem_range_lookup_1 _ _ _ _ i Hbs Hi) as (ls & b & Hl & _).
+      destruct (lookup_lt_is_Some_2 bs i) as [b' Hb']; [lia|].
+      rewrite (lookup_mem_write_in _ _ _ _ b') //; rewrite Hl; split; eauto.
+    - rewrite lookup_mem_write_out //. by rewrite Hlen.
+  Qed.
+
+  (** ** The physical relation for ranges of the byte region *)
+  Lemma phys_rel_mem_range P σ σL σB l bs :
+    phys_rel σ σL σB → mem_range P σB l bs → mem_range P σ l bs.
+  Proof.
+    rewrite !mem_range_lookup. intros Hr H i b Hb.
+    destruct (H i b Hb) as (ls & Hl & ?). exists ls. split; [|done].
+    by eapply phys_rel_lookup_B.
+  Qed.
+
+  Lemma phys_rel_mem_alter P f σ σL σB l bs :
+    phys_rel σ σL σB → mem_range P σB l bs →
+    phys_rel (mem_alter f l (length bs) σ) σL (mem_alter f l (length bs) σB).
+  Proof.
+    intros Hr Hbs. apply (phys_rel_B_update σ _ σL σB); [done|]. intros l'.
+    destruct (loc_range_dec l (length bs) l') as [[i [Hi ->]]|Hout].
+    - right. destruct (mem_range_lookup_1 _ _ _ _ i Hbs Hi) as (ls & b & Hl & _).
+      rewrite !lookup_mem_alter_in // Hl (phys_rel_lookup_B _ _ _ _ _ Hr Hl). eauto.
+    - left. by rewrite !lookup_mem_alter_out.
+  Qed.
+
+  Lemma phys_rel_mem_write P σ σL σB l bs bs' :
+    phys_rel σ σL σB → mem_range P σB l bs → length bs' = length bs →
+    phys_rel (mem_write l bs' σ) σL (mem_write l bs' σB).
+  Proof.
+    intros Hr Hbs Hlen. apply (phys_rel_B_update σ _ σL σB); [done|]. intros l'.
+    destruct (loc_range_dec l (length bs) l') as [[i [Hi ->]]|Hout].
+    - right. destruct (mem_range_lookup_1 _ _ _ _ i Hbs Hi) as (ls & b & Hl & _).
+      destruct (lookup_lt_is_Some_2 bs' i) as [b' Hb']; [lia|].
+      rewrite !(lookup_mem_write_in _ _ _ _ b') //; rewrite Hl; eauto.
+    - left. rewrite !lookup_mem_write_out //; by rewrite Hlen.
+  Qed.
+
+  Lemma mem_alter_mem_write f l bs σB :
+    mem_write l bs (mem_alter f l (length bs) σB) = mem_write l bs σB.
+  Proof.
+    apply map_eq. intros l'. destruct (loc_range_dec l (length bs) l') as [[i [Hi ->]]|Hout].
+    - destruct (lookup_lt_is_Some_2 bs i) as [b Hb]; [lia|].
+      by rewrite !(lookup_mem_write_in _ _ _ _ b).
+    - by rewrite !lookup_mem_write_out // lookup_mem_alter_out.
+  Qed.
+End bytes.
+
+Section bytes_ctx.
+  Context `{!heapGS Σ}.
+  Context `{!invGS Σ}.
+  Context `{!na_invG Σ}.
+  Context `{!alc_logicG Σ}.
+  Implicit Types bs : list abyte.
+
+  (** ** Allocation and deallocation in the byte region *)
+  Lemma heap_alloc_bytes_vs (σ : state') l n :
+    (∀ m : Z, σ !! (l +ₗ m) = None) →
+    heap_maps_ctx σ ==∗ heap_maps_ctx (init_mem l n σ) ∗ l ↦b (replicate n Uninit).
+  Proof.
+    revert l. induction n as [|n IH]; iIntros (l Hfresh) "σ".
+    { iFrame. by rewrite heap_mapsto_bytes_nil. }
+    iMod (IH (l +ₗ 1) with "σ") as "[σ Hl]".
+    { intros m. rewrite shift_loc_assoc. apply Hfresh. }
+    iDestruct "σ" as (σL σB) "(%Hr & σ & σB)".
+    have Hfr : init_mem (l +ₗ 1) n σ !! l = None.
+    { rewrite lookup_init_mem_ne /=; last lia. rewrite -(shift_loc_0 l). apply Hfresh. }
+    destruct (phys_rel_None _ _ _ _ Hr Hfr) as [HL HB].
+    iMod (heap_bytes_alloc_vs _ _ Uninit with "σB") as "[σB Hb]"; [done|].
+    iModIntro. rewrite /= (heap_mapsto_bytes_cons _ _ Uninit). iFrame.
+    iSplitR; [iPureIntro; by apply phys_rel_B_insert|].
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec /=.
+    rewrite shift_loc_0. by iFrame.
+  Qed.
+
+  Lemma heap_alloc_bytes (σ: state) l n :
+    0 < n →
+    (∀ m, σ.1 !! (l +ₗ m) = None) →
+    heap_ctx σ ==∗
+      heap_ctx (init_mem l (Z.to_nat n) $σ σ) ∗ †l…(Z.to_nat n) ∗
+      l ↦b replicate (Z.to_nat n) Uninit.
+  Proof.
+    intros ??; iDestruct 1 as (hF) "(Hvalσ & HhF & % & ato)".
+    assert (Z.to_nat n ≠ O). { rewrite -(Nat2Z.id 0)=>/Z2Nat.inj. lia. }
+    iMod (heap_alloc_bytes_vs _ _ (Z.to_nat n) with "[$Hvalσ]") as "[Hvalσ Hmapsto]"; first done.
+    iMod (own_update _ (● hF) with "HhF") as "[HhF Hfreeable]".
+    { apply auth_update_alloc,
+        (alloc_singleton_local_update _ (l.1) (1%Qp, inter (l.2) (Z.to_nat n))).
+      - eauto using heap_freeable_rel_None.
+      - split; first done. apply inter_valid. }
+    iModIntro. iSplitL "Hvalσ HhF ato".
+    { iExists _. iFrame. iPureIntro.
+      auto using heap_freeable_rel_init_mem. }
+    rewrite heap_freeable_eq /heap_freeable_def //. iFrame.
+  Qed.
+
+  Lemma heap_free_bytes_vs (σ : state') l bs :
+    heap_maps_ctx σ -∗ l ↦b bs ==∗ heap_maps_ctx (free_mem l (length bs) σ).
+  Proof.
+    iInduction bs as [|b bs] "IH" forall (l); iIntros "σ Hbs"; [by iFrame|].
+    rewrite heap_mapsto_bytes_cons. iDestruct "Hbs" as "[Hb Hbs]".
+    iMod ("IH" with "σ Hbs") as "σ".
+    iDestruct "σ" as (σL σB) "(%Hr & σ & σB)".
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec /= shift_loc_0.
+    iDestruct "Hb" as "[Hb _]".
+    iMod (heap_bytes_dealloc_vs with "σB Hb") as "[%Hl σB]".
+    iModIntro. iFrame. iPureIntro. apply phys_rel_B_delete; [done|].
+    eapply phys_rel_B_not_L; [done|]. by eexists.
+  Qed.
+
+  Lemma heap_free_bytes σ l bs (n : Z) E :
+    n = length bs →
+    heap_ctx σ -∗ l ↦b bs -∗ †l…(length bs)
+    ={E}=∗ ⌜0 < n⌝ ∗ ⌜∀ m, is_Some (σ.1 !! (l +ₗ m)) ↔ (0 ≤ m < n)⌝ ∗
+        heap_ctx (free_mem l (Z.to_nat n) $σ σ).
+  Proof.
+    iDestruct 1 as (hF) "(Hvalσ & HhF & REL & ato)"; iDestruct "REL" as %REL.
+    iIntros "Hmt Hf". rewrite heap_freeable_eq /heap_freeable_def.
+    iDestruct (own_valid_2 with "HhF Hf") as % [Hl Hv]%auth_both_valid_discrete.
+    move: Hl=> /singleton_included_l [[q qs] [/leibniz_equiv_iff Hl Hq]].
+    apply (Some_included_exclusive _ _) in Hq as [=<-<-]%leibniz_equiv; last first.
+    { move: (Hv (l.1)). rewrite Hl. by intros [??]. }
+    assert (bs ≠ []).
+    { intros ->. by destruct (REL (l.1) (1%Qp, ∅)) as [[] ?]. }
+    assert (0 < n) by (subst n; by destruct bs).
+    iMod (heap_free_bytes_vs with "Hvalσ Hmt") as "Hvalσ".
+    iMod (own_update_2 with "HhF Hf") as "HhF".
+    { apply auth_update_dealloc, (delete_singleton_local_update _ _ _). }
+    iModIntro; subst. repeat iSplit;  eauto using heap_freeable_is_Some.
+    iExists _. subst. rewrite Nat2Z.id. iFrame.
+    eauto using heap_freeable_rel_free_mem.
+  Qed.
+
+  (** ** Moving locations between the legacy region and the byte region *)
+  Lemma heap_word_to_bytes (σ : state') l v E :
+    ↑naN ⊆ E →
+    heap_maps_ctx σ -∗ l ↦ v ={E}=∗ heap_maps_ctx σ ∗ l ↦b [word_to_byte v].
+  Proof.
+    iIntros (?) "(%σL & %σB & %Hr & σ & σB) Hl". rewrite /heap_mapsto.
+    iMod (non_atomic_map_delete with "Hl σ") as "[%HL σ]"; [done|].
+    have HB := phys_rel_L_not_B _ _ _ _ Hr (mk_is_Some _ _ HL).
+    iMod (heap_bytes_alloc_vs _ _ (word_to_byte v) with "σB") as "[σB Hb]"; [done|].
+    iModIntro. iFrame. iSplitR; [iPureIntro; by apply phys_rel_L_to_B|].
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec /=.
+    rewrite shift_loc_0. by iFrame.
+  Qed.
+
+  Lemma heap_bytes_to_word (σ : state') l v :
+    heap_maps_ctx σ -∗ l ↦b [word_to_byte v] ==∗ heap_maps_ctx σ ∗ l ↦ v.
+  Proof.
+    iIntros "(%σL & %σB & %Hr & σ & σB) Hb".
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec /= shift_loc_0.
+    iDestruct "Hb" as "[Hb _]".
+    iMod (heap_bytes_dealloc_vs with "σB Hb") as "[%HB σB]".
+    have HL := phys_rel_B_not_L _ _ _ _ Hr (mk_is_Some _ _ HB).
+    iMod (non_atomic_map_insert _ l v with "σ") as "[Hl σ]"; [done|].
+    iModIntro. iFrame. iSplitR; [iPureIntro; by apply phys_rel_B_to_L|]. by rewrite /heap_mapsto.
+  Qed.
+
+  Lemma heap_words_to_bytes (σ : state') l vl E :
+    ↑naN ⊆ E →
+    heap_maps_ctx σ -∗ l ↦∗ vl ={E}=∗ heap_maps_ctx σ ∗ l ↦b (word_to_byte <$> vl).
+  Proof.
+    iIntros (?). iInduction vl as [|v vl] "IH" forall (l); iIntros "σ Hvl".
+    { iFrame. by rewrite heap_mapsto_bytes_nil. }
+    rewrite heap_mapsto_vec_cons fmap_cons heap_mapsto_bytes_cons.
+    iDestruct "Hvl" as "[Hv Hvl]".
+    iMod (heap_word_to_bytes with "σ Hv") as "[σ $]"; [done|].
+    iApply ("IH" with "σ Hvl").
+  Qed.
+
+  Lemma heap_bytes_to_words (σ : state') l vl :
+    heap_maps_ctx σ -∗ l ↦b (word_to_byte <$> vl) ==∗ heap_maps_ctx σ ∗ l ↦∗ vl.
+  Proof.
+    iInduction vl as [|v vl] "IH" forall (l); iIntros "σ Hvl".
+    { iFrame. by rewrite heap_mapsto_vec_nil. }
+    rewrite heap_mapsto_vec_cons fmap_cons heap_mapsto_bytes_cons.
+    iDestruct "Hvl" as "[Hv Hvl]".
+    iMod (heap_bytes_to_word with "σ Hv") as "[σ $]".
+    iApply ("IH" with "σ Hvl").
+  Qed.
+End bytes_ctx.

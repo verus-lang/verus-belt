@@ -25,6 +25,17 @@ Inductive expr :=
 | Fork (e : expr)
 | GlobalLock
 | GlobalUnlock
+| MLit (v : Value)
+| Load (o : order) (m : mty) (e : expr)
+| Store (o : order) (m : mty) (e1 e2 : expr)
+| MemCopy (o : order) (n : nat) (e1 e2 : expr)
+| MkTuple (el : list expr)
+| Proj (i : nat) (e : expr)
+| MkVariant (t : Z) (e : expr)
+| VariantTag (e : expr)
+| VariantData (e : expr)
+| ToLit (e : expr)
+| OfLit (e : expr)
 .
 
 Fixpoint to_expr (e : expr) : lang.expr :=
@@ -46,6 +57,17 @@ Fixpoint to_expr (e : expr) : lang.expr :=
   | Fork e => lang.Fork (to_expr e)
   | GlobalLock => lang.GlobalLock
   | GlobalUnlock => lang.GlobalUnlock
+  | MLit v => lang.MLit v
+  | Load o m e => lang.Load o m (to_expr e)
+  | Store o m e1 e2 => lang.Store o m (to_expr e1) (to_expr e2)
+  | MemCopy o n e1 e2 => lang.MemCopy o n (to_expr e1) (to_expr e2)
+  | MkTuple el => lang.MkTuple (map to_expr el)
+  | Proj i e => lang.Proj i (to_expr e)
+  | MkVariant t e => lang.MkVariant t (to_expr e)
+  | VariantTag e => lang.VariantTag (to_expr e)
+  | VariantData e => lang.VariantData (to_expr e)
+  | ToLit e => lang.ToLit (to_expr e)
+  | OfLit e => lang.OfLit (to_expr e)
   end.
 
 Ltac of_expr e :=
@@ -77,6 +99,19 @@ Ltac of_expr e :=
   | of_val ?v => constr:(Val v (of_val v) (to_of_val v))
   | lang.GlobalLock => constr:(GlobalLock)
   | lang.GlobalUnlock => constr:(GlobalUnlock)
+  | lang.MLit ?v => constr:(MLit v)
+  | lang.Load ?o ?m ?e => let e := of_expr e in constr:(Load o m e)
+  | lang.Store ?o ?m ?e1 ?e2 =>
+    let e1 := of_expr e1 in let e2 := of_expr e2 in constr:(Store o m e1 e2)
+  | lang.MemCopy ?o ?n ?e1 ?e2 =>
+    let e1 := of_expr e1 in let e2 := of_expr e2 in constr:(MemCopy o n e1 e2)
+  | lang.MkTuple ?el => let el := of_expr el in constr:(MkTuple el)
+  | lang.Proj ?i ?e => let e := of_expr e in constr:(Proj i e)
+  | lang.MkVariant ?t ?e => let e := of_expr e in constr:(MkVariant t e)
+  | lang.VariantTag ?e => let e := of_expr e in constr:(VariantTag e)
+  | lang.VariantData ?e => let e := of_expr e in constr:(VariantData e)
+  | lang.ToLit ?e => let e := of_expr e in constr:(ToLit e)
+  | lang.OfLit ?e => let e := of_expr e in constr:(OfLit e)
   | _ => match goal with
          | H : to_val e = Some ?v |- _ => constr:(Val v e H)
          | H : Closed [] e |- _ => constr:(@ClosedExpr e H)
@@ -87,18 +122,21 @@ Fixpoint is_closed (X : list string) (e : expr) : bool :=
   match e with
   | Val _ _ _ | ClosedExpr _ => true
   | Var x => bool_decide (x ∈ X)
-  | Lit _ | NdInt | GlobalLock | GlobalUnlock => true
+  | Lit _ | NdInt | GlobalLock | GlobalUnlock | MLit _ => true
   | Rec f xl e => is_closed (f :b: xl +b+ X) e
-  | BinOp _ e1 e2 | Write _ e1 e2 | Free e1 e2 =>
+  | BinOp _ e1 e2 | Write _ e1 e2 | Free e1 e2 | Store _ _ e1 e2 | MemCopy _ _ e1 e2 =>
     is_closed X e1 && is_closed X e2
   | App e el | Case e el => is_closed X e && forallb (is_closed X) el
-  | Read _ e | Alloc e | Fork e => is_closed X e
+  | MkTuple el => forallb (is_closed X) el
+  | Read _ e | Alloc e | Fork e | Load _ _ e | Proj _ e | MkVariant _ e
+  | VariantTag e | VariantData e | ToLit e | OfLit e => is_closed X e
   | CAS e0 e1 e2 => is_closed X e0 && is_closed X e1 && is_closed X e2
   end.
 Lemma is_closed_correct X e : is_closed X e → lang.is_closed X (to_expr e).
 Proof.
   revert e X. fix FIX 1; destruct e=>/=;
     try naive_solver eauto using is_closed_to_val, is_closed_weaken_nil.
+  - induction el=>/=; naive_solver.
   - induction el=>/=; naive_solver.
   - induction el=>/=; naive_solver.
 Qed.
@@ -114,6 +152,7 @@ Definition to_val (e : expr) : option val :=
     if decide (is_closed (f :b: xl +b+ []) e) is left H
     then Some (@RecV f xl (to_expr e) (is_closed_correct _ _ H)) else None
   | Lit l => Some (LitV l)
+  | MLit v => Some (MLitV v)
   | _ => None
   end.
 Lemma to_val_Some e v :
@@ -148,12 +187,24 @@ Fixpoint subst (x : string) (es : expr) (e : expr)  : expr :=
   | Fork e => Fork (subst x es e)
   | GlobalLock => GlobalLock
   | GlobalUnlock => GlobalUnlock
+  | MLit v => MLit v
+  | Load o m e => Load o m (subst x es e)
+  | Store o m e1 e2 => Store o m (subst x es e1) (subst x es e2)
+  | MemCopy o n e1 e2 => MemCopy o n (subst x es e1) (subst x es e2)
+  | MkTuple el => MkTuple (map (subst x es) el)
+  | Proj i e => Proj i (subst x es e)
+  | MkVariant t e => MkVariant t (subst x es e)
+  | VariantTag e => VariantTag (subst x es e)
+  | VariantData e => VariantData (subst x es e)
+  | ToLit e => ToLit (subst x es e)
+  | OfLit e => OfLit (subst x es e)
   end.
 Lemma to_expr_subst x er e :
   to_expr (subst x er e) = lang.subst x (to_expr er) (to_expr e).
 Proof.
   revert e x er. fix FIX 1; destruct e=>/= ? er; repeat case_bool_decide;
     f_equal; eauto using is_closed_nil_subst, is_closed_to_val, eq_sym.
+  - induction el=>//=. f_equal; auto.
   - induction el=>//=. f_equal; auto.
   - induction el=>//=. f_equal; auto.
 Qed.
@@ -165,6 +216,9 @@ Definition is_atomic (e: expr) : bool :=
     bool_decide (is_Some (to_val e1) ∧ is_Some (to_val e2))
   | CAS e0 e1 e2 =>
     bool_decide (is_Some (to_val e0) ∧ is_Some (to_val e1) ∧ is_Some (to_val e2))
+  | Load (ScOrd | Na2Ord) _ e => bool_decide (is_Some (to_val e))
+  | Store (ScOrd | Na2Ord) _ e1 e2 | MemCopy (ScOrd | Na2Ord) _ e1 e2 =>
+    bool_decide (is_Some (to_val e1) ∧ is_Some (to_val e2))
   | _ => false
   end.
 Lemma is_atomic_correct e : is_atomic e → Atomic WeaklyAtomic (to_expr e).
@@ -255,6 +309,7 @@ Ltac reshape_val e tac :=
   match e with
   | of_val ?v => v
   | Lit ?l => constr:(LitV l)
+  | MLit ?v => constr:(MLitV v)
   | Rec ?f ?xl ?e => constr:(RecV f xl e)
   end in let v := go e in tac v.
 
@@ -263,6 +318,11 @@ Ltac reshape_expr e tac :=
     match es with
     | ?e :: ?es => reshape_val e ltac:(fun v => go_fun K f (v :: vs) es)
     | ?e :: ?es => go (AppRCtx f (reverse vs) es :: K) e
+    end
+  with go_tuple K vs es :=
+    match es with
+    | ?e :: ?es => reshape_val e ltac:(fun v => go_tuple K (v :: vs) es)
+    | ?e :: ?es => go (MkTupleCtx (reverse vs) es :: K) e
     end
   with go K e :=
   match e with
@@ -284,5 +344,19 @@ Ltac reshape_expr e tac :=
   | Free ?e1 ?e2 => reshape_val e1 ltac:(fun v1 => go (FreeRCtx v1 :: K) e2)
   | Free ?e1 ?e2 => go (FreeLCtx e2 :: K) e1
   | Case ?e ?el => go (CaseCtx el :: K) e
+  | Load ?o ?m ?e => go (LoadCtx o m :: K) e
+  | Store ?o ?m ?e1 ?e2 =>
+    reshape_val e1 ltac:(fun v1 => go (StoreRCtx o m v1 :: K) e2)
+  | Store ?o ?m ?e1 ?e2 => go (StoreLCtx o m e2 :: K) e1
+  | MemCopy ?o ?n ?e1 ?e2 =>
+    reshape_val e1 ltac:(fun v1 => go (MemCopyRCtx o n v1 :: K) e2)
+  | MemCopy ?o ?n ?e1 ?e2 => go (MemCopyLCtx o n e2 :: K) e1
+  | MkTuple ?el => go_tuple K (@nil val) el
+  | Proj ?i ?e => go (ProjCtx i :: K) e
+  | MkVariant ?t ?e => go (MkVariantCtx t :: K) e
+  | VariantTag ?e => go (VariantTagCtx :: K) e
+  | VariantData ?e => go (VariantDataCtx :: K) e
+  | ToLit ?e => go (ToLitCtx :: K) e
+  | OfLit ?e => go (OfLitCtx :: K) e
   end
   in go (@nil ectx_item) e.

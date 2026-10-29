@@ -294,7 +294,7 @@ Section type_sum.
     iMod (proph_obs_sat with "PROPH Obs") as %[?[?[Eq _]]]; [done|]. iModIntro.
     iDestruct "p" as (val d Ev) "[#⧖ [gho %phys]]".
     destruct d; first by done.
-    destruct val as [|l]; last by done. destruct l as [| |]; [done| |done].
+    destruct val as [|l|]; [|done|done]. destruct l as [| |]; [done| |done].
     iExists ((cloc_take (cloc_skip cloc 1) (ty_size (tyl +!! i)), x1) -:: _). iFrame "T". iSplit.
     { iExists _, _. iSplit; [by rewrite/= Ev|]. iFrame "⧖".
     iDestruct "gho" as "(#pt & #gho & #ghopers)".

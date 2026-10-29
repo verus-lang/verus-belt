@@ -1,17 +1,26 @@
 From iris.program_logic Require Export language ectx_language ectxi_language.
 From stdpp Require Export strings binders.
 From stdpp Require Import gmap.
+From lrust.lang Require Export minirust.
 Set Default Proof Using "Type".
 
 Open Scope Z_scope.
 
-(** Expressions and vals. *)
-Definition block : Set := positive.
-Definition loc : Set := block * Z.
+(** Expressions and vals.
 
-Declare Scope loc_scope.
-Bind Scope loc_scope with loc.
-Delimit Scope loc_scope with L.
+[block], [loc], the MiniRust values [Value], the MiniRust types [mty] and the
+abstract bytes [AbstractByte] are defined in [minirust.v].
+
+The language has two layers, which coexist until the legacy layer is deleted
+(see [design_docs/minirust-memory-model.md]):
+- the legacy lambda-Rust layer: [base_lit]/[val] values, and one-word memory
+  operations [Read], [Write], [CAS] (a word is stored in one byte of kind
+  [Word], see [word_to_byte]);
+- the MiniRust layer: values [MLit v] (with [v : Value]), typed loads and
+  stores [Load o m e] and [Store o m e1 e2] of any [m : mty] (which decode_value and
+  encode_value [AbstractByte]s), a byte-level [MemCopy], and constructors and
+  projections on [Value]s.
+Memory holds [AbstractByte]s for both layers. *)
 Open Scope loc_scope.
 
 Inductive base_lit : Set :=
@@ -44,20 +53,35 @@ Inductive expr :=
 | Case (e : expr) (el : list expr)
 | Fork (e : expr)
 | GlobalLock
-| GlobalUnlock.
+| GlobalUnlock
+(* MiniRust layer *)
+| MLit (v : Value)
+| Load (o : order) (m : mty) (e : expr)
+| Store (o : order) (m : mty) (e1 e2 : expr)
+| MemCopy (o : order) (n : nat) (e1 e2 : expr)
+| MkTuple (el : list expr)
+| Proj (i : nat) (e : expr)
+| MkVariant (t : Z) (e : expr)
+| VariantTag (e : expr)
+| VariantData (e : expr)
+| ToLit (e : expr)
+| OfLit (e : expr).
 
 Arguments App _%E _%E.
 Arguments Case _%E _%E.
+Arguments MkTuple _%E.
 
 Fixpoint is_closed (X : list string) (e : expr) : bool :=
   match e with
   | Var x => bool_decide (x ∈ X)
-  | Lit _ | NdInt | GlobalLock | GlobalUnlock => true
+  | Lit _ | NdInt | GlobalLock | GlobalUnlock | MLit _ => true
   | Rec f xl e => is_closed (f :b: xl +b+ X) e
-  | BinOp _ e1 e2 | Write _ e1 e2 | Free e1 e2 =>
+  | BinOp _ e1 e2 | Write _ e1 e2 | Free e1 e2 | Store _ _ e1 e2 | MemCopy _ _ e1 e2 =>
     is_closed X e1 && is_closed X e2
   | App e el | Case e el => is_closed X e && forallb (is_closed X) el
-  | Read _ e | Alloc e | Fork e => is_closed X e
+  | MkTuple el => forallb (is_closed X) el
+  | Read _ e | Alloc e | Fork e | Load _ _ e | Proj _ e | MkVariant _ e
+  | VariantTag e | VariantData e | ToLit e | OfLit e => is_closed X e
   | CAS e0 e1 e2 => is_closed X e0 && is_closed X e1 && is_closed X e2
   end.
 
@@ -69,7 +93,8 @@ Proof. rewrite /Closed. apply _. Qed.
 
 Inductive val :=
 | LitV (l : base_lit)
-| RecV (f : binder) (xl : list binder) (e : expr) `{!Closed (f :b: xl +b+ []) e}.
+| RecV (f : binder) (xl : list binder) (e : expr) `{!Closed (f :b: xl +b+ []) e}
+| MLitV (v : Value).
 
 Bind Scope val_scope with val.
 
@@ -77,6 +102,7 @@ Definition of_val (v : val) : expr :=
   match v with
   | RecV f x e => Rec f x e
   | LitV l => Lit l
+  | MLitV v => MLit v
   end.
 
 Definition to_val (e : expr) : option val :=
@@ -84,14 +110,30 @@ Definition to_val (e : expr) : option val :=
   | Rec f xl e =>
     if decide (Closed (f :b: xl +b+ []) e) then Some (RecV f xl e) else None
   | Lit l => Some (LitV l)
+  | MLit v => Some (MLitV v)
   | _ => None
   end.
 
-(** The state: heaps of vals*lockstate. *)
+(** The state: heaps of abstract bytes*lockstate. *)
+Notation abyte := (AbstractByte val).
+
+(** A legacy word is stored as one byte: [Word v], except that [LitPoison] is
+    stored as [Uninit]. Hence [Alloc] (which yields [Uninit] bytes) is seen by
+    the legacy layer as yielding poison, as before. *)
+Definition word_to_byte (v : val) : abyte :=
+  match v with LitV LitPoison => Uninit | _ => Word v end.
+Global Arguments word_to_byte : simpl never.
+Definition byte_to_word (b : abyte) : option val :=
+  match b with Uninit => Some (LitV LitPoison) | Word v => Some v | _ => None end.
+Lemma byte_to_word_to_byte v : byte_to_word (word_to_byte v) = Some v.
+Proof. by destruct v as [[]| |]. Qed.
+Global Instance word_to_byte_inj : Inj (=) (=) word_to_byte.
+Proof. intros v1 v2 Heq. apply (inj Some). by rewrite -!byte_to_word_to_byte Heq. Qed.
+
 Inductive lock_state :=
 | WSt | RSt (n : nat).
-Definition state' : Type := gmap loc (lock_state * val).
-Definition state : Type := gmap loc (lock_state * val) * bool.
+Definition state' : Type := gmap loc (lock_state * abyte).
+Definition state : Type := gmap loc (lock_state * abyte) * bool.
 
 Definition σ_map : (state' → state') → (state → state) :=
     λ f s, (f (fst s), snd s).
@@ -112,7 +154,19 @@ Inductive ectx_item :=
 | AllocCtx
 | FreeLCtx (e2 : expr)
 | FreeRCtx (v1 : val)
-| CaseCtx (el : list expr).
+| CaseCtx (el : list expr)
+| LoadCtx (o : order) (m : mty)
+| StoreLCtx (o : order) (m : mty) (e2 : expr)
+| StoreRCtx (o : order) (m : mty) (v1 : val)
+| MemCopyLCtx (o : order) (n : nat) (e2 : expr)
+| MemCopyRCtx (o : order) (n : nat) (v1 : val)
+| MkTupleCtx (vl : list val) (el : list expr)
+| ProjCtx (i : nat)
+| MkVariantCtx (t : Z)
+| VariantTagCtx
+| VariantDataCtx
+| ToLitCtx
+| OfLitCtx.
 
 Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
   match Ki with
@@ -130,6 +184,18 @@ Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
   | FreeLCtx e2 => Free e e2
   | FreeRCtx v1 => Free (of_val v1) e
   | CaseCtx el => Case e el
+  | LoadCtx o m => Load o m e
+  | StoreLCtx o m e2 => Store o m e e2
+  | StoreRCtx o m v1 => Store o m (of_val v1) e
+  | MemCopyLCtx o n e2 => MemCopy o n e e2
+  | MemCopyRCtx o n v1 => MemCopy o n (of_val v1) e
+  | MkTupleCtx vl el => MkTuple ((of_val <$> vl) ++ e :: el)
+  | ProjCtx i => Proj i e
+  | MkVariantCtx t => MkVariant t e
+  | VariantTagCtx => VariantTag e
+  | VariantDataCtx => VariantData e
+  | ToLitCtx => ToLit e
+  | OfLitCtx => OfLit e
   end.
 
 (** Substitution *)
@@ -151,6 +217,17 @@ Fixpoint subst (x : string) (es : expr) (e : expr)  : expr :=
   | Fork e => Fork (subst x es e)
   | GlobalLock => GlobalLock
   | GlobalUnlock => GlobalUnlock
+  | MLit v => MLit v
+  | Load o m e => Load o m (subst x es e)
+  | Store o m e1 e2 => Store o m (subst x es e1) (subst x es e2)
+  | MemCopy o n e1 e2 => MemCopy o n (subst x es e1) (subst x es e2)
+  | MkTuple el => MkTuple (map (subst x es) el)
+  | Proj i e => Proj i (subst x es e)
+  | MkVariant t e => MkVariant t (subst x es e)
+  | VariantTag e => VariantTag (subst x es e)
+  | VariantData e => VariantData (subst x es e)
+  | ToLit e => ToLit (subst x es e)
+  | OfLit e => OfLit (subst x es e)
   end.
 
 Definition subst' (mx : binder) (es : expr) : expr → expr :=
@@ -192,7 +269,7 @@ Notation "l +ₗ z" := (shift_loc l%L z%Z)
 Fixpoint init_mem (l:loc) (n:nat) (σ:state') : state' :=
   match n with
   | O => σ
-  | S n => <[l:=(RSt 0, LitV LitPoison)]>(init_mem (l +ₗ 1) n σ)
+  | S n => <[l:=(RSt 0, Uninit)]>(init_mem (l +ₗ 1) n σ)
   end.
 
 Fixpoint free_mem (l:loc) (n:nat) (σ:state') : state' :=
@@ -247,6 +324,49 @@ Inductive bin_op_eval (σ : state) : bin_op → base_lit → base_lit → base_l
 
 Notation stuck_term := (App (Lit (LitInt 0)) []).
 
+(** Memory ranges, for the MiniRust layer. *)
+Definition ls_inc (ls : lock_state) : lock_state :=
+  match ls with RSt n => RSt (S n) | WSt => WSt end.
+Definition ls_dec (ls : lock_state) : lock_state :=
+  match ls with RSt n => RSt (pred n) | WSt => WSt end.
+Definition is_reading (ls : lock_state) : Prop := ∃ n, ls = RSt n.
+Definition is_reading_S (ls : lock_state) : Prop := ∃ n, ls = RSt (S n).
+
+(** The bytes at [l], [l +ₗ 1], ... are [bs], and their lock states satisfy [P]. *)
+Fixpoint mem_range (P : lock_state → Prop) (σ : state') (l : loc) (bs : list abyte) : Prop :=
+  match bs with
+  | [] => True
+  | b :: bs => (∃ ls, σ !! l = Some (ls, b) ∧ P ls) ∧ mem_range P σ (l +ₗ 1) bs
+  end.
+
+(** Change the lock states of the [n] bytes at [l] with [f]. *)
+Fixpoint mem_alter (f : lock_state → lock_state) (l : loc) (n : nat) (σ : state') : state' :=
+  match n with
+  | O => σ
+  | S n => alter (λ p, (f p.1, p.2)) l (mem_alter f (l +ₗ 1) n σ)
+  end.
+
+(** Write the bytes [bs] at [l], with lock state [RSt 0]. *)
+Fixpoint mem_write (l : loc) (bs : list abyte) (σ : state') : state' :=
+  match bs with
+  | [] => σ
+  | b :: bs => <[l:=(RSt 0, b)]>(mem_write (l +ₗ 1) bs σ)
+  end.
+
+Definition value_to_lit (v : Value) : option base_lit :=
+  match v with
+  | VInt z => Some (LitInt z)
+  | VBool b => Some (lit_of_bool b)
+  | VPtr l => Some (LitLoc l)
+  | _ => None
+  end.
+Definition lit_to_value (l : base_lit) : option Value :=
+  match l with
+  | LitInt z => Some (VInt z)
+  | LitLoc l => Some (VPtr l)
+  | LitPoison => None
+  end.
+
 Inductive head_step : expr → state → list Empty_set → expr → state → list expr → Prop :=
 | BinOpS op l1 l2 l' σ :
     bin_op_eval σ op l1 l2 l' →
@@ -259,53 +379,53 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
     subst_l (f::xl) (Rec f xl e :: el) e = Some e' →
     head_step (App (Rec f xl e) el) σ [] e' σ []
 | ReadScS l n v σ:
-    σ.1 !! l = Some (RSt n, v) →
+    σ.1 !! l = Some (RSt n, word_to_byte v) →
     head_step (Read ScOrd (Lit $ LitLoc l)) σ [] (of_val v) σ []
-| ReadNa1S l n v σ:
-    σ.1 !! l = Some (RSt n, v) →
+| ReadNa1S l n b σ:
+    σ.1 !! l = Some (RSt n, b) →
     head_step (Read Na1Ord (Lit $ LitLoc l)) σ
               []
-              (Read Na2Ord (Lit $ LitLoc l)) ((<[l:=(RSt $ S n, v)]>σ.1), σ.2)
+              (Read Na2Ord (Lit $ LitLoc l)) ((<[l:=(RSt $ S n, b)]>σ.1), σ.2)
               []
 | ReadNa2S l n v σ:
-    σ.1 !! l = Some (RSt $ S n, v) →
+    σ.1 !! l = Some (RSt $ S n, word_to_byte v) →
     head_step (Read Na2Ord (Lit $ LitLoc l)) σ
               []
-              (of_val v) ((<[l:=(RSt n, v)]>σ.1), σ.2)
+              (of_val v) ((<[l:=(RSt n, word_to_byte v)]>σ.1), σ.2)
               []
-| WriteScS l e v v' σ:
+| WriteScS l e v b' σ:
     to_val e = Some v →
-    σ.1 !! l = Some (RSt 0, v') →
+    σ.1 !! l = Some (RSt 0, b') →
     head_step (Write ScOrd (Lit $ LitLoc l) e) σ
               []
-              (Lit LitPoison) ((<[l:=(RSt 0, v)]>σ.1, σ.2))
+              (Lit LitPoison) ((<[l:=(RSt 0, word_to_byte v)]>σ.1, σ.2))
               []
-| WriteNa1S l e v v' σ:
+| WriteNa1S l e v b' σ:
     to_val e = Some v →
-    σ.1 !! l = Some (RSt 0, v') →
+    σ.1 !! l = Some (RSt 0, b') →
     head_step (Write Na1Ord (Lit $ LitLoc l) e) σ
               []
-              (Write Na2Ord (Lit $ LitLoc l) e) ((<[l:=(WSt, v')]>σ.1, σ.2))
+              (Write Na2Ord (Lit $ LitLoc l) e) ((<[l:=(WSt, b')]>σ.1, σ.2))
               []
-| WriteNa2S l e v v' σ:
+| WriteNa2S l e v b' σ:
     to_val e = Some v →
-    σ.1 !! l = Some (WSt, v') →
+    σ.1 !! l = Some (WSt, b') →
     head_step (Write Na2Ord (Lit $ LitLoc l) e) σ
               []
-              (Lit LitPoison) ((<[l:=(RSt 0, v)]>σ.1, σ.2))
+              (Lit LitPoison) ((<[l:=(RSt 0, word_to_byte v)]>σ.1, σ.2))
               []
 | CasFailS l n e1 lit1 e2 lit2 litl σ :
     to_val e1 = Some $ LitV lit1 → to_val e2 = Some $ LitV lit2 →
-    σ.1 !! l = Some (RSt n, LitV litl) →
+    σ.1 !! l = Some (RSt n, word_to_byte (LitV litl)) →
     lit_neq lit1 litl →
     head_step (CAS (Lit $ LitLoc l) e1 e2) σ [] (Lit $ lit_of_bool false) σ  []
 | CasSucS l e1 lit1 e2 lit2 litl σ :
     to_val e1 = Some $ LitV lit1 → to_val e2 = Some $ LitV lit2 →
-    σ.1 !! l = Some (RSt 0, LitV litl) →
+    σ.1 !! l = Some (RSt 0, word_to_byte (LitV litl)) →
     lit_eq σ lit1 litl →
     head_step (CAS (Lit $ LitLoc l) e1 e2) σ
               []
-              (Lit $ lit_of_bool true) (<[l:=(RSt 0, LitV lit2)]>σ.1, σ.2)
+              (Lit $ lit_of_bool true) (<[l:=(RSt 0, word_to_byte (LitV lit2))]>σ.1, σ.2)
               []
 (* A succeeding CAS has to detect concurrent non-atomic read accesses, and
    trigger UB if there is one.  In lambdaRust, succeeding and failing CAS are
@@ -323,7 +443,7 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
    reductions are blocked.  *)
 | CasStuckS l n e1 lit1 e2 lit2 litl σ :
     to_val e1 = Some $ LitV lit1 → to_val e2 = Some $ LitV lit2 →
-    σ.1 !! l = Some (RSt n, LitV litl) → 0 < n →
+    σ.1 !! l = Some (RSt n, word_to_byte (LitV litl)) → 0 < n →
     lit_eq σ lit1 litl →
     head_step (CAS (Lit $ LitLoc l) e1 e2) σ
               []
@@ -360,6 +480,82 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
     head_step (Case (Lit $ LitInt i) el) σ [] e σ []
 | ForkS e σ:
     head_step (Fork e) σ [] (Lit LitPoison) σ [e]
+(** MiniRust layer: typed loads and stores of any size, with the same
+    two-phase race detection as the legacy word operations, over the whole
+    byte range. *)
+| LoadScS l m bs v σ :
+    mem_range is_reading σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v →
+    head_step (Load ScOrd m (Lit $ LitLoc l)) σ [] (MLit v) σ []
+| LoadNa1S l m bs σ :
+    mem_range is_reading σ.1 l bs → length bs = mty_size m →
+    head_step (Load Na1Ord m (Lit $ LitLoc l)) σ
+              []
+              (Load Na2Ord m (Lit $ LitLoc l)) (mem_alter ls_inc l (mty_size m) σ.1, σ.2)
+              []
+| LoadNa2S l m bs v σ :
+    mem_range is_reading_S σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v →
+    head_step (Load Na2Ord m (Lit $ LitLoc l)) σ
+              []
+              (MLit v) (mem_alter ls_dec l (mty_size m) σ.1, σ.2)
+              []
+| StoreScS l m e v bs σ :
+    to_val e = Some (MLitV v) → val_wf m v →
+    mem_range (.= RSt 0) σ.1 l bs → length bs = mty_size m →
+    head_step (Store ScOrd m (Lit $ LitLoc l) e) σ
+              []
+              (Lit LitPoison) (mem_write l (encode_value m v) σ.1, σ.2)
+              []
+| StoreNa1S l m e v bs σ :
+    to_val e = Some (MLitV v) → val_wf m v →
+    mem_range (.= RSt 0) σ.1 l bs → length bs = mty_size m →
+    head_step (Store Na1Ord m (Lit $ LitLoc l) e) σ
+              []
+              (Store Na2Ord m (Lit $ LitLoc l) e) (mem_alter (λ _, WSt) l (mty_size m) σ.1, σ.2)
+              []
+| StoreNa2S l m e v bs σ :
+    to_val e = Some (MLitV v) → val_wf m v →
+    mem_range (.= WSt) σ.1 l bs → length bs = mty_size m →
+    head_step (Store Na2Ord m (Lit $ LitLoc l) e) σ
+              []
+              (Lit LitPoison) (mem_write l (encode_value m v) σ.1, σ.2)
+              []
+(** [MemCopy Na1Ord n l1 l2] copies the [n] bytes at [l2] to [l1], verbatim. It is
+    non-atomic: it reads [l2] and writes [l1] in two phases. Overlapping ranges
+    get stuck in the second phase. *)
+| MemCopyNa1S l1 l2 n bs1 bs2 σ :
+    mem_range (.= RSt 0) σ.1 l1 bs1 → length bs1 = n →
+    mem_range is_reading σ.1 l2 bs2 → length bs2 = n →
+    head_step (MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2)) σ
+              []
+              (MemCopy Na2Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2))
+              (mem_alter (λ _, WSt) l1 n (mem_alter ls_inc l2 n σ.1), σ.2)
+              []
+| MemCopyNa2S l1 l2 n bs1 bs2 σ :
+    mem_range (.= WSt) σ.1 l1 bs1 → length bs1 = n →
+    mem_range is_reading_S σ.1 l2 bs2 → length bs2 = n →
+    head_step (MemCopy Na2Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2)) σ
+              []
+              (Lit LitPoison) (mem_write l1 bs2 (mem_alter ls_dec l2 n σ.1), σ.2)
+              []
+(** MiniRust layer: values *)
+| MkTupleS el vs σ :
+    Forall2 (λ e v, to_val e = Some (MLitV v)) el vs →
+    head_step (MkTuple el) σ [] (MLit (VTuple vs)) σ []
+| ProjS i vs v σ :
+    vs !! i = Some v →
+    head_step (Proj i (MLit (VTuple vs))) σ [] (MLit v) σ []
+| MkVariantS t v σ :
+    head_step (MkVariant t (MLit v)) σ [] (MLit (VVariant t v)) σ []
+| VariantTagS t v σ :
+    head_step (VariantTag (MLit (VVariant t v))) σ [] (MLit (VInt t)) σ []
+| VariantDataS t v σ :
+    head_step (VariantData (MLit (VVariant t v))) σ [] (MLit v) σ []
+| ToLitS v l σ :
+    value_to_lit v = Some l →
+    head_step (ToLit (MLit v)) σ [] (Lit l) σ []
+| OfLitS l v σ :
+    lit_to_value l = Some v →
+    head_step (OfLit (Lit l)) σ [] (MLit v) σ []
     .
 
 (** Basic properties about the language *)
@@ -370,7 +566,7 @@ Qed.
 
 Lemma of_to_val e v : to_val e = Some v → of_val v = e.
 Proof.
-  revert v; induction e; intros v ?; simplify_option_eq; auto with f_equal.
+  revert v; induction e; intros w ?; simplify_option_eq; auto with f_equal.
 Qed.
 
 Global Instance of_val_inj : Inj (=) (=) of_val.
@@ -410,13 +606,13 @@ Lemma fill_item_no_val_inj Ki1 Ki2 e1 e2 :
   to_val e1 = None → to_val e2 = None →
   fill_item Ki1 e1 = fill_item Ki2 e2 → Ki1 = Ki2.
 Proof.
-  destruct Ki1 as [| | |v1 vl1 el1| | | | | | | | | |],
-           Ki2 as [| | |v2 vl2 el2| | | | | | | | | |];
+  destruct Ki1 as [| | |v1 vl1 el1| | | | | | | | | | | | | | | |vl1 el1| | | | | |],
+           Ki2 as [| | |v2 vl2 el2| | | | | | | | | | | | | | | |vl2 el2| | | | | |];
   intros He1 He2 EQ; try discriminate; simplify_eq/=;
     repeat match goal with
     | H : to_val (of_val _) = None |- _ => by rewrite to_of_val in H
     end; auto.
-  destruct (list_expr_val_eq_inv vl1 vl2 e1 e2 el1 el2); auto. congruence.
+  all: destruct (list_expr_val_eq_inv vl1 vl2 e1 e2 el1 el2); auto; congruence.
 Qed.
 
 Lemma shift_loc_assoc l n n' : l +ₗ n +ₗ n' = l +ₗ (n + n').
@@ -437,7 +633,7 @@ Proof. done. Qed.
 
 Lemma lookup_init_mem σ (l l' : loc) (n : nat) :
   l.1 = l'.1 → l.2 ≤ l'.2 < l.2 + n →
-  init_mem l n σ !! l' = Some (RSt 0, LitV LitPoison).
+  init_mem l n σ !! l' = Some (RSt 0, Uninit).
 Proof.
   intros ?. destruct l' as [? l']; simplify_eq/=.
   revert l. induction n as [|n IH]=> /= l Hl; [lia|].
@@ -454,6 +650,103 @@ Proof.
   revert l. induction n as [|n IH]=> /= l Hl; auto.
   rewrite -(IH (l +ₗ 1)); last (simpl; intuition lia).
   apply lookup_insert_ne. intros ->; intuition lia.
+Qed.
+
+(** Memory ranges *)
+Lemma shift_loc_S l (i : nat) : l +ₗ S i = l +ₗ 1 +ₗ i.
+Proof. rewrite shift_loc_assoc. f_equal. lia. Qed.
+
+Lemma shift_loc_ne_S l (i : nat) : l ≠ l +ₗ 1 +ₗ i.
+Proof. rewrite shift_loc_assoc. destruct l as [b o]. intros [=]. lia. Qed.
+
+Lemma loc_range_dec (l : loc) (n : nat) (l' : loc) :
+  {i : nat | (i < n)%nat ∧ l' = l +ₗ i} + (∀ i : nat, (i < n)%nat → l' ≠ l +ₗ i).
+Proof.
+  destruct l as [b o], l' as [b' o'].
+  destruct (decide (b' = b ∧ o ≤ o' < o + n)) as [[-> Ho]|Hn].
+  - left. exists (Z.to_nat (o' - o)). split; [lia|]. rewrite /shift_loc /=. f_equal. lia.
+  - right. intros i Hi [= -> ->]. apply Hn. split; [done|lia].
+Qed.
+
+Lemma mem_range_det P Q σ l bs bs' :
+  mem_range P σ l bs → mem_range Q σ l bs' → length bs = length bs' → bs = bs'.
+Proof.
+  revert l bs'. induction bs as [|b bs IH]; intros l [|b' bs'] H H' Hlen; try done.
+  destruct H as [(ls&Hl&_) H], H' as [(ls'&Hl'&_) H'].
+  simpl in Hlen. rewrite Hl in Hl'. simplify_eq. f_equal. eapply IH; [done..|lia].
+Qed.
+
+Lemma lookup_mem_alter_out f l n σ l' :
+  (∀ i : nat, (i < n)%nat → l' ≠ l +ₗ i) → mem_alter f l n σ !! l' = σ !! l'.
+Proof.
+  revert l. induction n as [|n IH]; intros l Hl'; simpl; [done|].
+  rewrite lookup_alter_ne; last first.
+  { intros ->. apply (Hl' 0%nat); [lia|]. by rewrite shift_loc_0. }
+  apply IH. intros i ?. rewrite -shift_loc_S. apply Hl'. lia.
+Qed.
+
+Lemma lookup_mem_alter_in f l n σ (i : nat) :
+  (i < n)%nat → mem_alter f l n σ !! (l +ₗ i) = (λ p, (f p.1, p.2)) <$> σ !! (l +ₗ i).
+Proof.
+  revert l i. induction n as [|n IH]; intros l i Hi; simpl; [lia|].
+  destruct i as [|i].
+  - rewrite shift_loc_0 lookup_alter lookup_mem_alter_out //.
+    intros j _. apply shift_loc_ne_S.
+  - rewrite shift_loc_S lookup_alter_ne; [|apply shift_loc_ne_S]. apply IH. lia.
+Qed.
+
+Lemma lookup_mem_write_out l bs σ l' :
+  (∀ i : nat, (i < length bs)%nat → l' ≠ l +ₗ i) → mem_write l bs σ !! l' = σ !! l'.
+Proof.
+  revert l. induction bs as [|b bs IH]; intros l Hl'; simpl; [done|].
+  rewrite lookup_insert_ne; last first.
+  { intros ->. apply (Hl' 0%nat); [simpl; lia|]. by rewrite shift_loc_0. }
+  apply IH. intros i ?. rewrite -shift_loc_S. apply Hl'. simpl. lia.
+Qed.
+
+Lemma lookup_mem_write_in l bs σ (i : nat) b :
+  bs !! i = Some b → mem_write l bs σ !! (l +ₗ i) = Some (RSt 0, b).
+Proof.
+  revert l i. induction bs as [|b' bs IH]; intros l i Hi; simpl; [done|].
+  destruct i as [|i]; simplify_eq/=.
+  - by rewrite shift_loc_0 lookup_insert.
+  - rewrite shift_loc_S lookup_insert_ne; [|apply shift_loc_ne_S]. by apply IH.
+Qed.
+
+Lemma mem_range_lookup P σ l bs :
+  mem_range P σ l bs ↔
+  ∀ (i : nat) b, bs !! i = Some b → ∃ ls, σ !! (l +ₗ i) = Some (ls, b) ∧ P ls.
+Proof.
+  revert l. induction bs as [|b bs IH]; intros l; simpl; [naive_solver|].
+  rewrite IH. split.
+  - intros [Hb Hbs] [|i] b'; simpl.
+    + intros [= <-]. by rewrite shift_loc_0.
+    + intros Hi. rewrite shift_loc_S. by apply Hbs.
+  - intros H. split.
+    + rewrite -(shift_loc_0_nat l). by apply (H 0%nat).
+    + intros i b' Hi. rewrite -shift_loc_S. by apply (H (S i)).
+Qed.
+
+Lemma mem_range_lookup_1 P σ l bs (i : nat) :
+  mem_range P σ l bs → (i < length bs)%nat →
+  ∃ ls b, σ !! (l +ₗ i) = Some (ls, b) ∧ P ls ∧ bs !! i = Some b.
+Proof.
+  rewrite mem_range_lookup. intros H Hi.
+  destruct (lookup_lt_is_Some_2 bs i Hi) as [b Hb].
+  destruct (H i b Hb) as (ls & ? & ?). eauto.
+Qed.
+
+Lemma mem_range_impl (P Q : lock_state → Prop) σ l bs :
+  (∀ ls, P ls → Q ls) → mem_range P σ l bs → mem_range Q σ l bs.
+Proof.
+  rewrite !mem_range_lookup. intros HPQ H i b Hb.
+  destruct (H i b Hb) as (ls & ? & ?). eauto.
+Qed.
+
+Lemma is_Some_mem_alter f l n σ l' : is_Some (mem_alter f l n σ !! l') ↔ is_Some (σ !! l').
+Proof.
+  revert l. induction n as [|n IH]; intros l; simpl; [done|].
+  by rewrite lookup_alter_is_Some IH.
 Qed.
 
 Definition fresh_block (σ : state') : block :=
@@ -502,6 +795,7 @@ Proof.
     induction el=>/=; naive_solver.
   - rewrite !andb_True. intros [He Hel] HXY. split. by eauto.
     induction el=>/=; naive_solver.
+  - intros Hel HXY. induction el=>/=; naive_solver.
 Qed.
 
 Lemma is_closed_weaken_nil X e : is_closed [] e → is_closed X e.
@@ -515,6 +809,8 @@ Proof.
   - case He=> _. clear He. induction el=>//=. rewrite andb_True=>?.
     f_equal; intuition eauto with set_solver.
   - case He=> _. clear He. induction el=>//=. rewrite andb_True=>?.
+    f_equal; intuition eauto with set_solver.
+  - induction el=>//=. move: He. rewrite /= andb_True=>?.
     f_equal; intuition eauto with set_solver.
 Qed.
 
@@ -538,6 +834,7 @@ Proof.
     destruct (decide (BNamed x = f)), (decide (BNamed x ∈ xl)); set_solver.
   - split; first naive_solver. induction el; naive_solver.
   - split; first naive_solver. induction el; naive_solver.
+  - induction el; naive_solver.
 Qed.
 
 Lemma subst'_is_closed X b es e :
@@ -597,15 +894,31 @@ Fixpoint expr_beq (e : expr) (e' : expr) : bool :=
     expr_beq e0 e0' && expr_beq e1 e1' && expr_beq e2 e2'
   | Alloc e, Alloc e' | Fork e, Fork e' => expr_beq e e'
   | Free e1 e2, Free e1' e2' => expr_beq e1 e1' && expr_beq e2 e2'
+  | MLit v, MLit v' => bool_decide (v = v')
+  | Load o m e, Load o' m' e' =>
+    bool_decide (o = o') && bool_decide (m = m') && expr_beq e e'
+  | Store o m e1 e2, Store o' m' e1' e2' =>
+    bool_decide (o = o') && bool_decide (m = m') && expr_beq e1 e1' && expr_beq e2 e2'
+  | MemCopy o n e1 e2, MemCopy o' n' e1' e2' =>
+    bool_decide (o = o') && bool_decide (n = n') && expr_beq e1 e1' && expr_beq e2 e2'
+  | MkTuple el, MkTuple el' => expr_list_beq el el'
+  | Proj i e, Proj i' e' => bool_decide (i = i') && expr_beq e e'
+  | MkVariant t e, MkVariant t' e' => bool_decide (t = t') && expr_beq e e'
+  | VariantTag e, VariantTag e' | VariantData e, VariantData e'
+  | ToLit e, ToLit e' | OfLit e, OfLit e' => expr_beq e e'
   | _, _ => false
   end.
 Lemma expr_beq_correct (e1 e2 : expr) : expr_beq e1 e2 ↔ e1 = e2.
 Proof.
   revert e1 e2; fix FIX 1.
-    destruct e1 as [| | | | |? el1| | | | | |? el1| | |],
-             e2 as [| | | | |? el2| | | | | |? el2| | |]; simpl; try done;
+    destruct e1 as [ | | | | |? el1 | | | | | |? el1 | | | | | | | |el1 | | | | | |],
+             e2 as [ | | | | |? el2 | | | | | |? el2 | | | | | | | |el2 | | | | | |]; simpl; try done;
   rewrite ?andb_True ?bool_decide_spec ?FIX;
   try (split; intro; [destruct_and?|split_and?]; congruence).
+  - match goal with |- context [?F el1 el2] => assert (F el1 el2 ↔ el1 = el2) end.
+    { revert el2. induction el1 as [|el1h el1q]; destruct el2; try done.
+      specialize (FIX el1h). naive_solver. }
+    clear FIX. naive_solver.
   - match goal with |- context [?F el1 el2] => assert (F el1 el2 ↔ el1 = el2) end.
     { revert el2. induction el1 as [|el1h el1q]; destruct el2; try done.
       specialize (FIX el1h). naive_solver. }

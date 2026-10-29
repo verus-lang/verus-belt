@@ -36,16 +36,19 @@ Proof.
   (* use a variant that lets us start at step 1 with some later credits *)
   eapply (adequacy_util.wp_strong_adequacy Σ _); [|done]=>?.
   iMod (non_atomic_map_alloc_empty) as (vγ) "Hvγ".
+  iMod (own_alloc (● (∅ : heapUR))) as (bγ) "Hbγ";
+    first by apply auth_auth_valid.
   iMod (own_alloc (● (∅ : heap_freeableUR))) as (fγ) "Hfγ";
     first by apply auth_auth_valid.
   iIntros "H£". iDestruct "H£" as "[H£1 H£2]".
   iMod (time_init with "H£1") as (Htime) "[TIME Htime]"; [done|].
   iMod (na_alloc) as (atomic_poolname) "pool".
   iMod (atomic_lock_ctr_alloc) as (atomic_lock_ctr_name) "ctr".
-  set (Hheap := HeapGS _ _ _ _ vγ fγ atomic_poolname atomic_lock_ctr_name).
+  set (Hheap := HeapGS _ _ _ _ vγ bγ fγ atomic_poolname atomic_lock_ctr_name).
   iModIntro. iExists _, [_], _, _. simpl.
   iDestruct (Hwp (LRustGS _ _ _ _ Hheap Htime) with "H£2 TIME") as "$".
-  iSplitL; first by auto with iFrame. iIntros ([|e' [|]]? -> ??) "//".
+  iSplitL. { iFrame. iSplitL "Hbγ". { iExists ∅. iFrame. iPureIntro. apply phys_rel_empty. } iPureIntro. intros ?? Hb. by rewrite lookup_empty in Hb. }
+  iIntros ([|e' [|]]? -> ??) "//".
   iIntros "[??] [?_] _". iApply fupd_mask_weaken; [|iIntros "_ !>"]; [done|].
   iSplit; [|done]. iIntros (v2 t2'' [= -> <-]). by rewrite to_of_val.
 Qed.

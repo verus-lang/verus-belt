@@ -2135,7 +2135,7 @@ Section type_util.
     match vl with [ #(LitLoc l)] => Φ l | _ => False end.
   Lemma by_just_loc_ex vl Φ : by_just_loc vl Φ ⊣⊢ ∃l: loc, ⌜vl = [ #l]⌝ ∗ Φ l.
   Proof.
-    iSplit; [|by iIntros "[%[->$]]"]. iIntros. case vl=> [|[[|l|?]|?][|??]]//.
+    iSplit; [|by iIntros "[%[->$]]"]. iIntros. case vl=> [|[[|l|?]|?|?][|??]]//.
     iExists l. by iFrame.
   Qed.
   Global Instance by_just_loc_proper :
@@ -2167,7 +2167,7 @@ Section type_util.
     [S(d') := d] ∃l: loc, l' ↦ #l ∗ Φ d' l.
   Proof.
     iSplit.
-    - iIntros "(%vl & ↦ &?)". case d as [|]=>//. case vl as [|[[]|][]]=>//.
+    - iIntros "(%vl & ↦ &?)". case d as [|]=>//. case vl as [|[[]| |][]]=>//.
       rewrite heap_mapsto_vec_singleton. iExists _. iFrame.
     - iIntros "big". case d as [|]=>//. iDestruct "big" as (?) "[??]".
       iExists [_]. rewrite heap_mapsto_vec_singleton. by iFrame.
