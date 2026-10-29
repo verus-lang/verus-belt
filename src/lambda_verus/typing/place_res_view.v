@@ -33,10 +33,16 @@ Section view_laws.
   Proof.
     intros ??. destruct r as [lr|]; [|done]. rewrite /view_leaf.
     destruct p; try done; try (iIntros "[#G $]"; iApply (lguards_weaken_later with "G"); lia);
-      iIntros "(%x & Rel & #G & #Shr & #Pers)"; iExists x; iFrame "Rel";
-      (iSplit; [iApply (lguards_weaken_later with "G"); lia|]);
-      (iSplit; [by iApply (ty_shr_depth_mono with "Shr")|]);
-      by iApply (ty_gho_pers_depth_mono with "Pers").
+      (first [iIntros "(%x & Rel & #G & #Shr & #Pers & #Gc & %d0 & %g0 & %Hle & Bor)";
+          iExists x; iFrame "Rel"; iSplit; [iApply (lguards_weaken_later with "G"); lia|];
+          iSplit; [by iApply (ty_shr_depth_mono with "Shr")|];
+          iSplit; [by iApply (ty_gho_pers_depth_mono with "Pers")|];
+          iSplit; [iApply (lguards_weaken_later with "Gc"); lia|];
+          iExists d0, g0; iFrame "Bor"; iPureIntro; lia
+        |iIntros "(%x & Rel & #G & #Shr & #Pers)"; iExists x; iFrame "Rel";
+          (iSplit; [iApply (lguards_weaken_later with "G"); lia|]);
+          (iSplit; [by iApply (ty_shr_depth_mono with "Shr")|]);
+          by iApply (ty_gho_pers_depth_mono with "Pers")]).
   Qed.
 
   Lemma lty_view_depth_mono {𝔄} (lt: lty 𝔄) κ m p r d g d' g' tid l :
@@ -46,9 +52,12 @@ Section view_laws.
       𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'] in κ, m, p, r, d, g, d', g', tid, l |- *;
       intros Hd Hg; simpl; try by apply view_leaf_depth_mono.
     - destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /view_uniq.
-      iIntros "(#G & $ & %d1 & %g1 & %Hle & C)". iSplitR.
+      iIntros "(#G & $ & %d1 & %g1 & %Hle & C & I)". iSplitR.
       { iApply (lguards_weaken_later with "G"). lia. }
-      iExists d1, g1. iFrame. iPureIntro. lia.
+      iExists d1, g1. iFrame "C". iSplit; [iPureIntro; lia|].
+      destruct (lty_leafb lt); [|done].
+      iDestruct "I" as (x0 idx) "[#T P]". iExists x0, idx. iFrame "P".
+      iApply (lguards_weaken_later with "T"). lia.
     - destruct r as [?|[l' r']]; [done|]. rewrite /view_own.
       iIntros "(#G & % & C)". iSplitR; [iApply (lguards_weaken_later with "G"); lia|].
       iSplit; [iPureIntro; lia|]. iApply (IH with "C"); lia.
@@ -117,9 +126,11 @@ Section view_laws.
   Lemma view_leaf_shrblk_tguards {𝔄} κ m (ty: type 𝔄) α x d g tid l :
     llft_ctx -∗ κ ⊑ ty_lft ty -∗
     view_leaf κ m ty (PatShrBlocked α) (inl (PlaceIn x)) d g tid l -∗
+    view_leaf κ m ty (PatShrBlocked α) (inl (PlaceIn x)) d g tid l ∗
     view_tguards (κ ⊓ α) (ξl x) d g.
   Proof.
-    iIntros "#LFT #Incl (%x' & -> & _ & #Shr & #Pers)".
+    iIntros "#LFT #Incl (%x' & -> & #G & #Shr & #Pers & Rest)".
+    iSplitL "Rest". { iExists x. by iFrame "G Shr Pers Rest". }
     iAssert (κ ⊓ α ⊑ ty_lft ty)%I as "#Incl'".
     { iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|done]. }
     rewrite /view_tguards. iApply bi.laterN_intuitionistically_2. iModIntro.
@@ -171,11 +182,11 @@ Section view_laws.
       + iApply (view_tguards_mono with "[] T"); [lia|lia|]. iApply llftl_intersect_incl_l.
     - iFrame "V". iExists []. iSplit; [|iApply view_tguards_nil]. iPureIntro.
       intros ζl. rewrite prfn_rsv_inl prfn_den_inl app_nil_r. done.
-    - rewrite /view_uniq. iDestruct "V" as "(#G & #Incl' & %d1 & %g1 & %Hle & V)".
+    - rewrite /view_uniq. iDestruct "V" as "(#G & #Incl' & %d1 & %g1 & %Hle & V & I)".
       iAssert (κ ⊓ κ' ⊑ ty_lft (lty_fold lt))%I as "#Incl2".
       { iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|done]. }
       iDestruct (IH with "LFT Incl2 V") as "[V (%ηl & %Hdep & #T)]".
-      iSplitL "V". { iFrame "G Incl'". iExists d1, g1. by iFrame. }
+      iSplitL "V I". { iFrame "G Incl'". iExists d1, g1. by iFrame. }
       iExists ηl. iSplit.
       + iPureIntro. intros ζl [Hr Hξ].
         apply (proph_dep_weaken _ ((ζl ++ ηl) ++ (ζl ++ ηl))); [set_solver|].
@@ -208,8 +219,7 @@ Section view_laws.
       + iApply view_tguards_app.
         * iApply (view_tguards_mono with "[] T1"); [lia|lia|]. iApply lft_incl_inter_mono_l.
         * iApply (view_tguards_mono with "[] T2"); [lia|lia|]. iApply lft_incl_inter_mono_r.
-    - iDestruct "V" as "#V".
-      iDestruct (view_leaf_shrblk_tguards κ m ty α x d g tid l with "LFT Incl V") as "#T".
+    - iDestruct (view_leaf_shrblk_tguards κ m ty α x d g tid l with "LFT Incl V") as "[V #T]".
       iFrame "V". iExists (ξl x). iFrame "T". iPureIntro. intros ζl _.
       rewrite prfn_den_in. eapply proph_dep_weaken; [|apply syn_indep]. set_solver.
     - destruct (psum_proj i x.1) as [y|] eqn:Hy; last first.
@@ -426,29 +436,36 @@ Section lty_share_view.
     iFrame "G Gc". by rewrite /ltype_own /=.
   Qed.
 
-  (** A shared-blocked leaf (at [α]): its sharing at [α] is taken out of the borrow (its
-      inheritance stays in it) and viewed at [κ ⊓ α]. *)
+  (** A shared-blocked leaf (at [α]): its sharing at [α] is taken out of the borrow and
+      viewed at [κ ⊓ α]; the borrow is split, and its inheritance is kept in the view. *)
   Lemma share_view_shrblk {𝔄} (ty: type 𝔄) α : share_view_stmt (ShrBlocked ty α).
   Proof.
     iIntros (κ m x ζm q d g g' tid l G E ???) "#LFT _ _ #Gκ #Incl #Gc G Bor".
     have ?: ↑Nllft ⊆ E by (trans lazyE; [rewrite /lazyE; solve_ndisj|done]).
     rewrite /ltype_own /= /shr_blocked_owned.
-    iMod (llftl_bor_guarded_extract _ _ _ _
-      ((@[α] &&{↑NllftG; g+1}&&> l #↦!∗ ty.(ty_phys) x tid) ∗ ty.(ty_shr) α x d g tid ∗
-        ty.(ty_gho_pers) x d g tid)%I with "LFT Gκ G Bor []") as "(G & _ & S)"; [done| |].
-    { iIntros "!> (%x' & -> & $ & $ & $ & _)". }
+    iDestruct (llftl_bor_iff _ _
+      (((@[α] &&{↑NllftG; g+1}&&> l #↦!∗ ty.(ty_phys) x tid) ∗ ty.(ty_shr) α x d g tid ∗
+        ty.(ty_gho_pers) x d g tid) ∗ ([†α] ={lazyE}=∗ ofty_owned m ty x d g tid l))%I
+      with "[] Bor") as "Bor".
+    { iIntros "!> !>". iSplit.
+      - iIntros "(%x' & -> & $ & $ & $ & $)".
+      - iIntros "[(A & B & C) D]". iExists x. by iFrame. }
+    iMod (llftl_sep_split with "LFT Bor") as "[S Inh]"; [done|].
+    iMod (llftl_bor_guarded_pers with "LFT Gκ G S") as "[G S]"; [done|].
     iModIntro. iApply step_fupdN_intro; [done|].
     rewrite (_: m + 2 * d + 3 = S (m + 2 * d + 2)); [|lia]. simpl. iNext.
     iDestruct "S" as "#(Gpt & Shr & Pers)". iApply bi.laterN_intro. iModIntro. iFrame "G".
     rewrite /view_leaf. iExists x. iSplit; [done|]. iSplit.
-    - iApply guard_cloc_combine_fancy.
+    { iApply guard_cloc_combine_fancy.
       + iApply (guards_transitive_right with "[] Gc"). iApply llftl_intersect_incl_l.
       + iApply (guards_transitive_right with "[] [Gpt]"); [iApply llftl_intersect_incl_r|].
-        iApply (lguards_weaken_later with "Gpt"). lia.
-    - iSplit; [|by iApply (ty_gho_pers_depth_mono with "Pers")].
-      iDestruct (ty_shr_lft_mono _ α (κ ⊓ α) _ 0 with "[] Shr") as "Shr'";
+        iApply (lguards_weaken_later with "Gpt"). lia. }
+    iSplit.
+    { iDestruct (ty_shr_lft_mono _ α (κ ⊓ α) _ 0 with "[] Shr") as "Shr'";
         [iApply llftl_intersect_incl_r|].
-      iApply (ty_shr_depth_mono with "Shr'"); lia.
+      iApply (ty_shr_depth_mono with "Shr'"); lia. }
+    iSplit; [by iApply (ty_gho_pers_depth_mono with "Pers")|].
+    iFrame "Gc". iExists d, g. iFrame "Inh". iPureIntro. lia.
   Qed.
 
   Lemma share_view_shr {𝔄} (lt: lty 𝔄) κ' : share_view_stmt (ShrLty lt κ').
@@ -598,13 +615,17 @@ Section lty_share_view3.
     iModIntro. iApply (step_fupdN_nmono (d + 2) (S (S (d + d)))); [lia|].
     iApply step_fupdN_add. iApply (step_fupdN_wand with "Shr"). iIntros "Upd".
     iApply (step_fupdN_nmono 2); [done|]. simpl. iMod "Upd" as "[G #Shr]".
-    iDestruct "Shr" as (_) "(#Gpt & _ & Shr & Pers0)". simpl.
+    iDestruct "Shr" as (_) "(#Gpt & #Tok & Shr & Pers0)". simpl.
     iModIntro. iNext. iModIntro. iModIntro. iNext. iModIntro. iModIntro.
     iFrame "G". rewrite /view_uniq. iFrame "Gp I'". iExists d1, g'.
-    iSplit; [iPureIntro; lia|]. rewrite /view_leaf. iExists x0. iSplit; [done|].
-    iSplit; [iApply (lguards_weaken_later with "Gpt"); lia|].
-    iSplit; [by iApply (ty_shr_depth_mono with "Shr")|].
-    iApply (ty_gho_pers_depth_mono with "Pers0"); lia.
+    iSplit; [iPureIntro; lia|]. iSplitL.
+    { rewrite /view_leaf. iExists x0. iSplit; [done|].
+      iSplit; [iApply (lguards_weaken_later with "Gpt"); lia|].
+      iSplit; [by iApply (ty_shr_depth_mono with "Shr")|].
+      iApply (ty_gho_pers_depth_mono with "Pers0"); lia. }
+    iExists x0, idx. iSplit; [iApply (lguards_weaken_later with "Tok"); lia|].
+    iDestruct "Pers" as "[_ P]".
+    by rewrite (uniq_pers_component_retarget _ x0 x0 _ d1 g' d1 g1).
   Qed.
 End lty_share_view3.
 
@@ -691,7 +712,7 @@ Section lty_share_view4.
     { rewrite /ltype_own. iExact "Bor". }
     iModIntro. iApply (step_fupdN_wand with "Upd"). iIntros ">[$ V] !>".
     rewrite /view_uniq. iFrame "Gp I'". iExists d1, g'. iSplit; [iPureIntro; lia|].
-    iExact "V".
+    iFrame "V". by destruct lt.
   Qed.
 
   Lemma lty_share_view {𝔄} (lt: lty 𝔄) : lty_vok lt → share_view_stmt lt.
