@@ -42,18 +42,20 @@ Section resolve_share_rsv.
   (** As [proph_idx_bor_gen_resolve_share], for a reserved observer: the prophecy
       variable is resolved to [uπ], which may depend on the reserved [ζl] and on [ηl],
       whose tokens are guarded by the sharing of the contents ([Share]). *)
-  Lemma proph_idx_bor_gen_resolve_share_rsv E κ ξ x idx ζl
+  Lemma proph_idx_bor_gen_resolve_share_rsv E κ κs ξ x idx ζl
       (P: pv_val ξ → pv_proph ξ → iProp Σ) (uπ: pv_proph ξ) (P0 S: iProp Σ) G n :
     Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
-    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ ⊓ κs]) -∗
     (∀ wπ, ▷ P x wπ -∗ ◇ (▷ P0 ∗ ▷ (P0 -∗ P x uπ))) -∗
-    (∀ (H: iProp Σ), ⌜Timeless H⌝ -∗ (H &&{↑NllftG}&&> @[κ]) -∗ H -∗ &{κ} P0 ={E}=∗
+    (∀ (H: iProp Σ), ⌜Timeless H⌝ -∗ (H &&{↑NllftG}&&> @[κ ⊓ κs]) -∗ H -∗ &{κ} P0 ={E}=∗
        H ∗ S ∗ £ n ∗ ∃ ηl, ⌜uπ ./ ζl ++ ηl⌝ ∗
          (∀ η, ⌜η ∈ ηl⌝ -∗ (H &&{↑NllftG; n}&&> 1:[η]))) -∗
     G -∗ proph_bor_tok_rsv ξ x idx ζl -∗ proph_idx_bor_gen κ ξ idx P ={E}=∗
       ⟨π, π ξ = uπ π⟩ ∗ G ∗ S.
   Proof.
-    iIntros (Ti ?) "#LFT #PROPH #UNIQ #Gk Pin Share G Tok #IBor".
+    iIntros (Ti ?) "#LFT #PROPH #UNIQ #Gks Pin Share G Tok #IBor".
+    iAssert (G &&{↑NllftG}&&> @[κ])%I as "#Gk".
+    { iApply (guards_transitive with "Gks"). iApply llftl_intersect_incl_l. }
     rewrite proph_bor_tok_rsv_unfold. iDestruct "Tok" as "[Vo Tok]".
     iDestruct (llftl_bor_idx_to_full with "IBor Tok") as "Bor".
     iMod (llftl_bor_acc_guarded with "LFT Bor Gk G") as "[Body Back]"; [solve_ndisj|].
@@ -69,9 +71,11 @@ Section resolve_share_rsv.
       iExists x, uπ. iFrame. by iApply "Inv". }
     iMod "Upd" as "_".
     iMod (llftl_sep_split with "LFT Bor") as "[PcBor PBor]"; [solve_ndisj|].
-    iMod (fractional.frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Halfback]]]".
+    iMod (fractional.frac_split_guard_in_half with "G Gks") as (γ) "[H1 [H2 [#Ghs #Halfback]]]".
     { solve_ndisj. }
-    iMod ("Share" with "[%] Gh H1 PBor") as "(H1 & $ & £ & %ηl & %Hdep & #Deps)"; [apply _|].
+    iAssert (fractional.half γ &&{↑NllftG}&&> @[κ])%I as "#Gh".
+    { iApply (guards_transitive with "Ghs"). iApply llftl_intersect_incl_l. }
+    iMod ("Share" with "[%] Ghs H1 PBor") as "(H1 & $ & £ & %ηl & %Hdep & #Deps)"; [apply _|].
     iMod (llftl_bor_acc_guarded with "LFT PcBor Gh H2") as "[Pc Back]"; [solve_ndisj|].
     iMod (uniq_rsv_strip_later with "Vo Pc") as "(_ & Vo & Pc)".
     iMod (uniq_resolve_reserved_guarded with "Deps UNIQ PROPH Vo Pc H1") as "X";
@@ -248,12 +252,12 @@ Section lty_res_uniq.
       reservation, the unblocked leaves by their sharing at [κ]), and the referent is
       shared into its view at [κ]. *)
   Lemma lty_res_uniq_cpd {𝔄} E L κ (lt: lty 𝔄) :
-    lctx_lft_alive E L κ → lty_is_cpd lt → lty_vok lt →
+    lctx_lft_alive E L κ → lctx_lft_alive E L (lty_sbl lt) → lty_is_cpd lt → lty_vok lt →
     lty_res E L (UniqLty lt κ) (ResUniqLty lt κ) 1 (λ x ζm q π,
       (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
         prfn_den (lty_rfn lt (uniq_bor_current x) ζm (false :: q)) π).
   Proof.
-    intros Alv Hc Hv. split; [done|]. split; [done|].
+    intros Alv Alvs Hc Hv. split; [done|]. split; [done|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "#LFT #PROPH #UNIQ #TIME #E #GL G #⧖ Own".
     destruct x as [[[[[l' x0] ξi] d0] g0] idx0].
     rewrite /ltype_own /= /uniq_node /= ltype_own_cp_uniq_cpd //.
@@ -264,8 +268,11 @@ Section lty_res_uniq.
       [rewrite /advance_credits; nia|].
     iMod (lc_fupd_elim_laterN with "£m N") as "(#Incl & #Gc & %d' & %g' & %Hle & C)".
     leaf_open "GL" with "G" as "[L back]"; [solve_ndisj|].
-    iDestruct (Alv with "L E") as "#Lκ". iMod ("back" with "L") as "G".
+    iDestruct (Alv with "L E") as "#Lκ". iDestruct (Alvs with "L E") as "#Lκs".
+    iMod ("back" with "L") as "G".
     iDestruct (guards_transitive with "GL Lκ") as "#Gκ".
+    iAssert (G &&{↑NllftG}&&> @[κ ⊓ lty_sbl lt])%I as "#Gκs".
+    { iApply guards_llft_glb; [iApply "Gκ"|iApply (guards_transitive with "GL Lκs")]. }
     rewrite /cpd_own.
     iDestruct "C" as (x₀ κp γ γf idx ζl) "(#Inclp & %Hr & Tok & Gh & Tf & _ & #Bor)".
     set node := ltype_own_cp false lt (Owned 0).
@@ -275,12 +282,12 @@ Section lty_res_uniq.
     set n := (d' + 1) * (g + 1).
     iDestruct (lc_weaken (1 + (0 + 2 * d' + 3) + d' * (g + 2) + n) with "£") as
       "[[[£1 £s] £t] £n]"; [rewrite /advance_credits /n; nia|].
-    iMod (proph_idx_bor_gen_resolve_share_rsv ⊤ κ (uniq_prvar x₀ ξi) c idx ζl P uπ
+    iMod (proph_idx_bor_gen_resolve_share_rsv ⊤ κ (lty_sbl lt) (uniq_prvar x₀ ξi) c idx ζl P uπ
       (pat_ok κp (lty_pat lt) ∗ ghost_var γ (1/2) (lstate (lty_pat lt) r') ∗
        guarded_upd lazyE @[ty_lft (lty_fold lt)] (⧖(S d' `max` g') ∗
          node (lty_pat lt) r' d' g' tid l'))
       (lty_view lt κ 0 (lty_pat lt) r' d' g tid l') G n
-      with "LFT PROPH UNIQ Gκ [Gh Tf] [£1 £s £t £n] G Tok Bor") as "(#Obs & G & V)";
+      with "LFT PROPH UNIQ Gκs [Gh Tf] [£1 £s £t £n] G Tok Bor") as "(#Obs & G & V)";
       [solve_ndisj| | |].
     { iIntros (wπ) "Body".
       iPoseProof (cpd_gbody_pin κp γ γf (lty_fold lt) node (lty_pat lt) r' x₀ d' g' tid l')
@@ -293,7 +300,9 @@ Section lty_res_uniq.
       iDestruct "H" as "[(_ & Gh & Tf) P0]". iModIntro. iFrame "P0". iNext.
       iIntros "P0". iDestruct ("Iff" $! uπ) as "[_ I2]".
       iDestruct ("I2" with "[Gh Tf P0]") as "[_ $]". iFrame. by iPureIntro. }
-    { iIntros (Hh HTh) "#Hκ Hh Bb".
+    { iIntros (Hh HTh) "#Hκs Hh Bb".
+      iAssert (Hh &&{↑NllftG}&&> @[κ])%I as "#Hκ".
+      { iApply (guards_transitive with "Hκs"). iApply llftl_intersect_incl_l. }
       iMod (llftl_sep_split with "LFT Bb") as "[_ Bb]"; [solve_ndisj|].
       iMod (llftl_sep_split with "LFT Bb") as "[_ Bb]"; [solve_ndisj|].
       iMod (llftl_bor_guarded_upd with "LFT Hκ Incl Hh £1 Bb") as "[Bb Hh]";
@@ -307,7 +316,7 @@ Section lty_res_uniq.
       iMod (lc_fupd_elim_laterN with "£t T") as "#T".
       iModIntro. iFrame "Hh V £n". iExists ηl. iSplit.
       - iPureIntro. apply (proph_dep_constr (λ a, (a, c.2))). by apply Hdep.
-      - iIntros (η Hη). iApply ("T" $! η Hη Hh with "Hκ"). }
+      - iIntros (η Hη). iApply ("T" $! η Hη Hh with "Hκs"). }
     iModIntro. iFrame "G". iSplitR.
     { iApply (proph_obs_impl with "Obs")=> π /= Heq.
       by rewrite (uniq_prvar_app_irrel x0 x₀) Heq. }

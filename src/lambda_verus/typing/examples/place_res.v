@@ -231,7 +231,7 @@ Section place_res_nested.
           (λ x ζm q π, (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
             prfn_den (lty_rfn (UniqLty (ProdLty (Blocked int static) (OfTy int)) β)
               (uniq_bor_current x) ζm (false :: q)) π)).
-        eapply lty_res_impl; [apply lty_res_uniq_cpd; [solve_typing|done|done]|].
+        eapply lty_res_impl; [apply lty_res_uniq_cpd; [solve_typing|solve_typing|done|done]|].
         intros ????. done. }
       { solve_typing. } { reflexivity. }
       (* ( **x).1 *)

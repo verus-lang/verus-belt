@@ -68,7 +68,7 @@ Section place_res_fold.
       { apply (type_resolve_oplace_res_instr _ _ _ vx 1
           (UniqLty (ProdLty (OfTy int) (OfTy int)) α)
           (ResUniqLty (ProdLty (OfTy int) (OfTy int)) α) 1).
-        apply lty_res_uniq_cpd; [solve_typing|done|done]. }
+        apply lty_res_uniq_cpd; [solve_typing|solve_typing|done|done]. }
       { solve_typing. } { reflexivity. }
       (* fold the view to a shared reference, then to a leaf *)
       iApply typed_body_tctx_incl.

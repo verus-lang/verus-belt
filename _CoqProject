@@ -361,6 +361,7 @@ src/lambda_verus/typing/examples/place_res_gen.v
 src/lambda_verus/typing/examples/place_res.v
 src/lambda_verus/typing/examples/place_res_sum.v
 src/lambda_verus/typing/examples/place_res_fold.v
+src/lambda_verus/typing/examples/place_res_shr.v
 
 
 -arg -w -arg -argument-scope-delimiter

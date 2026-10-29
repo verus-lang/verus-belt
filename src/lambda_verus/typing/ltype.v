@@ -432,7 +432,9 @@ Section ltype_own.
         without its laters, [shr_view] of [typing/place_pshr.v]);
       - a blocked leaf keeps its inheritance, in a borrow at [κ] (it is shared at [κ] once
         it has been unblocked), with a guard of the cells of its location;
-      - shared-blocked leaves are not supported. *)
+      - a shared-blocked leaf (at [α]) is shared at [κ ⊓ α]: its value does not change,
+        and it is shared at [α] already (it is readable while [α] is alive; it is not
+        unblocked in the view). *)
   Definition view_leaf {𝔄} (κ: lft) (m: nat) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
       (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
     match r with
@@ -441,7 +443,9 @@ Section ltype_own.
         match p with
         | PatBlocked α =>
             (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_) ∗ &{κ} (blocked_owned m ty α lr tid l)
-        | PatShrBlocked _ => False
+        | PatShrBlocked α => ∃ x, place_rfn_rel lr x ∗
+            (@[κ ⊓ α] &&{↑NllftG; g+1}&&> l.1 ↦[^ l.2]!∗ ty.(ty_phys) x tid) ∗
+            ty.(ty_shr) (κ ⊓ α) x d g tid ∗ ty.(ty_gho_pers) x d g tid
         | _ => ∃ x, place_rfn_rel lr x ∗
             (@[κ] &&{↑NllftG; g+1}&&> l.1 ↦[^ l.2]!∗ ty.(ty_phys) x tid) ∗
             ty.(ty_shr) κ x d g tid ∗ ty.(ty_gho_pers) x d g tid

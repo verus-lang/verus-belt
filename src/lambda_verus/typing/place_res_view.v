@@ -113,20 +113,62 @@ Section view_laws.
     iApply (ty_shr_guard_proph ty κ x 0 d g tid η R Hη with "LFT Incl Pers Shr").
   Qed.
 
+  (** A shared-blocked leaf (at [α]) is shared at [κ ⊓ α]. *)
+  Lemma view_leaf_shrblk_tguards {𝔄} κ m (ty: type 𝔄) α x d g tid l :
+    llft_ctx -∗ κ ⊑ ty_lft ty -∗
+    view_leaf κ m ty (PatShrBlocked α) (inl (PlaceIn x)) d g tid l -∗
+    view_tguards (κ ⊓ α) (ξl x) d g.
+  Proof.
+    iIntros "#LFT #Incl (%x' & -> & _ & #Shr & #Pers)".
+    iAssert (κ ⊓ α ⊑ ty_lft ty)%I as "#Incl'".
+    { iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|done]. }
+    rewrite /view_tguards. iApply bi.laterN_intuitionistically_2. iModIntro.
+    rewrite bi.laterN_forall. iIntros (η). rewrite bi.laterN_forall. iIntros (Hη).
+    rewrite bi.laterN_forall. iIntros (R).
+    rewrite -(Nat.add_0_l ((d + 1) * (g + 1))).
+    iApply (ty_shr_guard_proph ty (κ ⊓ α) x 0 d g tid η R Hη with "LFT Incl' Pers Shr").
+  Qed.
+
+  (** The intersection of the lifetimes of the shared-blocked leaves of a place (below the
+      nested unique borrows too); [static] if there are none. *)
+  Fixpoint lty_sbl {𝔄} (lt: lty 𝔄) : lft :=
+    match lt with
+    | ShrBlocked _ α => α
+    | UniqLty lt' _ | OwnPtrLty _ lt' | SumLty _ _ lt' => lty_sbl lt'
+    | ProdLty lt1 lt2 => lty_sbl lt1 ⊓ lty_sbl lt2
+    | _ => static
+    end.
+
+  (** [κ ⊓ (κ1 ⊓ κ2) ⊑ κ ⊓ κ1] and [⊑ κ ⊓ κ2]. *)
+  Lemma lft_incl_inter_mono_l κ κ1 κ2 : ⊢ κ ⊓ (κ1 ⊓ κ2) ⊑ κ ⊓ κ1.
+  Proof.
+    iApply llftl_incl_glb; [iApply llftl_intersect_incl_l|].
+    iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply llftl_intersect_incl_l].
+  Qed.
+  Lemma lft_incl_inter_mono_r κ κ1 κ2 : ⊢ κ ⊓ (κ1 ⊓ κ2) ⊑ κ ⊓ κ2.
+  Proof.
+    iApply llftl_incl_glb; [iApply llftl_intersect_incl_l|].
+    iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply llftl_intersect_incl_r].
+  Qed.
+
+  (** The prophecy tokens of the values of the unblocked and shared-blocked leaves of a
+      view are guarded by anything that guards [κ ⊓ lty_sbl lt]. *)
   Lemma lty_view_guard_proph {𝔄} (lt: lty 𝔄) κ m x ζm q d g tid l :
     llft_ctx -∗ κ ⊑ ty_lft (lty_fold lt) -∗
     lty_view lt κ m (lty_pat lt) (lty_rfn lt x ζm q) d g tid l -∗
     lty_view lt κ m (lty_pat lt) (lty_rfn lt x ζm q) d g tid l ∗
     ∃ ηl, ⌜∀ ζl, prfn_rsv (lty_rfn lt x ζm q) ζl → prfn_den (lty_rfn lt x ζm q) ./ ζl ++ ηl⌝ ∗
-      view_tguards κ ηl d g.
+      view_tguards (κ ⊓ lty_sbl lt) ηl d g.
   Proof.
     induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
       𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'] in κ, m, x, q, d, g, tid, l |- *;
       iIntros "#LFT #Incl V"; simpl.
     - iDestruct "V" as "#V".
       iDestruct (view_leaf_unblocked_tguards κ m ty x d g tid l with "LFT Incl V") as "#T".
-      iFrame "V". iExists (ξl x). iFrame "T". iPureIntro. intros ζl _.
-      rewrite prfn_den_in. eapply proph_dep_weaken; [|apply syn_indep]. set_solver.
+      iFrame "V". iExists (ξl x). iSplit.
+      + iPureIntro. intros ζl _.
+        rewrite prfn_den_in. eapply proph_dep_weaken; [|apply syn_indep]. set_solver.
+      + iApply (view_tguards_mono with "[] T"); [lia|lia|]. iApply llftl_intersect_incl_l.
     - iFrame "V". iExists []. iSplit; [|iApply view_tguards_nil]. iPureIntro.
       intros ζl. rewrite prfn_rsv_inl prfn_den_inl app_nil_r. done.
     - rewrite /view_uniq. iDestruct "V" as "(#G & #Incl' & %d1 & %g1 & %Hle & V)".
@@ -140,7 +182,9 @@ Section view_laws.
         apply (proph_dep_constr2 pair); [by apply Hdep|].
         eapply proph_dep_weaken; [|apply Hξ]. set_solver.
       + iApply (view_tguards_mono with "[] T"); [lia|lia|].
-        iApply llftl_incl_glb; [iApply guards_refl|].
+        iApply llftl_incl_glb; [|iApply llftl_intersect_incl_r].
+        iApply llftl_incl_glb; [iApply llftl_intersect_incl_l|].
+        iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
         iApply llftl_incl_trans; [iApply "Incl"|]. iApply llftl_intersect_incl_l.
     - destruct x as [l' x]. rewrite /view_own. iDestruct "V" as "(#G & %Hd & V)".
       iDestruct (IH with "LFT Incl V") as "[V (%ηl & %Hdep & #T)]".
@@ -161,8 +205,13 @@ Section view_laws.
       + iPureIntro. intros ζl [Hr1 Hr2].
         apply (proph_dep_weaken _ ((ζl ++ ηl1) ++ (ζl ++ ηl2))); [set_solver|].
         apply (proph_dep_constr2 pair); [by apply Hdep1|by apply Hdep2].
-      + by iApply view_tguards_app.
-    - by iDestruct "V" as "[]".
+      + iApply view_tguards_app.
+        * iApply (view_tguards_mono with "[] T1"); [lia|lia|]. iApply lft_incl_inter_mono_l.
+        * iApply (view_tguards_mono with "[] T2"); [lia|lia|]. iApply lft_incl_inter_mono_r.
+    - iDestruct "V" as "#V".
+      iDestruct (view_leaf_shrblk_tguards κ m ty α x d g tid l with "LFT Incl V") as "#T".
+      iFrame "V". iExists (ξl x). iFrame "T". iPureIntro. intros ζl _.
+      rewrite prfn_den_in. eapply proph_dep_weaken; [|apply syn_indep]. set_solver.
     - destruct (psum_proj i x.1) as [y|] eqn:Hy; last first.
       { by rewrite /prfn_dummy /view_sum /=. }
       iEval (rewrite /view_sum /prfn_sum psum_proj_pinj) in "V".
@@ -179,8 +228,10 @@ Section view_laws.
     - iDestruct "V" as "[#V %Hv]".
       iDestruct (view_leaf_unblocked_tguards κ m (shr_bor κ' (lty_fold lt)) x d g tid l
         with "LFT Incl V") as "#T".
-      iFrame "V". iSplit; [done|]. iExists (ξl x). iFrame "T". iPureIntro. intros ζl _.
-      eapply proph_dep_weaken; [|apply (syn_indep x)]. set_solver.
+      iFrame "V". iSplit; [done|]. iExists (ξl x). iSplit.
+      + iPureIntro. intros ζl _.
+        eapply proph_dep_weaken; [|apply (syn_indep x)]. set_solver.
+      + iApply (view_tguards_mono with "[] T"); [lia|lia|]. iApply llftl_intersect_incl_l.
     - done.
     - done.
   Qed.
@@ -328,11 +379,11 @@ End unnest.
 Section lty_share_view.
   Context `{!typeG Σ}.
 
-  (** The place types whose views can be produced: leaves are unblocked or blocked (not
-      shared-blocked); nested unique borrows have a leaf or a compound referent. *)
+  (** The place types whose views can be produced: leaves are unblocked, blocked or
+      shared-blocked; nested unique borrows have a leaf or a compound referent. *)
   Fixpoint lty_vok {𝔄} (lt: lty 𝔄) : Prop :=
     match lt with
-    | OfTy _ | Blocked _ _ | ShrLty _ _ => True
+    | OfTy _ | Blocked _ _ | ShrBlocked _ _ | ShrLty _ _ => True
     | UniqLty lt' _ =>
         (match lt' with
          | OfTy _ | ProdLty _ _ | OwnPtrLty _ _ | UniqLty _ _ | SumLty _ _ _ => True
@@ -340,7 +391,7 @@ Section lty_share_view.
          end) ∧ lty_vok lt'
     | OwnPtrLty _ lt' | SumLty _ _ lt' => lty_vok lt'
     | ProdLty lt1 lt2 => lty_vok lt1 ∧ lty_vok lt2
-    | ShrBlocked _ _ | OfRes _ | ResUniqLty _ _ => False
+    | OfRes _ | ResUniqLty _ _ => False
     end.
 
   (** A place in a borrow at [κ] (in [Owned m] mode) is shared into its view at [κ], in
@@ -373,6 +424,31 @@ Section lty_share_view.
     iIntros (κ m x ζm q d g g' tid l G E ???) "_ _ _ _ _ #Gc G Bor".
     iModIntro. iApply step_fupdN_intro; [done|]. iApply bi.laterN_intro. iModIntro.
     iFrame "G Gc". by rewrite /ltype_own /=.
+  Qed.
+
+  (** A shared-blocked leaf (at [α]): its sharing at [α] is taken out of the borrow (its
+      inheritance stays in it) and viewed at [κ ⊓ α]. *)
+  Lemma share_view_shrblk {𝔄} (ty: type 𝔄) α : share_view_stmt (ShrBlocked ty α).
+  Proof.
+    iIntros (κ m x ζm q d g g' tid l G E ???) "#LFT _ _ #Gκ #Incl #Gc G Bor".
+    have ?: ↑Nllft ⊆ E by (trans lazyE; [rewrite /lazyE; solve_ndisj|done]).
+    rewrite /ltype_own /= /shr_blocked_owned.
+    iMod (llftl_bor_guarded_extract _ _ _ _
+      ((@[α] &&{↑NllftG; g+1}&&> l #↦!∗ ty.(ty_phys) x tid) ∗ ty.(ty_shr) α x d g tid ∗
+        ty.(ty_gho_pers) x d g tid)%I with "LFT Gκ G Bor []") as "(G & _ & S)"; [done| |].
+    { iIntros "!> (%x' & -> & $ & $ & $ & _)". }
+    iModIntro. iApply step_fupdN_intro; [done|].
+    rewrite (_: m + 2 * d + 3 = S (m + 2 * d + 2)); [|lia]. simpl. iNext.
+    iDestruct "S" as "#(Gpt & Shr & Pers)". iApply bi.laterN_intro. iModIntro. iFrame "G".
+    rewrite /view_leaf. iExists x. iSplit; [done|]. iSplit.
+    - iApply guard_cloc_combine_fancy.
+      + iApply (guards_transitive_right with "[] Gc"). iApply llftl_intersect_incl_l.
+      + iApply (guards_transitive_right with "[] [Gpt]"); [iApply llftl_intersect_incl_r|].
+        iApply (lguards_weaken_later with "Gpt"). lia.
+    - iSplit; [|by iApply (ty_gho_pers_depth_mono with "Pers")].
+      iDestruct (ty_shr_lft_mono _ α (κ ⊓ α) _ 0 with "[] Shr") as "Shr'";
+        [iApply llftl_intersect_incl_r|].
+      iApply (ty_shr_depth_mono with "Shr'"); lia.
   Qed.
 
   Lemma share_view_shr {𝔄} (lt: lty 𝔄) κ' : share_view_stmt (ShrLty lt κ').
@@ -628,6 +704,7 @@ Section lty_share_view4.
         [apply share_view_uniq_leaf|apply share_view_uniq_cpd; [done|by apply IH]..].
     - apply share_view_own, IH, Hv.
     - destruct Hv. apply share_view_prod; [by apply IH1|by apply IH2].
+    - apply share_view_shrblk.
     - apply share_view_sum, IH, Hv.
     - apply share_view_shr.
   Qed.
