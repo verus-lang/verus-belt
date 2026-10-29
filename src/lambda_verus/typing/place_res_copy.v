@@ -17,7 +17,7 @@ From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode memcpy.
 From lrust.typing Require Export type ltype lpath pctx_acc place_own.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
-  uniq_util uniq_bor product own uninit freeable_util place place_sum place_puniq
+  uniq_util uniq_bor product own uninit freeable_util place_sum place_puniq
   place_pshr sum type_sum place_deep place_resolve place_res place_res_view place_res_rslv
   place_res_ops.
 From lrust.util Require Import proph_bor.

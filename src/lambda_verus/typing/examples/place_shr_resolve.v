@@ -1,6 +1,6 @@
 From iris.proofmode Require Import proofmode.
 From lrust.typing Require Export type function product programs own cont uninit int
-  uniq_bor shr_bor borrow place place_shr place_resolve.
+  uniq_bor shr_bor borrow vplace place_shr place_resolve place_puniq.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -14,9 +14,10 @@ Section place_shr_resolve.
   fn first_ref<'a>(x: &'a mut (i32, i32)) -> &'a i32 { &x.0 }
   ```
 
-  with the specification `ensures *result == old(x).0, fin(x) == old(x)`. The referent of
-  `x` is unfolded; field 0 is borrowed shared at `'a ⊓ 'a` ([type_share_place_instr]);
-  `x` is resolved while field 0 is still shared-blocked ([type_resolve_place_instr]:
+  with the specification `ensures *result == old(x).0, fin(x) == old(x)`. The value of `x`
+  becomes a place rooted at it ([type_uniq_to_vplace_instr]) and its referent is unfolded;
+  field 0 is borrowed shared at `'a ⊓ 'a` ([type_share_vplace_deep_instr]);
+  `x` is resolved while field 0 is still shared-blocked ([type_resolve_vplace_uniq_instr]:
   the shared lifetime is alive, so the prophecy tokens of the value of the field are
   available from its sharing predicate, and the field contributes its current value).
   *)
@@ -25,6 +26,7 @@ Section place_shr_resolve.
     fn: ["x"] :=
       let: "b" := !"x" in
       delete [ #1; "x"];;
+      Skip;; ReBor;;                       (* b as a place, unfold *b *)
       let: "r" := Share;; "b" in          (* &( *b).0 *)
       (Skip;; Skip;; Skip;; #☠);;          (* resolve b *)
       let: "ret" := new [ #1] in
@@ -57,17 +59,20 @@ Section place_shr_resolve.
       { reflexivity. }
       iIntros (vb). simpl_subst.
       iApply type_delete. { solve_typing. } { done. } { done. }
-      iApply typed_body_tctx_incl.
-      { apply (tctx_unfold_uniq_prod _ _ vb α int int). solve_typing. }
+      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vb α (int * int)). }
+      { solve_typing. } { reflexivity. }
+      iApply type_seq.
+      { apply (type_unfold_vplace_prod_instr _ _ _ vb (PUniq α PHole) int int). simpl. solve_typing. }
+      { solve_typing. } { reflexivity. }
       (* &( *b).0, at α ⊓ α *)
       iApply (type_let with "[]").
-      { apply (type_share_place_instr _ _ _ vb α α (PFst PHole (OfTy int)) int);
-          [solve_typing|done]. }
+      { apply (type_share_vplace_deep_instr _ _ _ vb α (PUniq α (PFst PHole (OfTy int))) int);
+          [done|solve_typing|simpl; solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       (* resolve b, with field 0 shared *)
       iApply type_seq.
-      { apply (type_resolve_place_instr _ _ _ vb α (ProdLty (ShrBlocked int (α ⊓ α)) (OfTy int)));
+      { apply (type_resolve_vplace_uniq_instr _ _ _ vb α (ProdLty (ShrBlocked int (α ⊓ α)) (OfTy int)));
           [solve_typing|done|done|]. intros ? ->%elem_of_list_singleton. solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply (type_new 1). { lia. } iIntros (vret). simpl_subst.
@@ -82,8 +87,7 @@ Section place_shr_resolve.
     intros post [[lx m] []] mask π. simpl.
     destruct m as [[[[[l [x1 x2]] ξi] d] g] idx]. simpl.
     intros Hspec. rewrite /trans_upper /trans_tail /=.
-    intros z _ Hres l0 _ z0 ->. apply Hspec; [done|]. rewrite Hres.
-    by rewrite /place_cur /place_rfn /=.
+    intros z _ Hres l0 _ z0 ->. by apply Hspec.
   Qed.
 End place_shr_resolve.
 

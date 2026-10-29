@@ -21,7 +21,7 @@ Definition blocked_type_elim `{!typeG Σ} {𝔄 T} (bty: blocked_type 𝔄) (x: 
   
 (** Type context elements. Besides typed paths and blocked paths, a _semantic_
     element [TCtx_sem p Φ] gives an arbitrary interpretation [Φ] to the value of a path;
-    it is used for place types ([typing/place.v]), whose interpretation depends on
+    it is used for place types ([typing/vplace.v]), whose interpretation depends on
     files that depend on this one. *)
 Inductive tctx_elt `{!typeG Σ} 𝔄 : Type :=
 | TCtx_hasty (p: path) (ty: type 𝔄)

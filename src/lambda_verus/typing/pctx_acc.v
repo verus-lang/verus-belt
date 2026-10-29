@@ -31,7 +31,7 @@ From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath.
-From lrust.typing Require Import uniq_util uniq_bor.
+From lrust.typing Require Import uniq_util uniq_bor freeable_util shr_bor.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -712,3 +712,257 @@ Section pctx_acc.
     destruct K; [apply pctx_acc_uniq_hole|apply pctx_acc_uniq_cpd; [done|done|by apply IHK]..|done].
   Qed.
 End pctx_acc.
+
+(** * Places rooted at a value
+
+  The root of a place rooted at a value ([typing/vplace.v]) is the [nval] of its root
+  pointer ([lty_vown], in [Owned 0] mode), at depths below the depth [D] of the receipt of
+  the place. A root owned pointer is kept in the form of a place rooted at an owned location
+  ([place_own.v]): its pointee at depths [d, g] with [S d ≤ D] and [g ≤ D]. The access to the
+  hole of a context [K] whose first step is the root pointer ([vroot_acc]) is the access of
+  [pctx_acc] to the hole of the rest of [K] (for a root owned pointer), or opens the root
+  unique borrow and its contents as [pctx_acc] does for a nested one. *)
+
+Section vroot.
+  Context `{!typeG Σ}.
+
+  Definition vroot_own {𝔄} (lt: lty 𝔄) : prfn 𝔄 → nat → thread_id → val → iProp Σ :=
+    match lt in lty 𝔄 return prfn 𝔄 → nat → thread_id → val → iProp Σ with
+    | OwnPtrLty n lt' => λ r D tid v, match r with
+        | inr (l, r') => ∃ d g, ⌜v = #l⌝ ∗ ⌜S d ≤ D ∧ g ≤ D⌝ ∗ freeable_sz n (lty_size lt') l ∗
+            ltype_own (Owned 1) lt' r' d g tid (l, repeat [] (lty_size lt'))
+        | inl _ => False
+        end
+    | lt' => λ r D tid v, ∃ d g, ⌜d ≤ D ∧ g ≤ D⌝ ∗ lty_vown lt' r d g tid v
+    end%I.
+
+  Lemma vroot_own_depth_mono {𝔄} (lt: lty 𝔄) r D D' tid v :
+    D ≤ D' → vroot_own lt r D tid v ⊢ vroot_own lt r D' tid v.
+  Proof.
+    intros ?. destruct lt; simpl;
+      try (iIntros "(%d & %g & %Hle & H)"; iExists d, g; iFrame; iPureIntro; lia).
+    destruct r as [|[l r']]; [done|].
+    iIntros "(%d & %g & -> & %Hle & H)". iExists d, g. iFrame. iPureIntro. split; [done|lia].
+  Qed.
+
+  (** The pointer cells on the path below the root pointer, and the guards of the cells of
+      the referents (as [pctx_ptrs], [pctx_pguards]). *)
+  Definition pctx_vptrs {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) : ~~𝔄 → iProp Σ :=
+    match K in pctx 𝔅 𝔄 return ~~𝔄 → iProp Σ with
+    | POwn _ K' => λ x, pctx_ptrs K' n x.2 (x.1, repeat [] (pctx_size K' n))
+    | PUniq _ K' => λ x, pctx_ptrs K' n (uniq_bor_current x) (uniq_bor_loc x)
+    | PShr _ K' => λ x, pctx_ptrs K' n x.2 x.1
+    | _ => λ _, True
+    end%I.
+
+  Definition pctx_vpguards {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n k: nat) (G: iProp Σ) (x: ~~𝔄) : iProp Σ :=
+    pctx_pguards K n k G x cloc_dummy.
+
+  Lemma pctx_vptrs_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x y :
+    pctx_in K x → pctx_vptrs K n (pctx_set K x y) = pctx_vptrs K n x.
+  Proof.
+    destruct K; simpl; try done; intros; rewrite ?uniq_bor_current_set ?uniq_bor_loc_set;
+      by rewrite pctx_ptrs_set.
+  Qed.
+
+  (** The address of the hole, from the value of the root pointer. *)
+  Lemma wp_pctx_vptrs {𝔅 𝔄} E (K: pctx 𝔅 𝔄) `{!PctxVRoot K} n k (G: iProp Σ) x (e: expr)
+      (R: iProp Σ) :
+    ↑NllftG ⊆ E →
+    pctx_vpguards K n k G x -∗ £(3 * k * pred (pctx_dlev K)) -∗
+    WP e @ E {{ v, ⌜v = #(pctx_vrloc K n x).1⌝ ∗ R ∗ G }} -∗ pctx_vptrs K n x -∗
+    WP pctx_vexpr K e @ E {{ v, ⌜v = #(pctx_vloc K n x).1⌝ ∗ R ∗ G ∗ pctx_vptrs K n x }}.
+  Proof.
+    rename select (PctxVRoot K) into HR. intros HE.
+    destruct K as [| | |𝔅 𝔄' n' K| |𝔅 𝔄' κ K|]; try done; simpl.
+    - iIntros "#Gs £ WP P".
+      iApply (wp_pctx_ptrs E K n k G x.2 (x.1, repeat [] (pctx_size K n)) e R with "[] Gs [£] WP P");
+        [done| |].
+      + rewrite -heap_cloc_mapsto_empty. iApply guards_true.
+      + iApply (lc_weaken with "£"). nia.
+    - iIntros "[#Gl #Gs] £ WP P".
+      iApply (wp_pctx_ptrs E K n k G (uniq_bor_current x) (uniq_bor_loc x) e R
+        with "Gl Gs [£] WP P"); [done|]. iApply (lc_weaken with "£"). nia.
+  Qed.
+
+  Lemma pctx_vroot_dlev {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} : 1 ≤ pctx_dlev K.
+  Proof. rename select (PctxVRoot K) into HR. destruct K; try done; simpl; lia. Qed.
+
+  Lemma pctx_vroot_nonempty {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} : pctx_nonempty K.
+  Proof. rename select (PctxVRoot K) into HR. by destruct K. Qed.
+
+  (** The later credits for an access to the hole below a root pointer, at a depth [D]. *)
+  Definition pctx_vacc_cred {𝔅 𝔄} (K: pctx 𝔅 𝔄) (D: nat) : nat :=
+    match pctx_ulfts K with [] => 0 | _ => (D + 1) * (D + 1) end.
+
+  Lemma pctx_vacc_cred_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) D : pctx_vacc_cred K D ≤ (D + 1) * (D + 1).
+  Proof. rewrite /pctx_vacc_cred. destruct (pctx_ulfts K); lia. Qed.
+
+  (** The closer of an access to the hole below a root pointer: as [pctx_closer], the root
+      at a new depth [D'] (with a receipt for it). *)
+  Definition pctx_vcloser {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (r: prfn 𝔅) (x: ~~𝔄)
+      (ζm: blk_map) (D: nat) (tid: thread_id) (v: val) (E: coPset) (G G': iProp Σ) : iProp Σ :=
+    ∀ (lt': lty 𝔅) r' dh' gh' D' ζl' (qq: Qp) (R: iProp Σ),
+      ⌜lty_simple lt'⌝ -∗ ⌜lty_fold lt' = lty_fold lt⌝ -∗ ⌜lty_size lt' = lty_size lt⌝ -∗
+      ⌜∀ ζl, prfn_rsv r ζl → prfn_rsv r' (ζl ++ ζl')⌝ -∗
+      ⌜D ≤ D' ∧ dh' + pctx_dlev K ≤ D' ∧ gh' ≤ D'⌝ -∗
+      ([∗ list] κ ∈ pctx_ulfts K, pat_ok κ (lty_pat lt')) -∗
+      ⧖D' -∗ G' -∗ pctx_vptrs K (lty_size lt) x -∗ qq:+[ζl'] -∗
+      (qq:+[ζl'] ={E}=∗ ltype_own (pctx_kind K (Owned 0) x) lt' r' dh' gh' tid
+          (pctx_vloc K (lty_size lt) x) ∗ R) ={E}=∗
+      vroot_own (pctx_plug K lt') (pctx_vrfn K x ζm r') D' tid v ∗ G ∗ R.
+
+  (** The result of an access to the hole below a root pointer (as [pctx_acc_res]). *)
+  Definition pctx_vacc_res {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (r: prfn 𝔅) (x: ~~𝔄)
+      (ζm: blk_map) (D: nat) (tid: thread_id) (v: val) (E: coPset) (G: iProp Σ) : iProp Σ :=
+    ∃ (G': iProp Σ) dh gh, ⌜Timeless G'⌝ ∗ G' ∗ (G' &&{↑NllftG}&&> G) ∗
+      ⌜v = #(pctx_vrloc K (lty_size lt) x).1⌝ ∗
+      ⌜dh + pctx_dlev K ≤ D ∧ gh ≤ D ∧ pctx_in K x⌝ ∗
+      ltype_own (pctx_kind K (Owned 0) x) lt r dh gh tid (pctx_vloc K (lty_size lt) x) ∗
+      pctx_vptrs K (lty_size lt) x ∗ pctx_vpguards K (lty_size lt) (D + 1) G' x ∗
+      □ (∀ b, @[pctx_hlft K b] &&{↑NllftG; D + 1}&&> pctx_vloc K (lty_size lt) x #↦∗_) ∗
+      pctx_vcloser K lt r x ζm D tid v E G G'.
+
+  Lemma vroot_acc_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') `{!PctxNoShr K} (lt: lty 𝔅) r x ζm D tid v E G :
+    lazyE ⊆ E → Timeless G →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_ulft (POwn n K) lt]) -∗ G -∗
+    £(pctx_vacc_cred (POwn n K) D) -∗
+    vroot_own (pctx_plug (POwn n K) lt) (pctx_vrfn (POwn n K) x ζm r) D tid v ={E}=∗
+    pctx_vacc_res (POwn n K) lt r x ζm D tid v E G.
+  Proof.
+    iIntros (??) "#LFT #PROPH #UNIQ #Gk G £ /=". iDestruct 1 as (d g -> Hle) "[Fr Own]".
+    rewrite /ltype_own lty_pat_plug. iEval (rewrite lty_size_plug) in "Own".
+    iDestruct (lc_weaken (pctx_acc_cred K 1 d) with "£") as "£";
+      [rewrite /pctx_acc_cred /pctx_vacc_cred /=; destruct (pctx_ulfts K); nia|].
+    iMod (pctx_acc K lt 1 with "LFT PROPH UNIQ Gk G £ Own")
+      as (G' dh gh) "(% & G' & #G'G & %Hdh & H & P & #Gs & #HG & Cl)"; [done..|].
+    destruct Hdh as (Hdh & Hgh & Hin).
+    iModIntro. iExists G', dh, gh. iSplitR; [done|]. iSplitL "G'"; [done|]. iSplitR; [done|].
+    iSplitR; [done|]. iSplitR; [iPureIntro; simpl; split_and!; [lia|lia|done]|].
+    rewrite /pctx_vloc /pctx_vpguards /=. iFrame "H P".
+    iSplitR; [iApply (pctx_pguards_mono with "Gs"); lia|]. iSplitR.
+    { iIntros "!>" (b). iApply (lguards_weaken_later with "[]"); last first.
+      { iApply ("HG" $! b 0). iEval (rewrite -heap_cloc_mapsto_empty). iApply guards_true. }
+      lia. }
+    iIntros (lt' r' dh' gh' D' ζl' qq R Hs Hf Hsz Hr (? & ? & ?)) "Oks #⧖ G' P toks VS".
+    iMod ("Cl" $! lt' (lty_pat lt') r' dh' gh' (pred D') D' ζl' qq R
+      with "[//] [//] [//] [//] [%] Oks [] G' P toks VS") as "(Own & $ & $)";
+      [simpl in *; lia|..].
+    { iApply (persistent_time_receipt_mono with "⧖"). simpl in *. lia. }
+    iModIntro. iExists (pred D'), D'. iSplit; [done|]. iSplit; [iPureIntro; simpl in *; lia|].
+    rewrite /ltype_own lty_pat_plug !lty_size_plug Hsz. iFrame.
+  Qed.
+
+  (** The hole is the whole referent of the root unique borrow. *)
+  Lemma vroot_acc_uniq_hole {𝔅} κ (lt: lty 𝔅) r x ζm D tid v E G :
+    lazyE ⊆ E → Timeless G →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_ulft (PUniq κ (PHole (𝔅:=𝔅))) lt]) -∗ G -∗
+    £(pctx_vacc_cred (PUniq κ (PHole (𝔅:=𝔅))) D) -∗
+    vroot_own (pctx_plug (PUniq κ (PHole (𝔅:=𝔅))) lt) (pctx_vrfn (PUniq κ (PHole (𝔅:=𝔅))) x ζm r) D tid v ={E}=∗
+    pctx_vacc_res (PUniq κ (PHole (𝔅:=𝔅))) lt r x ζm D tid v E G.
+  Proof.
+    iIntros (??) "_ _ _ #Gk G _ /=".
+    iDestruct 1 as (d g Hle) "(-> & ⧗ & #TIME & #Incl & #Gpt & %d' & %g' & %Hle' & C)".
+    iModIntro. iExists G, d', g'. iSplitR; [done|]. iSplitL "G"; [done|].
+    iSplitR; [iApply guards_refl|]. iSplitR; [done|].
+    iSplitR; [iPureIntro; simpl in *; split_and!; [lia|lia|done]|].
+    rewrite /pctx_vloc /pctx_vpguards /=. iSplitL "C"; [done|]. iSplitR; [done|]. iSplitR.
+    { iSplit; [|done]. iApply (guards_transitive_right with "[] [Gpt]").
+      - iApply (guards_transitive with "Gk"). iApply llftl_intersect_incl_l.
+      - iApply (lguards_weaken_later with "Gpt"). lia. }
+    iSplitR. { iIntros "!>" (b). iApply (lguards_weaken_later with "Gpt"). lia. }
+    iIntros (lt' r' dh' gh' D' ζl' qq R Hs Hf Hsz Hr (? & ? & ?)) "_ _ G _ toks VS".
+    iMod ("VS" with "toks") as "[C $]". iFrame "G". iModIntro.
+    iExists D', D'. iSplit; [done|]. rewrite /= Hf. iSplit; [done|]. iFrame "⧗ TIME Incl".
+    iSplit; [iApply (lguards_weaken_later with "Gpt"); lia|].
+    iExists dh', gh'. iFrame "C". iPureIntro. simpl in *. lia.
+  Qed.
+
+  (** The hole is below the root unique borrow, whose referent is compound: as
+      [pctx_acc_uniq_cpd]. *)
+  Lemma vroot_acc_uniq_cpd {𝔅 𝔄'} κ (K: pctx 𝔅 𝔄') `{!PctxNoShr K} (lt: lty 𝔅) r x ζm D tid v E G :
+    pctx_nonempty K → pctx_simple K → lazyE ⊆ E → Timeless G →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_ulft (PUniq κ K) lt]) -∗ G -∗
+    £(pctx_vacc_cred (PUniq κ K) D) -∗
+    vroot_own (pctx_plug (PUniq κ K) lt) (pctx_vrfn (PUniq κ K) x ζm r) D tid v ={E}=∗
+    pctx_vacc_res (PUniq κ K) lt r x ζm D tid v E G.
+  Proof.
+    iIntros (HK HKs HE ?) "#LFT #PROPH #UNIQ #Gk G £ /=".
+    iDestruct 1 as (d g Hle) "(-> & ⧗ & #TIME & #Incl & #Gpt & %d' & %g' & %Hle' & C)".
+    iDestruct (lc_weaken (1 + pctx_acc_cred K 0 d') with "£") as "[£1 £]";
+      [have := pctx_acc_cred_le K 0 d'; rewrite /pctx_vacc_cred /=; nia|].
+    rewrite /ltype_own lty_pat_plug ltype_own_cp_uniq_plug //.
+    have ?: ↑NllftG ⊆ E. { trans lazyE; [apply lazyE_NllftG|done]. }
+    have ?: ↑Nllft ∪ ↑prophN ⊆ E. { trans lazyE; [rewrite /lazyE; solve_ndisj|done]. }
+    iMod (fractional.frac_split_guard_in_half NllftG G G with "G []")
+      as (γh) "[H1 [H2 [#Gh #Back]]]"; [done|iApply guards_refl|].
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[κ])%I as "#Hκ".
+    { iApply (guards_transitive with "Gh"). iApply (guards_transitive with "Gk").
+      iApply llftl_intersect_incl_l. }
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[ty_lft (lty_fold (pctx_plug K lt))])%I as "#Hty".
+    { iApply (guards_transitive with "Gh"). iApply (guards_transitive with "Gk").
+      iApply llftl_intersect_incl_r. }
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K lt])%I as "#Hu".
+    { iApply (guards_transitive with "Hty"). iApply pctx_ulft_incl. }
+    iMod (cpd_rebody_gen with "LFT PROPH UNIQ Hκ H1 C") as (κp) "(#Inclp & #Ok & Upd & Close)";
+      [done|].
+    iMod (lc_fupd_elim_later with "£1 Upd") as "Upd".
+    iMod (guarded_upd_run with "Hty H2 Upd") as "(H2 & #⧖' & N)"; [done|].
+    iMod (pctx_acc K lt 0 with "LFT PROPH UNIQ Hu H2 £ N")
+      as (G' dh gh) "(% & G' & #G'G & %Hdh & H & P & #Gs & #HG & Cl)"; [done..|].
+    destruct Hdh as (Hdh & Hgh & Hin).
+    iModIntro. iExists G', dh, gh. iSplitR; [done|]. iSplitL "G'"; [done|].
+    iSplitR; [iApply (guards_transitive with "G'G Gh")|]. iSplitR; [done|].
+    iSplitR; [iPureIntro; simpl in *; split_and!; [lia|lia|done]|].
+    rewrite /pctx_vcloser /pctx_vloc /pctx_vpguards /= pctx_kind_nonempty //.
+    iSplitL "H"; [done|]. iSplitL "P"; [done|]. iSplitR.
+    { iSplit.
+      - iApply (guards_transitive_right with "[] [Gpt]").
+        + iApply (guards_transitive with "G'G Hκ").
+        + iApply (lguards_weaken_later with "Gpt"). lia.
+      - iApply (pctx_pguards_mono with "Gs"). lia. }
+    iSplitR.
+    { iIntros "!>" (b). iApply (lguards_weaken_later with "[]"); last first.
+      { iApply ("HG" with "Gpt"). } lia. }
+    iIntros (lt' r' dh' gh' D' ζl' qq R Hs Hf Hsz Hr (? & ? & ?)) "[#Okκ Oks] #⧖ G' P toks VS".
+    have Hf': lty_fold (pctx_plug K lt') = lty_fold (pctx_plug K lt) by apply lty_fold_plug_eq'.
+    iMod ("Close" $! (ltype_own_cp false (pctx_plug K lt') (Owned 0)) (pctx_pat K (lty_pat lt'))
+      (pctx_rfn K (uniq_bor_current x) ζm [] r') (pred D') D' ζl' qq
+      (fractional.half γh ∗ R)%I with "[%] [] toks [VS G' P Oks Cl]") as "(C' & H1 & H2 & $)".
+    { intros ζl. apply pctx_rfn_rsv_mono; [set_solver|]. apply Hr. }
+    { iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖2 N". rewrite -Hf'.
+      iApply (ltype_owned_leaf_node with "LFT PROPH UNIQ Ok2 ⧖2 N");
+        [by apply lty_is_cpd_plug_nonempty'|by apply lty_simple_plug]. }
+    { iIntros "toks".
+      iMod ("Cl" $! lt' (lty_pat lt') r' dh' gh' (pred D') D' ζl' qq R
+        with "[//] [//] [//] [//] [%] Oks [] G' P toks VS") as "(N' & $ & $)";
+        [simpl in *; lia|..].
+      { iApply (persistent_time_receipt_mono with "⧖"). simpl in *. lia. }
+      iModIntro. iSplitR.
+      - iNext. iApply (pat_ok_plug with "Ok"). iApply (pat_ok_mono with "Inclp Okκ").
+      - iNext. iApply guarded_upd_intro. iModIntro. iFrame "N'".
+        iApply (persistent_time_receipt_mono with "⧖"). simpl in *. lia. }
+    iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [done|].
+    iModIntro. iExists D', D'. iSplit; [iPureIntro; simpl in *; lia|]. rewrite /= Hf'.
+    iSplit; [done|]. iFrame "⧗ TIME Incl".
+    iSplit; [iApply (lguards_weaken_later with "Gpt"); lia|].
+    iExists (pred D'), D'. iSplit; [iPureIntro; simpl in *; lia|].
+    rewrite /ltype_own lty_pat_plug (ltype_own_cp_uniq_plug K) // Hf'. iExact "C'".
+  Qed.
+
+  (** The access to the hole of a context whose first step is the root pointer. *)
+  Lemma vroot_acc {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} (lt: lty 𝔅) r x ζm D tid v
+      E G :
+    lazyE ⊆ E → Timeless G →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_ulft K lt]) -∗ G -∗
+    £(pctx_vacc_cred K D) -∗
+    vroot_own (pctx_plug K lt) (pctx_vrfn K x ζm r) D tid v ={E}=∗
+    pctx_vacc_res K lt r x ζm D tid v E G.
+  Proof.
+    rename select (PctxVRoot K) into HR. rename select (PctxNoShr K) into HK.
+    destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|]; try done.
+    - apply vroot_acc_own. done.
+    - destruct HK as [HKs HK]. destruct K; [apply vroot_acc_uniq_hole|
+        apply vroot_acc_uniq_cpd; done..|done].
+  Qed.
+End vroot.

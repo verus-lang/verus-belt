@@ -548,6 +548,54 @@ Section ltype_own.
         ▷^m (κ' ⊑ ty_lft ty ∗ ∃ d' g', ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ child r' d' g' tid l')
     end%I.
 
+  (** ** Pointer nodes without their cells
+
+      The node of a pointer ([own_node], [uniq_node], [res_node]) is the cell of the
+      pointer together with the ownership of the pointer _value_, [own_nval], [uniq_nval],
+      [res_nval] ([own_node_nval], …). The root of a place rooted at a value (a pointer
+      that is not in memory, [typing/vplace.v]) is the [nval] of its root pointer. *)
+  Definition uniq_nval {𝔅} (m: nat) (κ': lft) (ty: type 𝔅)
+      (child: positive → prfn 𝔅 → nat → nat → thread_id → cloc → iProp Σ)
+      (r: prfn (uniq_borₛ 𝔅)) (d g: nat) (tid: thread_id) : iProp Σ :=
+    match r with
+    | inl _ => False
+    | inr (l', r', ξi) =>
+        ⧗(2 + m) ∗ time_ctx ∗
+        ▷^m (κ' ⊑ ty_lft ty ∗ (@[κ'] &&{↑NllftG; g+1}&&> l' #↦∗_) ∗
+          ∃ d' g', ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ child ξi r' d' g' tid l')
+    end%I.
+
+  Definition own_nval {𝔅} (m: nat) (n sz: nat)
+      (child: prfn 𝔅 → nat → nat → thread_id → cloc → iProp Σ)
+      (r: prfn (at_locₛ 𝔅)) (d g: nat) (tid: thread_id) : iProp Σ :=
+    match r with
+    | inl _ => False
+    | inr (l', r') => ⌜d ≠ 0%nat⌝ ∗ ▷^m (freeable_sz n sz l') ∗ child r' (pred d) g tid (l', repeat [] sz)
+    end%I.
+
+  Definition res_nval {𝔅} (m: nat) (κ': lft) (ty: type 𝔅)
+      (child: prfn 𝔅 → nat → nat → thread_id → cloc → iProp Σ)
+      (r: prfn (uniq_borₛ 𝔅)) (d g: nat) (tid: thread_id) : iProp Σ :=
+    match r with
+    | inl _ => False
+    | inr (l', r', ξi) =>
+        ▷^m (κ' ⊑ ty_lft ty ∗ ∃ d' g', ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ child r' d' g' tid l')
+    end%I.
+
+  (** A leaf at a value (of size 1), and a resolved leaf at a value (as [res_leaf]). *)
+  Definition vleaf {𝔄} (ty: type 𝔄) (r: prfn 𝔄) (d g: nat) (tid: thread_id) (v: val) : iProp Σ :=
+    match r with
+    | inr _ => False
+    | inl lr => ∃ x, place_rfn_rel lr x ∗ ⌜ty.(ty_phys) x tid = [FVal v]⌝ ∗ ty.(ty_gho_own) x d g tid
+    end%I.
+
+  Definition vres_leaf {𝔄} (ty: type 𝔄) (r: prfn 𝔄) (d g: nat) (tid: thread_id) (v: val) : iProp Σ :=
+    match r with
+    | inr _ => False
+    | inl lr => ∃ x, place_rfn_rel lr x ∗ ⌜ty.(ty_phys) x tid = [FVal v]⌝ ∗
+        ∃ d' g', ⌜d' ≤ d ∧ g' ≤ g⌝ ∗ ty.(ty_gho_res) x d' g' tid
+    end%I.
+
   (** ** The interpretation
 
       By structural recursion on the place type, with the blocking pattern
@@ -620,6 +668,32 @@ Section ltype_own.
     | Owned _ => ltype_own_cp true lt k (lty_pat lt) r d g tid l
     | Uniq _ _ => ∃ p, ltype_own_cp false lt k p r d g tid l
     end.
+
+  (** ** The interpretation at a value
+
+      A place type whose root is a pointer ([OwnPtrLty], [UniqLty], [ResUniqLty]) or a leaf
+      of size 1 ([OfTy], [OfRes], [ShrLty]), at a value [v] (not in memory): the [nval] of the
+      root pointer, in [Owned 0] mode, with the value of the pointer, or the leaf at the
+      value. The other place types have no interpretation at a value. *)
+  Definition lty_vown {𝔄} (lt: lty 𝔄) : prfn 𝔄 → nat → nat → thread_id → val → iProp Σ :=
+    match lt in lty 𝔄 return prfn 𝔄 → nat → nat → thread_id → val → iProp Σ with
+    | OfTy ty => vleaf ty
+    | UniqLty lt' κ' => λ r d g tid v,
+        ((match r with inr (l', _, _) => ⌜v = #(l'.1)⌝ | inl _ => False end) ∗
+         uniq_nval 0 κ' (lty_fold lt')
+           (λ ξi r' d' g' tid l', ltype_own (Uniq κ' ξi) lt' r' d' g' tid l') r d g tid)%I
+    | OwnPtrLty n lt' => λ r d g tid v,
+        ((match r with inr (l', _) => ⌜v = #l'⌝ | inl _ => False end) ∗
+         own_nval 0 n (lty_size lt') (ltype_own (Owned 1) lt') r d g tid)%I
+    | ShrLty lt' κ' => λ r d g tid v,
+        (vleaf (shr_bor κ' (lty_fold lt')) r d g tid v ∗
+          ⌜prfn_vin (λ x: ~~ (at_clocₛ _), lty_vin lt' x.2) r⌝)%I
+    | OfRes ty => vres_leaf ty
+    | ResUniqLty lt' κ' => λ r d g tid v,
+        ((match r with inr (l', _, _) => ⌜v = #(l'.1)⌝ | inl _ => False end) ∗
+         res_nval 0 κ' (lty_fold lt') (lty_view lt' κ' 0 (lty_pat lt')) r d g tid)%I
+    | _ => λ _ _ _ _ _, False%I
+    end.
 End ltype_own.
 
 Notation "l ◁ₗ[ tid , k , d , g ] r @ lt" := (ltype_own k lt r d g tid l)
@@ -660,6 +734,42 @@ Section ltype_lemmas.
   Proof.
     intros Hc. destruct r as [?|[l' r']]; [done|]. rewrite /own_node.
     iIntros "($ & $ & $ & C)". by iApply Hc.
+  Qed.
+
+  (** ** Pointer nodes are their cells and their [nval]s *)
+
+  Lemma uniq_node_nval {𝔅} m κ' (ty: type 𝔅) child l' r' ξi d g tid l :
+    uniq_node m κ' ty child (inr (l', r', ξi)) d g tid l ⊣⊢
+      l #↦!∗ [FVal (LitV l'.1)] ∗ uniq_nval m κ' ty child (inr (l', r', ξi)) d g tid.
+  Proof. done. Qed.
+
+  Lemma own_node_nval {𝔅} m n sz (child: prfn 𝔅 → nat → nat → thread_id → cloc → iProp Σ)
+      l' r' d g tid l :
+    own_node m n sz child (inr (l', r')) d g tid l ⊣⊢
+      l #↦!∗ [FVal (LitV l')] ∗ own_nval m n sz child (inr (l', r')) d g tid.
+  Proof. done. Qed.
+
+  Lemma res_node_nval {𝔅} m κ' (ty: type 𝔅) child l' r' ξi d g tid l :
+    res_node m κ' ty child (inr (l', r', ξi)) d g tid l ⊣⊢
+      l #↦!∗ [FVal (LitV l'.1)] ∗ res_nval m κ' ty child (inr (l', r', ξi)) d g tid.
+  Proof. done. Qed.
+
+  (** A leaf of size 1 is its cell and the leaf at the value of the cell. *)
+  Lemma leaf_owned_vleaf {𝔄} (ty: type 𝔄) r d g tid (l: cloc) v :
+    l #↦!∗ [FVal v] ∗ vleaf ty r d g tid v ⊢ leaf_owned_s false 0 ty PatLeaf r d g tid l.
+  Proof.
+    destruct r as [lr|]; [|by iIntros "[_ []]"].
+    iIntros "[Pt (%x & Rel & %Hphys & Gho)]". iExists x. iFrame "Rel Gho". by rewrite Hphys.
+  Qed.
+
+  Lemma uniq_nval_mono {𝔅} m κ' (ty: type 𝔅)
+      (c1 c2: positive → prfn 𝔅 → nat → nat → thread_id → cloc → iProp Σ) r d g tid :
+    (∀ ξi r' d' g' tid' l', c1 ξi r' d' g' tid' l' ⊢ c2 ξi r' d' g' tid' l') →
+    uniq_nval m κ' ty c1 r d g tid ⊢ uniq_nval m κ' ty c2 r d g tid.
+  Proof.
+    intros Hc. destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /uniq_nval.
+    iIntros "($ & $ & H)". iNext. iDestruct "H" as "($ & $ & %d' & %g' & ? & C)".
+    iExists d', g'. iFrame. by iApply Hc.
   Qed.
 
   Lemma prod_node_mono {𝔅 ℭ} sz1 (c1 c1': prfn 𝔅 → nat → nat → thread_id → cloc → iProp Σ)

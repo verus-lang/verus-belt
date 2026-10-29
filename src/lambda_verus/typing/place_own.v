@@ -1,12 +1,12 @@
 (** * Places rooted at an owned location
 
-  The place elements of [place.v] are rooted at a unique borrow. This file adds place
-  elements rooted at an _owned_ location, i.e. the pointee of an owned pointer
+  This file adds the rules for place elements rooted at an _owned_ location, i.e. the pointee of an owned pointer
   [own_ptr n] (a [Box], or a stack slot holding a local variable): [p ◁ₗown{n} lt]
   says that [p] is an owned pointer whose pointee has the place type [lt], in [Owned 1]
   mode (one later for the ghost parts, as in [own_ptr]; so the conversions
   [tctx_own_to_oplace], [tctx_oplace_to_own] are inclusions). Its value is a pair of
-  the value of the owned pointer [(l, x₀)] and a blocking map [ζm] (as for [p ◁ₗ{κ} lt]):
+  the value of the owned pointer [(l, x₀)] and a blocking map [ζm] ([vplace.v]:
+  [p ◁ₗown{n} lt] is [p ◁ₗ OwnPtrLty n lt]):
   the refinement of the place is [lty_rfn lt x₀ ζm []].
 
   There is no outer borrow: blocking a leaf (a mutable borrow of a subplace at some
@@ -25,40 +25,14 @@
 
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
-From lrust.typing Require Export type ltype lpath.
+From lrust.typing Require Export type ltype lpath vplace.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
-  uniq_util uniq_bor product own uninit freeable_util place.
+  uniq_util uniq_bor product own uninit freeable_util .
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
 
 Implicit Type 𝔄 𝔅: syn_type.
-
-(** The value of an owned place element. *)
-Notation oplaceₛ 𝔄 := (at_locₛ 𝔄 * blk_mapₛ)%ST.
-
-Section oplace.
-  Context `{!typeG Σ}.
-
-  Definition oplace_own {𝔄} (n: nat) (lt: lty 𝔄) (x: ~~ (oplaceₛ 𝔄))
-      (tid: thread_id) (v: val) : iProp Σ :=
-    match x with ((l, x₀), ζm) =>
-      ∃ D d g, ⧖D ∗ ⧗(lty_nrc lt 0 0) ∗ ⌜v = #l⌝ ∗ ⌜S d ≤ D ∧ g ≤ D⌝ ∗
-        freeable_sz n (lty_size lt) l ∗
-        ltype_own (Owned 1) lt (lty_rfn lt x₀ ζm []) d g tid (l, repeat [] (lty_size lt))
-    end%I.
-
-  (** The current value of an owned place. *)
-  Definition oplace_cur {𝔄} (lt: lty 𝔄) (x: ~~ (oplaceₛ 𝔄)) : proph 𝔄 :=
-    prfn_den (lty_rfn lt x.1.2 x.2 []).
-
-  (** The final value of the borrow of the blocked leaf at the hole of [K]. *)
-  Definition oplace_blk_fin {𝔅 𝔄} (K: pctx 𝔅 𝔄) (x: ~~ (oplaceₛ 𝔄)) : proph 𝔅 := λ π,
-    (π (uniq_prvar (pctx_get K x.1.2) (blk_lookup x.2 (pctx_path K [])))).1.
-End oplace.
-
-Notation "p ◁ₗown{ n } lt" := (TCtx_sem _ p (oplace_own n lt))
-  (at level 55, format "p  ◁ₗown{ n }  lt").
 
 Section typing.
   Context `{!typeG Σ}.
