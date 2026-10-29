@@ -5,13 +5,14 @@
 
   ** Places rooted at a unique borrow
 
-  [type_resolve_place_instr] gives up [p ◁ₗ{κ} lt] for any compound place type [lt]
+  [type_resolve_vplace_uniq_instr] gives up [p ◁ₗ{κ} lt] (a place rooted at the value of a
+  unique borrow, [vplace.v]) for any compound place type [lt]
   whose leaves are unblocked ([OfTy], also below owned pointers and sums), blocked
   ([Blocked]) or shared-blocked ([ShrBlocked], see below), and whose nested unique
   borrows ([UniqLty]) have only blocked leaves
   ([lty_uniq_rslv]). The prophecy variable of the outer borrow is pre-resolved to the
   current value of the place: the final values of the reborrows at the blocked leaves,
-  the current values at the unblocked leaves. This generalizes [tctx_drop_place_cpd]
+  the current values at the unblocked leaves. This generalizes [tctx_drop_vplace_uniq]
   (all leaves blocked), without reborrowing the unblocked leaves first. No condition on
   the types of the leaves is needed: their contents are not consumed (they go back to
   the lender of the outer borrow, at the same values).
@@ -59,7 +60,7 @@ From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.lang.lib Require Import new_delete.
 From lrust.util Require Import update.
-From lrust.typing Require Export type ltype lpath place place_own.
+From lrust.typing Require Export type ltype lpath place_own.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
   uniq_util uniq_bor product own uninit freeable_util.
 From lrust.lifetime Require Import lifetime_full.
@@ -448,71 +449,19 @@ Section typing.
     iDestruct (IH with "L E") as "#Gαl"; [set_solver|]. by iFrame "Gα Gαl".
   Qed.
 
-  Lemma type_resolve_place_instr {𝔄} E L I p κ (lt: lty 𝔄) :
-    lctx_lft_alive E L κ → lty_is_cpd lt → lty_uniq_rslv lt →
-    (∀ α, α ∈ lty_shr_lfts lt → lctx_lft_alive E L α) →
-    typed_instr E L I +[p ◁ₗ{κ} lt] (skipn (S (lty_nunblk lt))) (const +[])
-      (λ post '-[x], λ mask π,
-        uniq_bor_future (place_bor x) π = place_cur lt x π → post -[] mask π).
-  Proof.
-    iIntros (Alv Hc Hrs Halv tid post mask iκs [x []])
-      "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
-    destruct x as [[[[[[l x₀] ξi] d'] g'] idx] ζm].
-    rewrite /tctx_elt_interp.
-    iDestruct "T" as (v ?) "(%d0 & #⧖0 & _ & -> & %Hle & #Incl & #PtBase & Own)".
-    iDestruct (Alv with "L E") as "#Alv".
-    iDestruct (lctx_lft_alive_list _ _ _ Halv with "L E") as "#Alvl".
-    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
-      [solve_ndisj|].
-    iDestruct (guards_transitive with "Ghalf Alv") as "#Hκ".
-    iAssert ([∗ list] α ∈ lty_shr_lfts lt, fractional.half γh &&{↑NllftG}&&> @[α])%I
-      as "#Hαl".
-    { iApply (big_sepL_impl with "Alvl"). iIntros "!>" (k α _) "#Gk".
-      iApply (guards_transitive with "Ghalf Gk"). }
-    iAssert (fractional.half γh &&{↑NllftG}&&> @[ty_lft (lty_fold lt)])%I as "#Hty".
-    { iApply (guards_transitive with "Hκ Incl"). }
-    rewrite /ltype_own ltype_own_cp_uniq_cpd //.
-    iMod (ltype_owned_rslv lt x₀ ζm [] with "PROPH") as (r' ηl Hdep) "[ηl Cont]"; [done|].
-    iMod (cpd_preresolve with "LFT PROPH UNIQ Hκ H1 Own") as (x₀' ζl Hr) "[Upd Pre]";
-      [solve_ndisj|].
-    iMod ("Pre" $! r' ηl with "[%] ηl") as "(#Obs' & ηl & Close)"; [by apply Hdep|].
-    set c := 1 + rslv_cost d0 d0.
-    iApply (wp_skipn_ctask _ c d0
-      (llctx_interp L ∗ ⟨π, prfn_den r' π = prfn_den (lty_rfn lt x₀ ζm []) π⟩)
-      with "TIME ⧖0 [-Obs I]").
-    { rewrite /c /rslv_cost /advance_credits. nia. }
-    { iModIntro. iIntros "[£1 _]". iApply ctask_fupd.
-      iMod (lc_fupd_elim_later with "£1 Upd") as "Upd".
-      iMod (guarded_upd_run with "Hty H2 Upd") as "(H2 & #⧖' & N)";
-        [rewrite /lazyE; solve_ndisj|].
-      iDestruct ("Cont" $! _ 0 d' g' tid l with "[%] LFT PROPH Hty Hαl H2 ηl N") as "T";
-        [apply _|].
-      iDestruct (ctask_weaken _ c with "T") as "T".
-      { rewrite /c. have := rslv_cost_mono (0 + d') g' d0 d0. lia. }
-      iApply (ctask_mono with "[Close] T").
-      iIntros "(#Obs & H2 & N)".
-      iMod ("Close" with "[N]") as "H1".
-      { iNext. iApply guarded_upd_intro. iModIntro. iFrame "⧖' N". }
-      iMod (fupd_mask_mono with "(Halfback H1 H2)") as "$"; [solve_ndisj|].
-      by iModIntro. }
-    iIntros "[$ #Obs2]". iExists -[]. iFrame "I". iSplit; [done|].
-    iCombine "Obs Obs' Obs2" as "Obs3". iApply (proph_obs_impl with "Obs3")=> π [Hπ [H1 H2]].
-    apply Hπ. rewrite uniq_bor_future_eq (uniq_prvar_app_irrel x₀ x₀') H1 H2. done.
-  Qed.
 End typing.
 
 (** * Resolving a place rooted at a unique borrow value
 
-  The rules of [place.v] for a place [p ◁ₗ{κ} lt] rooted at a unique borrow, for the
-  value-rooted element [p ◁ₗ UniqLty lt κ] ([vplace.v]): the root is the node value of
-  the borrow ([uniq_nval]), whose referent is in [Uniq κ] mode. *)
+  A place [p ◁ₗ{κ} lt], i.e. [p ◁ₗ UniqLty lt κ] ([vplace.v]): the root is the node value
+  of the borrow ([uniq_nval]), whose referent is in [Uniq κ] mode. *)
 
 Section vplace_uniq.
   Context `{!typeG Σ}.
 
   (** Give up the root borrow while all leaves of the (compound) referent are blocked: its
       prophecy variable is pre-resolved, through its reservation, to the current value of
-      the place (as [tctx_drop_place_cpd]). *)
+      the place. *)
   Lemma tctx_drop_vplace_uniq {𝔄} E L p κ (lt: lty 𝔄) :
     lctx_lft_alive E L κ → lty_is_cpd lt → lty_blk_all lt →
     tctx_incl E L +[p ◁ₗ UniqLty lt κ] +[]
@@ -549,8 +498,7 @@ Section vplace_uniq.
     apply Hπ. rewrite uniq_bor_future_eq (uniq_prvar_app_irrel x₀ x₀') Heq. done.
   Qed.
 
-  (** Give up the root borrow of a place whose leaves are unblocked or blocked (as
-      [type_resolve_place_instr]): its prophecy variable is pre-resolved to the current
+  (** Give up the root borrow of a place whose leaves are unblocked or blocked: its prophecy variable is pre-resolved to the current
       value of the place. One program step per unblocked leaf (and one to open the
       borrow). *)
   Lemma type_resolve_vplace_uniq_instr {𝔄} E L I p κ (lt: lty 𝔄) :

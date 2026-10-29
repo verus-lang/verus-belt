@@ -106,6 +106,8 @@ Notation "p ◁ₗ lt" := (TCtx_sem _ p (vplace_own lt))
   (at level 55, format "p  ◁ₗ  lt").
 Notation "p ◁ₗown{ n } lt" := (TCtx_sem _ p (vplace_own (OwnPtrLty n lt)))
   (at level 55, format "p  ◁ₗown{ n }  lt").
+Notation "p ◁ₗ{ κ } lt" := (TCtx_sem _ p (vplace_own (UniqLty lt κ)))
+  (at level 55, format "p  ◁ₗ{ κ }  lt").
 
 Section conv.
   Context `{!typeG Σ}.
@@ -260,7 +262,7 @@ Section conv.
   Qed.
 End conv.
 
-(** * Utilities (formerly in [place.v]) *)
+(** * Utilities *)
 
 Section util.
   Context `{!typeG Σ}.

@@ -1,12 +1,12 @@
 (** * Places rooted at an owned location
 
-  The place elements of [place.v] are rooted at a unique borrow. This file adds place
-  elements rooted at an _owned_ location, i.e. the pointee of an owned pointer
+  This file adds the rules for place elements rooted at an _owned_ location, i.e. the pointee of an owned pointer
   [own_ptr n] (a [Box], or a stack slot holding a local variable): [p ◁ₗown{n} lt]
   says that [p] is an owned pointer whose pointee has the place type [lt], in [Owned 1]
   mode (one later for the ghost parts, as in [own_ptr]; so the conversions
   [tctx_own_to_oplace], [tctx_oplace_to_own] are inclusions). Its value is a pair of
-  the value of the owned pointer [(l, x₀)] and a blocking map [ζm] (as for [p ◁ₗ{κ} lt]):
+  the value of the owned pointer [(l, x₀)] and a blocking map [ζm] ([vplace.v]:
+  [p ◁ₗown{n} lt] is [p ◁ₗ OwnPtrLty n lt]):
   the refinement of the place is [lty_rfn lt x₀ ζm []].
 
   There is no outer borrow: blocking a leaf (a mutable borrow of a subplace at some
@@ -27,7 +27,7 @@ From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath vplace.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
-  uniq_util uniq_bor product own uninit freeable_util place.
+  uniq_util uniq_bor product own uninit freeable_util .
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".

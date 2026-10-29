@@ -1,6 +1,6 @@
 From iris.proofmode Require Import proofmode.
 From lrust.typing Require Export type function product programs own cont uninit int sum type_sum
-  uniq_bor shr_bor borrow place place_own place_resolve place_puniq place_pshr place_deep.
+  uniq_bor shr_bor borrow place_own place_resolve place_puniq place_pshr place_deep.
 From lrust.lang Require Import lang notation memcpy new_delete.
 Set Default Proof Using "Type".
 

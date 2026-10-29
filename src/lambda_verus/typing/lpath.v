@@ -25,7 +25,7 @@
     a _blocking map_ [ζm] from the paths of blocked leaves to the prophecy ids of
     their reborrows ([lty_rfn]); a blocked leaf is refined by the final value of
     its reborrow ([PlaceGhost]). The blocking map is stored in the value of a place
-    element ([typing/place.v]). The refinement of a plugged place is the plugged
+    element ([typing/vplace.v]). The refinement of a plugged place is the plugged
     refinement ([lty_rfn_plug], [pctx_rfn]); adding an entry for the path of the
     hole does not change the refinements of the rest ([pctx_rfn_blk_cons]).
   - In [Owned] mode, the ownership of a plugged place splits into the ownership

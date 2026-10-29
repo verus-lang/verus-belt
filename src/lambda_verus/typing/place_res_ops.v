@@ -22,7 +22,7 @@ From lrust.lang.lib Require Import new_delete.
 From lrust.util Require Import update.
 From lrust.typing Require Export type ltype lpath pctx_acc place_own.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
-  uniq_util uniq_bor product own shr_bor sum type_sum freeable_util place place_shr
+  uniq_util uniq_bor product own shr_bor sum type_sum freeable_util place_shr
   place_resolve place_puniq place_sum place_pshr place_res place_res_view place_res_rslv.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.

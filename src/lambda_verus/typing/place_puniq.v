@@ -33,7 +33,7 @@ From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own.
 From lrust.lang.lib Require Import new_delete.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
-  uniq_util uniq_bor product own freeable_util place place_shr place_resolve.
+  uniq_util uniq_bor product own freeable_util place_shr place_resolve.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -1697,7 +1697,7 @@ End puniq.
     blocked leaf is the final value of its reborrow, recorded in the blocking map). A
     nested unique borrow whose referent has only blocked leaves is resolved by
     pre-resolving its prophecy variable to the denotation of its referent, through its
-    reservation ([lty_rslv_uniq_blk], as [tctx_drop_place_cpd]); its inner borrows and
+    reservation ([lty_rslv_uniq_blk], as [tctx_drop_vplace_uniq]); its inner borrows and
     the reborrows of its leaves are kept by their lenders. *)
 
 Definition lty_rslv `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (lt: lty 𝔄)
