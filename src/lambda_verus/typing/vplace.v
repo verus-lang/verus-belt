@@ -257,3 +257,60 @@ Section conv.
     by intros ? [? []] ??.
   Qed.
 End conv.
+
+(** * Utilities (formerly in [place.v]) *)
+
+Section util.
+  Context `{!typeG Σ}.
+
+  Lemma uniq_bor_future_eq {𝔄} l (x₀: ~~𝔄) ξi d g idx π :
+    uniq_bor_future (l, x₀, ξi, d, g, idx) π = (π (uniq_prvar x₀ ξi)).1.
+  Proof. done. Qed.
+
+  Lemma place_ghost_rsv_elem {𝔄} (x₀: ~~𝔄) ζi ζl :
+    uniq_prvar x₀ ζi ∈ ζl → place_rfn_rsv (PlaceGhost x₀ ζi) ζl.
+  Proof.
+    intros ?. eapply proph_dep_weaken; [|apply place_ghost_rsv]. set_solver.
+  Qed.
+
+  (** Turning an equalizer of the value of some contents into an observation, by
+      sharing the contents at a fresh lifetime to get guards of their prophecy tokens
+      (as in [unblock_tctx_cons_unblock]). *)
+  Lemma proph_eqz_obs_by_share {𝔄} (ty: type 𝔄) (xπ: proph 𝔄) x d g tid G :
+    Timeless G →
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ G -∗
+    £(d + d*(g+2) + (0 + (d+1)*(g+1)) + 1 + 1) -∗
+    (xπ :== vπ x) -∗ ty_gho_own ty x d g tid ={⊤}=∗
+      ⟨π, xπ π = vπ x π⟩ ∗ G ∗ ty_gho_own ty x d g tid.
+  Proof.
+    iIntros (?) "#LFT #Gty G £ Eqz gho".
+    iDestruct "£" as "[[[[£s £k] £k'] £e] £g]".
+    iDestruct (ty_gho_pers_impl with "gho") as "#ghoPers".
+    iMod (llftl_begin with "LFT") as (κf) "[κf #κfend]"; [solve_ndisj|].
+    set κs := κf ⊓ ty_lft ty.
+    iMod (llftl_borrow _ κs (ty_gho_own ty x d g tid) with "LFT [$gho]") as "[Bor Inh]";
+      [solve_ndisj|].
+    iAssert ((@[κf] ∗ G) &&{↑NllftG}&&> @[κs])%I as "#Wκs".
+    { iApply guards_llft_glb; [iApply guards_weaken_sep_l|].
+      iApply guards_weaken_lhs_sep_r. iApply "Gty". }
+    iAssert (κs ⊑ ty_lft ty)%I as "#Incl". { iApply llftl_intersect_incl_r. }
+    iMod (ty_share with "LFT Incl ghoPers Wκs [$κf $G] Bor") as "Upd"; [solve_ndisj|].
+    iMod (lc_step_fupdN_elim_later with "£s Upd") as ">[[κf G] #Shr]".
+    iAssert (▷^(d*(g+2)) (∀ ζ, ⌜ζ ∈ ξl x⌝ -∗
+      ((@[κf] ∗ G) &&{↑NllftG; 0 + (d+1)*(g+1)}&&> 1:[ζ])))%I as "#Hallζlater".
+    { iIntros (ζ) "%Hin".
+      iDestruct (ty_shr_guard_proph ty κs x 0 d g tid ζ (@[κf] ∗ G)%I Hin
+        with "LFT Incl ghoPers Shr") as "A".
+      iNext. iApply "A". leaf_goal laters to 0; [lia|]. iFrame "Wκs". }
+    iMod (lc_fupd_elim_laterN with "£k Hallζlater") as "#Hallζ".
+    iMod (uniq_cmra.proph_eqz_to_obs_with_guard with "£k' Hallζ [κf G] Eqz")
+      as "[#Obs [κf G]]"; [set_solver|apply syn_indep|iFrame|].
+    iAssert (|={⊤}=> [†κf])%I with "[£e κf]" as ">#†κf".
+    { iApply fupd_mask_mono; [|iApply (lc_step_fupd_elim_later with "£e"); by iApply "κfend"].
+      solve_ndisj. }
+    iAssert (|={⊤}=> ▷ ty_gho_own ty x d g tid)%I with "[Inh]" as ">gho".
+    { iApply fupd_mask_mono; [|iApply "Inh"; iApply llftl_end_inter; by iLeft]. solve_ndisj. }
+    iMod (lc_fupd_elim_later with "£g gho") as "gho".
+    iModIntro. iFrame "∗#".
+  Qed.
+End util.
