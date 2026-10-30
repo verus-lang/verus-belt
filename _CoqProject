@@ -388,6 +388,7 @@ src/lambda_verus/typing/examples/own_bytes.v
 src/lambda_verus/typing/examples/bplace_own.v
 src/lambda_verus/typing/examples/bget_first.v
 src/lambda_verus/typing/examples/bplace_deep.v
+src/lambda_verus/typing/examples/bget_some_first.v
 
 
 -arg -w -arg -argument-scope-delimiter
