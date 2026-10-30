@@ -221,3 +221,50 @@ then finish:
    with whole-value replacement (`replace`/`put`/`take`) and add `borrow_mut` writes afterwards?
 6. **Mixed-size atomics on cells,** e.g. an atomic store at a sub-mty: allow them? With the
    two-phase-free atomic semantics, they're no harder than D5.4.
+
+## 6. Decisions (user, 2026-10-30)
+
+1. **D1:** per-byte chains plus a group registry.
+2. **Alignment requirement A** is adopted: nested cells sit only at whole-sub-value positions
+   (tuple fields, enum payloads, the whole value), never covering part of an int or pointer.
+3. **`ty_val` is generalised to `ty_fval`**, so parents own fancy bytes and structs with `PCell`
+   fields work in places.
+4. **A PCell in transit** is represented as `untethered g v`: the content value travels as the
+   root `Value`, and the identity as the ghost group.
+5. **`borrow_mut`**, i.e. sub-position writes through `&mut T` into a cell, is supported from
+   the start.
+6. **Mixed-size atomics on cells** are ignored for now.
+
+## 7. Refinement: what `represents` depends on
+
+**The registry has two parts:**
+- **Static** (persistent, fixed at creation): `g ↦ (m_g, cs_g)`.
+- **Dynamic:** `fv_g`, each group's current fancy value.
+
+**`represents_R m bs fv` takes only the static part R.** At an `FVCell g'` position it checks:
+- that `m_{g'}` equals the sub-mty at that position (alignment requirement A);
+- that `cs_{g'}` are exactly the cells that the enclosing group's chains pass through at those
+  bytes.
+
+It says *nothing* about those bytes themselves. They are constrained by `g'`'s own invariant.
+
+**Consequences:**
+- **Each group's invariant constrains only its own non-cell bytes.** Nothing is duplicated
+  across nesting levels.
+- **Writes stay local.** A write into an inner cell updates only `fv_{g'}` and re-proves
+  `g'`'s invariant. The `represents` facts of enclosing groups are unaffected.
+- **The `WSt` exemption composes.** An inner write in flight marks bytes that also belong to
+  every enclosing group, so those groups are exempt as well.
+
+**Compositionality** is therefore a statement about the whole registry:
+
+    (∀ g, at rest g → represents_R m_g (bytes g) fv_g)  →  at rest g  →
+    decode m_g (bytes g) = Some ⌊fv_g⌋_ρ
+
+Here `at rest g` means "no byte of `g` is in `WSt`", and `⌊·⌋_ρ` is erasure using the dynamic
+values `ρ g := fv_g`. Erasure is defined recursively:
+
+    ⌊FVCell g⌋_ρ = ⌊ρ g⌋_ρ    (well-founded, since nesting is finite)
+
+On all other constructors erasure is structural. In the Coq code it would be a named function
+such as `fval_erase`.
