@@ -1,16 +1,14 @@
-(** * Operations on resolved places
+(** * Operations on resolved places, on bytes
 
-  Resolved places ([OfRes], [ResUniqLty], see [typing/place_res.v]) are read and shared,
-  not written:
+  The byte version of the deleted legacy [place_res_ops.v]. Resolved places ([OfRes], [ResUniqLty],
+  see [typing/place_res.v]) are read and shared, not written:
   - the access to a sub-place of a view ([view_pctx_acc]);
-  - reading a [Copy] leaf of size 1 below a resolved unique borrow
-    ([type_read_oplace_res_instr]), and a shared borrow of a leaf below it
-    ([type_share_oplace_res_instr]);
-  - folding a resolved unique borrow to a shared reference to its folded referent: a leaf
-    ([tctx_fold_oplace_res_uniq_leaf]), a compound referent without blocked leaves and
-    nested unique borrows (pairs, boxes, sums, shared references,
-    [tctx_fold_oplace_res_uniq]), or with nested unique borrows whose referent is a leaf
-    ([type_fold_oplace_res_uniq_meta_instr], a program step);
+  - reading a [Copy] leaf (of any size, a guarded typed [Load]) below a resolved unique
+    borrow ([type_read_oplace_res_instr], [type_read_oplace_res_shrblk_instr]), and a
+    shared borrow of a leaf below it ([type_share_oplace_res_instr]);
+  - folding a resolved unique borrow whose referent is a leaf to a shared reference
+    ([tctx_fold_oplace_res_uniq_leaf]); compound referents are not folded on bytes (see
+    the end of the file);
   - unblocking a blocked leaf ([unblock_tctx_oplace_res]) or a shared-blocked leaf
     ([unblock_tctx_oplace_res_shr]) of a view;
   - dropping a resolved place ([type_drop_oplace_res_instr]). *)
@@ -20,10 +18,11 @@ From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.lang.lib Require Import new_delete.
 From lrust.util Require Import update.
-From lrust.typing Require Export type ltype lpath pctx_acc place_own.
+From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bytes.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
-  uniq_util uniq_bor product own shr_bor sum type_sum freeable_util place_shr
-  place_resolve place_puniq place_sum place_pshr place_res place_res_view place_res_rslv.
+  uniq_util uniq_bor uniq_bytes_util uniq_bytes own_bytes bytes_layout value_ctx product own
+  freeable_util sum type_sum place_shr place_resolve place_puniq place_sum place_pshr
+  place_res place_res_view place_res_rslv.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -145,19 +144,18 @@ Section read.
   Proof. by destruct 1. Qed.
 
   Lemma view_rleaf_size {ℭ} (lt0: lty ℭ) ty κs :
-    view_rleaf lt0 ty κs → lty_size lt0 = ty_size ty.
-  Proof. by destruct 1. Qed.
+    view_rleaf lt0 ty κs → lty_size lt0 = ty_bsize ty.
+  Proof. intros _. apply lty_size_ty. Qed.
 
   Lemma view_rleaf_shared {ℭ} (lt0: lty ℭ) ty κs κ m x d g tid l :
     view_rleaf lt0 ty κs →
     lty_view lt0 κ m (lty_pat lt0) (inl (PlaceIn x)) d g tid l ⊢
     lty_view lt0 κ m (lty_pat lt0) (inl (PlaceIn x)) d g tid l ∗
-    □ ((@[κ ⊓ κs] &&{↑NllftG; g+1}&&> l.1 ↦[^ l.2]!∗ ty.(ty_phys) x tid) ∗
-       ty.(ty_shr) (κ ⊓ κs) x d g tid ∗ ty.(ty_gho_pers) x d g tid).
+    □ shr_view (κ ⊓ κs) ty x d g tid l.
   Proof.
     destruct 1; simpl; rewrite /view_leaf.
     - iIntros "#V". iFrame "V".
-      iDestruct "V" as (x' ->) "(G & Shr & Pers)". iFrame "Pers". iModIntro. iSplit.
+      iDestruct "V" as (x' ->) "(G & Shr & Pers)". iModIntro. iSplit; [|iSplit; [|done]].
       + iApply (guards_transitive_right with "[] G"). iApply llftl_intersect_incl_l.
       + iDestruct (ty_shr_lft_mono _ κ (κ ⊓ static) _ 0 with "[] Shr") as "Shr'";
           [iApply llftl_intersect_incl_l|].
@@ -167,33 +165,31 @@ Section read.
       iModIntro. by iFrame "G Shr Pers".
   Qed.
 
-  (** Copying a value of size 1 out of the hole of [K2], in the view of the resolved unique
-      borrow at the hole of [K] (in the owned part of the place, [PctxNoUniq K]); the leaf
-      [lt0] is unblocked or shared-blocked ([view_rleaf]), it is shared at
-      [pctx_slft K2 κ ⊓ κs] (which must be alive); the place does not change. *)
+  (** Copying a value of a [Copy] type (of any size) out of the hole of [K2], in the view of
+      the resolved unique borrow at the hole of [K] (in the owned part of the place,
+      [PctxNoUniq K]), with a guarded typed [Load]; the leaf [lt0] is unblocked or
+      shared-blocked ([view_rleaf]), it is shared at [pctx_slft K2 κ ⊓ κs] (which must be
+      alive); the place does not change. The first step gives the credits. *)
   Lemma type_read_oplace_res_leaf_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄)
       `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2} (lt0: lty ℭ) (ty: type ℭ) κs :
-    view_rleaf lt0 ty κs →
-    ty_size ty = 1%nat → Copy ty → lctx_lft_alive E L (pctx_salv K2 κ ⊓ κs) →
+    view_rleaf lt0 ty κs → Copy ty → lctx_lft_alive E L (pctx_salv K2 κ ⊓ κs) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 lt0) κ)]
-      (Seq Skip (!(pctx_expr K2 (!(pctx_expr K p)))))%E
-      (λ v, +[v ◁ ty; p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 lt0) κ)])
+      (Load Na1Ord ty.(ty_mty)
+        (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p))))))
+      (λ v, +[v ◁ᵥ ty; p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 lt0) κ)])
       (λ post '-[x], post -[pctx_get K2 (uniq_bor_current (pctx_get K x.1.2)); x]).
   Proof.
-    iIntros (Hl Hsz Hcopy Alv tid post mask iκs [x []])
+    iIntros (Hl Hcopy Alv tid post mask iκs [x []])
       "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
     destruct x as [[l x₀] ζm].
     rewrite /tctx_elt_interp.
     iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
-    have ?: Closed [] (pctx_expr K p).
-    { apply pctx_expr_closed. by eapply eval_path_closed. }
-    have ?: Closed [] (pctx_expr K2 (!(pctx_expr K p))%E).
-    { apply pctx_expr_closed. apply _. }
+    have ?: Closed [] (pctx_expr K (ToLit p)).
+    { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
     iDestruct (Alv with "L E") as "#Alv".
-    (* A step, for the credits. *)
-    wp_bind Skip. iApply wp_fupd.
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [set_solver|].
-    iIntros "£ #⧖S". wp_let. iModIntro. wp_let.
+    (* The first step gives the credits. *)
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
+    iIntros "£ #⧖S". iApply wp_fupd.
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
       [solve_ndisj|].
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_salv K2 κ ⊓ κs])%I as "#Hss".
@@ -212,9 +208,6 @@ Section read.
     set q0 := pctx_path K [].
     set lr := (l, repeat [] (lty_size (pctx_plug K lt1))).
     set lK := pctx_loc K (lty_size lt1) x₀ lr.
-    destruct (pctx_loc_empty K 1 x₀ l) as [lK0 HlK].
-    have HlK': lK = (lK0, repeat [] 1).
-    { rewrite /lK /lr lty_size_plug. exact HlK. }
     destruct y as [[[[[ly z] ξi] d0] g0] idx0] eqn:Hy.
     rewrite /= /res_node /=. iDestruct "H" as "[Pt N]".
     iDestruct (lc_weaken (pctx_mode K 1 + (advance_credits D - pctx_mode K 1)) with "£")
@@ -224,90 +217,80 @@ Section read.
     iDestruct (view_pctx_acc K2 κ lt0 0 (lty_pat lt0)
       (inl (PlaceIn (pctx_get K2 z))) z ζm (false :: q0) d' g' tid ly (fractional.half γh)
       with "Hs V") as (dh gh) "([%Hdh [%Hgh %Hin]] & Vh & #Gs & Cl)".
-    iDestruct (view_rleaf_shared with "Vh") as "[Vh #(Gpt & Shr & Pers)]"; [done|].
+    iDestruct (view_rleaf_shared with "Vh") as "[Vh #Vs]"; [done|].
     set zh := pctx_get K2 z.
-    rewrite (view_rleaf_size _ _ _ Hl).
-    set lh := pctx_loc K2 (ty_size ty) z ly.
+    set lh := pctx_loc K2 (lty_size lt0) z ly.
     have Hdl: pctx_dlev K2 ≤ D.
     { destruct Hle' as [Hle' _]. rewrite pctx_depth_sub in Hle'. lia. }
     have Hg': g' ≤ D by lia. have Hgh': gh ≤ D by lia.
     have ?: pctx_depth K d ≤ d by (rewrite pctx_depth_sub; lia).
     have Hm: pctx_mode K 1 ≤ D by (rewrite pctx_mode_add; lia).
-    iDestruct (lc_weaken (3 * (g' + 1) * pctx_dlev K2 + ((gh + 1) + 3 * (gh + 1))) with "£")
-      as "[£w [£g £r]]".
+    iDestruct (lc_weaken (2 * (g' + 1) * pctx_dlev K2 + 4 * (gh + 1)) with "£")
+      as "[£w £r]".
     { rewrite /advance_credits. clear - Hdl Hg' Hgh' Hm. nia. }
     (* The address of the hole. *)
-    wp_bind (pctx_expr K2 (!(pctx_expr K p))%E).
-    iApply (wp_pctx_sexpr ⊤ K2 (ty_size ty) (g' + 1) (fractional.half γh) z ly);
+    wp_bind (pctx_expr K2 _).
+    iApply (wp_pctx_sexpr _ K2 (lty_size lt0) (g' + 1) (fractional.half γh) z ly);
       [solve_ndisj|].
-    wp_bind (pctx_expr K p).
+    wp_bind (pctx_expr K (ToLit p)).
     iMod lc_zero as "£0".
     iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr K 1 1 x₀ ζm [] d g tid lr p True True 0 with "[] £0 [] Rest").
+    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
+        with "[] £0 [] Rest"); [solve_ndisj|..].
       - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
-      - iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
+      - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
+        by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".
-    rewrite -/lK HlK' cell_mapsto_val. wp_read. iFrame "Gs £w H1".
-    iSplit; [done|]. iIntros "H1".
-    (* The (persistent) ownership of the value, from the sharing predicate. *)
-    iDestruct (copy_shr with "Shr") as "#GGho".
-    iDestruct (guards_transitive_right with "Hsl GGho") as "#GGho'".
-    iAssert (|={⊤}=> ty_gho_own ty zh dh gh tid ∗ fractional.half γh)%I
-      with "[H1 £g]" as ">[#Gho H1]".
-    { leaf_open_laters "GGho'" with "H1" as "Gho1"; [solve_ndisj|].
-      iMod (lc_fupd_add_laterN with "£g Gho1") as "[#Gho1 Hclose]".
-      iMod ("Hclose" with "Gho1") as "$". by iModIntro. }
-    iDestruct (copy_concrete with "Gho") as %Hconc.
-    have Hlen: length (ty_phys ty zh tid) = 1%nat by rewrite ty_size_eq.
-    destruct (ty_phys ty zh tid) as [|fv [|]] eqn:Hphys; [done| |done].
-    destruct fv as [u|]; [|by destruct Hconc].
-    iApply wp_fupd.
-    iApply (wp_read_na_guarded_cells_singleton _ lh.1 lh.2 (fractional.half γh) u (gh + 1)
-      with "[H1 £r]"); [solve_ndisj| |].
-    { iFrame "H1 £r". iApply (guards_transitive_right with "Hsl Gpt"). }
-    iIntros "!> H1".
+    (* The pointer of the resolved borrow. *)
+    iDestruct "Pt" as (bs) "[Hbs %Hbs]".
+    wp_bind (Load _ _ _). iApply (wp_load_na with "Hbs"); [exact Hbs|]. iIntros "!> Hbs".
+    wp_pure _. iFrame "Gs £w H1". iSplit; [done|]. iIntros "H1".
+    (* The guarded typed load of the leaf. *)
+    iApply (wp_load_shr_view with "Hsl H1 £r Vs"); [solve_ndisj|].
+    iIntros (u Hu) "#Gho H1".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro. iExists -[zh; ((l, x₀), ζm)]. iFrame "L I".
-    iSplitL "Pt Rest Cl Vh ⧗p Fr"; last first.
+    iSplitL "Hbs Rest Cl Vh ⧗p Fr"; last first.
     { iExact "Obs". }
-    iSplitR "Pt Rest Cl Vh ⧗p Fr".
-    { iExists u, D. iSplit; [by rewrite eval_path_of_val|]. iFrame "⧖".
-      iSplit; [|done].
-      iDestruct (ty_gho_own_depth_mono _ dh gh D D with "Gho") as "[$ _]"; lia. }
-    iSplit; [|done]. iExists #l. iSplit; [done|]. iExists D, d, g. iFrame "⧖ ⧗p Fr".
-    iSplit; [done|]. iSplit; [done|].
+    iSplitR "Hbs Rest Cl Vh ⧗p Fr".
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists u, D. iSplit; [done|].
+      iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ dh gh D D with "Gho") as "[$ _]"; lia. }
+    iSplit; [|done]. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
+    iFrame "⧖ ⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug -/y Hy. iFrame "Rest".
-    iEval (rewrite -cell_mapsto_val -HlK') in "Pt".
-    rewrite /= /res_node /=. iFrame "Pt". iApply bi.laterN_intro. iFrame "Incl".
+    rewrite /= /res_node /=. iSplitL "Hbs"; [iExists bs; by iFrame|].
+    iApply bi.laterN_intro. iFrame "Incl".
     iExists d', g'. iSplit; [done|]. rewrite lty_pat_plug lty_rfn_plug.
     rewrite (view_rleaf_rfn _ _ _ _ _ _ Hl).
-    iApply ("Cl" $! lt0 (lty_pat lt0) (inl (PlaceIn zh)) dh gh d' g' with "[%] [//] [//] [%] Vh");
-      [by rewrite (view_rleaf_size _ _ _ Hl)|lia].
+    iApply ("Cl" $! lt0 (lty_pat lt0) (inl (PlaceIn zh)) dh gh d' g' with "[//] [//] [//] [%] Vh").
+    lia.
   Qed.
 
   Lemma type_read_oplace_res_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄)
       `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2} (ty: type ℭ) :
-    ty_size ty = 1%nat → Copy ty → lctx_lft_alive E L (pctx_salv K2 κ) →
+    Copy ty → lctx_lft_alive E L (pctx_salv K2 κ) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (OfTy ty)) κ)]
-      (Seq Skip (!(pctx_expr K2 (!(pctx_expr K p)))))%E
-      (λ v, +[v ◁ ty; p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (OfTy ty)) κ)])
+      (Load Na1Ord ty.(ty_mty)
+        (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p))))))
+      (λ v, +[v ◁ᵥ ty; p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (OfTy ty)) κ)])
       (λ post '-[x], post -[pctx_get K2 (uniq_bor_current (pctx_get K x.1.2)); x]).
   Proof.
-    intros ???. apply (type_read_oplace_res_leaf_instr _ _ _ _ _ K κ K2 _ _ static);
-      [constructor|done|done|].
+    intros ??. apply (type_read_oplace_res_leaf_instr _ _ _ _ _ K κ K2 _ _ static);
+      [constructor|done|].
     apply lctx_lft_alive_intersect; [done|apply lctx_lft_alive_static].
   Qed.
 
   (** Reading a shared-blocked leaf (at [β]) of a view, while [β] is alive. *)
   Lemma type_read_oplace_res_shrblk_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄)
       `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2} (ty: type ℭ) β :
-    ty_size ty = 1%nat → Copy ty → lctx_lft_alive E L (pctx_salv K2 κ ⊓ β) →
+    Copy ty → lctx_lft_alive E L (pctx_salv K2 κ ⊓ β) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (ShrBlocked ty β)) κ)]
-      (Seq Skip (!(pctx_expr K2 (!(pctx_expr K p)))))%E
-      (λ v, +[v ◁ ty; p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (ShrBlocked ty β)) κ)])
+      (Load Na1Ord ty.(ty_mty)
+        (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p))))))
+      (λ v, +[v ◁ᵥ ty; p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (ShrBlocked ty β)) κ)])
       (λ post '-[x], post -[pctx_get K2 (uniq_bor_current (pctx_get K x.1.2)); x]).
   Proof.
-    intros ???. by apply (type_read_oplace_res_leaf_instr _ _ _ _ _ K κ K2 _ _ β);
+    intros ??. by apply (type_read_oplace_res_leaf_instr _ _ _ _ _ K κ K2 _ _ β);
       [constructor|..].
   Qed.
 End read.
@@ -432,10 +415,10 @@ Section unblock.
     iMod (proph_eqz_obs_by_share ty with "LFT H2ty H2 £o Eqz Gho1") as "(#Obs1 & H2 & Gho1)".
     (* Close the borrow at the restored contents. *)
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
-    iMod ("Close" $! (lh #↦!∗ ty_phys ty x' tid ∗ ▷^m2 ty_gho_own ty x' d1 g1 tid)%I
+    iMod ("Close" $! (cbytes ty x' lh ∗ ▷^m2 ty_gho_own ty x' d1 g1 tid)%I
       with "[Pt1 Gho1]") as "[Bor H1]".
     { iSplitR "Pt1 Gho1"; [|iNext; iFrame "Pt1"; by iApply bi.laterN_intro].
-      iIntros "!> Q !> !>". rewrite /blocked_owned. iIntros "_ !>".
+      iIntros "!> Q !> !>". rewrite /bblocked_owned. iIntros "_ !>".
       iApply guarded_upd_intro. iModIntro. iExists x', d1, g1. iFrame "Q ⧖1".
       iNext. by iApply proph_eqz_obs. }
     iMod "Upd" as "_".
@@ -459,7 +442,7 @@ Section unblock.
     iApply (step_fupdN_wand with "ToT'"). iIntros ">(GT & T' & #Obs')".
     iMod (fupd_mask_mono with "(BackT GT GP)") as "$"; [solve_ndisj|].
     iModIntro. iSplitR "Obs'".
-    { iFrame "T'". rewrite /tctx_elt_interp. iExists #l. iSplit; [done|].
+    { iFrame "T'". rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|].
       iExists (D `max` (e' - 1 + ((m2 + S d1) `max` g1 + 1))), dr, gr.
       iCombine "⧖0 ⧖2" as "⧖D". iFrame "⧖D".
       rewrite (lty_size_plug_eq K (ResUniqLty (pctx_plug K2 (OfTy ty)) κ) lt1) //.
@@ -566,7 +549,7 @@ Section unblock.
     { by iApply pctx_blft_dead. }
     (* Close the borrow at the restored contents. *)
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
-    iMod ("Close" $! (ofty_owned m2 ty w d1 g1 tid lh) with "[Own1]") as "[Bor GP]".
+    iMod ("Close" $! (bofty_owned m2 ty w d1 g1 tid lh) with "[Own1]") as "[Bor GP]".
     { iSplitR; [|by iNext]. iIntros "!> Q !> !>". iIntros "_ !>". iExact "Q". }
     iMod "Upd" as "_".
     (* Share the leaf into the view. *)
@@ -582,7 +565,7 @@ Section unblock.
     iMod (fupd_mask_mono with "(BackT GT GP)") as "$"; [solve_ndisj|].
     iModIntro. iSplitR "Obs'"; last first.
     { iApply (proph_obs_impl with "Obs'")=> π Hf. done. }
-    iFrame "T'". rewrite /tctx_elt_interp. iExists #l. iSplit; [done|].
+    iFrame "T'". rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|].
     iExists D, d, g. iFrame "⧖0".
     rewrite (lty_size_plug_eq K (ResUniqLty (pctx_plug K2 (OfTy ty)) κ) lt1) //.
     iFrame "Fr". rewrite Hnrc /= Nat.add_0_r. iFrame "⧗r".
@@ -606,7 +589,7 @@ Section drop.
       their lenders), then the memory of the place is freed. *)
   Lemma type_drop_oplace_res_instr {𝔄} E L I p n (nz: Z) (lt: lty 𝔄) :
     lty_freeb lt = true → n = lty_size lt → nz = Z.of_nat n →
-    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt p;; new_delete.delete [ #nz; p ])%E
+    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt (ToLit p);; new_delete.delete [ #nz; ToLit p])%E
       (λ _, +[]) (λ post '-[x], post -[]).
   Proof.
     intros Hf Hn Hnz. eapply typed_instr_tr_impl;
@@ -623,15 +606,15 @@ Section share_fold.
 
   (** A shared reference to the leaf at the hole of [K2], in the view of the resolved
       unique borrow at the hole of [K] (the leaf is shared at [pctx_slft K2 κ]); the place
-      does not change. *)
+      does not change. The first step gives the credits. *)
   Lemma type_share_oplace_res_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄)
       `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2} (ty: type ℭ) :
     lctx_lft_alive E L (pctx_salv K2 κ) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (OfTy ty)) κ)]
-      (Seq Skip (pctx_expr K2 (!(pctx_expr K p))))%E
-      (λ v, +[v ◁ &shr{pctx_slft K2 κ} ty;
+      (OfLit (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p))))))
+      (λ v, +[v ◁ᵥ &shrb{pctx_slft K2 κ} ty;
         p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (OfTy ty)) κ)])
-      (λ post '-[x], post -[(pctx_loc K2 (ty_size ty)
+      (λ post '-[x], post -[(pctx_loc K2 (lty_size (OfTy ty))
           (uniq_bor_current (pctx_get K x.1.2)) (uniq_bor_loc (pctx_get K x.1.2)),
         pctx_get K2 (uniq_bor_current (pctx_get K x.1.2))); x]).
   Proof.
@@ -640,15 +623,11 @@ Section share_fold.
     destruct x as [[l x₀] ζm].
     rewrite /tctx_elt_interp.
     iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
-    have ?: Closed [] (pctx_expr K p).
-    { apply pctx_expr_closed. by eapply eval_path_closed. }
-    have ?: Closed [] (pctx_expr K2 (!(pctx_expr K p))%E).
-    { apply pctx_expr_closed. apply _. }
+    have ?: Closed [] (pctx_expr K (ToLit p)).
+    { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
     iDestruct (Alv with "L E") as "#Alv".
-    (* A step, for the credits. *)
-    wp_bind Skip. iApply wp_fupd.
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [set_solver|].
-    iIntros "£ #⧖S". wp_let. iModIntro. wp_let.
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
+    iIntros "£ #⧖S". iApply wp_fupd.
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
       [solve_ndisj|].
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
@@ -661,9 +640,6 @@ Section share_fold.
     set q0 := pctx_path K [].
     set lr := (l, repeat [] (lty_size (pctx_plug K lt1))).
     set lK := pctx_loc K (lty_size lt1) x₀ lr.
-    destruct (pctx_loc_empty K 1 x₀ l) as [lK0 HlK].
-    have HlK': lK = (lK0, repeat [] 1).
-    { rewrite /lK /lr lty_size_plug. exact HlK. }
     destruct y as [[[[[ly z] ξi] d0] g0] idx0] eqn:Hy.
     rewrite /= /res_node /=. iDestruct "H" as "[Pt N]".
     iDestruct (lc_weaken (pctx_mode K 1 + (advance_credits D - pctx_mode K 1)) with "£")
@@ -682,36 +658,39 @@ Section share_fold.
     have Hg': g' ≤ D by lia.
     have ?: pctx_depth K d ≤ d by (rewrite pctx_depth_sub; lia).
     have Hm: pctx_mode K 1 ≤ D by (rewrite pctx_mode_add; lia).
-    iDestruct (lc_weaken (3 * (g' + 1) * pctx_dlev K2) with "£") as "£w".
+    iDestruct (lc_weaken (2 * (g' + 1) * pctx_dlev K2) with "£") as "£w".
     { rewrite /advance_credits. clear - Hdl Hg' Hm. nia. }
     (* The address of the hole. *)
-    iApply wp_fupd.
-    iApply (wp_pctx_sexpr ⊤ K2 (lty_size (OfTy ty)) (g' + 1) (fractional.half γh) z ly);
+    wp_bind (pctx_expr K2 _).
+    iApply (wp_pctx_sexpr _ K2 (lty_size (OfTy ty)) (g' + 1) (fractional.half γh) z ly);
       [solve_ndisj|].
-    wp_bind (pctx_expr K p).
+    wp_bind (pctx_expr K (ToLit p)).
     iMod lc_zero as "£0".
     iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr K 1 1 x₀ ζm [] d g tid lr p True True 0 with "[] £0 [] Rest").
+    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
+        with "[] £0 [] Rest"); [solve_ndisj|..].
       - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
-      - iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
+      - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
+        by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".
-    rewrite -/lK HlK' cell_mapsto_val. wp_read. iFrame "Gs £w H1".
-    iSplit; [done|]. iIntros "H1".
+    iDestruct "Pt" as (bs) "[Hbs %Hbs]".
+    wp_bind (Load _ _ _). iApply (wp_load_na with "Hbs"); [exact Hbs|]. iIntros "!> Hbs".
+    wp_pure _. iFrame "Gs £w H1". iSplit; [done|]. iIntros "H1".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    iModIntro. iExists -[(lh, zh); ((l, x₀), ζm)]. iFrame "L I".
-    iSplitL "Pt Rest Cl ⧗p Fr"; last first.
+    wp_pure _. iModIntro. iExists -[(lh, zh); ((l, x₀), ζm)]. iFrame "L I".
+    iSplitL "Hbs Rest Cl ⧗p Fr"; last first.
     { iExact "Obs". }
-    iSplitR "Pt Rest Cl ⧗p Fr".
-    { iExists _, D. iSplit; [done|]. iFrame "⧖". iSplit; [|done].
-      destruct D as [|D']; [lia|]. simpl. iSplit.
+    iSplitR "Hbs Rest Cl ⧗p Fr".
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists _, D. iSplit; [done|].
+      iFrame "⧖". destruct D as [|D']; [lia|]. simpl. iSplit.
       - iApply (lguards_weaken_later with "Gpt"). lia.
       - iSplit; [iApply (ty_shr_depth_mono with "Shr"); lia|].
         iNext. iApply (ty_gho_pers_depth_mono with "Pers"); lia. }
-    iSplit; [|done]. iExists #l. iSplit; [done|]. iExists D, d, g. iFrame "⧖ ⧗p Fr".
-    iSplit; [done|]. iSplit; [done|].
+    iSplit; [|done]. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
+    iFrame "⧖ ⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug -/y Hy. iFrame "Rest".
-    iEval (rewrite -cell_mapsto_val -HlK') in "Pt".
-    rewrite /= /res_node /=. iFrame "Pt". iApply bi.laterN_intro. iFrame "Incl".
+    rewrite /= /res_node /=. iSplitL "Hbs"; [iExists bs; by iFrame|].
+    iApply bi.laterN_intro. iFrame "Incl".
     iExists d', g'. iSplit; [done|]. rewrite lty_pat_plug lty_rfn_plug.
     iApply ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn zh)) dh gh d' g' with "[//] [//] [//] [%]").
     { lia. }
@@ -737,7 +716,7 @@ Section share_fold.
     set y := pctx_get K x₀.
     set y' := ((uniq_bor_loc y, uniq_bor_current y) : ~~ (at_clocₛ 𝔅)).
     iModIntro. iExists -[((l, pctx_reset K x₀ y'), ζm)]. iFrame "Obs". iSplit; [|done].
-    rewrite /tctx_elt_interp. iExists #l. iSplit; [done|]. iExists D, d, g.
+    rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
     rewrite (lty_nrc_plug_retype K (ResUniqLty (OfTy ty) κ) (ShrLty (OfTy ty) κ)) //.
     rewrite (lty_size_plug_retype K (ResUniqLty (OfTy ty) κ) (ShrLty (OfTy ty) κ)); [|done|done].
     iFrame "⧖ ⧗ Fr". iSplit; [done|]. iSplit; [done|].
@@ -745,9 +724,9 @@ Section share_fold.
       pctx_loc_reset // pctx_mode_retype pctx_depth_retype. iFrame "Rest".
     rewrite (_: lty_size (ShrLty (OfTy ty) κ) = lty_size (ResUniqLty (OfTy ty) κ)); [|done].
     destruct y as [[[[[l' x0] ξi] d0] g0] idx0] eqn:Hy.
-    rewrite /= /res_node /leaf_owned_s /leaf_owned /ofty_owned /=.
+    rewrite /= /res_node /leaf_owned_s /bleaf_owned /bofty_owned /=.
     iDestruct "H" as "[Pt H]". iSplit; [|done]. iExists (l', x0). iSplit; [done|].
-    iFrame "Pt". iNext.
+    rewrite cbytes_at_cloc. iFrame "Pt". iNext.
     iDestruct "H" as "(_ & %d' & %g' & %Hle' & %x' & -> & #Gpt & #Shr & #Pers)".
     destruct (pctx_depth K d) as [|dK] eqn:HdK; [lia|]. simpl. iSplit.
     - iApply (lguards_weaken_later with "Gpt"). lia.
@@ -755,276 +734,10 @@ Section share_fold.
       iNext. iApply (ty_gho_pers_depth_mono with "Pers"); lia.
   Qed.
 
-  (** The referents of resolved unique borrows that are folded to a shared reference: no
-      blocked leaf, no nested unique borrow (see [lty_rfoldu] for nested unique borrows
-      whose referent is a leaf). Sums are folded to the sum of the list of types with the
-      folded payload ([lty_fold], [Σ! (hlist_set tyl i (lty_fold lt))]; it is [Σ! tyl] when
-      the payload is the leaf of its variant, [lty_fold_sum_ofty]). *)
-  Fixpoint lty_rfold {𝔄} (lt: lty 𝔄) : Prop :=
-    match lt with
-    | OfTy _ => True
-    | ShrLty lt' _ => ∀ e mm, lty_nrc lt' e mm = 0
-    | OwnPtrLty _ lt' | SumLty _ _ lt' => lty_rfold lt'
-    | ProdLty lt1 lt2 => lty_rfold lt1 ∧ lty_rfold lt2
-    | _ => False
-    end.
-
-  (** The folded type of a sum place whose payload folds to the type of its variant (e.g.
-      after a case analysis) is the sum ([lty_fold_sum_ofty] for a leaf payload). *)
-  Lemma lty_fold_sum_eq {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
-    lty_fold lt = tyl +!! i → lty_fold (SumLty tyl i lt) = xsum_ty tyl.
-  Proof. intros Hf. by rewrite /= Hf hlist_set_hlookup. Qed.
-
-  (** As [lty_rfold], with nested unique borrows whose referent is a leaf (their views keep
-      a guard of the token of their prophecy variables, [view_uniq]). *)
-  Fixpoint lty_rfoldu {𝔄} (lt: lty 𝔄) : Prop :=
-    match lt with
-    | OfTy _ => True
-    | ShrLty lt' _ => ∀ e mm, lty_nrc lt' e mm = 0
-    | UniqLty lt' _ => match lt' with OfTy _ => True | _ => False end
-    | OwnPtrLty _ lt' | SumLty _ _ lt' => lty_rfoldu lt'
-    | ProdLty lt1 lt2 => lty_rfoldu lt1 ∧ lty_rfoldu lt2
-    | _ => False
-    end.
-
-  Lemma lty_rfold_u {𝔄} (lt: lty 𝔄) : lty_rfold lt → lty_rfoldu lt.
-  Proof. induction lt; simpl; naive_solver. Qed.
-
-  Lemma lty_rfoldu_nrc {𝔄} (lt: lty 𝔄) : lty_rfoldu lt → ∀ e mm, lty_nrc lt e mm = 0.
-  Proof.
-    induction lt; simpl; intros Hf e mm; try done.
-    all: try by destruct lt.
-    all: try by apply IHlt.
-    all: try by apply Hf.
-    destruct Hf. rewrite IHlt1 // IHlt2 //.
-  Qed.
-
-  Lemma lty_rfold_nrc {𝔄} (lt: lty 𝔄) : lty_rfold lt → ∀ e mm, lty_nrc lt e mm = 0.
-  Proof. intros ?. by apply lty_rfoldu_nrc, lty_rfold_u. Qed.
-
-  (** The folded value of a referent, up to the depths and the indices of the values of its
-      nested unique borrows (which are not part of the refinement of a place, [lty_rfn]:
-      the fold of the view of a nested unique borrow picks them, as
-      [type_fold_oplace_uniq_instr] does with [uniq_bor_set_meta]). *)
-  Fixpoint lty_meq {𝔄} (lt: lty 𝔄) : ~~𝔄 → ~~𝔄 → Prop :=
-    match lt in lty 𝔄 return ~~𝔄 → ~~𝔄 → Prop with
-    | UniqLty lt' _ => λ x y, uniq_bor_loc y = uniq_bor_loc x ∧ uniq_bor_ξi y = uniq_bor_ξi x ∧
-        lty_meq lt' (uniq_bor_current x) (uniq_bor_current y)
-    | OwnPtrLty _ lt' => λ x y, y.1 = x.1 ∧ lty_meq lt' x.2 y.2
-    | ProdLty lt1 lt2 => λ x y, lty_meq lt1 x.1 y.1 ∧ lty_meq lt2 x.2 y.2
-    | SumLty _ i lt' => λ x y, y.2 = x.2 ∧
-        ∃ a b, psum_proj i x.1 = Some a ∧ y.1 = pinj i b ∧ lty_meq lt' a b
-    | _ => λ x y, y = x
-    end.
-
-  (** Without nested unique borrows, the folded value is the value. *)
-  Lemma lty_rfold_meq {𝔄} (lt: lty 𝔄) x y : lty_rfold lt → lty_meq lt x y → y = x.
-  Proof.
-    induction lt in x, y |- *; simpl; try done.
-    - destruct x, y. intros ? [??]. simpl in *. subst. f_equal. by apply IHlt.
-    - destruct x, y. intros [??] [??]. simpl in *. f_equal; [by apply IHlt1|by apply IHlt2].
-    - destruct x as [s pad], y as [s' pad']. intros ? [? (a & b & Ha & ? & Hab)].
-      simpl in *. subst. apply psum_proj_Some in Ha as ->. do 2 f_equal. by apply IHlt.
-  Qed.
-
-  Lemma xsum_shr_pinj {𝔄l} i (tyl: typel 𝔄l) x0 pad κ d g tid :
-    ty_shr (Σ! tyl) κ (pinj i x0, pad) d g tid ⊣⊢ ty_shr (tyl +!! i) κ x0 d g tid.
-  Proof. rewrite [ty_shr (Σ! tyl)]/ty_shr /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
-
-  Lemma xsum_phys_pinj {𝔄l} i (tyl: typel 𝔄l) x0 pad tid :
-    ty_phys (Σ! tyl) (pinj i x0, pad) tid = [FVal #i] ++ (ty_phys (tyl +!! i) x0 tid ++
-      fmap FVal (vec_to_list (padding_to_vec (sum_pad_size tyl (tyl +!! i)) pad))).
-  Proof.
-    rewrite [ty_phys (Σ! tyl)]/ty_phys /xsum_ty /= to_xsum_pinj.
-    have Ha := max_hlist_with_ge (λ X : syn_type, ty_size) tyl i.
-    rewrite (_: FVal #i :: _ ++ _ = ([FVal #i] ++ ty_phys (tyl +!! i) x0 tid) ++ fmap FVal pad);
-      [|done].
-    rewrite pad_app; last first.
-    { rewrite length_app ty_size_eq. cbn [length]. apply le_n_S. exact Ha. }
-    rewrite -app_assoc length_app ty_size_eq. done.
-  Qed.
-
-  (** The view of a foldable referent is the view of a shared leaf of its folded type (at
-      its folded value, up to the depths and indices of its nested unique borrows): the
-      guards of the cells of the fields are combined ([guard_cells_app_combine_fancy]); a
-      nested unique borrow is shared from the view of its referent and the guard of its
-      token. *)
-  Lemma lty_view_fold_meta {𝔄} (lt: lty 𝔄) κ m x ζm q d g tid l :
-    lty_rfoldu lt →
-    lty_view lt κ m (lty_pat lt) (lty_rfn lt x ζm q) d g tid l ⊢
-    ∃ y, ⌜lty_meq lt x y⌝ ∗ view_leaf κ m (lty_fold lt) PatLeaf (inl (PlaceIn y)) d g tid l.
-  Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄1 𝔄2 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'] in m, x, q, d, g, l |- *;
-      simpl; try done.
-    - (* leaf *)
-      intros _. iIntros "V". iExists x. by iFrame "V".
-    - (* nested unique borrow, whose referent is a leaf *)
-      destruct lt as [ty| | | | | | | | |]; try done. intros _.
-      destruct x as [[[[[l' x0] ξi] d0] g0] idx0]. rewrite /view_uniq /=.
-      iIntros "(#Gp & #Incl' & %d' & %g' & %Hle & V & I)".
-      iDestruct "V" as (x' ->) "(#G & #Shr & #Pers)".
-      iDestruct "I" as (x1 idx) "[#T #P]".
-      iExists (l', x0, ξi, d', g', idx). iSplit; [done|].
-      iExists _. iSplit; [done|]. iSplit; [iExact "Gp"|]. iSplit.
-      + iSplit; [iPureIntro; lia|].
-        iSplit; [iApply (lguards_weaken_later with "G"); lia|].
-        iSplit; [by rewrite /uniq_prvar (uniq_cell_tyi_irrel x0 x1)|].
-        iSplit; [iNext; iApply (ty_shr_depth_mono with "Shr"); lia|]. by iNext; iNext.
-      + iSplit; [iPureIntro; lia|]. by rewrite (uniq_pers_component_retarget _ x0 x1 _ d' g' d' g').
-    - (* owned pointer *)
-      intros Hf. destruct x as [l' x]. simpl.
-      iIntros "(#Gp & %Hd & V)".
-      iDestruct (IH with "V") as (y Hy x' ->) "(#G & #Shr & #Pers)"; [done|].
-      iExists (l', y). iSplit; [done|].
-      iExists (l', y). iSplit; [done|]. destruct d as [|d]; [done|]. simpl.
-      iSplit; [done|]. rewrite /heap_mapsto_fancy_vec ty_size_eq lty_size_fold.
-      iSplit; [iNext; by iFrame "G Shr"|]. by iNext.
-    - (* pair *)
-      intros [Hf1 Hf2]. destruct x as [x1 x2]. rewrite /prod_node /=.
-      iIntros "[V1 V2]".
-      iDestruct (IH1 with "V1") as (y1 Hy1 x1' ->) "(#G1 & #Shr1 & #Pers1)"; [done|].
-      iDestruct (IH2 with "V2") as (y2 Hy2 x2' ->) "(#G2 & #Shr2 & #Pers2)"; [done|].
-      iExists (y1, y2). iSplit; [done|].
-      iExists (y1, y2). iSplit; [done|]. iFrame "Shr1 Shr2 Pers1 Pers2".
-      rewrite /cloc_take /cloc_skip /=.
-      rewrite (_: lty_size lt1 = length (ty_phys (lty_fold lt1) y1 tid));
-        [|by rewrite ty_size_eq lty_size_fold].
-      iApply (guard_cells_app_combine_fancy with "G1 G2").
-    - (* sum *)
-      intros Hf. destruct x as [s pad]. simpl.
-      destruct (psum_proj i s) as [a|] eqn:Ha; rewrite Ha; last first.
-      { rewrite /prfn_dummy /view_sum /=. by iIntros "[]". }
-      rewrite /view_sum /prfn_sum psum_proj_pinj.
-      iIntros "(#Gt & V & #Gq)".
-      iDestruct (IH with "V") as (b Hb x' ->) "(#G & #Shr & #Pers)"; [done|].
-      iExists (pinj i b, pad). iSplit; [iPureIntro; split; [done|]; by exists a, b|].
-      iExists _. iSplit; [done|].
-      rewrite xsum_shr_pinj xsum_gho_pers_pinj xsum_phys_pinj hlookup_hlist_set.
-      iSplit; last first. { iSplit; [iExact "Shr"|iExact "Pers"]. }
-      rewrite (_: max_hlist_with (λ X : syn_type, ty_size) (hlist_set tyl i (lty_fold lt)) -
-          ty_size (lty_fold lt) =
-        max_hlist_set (λ X : syn_type, ty_size) tyl i (lty_size lt) - lty_size lt); last first.
-      { rewrite lty_size_fold. f_equal. apply max_hlist_with_hlist_set. }
-      iApply (guard_cells_app_combine_fancy _ _ _ l.1 l.2 [FVal #i]); [iExact "Gt"|].
-      iApply (guard_cells_app_combine_fancy _ _ _ (cloc_skip l 1).1 (cloc_skip l 1).2
-        (ty_phys (lty_fold lt) b tid)).
-      + rewrite ty_size_eq -lty_size_fold. iExact "G".
-      + rewrite ty_size_eq -lty_size_fold. iExact "Gq".
-    - (* shared reference *)
-      intros _. iIntros "[V _]". iExists x. by iFrame "V".
-  Qed.
-
-  (** Without nested unique borrows, at the value itself. *)
-  Lemma lty_view_fold {𝔄} (lt: lty 𝔄) κ m x ζm q d g tid l :
-    lty_rfold lt →
-    lty_view lt κ m (lty_pat lt) (lty_rfn lt x ζm q) d g tid l ⊢
-    view_leaf κ m (lty_fold lt) PatLeaf (inl (PlaceIn x)) d g tid l.
-  Proof.
-    intros Hf. rewrite lty_view_fold_meta; [|by apply lty_rfold_u].
-    iIntros "(%y & %Hy & V)". by rewrite -(lty_rfold_meq lt x y).
-  Qed.
-
-  (** A resolved unique borrow whose referent is foldable ([lty_rfold]: no blocked leaf,
-      no nested unique borrow) is folded to a shared reference to its folded
-      referent at its lifetime (retyping the leaf, below no sum). *)
-  Lemma tctx_fold_oplace_res_uniq {𝔅 𝔄} E L p n (K: pctx (uniq_borₛ 𝔅) 𝔄)
-      `{!PctxNoUniq K} κ (lt: lty 𝔅) :
-    pctx_nosum K → lty_rfold lt →
-    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (ResUniqLty lt κ)]
-      +[p ◁ₗown{n} pctx_plug (pctx_retype K (at_clocₛ 𝔅)) (ShrLty (OfTy (lty_fold lt)) κ)]
-      (λ post '-[x], post -[((x.1.1, pctx_reset K x.1.2
-        ((uniq_bor_loc (pctx_get K x.1.2), uniq_bor_current (pctx_get K x.1.2))
-          : ~~ (at_clocₛ 𝔅))), x.2)]).
-  Proof.
-    intros Hns Hf. split; [by intros ??? [? []]|].
-    iIntros (G tid [[[l x₀] ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
-    iDestruct "T" as (v Hp D d g) "(⧖ & ⧗ & -> & %Hle & Fr & Own)".
-    rewrite /ltype_own !lty_pat_plug !lty_rfn_plug !ltype_own_plug.
-    iDestruct "Own" as "[H Rest]".
-    set y := pctx_get K x₀.
-    set y' := ((uniq_bor_loc y, uniq_bor_current y) : ~~ (at_clocₛ 𝔅)).
-    have Hn: ∀ e mm, lty_nrc (ShrLty (OfTy (lty_fold lt)) κ) e mm = lty_nrc (ResUniqLty lt κ) e mm.
-    { intros e mm. by rewrite /= lty_rfold_nrc. }
-    iModIntro. iExists -[((l, pctx_reset K x₀ y'), ζm)]. iFrame "Obs". iSplit; [|done].
-    rewrite /tctx_elt_interp. iExists #l. iSplit; [done|]. iExists D, d, g.
-    rewrite (lty_nrc_plug_retype K (ResUniqLty lt κ) (ShrLty (OfTy (lty_fold lt)) κ)) //.
-    rewrite (lty_size_plug_retype K (ResUniqLty lt κ) (ShrLty (OfTy (lty_fold lt)) κ));
-      [|done|done].
-    iFrame "⧖ ⧗ Fr". iSplit; [done|]. iSplit; [done|].
-    rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //
-      pctx_loc_reset // pctx_mode_retype pctx_depth_retype. iFrame "Rest".
-    rewrite (_: lty_size (ShrLty (OfTy (lty_fold lt)) κ) = lty_size (ResUniqLty lt κ)); [|done].
-    destruct y as [[[[[l' x0] ξi] d0] g0] idx0] eqn:Hy.
-    rewrite /= /res_node /leaf_owned_s /leaf_owned /ofty_owned /=.
-    iDestruct "H" as "[Pt H]". iSplit; [|done]. iExists (l', x0). iSplit; [done|].
-    iFrame "Pt". iNext.
-    iDestruct "H" as "(_ & %d' & %g' & %Hle' & V)".
-    iDestruct (lty_view_fold with "V") as (x' ->) "(#Gpt & #Shr & #Pers)"; [done|].
-    destruct (pctx_depth K d) as [|dK] eqn:HdK; [lia|]. simpl. iSplit.
-    - iApply (lguards_weaken_later with "Gpt"). lia.
-    - iSplit; [iApply (ty_shr_depth_mono with "Shr"); lia|].
-      iNext. iApply (ty_gho_pers_depth_mono with "Pers"); lia.
-  Qed.
-
-  (** As [tctx_fold_oplace_res_uniq], with nested unique borrows whose referent is a leaf
-      ([lty_rfoldu]): the folded value is the current value of the referent up to the
-      depths and indices of the values of the nested unique borrows ([lty_meq]); they are
-      chosen from the view, below the laters of the resolved unique borrow, which are
-      stripped with the credits of a program step. *)
-  Lemma type_fold_oplace_res_uniq_meta_instr {𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄)
-      `{!PctxNoUniq K} κ (lt: lty 𝔅) :
-    pctx_nosum K → lty_rfoldu lt →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ResUniqLty lt κ)] (place_resolve.skipn 1)
-      (const +[p ◁ₗown{n} pctx_plug (pctx_retype K (at_clocₛ 𝔅)) (ShrLty (OfTy (lty_fold lt)) κ)])
-      (λ post '-[x], λ mask π, ∀ y, lty_meq lt (uniq_bor_current (pctx_get K x.1.2)) y →
-        post -[((x.1.1, pctx_reset K x.1.2
-          ((uniq_bor_loc (pctx_get K x.1.2), y) : ~~ (at_clocₛ 𝔅))), x.2)] mask π).
-  Proof.
-    iIntros (Hns Hf tid post mask iκs [x []])
-      "#LFT #TIME #PROPH #UNIQ #E L I [(%v & %Hp & Own) _] Obs".
-    destruct x as [[l x₀] ζm].
-    iDestruct "Own" as (D d g) "(#⧖ & ⧗ & -> & %Hle & Fr & Own)".
-    rewrite /ltype_own !lty_pat_plug !lty_rfn_plug !ltype_own_plug.
-    iDestruct "Own" as "[H Rest]".
-    iDestruct (pctx_own_mode_le with "Rest") as %Hk.
-    have ?: pctx_mode K 1 ≤ D by (rewrite pctx_mode_add; lia).
-    set y := pctx_get K x₀.
-    destruct y as [[[[[l' x0] ξi] d0] g0] idx0] eqn:Hy.
-    rewrite /= /res_node /=. iDestruct "H" as "[Pt H]".
-    iApply (wp_skipn_ctask 1 (advance_credits D) D with "TIME ⧖ [H]"); [done| |].
-    { iIntros "!> £".
-      iDestruct (lc_weaken (pctx_mode K 1) with "£") as "£"; [rewrite /advance_credits; lia|].
-      iMod (lc_fupd_elim_laterN with "£ H") as "(#Incl & %d' & %g' & %Hle' & V)".
-      iDestruct (lty_view_fold_meta with "V") as (z Hz) "V"; [done|].
-      iModIntro. iCombine "Incl V" as "R".
-      iAssert (∃ z d' g', ⌜lty_meq lt x0 z ∧ S d' ≤ pctx_depth K d ∧ g' ≤ g⌝ ∗
-        κ ⊑ ty_lft (lty_fold lt) ∗
-        view_leaf κ 0 (lty_fold lt) PatLeaf (inl (PlaceIn z)) d' g' tid l')%I
-        with "[R]" as "R"; [|iExact "R"].
-      iExists z, d', g'. iSplit; [iPureIntro; destruct Hle'; by split_and!|]. iExact "R". }
-    iIntros "(%z & %d' & %g' & (%Hz & %Hd' & %Hg') & #Incl & V)".
-    iDestruct "V" as (z' ->) "(#Gpt & #Shr & #Pers)".
-    set y' := ((l', z) : ~~ (at_clocₛ 𝔅)).
-    iExists -[((l, pctx_reset K x₀ y'), ζm)]. iFrame "L I". iSplitR "Obs"; last first.
-    { iApply (proph_obs_impl with "Obs")=> π /= Hπ. by apply Hπ. }
-    iSplit; [|done].
-    rewrite /tctx_elt_interp. iExists #l. iSplit; [done|]. iExists D, d, g.
-    have Hn: ∀ e mm, lty_nrc (ShrLty (OfTy (lty_fold lt)) κ) e mm = lty_nrc (ResUniqLty lt κ) e mm.
-    { intros e mm. by rewrite /= lty_rfoldu_nrc. }
-    rewrite (lty_nrc_plug_retype K (ResUniqLty lt κ) (ShrLty (OfTy (lty_fold lt)) κ)) //.
-    rewrite (lty_size_plug_retype K (ResUniqLty lt κ) (ShrLty (OfTy (lty_fold lt)) κ));
-      [|done|done].
-    iFrame "⧖ ⧗ Fr". iSplit; [done|]. iSplit; [done|].
-    rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //
-      pctx_loc_reset // pctx_mode_retype pctx_depth_retype. iFrame "Rest".
-    rewrite (_: lty_size (ShrLty (OfTy (lty_fold lt)) κ) = lty_size (ResUniqLty lt κ)); [|done].
-    rewrite /= /leaf_owned_s /leaf_owned /ofty_owned /=.
-    iSplit; [|done]. iExists y'. iSplit; [done|].
-    iFrame "Pt". iApply bi.laterN_intro.
-    destruct (pctx_depth K d) as [|dK] eqn:HdK; [lia|]. simpl. iSplit.
-    - iApply (lguards_weaken_later with "Gpt"). lia.
-    - iSplit; [iApply (ty_shr_depth_mono with "Shr"); lia|].
-      iNext. iApply (ty_gho_pers_depth_mono with "Pers"); lia.
-  Qed.
+  (* The fold of a resolved unique borrow with a compound referent ([lty_view_fold],
+     [tctx_fold_oplace_res_uniq], [type_fold_oplace_res_uniq_meta_instr] of
+     the deleted legacy [place_res_ops.v]) is not ported: on bytes, the guards of the bytes of the
+     components ([cbytes], existential bytes) cannot be combined into a guard of the bytes
+     of the whole ([guards_and_point] needs a point property); see
+     [design_docs/minirust-memory-model.md], "Outcome: stage 4f". *)
 End share_fold.

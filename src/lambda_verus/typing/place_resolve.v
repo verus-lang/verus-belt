@@ -47,12 +47,12 @@
   unfolded owned pointers ([OwnPtrLty], [drop_boxes]), for places none of whose leaves
   (outside the pointees) is blocked or shared ([lty_freeb]): the memory of such a leaf
   is lent, so it must not be freed (a pointee with a blocked leaf is leaked instead,
-  [own_freeb]). Owned pointers in unblocked leaves ([OfTy (own_ptr …)]) are resolved
+  [own_freeb]). Owned pointers in unblocked leaves ([OfTy (own_bytes …)]) are resolved
   by their type and their pointees leaked, as by [type_delete_instr].
 
   ** Places below shared references
 
-  These are plain [p ◁ &shr{κ} ty] elements (see [place_shr.v]); they are dropped as
+  These are plain [p ◁ &shrb{κ} ty] elements (see [place_shr.v]); they are dropped as
   any element ([resolve_just]). *)
 
 From iris.proofmode Require Import proofmode.
@@ -62,7 +62,8 @@ From lrust.lang.lib Require Import new_delete.
 From lrust.util Require Import update.
 From lrust.typing Require Export type ltype lpath place_own.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
-  uniq_util uniq_bor product own uninit freeable_util.
+  uniq_util uniq_bor uniq_bytes_util uniq_bytes own_bytes shr_bytes bytes_layout value_ctx product own
+  uninit freeable_util.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -210,7 +211,7 @@ Section rslv.
       iSplitL "η"; [by iApply proph_tok_singleton|].
       iIntros (G m d g tid l ?) "#LFT _ #Gty _ G η Own".
       iDestruct (proph_tok_singleton with "η") as "η".
-      rewrite /ltype_own /= /leaf_owned_s /leaf_owned /=.
+      rewrite /ltype_own /= /leaf_owned_s /bleaf_owned /=.
       iDestruct "Own" as (x' Hx) "[Pt Gho]". simpl in Hx. subst x'.
       iIntros "!> £".
       iDestruct (lc_weaken (m + (d + d*(g+2) + (0 + (d+1)*(g+1)) + 1 + 1)) with "£")
@@ -583,15 +584,14 @@ Section lty_mem.
   Definition own_freeb {𝔄} (n: nat) (lt: lty 𝔄) : bool :=
     lty_freeb lt && bool_decide (n = lty_size lt).
 
-  (** The memory owned by a place in [Owned m] mode: the memory of the place itself
+  (** The memory owned by a place in [Owned m] mode: the bytes of the place itself
       (unless a leaf is blocked or shared) and the memory of the pointees of its owned
       pointers that are freed by [drop_boxes]; the right to free a pointee is under [m]
       laters, as in [own_node]. *)
   Fixpoint lty_omem {𝔄} (m: nat) (lt: lty 𝔄) : cloc → iProp Σ :=
     match lt in lty 𝔄 return cloc → iProp Σ with
-    | OfTy ty | OfRes ty => λ l, ∃ vl, l #↦!∗ vl ∗ ⌜length vl = ty_size ty⌝
-    | UniqLty _ _ | ShrLty _ _ | ResUniqLty _ _ => λ l, ∃ v, l #↦!∗ [v]
-    | OwnPtrLty n lt' => λ l, ∃ l': loc, l #↦!∗ [FVal #l'] ∗
+    | OfTy _ | OfRes _ | UniqLty _ _ | ShrLty _ _ | ResUniqLty _ _ => λ l, pad_cell l (lty_size lt)
+    | OwnPtrLty n lt' => λ l, ∃ l': loc, ptr_cell l l' ∗
         if own_freeb n lt' then
           ▷^m freeable_sz n (lty_size lt') l' ∗
           lty_omem (m + 1) lt' (l', repeat [] (lty_size lt'))
@@ -599,12 +599,23 @@ Section lty_mem.
     | ProdLty lt1 lt2 => λ l,
         lty_omem m lt1 (cloc_take l (lty_size lt1)) ∗
         lty_omem m lt2 (cloc_skip l (lty_size lt1))
-    | SumLty tyl i lt' => λ l, ∃ vp: list val,
-        cloc_take l 1 #↦∗ [ #i ] ∗ lty_omem m lt' (cloc_take (cloc_skip l 1) (lty_size lt')) ∗
-        cloc_skip (cloc_skip l 1) (lty_size lt') #↦∗ vp ∗
-        ⌜length vp = max_hlist_set (λ _, ty_size) tyl i (lty_size lt') - lty_size lt'⌝
+    | @SumLty _ _ 𝔄l tyl i lt' => λ l,
+        tag_cell 𝔄l (cloc_take l (tag_size 𝔄l)) i ∗
+        lty_omem m lt' (cloc_take (cloc_skip l (tag_size 𝔄l)) (lty_size lt')) ∗
+        pad_cell (cloc_skip (cloc_skip l (tag_size 𝔄l)) (lty_size lt')) (sum_max 𝔄l - lty_size lt')
     | Blocked _ _ | ShrBlocked _ _ => λ _, True
     end%I.
+
+  Lemma cbytes_pad_cell {𝔄} (ty: type 𝔄) x l : cbytes ty x l -∗ pad_cell l (syn_bsize 𝔄).
+  Proof.
+    iIntros "(%bs & Hbs & %Hbs)". iExists bs. iFrame. iPureIntro.
+    by rewrite (ty_bytes_length _ _ _ Hbs) ty_bsize_eq.
+  Qed.
+
+  Lemma ptr_cell_pad_cell l l' : ptr_cell l l' -∗ pad_cell l PTR_SIZE.
+  Proof.
+    iIntros "(%bs & Hbs & %Hbs)". iExists bs. iFrame. iPureIntro. by eapply ptr_bytes_length.
+  Qed.
 
   (** The memory of any place. *)
   Lemma ltype_owned_omem {𝔄} (lt: lty 𝔄) m r d g tid l :
@@ -612,18 +623,18 @@ Section lty_mem.
   Proof.
     induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
       𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'] in m, r, d, g, l |- *; rewrite /ltype_own /=;
-      [..|rewrite /leaf_owned_s /leaf_owned;
+      [..|rewrite /leaf_owned_s /bleaf_owned;
         destruct r as [lr|]; [|by iIntros "[[] _]"]; iIntros "[(%x & _ & Pt & _) _]";
-        iExists _; by iFrame "Pt"
+        rewrite cbytes_at_cloc; by iApply ptr_cell_pad_cell
        |rewrite /res_leaf; destruct r as [lr|]; [|by iIntros "[]"];
-        iIntros "(%x & _ & Pt & _)"; iExists _; iFrame "Pt"; by rewrite ty_size_eq
+        iIntros "(%x & _ & Pt & _)"; by iApply cbytes_pad_cell
        |rewrite /res_node; destruct r as [|[[l' r'] ξi]]; [by iIntros "[]"|];
-        iIntros "[Pt _]"; iExists _; by iFrame]; try by iIntros.
-    - rewrite /leaf_owned_s /leaf_owned.
+        iIntros "[Pt _]"; by iApply ptr_cell_pad_cell]; try by iIntros.
+    - rewrite /leaf_owned_s /bleaf_owned.
       destruct r as [lr|]; [|by iIntros "[]"]. iIntros "(%x & _ & Pt & _)".
-      iExists _. iFrame "Pt". by rewrite ty_size_eq.
+      by iApply cbytes_pad_cell.
     - rewrite /uniq_node. destruct r as [|[[l' r'] ξi]]; [by iIntros "[]"|].
-      iIntros "[Pt _]". iExists _. iFrame.
+      iIntros "[Pt _]". by iApply ptr_cell_pad_cell.
     - rewrite /own_node. destruct r as [|[l' r']]; [by iIntros "[]"|].
       iIntros "(Pt & _ & Fr & O)". iExists l'. iFrame "Pt".
       destruct (own_freeb n lt); [|done]. iFrame "Fr". by iApply IH.
@@ -631,7 +642,7 @@ Section lty_mem.
       iSplitL "O1"; [by iApply IH1|by iApply IH2].
     - destruct r as [|[s pad]]; [by iIntros "[]"|]. rewrite /sum_node.
       case_match; [|by iIntros "[]"]. iIntros "(Tag & O & Pad)".
-      iExists _. iFrame "Tag Pad". iSplitL; [by iApply IH|]. by rewrite length_vec_to_list.
+      iFrame "Tag Pad". by iApply IH.
   Qed.
 End lty_mem.
 
@@ -667,9 +678,9 @@ Section lty_resolve.
     resolve E L ty Φ → lty_resolve E L (OfTy ty) Φ.
   Proof.
     iIntros (Rslv G F m x ζm q d g tid l ??) "LFT PROPH UNIQ TIME E L G Own".
-    rewrite /ltype_own /= /leaf_owned_s /leaf_owned /=.
+    rewrite /ltype_own /= /leaf_owned_s /bleaf_owned /=.
     iDestruct "Own" as (x' Hx) "[Pt Gho]". simpl in Hx. subst x'.
-    iSplitL "Pt". { iModIntro. iExists _. iFrame "Pt". by rewrite ty_size_eq. }
+    iSplitL "Pt". { iModIntro. by iApply cbytes_pad_cell. }
     iModIntro. iApply step_fupdN_add.
     iApply (step_fupdN_wand with "[Gho]"); [by iApply step_fupdN_intro|].
     iIntros "Gho". iApply fupd_step_fupdN_front.
@@ -715,7 +726,7 @@ Section lty_resolve.
     iDestruct "Own" as "(Tag & Own & Pad)".
     iMod (Rslv with "LFT PROPH UNIQ TIME E L G Own") as "[M Upd]"; [done..|].
     iSplitL "Tag M Pad".
-    { iModIntro. iExists _. iFrame. by rewrite length_vec_to_list. }
+    { iModIntro. iFrame. }
     iModIntro. iApply (step_fupdN_wand with "Upd"). iIntros ">[Obs $] !>".
     iApply (proph_obs_impl with "Obs")=> π ? y' [= <-]. done.
   Qed.
@@ -727,17 +738,18 @@ Section drop_boxes.
   Context `{!typeG Σ}.
 
   (** The program that frees the pointees of the owned pointers of a place (whose
-      memory starts at the location computed by [e]), innermost first. The location of
+      memory starts at the address computed by [e]), innermost first. The address of
       a pointee is computed again from [e] for each access (as [pctx_expr]): the memory
       of the place is only freed afterwards. *)
   Fixpoint drop_boxes {𝔄} (lt: lty 𝔄) (e: expr) : expr :=
     match lt with
     | OwnPtrLty n lt' =>
         if own_freeb n lt' then
-          (drop_boxes lt' (!e);; new_delete.delete [ #(lty_size lt'); !e])%E
+          (drop_boxes lt' (ToLit (Load Na1Ord MPtr e));;
+           new_delete.delete [ #(lty_size lt'); ToLit (Load Na1Ord MPtr e)])%E
         else #☠%E
     | ProdLty lt1 lt2 => (drop_boxes lt1 e;; drop_boxes lt2 (e +ₗ #(lty_size lt1)))%E
-    | SumLty _ _ lt' => drop_boxes lt' (e +ₗ #1)%E
+    | @SumLty _ _ 𝔄l _ _ lt' => drop_boxes lt' (e +ₗ #(tag_size 𝔄l))%E
     | _ => #☠%E
     end.
 
@@ -746,13 +758,25 @@ Section drop_boxes.
   Proof.
     induction lt as [| | | 𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | |] in e |- *;
       intros ?; simpl; try done.
-    - destruct (own_freeb n lt); [|done]. have ?: Closed [] (drop_boxes lt (!e)%E).
+    - destruct (own_freeb n lt); [|done].
+      have ?: Closed [] (drop_boxes lt (ToLit (Load Na1Ord MPtr e))%E).
       { apply IH. apply _. }
       apply _.
     - have ?: Closed [] (drop_boxes lt1 e) by apply IH1.
       have ?: Closed [] (drop_boxes lt2 (e +ₗ #(lty_size lt1))%E) by apply IH2; apply _.
       apply _.
     - apply IH. apply _.
+  Qed.
+
+  Lemma wp_delete_bytes bs (n: Z) l E :
+    ↑non_atomic_cell_map.naN ⊆ E → n = length bs →
+    {{{ l ↦b bs ∗ (†l…(length bs) ∨ ⌜n = 0⌝) }}} new_delete.delete [ #n; #l] @ E
+    {{{ RET #☠; True }}}.
+  Proof.
+    iIntros (?? Φ) "(H↦ & H†) HΦ". wp_lam. wp_op. case_bool_decide.
+    - wp_if. by iApply "HΦ".
+    - wp_if. iDestruct "H†" as "[H†|%]"; [|lia].
+      iApply (wp_free_bytes with "[$H↦ $H†]"); [done|done|]. iIntros "!> _". by iApply "HΦ".
   Qed.
 
   Lemma cloc_take_repeat (l: loc) a b : cloc_take (l, repeat [] (a + b)) a = (l, repeat [] a).
@@ -762,74 +786,58 @@ Section drop_boxes.
     cloc_skip (l, repeat [] (a + b)) a = (l +ₗ a, repeat [] b).
   Proof. by rewrite /cloc_skip /= drop_repeat_add. Qed.
 
-  Lemma lty_omem_sum_repeat {𝔄l} m (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) (l: loc) :
-    lty_omem m (SumLty tyl i lt) (l, repeat [] (lty_size (SumLty tyl i lt))) ⊣⊢
-      ∃ vp: list val, (l, repeat [] 1) #↦∗ [ #i ] ∗
-        lty_omem m lt (l +ₗ 1, repeat [] (lty_size lt)) ∗
-        (l +ₗ 1 +ₗ lty_size lt,
-          repeat [] (max_hlist_set (λ _, ty_size) tyl i (lty_size lt) - lty_size lt)) #↦∗ vp ∗
-        ⌜length vp = max_hlist_set (λ _, ty_size) tyl i (lty_size lt) - lty_size lt⌝.
+  Lemma pad_cell_app (l: cloc) n1 n2 :
+    pad_cell (cloc_take l n1) n1 ∗ pad_cell (cloc_skip l n1) n2 ⊢ pad_cell l (n1 + n2).
   Proof.
-    have Hle := max_hlist_set_ge (λ _, ty_size) tyl i (lty_size lt).
-    have Hsz: lty_size (SumLty tyl i lt) =
-      1 + (lty_size lt + (max_hlist_set (λ _, ty_size) tyl i (lty_size lt) - lty_size lt)).
-    { cbn [lty_size]. lia. }
-    rewrite Hsz. cbn [lty_omem].
-    by rewrite !cloc_take_repeat !cloc_skip_repeat.
-  Qed.
-
-  Lemma cell_mapsto_val (l: loc) v : (l, repeat [] 1) #↦!∗ [FVal v] ⊣⊢ l ↦ v.
-  Proof.
-    rewrite -heap_mapsto_vec_singleton -(heap_mapsto_fancy_fmap_eq l [v]).
-    symmetry. apply (heap_cloc_mapsto_fancy_empty l [FVal v]).
+    iIntros "[(%bs1 & B1 & %H1) (%bs2 & B2 & %H2)]". iExists (bs1 ++ bs2).
+    rewrite heap_mapsto_bytes_app H1 /=. iFrame. iPureIntro. rewrite length_app. lia.
   Qed.
 
   (** [drop_boxes lt e] frees the pointees of the owned pointers of the place (those in
-      [lty_omem]) and gives back the memory of the place itself. [e] computes the
-      location of the place, using some resource [R], in at least [k] steps; the rights
+      [lty_omem]) and gives back the bytes of the place itself. [e] computes the
+      address of the place, using some resource [R], in at least [k] steps; the rights
       to free the pointees are under [m] laters, with [m ≤ k + 1]: the pointee of an
-      owned pointer is freed after its location has been computed again, i.e. after
+      owned pointer is freed after its address has been computed again, i.e. after
       [k + 1] steps. *)
   Lemma wp_drop_boxes {𝔄} (lt: lty 𝔄) m k (l: loc) (e: expr) (R: iProp Σ) E Φ :
     ↑non_atomic_cell_map.naN ⊆ E → lty_freeb lt = true → Closed [] e → m ≤ k + 1 →
     (⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^k P -∗ (R -∗ P -∗ Ψ #l) -∗ WP e @ E {{ Ψ }}) →
     R -∗ lty_omem m lt (l, repeat [] (lty_size lt)) -∗
-    (∀ vl, R -∗ (l, repeat [] (lty_size lt)) #↦!∗ vl -∗ ⌜length vl = lty_size lt⌝ -∗
-      Φ #☠) -∗
+    (R -∗ pad_cell (l, repeat [] (lty_size lt)) (lty_size lt) -∗ Φ #☠) -∗
     WP drop_boxes lt e @ E {{ Φ }}.
   Proof.
     intros ?. induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ']
       in m, k, l, e, R, Φ |- *; intros Hf ? Hm Hev; simpl in Hf; try done; cbn [drop_boxes];
       iIntros "R M HΦ".
-    6: { iDestruct "M" as (v) "Pt". iApply wp_value. by iApply ("HΦ" with "R Pt"). }
-    6: { iDestruct "M" as (vl) "[Pt %Hl]". iApply wp_value. by iApply ("HΦ" with "R Pt"). }
-    6: { iDestruct "M" as (v) "Pt". iApply wp_value. by iApply ("HΦ" with "R Pt"). }
-    - iDestruct "M" as (vl) "[Pt %Hl]". iApply wp_value. by iApply ("HΦ" with "R Pt").
-    - iDestruct "M" as (v) "Pt". iApply wp_value. by iApply ("HΦ" with "R Pt").
+    6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
+    6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
+    6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
+    - iApply wp_value. by iApply ("HΦ" with "R M").
+    - iApply wp_value. by iApply ("HΦ" with "R M").
     - simpl. iDestruct "M" as (l') "[Pt M]". destruct (own_freeb n lt) eqn:Hfb; last first.
-      { iApply wp_value. by iApply ("HΦ" with "R Pt"). }
+      { iApply wp_value. iApply ("HΦ" with "R"). by iApply ptr_cell_pad_cell. }
       apply andb_true_iff in Hfb as [Hf' Hn%bool_decide_eq_true].
-      iEval (rewrite cell_mapsto_val) in "Pt".
-      have Hev': ⊢ ∀ Ψ (P: iProp Σ), (R ∗ l ↦ #l') -∗ ▷^(k + 1) P -∗
-        ((R ∗ l ↦ #l') -∗ P -∗ Ψ #l') -∗ WP (!e)%E @ E {{ Ψ }}.
+      have Hev': ⊢ ∀ Ψ (P: iProp Σ), (R ∗ ptr_cell (l, repeat [] (lty_size (OwnPtrLty n lt))) l') -∗
+        ▷^(k + 1) P -∗ ((R ∗ ptr_cell (l, repeat [] (lty_size (OwnPtrLty n lt))) l') -∗ P -∗ Ψ #l') -∗
+        WP (ToLit (Load Na1Ord MPtr e))%E @ E {{ Ψ }}.
       { iIntros (Ψ P) "[R Pt] P HΨ". wp_bind e.
         iApply (Hev $! _ (▷ P)%I with "R [P]"); [by rewrite bi.laterN_add|]. iIntros "R P".
-        wp_read. iApply ("HΨ" with "[$R $Pt] P"). }
+        iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
+        iApply (wp_load_na with "Hbs"); [exact Hbs|]. iIntros "!> Hbs". wp_pure _.
+        iApply ("HΨ" with "[R Hbs] P"). by iFrame. }
       iDestruct "M" as "[Fr M]".
-      wp_bind (drop_boxes lt (!e)%E).
-      iApply (IH (m + 1) (k + 1) l' (!e)%E (R ∗ l ↦ #l')%I _ Hf' _ ltac:(lia) Hev'
-        with "[$R $Pt] M").
-      iIntros (vl) "[R Pt] Pt' %Hl". wp_seq.
-      iMod (mapsto_vec_untether_emp _ _ _ ∅ with "[Pt']") as (vl') "[Pt' [%Hl' _]]".
-      { by rewrite -Hl -heap_cloc_mapsto_fancy_empty. }
-      wp_bind (!e)%E. iApply (Hev' with "[$R $Pt] [Fr]").
+      wp_bind (drop_boxes lt (ToLit (Load Na1Ord MPtr e))%E).
+      iApply (IH (m + 1) (k + 1) l' (ToLit (Load Na1Ord MPtr e))%E (R ∗ ptr_cell (l, repeat [] (lty_size (OwnPtrLty n lt))) l')%I
+        _ Hf' _ ltac:(lia) Hev' with "[$R $Pt] M").
+      iIntros "[R Pt] (%bs & Pt' & %Hl)". wp_seq.
+      wp_bind (ToLit _). iApply (Hev' with "[$R $Pt] [Fr]").
       { iApply (bi.laterN_le with "Fr"). lia. }
-      iIntros "[R Pt] Fr".
-      iApply (wp_delete vl' with "[Pt' Fr]"); [done|by rewrite Hl' Hl| |].
-      { iFrame "Pt'". rewrite Hl' Hl -Hn. by iApply freeable_sz_full. }
-      iIntros "!> _". iApply ("HΦ" $! [FVal #l'] with "R [Pt]"); [by rewrite /= cell_mapsto_val|done].
+      iIntros "[R Pt] Fr". iEval (rewrite -Hn freeable_sz_full) in "Fr".
+      iApply (wp_delete_bytes bs with "[Pt' Fr]"); [done|by rewrite Hl -Hn|..].
+      { iFrame "Pt'". rewrite Hl -Hn. iDestruct "Fr" as "[$|%]"; by iRight. }
+      iIntros "!> _". iApply ("HΦ" with "R"). by iApply ptr_cell_pad_cell.
     - apply andb_true_iff in Hf as [Hf1 Hf2]. iDestruct "M" as "[M1 M2]".
-      rewrite /cloc_take /cloc_skip /= take_repeat_add drop_repeat_add.
+      rewrite lty_size_prod /cloc_take /cloc_skip /= take_repeat_add drop_repeat_add.
       have Hev2: ⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^(k + 1) P -∗ (R -∗ P -∗ Ψ #(l +ₗ lty_size lt1)) -∗
         WP (e +ₗ #(lty_size lt1))%E @ E {{ Ψ }}.
       { iIntros (Ψ P) "R P HΨ". wp_bind e.
@@ -837,34 +845,26 @@ Section drop_boxes.
         wp_op. by iApply ("HΨ" with "R P"). }
       wp_bind (drop_boxes lt1 e).
       iApply (IH1 m k l e R _ Hf1 _ Hm Hev with "R M1 [M2 HΦ]").
-      iIntros (vl1) "R Pt1 %Hl1". wp_seq.
+      iIntros "R Pt1". wp_seq.
       iApply (IH2 m (k + 1) (l +ₗ lty_size lt1) (e +ₗ #(lty_size lt1))%E R _ Hf2 _ ltac:(lia)
         Hev2 with "R M2 [Pt1 HΦ]").
-      iIntros (vl2) "R Pt2 %Hl2". iApply ("HΦ" $! (vl1 ++ vl2) with "R [Pt1 Pt2]").
-      + rewrite heap_cloc_mapsto_fancy_vec_app Hl1 cloc_take_repeat cloc_skip_repeat.
-        iFrame.
-      + by rewrite length_app Hl1 Hl2.
-    - iEval (rewrite lty_omem_sum_repeat) in "M".
-      iDestruct "M" as (vp) "(Tag & M & Pad & %Hp)".
-      have Hle := max_hlist_set_ge (λ _, ty_size) tyl i (lty_size lt).
-      have Hsz: lty_size (SumLty tyl i lt) =
-        1 + (lty_size lt + (max_hlist_set (λ _, ty_size) tyl i (lty_size lt) - lty_size lt)).
-      { cbn [lty_size]. lia. }
-      set sz := lty_size lt. set mx := max_hlist_set (λ _, ty_size) tyl i sz.
-      rewrite Hsz.
-      have Hev2: ⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^(k + 1) P -∗ (R -∗ P -∗ Ψ #(l +ₗ 1)) -∗
-        WP (e +ₗ #1)%E @ E {{ Ψ }}.
+      iIntros "R Pt2". iApply ("HΦ" with "R [Pt1 Pt2]").
+      iApply pad_cell_app. rewrite cloc_take_repeat cloc_skip_repeat. iFrame.
+    - have Hsz: lty_size (SumLty tyl i lt) = (tag_size 𝔄l + (lty_size lt + (sum_max 𝔄l - lty_size lt)))%nat.
+      { rewrite /lty_size syn_bsize_sum /tag_size. have := sum_max_ge 𝔄l i. lia. }
+      rewrite Hsz. cbn [lty_omem]. rewrite !cloc_take_repeat !cloc_skip_repeat !cloc_take_repeat.
+      iDestruct "M" as "(Tag & M & Pad)".
+      have Hev2: ⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^(k + 1) P -∗ (R -∗ P -∗ Ψ #(l +ₗ tag_size 𝔄l)) -∗
+        WP (e +ₗ #(tag_size 𝔄l))%E @ E {{ Ψ }}.
       { iIntros (Ψ P) "R P HΨ". wp_bind e.
         iApply (Hev $! _ (▷ P)%I with "R [P]"); [by rewrite bi.laterN_add|]. iIntros "R P".
         wp_op. by iApply ("HΨ" with "R P"). }
-      iApply (IH m (k + 1) (l +ₗ 1) (e +ₗ #1)%E R _ Hf _ ltac:(lia) Hev2 with "R M [-]").
-      iIntros (vl) "R Pt %Hl".
-      iApply ("HΦ" $! ([FVal #i] ++ (vl ++ fmap FVal vp)) with "R [-]").
-      + rewrite heap_cloc_mapsto_fancy_vec_app. cbn [length].
-        rewrite cloc_take_repeat cloc_skip_repeat.
-        rewrite heap_cloc_mapsto_fancy_vec_app Hl cloc_take_repeat cloc_skip_repeat.
-        by iFrame.
-      + iPureIntro. rewrite /= length_app length_fmap Hl Hp. lia.
+      iApply (IH m (k + 1) (l +ₗ tag_size 𝔄l) (e +ₗ #(tag_size 𝔄l))%E R _ Hf _ ltac:(lia) Hev2 with "R M [-]").
+      iIntros "R Pt". iApply ("HΦ" with "R [-]").
+      iApply pad_cell_app. rewrite cloc_take_repeat cloc_skip_repeat.
+      iSplitL "Tag". { iDestruct "Tag" as (bt) "[Bt %Ht]". iExists bt. iFrame. iPureIntro.
+        by apply decode_value_length in Ht. }
+      iApply pad_cell_app. rewrite cloc_take_repeat cloc_skip_repeat. iFrame.
   Qed.
 End drop_boxes.
 
@@ -933,13 +933,13 @@ Section oplace.
 
   (** Dropping an owned place: the unblocked leaves are resolved, the pointees of the
       owned pointers of the place are freed ([drop_boxes], recursively, if their memory
-      is owned, [own_freeb]), and the memory of the place is freed. The pointees of
-      owned pointers in unblocked leaves ([OfTy (own_ptr …)]) are leaked, as by
-      [type_delete_instr]. No leaf of the place itself may be blocked or shared
-      ([lty_freeb]): their memory is lent. *)
+      is owned, [own_freeb]), and the memory of the place is freed ([Free] of its bytes).
+      The pointees of owned pointers in unblocked leaves ([OfTy (own_bytes …)]) are
+      leaked. No leaf of the place itself may be blocked or shared ([lty_freeb]): their
+      memory is lent. *)
   Lemma type_drop_oplace_instr {𝔄} E L I p n (nz: Z) (lt: lty 𝔄) Φ :
     lty_freeb lt = true → n = lty_size lt → nz = Z.of_nat n → lty_resolve E L lt Φ →
-    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt p;; new_delete.delete [ #nz; p ])%E
+    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt (ToLit p);; new_delete.delete [ #nz; ToLit p])%E
       (λ _, +[]) (λ post '-[x], λ mask π, Φ x.1.2 π → post -[] mask π).
   Proof.
     iIntros (Hf -> -> Rslv tid post mask iκs [x []])
@@ -956,19 +956,18 @@ Section oplace.
     iMod "Upd" as "[Obs' H1]".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     have ?: Closed [] p by eapply eval_path_closed.
-    wp_bind (drop_boxes lt p).
+    wp_bind (drop_boxes lt (ToLit p)).
     have Hev: ⊢ ∀ Ψ (P: iProp Σ), True -∗ ▷^0 P -∗ (True -∗ P -∗ Ψ #l) -∗
-      WP p @ ⊤∖↑advN {{ Ψ }}.
-    { iIntros (Ψ P) "_ P HΨ". iApply wp_wand; [by iApply wp_eval_path|].
-      iIntros (?) "->". by iApply ("HΨ" with "[//] P"). }
-    iApply (wp_drop_boxes lt 1 0 l p True%I (⊤∖↑advN) _ ltac:(solve_ndisj) Hf _ ltac:(lia) Hev
-      with "[//] M").
-    iIntros (vl) "_ Pt %Hl". wp_seq.
-    wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-    iMod (mapsto_vec_untether_emp _ _ _ ∅ with "[Pt]") as (vl') "[Pt [%Hl' _]]".
-    { by rewrite -Hl -heap_cloc_mapsto_fancy_empty. }
-    iApply (wp_delete vl' with "[Pt Fr]"); [solve_ndisj|by rewrite Hl' Hl| |].
-    { iFrame "Pt". rewrite Hl' Hl. by iApply freeable_sz_full. }
+      WP ToLit p @ ⊤∖↑advN {{ Ψ }}.
+    { iIntros (Ψ P) "_ P HΨ". wp_bind p. iApply wp_wand; [by iApply wp_eval_path|].
+      iIntros (?) "->". wp_pure _. by iApply ("HΨ" with "[//] P"). }
+    iApply (wp_drop_boxes lt 1 0 l (ToLit p) True%I (⊤∖↑advN) _ ltac:(solve_ndisj) Hf _
+      ltac:(lia) Hev with "[//] M").
+    iIntros "_ (%bs & Pt & %Hl)". wp_seq.
+    wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". wp_pure _.
+    iEval (rewrite freeable_sz_full) in "Fr".
+    iApply (wp_delete_bytes bs with "[Pt Fr]"); [solve_ndisj|by rewrite Hl|..].
+    { iFrame "Pt". rewrite Hl. iDestruct "Fr" as "[$|%]"; by iRight. }
     iIntros "!> _". iExists -[]. iFrame "L I". iSplit; [done|].
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?]. by apply Imp.
   Qed.

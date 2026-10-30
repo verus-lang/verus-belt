@@ -1,3 +1,10 @@
+> **Note (stage 5 of the MiniRust memory model, 2026-10-30).** The legacy word-level place
+> files and examples named in this document (`ltype.v`, `lpath.v`, `pctx_acc.v`,
+> `vplace.v`, `place_*.v`, `examples/place_*.v`, `get_first.v`, `nested_*.v`, …) were
+> deleted. The byte versions now carry the same file names (e.g. `bltype.v` became
+> `ltype.v`), so a file name below may now refer to its byte version. See
+> `design_docs/minirust-memory-model.md`, "Outcome: legacy place layer deleted".
+
 It sounds like we need to go the lazy route, but there's a big problem. VerusBelt completely rearchitected the way shared borrows work. Instead of RustBelt's `own` and `shr` predicates, VerusBelt uses a single `ty_gho` predicate, with shared borrows defined uniformly via the "guard" operator: `@[k] &&{E}&&> ty_gho`. There's also a law for how guard interacts with full borrows that lets you guard the contents of a full borrow (`llftl_idx_bor_guard`). The problem is if mutable borrows are lazy, we have `&{κ} |==> P` and then we can only guard `|==> P` which is no good. We need to make a big detour to fix this architectural problem before we can make mutable borrows lazy.
 
 We need to synthesize the RustBelt `shr`/`own` approach a bit with VerusBelt. Instead of just `gho` we should have `gho_own` and `gho_shr`, and shared borrows being defined as a guard of `gho_shr`.

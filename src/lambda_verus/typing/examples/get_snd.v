@@ -1,12 +1,12 @@
 From iris.proofmode Require Import proofmode.
 From lrust.typing Require Export type programs cont int product value_ctx own_bytes shr_bytes
-  bplace_own bplace_shr bplace_resolve.
+  place_own place_shr place_resolve.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
 (** * [get_snd] on bytes
 
-The body of [get_snd] of [typing/examples/place_pshr.v], on bytes: the argument is a box
+The body of [get_snd] of the deleted legacy example [place_pshr.v], on bytes: the argument is a box
 of bytes holding a shared reference to a shared reference ([&shrb]); the two references
 are loaded with typed [Load]s of [MPtr] (the second one a guarded load), the shared
 reference to the field [.1] is a pointer offset ([type_shr_bytes_snd_instr]), and the
@@ -14,7 +14,7 @@ field is read with a guarded typed [Load] of [i32]. The reads below shared refer
 through shared references, not through shared places: the shared places of
 [place_pshr.v] are not ported to bytes yet. *)
 
-Section bget_snd.
+Section get_snd.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
@@ -24,7 +24,7 @@ Section bget_snd.
   fn get_snd<'a, 'b>(x: &'a &'b (i32, i32)) -> i32 { ( **x).1 }
   ```
   *)
-  Definition get_snd_b : expr := (
+  Definition get_snd : expr := (
     let: "x1" := Load Na1Ord MPtr (ToLit "x") in             (* *x *)
     let: "x2" := Load Na1Ord MPtr (ToLit "x1") in            (* **x *)
     let: "x3" := OfLit (ToLit "x2" +ₗ #4) in                 (* &( **x).1 *)
@@ -35,14 +35,14 @@ Section bget_snd.
 
   Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.
 
-  Lemma get_snd_b_type ϝ α β (k vx: val) :
+  Lemma get_snd_type ϝ α β (k vx: val) :
     ⊢ typed_body [ϝ ⊑ₑ α; α ⊑ₑ β] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
         +[vx ◁ᵥ own_bytes PTR_SIZE (&shrb{α} (&shrb{β} (i32t * i32t)))%T]
-        (subst "return" k (subst "x" vx get_snd_b))
+        (subst "return" k (subst "x" vx get_snd))
         (λ post '-[(_, (_, (_, (_, z2))))], λ mask π, post z2 mask π).
   Proof.
-    rewrite /get_snd_b. simpl_subst.
+    rewrite /get_snd. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
       (* *x *)
       iApply (type_let with "[]").
@@ -89,6 +89,6 @@ Section bget_snd.
     intros post [[lx [l1 [l2 [z1 z2]]]] []] mask π. simpl.
     rewrite /trans_upper /trans_tail /ret_z /=. auto.
   Qed.
-End bget_snd.
+End get_snd.
 
-Print Assumptions get_snd_b_type.
+Print Assumptions get_snd_type.

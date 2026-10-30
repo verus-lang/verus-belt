@@ -11,14 +11,14 @@ Set Default Proof Using "Type".
 and the result of a function are MiniRust values ([w ◁ᵥ ty], [typing/value_ctx.v]) of the
 types of [fp] (instead of boxes [box ty] owning legacy words). A box of bytes is passed
 as a value of type [own_bytes n ty]; a shared reference as a value of type [&shrb{κ} ty]
-(the root of a shared place, [typing/bplace_pshr.v]); a unique borrow as a value of type
+(the root of a shared place, [typing/place_pshr.v]); a unique borrow as a value of type
 [&uniqb{κ} ty]. The function value itself is still a closure ([RecV]) typed by the
 legacy element [f ◁ bfn fp spec]: closures have no MiniRust value (decision 3 of the
 plan). The specification is a predicate transformer on the values of the arguments and
 the result ([bfn_spec]), not on boxes of them.
 
 Rules: [type_bcall] ([call: p ql → k]), [type_bletcall], [type_bfnrec], [type_bfn]. The
-legacy [fn] and its rules stay until stage 5. *)
+legacy [fn] and its rules stay while [pcell] is on the legacy layer. *)
 
 Implicit Type (𝔄 𝔅: syn_type) (𝔄l 𝔅l: syn_typel).
 

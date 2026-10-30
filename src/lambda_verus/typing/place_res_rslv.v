@@ -23,10 +23,11 @@ From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.util Require Import update.
-From lrust.typing Require Export type ltype lpath pctx_acc place_own.
+From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bytes.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
-  uniq_util uniq_bor product own shr_bor sum type_sum freeable_util place_shr
-  place_resolve place_puniq place_sum place_pshr place_res place_res_view.
+  uniq_util uniq_bor uniq_bytes_util uniq_bytes own_bytes bytes_layout value_ctx product own
+  freeable_util sum type_sum place_shr place_resolve place_puniq place_sum place_pshr
+  place_res place_res_view.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -130,7 +131,7 @@ Section lty_res.
   Proof.
     intros Rslv. split; [done|]. split; [done|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "LFT PROPH UNIQ TIME E L G _ Own".
-    rewrite /ltype_own /= /leaf_owned_s /leaf_owned /ofty_owned /=.
+    rewrite /ltype_own /= /leaf_owned_s /bleaf_owned /bofty_owned /=.
     iDestruct "Own" as (x' ->) "[Pt Gho]". iModIntro. iIntros "£".
     iDestruct (lc_weaken (m + d * (g + 1)) with "£") as "[£m £r]";
       [rewrite /advance_credits; nia|].
@@ -148,7 +149,7 @@ Section lty_res.
   Proof.
     intros Rslv. split; [done|]. split; [done|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "LFT PROPH UNIQ TIME E L G _ Own".
-    rewrite /ltype_own /= /leaf_owned_s /leaf_owned /ofty_owned /=.
+    rewrite /ltype_own /= /leaf_owned_s /bleaf_owned /bofty_owned /=.
     iDestruct "Own" as (x' ->) "[Pt #Gho]". iModIntro. iIntros "£".
     iDestruct (lc_weaken (m + d * (g + 1)) with "£") as "[£m £r]";
       [rewrite /advance_credits; nia|].
@@ -164,7 +165,7 @@ Section lty_res.
       (λ x ζm q π, Φ1 x.1 ζm (false :: q) π ∧ Φ2 x.2 ζm (true :: q) π).
   Proof.
     intros (Hs1 & Hn1 & Rslv1) (Hs2 & Hn2 & Rslv2).
-    split; [by rewrite /= Hs1 Hs2|]. split; [by rewrite /= Hn1 Hn2|].
+    split; [done|]. split; [by rewrite /= Hn1 Hn2|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "#LFT #PROPH #UNIQ #TIME #E #L G #⧖ Own".
     rewrite /ltype_own /= /prod_node. iDestruct "Own" as "[Own1 Own2]".
     iApply ctask_fupd.
@@ -178,7 +179,7 @@ Section lty_res.
     iApply (ctask_mono with "[] T").
     iIntros "[(#Obs1 & H1 & Own1) (#Obs2 & H2 & Own2)]".
     iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
-    iModIntro. rewrite Hs1. iFrame "Own1 Own2".
+    iModIntro. iFrame "Own1 Own2".
     iCombine "Obs1 Obs2" as "Obs". iApply (proph_obs_impl with "Obs")=> π [??]. done.
   Qed.
 
@@ -192,7 +193,7 @@ Section lty_res.
     iDestruct (Rslv G (m + 1) x ζm (false :: q) (pred d) g D tid _ with
       "LFT PROPH UNIQ TIME E L G ⧖ Own") as "T"; [lia|done|].
     iApply (ctask_mono with "[Pt Fr] T"). iIntros "(Obs & $ & Own) !>". iFrame "Obs".
-    rewrite /own_node Hs. by iFrame.
+    rewrite /own_node. by iFrame.
   Qed.
 
   Lemma lty_res_sum {𝔄l} E L (tyl: typel 𝔄l) i (lt lt': lty (𝔄l !!ₗ i)) k Φ :
@@ -200,7 +201,7 @@ Section lty_res.
     lty_res E L (SumLty tyl i lt) (SumLty tyl i lt') k
       (λ x ζm q π, ∀ y, psum_proj i x.1 = Some y → Φ y ζm (false :: q) π).
   Proof.
-    intros (Hs & Hn & Rslv). split; [by rewrite /= Hs|]. split; [done|].
+    intros (Hs & Hn & Rslv). split; [done|]. split; [done|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "LFT PROPH UNIQ TIME E L G ⧖ Own".
     rewrite lty_rfn_sum. destruct (psum_proj i x.1) as [y|] eqn:Hy; last first.
     { by rewrite /ltype_own /= /prfn_dummy /sum_node /=. }
@@ -209,7 +210,7 @@ Section lty_res.
     iDestruct (Rslv G m y ζm (false :: q) d g D tid _ with
       "LFT PROPH UNIQ TIME E L G ⧖ Own") as "T"; [done..|].
     iApply (ctask_mono with "[Tag Pad] T"). iIntros "(Obs & $ & Own) !>".
-    rewrite lty_rfn_sum Hy ltype_own_cp_sum_owned sum_node_sum Hs. iFrame.
+    rewrite lty_rfn_sum Hy ltype_own_cp_sum_owned sum_node_sum. iFrame.
     iApply (proph_obs_impl with "Obs")=> π ? y' [= <-]. done.
   Qed.
 End lty_res.
@@ -242,7 +243,7 @@ Section lty_res_uniq.
     rewrite /res_node. iFrame "Pt". iApply bi.laterN_intro. iFrame "Incl".
     iExists d', g. iSplit; [iPureIntro; lia|]. rewrite /= /view_leaf.
     iExists x0. iSplit; [done|]. iSplit.
-    - iApply guard_cloc_combine_fancy; [done|]. iApply (lguards_weaken_later with "Pt'"). lia.
+    - iApply (lguards_weaken_later with "Pt'"). lia.
     - iSplit; [iApply (ty_shr_depth_mono with "Shr"); lia|].
       iApply (ty_gho_pers_depth_mono with "Pers"); lia.
   Qed.
@@ -352,8 +353,8 @@ Section typing.
     iApply (wp_skipn_ctask _ (advance_credits D) D with "TIME ⧖ T"); [done|].
     iIntros "(#Obs' & L & Own)".
     iExists -[((l, x₀), ζm)]. iFrame "L I". iSplitL "⧗r Fr Own".
-    - iSplit; [|done]. iExists #l. iSplit; [done|]. iExists D, d, g.
-      rewrite Hs Hn. by iFrame "⧖ ⧗r Fr Own".
+    - iSplit; [|done]. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
+      rewrite Hn. by iFrame "⧖ ⧗r Fr Own".
     - iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?].
       by apply Imp.
   Qed.

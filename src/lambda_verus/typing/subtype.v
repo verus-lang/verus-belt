@@ -1,8 +1,8 @@
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type.
-From lrust.typing Require Import programs type_context lft_contexts uniq_util buniq_util
-  buniq_bor own_bytes shr_bytes bytes_layout value_ctx uninit freeable_util.
+From lrust.typing Require Import programs type_context lft_contexts uniq_util uniq_bytes_util
+  uniq_bytes own_bytes shr_bytes bytes_layout value_ctx uninit freeable_util.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".

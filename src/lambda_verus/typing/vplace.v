@@ -14,20 +14,21 @@
 
   Conversions:
   - [tctx_ty_to_vplace], [tctx_vplace_to_ty]: [p ◁ ty] and [p ◁ₗ OfTy ty];
-  - [tctx_vplace_unfold_own], [tctx_vplace_fold_own]: [OfTy (own_ptr n ty)] and
-    [OwnPtrLty n (OfTy ty)] (so [p ◁ own_ptr n ty] and [p ◁ₗown{n} OfTy ty]);
-  - [tctx_vplace_unfold_shr], [tctx_vplace_fold_shr]: [OfTy (&shr{κ} ty)] and
+  - [tctx_vplace_unfold_own], [tctx_vplace_fold_own]: [OfTy (own_bytes n ty)] and
+    [OwnPtrLty n (OfTy ty)] (so [p ◁ own_bytes n ty] and [p ◁ₗown{n} OfTy ty]);
+  - [tctx_vplace_unfold_shr], [tctx_vplace_fold_shr]: [OfTy (&shrb{κ} ty)] and
     [ShrLty (OfTy ty) κ];
   - [type_vplace_unfold_uniq_instr] (one [Skip], for the two cumulative time receipts of the
-    node of [UniqLty]), [tctx_vplace_fold_uniq]: [OfTy (&uniq{κ} ty)] and
+    node of [UniqLty]), [tctx_vplace_fold_uniq]: [OfTy (&uniqb{κ} ty)] and
     [UniqLty (OfTy ty) κ]; [type_uniq_to_vplace_instr], [tctx_vplace_to_uniq]: from and to
-    [p ◁ &uniq{κ} ty] directly. *)
+    [p ◁ &uniqb{κ} ty] directly. *)
 
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath pctx_acc.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
-  uniq_util uniq_bor product own shr_bor freeable_util.
+  uniq_util uniq_bor uniq_bytes_util uniq_bytes own_bytes shr_bytes bytes_layout value_ctx product
+  freeable_util.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -47,7 +48,7 @@ Section vplace.
   Definition oplace_own {𝔄} (n: nat) (lt: lty 𝔄) (x: ~~ (oplaceₛ 𝔄))
       (tid: thread_id) (v: val) : iProp Σ :=
     match x with ((l, x₀), ζm) =>
-      ∃ D d g, ⧖D ∗ ⧗(lty_nrc lt 0 0) ∗ ⌜v = #l⌝ ∗ ⌜S d ≤ D ∧ g ≤ D⌝ ∗
+      ∃ D d g, ⧖D ∗ ⧗(lty_nrc lt 0 0) ∗ ⌜v = MLitV (VPtr l)⌝ ∗ ⌜S d ≤ D ∧ g ≤ D⌝ ∗
         freeable_sz n (lty_size lt) l ∗
         ltype_own (Owned 1) lt (lty_rfn lt x₀ ζm []) d g tid (l, repeat [] (lty_size lt))
     end%I.
@@ -115,32 +116,34 @@ Section conv.
   (** * Leaves *)
 
   Lemma tctx_ty_to_vplace {𝔄} E L p (ty: type 𝔄) :
-    tctx_incl E L +[p ◁ ty] +[p ◁ₗ OfTy ty] (λ post '-[a], post -[(a, [])]).
+    tctx_incl E L +[p ◁ᵥ ty] +[p ◁ₗ OfTy ty] (λ post '-[a], post -[(a, [])]).
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [x []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
-    iDestruct "T" as (v d Hp) "(⧖ & Gho & %Phys)".
+    iDestruct "T" as (v Hp w d [-> Hw]) "(⧖ & Gho)".
     iMod cumulative_time_receipt_0 as "⧗".
     iModIntro. iExists -[(x, [])]. iFrame "Obs". iSplit; [|done].
-    rewrite /tctx_elt_interp. iExists v. iSplit; [done|].
-    iExists d. iFrame "⧖ ⧗". iExists d, d. iSplit; [done|]. iExists x. by iFrame.
+    rewrite /tctx_elt_interp. iExists _. iSplit; [done|].
+    iExists d. iFrame "⧖ ⧗". iExists d, d. iSplit; [done|]. iExists x. iFrame.
+    iPureIntro. split; [done|]. by exists w.
   Qed.
 
   Lemma tctx_vplace_to_ty {𝔄} E L p (ty: type 𝔄) :
-    tctx_incl E L +[p ◁ₗ OfTy ty] +[p ◁ ty] (λ post '-[x], post -[x.1]).
+    tctx_incl E L +[p ◁ₗ OfTy ty] +[p ◁ᵥ ty] (λ post '-[x], post -[x.1]).
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[x ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
     iDestruct "T" as (v Hp D) "(⧖ & _ & %d & %g & %Hle & %y & -> & %Phys & Gho)".
+    destruct Phys as (w & -> & Hw).
     iModIntro. iExists -[x]. iFrame "Obs". iSplit; [|done].
-    iExists v, D. iSplit; [done|]. iFrame "⧖". iSplit; [|done].
+    iExists _. iSplit; [done|]. iExists w, D. iSplit; [done|]. iFrame "⧖".
     iDestruct (ty_gho_own_depth_mono _ d g D D with "Gho") as "[$ _]"; lia.
   Qed.
 
   (** * Owned pointers *)
 
   Lemma tctx_vplace_unfold_own {𝔄} E L p n (ty: type 𝔄) :
-    tctx_incl E L +[p ◁ₗ OfTy (own_ptr n ty)] +[p ◁ₗown{n} OfTy ty] (λ post '-[x], post -[x]).
+    tctx_incl E L +[p ◁ₗ OfTy (own_bytes n ty)] +[p ◁ₗown{n} OfTy ty] (λ post '-[x], post -[x]).
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[[l x] ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
@@ -148,32 +151,32 @@ Section conv.
     destruct d as [|d]; [done|]. iDestruct "Gho" as "(Pt & Fr & Gho)".
     iModIntro. iExists -[((l, x), ζm)]. iFrame "Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists v. iSplit; [done|].
-    iExists D, d, g. iFrame "⧖ ⧗ Fr". iSplit; [by inversion Phys|].
+    iExists D, d, g. rewrite /lty_size -(ty_bsize_eq ty). iFrame "⧖ ⧗ Fr".
+    iSplit; [by destruct Phys as (w & -> & [= <-])|].
     iSplit; [iPureIntro; lia|].
-    rewrite /ltype_own /= /ofty_owned. iExists x. iSplit; [done|].
-    iDestruct (ty_gho_own_depth_mono _ d g d g with "Gho") as "[$ _]"; [lia..|].
-    by rewrite -(ty_size_eq ty x tid) -heap_cloc_mapsto_fancy_empty.
+    rewrite /ltype_own /= /bofty_owned. iExists x. iSplit; [done|].
+    iDestruct (ty_gho_own_depth_mono _ d g d g with "Gho") as "[$ _]"; [lia..|]. done.
   Qed.
 
   Lemma tctx_vplace_fold_own {𝔄} E L p n (ty: type 𝔄) :
-    tctx_incl E L +[p ◁ₗown{n} OfTy ty] +[p ◁ₗ OfTy (own_ptr n ty)] (λ post '-[x], post -[x]).
+    tctx_incl E L +[p ◁ₗown{n} OfTy ty] +[p ◁ₗ OfTy (own_bytes n ty)] (λ post '-[x], post -[x]).
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[[l x] ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
     iDestruct "T" as (v Hp D d g) "(⧖ & _ & -> & %Hle & Fr & Own)".
-    rewrite /ltype_own /= /ofty_owned. iDestruct "Own" as (? ->) "[Pt Gho]".
+    rewrite /ltype_own /= /bofty_owned. iDestruct "Own" as (? ->) "[Pt Gho]".
     iMod cumulative_time_receipt_0 as "⧗".
     iModIntro. iExists -[((l, x), ζm)]. iFrame "Obs". iSplit; [|done].
-    rewrite /tctx_elt_interp. iExists #l. iSplit; [done|].
+    rewrite /tctx_elt_interp. iExists _. iSplit; [done|].
     iExists D. iFrame "⧖ ⧗". iExists (S d), g. iSplit; [iPureIntro; lia|].
-    iExists (l, x). iSplit; [done|]. iSplit; [done|]. iFrame "Fr".
-    rewrite heap_cloc_mapsto_fancy_empty ty_size_eq. iFrame.
+    iExists (l, x). iSplit; [done|]. iSplit; [iPureIntro; by eexists|].
+    rewrite /lty_size -(ty_bsize_eq ty). iFrame "Fr". iFrame.
   Qed.
 
   (** * Shared references *)
 
   Lemma tctx_vplace_unfold_shr {𝔄} E L p κ (ty: type 𝔄) :
-    tctx_incl E L +[p ◁ₗ OfTy (&shr{κ} ty)] +[p ◁ₗ ShrLty (OfTy ty) κ] (λ post '-[x], post -[x]).
+    tctx_incl E L +[p ◁ₗ OfTy (&shrb{κ} ty)] +[p ◁ₗ ShrLty (OfTy ty) κ] (λ post '-[x], post -[x]).
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[x ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
@@ -183,7 +186,7 @@ Section conv.
   Qed.
 
   Lemma tctx_vplace_fold_shr {𝔄} E L p κ (ty: type 𝔄) :
-    tctx_incl E L +[p ◁ₗ ShrLty (OfTy ty) κ] +[p ◁ₗ OfTy (&shr{κ} ty)] (λ post '-[x], post -[x]).
+    tctx_incl E L +[p ◁ₗ ShrLty (OfTy ty) κ] +[p ◁ₗ OfTy (&shrb{κ} ty)] (λ post '-[x], post -[x]).
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[x ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
@@ -198,7 +201,7 @@ Section conv.
       unfolding a [&uniq] value takes a program step. *)
 
   Lemma type_vplace_unfold_uniq_instr {𝔄} E L I p κ (ty: type 𝔄) :
-    typed_instr E L I +[p ◁ₗ OfTy (&uniq{κ} ty)] Skip
+    typed_instr E L I +[p ◁ₗ OfTy (&uniqb{κ} ty)] Skip
       (λ _, +[p ◁ₗ UniqLty (OfTy ty) κ]) (λ post '-[x], post -[x]).
   Proof.
     iIntros (tid post mask iκs [[m ζm] []]) "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
@@ -210,13 +213,13 @@ Section conv.
     iDestruct "Gho" as "(#Incl & %Hle' & Body & #Gpt)".
     iExists -[((l', x, ξi, d', g', idx), ζm)]. iFrame "L I Obs". iSplit; [|done].
     iExists v. iSplit; [done|]. iExists D. iFrame "⧖ ⧗0". iExists d, g. iSplit; [done|].
-    iSplit; [by inversion Phys|]. iSplitL "⧗".
+    iSplit; [by destruct Phys as (w & -> & [= <-])|]. iSplitL "⧗".
     { iApply (cumulative_time_receipt_mono with "⧗"). lia. }
     iFrame "TIME Incl Gpt". iExists d', g'. iSplit; [done|]. iExists x, idx. by iFrame.
   Qed.
 
   Lemma tctx_vplace_fold_uniq {𝔄} E L p κ (ty: type 𝔄) :
-    tctx_incl E L +[p ◁ₗ UniqLty (OfTy ty) κ] +[p ◁ₗ OfTy (&uniq{κ} ty)]
+    tctx_incl E L +[p ◁ₗ UniqLty (OfTy ty) κ] +[p ◁ₗ OfTy (&uniqb{κ} ty)]
       (λ post '-[x], λ mask π, ∀ d g idx, post -[(uniq_bor_set_meta x.1 d g idx, x.2)] mask π).
   Proof.
     split.
@@ -229,31 +232,31 @@ Section conv.
     iModIntro. iExists -[((l', x, ξi, d', g', idx), ζm)].
     iSplitR "Obs"; [|iApply (proph_obs_impl with "Obs")=> π Hπ; apply (Hπ d' g' idx)].
     iSplit; [|done]. iExists _. iSplit; [done|]. iExists D. iFrame "⧖ ⧗0".
-    iExists d, g. iSplit; [done|]. iExists _. iSplit; [done|]. iSplit; [done|].
+    iExists d, g. iSplit; [done|]. iExists _. iSplit; [done|]. iSplit; [iPureIntro; by eexists|].
     by iFrame "Incl Gpt Body".
   Qed.
 
   (** Directly from and to a [&uniq] value. *)
   Lemma type_uniq_to_vplace_instr {𝔄} E L I p κ (ty: type 𝔄) :
-    typed_instr E L I +[p ◁ &uniq{κ} ty] Skip
+    typed_instr E L I +[p ◁ᵥ &uniqb{κ} ty] Skip
       (λ _, +[p ◁ₗ UniqLty (OfTy ty) κ]) (λ post '-[m], post -[(m, [])]).
   Proof.
     iIntros (tid post mask iκs [m []]) "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
-    iDestruct "T" as (v D Hp) "(#⧖ & Gho & %Phys)".
+    iDestruct "T" as (v Hp w D [-> Hw]) "(#⧖ & Gho)".
     destruct m as [[[[[l' x] ξi] d'] g'] idx].
     iMod cumulative_time_receipt_0 as "⧗0".
     iApply (wp_cumulative_time_receipt_linear with "TIME ⧖"); [solve_ndisj|].
     iIntros "⧗". wp_seq.
     iDestruct "Gho" as "(#Incl & %Hle' & Body & #Gpt)".
     iExists -[((l', x, ξi, d', g', idx), [])]. iFrame "L I Obs". iSplit; [|done].
-    iExists v. iSplit; [done|]. iExists D. iFrame "⧖ ⧗0". iExists D, D. iSplit; [done|].
-    iSplit; [by inversion Phys|]. iSplitL "⧗".
+    iExists _. iSplit; [done|]. iExists D. iFrame "⧖ ⧗0". iExists D, D. iSplit; [done|].
+    iSplit; [iPureIntro; simpl in Hw; by simplify_eq|]. iSplitL "⧗".
     { iApply (cumulative_time_receipt_mono with "⧗"). lia. }
     iFrame "TIME Incl Gpt". iExists d', g'. iSplit; [done|]. iExists x, idx. by iFrame.
   Qed.
 
   Lemma tctx_vplace_to_uniq {𝔄} E L p κ (ty: type 𝔄) :
-    tctx_incl E L +[p ◁ₗ UniqLty (OfTy ty) κ] +[p ◁ &uniq{κ} ty]
+    tctx_incl E L +[p ◁ₗ UniqLty (OfTy ty) κ] +[p ◁ᵥ &uniqb{κ} ty]
       (λ post '-[x], λ mask π, ∀ d g idx, post -[uniq_bor_set_meta x.1 d g idx] mask π).
   Proof.
     eapply tctx_incl_ext; [eapply tctx_incl_trans;

@@ -6,13 +6,13 @@ From lrust.lang Require Import races adequacy proofmode notation.
 From lrust.lifetime Require Import lifetime_full.
 From guarding.lib Require Import fractional cancellable.
 From guarding Require Import guard.
-From lrust.typing Require Import type function product programs value_ctx bfunction soundness.
+From lrust.typing Require Import type function product programs value_ctx function_bytes soundness.
 Set Default Proof Using "Type".
 
 (** * Type soundness for programs typed with function types on MiniRust values
 
 The theorem [type_soundness] of [typing/soundness.v], for a [main] function typed with the
-byte function type [bfn] ([typing/bfunction.v]): its result is a MiniRust value of the
+byte function type [bfn] ([typing/function_bytes.v]): its result is a MiniRust value of the
 unit type. *)
 
 Section type_soundness_b.

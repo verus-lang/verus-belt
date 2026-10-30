@@ -1,14 +1,14 @@
 From iris.proofmode Require Import proofmode.
 From lrust.typing Require Export type programs cont int product value_ctx own_bytes shr_bytes
-  uniq_util uniq_bor buniq_bor bplace_own bplace_puniq bplace_resolve bplace_pshr function
-  bfunction.
+  uniq_util uniq_bor uniq_bytes place_own place_puniq place_resolve place_pshr function
+  function_bytes.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
 (** * Function types on MiniRust values
 
-The examples [get_snd] and [first_ref] of [typing/examples/bplace_pshr.v], as functions of
-the byte function type [bfn] ([typing/bfunction.v]): the arguments and the results are
+The examples [get_snd] and [first_ref] of [typing/examples/place_pshr.v], as functions of
+the byte function type [bfn] ([typing/function_bytes.v]): the arguments and the results are
 MiniRust values ([◁ᵥ]), the specifications are predicate transformers on them
 ([bfn_spec]). [call_get_snd] calls [get_snd] ([type_bletcall]). *)
 
@@ -128,7 +128,7 @@ Section bfn_examples.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
       iApply type_seq.
       { apply (type_resolve_val_instr vx (&uniqb{α} (&shrb{β} (i32t * i32t)))).
-        apply buniq_bor.uniq_resolve. solve_typing. }
+        apply uniq_bytes.uniq_resolve. solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply type_jump.
       { rewrite elem_of_list_singleton. reflexivity. }

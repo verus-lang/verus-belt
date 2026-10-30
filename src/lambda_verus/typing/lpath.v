@@ -39,7 +39,8 @@
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype.
-From lrust.typing Require Import uniq_util uniq_bor freeable_util sum type_sum.
+From lrust.typing Require Import uniq_util uniq_bor uniq_bytes_util uniq_bytes own_bytes bytes_layout
+  freeable_util sum type_sum.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -167,7 +168,7 @@ Section lty_rfn.
       after the last unique borrow. Unblocking such a leaf opens the enclosing borrows
       (later credits) and raises the depths of all levels above it, while the receipt of
       its inheritance is only shifted by the owned pointers after the last unique borrow
-      (see [blocked_owned]). A shared-blocked leaf below a unique borrow holds one receipt,
+      (see [bblocked_owned]). A shared-blocked leaf below a unique borrow holds one receipt,
       for the credits to open the enclosing borrows when it is unblocked (its depths do not
       change). [e] is the number of such levels so far, [mm] the number of owned pointers
       since the last unique borrow. (Nothing is blocked below a shared reference; the
@@ -335,9 +336,9 @@ Section pctx.
     | PHole => n
     | PFst K lt2 => pctx_size K n + lty_size lt2
     | PSnd lt1 K => lty_size lt1 + pctx_size K n
-    | POwn _ _ => 1
-    | PSum tyl i _ K => S (max_hlist_set (λ _, ty_size) tyl i (pctx_size K n))
-    | PUniq _ _ | PShr _ _ => 1
+    | POwn _ _ => PTR_SIZE
+    | @PSum _ 𝔄l _ _ _ _ => tag_size 𝔄l + sum_max 𝔄l
+    | PUniq _ _ | PShr _ _ => PTR_SIZE
     end.
 
   (** The hole is not below an owned pointer. *)
@@ -410,7 +411,7 @@ Section pctx.
     | PFst K _ => pctx_off K
     | PSnd lt1 K => lty_size lt1 + pctx_off K
     | POwn _ _ => 0
-    | PSum _ _ _ K => S (pctx_off K)
+    | @PSum _ 𝔄l _ _ _ K => tag_size 𝔄l + pctx_off K
     | PUniq _ _ | PShr _ _ => 0
     end.
 
@@ -421,8 +422,9 @@ Section pctx.
     | PFst K _ => λ x l, pctx_loc K n x.1 (cloc_take l (pctx_size K n))
     | PSnd lt1 K => λ x l, pctx_loc K n x.2 (cloc_skip l (lty_size lt1))
     | POwn _ K => λ x _, pctx_loc K n x.2 (x.1, repeat [] (pctx_size K n))
-    | PSum _ i w K => λ x l,
-        pctx_loc K n (psum_proj_or i x.1 w) (cloc_take (cloc_skip l 1) (pctx_size K n))
+    | @PSum _ 𝔄l _ i w K => λ x l,
+        pctx_loc K n (psum_proj_or i x.1 w)
+          (cloc_take (cloc_skip l (tag_size 𝔄l)) (pctx_size K n))
     | PUniq _ K => λ x _, pctx_loc K n (uniq_bor_current x) (uniq_bor_loc x)
     | PShr _ K => λ x _, pctx_loc K n x.2 x.1
     end.
@@ -653,7 +655,12 @@ Section pctx.
   Qed.
 
   Lemma lty_size_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt : lty_size (pctx_plug K lt) = pctx_size K (lty_size lt).
-  Proof. induction K in lt |- *; simpl; by rewrite ?IHK. Qed.
+  Proof.
+    induction K in lt |- *; simpl; try done.
+    - by rewrite lty_size_prod IHK.
+    - by rewrite lty_size_prod IHK.
+    - by rewrite /lty_size syn_bsize_sum.
+  Qed.
 
   Lemma lty_pat_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt : lty_pat (pctx_plug K lt) = pctx_pat K (lty_pat lt).
   Proof. induction K in lt |- *; simpl; by rewrite ?IHK. Qed.
@@ -840,16 +847,16 @@ Section pctx.
           (cloc_take l (lty_size lt1)) ∗
         pctx_own K n m x.2 ζm (true :: q) d g tid (cloc_skip l (lty_size lt1))
     | POwn n' K => λ x ζm q d g tid l,
-        l #↦!∗ [FVal (LitV x.1)] ∗ ⌜d ≠ 0%nat⌝ ∗ ▷^m (freeable_sz n' (pctx_size K n) x.1) ∗
+        ptr_cell l x.1 ∗ ⌜d ≠ 0%nat⌝ ∗ ▷^m (freeable_sz n' (pctx_size K n) x.1) ∗
         pctx_own K n (m + 1) x.2 ζm (false :: q) (pred d) g tid (x.1, repeat [] (pctx_size K n))
-    | PSum tyl i _ K => λ x ζm q d g tid l,
+    | @PSum _ 𝔄l tyl i _ K => λ x ζm q d g tid l,
         match psum_proj i x.1 with
         | Some y =>
-            cloc_take l 1 #↦∗ [ #i ] ∗
-            pctx_own K n m y ζm (false :: q) d g tid (cloc_take (cloc_skip l 1) (pctx_size K n)) ∗
-            cloc_skip (cloc_skip l 1) (pctx_size K n) #↦!∗ fmap FVal (vec_to_list
-              (padding_to_vec (max_hlist_set (λ _, ty_size) tyl i (pctx_size K n) -
-                pctx_size K n) x.2))
+            tag_cell 𝔄l (cloc_take l (tag_size 𝔄l)) i ∗
+            pctx_own K n m y ζm (false :: q) d g tid
+              (cloc_take (cloc_skip l (tag_size 𝔄l)) (pctx_size K n)) ∗
+            pad_cell (cloc_skip (cloc_skip l (tag_size 𝔄l)) (pctx_size K n))
+              (sum_max 𝔄l - pctx_size K n)
         | None => False
         end
     (* Below a unique borrow, the ownership does not split (see [pctx_acc.v]); below a
@@ -975,9 +982,9 @@ Section pctx.
     - rewrite (heap_cloc_mapsto_emp_vec_app l (lty_size lt1)).
       iApply (guards_weaken_rhs_sep_r with "G").
     - rewrite -heap_cloc_mapsto_empty. iApply guards_true.
-    - rewrite (heap_cloc_mapsto_emp_vec_app l 1).
+    - rewrite (heap_cloc_mapsto_emp_vec_app l (tag_size 𝔄l)).
       iDestruct (guards_weaken_rhs_sep_r with "G") as "G".
-      rewrite (heap_cloc_mapsto_emp_vec_app (cloc_skip l 1) (pctx_size K n)).
+      rewrite (heap_cloc_mapsto_emp_vec_app (cloc_skip l (tag_size 𝔄l)) (pctx_size K n)).
       iApply (guards_weaken_rhs_sep_l with "G").
   Qed.
 
@@ -990,9 +997,9 @@ Section pctx.
     | PHole => e
     | PFst K _ => pctx_expr K e
     | PSnd lt1 K => pctx_expr K (e +ₗ #(lty_size lt1))%E
-    | POwn _ K => pctx_expr K (!e)%E
-    | PSum _ _ _ K => pctx_expr K (e +ₗ #1)%E
-    | PUniq _ K | PShr _ K => pctx_expr K (!e)%E
+    | POwn _ K => pctx_expr K (ToLit (Load Na1Ord MPtr e))%E
+    | @PSum _ 𝔄l _ _ _ K => pctx_expr K (e +ₗ #(tag_size 𝔄l))%E
+    | PUniq _ K | PShr _ K => pctx_expr K (ToLit (Load Na1Ord MPtr e))%E
     end.
 
   Lemma pctx_expr_closed {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : Closed [] e → Closed [] (pctx_expr K e).
@@ -1019,26 +1026,23 @@ Section pctx.
           iFrame. done. }
       iIntros (v) "($ & $ & $ & $)". iFrame.
     - rewrite pctx_mode_add. iIntros "#Gl £ WP (Pt & %Hd & Fr & Own)".
-      iDestruct (lc_weaken (3 * k + 3 * k * pctx_mode K 0) with "£") as "[£1 £]"; [lia|].
+      iDestruct (lc_weaken (3 * k * pctx_mode K 0) with "£") as "£"; [lia|].
       iApply (wp_wand with "[- Fr]").
       { iApply (IHK (m + 1) x.2 (false :: q) (pred d) (x.1, repeat [] (pctx_size K n)) _
-          (R ∗ l #↦!∗ [FVal (LitV x.1)])%I with "[] £ [WP Pt £1] Own").
+          (R ∗ ptr_cell l x.1)%I with "[] £ [WP Pt] Own").
         - rewrite -heap_cloc_mapsto_empty. iApply guards_true.
         - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
-          iApply (wp_read_na_guarded_cells_singleton _ l.1 l.2 (G ∗ l #↦!∗ [FVal (LitV x.1)])
-            #(x.1) k with "[G Pt £1]"); [solve_ndisj| |].
-          + iFrame "G Pt £1". iApply guard_cloc_combine.
-            * by iApply guards_weaken_lhs_sep_l.
-            * iApply (lguards_weaken_later _ _ _ 0); [lia|iApply guards_weaken_sep_r].
-          + iIntros "!> [G Pt]". iFrame. done. }
+          iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
+          iApply (wp_load_na with "Hbs"); [exact Hbs|].
+          iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
       iIntros (v) "($ & [$ $] & $ & $)". by iFrame.
     - destruct (psum_proj i x.1) as [y|] eqn:Hy; [|by iIntros "_ _ _ []"].
       iIntros "#Gl £ WP (Tag & Own & Pad)". iApply (wp_wand with "[- Tag Pad]").
-      { iApply (IHK m y (false :: q) d (cloc_take (cloc_skip l 1) (pctx_size K n)) _ R
+      { iApply (IHK m y (false :: q) d (cloc_take (cloc_skip l (tag_size 𝔄l)) (pctx_size K n)) _ R
           with "[] £ [WP] Own").
-        - rewrite (heap_cloc_mapsto_emp_vec_app l 1).
+        - rewrite (heap_cloc_mapsto_emp_vec_app l (tag_size 𝔄l)).
           iDestruct (guards_weaken_rhs_sep_r with "Gl") as "Gl'".
-          rewrite (heap_cloc_mapsto_emp_vec_app (cloc_skip l 1) (pctx_size K n)).
+          rewrite (heap_cloc_mapsto_emp_vec_app (cloc_skip l (tag_size 𝔄l)) (pctx_size K n)).
           iApply (guards_weaken_rhs_sep_l with "Gl'").
         - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
           iFrame. done. }
@@ -1267,18 +1271,30 @@ Section pctx.
   Lemma drop_repeat_add {A} (a: A) n k : drop n (repeat a (n + k)) = repeat a k.
   Proof. induction n; simpl; done. Qed.
 
-  Lemma pctx_loc_empty {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} n x (l: loc) :
-    ∃ l', pctx_loc K n x (l, repeat [] (pctx_size K n)) = (l', repeat [] n).
+  Lemma syn_bsize_pair 𝔄1 𝔄2 : syn_bsize (𝔄1 * 𝔄2) = (syn_bsize 𝔄1 + syn_bsize 𝔄2)%nat.
+  Proof. rewrite /syn_bsize /= /seq_size /=. lia. Qed.
+
+  Lemma pctx_size_syn {𝔅 𝔄} (K: pctx 𝔅 𝔄) : pctx_size K (syn_bsize 𝔅) = syn_bsize 𝔄.
+  Proof.
+    induction K; simpl; try done.
+    - by rewrite syn_bsize_pair IHK.
+    - by rewrite syn_bsize_pair IHK.
+    - by rewrite syn_bsize_sum.
+  Qed.
+
+  Lemma pctx_loc_empty {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} x (l: loc) :
+    ∃ l', pctx_loc K (syn_bsize 𝔅) x (l, repeat [] (pctx_size K (syn_bsize 𝔅))) =
+      (l', repeat [] (syn_bsize 𝔅)).
   Proof.
     rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
     induction K in HK, x, l |- *; simpl; simpl in HK; [by eexists|..|done|done].
     - rewrite /cloc_take /= take_repeat_add. by apply IHK.
     - rewrite /cloc_skip /= drop_repeat_add. by apply IHK.
     - by apply IHK.
-    - rewrite /cloc_take /cloc_skip /=.
-      have Hle := max_hlist_set_ge (λ _, ty_size) tyl i (pctx_size K n).
-      rewrite -(Nat.sub_add (pctx_size K n) (max_hlist_set _ tyl i _)) //.
-      rewrite drop_0 Nat.add_comm repeat_app take_app_length'; [by apply IHK|by rewrite repeat_length].
+    - rewrite /cloc_take /cloc_skip /= drop_repeat_add.
+      have Hle := sum_max_ge 𝔄l i. rewrite -(pctx_size_syn K) in Hle.
+      rewrite -(Nat.sub_add (pctx_size K (syn_bsize 𝔅)) (sum_max 𝔄l)); [|lia].
+      rewrite Nat.add_comm repeat_app take_app_length'; [by apply IHK|by rewrite repeat_length].
   Qed.
 
   Global Instance pctx_no_uniq_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' :
@@ -1404,17 +1420,18 @@ Section pctx.
     lty_nrc lt' = lty_nrc lt → lty_vnrc (pctx_plug K lt') = lty_vnrc (pctx_plug K lt).
   Proof. intros Heq. by rewrite !lty_vnrc_plug Heq. Qed.
 
-  (** The address of the hole, from the value [e] of the root pointer. *)
+  (** The address of the hole, from the value [e] of the root pointer (a MiniRust pointer
+      value, converted to an address by [ToLit]). *)
   Definition pctx_vexpr {𝔅 𝔄} (K: pctx 𝔅 𝔄) (e: expr) : expr :=
     match K with
-    | POwn _ K' => pctx_expr K' e
-    | PUniq _ K' => pctx_expr K' e
-    | PShr _ K' => pctx_expr K' e
+    | POwn _ K' => pctx_expr K' (ToLit e)
+    | PUniq _ K' => pctx_expr K' (ToLit e)
+    | PShr _ K' => pctx_expr K' (ToLit e)
     | _ => e
     end.
 
   Lemma pctx_vexpr_closed {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : Closed [] e → Closed [] (pctx_vexpr K e).
-  Proof. destruct K; simpl; try done; apply pctx_expr_closed. Qed.
+  Proof. destruct K; simpl; try done; intros; apply pctx_expr_closed; apply _. Qed.
 
   (** The location of the referent of the root pointer, and of the hole. *)
   Definition cloc_dummy : cloc := ((1%positive, 0%Z), []).

@@ -1,95 +1,89 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type function product programs own cont uninit int
-  uniq_bor borrow place_own place_resolve.
+From lrust.typing Require Export type programs cont int product value_ctx own_bytes
+  place_own place_resolve place_xprod.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
+
+(** * N-ary products in byte places
+
+[set_mid] of the deleted legacy example [place_struct.v], on bytes: a struct of three [i32] fields
+as an n-ary product [Π!], in a box of bytes ([own_bytes 12]); the product is unfolded field
+by field ([tctx_unfold_oplace_xprod] of [typing/place_xprod.v], three times), then a
+field is written with a typed [Store] and another one read with a typed [Load]. *)
 
 Section place_struct.
   Context `{!typeG Σ}.
 
-  (*
-  Writing and reading fields of a local struct (an n-ary product, [Π!]):
+  Notation i32t := (int_ty i32).
+  Notation S := (Π! +[i32t; i32t; i32t])%T.
+  Notation Sₛ := (Π! [intₛ i32; intₛ i32; intₛ i32])%ST.
 
+  (*
   ```
   struct S { a: i32, b: i32, c: i32 }
   fn set_mid(mut x: S) -> i32 { x.b = 7; x.c }
   ```
-
-  with the specification `ensures result == old(x).c`. The argument is an owned place;
-  the n-ary product is unfolded field by field ([tctx_unfold_oplace_xprod], three
-  times: head and tail, the tail's head and tail, …); `x.b` is written
-  ([type_write_oplace_instr]) and `x.c` read ([type_read_oplace_instr]); the place is
-  dropped ([type_drop_oplace_instr]).
   *)
+  Definition set_mid : expr := (
+    let: "seven" := MLit (VInt 7) in
+    Store Na1Ord (MInt i32) (ToLit "x" +ₗ #4) "seven";;          (* x.b = 7 *)
+    let: "v" := Load Na1Ord (MInt i32) (ToLit "x" +ₗ #4 +ₗ #4) in (* x.c *)
+    ((#☠;; (#☠;; (#☠;; #☠)));; delete [ #12; ToLit "x"]);;         (* drop x *)
+    jump: "return" ["v"])%E.
 
-  Notation S := (Π! +[int; int; int])%T.
-  Notation Sₛ := (Π! [Zₛ; Zₛ; Zₛ])%ST.
+  Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.
 
-  Definition set_mid : val :=
-    fn: ["x"] :=
-      let: "seven" := #7 in
-      "x" +ₗ #1 <- "seven";;                     (* x.b = 7 *)
-      let: "v" := !("x" +ₗ #1 +ₗ #1) in          (* x.c *)
-      ((#☠;; (#☠;; (#☠;; #☠)));;                (* drop x *)
-       delete [ #3; "x"]);;
-      let: "r" := new [ #1] in
-      "r" <- "v";;
-      return: ["r"].
-
-  Definition set_mid_spec : fn_spec [Sₛ] Zₛ () :=
-    λ _ post '-[(_, -[_; _; c])], λ mask π, ∀ (lr: loc), post (lr, c) mask π.
-
-  Lemma set_mid_type :
-    typed_val set_mid ((fn(∅; S) → int) set_mid_spec) (set_mid, ()).
+  Lemma set_mid_type ϝ (k vx: val) :
+    ⊢ typed_body [] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
+        [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
+        +[vx ◁ᵥ own_bytes 12 S]
+        (subst "return" k (subst "x" vx set_mid))
+        (λ post '-[(_, -[_; _; c])], λ mask π, post c mask π).
   Proof.
-    unfold set_mid. unlock.
-    opose proof (@type_fn _ _ _ [Sₛ] Zₛ () ()
-      (λ _: (), FP ∅ +[S] int AtomicClosed)
-      set_mid_spec _ [BNamed "x"] _ _ _) as H.
-    unlock in H. apply H. clear H.
-    intros c ϝ k wl. destruct wl as [vx []]. simpl_subst.
+    rewrite /set_mid. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
       (* x as an owned place, unfolded field by field *)
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_own_to_oplace|].
-        eapply tctx_incl_trans; [apply (tctx_unfold_oplace_xprod _ _ _ _ PHole int +[int; int]); done|].
         eapply tctx_incl_trans;
-          [apply (tctx_unfold_oplace_xprod _ _ _ _ (PSnd (OfTy int) PHole) int +[int]); done|].
-        apply (tctx_unfold_oplace_xprod _ _ _ _ (PSnd (OfTy int) (PSnd (OfTy int) PHole)) int +[]).
+          [apply (tctx_unfold_oplace_xprod _ _ _ _ PHole i32t +[i32t; i32t]); done|].
+        eapply tctx_incl_trans;
+          [apply (tctx_unfold_oplace_xprod _ _ _ _ (PSnd (OfTy i32t) PHole) i32t +[i32t]); done|].
+        apply (tctx_unfold_oplace_xprod _ _ _ _ (PSnd (OfTy i32t) (PSnd (OfTy i32t) PHole))
+          i32t +[]).
         done. }
       simpl.
       (* x.b = 7 *)
-      iApply type_int. iIntros (v7). simpl_subst.
+      iApply (type_let with "[]").
+      { apply (type_val_int_instr i32). apply (bool_decide_unpack _); by vm_compute. }
+      { solve_typing. } { reflexivity. }
+      iIntros (v7). simpl_subst.
       iApply type_seq.
-      { apply (type_write_oplace_instr _ _ _ vx v7 3
-          (PSnd (OfTy int) (PFst PHole (ProdLty (OfTy int) (OfTy (Π! +[]))))) int int
-          (const (const True))); [done|done|apply resolve_just|done]. }
+      { apply (type_write_oplace_instr _ _ _ vx v7 12
+          (PSnd (OfTy i32t) (PFst PHole (ProdLty (OfTy i32t) (OfTy (Π! +[]))))) i32t i32t
+          (const (const True))); [done|apply resolve_just|done]. }
       { solve_typing. } { reflexivity. }
       simpl.
       (* x.c *)
       iApply (type_let with "[]").
-      { apply (type_read_oplace_instr _ _ _ vx 3
-          (PSnd (OfTy int) (PSnd (OfTy int) (PFst PHole (OfTy (Π! +[]))))) int); [done|apply _]. }
+      { apply (type_read_oplace_instr _ _ _ vx 12
+          (PSnd (OfTy i32t) (PSnd (OfTy i32t) (PFst PHole (OfTy (Π! +[]))))) i32t). apply _. }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       (* drop x *)
       iApply type_seq.
-      { apply (type_drop_oplace_instr _ _ _ vx 3 3
-          (ProdLty (OfTy int) (ProdLty (OfTy int) (ProdLty (OfTy int) (OfTy (Π! +[]))))));
-          [done|done|done|].
-        repeat apply lty_resolve_prod; apply lty_resolve_ofty; apply resolve_just. }
+      { apply (type_drop_oplace_instr _ _ _ vx 12 12
+          (ProdLty (OfTy i32t) (ProdLty (OfTy i32t) (ProdLty (OfTy i32t) (OfTy (Π! +[])))))
+          (const (const True))); [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
-      iApply (type_new 1). { lia. } iIntros (vr). simpl_subst.
-      iApply type_assign. { solve_typing. } { by apply write_own. }
-      { apply (resolve'_just _ _ _ (const True)). apply resolve_just. }
       iApply type_jump.
       { rewrite elem_of_list_singleton. reflexivity. }
       { solve_typing. }
       { solve_typing. }
       { reflexivity. }
     }
-    intros post [[lx [a1 [a2 [a3 []]]]] []] mask π Hspec. rewrite /trans_upper /trans_tail /=.
-    intros _ _ l _ z ->. apply Hspec.
+    intros post [[lx [a1 [a2 [a3 []]]]] []] mask π Hspec.
+    rewrite /trans_upper /trans_tail /ret_z /=. auto.
   Qed.
 End place_struct.
 

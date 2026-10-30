@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import type_context programs mod_ty uniq_util buniq_util own_bytes.
+From lrust.typing Require Import type_context programs mod_ty uniq_util uniq_bytes_util own_bytes.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -7,7 +7,7 @@ Set Default Proof Using "Type".
 (** * Unique borrows of bytes (stage 4 of the MiniRust memory model)
 
 [&uniqb{κ} ty] is [&uniqb{κ} ty] (of [typing/uniq_bytes.v]) with the body of
-[typing/buniq_util.v]: the referent owns bytes that represent its value ([cbytes]).
+[typing/uniq_bytes_util.v]: the referent owns bytes that represent its value ([cbytes]).
 It is the parent type of the referents of the byte place machinery
 ([typing/bplace/]). *)
 

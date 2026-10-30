@@ -1,18 +1,18 @@
 From iris.proofmode Require Import proofmode.
 From lrust.typing Require Export type programs cont int product sum value_ctx own_bytes uniq_util
-  uniq_bor buniq_bor bplace_own bplace_puniq bplace_resolve bplace_deep.
+  uniq_bor uniq_bytes place_own place_puniq place_resolve place_deep.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
 (** * [get_some_first] on bytes
 
-The body of [get_some_first] of [typing/examples/place_sum.v], on bytes: the argument is
+The body of [get_some_first] of the deleted legacy example [place_sum.v], on bytes: the argument is
 a MiniRust pointer value of type [&uniqb{α} Option<(i32, i32)>] (a root value, [◁ᵥ]);
 the [match] reads the tag with a typed [Load] of the tag [IntType] ([type_case_vplace_deep]);
 the result [Option<&mut i32>] is a MiniRust variant value built with [MkVariant]
 ([type_mk_variant_val_instr]). *)
 
-Section bget_some_first.
+Section get_some_first.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
@@ -28,7 +28,7 @@ Section bget_some_first.
   }
   ```
   *)
-  Definition get_some_first_b : expr := (
+  Definition get_some_first : expr := (
     Skip;;                                          (* b as a place *)
     case: ToLit (Load Na1Ord (MInt (sum_tag [unitₛ; (intₛ i32 * intₛ i32)%ST])) (ToLit "b")) of
     [ ReBor;;                                       (* None: fold back *)
@@ -45,7 +45,7 @@ Section bget_some_first.
 
   Definition ret_opt : predl_trans' [opt_refₛ] opt_refₛ := λ post '-[r], post r.
 
-  Definition get_some_first_b_spec : predl_trans' [uniq_borₛ opt_pairₛ] opt_refₛ :=
+  Definition get_some_first_spec : predl_trans' [uniq_borₛ opt_pairₛ] opt_refₛ :=
     λ post '-[m], λ mask π,
       (∀ pad, uniq_bor_current (𝔄:=opt_pairₛ) m = (pinj (Xl:=[unitₛ; (intₛ i32 * intₛ i32)%ST]) 0%fin (), pad) →
         uniq_bor_future (𝔄:=opt_pairₛ) m π = vπ (uniq_bor_current (𝔄:=opt_pairₛ) m) π →
@@ -58,14 +58,14 @@ Section bget_some_first.
             (pinj (Xl:=[unitₛ; (intₛ i32 * intₛ i32)%ST]) 1%fin (uniq_bor_future r π, a.2), pad) →
           post (pinj (Xl:=[unitₛ; uniq_borₛ (intₛ i32)]) 1%fin r, pad') mask π).
 
-  Lemma get_some_first_b_type ϝ α (k vb: val) :
+  Lemma get_some_first_type ϝ α (k vb: val) :
     ⊢ typed_body [ϝ ⊑ₑ α] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
           λ v: vec val 1, +[vhd v ◁ᵥ opt_ref (α ⊓ α)] } ret_opt]
         +[vb ◁ᵥ &uniqb{α} opt_pair]
-        (subst "return" k (subst "b" vb get_some_first_b)) get_some_first_b_spec.
+        (subst "return" k (subst "b" vb get_some_first)) get_some_first_spec.
   Proof.
-    rewrite /get_some_first_b. simpl_subst.
+    rewrite /get_some_first. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
       (* b as a place rooted at its value; match *)
       iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vb α opt_pair). }
@@ -81,7 +81,7 @@ Section bget_some_first.
         iApply typed_body_tctx_incl.
         { apply tctx_vplace_to_uniq. }
         iApply type_seq.
-        { apply (type_resolve_val_instr vb (&uniqb{α} opt_pair)). apply buniq_bor.uniq_resolve.
+        { apply (type_resolve_val_instr vb (&uniqb{α} opt_pair)). apply uniq_bytes.uniq_resolve.
           solve_typing. }
         { solve_typing. } { reflexivity. }
         iApply (type_let with "[]"). { apply type_val_unit_instr. }
@@ -117,7 +117,7 @@ Section bget_some_first.
         iIntros (vr1). simpl_subst.
         (* resolve the borrow of p.1 *)
         iApply type_seq.
-        { apply (type_resolve_val_instr vr1 (&uniqb{α ⊓ α} i32t)). apply buniq_bor.uniq_resolve.
+        { apply (type_resolve_val_instr vr1 (&uniqb{α ⊓ α} i32t)). apply uniq_bytes.uniq_resolve.
           solve_typing. }
         { solve_typing. } { reflexivity. }
         (* drop b while both leaves of the payload are blocked *)
@@ -148,6 +148,6 @@ Section bget_some_first.
       rewrite /psum_proj_or /= in Hc1 Hc2. simpl in Hres. subst y1 y2.
       rewrite uniq_bor_future_eq /=. do 4 f_equal. exact Hres.
   Qed.
-End bget_some_first.
+End get_some_first.
 
-Print Assumptions get_some_first_b_type.
+Print Assumptions get_some_first_type.

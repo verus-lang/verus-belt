@@ -270,6 +270,10 @@ bridged:**
 
 ## Outcome: stage 4
 
+> **Note (stage 5).** The file names in this section are those at the time. The legacy
+> place files were deleted later and the `b`-files renamed; see "Outcome: legacy place
+> layer deleted" for the mapping.
+
 Stage 4 is done as a parallel byte version of the place machinery. The legacy word
 versions stay in the build next to it, unchanged, until stage 5 deletes them. Every byte
 example has a `Qed` and `Print Assumptions` shows only `functional_extensionality_dep`.
@@ -462,6 +466,10 @@ Notes on the examples:
 - Redesign cells (`pcell`, ghost cells) as fancy bytes (stage 6 of the plan).
 
 ## Outcome: stage 4f
+
+> **Note (stage 5).** The file names in this section are those at the time. The legacy
+> place files were deleted later and the `b`-files renamed; see "Outcome: legacy place
+> layer deleted" for the mapping.
 
 Stage 4f ports the remaining rule families of the place machinery to bytes, next to the
 legacy versions, as in stage 4. `pcell` (with `ra`, `protocol` and the pcell examples)
@@ -723,3 +731,74 @@ So, with `pcell` kept:
   - typed CAS and atomics on bytes;
   - unfolding a box that is the whole referent of a unique borrow (`pctx_uend`), which
     the legacy place rules cannot do either.
+
+## Outcome: legacy place layer deleted
+
+Stage 5, first part. `pcell` stays on the legacy layer (user decision, 2026-10-30), so only
+the legacy place machinery is deleted. Every place rule family already has a byte version
+(stages 4 and 4f), and no byte file, no `pcell`/`pptr`/`ra`/`protocol` file and no kept
+example imported the deleted files.
+
+### Deleted
+
+- Place files (`typing/`): `ltype.v`, `lpath.v`, `pctx_acc.v`, `vplace.v`, `place_own.v`,
+  `place_shr.v`, `place_sum.v`, `place_resolve.v`, `place_memcpy.v`, `place_puniq.v`,
+  `place_pshr.v`, `place_deep.v`, `place_res.v`, `place_res_view.v`, `place_res_rslv.v`,
+  `place_res_ops.v`, `place_res_copy.v`.
+- Their examples (`typing/examples/`): `get_first.v`, `place_box.v`, `nested_uniq.v`,
+  `nested_deep.v`, `place_own.v`, `place_shr.v`, `place_shr_mid.v`, `place_shr_resolve.v`,
+  `place_sum.v`, `place_sum2.v`, `place_resolve.v`, `place_memcpy.v`, `place_deep_box.v`,
+  `place_struct.v`, `place_puniq.v`, `place_pshr.v`, `place_deep.v`, `place_deep_sum.v`,
+  `place_res_gen.v`, `place_res.v`, `place_res_sum.v`, `place_res_fold.v`,
+  `place_res_shr.v`, `place_res_copy.v`, `place_res_shr_end.v`, `place_res_sum_fold.v`,
+  `place_res_nested_fold.v`.
+
+### Renamed (with `git mv`)
+
+- The byte place files take the plain names: `bltype` → `ltype`, `blpath` → `lpath`,
+  `bpctx_acc` → `pctx_acc`, `bvplace` → `vplace`, and `bplace_X` → `place_X` for `X` in
+  `own`, `shr`, `resolve`, `puniq`, `sum`, `deep`, `pshr`, `res`, `res_view`, `res_rslv`,
+  `res_ops`, `res_copy`, `xprod`.
+- `bsubtype` → `subtype` (there was no legacy `subtype.v`).
+- Files whose plain name is a kept legacy file get a `_bytes` name, like `own_bytes.v` and
+  `shr_bytes.v`:
+  - `buniq_bor` → `uniq_bytes` (`uniq_bor.v` is the legacy `&uniq`, used by `pcell`);
+  - `buniq_util` → `uniq_bytes_util` (`uniq_util.v` is used by the legacy `&uniq`, and its
+    generic part by the byte files too);
+  - `bfunction` → `function_bytes` (`function.v` is the legacy `fn`);
+  - `bsoundness` → `soundness_bytes` (`soundness.v` is the adequacy of the legacy `fn`).
+- Examples: `bplace_own` → `place_own`, `bget_first` → `get_first`, `bplace_deep` →
+  `place_deep`, `bget_some_first` → `get_some_first`, `bget_snd` → `get_snd`,
+  `bplace_pshr` → `place_pshr`, `bplace_res` → `place_res`, `bplace_struct` →
+  `place_struct`, `bnew` → `new`, `bfn` → `function_bytes`.
+- In the examples, the `_b` suffix of the example names is dropped (`get_first_b_type` →
+  `get_first_type`, likewise `set_snd`, `box_pair`, `swap_snd`, `get_snd`,
+  `get_some_first`, `res_pair`, `res_nested`, `set_mid`, `shorten`). The suffixes `_pb`,
+  `_f` and `_n` stay: they tell apart the variants of one example.
+- `_CoqProject_using_opam` was stale (it still listed `place.v`/`place_nested.v` and none
+  of the byte files); its file list is now that of `_CoqProject`.
+
+**Definitions not renamed.** Every `b`-prefixed definition still has a kept legacy
+namesake, so none is renamed back:
+- `bofty_owned`, `bleaf_owned`, `bleaf_node`, `bblocked_owned`, `buniq_body(γ)`,
+  `buniq_gbody`, `buniq_payload`, `buniq_lender`, `buniq_restored`, `buniq_persγ`,
+  `buniq_body_pers_component(_persistent)` (`uniq_bytes_util.v`): the legacy versions in
+  `uniq_util.v` are used by `&uniq`, `borrow.v`, `product_split.v` and `type_sum.v`, and
+  `uniq_util.v` is imported by the byte files.
+- `bfn`, `bfn_spec`, `bfn_resolve`, the rules `type_bcall`, `type_bfn`, … and `bmain_type`,
+  `type_soundness_b(_closed)`: the legacy `fn` and `type_soundness` stay.
+- `btype_incl`, `bsubtype`: `type_incl` and `subtype` of `type.v` stay.
+- The notations `&uniqb` and `&shrb`: `&uniq` and `&shr` stay.
+
+### Still legacy, and why
+
+All of this is needed by `pcell` (with `pptr`, `ra`, `protocol` and `pcell_example`):
+- the word layer: `ty_phys`, `syn_phys`, the sum padding, `↦!∗` cells, `phys_rel`, legacy
+  `Read`/`Write`/`CAS`, and `ty_size` in words;
+- the legacy types `own_ptr`/`box`, `&shr` (`shr_bor.v`), `&uniq` (`uniq_bor.v`,
+  `uniq_util.v`), `fn` (`function.v`) and `soundness.v`;
+- the core rules `borrow.v`, `product_split.v`, `type_sum.v`, `programs_util(_own)` and
+  `type_new`.
+
+These go with the pcell redesign (cells as fancy bytes). The examples `assert.v` and
+`list.v` also stay on the legacy layer.

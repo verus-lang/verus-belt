@@ -1,5 +1,12 @@
 # Phase 3: typing rules with place types (design)
 
+> **Note (stage 5 of the MiniRust memory model, 2026-10-30).** The legacy word-level place
+> files and examples named in this document (`ltype.v`, `lpath.v`, `pctx_acc.v`,
+> `vplace.v`, `place_*.v`, `examples/place_*.v`, `get_first.v`, `nested_*.v`, …) were
+> deleted. The byte versions now carry the same file names (e.g. `bltype.v` became
+> `ltype.v`), so a file name below may now refer to its byte version. See
+> `design_docs/minirust-memory-model.md`, "Outcome: legacy place layer deleted".
+
 Context: `design_docs/verus-belt-place-types-summary.md`. Start: `prophecy-ra` at `3866d11`.
 
 ## Goal of the slice

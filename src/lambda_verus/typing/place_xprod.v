@@ -12,14 +12,14 @@
   [ProdLty (OfTy ty) (OfTy (Π! tyl))] and back; the syntactic type of the hole changes, so
   the context is retyped ([pctx_retype], below no sum) and the value converted
   ([of_cons_prodₛ]/[to_cons_prodₛ]). Unfolding the tail again gives the fields one by one;
-  all leaf rules then apply. As in the legacy version, this is for the owned part of a
+  all leaf rules then apply. As in the deleted legacy version, this is for the owned part of a
   place only: below a unique borrow, the folded type of the referent would change. *)
 
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
-From lrust.typing Require Export type bltype blpath bpctx_acc bvplace bplace_own.
+From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own.
 From lrust.typing Require Import type_context programs programs_util lft_contexts
-  uniq_util buniq_util own_bytes bytes_layout value_ctx product mod_ty.
+  uniq_util uniq_bytes_util own_bytes bytes_layout value_ctx product mod_ty.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
