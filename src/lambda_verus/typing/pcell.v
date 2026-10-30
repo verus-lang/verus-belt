@@ -17,6 +17,7 @@ Section pcell.
       ty_gho_own x _ _ _ := ⌜ length x = n ⌝;
       ty_gho_res x _ _ _ := ⌜ length x = n ⌝;
       ty_gho_pers  x _ _ _ := ⌜ length x = n ⌝;
+      ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
       ty_phys (cell_ids: ~~ (pcellₛ n)) _ := pad (FCell <$> cell_ids) n ;
       ty_lfts := [];
       ty_E := [];
@@ -61,6 +62,7 @@ Section points_to.
         [S(d') := d] (cells_points_to_fancy_value_vec x.1 (ty.(ty_phys) x.2 tid))%I ∗ ▷ (ty.(ty_gho_res) x.2 d' g tid) ;
       ty_gho_pers x d g tid := 
         [S(d') := d] ⌜ length x.1 = ty_size ty ⌝ ∗ ▷ (ty.(ty_gho_pers) (snd x) d' g tid) ;
+      ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
       ty_phys _ _ := [];
       (* Structural, as for [own_ptr]. *)
       ty_shr κ x d g tid :=

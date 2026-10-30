@@ -14,6 +14,7 @@ Section uninit.
     ty_gho_own vπ _ _ _ := True;
     ty_gho_res vπ _ _ _ := True;
     ty_gho_pers vπ _ _ _ := True;
+    ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_phys x _ := fmap FVal (vec_to_list x);
     ty_shr := default_shr (λ vπ _ _ _, True);
   |}%I.
@@ -85,6 +86,8 @@ Section typing.
           * fun_ext. intros x. destruct x. trivial.
         + done.
         + intros. refine (match x with vnil => _ end). trivial.
+        + done.
+        + intros. refine (match x with vnil => _ end). done.
     }
     iIntros "_!>_". iSplit; [done|]. iSplit; [iApply lft_equiv_refl|].
     iSplit; first iModIntro=>/=.
@@ -136,6 +139,9 @@ Section typing.
         replace (t) with ((vsepat m x).1); last by rewrite Heqn.
         replace (t0) with ((vsepat m x).2); last by rewrite Heqn.
         rewrite <- vsepat_app. trivial.
+      - rewrite /syn_bsize /= !seq_size_cons seq_size_nil /=. lia.
+      - intros x bs. cbn [syn_mty syn_val]. rewrite decode_pad decode_pad_pair.
+        destruct (syn_type_morphism_fn _ x). case_decide; naive_solver.
     }
     iIntros "_!>_". iSplit; [done|]. iSplit; [iApply lft_equiv_refl|].
     iSplit; first iModIntro=>/=.

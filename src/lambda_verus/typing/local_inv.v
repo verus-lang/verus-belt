@@ -98,6 +98,7 @@ Section local_invariants.
             £(d' - d1) ∗
             ty.(ty_gho_own) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
     end;
+    ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_phys x tid := [];
     ty_shr := default_shr (λ (x: ~~(local_invₛ ℭ)) d g tid, match x with (N, (γ, γt, d1), c) =>
           cna_active γ
@@ -147,6 +148,7 @@ Section local_invariants.
             £(d' - d1) ∗
             ty.(ty_gho_own) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
     end;
+    ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_phys x tid := [];
     ty_shr := default_shr (λ (x: ~~(local_invₛ ℭ)) d g tid, match x with (N, (γ, γt, d1), c) =>
           dg_tok γt d1 ∗

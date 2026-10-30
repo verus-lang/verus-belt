@@ -19,6 +19,7 @@ Section product.
        ty_gho_own x d g tid := True%I;
        ty_gho_res x d g tid := True%I;
        ty_gho_pers x d g tid := True%I;
+       ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
        ty_phys x tid := [];
        ty_shr κ x d g tid := True%I;
     |}%I.
@@ -62,6 +63,7 @@ Section product.
     ty_gho_own x d g tid := ty.(ty_gho_own) (fst x) d g tid ∗ ty'.(ty_gho_own) (snd x) d g tid;
     ty_gho_res x d g tid := ty.(ty_gho_res) (fst x) d g tid ∗ ty'.(ty_gho_res) (snd x) d g tid;
     ty_gho_pers x d g tid := ty.(ty_gho_pers) (fst x) d g tid ∗ ty'.(ty_gho_pers) (snd x) d g tid;
+    ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_phys x tid := ty.(ty_phys) (fst x) tid ++ ty'.(ty_phys) (snd x) tid;
     ty_shr κ x d g tid := ty.(ty_shr) κ (fst x) d g tid ∗ ty'.(ty_shr) κ (snd x) d g tid;
   |}%I.
@@ -421,7 +423,8 @@ Section typing.
     eqtype E L (ty1 * (ty2 * ty3)) ((ty1 * ty2) * ty3) prod_assocₛ prod_assoc'ₛ.
   Proof.
     apply eqtype_unfold.
-      { split. apply _. apply _. simpl. { lia. } intros [x0 [x1 x2]]. simpl. rewrite List.app_assoc. trivial. }
+      { split. apply _. apply _. simpl. { lia. } intros [x0 [x1 x2]]. simpl. rewrite List.app_assoc. trivial.
+        apply prod_assoc_bsize. apply prod_assoc_bytes. }
     iIntros "*_!>_/=".
     iSplit; [iPureIntro; lia|].
     iSplit; [rewrite (assoc (++)); by iApply lft_equiv_refl|].

@@ -57,6 +57,7 @@ Section points_to.
     ty_gho_own x d g tid := P ∗ (ty.(ty_gho_own) x d g tid) ;
     ty_gho_res x d g tid := P ∗ (ty.(ty_gho_res) x d g tid) ;
     ty_gho_pers x d g tid := (ty.(ty_gho_pers) x d g tid) ;
+    ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_phys x tid := [];
     ty_shr κ x d g tid := (@[κ] &&{↑NllftG; g+1}&&> P) ∗ ty.(ty_shr) κ x d g tid;
   |}%I.

@@ -18,6 +18,7 @@ Section base.
     ty_gho_pers x d g tid := False;
     ty_gho_own x d g tid := False;
     ty_gho_res x d g tid := False;
+    ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_phys x tid := @syn_phys 𝔄 x;
     ty_shr := default_shr (λ x d g tid, False);
   |}%I.
