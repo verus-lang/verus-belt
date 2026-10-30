@@ -1686,4 +1686,48 @@ Proof.
   iApply "HΦ". by iFrame.
 Qed.
 
+(** A non-atomic write of a whole value through a cell whose location side is only guarded
+    (as for [borrow_mut] of a [PCell] behind a shared reference), with the permission. *)
+Lemma wp_pcell_store_na_guarded E l g m cs fv e v G P d :
+  ↑naN ⊆ E → IntoVal e (MLitV v) → mty_wf m → val_wf m v →
+  {{{ (G &&{↑naN; d}&&> P) ∗ □ (P -∗ loc_side l g m cs ∗ (loc_side l g m cs -∗ P)) ∗
+      greg g m cs ∗ gnocell g ∗ G ∗ gdyn g fv ∗ £(2*d) }}}
+    Store Na1Ord m (Lit $ LitLoc l) e @ E
+  {{{ RET LitV LitPoison; G ∗ gdyn g (fv_lift v) }}}.
+Proof.
+  iIntros (? <- Hm Hwf Φ) "(#Guard & #HP & #Hg & #Hnc & G & Hgd & £) HΦ".
+  iApply wp_lift_base_step; auto.
+  iIntros (σ1 stepcnt κ κs n) "[Hσ Ht]". heap_split.
+  iMod (bytes_ctx_cell_write_begin with "£ Guard HP G Hgd Hnc HB")
+    as (bs) "([%Hrange %Hlen] & HB & Tok)"; [done|].
+  have Hrange' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange.
+  iApply fupd_mask_intro; first set_solver. iIntros "Hclose". iSplit.
+  { iPureIntro. eexists _, _, _, _. eapply StoreNa1S; eauto. }
+  iNext; iIntros (e2 σ2 efs Hstep); inv_head_step. iMod "Hclose" as "_".
+  iMod (time_interp_step with "Ht") as "$". iIntros "credit !>".
+  iSplitR "HΦ Tok credit".
+  { iExists hF. rewrite -Hlen. iFrame. iPureIntro. split.
+    - by eapply phys_rel_mem_alter.
+    - eapply heap_freeable_rel_dom; [|done]. intros ?. by rewrite is_Some_mem_alter. }
+  iSplit; last done.
+  clear dependent σ1 σL σB hF. iApply wp_lift_atomic_base_step_no_fork; auto.
+  iIntros (σ1 stepcnt' κ' κs' n') "[Hσ Ht]".
+  iMod (time_interp_step with "Ht") as "$". heap_split.
+  match goal with H : val_wf m ?w |- _ => rename w into v end.
+  iMod (bytes_ctx_cell_write_end _ _ _ _ _ _ _ _ v with "Hg Hnc HB Tok")
+    as (bs2) "([%Hrange2 %Hlen2] & HB & Hgd & G)"; [done..|].
+  iMod (lc_fupd_elim_later with "credit G") as "G".
+  have Hlen' : length (@encode_value val m v) = length bs2 by rewrite length_encode_value.
+  have Hrange' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange2.
+  iModIntro; iSplit.
+  { iPureIntro. eexists _, _, _, _. eapply StoreNa2S; eauto. }
+  iNext. iIntros (e2 σ2 efs Hstep) "credit2 !>"; inv_head_step.
+  iSplit; [done|]. iSplitR "HΦ G Hgd".
+  { iExists hF. iFrame. iPureIntro. split.
+    - by eapply phys_rel_mem_write.
+    - eapply heap_freeable_rel_dom; [|done]. intros ?. simpl.
+      by rewrite (is_Some_mem_write _ _ _ _ _ _ Hrange' Hlen'). }
+  iApply "HΦ". by iFrame.
+Qed.
+
 End lifting.
