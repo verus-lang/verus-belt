@@ -150,7 +150,7 @@ Definition cells_wf (R : gmap positive (mty * list positive)) (ρ : gmap positiv
   (∀ g fv, ρ !! g = Some fv → ∀ g', g' ∈ fv_cells fv → (g' < g)%positive ∧ g' ∈ dom ρ) ∧
   (∀ g1 g2 m1 cs1 m2 cs2, g1 ≠ g2 → R !! g1 = Some (m1, cs1) → R !! g2 = Some (m2, cs2) →
      cs1 ## cs2) ∧
-  (∀ g m cs, R !! g = Some (m, cs) → 0 < mty_size m) ∧
+  (∀ g m cs, R !! g = Some (m, cs) → (0 < mty_size m)%nat) ∧
   dom NC ⊆ dom R ∧ (∀ g fv, ρ !! g = Some fv → g ∈ dom NC → fv_cells fv = []) ∧
   (∀ g k, CW !! g = Some k → ρ !! g = Some k.2 ∧
      ∃ m cs, R !! g = Some (m, cs) ∧ (k.1.1.2 + k.1.2 ≤ length cs)%nat).
@@ -3109,6 +3109,271 @@ Section cells.
     intros g' fv' Hg' _. destruct (Hf g' fv' Hg') as (m' & cs' & fbs & HR' & Hrep & Hfin).
     exists m', cs', fbs. split_and!; [done..|]. intros g'' Hg''.
     destruct Hwf as (_ & _ & Hlt & _). destruct (Hlt g' fv' Hg' g'' Hg''). done.
+  Qed.
+
+  (** ** Helpers *)
+  Lemma inl_loc_inj {B} (a b : loc) : (inl a : loc + B) = inl b → a = b.
+  Proof. intros H. by inversion H. Qed.
+
+  Lemma fb_strip_rst (fbs : list (positive + abyte)) : fb_strip <$> (fb_rst <$> fbs) = fbs.
+  Proof. induction fbs as [|fb fbs IH]; [done|]. rewrite !fmap_cons IH. by destruct fb. Qed.
+
+  Lemma gcontents_mono_R R R' CW g fv :
+    R ⊆ R' → gcontents R CW g fv -∗ gcontents R' CW g fv.
+  Proof.
+    iIntros (Hsub) "(%m & %cs & %fbs & (%HR & %Hrep & %Hls) & Hcs)". iExists m, cs, fbs. iFrame.
+    iPureIntro. split_and!; [by eapply lookup_weaken|by eapply frepr_mono|done].
+  Qed.
+
+  Lemma heap_mapsto_fbytes_bytes l bs : l ↦b bs ⊣⊢ heap_mapsto_fbytes l (inr <$> bs).
+  Proof.
+    rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec
+      /heap_mapsto_fbytes big_sepL_fmap. done.
+  Qed.
+
+  Lemma heap_mapsto_fbytes_cons l fb fbs :
+    heap_mapsto_fbytes l (fb :: fbs) ⊣⊢
+    bpt (inl l) (fb_rst fb) ∗ heap_mapsto_fbytes (l +ₗ 1) fbs.
+  Proof.
+    rewrite /heap_mapsto_fbytes big_sepL_cons shift_loc_0_nat. f_equiv.
+    apply big_sepL_proper. intros i fb' _. by rewrite shift_loc_S.
+  Qed.
+
+  (** Fresh group ids, larger than every registered one. *)
+  Definition fresh_gid (R : gmap positive (mty * list positive)) : positive :=
+    Pos.succ (foldr Pos.max 1%positive (elements (dom R))).
+
+  Lemma fresh_gid_gt R g : g ∈ dom R → (g < fresh_gid R)%positive.
+  Proof.
+    rewrite /fresh_gid -elem_of_elements. generalize (elements (dom R)). intros gs Hg.
+    cut (g ≤ foldr Pos.max 1 gs)%positive; [lia|].
+    induction gs as [|g' gs IH]; [by apply not_elem_of_nil in Hg|].
+    apply elem_of_cons in Hg as [->|Hg]; simpl; [lia|]. specialize (IH Hg). lia.
+  Qed.
+
+  Lemma fresh_gid_fresh R : R !! fresh_gid R = None.
+  Proof.
+    destruct (R !! fresh_gid R) eqn:Hg; [|done]. exfalso.
+    have Hd : fresh_gid R ∈ dom R by apply elem_of_dom; eauto.
+    have Hlt := fresh_gid_gt R _ Hd. exact (Pos.lt_irrefl _ Hlt).
+  Qed.
+
+  (** All the byte-cells of the registry. *)
+  Definition reg_cells (R : gmap positive (mty * list positive)) : list positive :=
+    mjoin ((λ kv : positive * (mty * list positive), kv.2.2) <$> map_to_list R).
+
+  Lemma reg_cells_in R g m cs c : R !! g = Some (m, cs) → c ∈ cs → c ∈ reg_cells R.
+  Proof.
+    intros Hg Hc. rewrite /reg_cells elem_of_list_join. exists cs. split; [done|].
+    apply elem_of_list_fmap. exists (g, (m, cs)). split; [done|]. by apply elem_of_map_to_list.
+  Qed.
+
+  (** Inserting fresh byte-cells at the front of the rows of [n] locations. *)
+  Lemma bheap_insert_fronts 𝛼 l fbs (X : list positive) :
+    bheap 𝛼 -∗ heap_mapsto_fbytes l fbs ==∗ ∃ 𝛼' cs,
+      ⌜length cs = length fbs ∧ NoDup cs ∧ (∀ c, c ∈ cs → c ∉ X) ∧ bphi 𝛼' = bphi 𝛼 ∧
+       (∀ k cs' v c, 𝛼' !! k = Some (cs', v) → c ∈ cs' →
+          c ∈ cs ∨ ∃ cs'', 𝛼 !! k = Some (cs'', v) ∧ c ∈ cs'') ∧
+       (∀ k, (∀ i : nat, (i < length fbs)%nat → k ≠ inl (l +ₗ i)) → 𝛼' !! k = 𝛼 !! k)⌝ ∗
+      bheap 𝛼' ∗ ([∗ list] i ↦ c ∈ cs, bpt (inl (l +ₗ i)) (inl c)) ∗
+      bcells cs (fb_rst <$> fbs).
+  Proof.
+    iInduction fbs as [|fb fbs] "IH" forall (𝛼 l X); iIntros "H● Hfbs".
+    { iModIntro. iExists 𝛼, []. iFrame. rewrite /bcells /=. iSplit; [|done]. iPureIntro.
+      split_and!; try done.
+      - apply NoDup_nil_2.
+      - intros c Hc. by apply not_elem_of_nil in Hc.
+      - intros k cs' v c Hk Hc. right. eauto. }
+    rewrite heap_mapsto_fbytes_cons. iDestruct "Hfbs" as "[Hfb Hfbs]".
+    iDestruct (fheap_fpt with "H● Hfb") as %Hp0.
+    assert (∃ cs0 v0, 𝛼 !! inl l = Some (cs0, v0)) as (cs0 & v0 & Hl0).
+    { rewrite /𝛼_fine_pair in Hp0. destruct (fb_rst fb) as [c|v];
+        destruct (𝛼 !! inl l) as [[[|??]?]|]; naive_solver. }
+    iMod (fcmap_insert_front loc positive bval _ _ _ _ _ _ X with "H● Hfb") as (c) "([%Hc %HcX] & H● & Hl & Hc)"; [done|].
+    iMod ("IH" $! _ _ (c :: X) with "H● Hfbs")
+      as (𝛼' cs) "([%Hlen [%Hnd [%HX [%Hphi [%Hrows %Hsame]]]]] & H● & Hls & Hcs)".
+    iModIntro. iExists 𝛼', (c :: cs). rewrite /bcells ?fmap_cons big_sepL2_cons.
+    iFrame "H● Hc Hcs". iSplit; last first.
+    { rewrite big_sepL_cons shift_loc_0_nat. iFrame "Hl".
+      iApply (big_sepL_impl with "Hls"). iIntros "!>" (i c' _) "H". by rewrite shift_loc_S. }
+    iPureIntro. split_and!.
+    - by rewrite /= Hlen.
+    - constructor; [|done]. intros Hin. apply (HX c Hin). by left.
+    - intros c' [->|Hin]%elem_of_cons; [done|]. intros HX'. apply (HX c' Hin). by right.
+    - by rewrite Hphi phi_insert_loc insert_id // phi_lookup Hl0.
+    - intros k cs' v c' Hk Hc'. destruct (Hrows k cs' v c' Hk Hc') as [?|(cs'' & Hk' & Hc'')].
+      { left. by right. }
+      destruct (decide (k = inl l)) as [->|Hne].
+      + rewrite lookup_insert in Hk'. simplify_eq.
+        apply elem_of_cons in Hc'' as [->|Hc'']; [by left; left|]. right. eauto.
+      + rewrite lookup_insert_ne // in Hk'. right. eauto.
+    - intros k Hk. rewrite Hsame.
+      + rewrite lookup_insert_ne //. intros Heq. apply (Hk 0%nat); [simpl; lia|].
+        by rewrite shift_loc_0_nat Heq.
+      + intros i Hi. rewrite -shift_loc_S. apply (Hk (S i)). simpl. lia.
+  Qed.
+
+  (** An owned edge from a location in the range of a group with a write in flight gives a
+      contradiction. *)
+  Lemma cwentry_disj E R g e (p : loc) cv :
+    ↑naN ⊆ E →
+    ghost_map_auth heap_greg_name 1 R -∗ cwentry g e -∗ bpt (inl p) cv ={E}=∗
+      ⌜∀ m cs, R !! g = Some (m, cs) → ∀ j : nat, (j < length cs)%nat → p ≠ e.1.1.1.1 +ₗ j⌝ ∗
+      ghost_map_auth heap_greg_name 1 R ∗ cwentry g e ∗ bpt (inl p) cv.
+  Proof.
+    iIntros (?) "Hreg (%m & %cs & #Hg & Hgd & G & %P & %d & £ & #Guard & #HP) Hp".
+    iDestruct (greg_lookup with "Hreg Hg") as %HR.
+    destruct (decide (in_rng e.1.1.1.1 (length cs) p)) as [(j & Hj & ->)|Hn]; last first.
+    { iModIntro. iFrame "Hreg Hp". iSplitR.
+      { iPureIntro. intros m' cs' HR' j Hj ->. rewrite HR in HR'. simplify_eq. apply Hn. by exists j. }
+      iExists m, cs. iSplitR; [iExact "Hg"|]. iFrame "Hgd G". iExists P, d. iFrame "£ Guard HP". }
+    iMod (guards_open_later with "Guard G") as "Open"; [done|].
+    iMod (lc_fupd_elim_laterN with "£ Open") as ">[P _]".
+    iDestruct ("HP" with "P") as "[_ Hcs]".
+    destruct (lookup_lt_is_Some_2 cs j) as [c Hc]; [done|].
+    iDestruct (big_sepL_lookup with "Hcs") as "Hc"; [done|].
+    iDestruct (fpt_excl with "Hp Hc") as "[]".
+  Qed.
+
+  Lemma cwentries_disj E R (CW : gmap positive (cwkey * iProp Σ)) (p : loc) cv :
+    ↑naN ⊆ E →
+    ghost_map_auth heap_greg_name 1 R -∗ ([∗ map] g ↦ e ∈ CW, cwentry g e) -∗ bpt (inl p) cv ={E}=∗
+      ⌜∀ g e m cs, CW !! g = Some e → R !! g = Some (m, cs) →
+         ∀ j : nat, (j < length cs)%nat → p ≠ e.1.1.1.1 +ₗ j⌝ ∗
+      ghost_map_auth heap_greg_name 1 R ∗ ([∗ map] g ↦ e ∈ CW, cwentry g e) ∗ bpt (inl p) cv.
+  Proof.
+    iIntros (?) "Hreg HCW Hp". iInduction CW as [|g e CW Hg] "IH" using map_ind.
+    { iFrame. iPureIntro. intros ????. by rewrite lookup_empty. }
+    rewrite big_sepM_insert //. iDestruct "HCW" as "[He HCW]".
+    iMod (cwentry_disj with "Hreg He Hp") as "(%H1 & Hreg & He & Hp)"; [done|].
+    iMod ("IH" with "Hreg HCW Hp") as "(%H2 & $ & HCW & $)". iFrame. iPureIntro.
+    intros g' e' m cs. destruct (decide (g = g')) as [<-|].
+    - rewrite lookup_insert. intros [= <-]. apply H1.
+    - rewrite lookup_insert_ne //. apply H2.
+  Qed.
+
+  Lemma cwentries_disj_fbytes E R (CW : gmap positive (cwkey * iProp Σ)) l fbs :
+    ↑naN ⊆ E →
+    ghost_map_auth heap_greg_name 1 R -∗ ([∗ map] g ↦ e ∈ CW, cwentry g e) -∗
+    heap_mapsto_fbytes l fbs ={E}=∗
+      ⌜∀ g e m cs, CW !! g = Some e → R !! g = Some (m, cs) →
+         ∀ i j : nat, (i < length fbs)%nat → (j < length cs)%nat → l +ₗ i ≠ e.1.1.1.1 +ₗ j⌝ ∗
+      ghost_map_auth heap_greg_name 1 R ∗ ([∗ map] g ↦ e ∈ CW, cwentry g e) ∗
+      heap_mapsto_fbytes l fbs.
+  Proof.
+    iIntros (?) "Hreg HCW Hfbs". iInduction fbs as [|fb fbs] "IH" forall (l).
+    { iFrame. iPureIntro. simpl. lia. }
+    rewrite !heap_mapsto_fbytes_cons. iDestruct "Hfbs" as "[Hfb Hfbs]".
+    iMod (cwentries_disj with "Hreg HCW Hfb") as "(%H1 & Hreg & HCW & $)"; [done|].
+    iMod ("IH" with "Hreg HCW Hfbs") as "(%H2 & $ & $ & $)". iPureIntro.
+    intros g e m cs Hg HR [|i] j Hi Hj.
+    - rewrite shift_loc_0_nat. by eapply H1.
+    - rewrite shift_loc_S. eapply H2; [done..|simpl in Hi; lia|done].
+  Qed.
+
+  (** ** Creating a cell group ([PCellFromOwn]) *)
+  Lemma bytes_ctx_pcell_create E σB l m fbs fv :
+    ↑naN ⊆ E → (0 < mty_size m)%nat → length fbs = mty_size m →
+    bytes_ctx σB -∗ heap_mapsto_fbytes l fbs -∗ brepr m fbs fv ={E}=∗ ∃ g cs,
+      bytes_ctx σB ∗ loc_side l g m cs ∗ gdyn g fv ∗
+      (if bool_decide (fv_cells fv = []) then gnocell g else True).
+  Proof.
+    iIntros (? Hsz Hlen) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hfbs #Hrep".
+    iDestruct "Cells" as (R ρ NC CW) "(Hreg & Hdyn & Hnc & Hcw & [%Hcwf %Hlive] & #HR & Hcwe & Hρ)".
+    iDestruct (brepr_frepr with "Hreg Hrep") as %Hfrep.
+    iDestruct (fheap_no_dupes with "H●") as %Hnd.
+    iDestruct (bheap_edges _ l (fb_rst <$> fbs) with "H● [Hfbs]") as %Hedges.
+    { rewrite /heap_mapsto_fbytes big_sepL_fmap. done. }
+    iMod (cwentries_disj_fbytes with "Hreg Hcwe Hfbs") as "(%Hcwd & Hreg & Hcwe & Hfbs)"; [done|].
+    destruct Hcwf as (HRwf & HdomR & Hrefs & Hdisj & Hpos & HdomNC & HNC & HCW).
+    destruct Hlive as [Hlive1 Hlive2].
+    (* The groups embedded in [fv] are live. *)
+    have Hlive_fv : ∀ g', g' ∈ fv_cells fv → g' ∈ dom ρ.
+    { intros g' Hg'. destruct (frepr_cells_in _ _ _ _ _ Hfrep Hg') as (m' & cs' & HR' & Hin).
+      have Hpos' := Hpos _ _ _ HR'. have Hlen' := HRwf _ _ _ HR'.
+      destruct cs' as [|c cs']; [simpl in Hlen'; lia|].
+      destruct (elem_of_list_lookup_1 _ _ (Hin c ltac:(set_solver))) as [i Hi].
+      have := Hedges i (inl c). rewrite list_lookup_fmap Hi /=. intros Hp. specialize (Hp eq_refl).
+      rewrite /𝛼_fine_pair in Hp. destruct (𝛼 !! inl (l +ₗ i)) as [[[|c0 rest] v]|] eqn:Hrow; try done.
+      subst c0. destruct (Hlive1 _ _ _ c Hrow ltac:(set_solver)) as (g'' & m'' & cs'' & Hg'' & HR'' & Hc'').
+      destruct (decide (g'' = g')) as [->|Hne]; [done|].
+      exfalso. apply (Hdisj _ _ _ _ _ _ Hne HR'' HR' c); [done|set_solver]. }
+    iMod (bheap_insert_fronts _ _ _ (reg_cells R) with "H● Hfbs")
+      as (𝛼' cs) "([%Hlencs [%Hndcs [%HcsX [%Hphi [%Hrows %Hsame]]]]] & H● & Hls & Hcs)".
+    set (g := fresh_gid R).
+    have HgR : R !! g = None := fresh_gid_fresh R.
+    have Hgρ : ρ !! g = None by apply not_elem_of_dom; intros ?; apply (not_elem_of_dom R g); [done|set_solver].
+    have HgNC : NC !! g = None by apply not_elem_of_dom; intros ?; apply (not_elem_of_dom R g); [done|set_solver].
+    have HgCW : (fst <$> CW) !! g = None.
+    { destruct ((fst <$> CW) !! g) as [k|] eqn:Hk; [|done]. destruct (HCW g k Hk) as [Hρg _].
+      by rewrite Hgρ in Hρg. }
+    iMod (ghost_map_insert_persist g (m, cs) with "Hreg") as "[Hreg #Hg]"; [done|].
+    iMod (ghost_map_insert g fv with "Hdyn") as "[Hdyn Hgd]"; [done|].
+    set (NC' := if bool_decide (fv_cells fv = []) then <[g := ()]> NC else NC).
+    iAssert (|==> ghost_map_auth heap_gnc_name 1 NC' ∗
+      if bool_decide (fv_cells fv = []) then gnocell g else True)%I with "[Hnc]" as ">[Hnc Hgnc]".
+    { rewrite /NC'. case_bool_decide; [|by iFrame].
+      iMod (ghost_map_insert_persist g () with "Hnc") as "[$ $]"; done. }
+    iModIntro. iExists g, cs. iFrame "Hgd Hgnc". iSplitR "Hls"; last by iFrame "Hg".
+    iExists 𝛼', M. rewrite Hphi. iFrame "H● Hbank Entries". iSplit; [done|]. iSplit; [done|].
+    iExists (<[g := (m, cs)]> R), (<[g := fv]> ρ), NC', CW. iFrame "Hreg Hdyn Hnc Hcw Hcwe".
+    have HRsub : R ⊆ <[g := (m, cs)]> R by apply insert_subseteq.
+    iSplit; [iPureIntro; split|].
+    { (* cells_wf *)
+      split_and!.
+      - intros g' m' cs' Hg'. destruct (decide (g' = g)) as [->|Hne].
+        + rewrite lookup_insert in Hg'. simplify_eq. by rewrite Hlencs.
+        + rewrite lookup_insert_ne // in Hg'. by eapply HRwf.
+      - rewrite !dom_insert_L. set_solver.
+      - intros g' fv' Hg' g'' Hg''. destruct (decide (g' = g)) as [->|Hne].
+        + rewrite lookup_insert in Hg'. simplify_eq. have Hd := Hlive_fv g'' Hg''.
+          split; [apply fresh_gid_gt; set_solver|]. rewrite dom_insert_L. set_solver.
+        + rewrite lookup_insert_ne // in Hg'. destruct (Hrefs g' fv' Hg' g'' Hg'').
+          split; [done|]. rewrite dom_insert_L. set_solver.
+      - intros g1 g2 m1 cs1 m2 cs2 Hne H1 H2.
+        destruct (decide (g1 = g)) as [->|Hne1]; destruct (decide (g2 = g)) as [->|Hne2]; try done.
+        + rewrite lookup_insert in H1. rewrite lookup_insert_ne // in H2. simplify_eq.
+          intros c Hc1 Hc2. apply (HcsX c Hc1). by eapply reg_cells_in.
+        + rewrite lookup_insert in H2. rewrite lookup_insert_ne // in H1. simplify_eq.
+          intros c Hc1 Hc2. apply (HcsX c Hc2). by eapply reg_cells_in.
+        + rewrite lookup_insert_ne // in H1. rewrite lookup_insert_ne // in H2.
+          by apply (Hdisj g1 g2 m1 cs1 m2 cs2).
+      - intros g' m' cs' Hg'. destruct (decide (g' = g)) as [->|Hne].
+        + rewrite lookup_insert in Hg'. by simplify_eq.
+        + rewrite lookup_insert_ne // in Hg'. by eapply Hpos.
+      - rewrite /NC' dom_insert_L. case_bool_decide; rewrite ?dom_insert_L; set_solver.
+      - intros g' fv' Hg' HNC'. destruct (decide (g' = g)) as [->|Hne].
+        + rewrite lookup_insert in Hg'. simplify_eq. rewrite /NC' in HNC'. case_bool_decide; [done|].
+          exfalso. by apply (not_elem_of_dom NC g).
+        + rewrite lookup_insert_ne // in Hg'. apply (HNC g' fv' Hg').
+          rewrite /NC' in HNC'. case_bool_decide; [|done]. rewrite dom_insert_L in HNC'. set_solver.
+      - intros g' k Hk. destruct (HCW g' k Hk) as (Hρg & m' & cs' & HR' & Hb).
+        have Hne : g' ≠ g by intros ->; rewrite HgCW in Hk.
+        rewrite !lookup_insert_ne //. eauto. }
+    { (* cells_live *)
+      split.
+      - intros k cs' v c Hk Hc. destruct (Hrows k cs' v c Hk Hc) as [Hcn|(cs'' & Hk' & Hc'')].
+        + exists g, m, cs. rewrite dom_insert_L lookup_insert. split_and!; [set_solver|done|done].
+        + destruct (Hlive1 k cs'' v c Hk' Hc'') as (g' & m' & cs0 & Hg' & HR' & Hc0).
+          exists g', m', cs0. rewrite dom_insert_L. split_and!; [set_solver| |done].
+          by eapply lookup_weaken.
+      - intros g' k m' cs' Hk HR' i c Hc.
+        have Hne : g' ≠ g by intros ->; rewrite HgCW in Hk.
+        rewrite lookup_insert_ne // in HR'.
+        destruct (Hlive2 g' k m' cs' Hk HR' i c Hc) as (rest & v & Hrow).
+        exists rest, v. rewrite Hsame //. intros j Hj Heq.
+        move: Hk. rewrite lookup_fmap. destruct (CW !! g') as [e|] eqn:He; [|done]. intros [= <-].
+        apply (Hcwd g' e m' cs' He HR' j i); [lia|by eapply lookup_lt_Some|].
+        symmetry. by apply inl_loc_inj in Heq. }
+    (* the static registry and the contents *)
+    iSplitR "Hcs Hρ". { rewrite big_sepM_insert //. by iFrame "HR Hg". }
+    rewrite big_sepM_insert //. iSplitL "Hcs".
+    - iExists m, cs, (fb_rst <$> fbs). iFrame "Hcs". iPureIntro. split_and!.
+      + apply lookup_insert.
+      + rewrite fb_strip_rst. by eapply frepr_mono.
+      + intros i ls b. rewrite list_lookup_fmap. destruct (fbs !! i) as [[c|b']|]; simpl; try done.
+        intros [= <- <-]. rewrite /cw_ls HgCW. done.
+    - iApply (big_sepM_impl with "Hρ"). iIntros "!>" (g' fv' _) "H". by iApply gcontents_mono_R.
   Qed.
 End cells.
 
