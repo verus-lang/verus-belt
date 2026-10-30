@@ -218,24 +218,23 @@ Section frepr.
       rewrite decide_True // Hvm /=. rewrite -/(fin_bytes rv _) -fin_bytes_slice Hdec //.
   Qed.
 
-  (** The compositionality lemma, over the whole registry. [K g] are the contents of the
+  (** The compositionality lemma, over the whole registry. [fbs] are the contents of the
       group [g] (the fancy bytes that follow its cells), and [rv c] the final byte of the
       cell [c]: the final bytes of [g] are those of its contents. [ok] is a property of
       groups (e.g. "at rest") that holds of the groups embedded in a group with [ok]; the
       contents of the groups with [ok] represent their fancy values. Groups only embed older
       groups, so the nesting is well-founded. *)
-  Theorem registry_decode R (ρ : gmap positive FValue)
-      (K : positive → list (positive + AbstractByte W)) (rv : positive → AbstractByte W)
+  Theorem registry_decode R (ρ : gmap positive FValue) (rv : positive → AbstractByte W)
       (ok : positive → Prop) :
-    (∀ g fv, ρ !! g = Some fv → ok g → ∃ m cs, R !! g = Some (m, cs) ∧ frepr R m (K g) fv ∧
-       rv <$> cs = fin_bytes rv (K g) ∧
+    (∀ g fv, ρ !! g = Some fv → ok g → ∃ m cs fbs, R !! g = Some (m, cs) ∧ frepr R m fbs fv ∧
+       rv <$> cs = fin_bytes rv fbs ∧
        ∀ g', g' ∈ fv_cells fv → (g' < g)%positive ∧ g' ∈ dom ρ ∧ ok g') →
     ∀ g fv m cs, ρ !! g = Some fv → R !! g = Some (m, cs) → ok g →
     ∃ v, fval_erase ρ fv v ∧ decode_value m (rv <$> cs) = Some v.
   Proof.
     intros Hinv g. remember (Pos.to_nat g) as n eqn:Hn. revert g Hn.
     induction n as [n IH] using lt_wf_ind. intros g -> fv m cs Hg HR Hok.
-    destruct (Hinv g fv Hg Hok) as (m' & cs' & HR' & Hrep & Hrv & Hlt).
+    destruct (Hinv g fv Hg Hok) as (m' & cs' & fbs & HR' & Hrep & Hrv & Hlt).
     rewrite HR in HR'. simplify_eq. rewrite Hrv. eapply frepr_decode; [done|].
     intros g' m'' cs'' Hg' HR''. destruct (Hlt g' Hg') as (Hlt' & Hdom & Hok').
     apply elem_of_dom in Hdom as [fv' Hfv'].

@@ -15,6 +15,8 @@ Class lrustGpreS Σ := HeapGpreS {
   #[global] lrustGpreS_heap_na_logic :: na_logicG loc lang.val Σ;
   #[global] lrustGpreS_heap_bbank :: inG Σ (gmap_viewR nat (agreeR (prodO
     (leibnizO (loc * list abyte)) (laterO (iPropO Σ)))));
+  #[global] lrustGpreS_heap_greg :: ghost_mapG Σ positive (mty * list positive);
+  #[global] lrustGpreS_heap_gdyn :: ghost_mapG Σ positive FValue;
   #[global] lrustGpreS_heap_na_inv :: na_invG Σ;
   #[global] lrustGpreS_atomic_lock_ctr :: alc_logicG Σ;
   #[global] lrustGpreS_time :: timePreG Σ
@@ -26,6 +28,8 @@ Definition lrustΣ : gFunctors :=
     GFunctor (constRF (authR heap_freeableUR));
     na_logicΣ loc lang.val;
     GFunctor (gmap_viewRF nat (agreeRF (prodOF (leibnizO (loc * list abyte)) (laterOF idOF))));
+    ghost_mapΣ positive (mty * list positive);
+    ghost_mapΣ positive FValue;
     alc_logicΣ;
     na_invΣ
     ].
@@ -46,14 +50,16 @@ Proof.
   iMod (own_alloc (gmap_view_auth (V:=agreeR (prodO (leibnizO (loc * list abyte))
     (laterO (iPropO Σ)))) (DfracOwn 1) ∅)) as (kγ) "Hkγ";
     first by apply gmap_view_auth_valid.
+  iMod (ghost_map_alloc_empty (K:=positive) (V:=mty * list positive)) as (rγ) "Hrγ".
+  iMod (ghost_map_alloc_empty (K:=positive) (V:=FValue)) as (dγ) "Hdγ".
   iIntros "H£". iDestruct "H£" as "[H£1 H£2]".
   iMod (time_init with "H£1") as (Htime) "[TIME Htime]"; [done|].
   iMod (na_alloc) as (atomic_poolname) "pool".
   iMod (atomic_lock_ctr_alloc) as (atomic_lock_ctr_name) "ctr".
-  set (Hheap := HeapGS _ _ _ _ _ vγ bγ kγ fγ atomic_poolname atomic_lock_ctr_name).
+  set (Hheap := HeapGS _ _ _ _ _ _ _ vγ bγ kγ rγ dγ fγ atomic_poolname atomic_lock_ctr_name).
   iModIntro. iExists _, [_], _, _. simpl.
   iDestruct (Hwp (LRustGS _ _ _ _ Hheap Htime) with "H£2 TIME") as "$".
-  iSplitL. { iDestruct (@bytes_ctx_empty _ Hheap _ with "Hbγ Hkγ") as "HB". iFrame "Htime".
+  iSplitL. { iDestruct (@bytes_ctx_empty _ Hheap _ with "Hbγ Hkγ Hrγ Hdγ") as "HB". iFrame "Htime".
     iExists ∅. iFrame "Hfγ". iSplitL "Hvγ HB".
     { iExists ∅, ∅. iFrame. iPureIntro. apply phys_rel_empty. }
     iSplit; [iPureIntro; intros ?? Hb; by rewrite lookup_empty in Hb|]. iFrame. }
