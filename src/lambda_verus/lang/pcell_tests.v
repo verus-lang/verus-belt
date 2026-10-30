@@ -169,6 +169,44 @@ Section pcell_tests.
     iApply "HΦ". iExists g, cs. iFrame.
   Qed.
 
+  (** Atomic accesses through a cell whose location side is only guarded. *)
+  Lemma test_pcell_atomic_guarded E l bs :
+    ↑naN ⊆ E → length bs = 4%nat →
+    {{{ ▷ l ↦b bs }}}
+      Store Na1Ord (MInt i32) (#l) (MLit (VInt 5)) ;;
+      Store ScOrd (MInt i32) (#l) (MLit (VInt 7)) ;; Load ScOrd (MInt i32) (#l) @ E
+    {{{ RET MLitV (VInt 7); ∃ g cs, loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 7) }}}.
+  Proof.
+    iIntros (? Hlen Φ) "Hl HΦ".
+    wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done|apply int5_wf|done|].
+    iIntros "!> Hl". wp_seq.
+    iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl");
+      [done|apply Nat.ltb_lt; reflexivity|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
+    iIntros (g cs) "Hls Hgd #Hnc".
+    iDestruct "Hls" as "[#Hg Hedges]".
+    iAssert (loc_side l g (MInt i32) cs) with "[Hedges]" as "Hls"; [by iFrame "Hg"|].
+    iAssert (loc_side l g (MInt i32) cs &&{↑naN; 0}&&> loc_side l g (MInt i32) cs)%I
+      as "#Guard"; [iApply guards_refl|].
+    iAssert (□ (loc_side l g (MInt i32) cs -∗ loc_side l g (MInt i32) cs ∗
+      (loc_side l g (MInt i32) cs -∗ loc_side l g (MInt i32) cs)))%I as "#HP".
+    { iIntros "!> Hls". iFrame. by iIntros "Hls". }
+    iMod lc_zero as "£".
+    wp_bind (Store _ _ _ _).
+    iApply (wp_pcell_store_sc_guarded _ l g (MInt i32) cs (FVInt 5) _ (VInt 7)
+      (loc_side l g (MInt i32) cs) (loc_side l g (MInt i32) cs) 0 with "[$Guard $HP $Hls $Hg $Hnc $Hgd $£]");
+      [done|constructor|apply int7_wf|].
+    iIntros "!> [Hls Hgd]". wp_seq.
+    set P2 := (loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 7))%I.
+    iAssert (P2 &&{↑naN; 0}&&> P2)%I as "#Guard2"; [iApply guards_refl|].
+    iAssert (□ (P2 -∗ (loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 7)) ∗
+      (loc_side l g (MInt i32) cs -∗ gdyn g (FVInt 7) -∗ P2)))%I as "#HP2".
+    { iIntros "!> [Hls Hgd]". iFrame. iIntros "Hls Hgd". iFrame. }
+    iMod lc_zero as "£".
+    iApply (wp_pcell_load_sc_guarded with "[$Guard2 $HP2 $Hls $Hgd $£]"); [done|].
+    iIntros "!>" (v) "[[Hls Hgd] %Hv]". have -> : v = VInt 7 by apply fv_lift_int, Hv.
+    iApply "HΦ". iExists g, cs. iFrame.
+  Qed.
+
   Lemma decode_ptr_wf (bs : list abyte) v : decode_value MPtr bs = Some v → val_wf MPtr v.
   Proof. simpl. destruct (decode_ptr bs); simpl; [|done]. intros [= <-]. constructor. Qed.
 
@@ -232,5 +270,6 @@ Print Assumptions test_pcell_lifecycle.
 Print Assumptions test_pcell_atomic.
 Print Assumptions test_pcell_read_guarded.
 Print Assumptions test_pcell_write_guarded.
+Print Assumptions test_pcell_atomic_guarded.
 Print Assumptions test_pcell_typed_move.
 Print Assumptions test_pcell_nested.

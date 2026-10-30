@@ -1730,4 +1730,38 @@ Proof.
   iApply "HΦ". by iFrame.
 Qed.
 
+(** An atomic write of a whole value through a cell whose location side is only guarded:
+    both phases of the cell write happen in the single step. *)
+Lemma wp_pcell_store_sc_guarded E l g m cs fv e v G P d :
+  ↑naN ⊆ E → IntoVal e (MLitV v) → mty_wf m → val_wf m v →
+  {{{ (G &&{↑naN; d}&&> P) ∗ □ (P -∗ loc_side l g m cs ∗ (loc_side l g m cs -∗ P)) ∗
+      greg g m cs ∗ gnocell g ∗ G ∗ gdyn g fv ∗ £(2*d) }}}
+    Store ScOrd m (Lit $ LitLoc l) e @ E
+  {{{ RET LitV LitPoison; G ∗ gdyn g (fv_lift v) }}}.
+Proof.
+  iIntros (? <- Hm Hwf Φ) "(#Guard & #HP & #Hg & #Hnc & G & Hgd & £) HΦ".
+  iApply wp_lift_atomic_base_step_no_fork; auto.
+  iIntros (σ1 stepcnt κ κs n') "[Hσ Ht]". heap_split.
+  iMod (bytes_ctx_cell_write_begin with "£ Guard HP G Hgd Hnc HB")
+    as (bs) "([%Hrange %Hlen] & HB & Tok)"; [done|].
+  iMod (bytes_ctx_cell_write_end _ _ _ _ _ _ _ _ v with "Hg Hnc HB Tok")
+    as (bs2) "(_ & HB & Hgd & G)"; [done..|].
+  have Heq : mem_write l (@encode_value val m v) (mem_alter (λ _, WSt) l (mty_size m) σB) =
+    mem_write l (encode_value m v) σB.
+  { have := mem_alter_mem_write (λ _, WSt) l (@encode_value val m v) σB.
+    by rewrite length_encode_value. }
+  rewrite Heq.
+  have Hlen' : length (@encode_value val m v) = length bs by rewrite length_encode_value.
+  have Hrange' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange.
+  iModIntro. iSplit. { iPureIntro. eexists _, _, _, _. eapply StoreScS; eauto. }
+  iNext; iIntros (e2 σ2 efs Hstep) "credit"; inv_head_step.
+  iMod (time_interp_step with "Ht") as "$". iModIntro. iSplit; [done|].
+  iSplitR "HΦ G Hgd".
+  { iExists hF. iFrame. iPureIntro. split.
+    - by eapply phys_rel_mem_write.
+    - eapply heap_freeable_rel_dom; [|done]. intros ?. simpl.
+      by rewrite (is_Some_mem_write _ _ _ _ _ _ Hrange' Hlen'). }
+  iApply "HΦ". by iFrame.
+Qed.
+
 End lifting.
