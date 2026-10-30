@@ -268,3 +268,23 @@ values `ρ g := fv_g`. Erasure is defined recursively:
 
 On all other constructors erasure is structural. In the Coq code it would be a named function
 such as `fval_erase`.
+
+## 8. Clarification: the value `v` in `pcell_untether`
+
+`v = ⌊fv_g⌋_ρ`: take `g`'s fancy value from the dynamic registry and replace each nested
+`FVCell g'` with `fv_{g'}`, recursively, until the value is concrete.
+
+- **Why the bytes decode to it.** Untethering requires exclusive ownership of the location chains,
+  so no write is in flight and `g` is at rest. The compositionality lemma (§7) then gives
+  `decode m_g bs = Some ⌊fv_g⌋_ρ`.
+- **What the mover knows.** The mover does not hold `g ↦fv fv_g`, so in the lemma `v` is
+  existential. The equation `v = ⌊fv_g⌋_ρ` is kept by the invariant, recorded in
+  `untethered g v`.
+- **Why it stays valid in transit.** Every write to `g`, or to any nested `g'`, needs a guard of a
+  chain that starts at a location (`inl l`). While `g` is untethered, its chains (and the nested
+  cells reached through them) sit in untethered rows (`inr u`), so nobody can write to them.
+  Hence `fv_g` and all nested `fv_{g'}` are frozen, and `⌊fv_g⌋_ρ = v` holds throughout.
+- **Retether.** The new bytes `bs'` only need `decode m_g bs' = Some v`; they may differ from `bs`
+  (e.g. `encode m_g v` turns padding into `Uninit`). Decoding is field-wise (alignment requirement
+  A), so at each nested cell's position the sub-range of `bs'` decodes to `⌊fv_{g'}⌋_ρ`. Every
+  group's invariant (§7) therefore holds again for the new bytes.
