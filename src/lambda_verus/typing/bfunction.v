@@ -63,6 +63,8 @@ Notation "bfn( E ; ity , .. , ity' ) → oty" :=
   (bfn (λ _: (), FP E%EL (ity%T +:: .. (+[ity'%T]) ..) oty%T AtomicClosed))
   (at level 99, oty at level 200, format
     "bfn( E ;  ity ,  .. ,  ity' )  →  oty") : lrust_type_scope.
+Notation "bfn( E ) → oty" := (bfn (λ _: (), FP E%EL +[] oty%T AtomicClosed))
+  (at level 99, oty at level 200, format "bfn( E )  →  oty") : lrust_type_scope.
 
 Section typing.
   Context `{!typeG Σ}.
