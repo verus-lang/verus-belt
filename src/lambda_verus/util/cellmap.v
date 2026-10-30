@@ -2452,7 +2452,7 @@ Section Cmap.
     - destruct (decide (inl l0 = k)) as [<-|]; [|by rewrite lookup_insert_ne].
       rewrite lookup_insert. by rewrite Hk in Hf.
     - destruct (decide (inl l0 = k)) as [<-|]; [|by rewrite lookup_insert_ne].
-      exfalso. rewrite Hk in Hf. simplify_eq. rewrite /row_last /= in Hlast. simplify_eq. done.
+      exfalso. rewrite Hk in Hf. simplify_eq. rewrite /row_last /= in Hlast. simplify_eq.
     - destruct Hf as (lu & cs0 & v0 & Hlu & Hp).
       destruct (decide (lu = k)) as [->|].
       + rewrite Hk in Hlu. simplify_eq. exists k, cs0, v'. by rewrite lookup_insert.
@@ -2485,10 +2485,10 @@ Section Cmap.
       { rewrite lookup_insert in Hl. simplify_eq. by rewrite /𝛼_fine_pair lookup_insert. }
       rewrite lookup_insert_ne in Hl; [|done].
       destruct (decide (src = inr nc)) as [->|Hne2].
-      { rewrite lookup_insert in Hl. simplify_eq. have Hf := fine_inv _ _ Hb.
+      { rewrite lookup_insert in Hl. injection Hl as <-. have Hf := fine_inv _ _ Hb.
         unfold 𝛼_fine_pair in *. rewrite Hk in Hf. destruct cv0 as [c1|v1].
         - destruct cs as [|c1' cs]; [done|]. simplify_eq.
-          exists (inl l), (nc :: c1 :: cs), v. rewrite lookup_insert. split; [done|].
+          exists (inl l), (nc :: c1' :: cs), v. rewrite lookup_insert. split; [done|].
           by apply (list_has_pair_mid []).
         - simplify_eq. exists (inl l), [nc]. rewrite lookup_insert. done. }
       rewrite lookup_insert_ne in Hl; [|done]. have Hf := fine_inv _ _ Hl.
@@ -2641,6 +2641,21 @@ Section Cmap.
 
   Lemma big_inv_eq 𝛼 𝛽 𝛽' 𝜃 : 𝛽' = 𝛽 → big_inv 𝛼 𝛽' 𝜃 → big_inv 𝛼 𝛽 𝜃.
   Proof. by intros ->. Qed.
+
+  (** Public versions of the lemmas about the physical heap [𝜙 𝛼]. *)
+  Lemma phi_empty : 𝜙 ∅ = ∅.
+  Proof. apply map_fold_empty. Qed.
+  Lemma phi_lookup 𝛼 l :
+      𝜙 𝛼 !! l = match 𝛼 !! (inl l) with Some (_, v) => Some v | _ => None end.
+  Proof. apply 𝜙_lookup. Qed.
+  Lemma phi_insert_loc 𝛼 l cells v : 𝜙 (<[ inl l := (cells, v) ]> 𝛼) = <[ l := v ]> (𝜙 𝛼).
+  Proof. apply 𝜙_insert_l. Qed.
+  Lemma phi_insert_unt 𝛼 u cells v : 𝜙 (<[ inr u := (cells, v) ]> 𝛼) = 𝜙 𝛼.
+  Proof. apply 𝜙_insert_u. Qed.
+  Lemma phi_delete_loc 𝛼 l : 𝜙 (delete (inl l) 𝛼) = delete l (𝜙 𝛼).
+  Proof. apply 𝜙_delete_l. Qed.
+  Lemma phi_delete_unt 𝛼 u : 𝜙 (delete (inr u) 𝛼) = 𝜙 𝛼.
+  Proof. apply 𝜙_delete_u. Qed.
 
   (* into the logic *)
       
@@ -3097,40 +3112,71 @@ Section Cmap.
   Lemma fpt_point_prop γ lc cv : factoring_props.point_prop (fpt γ lc cv).
   Proof. apply point_prop_own. Qed.
 
-  Local Lemma fheap_own γ 𝛼 𝛽 𝜃 :
-    fheap γ 𝛼 ∗ own γ (FOk None 𝛽 𝜃) ⊣⊢ own γ (FOk (Some 𝛼) 𝛽 𝜃).
+  Local Lemma fcmap_update_frag 𝛼 𝛼' 𝛽 𝛽' 𝜃 𝜃' :
+    (∀ 𝛽f 𝜃f, 𝛽 ##ₘ 𝛽f → 𝜃 ##ₘ 𝜃f → big_inv 𝛼 (𝛽 ∪ 𝛽f) (𝜃 ∪ 𝜃f) →
+       𝛽' ##ₘ 𝛽f ∧ 𝜃' ##ₘ 𝜃f ∧ big_inv 𝛼' (𝛽' ∪ 𝛽f) (𝜃' ∪ 𝜃f)) →
+    FOk (Some 𝛼) ∅ ∅ ⋅ FOk None 𝛽 𝜃 ~~> FOk (Some 𝛼') ∅ ∅ ⋅ FOk None 𝛽' 𝜃'.
   Proof.
-    rewrite /fheap -own_op fcmap_op_auth; [|solve_map_disjoint..].
-    by rewrite !map_empty_union.
+    rewrite !fcmap_op_auth; [|solve_map_disjoint..]. rewrite !map_empty_union.
+    apply fcmap_update.
   Qed.
+
+  Local Lemma fcmap_auth_unit 𝛼 : FOk (Some 𝛼) ∅ ∅ = FOk (Some 𝛼) ∅ ∅ ⋅ FOk None ∅ ∅.
+  Proof. rewrite fcmap_op_auth; [|solve_map_disjoint..]. by rewrite map_empty_union. Qed.
 
   Local Lemma own_frag_op γ 𝛽1 𝜃1 𝛽2 𝜃2 :
     𝛽1 ##ₘ 𝛽2 → 𝜃1 ##ₘ 𝜃2 →
-    own γ (FOk None 𝛽1 𝜃1) ∗ own γ (FOk None 𝛽2 𝜃2) ⊣⊢ own γ (FOk None (𝛽1 ∪ 𝛽2) (𝜃1 ∪ 𝜃2)).
+    own γ (FOk None (𝛽1 ∪ 𝛽2) (𝜃1 ∪ 𝜃2)) ⊣⊢ own γ (FOk None 𝛽1 𝜃1) ∗ own γ (FOk None 𝛽2 𝜃2).
   Proof. intros ??. by rewrite -own_op fcmap_op_frag. Qed.
+
+  Lemma fpt_funt_own γ lc cv u c v :
+    fpt γ lc cv ∗ funt γ u c v ⊣⊢ own γ (FOk None {[lc := cv]} {[u := (c, v)]}).
+  Proof.
+    rewrite /fpt /funt -own_frag_op; [|solve_map_disjoint..].
+    by rewrite map_union_empty map_empty_union.
+  Qed.
+  Lemma fpt_funt_own_1 γ lc cv u c v :
+    fpt γ lc cv -∗ funt γ u c v -∗ own γ (FOk None {[lc := cv]} {[u := (c, v)]}).
+  Proof. iIntros "A B". iApply fpt_funt_own. iFrame. Qed.
+
+  Lemma fpt_fpt_own γ lc cv lc' cv' :
+    lc ≠ lc' → fpt γ lc cv ∗ fpt γ lc' cv' ⊣⊢ own γ (FOk None ({[lc := cv]} ∪ {[lc' := cv']}) ∅).
+  Proof.
+    intros Hne. rewrite /fpt -own_frag_op; [|by apply map_disjoint_singleton_l_2, lookup_singleton_ne|solve_map_disjoint].
+    by rewrite map_union_empty.
+  Qed.
+  Lemma fpt_fpt_own_1 γ lc cv lc' cv' :
+    lc ≠ lc' → fpt γ lc cv -∗ fpt γ lc' cv' -∗ own γ (FOk None ({[lc := cv]} ∪ {[lc' := cv']}) ∅).
+  Proof. iIntros (?) "A B". iApply fpt_fpt_own; [done|]. iFrame. Qed.
 
   Lemma fcmap_init : ⊢ |==> ∃ γ, fheap γ ∅.
   Proof. iApply own_alloc. apply big_inv_empty. Qed.
 
-  Lemma fheap_valid γ 𝛼 𝛽 𝜃 : own γ (FOk (Some 𝛼) 𝛽 𝜃) -∗ ⌜big_inv 𝛼 𝛽 𝜃⌝.
+  Lemma fheap_valid γ 𝛼 : fheap γ 𝛼 -∗ ⌜big_inv 𝛼 ∅ ∅⌝.
   Proof. iIntros "H". by iDestruct (own_valid with "H") as %?. Qed.
+
+  Lemma fheap_frag_valid γ 𝛼 𝛽 𝜃 :
+    fheap γ 𝛼 -∗ own γ (FOk None 𝛽 𝜃) -∗ ⌜big_inv 𝛼 𝛽 𝜃⌝.
+  Proof.
+    iIntros "A B". iDestruct (own_valid_2 with "A B") as %Hv. iPureIntro.
+    rewrite fcmap_op_auth in Hv; [|solve_map_disjoint..]. by rewrite !map_empty_union in Hv.
+  Qed.
 
   Lemma fheap_no_dupes γ 𝛼 : fheap γ 𝛼 -∗ ⌜cells_no_dupes 𝛼⌝.
   Proof. iIntros "H". iDestruct (fheap_valid with "H") as %(_&_&?). done. Qed.
 
   Lemma fheap_fpt γ 𝛼 lc cv : fheap γ 𝛼 -∗ fpt γ lc cv -∗ ⌜𝛼_fine_pair 𝛼 lc cv⌝.
   Proof.
-    iIntros "A B". iCombine "A B" as "A". rewrite fheap_own.
-    iDestruct (fheap_valid with "A") as %(Hf&_&_). iPureIntro. apply Hf. apply lookup_singleton.
+    iIntros "A B". iDestruct (fheap_frag_valid with "A B") as %(Hf&_&_).
+    iPureIntro. apply Hf. apply lookup_singleton.
   Qed.
 
   Lemma fheap_funt γ 𝛼 u c v :
     fheap γ 𝛼 -∗ funt γ u c v -∗ ⌜∃ cs, 𝛼 !! inr u = Some (c :: cs, v)⌝.
   Proof.
-    iIntros "A B". iCombine "A B" as "A". rewrite fheap_own.
-    iDestruct (fheap_valid with "A") as %(_&Hu&_). iPureIntro.
-    have := Hu u c v (lookup_singleton _ _). destruct (𝛼 !! inr u) as [[[|c' cs] v']|]; try done.
-    intros [-> ->]. by eexists.
+    iIntros "A B". iDestruct (fheap_frag_valid with "A B") as %(_&Hu&_). iPureIntro.
+    have Hx := Hu u c v. rewrite lookup_singleton in Hx. specialize (Hx eq_refl).
+    destruct (𝛼 !! inr u) as [[[|c' cs] v']|]; try done. destruct Hx as [-> ->]. by eexists.
   Qed.
 
   Lemma fpt_excl γ lc cv cv' : fpt γ lc cv -∗ fpt γ lc cv' -∗ False.
@@ -3151,7 +3197,8 @@ Section Cmap.
     𝛼 !! inl l = None →
     fheap γ 𝛼 ==∗ fheap γ (<[inl l := ([], v)]> 𝛼) ∗ fpt γ (inl l) (inr v).
   Proof.
-    intros Hnone. rewrite /fpt fheap_own. iApply own_update. apply fcmap_update.
+    intros Hnone. rewrite /fheap /fpt -own_op. iApply own_update.
+    rewrite {1}fcmap_auth_unit. apply fcmap_update_frag.
     intros 𝛽f 𝜃f _ _ Hinv. rewrite !map_empty_union in Hinv |- *.
     have Hnone' : 𝜙 𝛼 !! l = None by rewrite 𝜙_lookup Hnone.
     destruct (alloc_preserves_inv 𝛼 𝛽f 𝜃f l v Hnone' Hinv) as (Hinv' & H𝛽 & _).
@@ -3164,25 +3211,25 @@ Section Cmap.
       ⌜𝛼 !! inl l = Some ([], v)⌝ ∗ fheap γ (delete (inl l) 𝛼).
   Proof.
     iIntros "A B". iDestruct (fheap_fpt with "A B") as %Hp.
-    iCombine "A B" as "A". rewrite fheap_own.
-    iMod (own_update with "A") as "A"; last first.
-    { iModIntro. iSplit; [done|]. rewrite /fheap. iExact "A". }
-    apply fcmap_update. intros 𝛽f 𝜃f Hd _ Hinv.
+    iMod (own_update_2 _ _ _ (FOk (Some (delete (inl l) 𝛼)) ∅ ∅ ⋅ FOk None ∅ ∅) with "A B") as "[A _]".
+    2: { iModIntro. iSplit; [done|]. iExact "A". }
+    apply fcmap_update_frag. intros 𝛽f 𝜃f Hd _ Hinv.
     have Hl : ({[inl l := inr v]} ∪ 𝛽f) !! inl l = Some (inr v).
     { by rewrite lookup_union lookup_singleton union_Some_l. }
     destruct (del_preserves_inv 𝛼 _ _ l v Hl Hinv) as [Hinv' _].
     rewrite delete_union delete_singleton map_empty_union in Hinv'.
     rewrite delete_notin in Hinv'; [|by eapply map_disjoint_singleton_l].
     split; [solve_map_disjoint|]. split; [solve_map_disjoint|].
-    by rewrite !map_empty_union.
+    rewrite map_empty_union. exact Hinv'.
   Qed.
 
   Lemma fcmap_write_loc γ 𝛼 l cs v v' lc :
     𝛼 !! inl l = Some (cs, v) → row_last (inl l) cs = Some lc →
     fheap γ 𝛼 -∗ fpt γ lc (inr v) ==∗ fheap γ (<[inl l := (cs, v')]> 𝛼) ∗ fpt γ lc (inr v').
   Proof.
-    iIntros (Hk Hlast) "A B". iCombine "A B" as "A". rewrite /fpt !fheap_own.
-    iApply (own_update with "A"). apply fcmap_update. intros 𝛽f 𝜃f Hd _ Hinv.
+    iIntros (Hk Hlast) "A B".
+    iMod (own_update_2 with "A B") as "[$ $]"; [|done].
+    apply fcmap_update_frag. intros 𝛽f 𝜃f Hd _ Hinv.
     rewrite map_empty_union in Hinv. rewrite map_empty_union.
     have Hinv' := write_row_preserves_inv 𝛼 _ 𝜃f 𝜃f (inl l) cs v v' lc Hk Hlast
       (unt_map_inv_insert_loc _ _ _ _ (proj1 (proj2 Hinv))) Hinv.
@@ -3196,22 +3243,19 @@ Section Cmap.
     fheap γ 𝛼 -∗ funt γ u c v -∗ fpt γ lc (inr v) ==∗
       fheap γ (<[inr u := (c :: cs, v')]> 𝛼) ∗ funt γ u c v' ∗ fpt γ lc (inr v').
   Proof.
-    iIntros (Hk Hlast) "A B C". iCombine "B C" as "B". rewrite /funt /fpt.
-    rewrite own_frag_op; [|solve_map_disjoint..]. rewrite !map_empty_union map_union_empty.
-    iCombine "A B" as "A". rewrite fheap_own.
-    iMod (own_update with "A") as "A".
-    2: { rewrite -fheap_own. iDestruct "A" as "[$ A]".
-         rewrite -(map_empty_union {[lc := _]}) -(map_union_empty {[u := _]}) -own_frag_op;
-           [|solve_map_disjoint..].
-         iDestruct "A" as "[$ $]". done. }
-    apply fcmap_update. intros 𝛽f 𝜃f Hd1 Hd2 Hinv.
+    iIntros (Hk Hlast) "A B C". iDestruct (fpt_funt_own_1 with "C B") as "B".
+    iMod (own_update_2 _ _ _ (FOk (Some (<[inr u := (c :: cs, v')]> 𝛼)) ∅ ∅ ⋅
+      FOk None {[lc := inr v']} {[u := (c, v')]}) with "A B") as "[$ B]".
+    2: { iModIntro. iDestruct (fpt_funt_own with "B") as "[$ $]". }
+    apply fcmap_update_frag. intros 𝛽f 𝜃f Hd1 Hd2 Hinv.
     have Hu : unt_map_inv (<[inr u:=(c :: cs, v')]> 𝛼) ({[u := (c, v')]} ∪ 𝜃f).
     { intros u' c' v0 Hl. destruct (decide (u' = u)) as [->|Hne].
       - rewrite lookup_insert. rewrite lookup_union lookup_singleton in Hl.
-        rewrite (map_disjoint_singleton_l _ _ _ _ Hd2) in Hl. by simplify_eq.
+        have H𝜃f : 𝜃f !! u = None by eapply map_disjoint_singleton_l.
+        rewrite H𝜃f (right_id_L None union) in Hl. simplify_eq. by split.
       - rewrite lookup_insert_ne; [|congruence].
-        rewrite lookup_union lookup_singleton_ne // left_id in Hl.
-        apply (proj1 (proj2 Hinv)). rewrite lookup_union lookup_singleton_ne // left_id //. }
+        rewrite lookup_union lookup_singleton_ne // (left_id_L None union) in Hl.
+        apply (proj1 (proj2 Hinv)). rewrite lookup_union lookup_singleton_ne // (left_id_L None union) //. }
     have Hinv' := write_row_preserves_inv 𝛼 _ _ _ (inr u) (c :: cs) v v' lc Hk Hlast Hu Hinv.
     rewrite insert_union_l insert_singleton in Hinv'.
     split; [|split; [|done]].
@@ -3224,23 +3268,20 @@ Section Cmap.
       ⌜is_row_for_lc 𝛼 lc k cells1 c cells2 v ∧ fresh_uid 𝛼 u⌝ ∗
       fheap γ (𝛼_untether 𝛼 lc k cells1 c cells2 v u) ∗ fpt γ lc (inr v) ∗ funt γ u c v.
   Proof using Infinite_C.
-    iIntros "A B". iCombine "A B" as "A". rewrite /fpt fheap_own.
-    iDestruct (fheap_valid with "A") as %Hinv0.
+    iIntros "A B". iDestruct (fheap_frag_valid with "A B") as %Hinv0.
     destruct (get_row_for_lc 𝛼 _ ∅ lc c (lookup_singleton _ _) Hinv0)
       as (k & cells1 & cells2 & v & Hrow).
     destruct (exists_fresh_uid 𝛼) as [u Hu].
-    iMod (own_update _ _ (FOk (Some (𝛼_untether 𝛼 lc k cells1 c cells2 v u))
-      {[lc := inr v]} {[u := (c, v)]}) with "A") as "A".
-    { apply fcmap_update. intros 𝛽f 𝜃f Hd1 Hd2 Hinv.
+    iMod (own_update_2 _ _ _ (FOk (Some (𝛼_untether 𝛼 lc k cells1 c cells2 v u)) ∅ ∅ ⋅
+      FOk None {[lc := inr v]} {[u := (c, v)]}) with "A B") as "[A B]".
+    { apply fcmap_update_frag. intros 𝛽f 𝜃f Hd1 Hd2 Hinv.
       have Hinv' := untether_preserves_inv 𝛼 _ _ lc k cells1 c cells2 v u Hrow Hu Hinv.
       have H𝜃 := fresh_uid_not_in_𝜃 _ _ _ u Hu Hinv. rewrite map_empty_union in H𝜃.
       rewrite insert_union_l insert_singleton map_empty_union insert_union_singleton_l in Hinv'.
       split; [|split; [by apply map_disjoint_singleton_l_2|done]].
       apply map_disjoint_singleton_l_2. by eapply map_disjoint_singleton_l. }
-    iModIntro. iExists k, cells1, cells2, v, u. iSplit; [done|].
-    rewrite -fheap_own. iDestruct "A" as "[$ A]".
-    rewrite /funt -(map_union_empty {[lc := _]}) -(map_empty_union {[u := _]}) -own_frag_op;
-      [|solve_map_disjoint..]. iExact "A".
+    iModIntro. iExists k, cells1, cells2, v, u. iSplit; [done|]. iFrame "A".
+    by iApply fpt_funt_own.
   Qed.
 
   Lemma fcmap_retether γ 𝛼 l v u c :
@@ -3250,11 +3291,10 @@ Section Cmap.
   Proof.
     iIntros "A B C". iDestruct (fheap_fpt with "A B") as %Hl.
     iDestruct (fheap_funt with "A C") as %[cs Hu].
-    iCombine "B C" as "B". rewrite /fpt /funt own_frag_op; [|solve_map_disjoint..].
-    rewrite !map_empty_union map_union_empty. iCombine "A B" as "A". rewrite fheap_own.
-    iMod (own_update _ _ (FOk (Some (<[inl l := (c :: cs, v)]> (delete (inr u) 𝛼)))
-      {[inl l := inl c]} ∅) with "A") as "A".
-    { apply fcmap_update. intros 𝛽f 𝜃f Hd1 Hd2 Hinv.
+    iDestruct (fpt_funt_own_1 with "B C") as "B".
+    iMod (own_update_2 _ _ _ (FOk (Some (<[inl l := (c :: cs, v)]> (delete (inr u) 𝛼))) ∅ ∅ ⋅
+      FOk None {[inl l := inl c]} ∅) with "A B") as "[A B]".
+    { apply fcmap_update_frag. intros 𝛽f 𝜃f Hd1 Hd2 Hinv.
       have Hr : read ({[inl l := inr v]} ∪ 𝛽f) (inl l) [] (inr v).
       { by rewrite /= lookup_union lookup_singleton union_Some_l. }
       have H𝜃 : ({[u := (c, v)]} ∪ 𝜃f) !! u = Some (c, v).
@@ -3266,7 +3306,7 @@ Section Cmap.
       rewrite map_empty_union.
       split; [|split; [solve_map_disjoint|done]].
       apply map_disjoint_singleton_l_2. by eapply map_disjoint_singleton_l. }
-    iModIntro. iExists cs. iSplit; [done|]. by rewrite -fheap_own.
+    iModIntro. iExists cs. iSplit; [done|]. iFrame.
   Qed.
 
   Lemma fcmap_insert_front γ 𝛼 l cs v cv0 :
@@ -3274,14 +3314,12 @@ Section Cmap.
     fheap γ 𝛼 -∗ fpt γ (inl l) cv0 ==∗ ∃ nc, ⌜fresh_cell_id 𝛼 nc⌝ ∗
       fheap γ (<[inl l := (nc :: cs, v)]> 𝛼) ∗ fpt γ (inl l) (inl nc) ∗ fpt γ (inr nc) cv0.
   Proof using Infinite_C.
-    iIntros (Hk) "A B". iCombine "A B" as "A". rewrite /fpt fheap_own.
-    iDestruct (fheap_valid with "A") as %Hinv0.
+    iIntros (Hk) "A B". iDestruct (fheap_frag_valid with "A B") as %Hinv0.
     destruct (exists_fresh_cell_id 𝛼) as [nc Hnc].
-    have Hnc𝛽 := fresh_cell_not_in_𝛽 _ _ _ nc Hnc Hinv0.
     have Hne : inl l ≠ (inr nc : L + C) by done.
-    iMod (own_update _ _ (FOk (Some (<[inl l := (nc :: cs, v)]> 𝛼))
-      ({[inl l := inl nc]} ∪ {[inr nc := cv0]}) ∅) with "A") as "A".
-    { apply fcmap_update. intros 𝛽f 𝜃f Hd1 Hd2 Hinv.
+    iMod (own_update_2 _ _ _ (FOk (Some (<[inl l := (nc :: cs, v)]> 𝛼)) ∅ ∅ ⋅
+      FOk None ({[inl l := inl nc]} ∪ {[inr nc := cv0]}) ∅) with "A B") as "[A B]".
+    { apply fcmap_update_frag. intros 𝛽f 𝜃f Hd1 Hd2 Hinv.
       have Hb : ({[inl l := cv0]} ∪ 𝛽f) !! inl l = Some cv0.
       { by rewrite lookup_union lookup_singleton union_Some_l. }
       have Hnc' := fresh_cell_not_in_𝛽 _ _ _ nc Hnc Hinv.
@@ -3290,16 +3328,17 @@ Section Cmap.
       have Hl : 𝛽f !! inl l = None by eapply map_disjoint_singleton_l.
       split; [|split; [done|]].
       - apply map_disjoint_union_l_2; by apply map_disjoint_singleton_l_2.
-      - rewrite map_empty_union in Hinv' |- *. eapply big_inv_eq; [|exact Hinv'].
-        f_equal. apply map_eq. intros i.
-        destruct (decide (i = inl l)) as [->|]; [by rewrite !lookup_insert lookup_union lookup_singleton|].
+      - eapply big_inv_eq; [|exact Hinv']. apply map_eq. intros i.
+        destruct (decide (i = inl l)) as [->|].
+        { rewrite lookup_insert !lookup_union lookup_singleton lookup_singleton_ne // Hl;
+          by rewrite ?(right_id_L None union). }
         rewrite lookup_insert_ne //. destruct (decide (i = inr nc)) as [->|].
-        + rewrite lookup_insert !lookup_union lookup_singleton_ne // lookup_singleton.
-          by rewrite left_id Hnc'.
-        + rewrite lookup_insert_ne // !lookup_union !lookup_singleton_ne //. }
-    iModIntro. iExists nc. iSplit; [done|]. rewrite -fheap_own. iDestruct "A" as "[$ A]".
-    rewrite -(map_union_empty (∅ : unt_map)) -own_frag_op; [done|..|solve_map_disjoint].
-    by apply map_disjoint_singleton_l_2, lookup_singleton_ne.
+        + rewrite lookup_insert !lookup_union lookup_singleton_ne // lookup_singleton Hnc';
+          by rewrite ?(left_id_L None union) ?(right_id_L None union).
+        + rewrite lookup_insert_ne // !lookup_union !lookup_singleton_ne //;
+          by rewrite ?(left_id_L None union). }
+    iModIntro. iExists nc. iSplit; [done|]. iFrame "A".
+    by iApply fpt_fpt_own.
   Qed.
 
   Lemma fcmap_delete_front γ 𝛼 l c cv :
@@ -3308,31 +3347,35 @@ Section Cmap.
   Proof.
     iIntros "A B C". iDestruct (fheap_fpt with "A B") as %Hl.
     rewrite /𝛼_fine_pair in Hl.
-    destruct (𝛼 !! inl l) as [[[|c' cs] v]|] eqn:Hk; try done. simplify_eq.
+    destruct (𝛼 !! inl l) as [[[|c' cs] v]|] eqn:Hk; try done. subst c'.
     have Hne : (inl l : L + C) ≠ inr c by done.
-    iCombine "B C" as "B". rewrite /fpt own_frag_op; [|by apply map_disjoint_singleton_l_2, lookup_singleton_ne|solve_map_disjoint].
-    rewrite map_empty_union. iCombine "A B" as "A". rewrite fheap_own.
-    iMod (own_update _ _ (FOk (Some (<[inl l := (cs, v)]> 𝛼)) {[inl l := cv]} ∅) with "A") as "A".
-    { apply fcmap_update. intros 𝛽f 𝜃f Hd1 Hd2 Hinv.
+    iDestruct (fpt_fpt_own_1 with "B C") as "B"; [done|].
+    iMod (own_update_2 _ _ _ (FOk (Some (<[inl l := (cs, v)]> 𝛼)) ∅ ∅ ⋅
+      FOk None {[inl l := cv]} ∅) with "A B") as "[A B]".
+    { apply fcmap_update_frag. intros 𝛽f 𝜃f Hd1 Hd2 Hinv.
       have Hb1 : ({[inl l := inl c]} ∪ {[inr c := cv]} ∪ 𝛽f) !! inl l = Some (inl c).
-      { by rewrite !lookup_union lookup_singleton lookup_singleton_ne // right_id union_Some_l. }
+      { by rewrite !lookup_union lookup_singleton lookup_singleton_ne // (right_id_L None union) union_Some_l. }
       have Hb2 : ({[inl l := inl c]} ∪ {[inr c := cv]} ∪ 𝛽f) !! inr c = Some cv.
-      { by rewrite !lookup_union lookup_singleton lookup_singleton_ne // left_id union_Some_l. }
+      { by rewrite !lookup_union lookup_singleton lookup_singleton_ne // (left_id_L None union) union_Some_l. }
       have Hrow : is_row_for_lc 𝛼 (inl l) (inl l) [] c cs v by done.
       have Hinv' := delete_cell_preserves_inv 𝛼 _ _ (inl l) c cv (inl l) [] cs v Hb1 Hb2 Hrow Hinv.
       rewrite /𝛼_delete_cell /= in Hinv'.
       have Hf1 : 𝛽f !! inl l = None.
-      { eapply map_disjoint_Some_l in Hd1; [done|]. by rewrite lookup_union lookup_singleton union_Some_l. }
+      { eapply map_disjoint_Some_l in Hd1; [done|].
+        by rewrite lookup_union lookup_singleton union_Some_l. }
       have Hf2 : 𝛽f !! inr c = None.
       { eapply map_disjoint_Some_l in Hd1; [done|].
-        by rewrite lookup_union lookup_singleton lookup_singleton_ne // left_id. }
+        by rewrite lookup_union lookup_singleton lookup_singleton_ne // (left_id_L None union). }
       split; [by apply map_disjoint_singleton_l_2|]. split; [done|].
       eapply big_inv_eq; [|exact Hinv']. apply map_eq. intros i.
-      destruct (decide (i = inl l)) as [->|]; [by rewrite lookup_insert lookup_union lookup_singleton|].
+      destruct (decide (i = inl l)) as [->|].
+      { rewrite lookup_insert lookup_union lookup_singleton Hf1; by rewrite ?(right_id_L None union). }
       rewrite lookup_insert_ne //. destruct (decide (i = inr c)) as [->|].
-      + by rewrite lookup_delete lookup_union lookup_singleton_ne // left_id Hf2.
-      + by rewrite lookup_delete_ne // !lookup_union !lookup_singleton_ne // !left_id. }
-    iModIntro. iExists cs, v. iSplit; [done|]. by rewrite -fheap_own.
+      + rewrite lookup_delete lookup_union lookup_singleton_ne // ?(left_id_L None union) Hf2;
+        by rewrite ?(left_id_L None union) ?(right_id_L None union).
+      + rewrite lookup_delete_ne // !lookup_union !lookup_singleton_ne //;
+        by rewrite ?(left_id_L None union). }
+    iModIntro. iExists cs, v. iSplit; [done|]. iFrame.
   Qed.
 
 End Cmap.
