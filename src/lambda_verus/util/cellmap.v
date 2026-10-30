@@ -2689,6 +2689,11 @@ Section Cmap.
       rewrite Hrest. set_solver.
   Qed.
 
+  Lemma rows_disjoint 𝛼 k1 k2 cs1 v1 cs2 v2 c :
+    cells_no_dupes 𝛼 → k1 ≠ k2 → 𝛼 !! k1 = Some (cs1, v1) → 𝛼 !! k2 = Some (cs2, v2) →
+    c ∈ cs1 → c ∉ cs2.
+  Proof. intros. by eapply cells_no_dupes_different_rows_disjoint. Qed.
+
   (** Public versions of the lemmas about the physical heap [𝜙 𝛼]. *)
   Lemma phi_empty : 𝜙 ∅ = ∅.
   Proof. apply map_fold_empty. Qed.
