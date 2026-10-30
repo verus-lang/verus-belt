@@ -8,7 +8,7 @@ Set Default Proof Using "Type".
 
 Definition Mask := coPset.
 
-Inductive syn_type := Zₛ | boolₛ | unitₛ | Propₛ | positiveₛ
+Inductive syn_type := intₛ (_: IntType) | boolₛ | unitₛ | Propₛ | positiveₛ
 | optionₛ (_: syn_type) | listₛ (_: syn_type) | vecₛ (_: syn_type) (_: nat)
 | prodₛ (_ _: syn_type) | sumₛ (_ _: syn_type)
 | xprodₛ (_: list syn_type) | xsumₛ (_: list syn_type)
@@ -32,6 +32,10 @@ Inductive syn_type := Zₛ | boolₛ | unitₛ | Propₛ | positiveₛ
 | maskₛ
 .
 
+(** The syntactic type of the integers of an [IntType]. [Zₛ] is the one of [isize]
+    (the legacy integer type, see [typing/int.v]). *)
+Notation Zₛ := (intₛ isize).
+
 Notation syn_typel := (list syn_type).
 Implicit Type (𝔄 𝔅: syn_type) (𝔄l 𝔅l: syn_typel).
 
@@ -51,7 +55,7 @@ Global Instance Empty_setₛ_empty: Empty syn_type := Empty_setₛ.
 
 Fixpoint indep_interp_of_syn_type (𝔄: syn_type) : Type :=
   match 𝔄 with
-  | Zₛ => Z | boolₛ => bool | unitₛ => () | Propₛ => Prop | positiveₛ => positive
+  | intₛ _ => Z | boolₛ => bool | unitₛ => () | Propₛ => Prop | positiveₛ => positive
   | optionₛ 𝔄₀ => option (indep_interp_of_syn_type 𝔄₀) | listₛ 𝔄₀ => list (indep_interp_of_syn_type 𝔄₀)
   | vecₛ 𝔄₀ n => vec (indep_interp_of_syn_type 𝔄₀) n
   | prodₛ 𝔄₀ 𝔄₁ => indep_interp_of_syn_type 𝔄₀ * indep_interp_of_syn_type 𝔄₁
@@ -82,7 +86,7 @@ Notation "~~" := indep_interp_of_syn_type.
 
 Fixpoint proph_interp_of_syn_type (𝔄: syn_type) : Type :=
   match 𝔄 with
-  | Zₛ => Z | boolₛ => bool | unitₛ => () | Propₛ => Prop | positiveₛ => positive
+  | intₛ _ => Z | boolₛ => bool | unitₛ => () | Propₛ => Prop | positiveₛ => positive
   | optionₛ 𝔄₀ => option (proph_interp_of_syn_type 𝔄₀) | listₛ 𝔄₀ => list (proph_interp_of_syn_type 𝔄₀)
   | vecₛ 𝔄₀ n => vec (proph_interp_of_syn_type 𝔄₀) n
   | prodₛ 𝔄₀ 𝔄₁ => proph_interp_of_syn_type 𝔄₀ * proph_interp_of_syn_type 𝔄₁
@@ -112,7 +116,7 @@ Coercion proph_interp_of_syn_type: syn_type >-> Sortclass.
 
 Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
   match 𝔄 with
-  | Zₛ => Z | boolₛ => bool | unitₛ => () | Propₛ => Prop | positiveₛ => positive
+  | intₛ _ => Z | boolₛ => bool | unitₛ => () | Propₛ => Prop | positiveₛ => positive
   | optionₛ 𝔄₀ => option (abstracted_syn_type 𝔄₀) | listₛ 𝔄₀ => list (abstracted_syn_type 𝔄₀)
   | vecₛ 𝔄₀ n => vec (abstracted_syn_type 𝔄₀) n
   | prodₛ 𝔄₀ 𝔄₁ => abstracted_syn_type 𝔄₀ * abstracted_syn_type 𝔄₁
@@ -143,9 +147,10 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
 
 Fixpoint syn_type_beq 𝔄 𝔅 : bool :=
   match 𝔄, 𝔅 with
-  | Zₛ, Zₛ | boolₛ, boolₛ | (), () | Propₛ, Propₛ | positiveₛ, positiveₛ
+  | boolₛ, boolₛ | (), () | Propₛ, Propₛ | positiveₛ, positiveₛ
   | locₛ, locₛ | paddingₛ, paddingₛ | namespaceₛ, namespaceₛ | maskₛ, maskₛ
     => true
+  | intₛ it, intₛ it' => bool_decide (it = it')
   | uninitₛ n, uninitₛ m => bool_decide (n = m)
   | pcellₛ n, pcellₛ m => bool_decide (n = m)
   | optionₛ 𝔄₀, optionₛ 𝔅₀ | listₛ 𝔄₀, listₛ 𝔅₀ | at_locₛ 𝔄₀, at_locₛ 𝔅₀
@@ -365,7 +370,7 @@ Proof. apply populate. case=> ??. apply inhabitant. Qed.
 
 Fixpoint vπ {𝔄} : ~~𝔄 → proph_asn → 𝔄 :=
   match 𝔄 return ~~𝔄 → proph_asn → 𝔄 with
-  | Zₛ => λ x π , x
+  | intₛ _ => λ x π , x
   | boolₛ => λ x π , x
   | unitₛ => λ x π , x
   | Propₛ => λ x π , x
@@ -409,7 +414,7 @@ Fixpoint plist_to_list {A: Type} {U: Type} {Xl} (xl: plist (λ (_ : A), U) Xl) :
   
 Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   match 𝔄 return ~~𝔄 → list proph_var with
-  | Zₛ => λ x , []
+  | intₛ _ => λ x , []
   | boolₛ => λ x , []
   | unitₛ => λ x , []
   | Propₛ => λ x , []
@@ -454,7 +459,7 @@ Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   
 Fixpoint size_of 𝔄 : nat :=
   match 𝔄 return nat with
-  | Zₛ => 1
+  | intₛ _ => 1
   | boolₛ => 1
   | unitₛ => 0
   | Propₛ => 0
@@ -494,7 +499,7 @@ Definition pad (l: list fancy_val) (n: nat) : list fancy_val :=
   
 Fixpoint syn_phys {𝔄} : (~~𝔄) → list fancy_val :=
   match 𝔄 return (~~𝔄) → list fancy_val with
-  | Zₛ => λ x, [ FVal (LitV (LitInt x)) ]
+  | intₛ _ => λ x, [ FVal (LitV (LitInt x)) ]
   | boolₛ => λ x, [FVal (LitV (lit_of_bool x))]
   | unitₛ => λ x, []
   | Propₛ => λ x, []
@@ -598,7 +603,7 @@ Proof. done. Qed.
 
 Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   match 𝔄 return ~~𝔄 → abstracted_syn_type 𝔄 with
-  | Zₛ => λ x , x
+  | intₛ _ => λ x , x
   | boolₛ => λ x , x
   | unitₛ => λ x , x
   | Propₛ => λ x , x
@@ -671,6 +676,261 @@ Proof.
     destruct x' as [[[[[[? ?] ?] ?] ?] ?] ?].
     inversion Hab as [[Ha Hb]]. clear FIX. trivial.
   - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
+Qed.
+
+(** * MiniRust types and values of syntactic types
+
+The MiniRust type [syn_mty 𝔄] (see [lang/minirust.v]) of a syntactic type, and the
+MiniRust value [syn_val x] (if any) of [x : ~~𝔄]. Like [size_of] and [syn_phys], they
+are determined by the syntactic type: every semantic type [ty : type 𝔄] has
+[ty_mty ty = syn_mty 𝔄] and [ty_val ty = syn_val] (see [typing/type.v]). They are
+shallow: a pointer is [MPtr] whatever its pointee.
+
+Layouts (sizes are abstract and there is no alignment yet):
+- [intₛ it] is [MInt it], [boolₛ] is [MBool], and the pointer-like types ([locₛ],
+  [at_locₛ], [at_clocₛ], [uniq_borₛ], [exec_funₛ]) are [MPtr];
+- a product is a tuple whose fields are laid out one after the other ([seq_tuple]);
+- [Σ! 𝔄l] is an enum with a tag of type [enum_tag (length 𝔄l)] at offset 0 and the
+  data of each variant right after the tag ([seq_enum]); the legacy padding component
+  of [~~(Σ! 𝔄l)] is ignored;
+- [uninitₛ n] and [pcellₛ n] are [n] bytes of padding ([MTuple [] n]);
+- every other syntactic type is zero-sized ([zst_mty]).
+
+[syn_val x] is [None] for the values that have no MiniRust representation: integers
+out of the range of their [IntType], closures ([exec_funₛ]) and cells ([pcellₛ]); so
+is a product or sum with such a component. *)
+
+Fixpoint layout_fields (o : nat) (ms : list mty) : list (nat * mty) :=
+  match ms with [] => [] | m :: ms => (o, m) :: layout_fields (o + mty_size m) ms end.
+Definition seq_size (ms : list mty) : nat := list_sum (mty_size <$> ms).
+Definition seq_tuple (ms : list mty) : mty := MTuple (layout_fields 0 ms) (seq_size ms).
+
+(** A one-byte tag for up to 256 variants. *)
+Definition enum_tag (n : nat) : IntType :=
+  IntTy false (if decide (n ≤ 256)%nat then 1 else n).
+Definition seq_enum (ms : list mty) : mty :=
+  MEnum ms (enum_tag (length ms))
+    (int_size (enum_tag (length ms)) + list_max (mty_size <$> ms)).
+
+Definition zst_mty : mty := MTuple [] 0.
+
+Fixpoint syn_mty (𝔄: syn_type) : mty :=
+  match 𝔄 with
+  | intₛ it => MInt it
+  | boolₛ => MBool
+  | locₛ | at_locₛ _ | at_clocₛ _ | uniq_borₛ _ | exec_funₛ _ => MPtr
+  | prodₛ 𝔄₀ 𝔄₁ => seq_tuple [syn_mty 𝔄₀; syn_mty 𝔄₁]
+  | xprodₛ 𝔄l => seq_tuple (syn_mty <$> 𝔄l)
+  | xsumₛ 𝔄l => seq_enum (syn_mty <$> 𝔄l)
+  | uninitₛ n | pcellₛ n => MTuple [] n
+  | _ => zst_mty
+  end.
+
+Fixpoint syn_val {𝔄} : ~~𝔄 → option Value :=
+  match 𝔄 return ~~𝔄 → option Value with
+  | intₛ it => λ z, if decide (int_in_range it z) then Some (VInt z) else None
+  | boolₛ => λ b, Some (VBool b)
+  | locₛ => λ l, Some (VPtr l)
+  | at_locₛ _ => λ x, Some (VPtr x.1)
+  | at_clocₛ _ => λ x, Some (VPtr x.1.1)
+  | uniq_borₛ _ => λ x, match x with (l, _, _, _, _, _) => Some (VPtr l.1) end
+  | exec_funₛ _ => λ _, None
+  | pcellₛ _ => λ _, None
+  | prodₛ 𝔄₀ 𝔄₁ => λ '(x₀, x₁),
+      v₀ ← @syn_val 𝔄₀ x₀; v₁ ← @syn_val 𝔄₁ x₁; Some (VTuple [v₀; v₁])
+  | xprodₛ 𝔄l => λ x, VTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) x))
+  | xsumₛ 𝔄l => λ '(x, _),
+      match to_xsum (psum_map1 (λ _ x0, syn_val x0) x) return option Value with
+        xinj i ov => VVariant (Z.of_nat (fin_to_nat i)) <$> ov
+      end
+  | _ => λ _, Some (VTuple [])
+  end.
+
+(** The size in bytes of a syntactic type. (The legacy [size_of] counts words.) *)
+Definition syn_bsize (𝔄: syn_type) : nat := mty_size (syn_mty 𝔄).
+
+(** ** Layout lemmas *)
+
+Lemma layout_fields_snd o ms : (layout_fields o ms).*2 = ms.
+Proof. revert o. induction ms as [|m ms IH]; intros o; [done|]. simpl. f_equal. apply IH. Qed.
+
+Lemma seq_size_cons m ms : seq_size (m :: ms) = (mty_size m + seq_size ms)%nat.
+Proof. done. Qed.
+
+Lemma seq_size_nil : seq_size [] = 0%nat.
+Proof. done. Qed.
+Lemma mty_size_seq_tuple ms : mty_size (seq_tuple ms) = seq_size ms.
+Proof. done. Qed.
+
+Lemma layout_fields_bounds o ms :
+  Forall (λ f, o ≤ f.1 ∧ f.1 + mty_size f.2 ≤ o + seq_size ms)%nat (layout_fields o ms).
+Proof.
+  revert o. induction ms as [|m ms IH]; intros o; constructor; rewrite ?seq_size_cons /=; [lia|].
+  eapply Forall_impl; [apply IH|]. intros [o' m'] ?. simpl in *. lia.
+Qed.
+
+Lemma layout_fields_disjoint o ms : fields_disjoint (layout_fields o ms).
+Proof.
+  revert o. induction ms as [|m ms IH]; intros o i j o1 m1 o2 m2 Hij Hi Hj; [done|].
+  have Hb := layout_fields_bounds (o + mty_size m) ms. rewrite Forall_lookup in Hb.
+  destruct i as [|i], j as [|j]; simplify_eq/=.
+  all: first [ left; by destruct (Hb _ _ Hj) | right; by destruct (Hb _ _ Hi)
+             | apply (IH (o + mty_size m) i j o1 m1 o2 m2); [congruence|done..] ].
+Qed.
+
+Lemma layout_fields_wf o ms : Forall mty_wf ms → Forall (λ f, mty_wf f.2) (layout_fields o ms).
+Proof.
+  intros Hms. revert o. induction Hms as [|m ms ?? IH]; intros o; constructor; [done|]. apply IH.
+Qed.
+
+Lemma seq_tuple_wf ms : Forall mty_wf ms → mty_wf (seq_tuple ms).
+Proof.
+  intros. constructor; [apply layout_fields_disjoint| |by apply layout_fields_wf].
+  eapply Forall_impl; [apply (layout_fields_bounds 0)|]. simpl. lia.
+Qed.
+
+Lemma Forall2_layout_fields {A} (P : mty → A → Prop) o ms xs :
+  Forall2 (λ f x, P f.2 x) (layout_fields o ms) xs ↔ Forall2 P ms xs.
+Proof.
+  revert o xs. induction ms as [|m ms IH]; intros o [|x xs]; simpl;
+    rewrite ?Forall2_cons ?IH; split; inversion 1; by constructor.
+Qed.
+
+Lemma list_max_lookup (ns : list nat) i n : ns !! i = Some n → (n ≤ list_max ns)%nat.
+Proof.
+  intros Hi. have [Hle _] := list_max_le ns (list_max ns).
+  have := Hle (le_n _). rewrite Forall_lookup. intros H. by apply (H i).
+Qed.
+
+Lemma seq_enum_wf ms : Forall mty_wf ms → mty_wf (seq_enum ms).
+Proof.
+  intros Hms. constructor; [|lia]. rewrite Forall_lookup in Hms. apply Forall_lookup.
+  intros i m Hi. split; [|by eapply Hms].
+  pose proof (list_max_lookup (mty_size <$> ms) i (mty_size m)) as Hn.
+  rewrite list_lookup_fmap Hi in Hn. have := Hn eq_refl. lia.
+Qed.
+
+Lemma enum_tag_in_range n i : (i < n)%nat → int_in_range (enum_tag n) (Z.of_nat i).
+Proof.
+  intros Hi. rewrite /int_in_range /int_modulus /=. case_decide.
+  - rewrite Z.pow_1_r. lia.
+  - split; [lia|]. have := Z.pow_gt_lin_r 256 (Z.of_nat n). lia.
+Qed.
+
+Lemma llookup_lookup {A} (xl : list A) (i : fin (length xl)) : xl !! fin_to_nat i = Some (xl !!ₗ i).
+Proof.
+  induction xl as [|x xl IH]; [inv_fin i|]. inv_fin i; [done|]. intros i. apply IH.
+Qed.
+
+Lemma syn_mty_wf 𝔄 : mty_wf (syn_mty 𝔄).
+Proof.
+  move: 𝔄. fix FIX 1. move=> 𝔄. destruct 𝔄; simpl;
+    try (clear FIX; by repeat constructor).
+  - apply seq_tuple_wf. constructor; [apply FIX|]. constructor; [apply FIX|]. constructor.
+  - apply seq_tuple_wf. induction l as [|𝔄 l IH]; constructor; [apply FIX|apply IH].
+  - apply seq_enum_wf. induction l as [|𝔄 l IH]; constructor; [apply FIX|apply IH].
+Qed.
+
+Lemma syn_val_wf 𝔄 (x: ~~𝔄) v : syn_val x = Some v → val_wf (syn_mty 𝔄) v.
+Proof.
+  move: 𝔄 x v. fix FIX 1. move=> 𝔄 x v. destruct 𝔄; simpl;
+    try (clear FIX; intros; simplify_eq; by repeat constructor).
+  - clear FIX. case_decide; intros; simplify_eq. by constructor.
+  - destruct x as [x₀ x₁].
+    destruct (syn_val x₀) as [v₀|] eqn:H₀; [|done]. destruct (syn_val x₁) as [v₁|] eqn:H₁; [|done].
+    intros [= <-]. constructor. simpl. constructor; [by eapply FIX|].
+    constructor; [by eapply FIX|]. constructor.
+  - intros (vs&Hvs&->)%fmap_Some_1. constructor. apply Forall2_layout_fields.
+    revert x vs Hvs. induction l as [|𝔄 l IH]; [intros []|intros [x xl]]; simpl.
+    + intros vs [= <-]. constructor.
+    + intros vs. destruct (syn_val x) as [w|] eqn:Hw; [|done]. simpl.
+      destruct (mapM _ _) as [ws|] eqn:Hws; [|done]. intros [= <-].
+      constructor; [by apply (FIX _ x w Hw)|]. by apply (IH xl).
+  - destruct x as [x pad].
+    assert (∀ (i: fin (length l)) (x0 : ~~ (l !!ₗ i)) v0,
+      syn_val x0 = Some v0 → val_wf (syn_mty (l !!ₗ i)) v0) as Hall.
+    { clear x pad v. induction l as [|𝔄0 l IH]; intros i; [inv_fin i|].
+      inv_fin i; [apply FIX|apply IH]. }
+    clear FIX.
+    replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
+    destruct (to_xsum x) as [i x0]. simpl. rewrite psum_map1_pinj to_xsum_pinj.
+    intros (d&Hd&->)%fmap_Some_1. econstructor; [lia| | |by eapply Hall, Hd].
+    + rewrite Nat2Z.id list_lookup_fmap llookup_lookup //.
+    + rewrite length_fmap. apply enum_tag_in_range, fin_to_nat_lt.
+  - clear FIX. destruct x as [[[[[??]?]?]?]?]. intros; simplify_eq. constructor.
+Qed.
+
+(** ** Decoding tuples laid out by [seq_tuple] *)
+Section decode_seq.
+  Context {W : Type}.
+  Implicit Types bs : list (AbstractByte W).
+
+  Fixpoint decode_seq (ms : list mty) bs : option (list Value) :=
+    match ms with
+    | [] => Some []
+    | m :: ms =>
+        v ← decode_value m (take (mty_size m) bs);
+        vs ← decode_seq ms (drop (mty_size m) bs); Some (v :: vs)
+    end.
+
+  Lemma decode_seq_tuple ms bs :
+    decode_value (seq_tuple ms) bs =
+    if decide (length bs = seq_size ms) then VTuple <$> decode_seq ms bs else None.
+  Proof.
+    rewrite /seq_tuple decode_value_tuple. case_decide as Hlen; [|done]. f_equal. clear Hlen.
+    rewrite -{2}(drop_0 bs). generalize 0%nat as o. induction ms as [|m ms IH]; intros o; [done|].
+    simpl. rewrite IH drop_drop. done.
+  Qed.
+
+  Lemma decode_zst bs : decode_value zst_mty bs = if decide (bs = []) then Some (VTuple []) else None.
+  Proof.
+    rewrite /zst_mty decode_value_tuple.
+    destruct bs; simpl; [done|]. done.
+  Qed.
+
+  Lemma decode_value_length_None m bs :
+    length bs ≠ mty_size m → decode_value m bs = None.
+  Proof.
+    intros Hlen. destruct (decode_value m bs) eqn:Hd; [|done].
+    by apply decode_value_length in Hd.
+  Qed.
+End decode_seq.
+
+Lemma fmap_eq_iff {A B} (f : A → B) `{!Inj (=) (=) f} (o1 o2 : option A) :
+  f <$> o1 = f <$> o2 ↔ o1 = o2.
+Proof. destruct o1, o2; simpl; split; intros; simplify_eq; done. Qed.
+
+(** The layout of [() * 𝔄], [𝔄 * ()] and [𝔄 * Π! 𝔅l] (for the isomorphisms below). *)
+Lemma decode_prod_unit_l {W} m (bs : list (AbstractByte W)) :
+  decode_value (seq_tuple [zst_mty; m]) bs = (λ v, VTuple [VTuple []; v]) <$> decode_value m bs.
+Proof.
+  rewrite decode_seq_tuple /seq_size /=. rewrite drop_0.
+  case_decide.
+  - rewrite take_ge; [|lia]. by destruct (decode_value m bs).
+  - rewrite decode_value_length_None //. lia.
+Qed.
+
+Lemma decode_prod_unit_r {W} m (bs : list (AbstractByte W)) :
+  decode_value (seq_tuple [m; zst_mty]) bs = (λ v, VTuple [v; VTuple []]) <$> decode_value m bs.
+Proof.
+  rewrite decode_seq_tuple /seq_size /=. case_decide.
+  - rewrite take_ge; [|lia]. by destruct (decode_value m bs).
+  - rewrite decode_value_length_None //. lia.
+Qed.
+
+Lemma decode_prod_cons {W} m ms (bs : list (AbstractByte W)) :
+  decode_value (seq_tuple [m; seq_tuple ms]) bs =
+  (λ v, match v with VTuple (v :: vs) => VTuple [v; VTuple vs] | _ => v end) <$>
+    decode_value (seq_tuple (m :: ms)) bs.
+Proof.
+  rewrite !decode_seq_tuple !seq_size_cons seq_size_nil mty_size_seq_tuple.
+  destruct (decide (length bs = _)) as [H1|H1];
+    destruct (decide (length bs = _)) as [H2|H2]; try lia; [|done].
+  rewrite /decode_seq -/decode_seq mty_size_seq_tuple.
+  rewrite (decode_seq_tuple ms) length_take length_drop decide_True; [|lia].
+  rewrite (take_ge (drop _ _)); [|rewrite length_drop; lia].
+  destruct (decode_value m _); [|done]. simpl.
+  by destruct (decode_seq ms _).
 Qed.
 
 Record syn_type_morphism (𝔄 𝔅 : syn_type) := {
@@ -923,17 +1183,25 @@ Qed.
 
 Infix "∘ₛ" := (composeₛ) (at level 50).
 
+(** An isomorphism of syntactic types. Besides the legacy [size_of] and [syn_phys], it
+    preserves the byte size and the byte representations: bytes that decode to the
+    MiniRust value of [x] at [𝔄] are exactly those that decode to the value of [f x] at
+    [𝔅] (the MiniRust types and values themselves may differ, e.g. [() * 𝔄] and [𝔄]). *)
 Class Isoₛ {𝔄 𝔅 : syn_type} (f : 𝔄 →ₛ 𝔅) (g : 𝔅 →ₛ 𝔄) := {
     syn_iso : Iso (syn_type_morphism_fn f) (syn_type_morphism_fn g) ;
     syn_iso_proph : Iso (syn_type_morphism_proph_fn f) (syn_type_morphism_proph_fn g) ;
     syn_iso_size_eq : size_of 𝔄 = size_of 𝔅 ;
     syn_iso_phys_eq : ∀ (x: ~~𝔄), @syn_phys 𝔄 x = @syn_phys 𝔅 (syn_type_morphism_fn f x) ;
+    syn_iso_bsize_eq : syn_bsize 𝔄 = syn_bsize 𝔅 ;
+    syn_iso_bytes : ∀ (x: ~~𝔄) (bs: list abyte),
+      decode_value (syn_mty 𝔄) bs = syn_val x ↔
+      decode_value (syn_mty 𝔅) bs = syn_val (syn_type_morphism_fn f x) ;
 }.
 Global Existing Instance syn_iso.
 Global Existing Instance syn_iso_proph.
 
 Global Instance isoₛ_id_id {𝔄} : @Isoₛ 𝔄 𝔄 idₛ idₛ.
-Proof. done. Qed.
+Proof. split; try apply _; done. Qed.
 
 Global Instance isoₛ_compose {𝔄 𝔅 ℭ} `{!@Isoₛ 𝔄 𝔅 f f'} `{!@Isoₛ 𝔅 ℭ g g'}
     : Isoₛ (g ∘ₛ f) (f' ∘ₛ g').
@@ -941,22 +1209,68 @@ Proof.
   inversion H. inversion H0. split.
     - typeclasses eauto. - typeclasses eauto. - congruence.
     - intros. simpl. rewrite <- syn_iso_phys_eq1. by rewrite <- syn_iso_phys_eq0.
+    - congruence.
+    - intros x bs. simpl. by rewrite syn_iso_bytes0 syn_iso_bytes1.
+Qed.
+
+Local Definition cons_to_pair (v : Value) : Value :=
+  match v with VTuple (v :: vs) => VTuple [v; VTuple vs] | _ => v end.
+Local Instance cons_to_pair_inj : Inj (=) (=) cons_to_pair.
+Proof.
+  intros [| | |[|??]|] [| | |[|??]|]; simpl; intros; simplify_eq; done.
 Qed.
 
 Global Instance isoₛ_cons_prod {𝔄 𝔅l} : @Isoₛ (𝔄 * Π! 𝔅l) (Π! (𝔄 :: 𝔅l)) to_cons_prodₛ of_cons_prodₛ.
 Proof.
-  split; trivial. - typeclasses eauto. - typeclasses eauto.
-  - intros [??]. done.
+  split; [apply _|apply _|done|by intros [??]| |].
+  - change (seq_size [syn_mty 𝔄; seq_tuple (syn_mty <$> 𝔅l)] =
+      seq_size (syn_mty 𝔄 :: (syn_mty <$> 𝔅l))).
+    rewrite !seq_size_cons seq_size_nil mty_size_seq_tuple. lia.
+  - intros [a xs] bs.
+    set M := mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) xs)).
+    change (decode_value (seq_tuple [syn_mty 𝔄; seq_tuple (syn_mty <$> 𝔅l)]) bs =
+        (v₀ ← syn_val a; v₁ ← VTuple <$> M; Some (VTuple [v₀; v₁])) ↔
+      decode_value (seq_tuple (syn_mty 𝔄 :: (syn_mty <$> 𝔅l))) bs =
+        VTuple <$> (v ← syn_val a; vs ← M; Some (v :: vs))).
+    rewrite (decode_prod_cons (W:=val)) -/(cons_to_pair).
+    rewrite (_: (v₀ ← syn_val a; v₁ ← VTuple <$> M; Some (VTuple [v₀; v₁])) =
+      cons_to_pair <$> (VTuple <$> (v ← syn_val a; vs ← M; Some (v :: vs)))).
+    + apply fmap_eq_iff, _.
+    + destruct (syn_val a); [|done]. simpl. by destruct M.
 Qed.
 
 Global Instance isoₛ_empty_prod_unit : @Isoₛ (Π! []) unitₛ empty_prod_to_unitₛ empty_prod_of_unitₛ.
-Proof. split; split; fun_ext; destruct x; done. Qed.
+Proof.
+  split; [split; fun_ext; destruct x; done|split; fun_ext; destruct x; done|done|by intros []|done|].
+  intros [] bs. done.
+Qed.
 
 Global Instance Isoₛ_prod_left_id {𝔄} : @Isoₛ (() * 𝔄) 𝔄 prod_left_idₛ prod_left_id'ₛ.
-Proof. split; trivial. - typeclasses eauto. - typeclasses eauto. - by intros [[]?]. Qed.
+Proof.
+  split; [apply _|apply _|done|by intros [[]?]| |].
+  - change (seq_size [zst_mty; syn_mty 𝔄] = syn_bsize 𝔄).
+    rewrite !seq_size_cons seq_size_nil /= /syn_bsize. lia.
+  - intros [[] a] bs.
+    change (decode_value (seq_tuple [zst_mty; syn_mty 𝔄]) bs =
+        (v₀ ← Some (VTuple []); v₁ ← syn_val a; Some (VTuple [v₀; v₁])) ↔
+      decode_value (syn_mty 𝔄) bs = syn_val a).
+    rewrite (decode_prod_unit_l (W:=val)).
+    rewrite (_: (v₀ ← Some (VTuple []); v₁ ← syn_val a; Some (VTuple [v₀; v₁])) =
+      (λ v, VTuple [VTuple []; v]) <$> syn_val a); [|by destruct (syn_val a)].
+    apply fmap_eq_iff. intros ???. by simplify_eq.
+Qed.
 
 Global Instance Isoₛ_prod_right_id {𝔄} : @Isoₛ (𝔄 * ()) 𝔄 prod_right_idₛ prod_right_id'ₛ.
 Proof.
-  split. - typeclasses eauto. - typeclasses eauto. - simpl. lia.
-  - intros [?[]]. simpl. by rewrite List.app_nil_r.
+  split; [apply _|apply _|simpl; lia|intros [?[]]; simpl; by rewrite List.app_nil_r| |].
+  - change (seq_size [syn_mty 𝔄; zst_mty] = syn_bsize 𝔄).
+    rewrite !seq_size_cons seq_size_nil /=. rewrite /syn_bsize. lia.
+  - intros [a []] bs.
+    change (decode_value (seq_tuple [syn_mty 𝔄; zst_mty]) bs =
+        (v₀ ← syn_val a; v₁ ← Some (VTuple []); Some (VTuple [v₀; v₁])) ↔
+      decode_value (syn_mty 𝔄) bs = syn_val a).
+    rewrite (decode_prod_unit_r (W:=val)).
+    rewrite (_: (v₀ ← syn_val a; v₁ ← Some (VTuple []); Some (VTuple [v₀; v₁])) =
+      (λ v, VTuple [v; VTuple []]) <$> syn_val a); [|by destruct (syn_val a)].
+    apply fmap_eq_iff. intros ???. by simplify_eq.
 Qed.
