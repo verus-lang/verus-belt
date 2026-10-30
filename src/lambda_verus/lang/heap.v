@@ -145,8 +145,11 @@ Section bank_defs.
     own heap_bbank_name (gmap_view_auth (DfracOwn 1)
       ((λ e, to_agree (bbank_elt e.1 e.2)) <$> M)).
 
+  (** An entry holds [G], a guard of some [P] by [G], and the knowledge that [P] contains
+      a fraction of the bytes of the range of the entry. *)
   Definition bbank_entry (e : (loc * list abyte) * iProp Σ) : iProp Σ :=
-    e.2 ∗ ∃ q d, £d ∗ (e.2 &&{↑naN; d}&&> e.1.1 ↦b{q} e.1.2).
+    e.2 ∗ ∃ P d, £d ∗ (e.2 &&{↑naN; d}&&> P) ∗
+      □ (P -∗ ∃ q bs, ⌜length bs = length e.1.2⌝ ∗ e.1.1 ↦b{q} bs).
 
   (** The ghost state of the byte region, at the physical byte region [σB]. *)
   Definition bytes_ctx (σB : state') : iProp Σ :=
@@ -2632,11 +2635,12 @@ Section bank.
     { iModIntro. iFrame. iPureIntro. intros j Hj Hin. apply Hnex.
       apply Exists_exists. exists j. split; [apply elem_of_seq; lia|done]. }
     apply Exists_exists in Hex as (j & Hj%elem_of_seq & (k & Hk & Heq)).
-    iDestruct "Entry" as "(G & %q & %d & £ & #Guard)".
+    iDestruct "Entry" as "(G & %P & %d & £ & #Guard & #HP)".
     iMod (guards_open_later with "Guard G") as "Open"; [done|].
-    iMod (lc_fupd_elim_laterN with "£ Open") as ">[Pt _]".
+    iMod (lc_fupd_elim_laterN with "£ Open") as ">[P _]".
+    iDestruct ("HP" with "P") as (q bs' Hlen') "Pt".
     rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec.
-    destruct (lookup_lt_is_Some_2 e.1.2 k Hk) as [b' Hb'].
+    destruct (lookup_lt_is_Some_2 bs' k) as [b' Hb']; [lia|].
     destruct (lookup_lt_is_Some_2 bs j) as [b Hb]; [lia|].
     iDestruct (big_sepL_lookup with "Pt") as "Pt"; [done|].
     iDestruct (big_sepL_lookup with "Hbs") as "Hbs"; [done|].
@@ -2799,18 +2803,21 @@ Section bank.
   Qed.
 
   (** ** Guarded reads *)
-  Lemma bytes_ctx_read_begin_guarded E σB l q bs G d :
-    ↑naN ⊆ E →
-    £(2*d) -∗ (G &&{↑naN; d}&&> l ↦b{q} bs) -∗ G -∗ bytes_ctx σB ={E}=∗ ∃ i,
-      ⌜mem_range is_reading σB l bs⌝ ∗
-      bytes_ctx (mem_alter ls_inc l (length bs) σB) ∗ bread_tok i l bs G.
+  Lemma bytes_ctx_read_begin_guarded E σB l (Φ : list abyte → Prop) n G P d :
+    ↑naN ⊆ E → (∀ bs, Φ bs → length bs = n) →
+    £(2*d) -∗ (G &&{↑naN; d}&&> P) -∗
+    □ (P -∗ ∃ q bs, ⌜Φ bs⌝ ∗ l ↦b{q} bs ∗ (l ↦b{q} bs -∗ P)) -∗ G -∗ bytes_ctx σB ={E}=∗
+      ∃ i bs, ⌜Φ bs⌝ ∗ ⌜mem_range is_reading σB l bs⌝ ∗
+      bytes_ctx (mem_alter ls_inc l n σB) ∗ bread_tok i l bs G.
   Proof.
-    iIntros (?) "[£1 £2] #Guard G (%σA & %M & %Hr & %Hwf & H● & Hbank & Entries)".
+    iIntros (? HΦ) "[£1 £2] #Guard #HP G (%σA & %M & %Hr & %Hwf & H● & Hbank & Entries)".
     replace (d + 0)%nat with d by lia.
     iMod (guards_open_later with "Guard G") as "Open"; [done|].
-    iMod (lc_fupd_elim_laterN with "£1 Open") as ">[Pt Back]".
+    iMod (lc_fupd_elim_laterN with "£1 Open") as ">[P Back]".
+    iDestruct ("HP" with "P") as (q bs HΦbs) "[Pt Ret]".
     iDestruct (heap_bytes_lookup with "H● Pt") as %Hrd.
-    iMod ("Back" with "Pt") as "G".
+    iMod ("Back" with "(Ret Pt)") as "G".
+    have Hn := HΦ _ HΦbs. subst n.
     set i := fresh (dom M).
     have Hi : M !! i = None by apply not_elem_of_dom, is_fresh.
     iMod (own_update _ _ (gmap_view_auth (DfracOwn 1)
@@ -2818,12 +2825,15 @@ Section bank.
       gmap_view_frag i (DfracOwn 1) (to_agree (bbank_elt (l, bs) G))) with "Hbank")
       as "[Hbank Tok]".
     { rewrite fmap_insert. apply gmap_view_alloc; [|done..]. by rewrite lookup_fmap Hi. }
-    iModIntro. iExists i. iFrame "Tok". iSplit; [iPureIntro; by eapply bank_rel_reading|].
+    iModIntro. iExists i, bs. iFrame "Tok". iSplit; [done|].
+    iSplit; [iPureIntro; by eapply bank_rel_reading|].
     iExists σA, (<[i := ((l, bs), G)]> M). iFrame "H● Hbank". iSplit.
     { iPureIntro. rewrite fmap_insert. apply bank_rel_add; [done| |done].
       by rewrite lookup_fmap Hi. }
     iSplit. { iPureIntro. rewrite fmap_insert. by apply bank_wf_add. }
-    rewrite big_sepM_insert //. iFrame "Entries G £2 Guard".
+    rewrite big_sepM_insert //. iFrame "Entries G". iExists P, d. iFrame "£2 Guard".
+    iIntros "!> P". iDestruct ("HP" with "P") as (q' bs' Hbs') "[Pt _]".
+    iExists q', bs'. iFrame "Pt". iPureIntro. by rewrite (HΦ _ Hbs').
   Qed.
 
   Lemma bytes_ctx_read_end_guarded σB i l bs G :
