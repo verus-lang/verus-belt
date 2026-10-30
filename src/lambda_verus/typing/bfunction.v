@@ -168,7 +168,7 @@ Section typing.
       { iApply (guards_transitive with "fGuardsL LguardsIl"). }
     iApply ("e" with "LFT TIME PROPH UNIQ Efp [ϝ] ii [ToG k iiback] ityl Obs").
     { iSplitL; [|done]. iExists _. iSplit; [by rewrite/= left_id|]. by iFrame "ϝ". }
-    rewrite cctx_interp_singleton. iIntros (v' b mask'). inv_vec v'=> v'.
+    rewrite cctx_interp_singleton. iIntros (v' [b []] mask'). inv_vec v'=> v'.
     iIntros "[(%& %Eq & ϝ &_) _] Invctx [oty ?] Obs". rewrite/= left_id in Eq.
     rewrite -Eq. wp_rec. wp_bind Skip.
     iDestruct "ϝnonempty" as "%To".
