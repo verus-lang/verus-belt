@@ -54,11 +54,16 @@ Class heapGS Σ := HeapGS {
     (laterO (iPropO Σ)))));
   #[global] heap_greg_inG :: ghost_mapG Σ positive (mty * list positive);
   #[global] heap_gdyn_inG :: ghost_mapG Σ positive FValue;
+  #[global] heap_gnc_inG :: ghost_mapG Σ positive ();
+  #[global] heap_cw_inG :: inG Σ (gmap_viewR positive (agreeR (prodO
+    (leibnizO (loc * nat * nat * FValue)) (laterO (iPropO Σ)))));
   heap_name : gname;
   heap_bytes_name : gname;
   heap_bbank_name : gname;
   heap_greg_name : gname;
   heap_gdyn_name : gname;
+  heap_gnc_name : gname;
+  heap_cw_name : gname;
   heap_freeable_name : gname;
   atomic_threadpool: gname;
   atomic_lock_ctr_name: gname
@@ -103,46 +108,123 @@ Notation "l ↦b bs" := (heap_mapsto_bytes l bs) (at level 20) : bi_scope.
 (** ** Cell groups
 
 A _cell group_ [g] is a multi-byte cell: the MiniRust type [m_g] of its contents and one
-byte-cell per byte ([cs_g], with [length cs_g = mty_size m_g]). The static registry
-[g ↪□ (m_g, cs_g)] is persistent; the dynamic registry holds the current fancy value of
-each live group, whose fragment [gdyn g fv] is the permission of the group. The byte
-context owns the _contents_ of the cells of every live group (the edges [inr c ↦ ...]
-from its byte-cells) and keeps the decodability invariant D3: the contents of a group
-represent its fancy value ([frepr], which depends only on the static registry). As the
-bytes of the contents of a group only change in the second phase of a write (where its
-fancy value changes as well), D3 needs no exemption for groups with a write in flight
-(the lock states of the contents are ignored, [fb_strip]). *)
+byte-cell per byte ([cs_g], with [length cs_g = mty_size m_g > 0]). The static registry
+[greg g m_g cs_g] is persistent; the dynamic registry holds the current fancy value of each
+live group, and its fragment [gdyn g fv] is the permission of the group. Groups whose
+fancy value never contains cells are recorded persistently ([gnocell g]).
+
+The byte context owns the _contents_ of the cells of every live group (the edges
+[inr c ↦ ...] from its byte-cells) and keeps the decodability invariant D3: the contents
+of a group represent its fancy value ([frepr], which depends only on the static
+registry). The bytes of the contents of a group only change in the second phase of a
+write, together with its fancy value, so D3 needs no exemption for groups with a write in
+flight (their contents are marked [WSt], and [fb_strip] ignores lock states).
+
+A non-atomic write through a cell ([bytes_ctx_cell_write_begin]) deposits the permission
+of the group, and the guard of its location side, in the bank of cell writes ([CW]) for
+the duration of the write. *)
 
 (** A fancy byte of the byte region without its lock state. *)
 Definition fb_strip (fb : positive + bval) : positive + abyte :=
   match fb with inl c => inl c | inr (_, b) => inr b end.
 
-(** The registry is well formed, and groups only embed older live groups. *)
-Definition cells_wf (R : gmap positive (mty * list positive)) (ρ : gmap positive FValue) : Prop :=
+(** A fancy byte with lock state [RSt 0]. *)
+Definition fb_rst (fb : positive + abyte) : positive + bval :=
+  match fb with inl c => inl c | inr b => inr (RSt 0, b) end.
+
+(** The data of a cell write in flight: the location of the group, the offset and the
+    length of the written range, and the fancy value of the group before the write. *)
+Definition cwkey : Type := loc * nat * nat * FValue.
+
+(** The lock state of the byte [i] of the contents of [g]. *)
+Definition cw_ls (CW : gmap positive cwkey) (g : positive) (i : nat) : lock_state :=
+  match CW !! g with
+  | Some (_, o, n, _) => if decide (o ≤ i < o + n)%nat then WSt else RSt 0
+  | None => RSt 0
+  end.
+
+(** The pure invariants of the cell registry. *)
+Definition cells_wf (R : gmap positive (mty * list positive)) (ρ : gmap positive FValue)
+    (NC : gmap positive ()) (CW : gmap positive cwkey) : Prop :=
   reg_wf R ∧ dom ρ ⊆ dom R ∧
-  ∀ g fv, ρ !! g = Some fv → ∀ g', g' ∈ fv_cells fv → (g' < g)%positive ∧ g' ∈ dom ρ.
+  (∀ g fv, ρ !! g = Some fv → ∀ g', g' ∈ fv_cells fv → (g' < g)%positive ∧ g' ∈ dom ρ) ∧
+  (∀ g1 g2 m1 cs1 m2 cs2, g1 ≠ g2 → R !! g1 = Some (m1, cs1) → R !! g2 = Some (m2, cs2) →
+     cs1 ## cs2) ∧
+  (∀ g m cs, R !! g = Some (m, cs) → 0 < mty_size m) ∧
+  dom NC ⊆ dom R ∧ (∀ g fv, ρ !! g = Some fv → g ∈ dom NC → fv_cells fv = []) ∧
+  (∀ g k, CW !! g = Some k → ρ !! g = Some k.2 ∧
+     ∃ m cs, R !! g = Some (m, cs) ∧ (k.1.1.2 + k.1.2 ≤ length cs)%nat).
+
+(** Every byte-cell of the byte region belongs to a live group, and the groups with a write
+    in flight sit at the start of the rows of their locations. *)
+Definition cells_live (𝛼 : bfull) (R : gmap positive (mty * list positive))
+    (ρ : gmap positive FValue) (CW : gmap positive cwkey) : Prop :=
+  (∀ k cs v c, 𝛼 !! k = Some (cs, v) → c ∈ cs →
+     ∃ g m cs', g ∈ dom ρ ∧ R !! g = Some (m, cs') ∧ c ∈ cs') ∧
+  (∀ g k m cs, CW !! g = Some k → R !! g = Some (m, cs) →
+     ∀ (i : nat) c, cs !! i = Some c → ∃ rest v, 𝛼 !! inl (k.1.1.1 +ₗ i) = Some (c :: rest, v)).
 
 Section cells_defs.
   Context `{!heapGS Σ}.
+  Context `{!invGS Σ}.
 
   (** The static registry: the group [g] has the MiniRust type [m] and the byte-cells [cs]. *)
   Definition greg (g : positive) (m : mty) (cs : list positive) : iProp Σ :=
     g ↪[heap_greg_name]□ (m, cs).
   (** The permission of the group [g]: its current fancy value is [fv]. *)
   Definition gdyn (g : positive) (fv : FValue) : iProp Σ := g ↪[heap_gdyn_name] fv.
+  (** The fancy value of the group [g] never contains cells. *)
+  Definition gnocell (g : positive) : iProp Σ := g ↪[heap_gnc_name]□ ().
 
   (** The contents [fbs] of the byte-cells [cs]. *)
   Definition bcells (cs : list positive) (fbs : list (positive + bval)) : iProp Σ :=
     [∗ list] c; fb ∈ cs; fbs, bpt (inr c) fb.
 
-  (** The contents of a live group, owned by the byte context, with the invariant D3. *)
-  Definition gcontents (R : gmap positive (mty * list positive)) (g : positive) (fv : FValue)
-      : iProp Σ :=
-    ∃ m cs fbs, ⌜R !! g = Some (m, cs) ∧ frepr R m (fb_strip <$> fbs) fv⌝ ∗ bcells cs fbs.
+  (** The location side of a cell group, i.e. the [PCell] itself: the locations [l],
+      [l +ₗ 1], ... point to the byte-cells of [g]. *)
+  Definition loc_side (l : loc) (g : positive) (m : mty) (cs : list positive) : iProp Σ :=
+    greg g m cs ∗ [∗ list] i ↦ c ∈ cs, bpt (inl (l +ₗ i)) (inl c).
 
-  Definition cells_ctx : iProp Σ :=
-    ∃ R ρ, ghost_map_auth heap_greg_name 1 R ∗ ghost_map_auth heap_gdyn_name 1 ρ ∗
-      ⌜cells_wf R ρ⌝ ∗ [∗ map] g ↦ fv ∈ ρ, gcontents R g fv.
+  (** Fancy bytes at locations: [l +ₗ i] points to the byte-cell or the byte [fbs !! i]. *)
+  Definition heap_mapsto_fbytes (l : loc) (fbs : list (positive + abyte)) : iProp Σ :=
+    [∗ list] i ↦ fb ∈ fbs, bpt (inl (l +ₗ i)) (fb_rst fb).
+
+  (** The fancy bytes [fbs] represent [fv] at [m], with the static registry. *)
+  Definition brepr (m : mty) (fbs : list (positive + abyte)) (fv : FValue) : iProp Σ :=
+    ∃ R, ⌜frepr R m fbs fv⌝ ∗ [∗ map] g ↦ e ∈ R, greg g e.1 e.2.
+
+  (** The contents of a live group, owned by the byte context, with the invariant D3. *)
+  Definition gcontents (R : gmap positive (mty * list positive)) (CW : gmap positive cwkey)
+      (g : positive) (fv : FValue) : iProp Σ :=
+    ∃ m cs fbs, ⌜R !! g = Some (m, cs) ∧ frepr R m (fb_strip <$> fbs) fv ∧
+      ∀ i ls b, fbs !! i = Some (inr (ls, b)) → ls = cw_ls CW g i⌝ ∗ bcells cs fbs.
+
+  (** The bank of cell writes. *)
+  Definition cw_elt (k : cwkey) (G : iProp Σ) : prodO (leibnizO cwkey) (laterO (iPropO Σ)) :=
+    (k, Next G).
+  Definition cwbank_auth (CW : gmap positive (cwkey * iProp Σ)) : iProp Σ :=
+    own heap_cw_name (gmap_view_auth (DfracOwn 1)
+      ((λ e : cwkey * iProp Σ, to_agree (cw_elt e.1 e.2)) <$> CW)).
+  Definition cwrite_tok (g : positive) (k : cwkey) (G : iProp Σ) : iProp Σ :=
+    own heap_cw_name (gmap_view_frag g (DfracOwn 1) (to_agree (cw_elt k G))).
+  Definition cwentry (g : positive) (e : cwkey * iProp Σ) : iProp Σ :=
+    ∃ m cs, greg g m cs ∗ gdyn g e.1.2 ∗ e.2 ∗ ∃ P d, £d ∗ (e.2 &&{↑naN; d}&&> P) ∗
+      □ (P -∗ loc_side e.1.1.1.1 g m cs).
+
+  Definition cells_ctx (𝛼 : bfull) : iProp Σ :=
+    ∃ R ρ NC (CW : gmap positive (cwkey * iProp Σ)),
+      ghost_map_auth heap_greg_name 1 R ∗ ghost_map_auth heap_gdyn_name 1 ρ ∗
+      ghost_map_auth heap_gnc_name 1 NC ∗ cwbank_auth CW ∗
+      ⌜cells_wf R ρ NC (fst <$> CW) ∧ cells_live 𝛼 R ρ (fst <$> CW)⌝ ∗
+      ([∗ map] g ↦ e ∈ R, greg g e.1 e.2) ∗ ([∗ map] g ↦ e ∈ CW, cwentry g e) ∗
+      [∗ map] g ↦ fv ∈ ρ, gcontents R (fst <$> CW) g fv.
+
+  (** The read witness of an entry of the bank of guarded reads: the location edges [cvs]
+      of the range all point to bytes, or all to byte-cells of one group, whose permission
+      the reader has. *)
+  Definition cells_wit (cvs : list (positive + bval)) : iProp Σ :=
+    ⌜Forall (λ cv, ∃ v, cv = inr v) cvs⌝ ∨
+    ∃ g m cs fv, greg g m cs ∗ gdyn g fv ∗ ⌜Forall (λ cv, ∃ c, cv = inl c ∧ c ∈ cs) cvs⌝.
 End cells_defs.
 
 (** ** The bank of guarded reads of the byte region
@@ -207,13 +289,13 @@ Section bank_defs.
   Definition bbank_entry (e : (loc * list abyte) * iProp Σ) : iProp Σ :=
     e.2 ∗ ∃ P d, £d ∗ (e.2 &&{↑naN; d}&&> P) ∗
       □ (P -∗ ∃ cvs, ⌜length cvs = length e.1.2⌝ ∗
-           [∗ list] i ↦ cv ∈ cvs, bpt (inl (e.1.1 +ₗ i)) cv).
+           ([∗ list] i ↦ cv ∈ cvs, bpt (inl (e.1.1 +ₗ i)) cv) ∗ cells_wit cvs).
 
   (** The ghost state of the byte region, at the physical byte region [σB]. *)
   Definition bytes_ctx (σB : state') : iProp Σ :=
     ∃ (𝛼 : bfull) (M : gmap nat ((loc * list abyte) * iProp Σ)),
       ⌜bank_rel (fst <$> M) (bphi 𝛼) σB⌝ ∗ ⌜bank_wf (fst <$> M) (bphi 𝛼)⌝ ∗
-      bheap 𝛼 ∗ bbank_auth M ∗ ([∗ map] e ∈ M, bbank_entry e) ∗ cells_ctx.
+      bheap 𝛼 ∗ bbank_auth M ∗ ([∗ map] e ∈ M, bbank_entry e) ∗ cells_ctx 𝛼.
 
   (** The token of a guarded read in progress, of the bytes [bs] at [l], whose guard
       [G] is in the bank. *)
@@ -2591,6 +2673,21 @@ Section bank_pure.
   Proof. intros H i e Hi j Hj. apply (H i e Hi j). simpl. lia. Qed.
 End bank_pure.
 
+Section cells_rows.
+  Context `{!heapGS Σ}.
+  Context `{!invGS Σ}.
+
+  Lemma cells_ctx_rows_eq 𝛼 𝛼' : rows_cells_eq 𝛼 𝛼' → cells_ctx 𝛼 -∗ cells_ctx 𝛼'.
+  Proof.
+    iIntros (Heq) "(%R & %ρ & %NC & %CW & Hreg & Hdyn & Hnc & Hcw & [%Hwf [%Hl1 %Hl2]] & HR & Hcwe & Hρ)".
+    iExists R, ρ, NC, CW. iFrame. iPureIntro. split; [done|]. split.
+    - intros k cs v c Hk Hc. apply (Hl1 k cs v c); [|done]. apply Heq; [|done].
+      intros ->. by apply not_elem_of_nil in Hc.
+    - intros g k m cs Hg HR i c Hc. destruct (Hl2 g k m cs Hg HR i c Hc) as (rest & v & Hr).
+      exists rest, v. by apply Heq.
+  Qed.
+End cells_rows.
+
 Section bank.
   Context `{!heapGS Σ}.
   Context `{!invGS Σ}.
@@ -2613,7 +2710,7 @@ Section bank.
     iDestruct "Entry" as "(G & %P & %d & £ & #Guard & #HP)".
     iMod (guards_open_later with "Guard G") as "Open"; [done|].
     iMod (lc_fupd_elim_laterN with "£ Open") as ">[P _]".
-    iDestruct ("HP" with "P") as (cvs Hlen') "Pt".
+    iDestruct ("HP" with "P") as (cvs Hlen') "[Pt _]".
     destruct (lookup_lt_is_Some_2 cvs k) as [cv Hcv]; [lia|].
     destruct (lookup_lt_is_Some_2 bs j) as [b Hb]; [lia|].
     iDestruct (big_sepL_lookup with "Pt") as "Pt"; [done|].
@@ -2638,20 +2735,18 @@ Section bank.
   Qed.
 
   (** ** The ghost state of the byte region *)
-  Lemma bytes_ctx_empty : bheap ∅ -∗
-    own heap_bbank_name (gmap_view_auth (DfracOwn 1) ∅) -∗
+  Lemma bytes_ctx_empty : bheap ∅ -∗ bbank_auth ∅ -∗
     ghost_map_auth heap_greg_name 1 (∅ : gmap positive (mty * list positive)) -∗
-    ghost_map_auth heap_gdyn_name 1 (∅ : gmap positive FValue) -∗ bytes_ctx ∅.
+    ghost_map_auth heap_gdyn_name 1 (∅ : gmap positive FValue) -∗
+    ghost_map_auth heap_gnc_name 1 (∅ : gmap positive ()) -∗
+    cwbank_auth ∅ -∗ bytes_ctx ∅.
   Proof.
-    iIntros "H● Hbank Hreg Hdyn". iExists ∅, ∅.
-    rewrite /bbank_auth fmap_empty !big_sepM_empty phi_empty. iFrame "H● Hbank".
-    iSplit. { iPureIntro. intros l. by rewrite !lookup_empty. }
-    iSplit. { iPureIntro. intros i e. by rewrite lookup_empty. }
-    iSplit; [done|]. iExists ∅, ∅. iFrame. rewrite big_sepM_empty. iPureIntro.
-    split; [|done]. rewrite /cells_wf. split_and!.
-    - intros ???. by rewrite lookup_empty.
-    - set_solver.
-    - intros ??. by rewrite lookup_empty.
+    iIntros "H● Hbank Hreg Hdyn Hnc Hcw". iExists ∅, ∅.
+    rewrite !big_sepM_empty phi_empty. iFrame "H● Hbank".
+    iSplit. { iPureIntro. intros l. by rewrite fmap_empty !lookup_empty. }
+    iSplit. { iPureIntro. intros i e. by rewrite fmap_empty lookup_empty. }
+    iSplit; [done|]. iExists ∅, ∅, ∅, ∅. iFrame. rewrite !big_sepM_empty fmap_empty.
+    iPureIntro. split_and!; try done.
   Qed.
 
   Lemma bytes_ctx_lookup σB l bs :
@@ -2689,7 +2784,8 @@ Section bank.
   Proof.
     iIntros "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hbs".
     rewrite heap_mapsto_bytes_st_vec.
-    iMod (heap_st_vec_set _ _ (RSt 1) _ _ bs with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' _]] & H● & $)"; [done|].
+    iMod (heap_st_vec_set _ _ (RSt 1) _ _ bs with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' %Hc]] & H● & $)"; [done|].
+    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|].
     have Hrd' : mem_range is_reading (bphi 𝛼) l bs.
     { eapply mem_range_impl; [|done]. intros ? ->. by eexists. }
     iModIntro. iSplit; [iPureIntro; by eapply bank_rel_reading|]. iExists _, M. iFrame. iPureIntro.
@@ -2705,7 +2801,8 @@ Section bank.
   Proof.
     iIntros "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hbs".
     rewrite heap_mapsto_bytes_st_vec.
-    iMod (heap_st_vec_set _ _ (RSt 0) _ _ bs with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' _]] & H● & $)"; [done|].
+    iMod (heap_st_vec_set _ _ (RSt 0) _ _ bs with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' %Hc]] & H● & $)"; [done|].
+    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|].
     have Hrd' : mem_range is_reading_S (bphi 𝛼) l bs.
     { eapply mem_range_impl; [|done]. intros ? ->. by eexists. }
     iModIntro. iSplit; [iPureIntro; by eapply bank_rel_reading_S|]. iExists _, M. iFrame. iPureIntro.
@@ -2723,7 +2820,8 @@ Section bank.
     iIntros (?) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hbs".
     iEval (rewrite heap_mapsto_bytes_st_vec) in "Hbs".
     iMod (bbank_disj with "Entries Hbs") as "(%Hd & Entries & Hbs)"; [done|].
-    iMod (heap_st_vec_set _ _ WSt _ _ bs with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' _]] & H● & $)"; [done|].
+    iMod (heap_st_vec_set _ _ WSt _ _ bs with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' %Hc]] & H● & $)"; [done|].
+    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|].
     iModIntro. iSplit; [iPureIntro; by eapply bank_rel_disj|]. iExists _, M. iFrame. iPureIntro.
     rewrite H𝛼' -(mem_set_alter (λ _, WSt) (RSt 0)) //. split.
     - by apply bank_rel_mem_alter_wst.
@@ -2738,7 +2836,8 @@ Section bank.
     iIntros (? Hlen) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hbs".
     iMod (bbank_disj with "Entries Hbs") as "(%Hd & Entries & Hbs)"; [done|].
     rewrite heap_mapsto_bytes_st_vec.
-    iMod (heap_st_vec_set _ _ (RSt 0) _ _ bs' with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' _]] & H● & $)"; [done|].
+    iMod (heap_st_vec_set _ _ (RSt 0) _ _ bs' with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' %Hc]] & H● & $)"; [done|].
+    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|].
     iModIntro. iSplit; [iPureIntro; by eapply bank_rel_disj|]. iExists _, M. iFrame.
     iPureIntro. rewrite H𝛼' mem_set_write. split.
     - by apply (bank_rel_mem_write _ _ _ _ bs).
@@ -2754,7 +2853,8 @@ Section bank.
     iEval (rewrite heap_mapsto_bytes_st_vec) in "Hbs".
     iMod (bbank_disj with "Entries Hbs") as "(%Hd & Entries & Hbs)"; [done|].
     rewrite heap_mapsto_bytes_st_vec.
-    iMod (heap_st_vec_set _ _ (RSt 0) _ _ bs' with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' _]] & H● & $)"; [done|].
+    iMod (heap_st_vec_set _ _ (RSt 0) _ _ bs' with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' %Hc]] & H● & $)"; [done|].
+    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|].
     iModIntro. iSplit; [iPureIntro; by eapply bank_rel_disj|]. iExists _, M. iFrame.
     iPureIntro. rewrite H𝛼' mem_set_write. split.
     - by apply (bank_rel_mem_write _ _ _ _ bs).
@@ -2767,7 +2867,8 @@ Section bank.
   Proof.
     iIntros (Hl) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells)".
     have HlA := bank_rel_lookup_None _ _ _ _ Hr Hl.
-    iMod (heap_bytes_alloc_vs' _ _ b with "H●") as (𝛼') "([%H𝛼' _] & H● & $)"; [done|].
+    iMod (heap_bytes_alloc_vs' _ _ b with "H●") as (𝛼') "([%H𝛼' %Hc] & H● & $)"; [done|].
+    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|].
     iModIntro. iExists _, M. iFrame. iPureIntro. rewrite H𝛼'. split.
     - apply bank_rel_insert; [done|]. by eapply bank_wf_bcnt.
     - by apply bank_wf_insert.
@@ -2783,7 +2884,8 @@ Section bank.
     { rewrite /heap_mapsto_st_vec /= shift_loc_0. by iFrame. }
     iMod (bbank_disj with "Entries Hb") as "(%Hd & Entries & Hb)"; [done|].
     rewrite /heap_mapsto_st_vec /= shift_loc_0. iDestruct "Hb" as "[Hb _]".
-    iMod (heap_bytes_dealloc_vs' with "H● Hb") as (𝛼') "([%HlA [%H𝛼' _]] & H●)". iModIntro.
+    iMod (heap_bytes_dealloc_vs' with "H● Hb") as (𝛼') "([%HlA [%H𝛼' %Hc]] & H●)".
+    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|]. iModIntro.
     iSplit.
     { iPureIntro. have H0 := bank_disj_bcnt _ _ _ 0%nat Hd ltac:(simpl; lia).
       rewrite shift_loc_0_nat in H0. by rewrite Hr HlA /= H0. }
@@ -2830,7 +2932,7 @@ Section bank.
     iExists ((λ b, inr (RSt 0, b)) <$> bs'). iSplit.
     { iPureIntro. by rewrite length_fmap (HΦ _ Hbs'). }
     rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec big_sepL_fmap.
-    iExact "Pt".
+    iFrame "Pt". iLeft. iPureIntro. apply Forall_fmap, Forall_true. eauto.
   Qed.
 
   Lemma bytes_ctx_read_end_guarded σB i l bs G :
@@ -2867,14 +2969,23 @@ End bank.
 
 Section cells.
   Context `{!heapGS Σ}.
+  Context `{!invGS Σ}.
   Implicit Types 𝛼 : bfull.
   Implicit Types (R : gmap positive (mty * list positive)) (ρ : gmap positive FValue).
 
   Global Instance greg_persistent g m cs : Persistent (greg g m cs).
   Proof. apply _. Qed.
+  Global Instance gnocell_persistent g : Persistent (gnocell g).
+  Proof. apply _. Qed.
   Global Instance gdyn_timeless g fv : Timeless (gdyn g fv).
   Proof. apply _. Qed.
   Global Instance bcells_timeless cs fbs : Timeless (bcells cs fbs).
+  Proof. apply _. Qed.
+  Global Instance loc_side_timeless l g m cs : Timeless (loc_side l g m cs).
+  Proof. apply _. Qed.
+  Global Instance brepr_persistent m fbs fv : Persistent (brepr m fbs fv).
+  Proof. apply _. Qed.
+  Global Instance heap_mapsto_fbytes_timeless l fbs : Timeless (heap_mapsto_fbytes l fbs).
   Proof. apply _. Qed.
 
   Lemma greg_agree g m cs m' cs' : greg g m cs -∗ greg g m' cs' -∗ ⌜m = m' ∧ cs = cs'⌝.
@@ -2882,6 +2993,71 @@ Section cells.
 
   Lemma gdyn_excl g fv fv' : gdyn g fv -∗ gdyn g fv' -∗ False.
   Proof. iIntros "A B". by iDestruct (ghost_map_elem_ne with "A B") as %?. Qed.
+
+  Lemma greg_lookup R g m cs :
+    ghost_map_auth heap_greg_name 1 R -∗ greg g m cs -∗ ⌜R !! g = Some (m, cs)⌝.
+  Proof. iIntros "A B". iApply (ghost_map_lookup with "A B"). Qed.
+  Lemma gdyn_lookup ρ g fv :
+    ghost_map_auth heap_gdyn_name 1 ρ -∗ gdyn g fv -∗ ⌜ρ !! g = Some fv⌝.
+  Proof. iIntros "A B". iApply (ghost_map_lookup with "A B"). Qed.
+  Lemma gnocell_lookup (NC : gmap positive ()) g :
+    ghost_map_auth heap_gnc_name 1 NC -∗ gnocell g -∗ ⌜g ∈ dom NC⌝.
+  Proof.
+    iIntros "A B". iDestruct (ghost_map_lookup with "A B") as %Hg. iPureIntro.
+    by apply elem_of_dom_2 in Hg.
+  Qed.
+
+  Lemma brepr_frepr R m fbs fv :
+    ghost_map_auth heap_greg_name 1 R -∗ brepr m fbs fv -∗ ⌜frepr R m fbs fv⌝.
+  Proof.
+    iIntros "A (%R' & %Hrep & #HR')". iAssert ⌜R' ⊆ R⌝%I as %Hsub.
+    { iIntros (g). destruct (R' !! g) as [[m' cs']|] eqn:Hg; [|by destruct (R !! g)].
+      iDestruct (big_sepM_lookup with "HR'") as "H"; [done|].
+      iDestruct (greg_lookup with "A H") as %->. done. }
+    iPureIntro. by eapply frepr_mono.
+  Qed.
+
+  (** The facts that the authority knows about owned edges. *)
+  Lemma bheap_edges 𝛼 (l : loc) (cvs : list (positive + bval)) :
+    bheap 𝛼 -∗ ([∗ list] i ↦ cv ∈ cvs, bpt (inl (l +ₗ i)) cv) -∗
+    ⌜∀ (i : nat) cv, cvs !! i = Some cv → 𝛼_fine_pair loc positive bval 𝛼 (inl (l +ₗ i)) cv⌝.
+  Proof.
+    iIntros "H● Hcvs". iApply pure_forall_2. iIntros (i). iApply pure_forall_2.
+    iIntros (cv). destruct (cvs !! i) as [cv'|] eqn:Hi; [|by iPureIntro].
+    iDestruct (big_sepL_lookup with "Hcvs") as "Hcv"; [done|].
+    iDestruct (fheap_fpt with "H● Hcv") as %Hp. iPureIntro. by intros [= <-].
+  Qed.
+
+  Lemma bheap_cells 𝛼 cs fbs :
+    bheap 𝛼 -∗ bcells cs fbs -∗
+    ⌜length cs = length fbs ∧ ∀ (i : nat) c fb, cs !! i = Some c → fbs !! i = Some fb →
+       𝛼_fine_pair loc positive bval 𝛼 (inr c) fb⌝.
+  Proof.
+    iIntros "H● Hcs". iDestruct (big_sepL2_length with "Hcs") as %Hlen.
+    iAssert ⌜∀ (i : nat) c fb, cs !! i = Some c → fbs !! i = Some fb →
+       𝛼_fine_pair loc positive bval 𝛼 (inr c) fb⌝%I with "[-]" as %H; [|done].
+    iApply pure_forall_2. iIntros (i). iApply pure_forall_2. iIntros (c).
+    iApply pure_forall_2. iIntros (fb).
+    destruct (cs !! i) as [c'|] eqn:Hc, (fbs !! i) as [fb'|] eqn:Hfb; try by iPureIntro.
+    iDestruct (big_sepL2_lookup with "Hcs") as "Hc"; [done..|].
+    iDestruct (fheap_fpt with "H● Hc") as %Hp. iPureIntro. by intros [= <-] [= <-].
+  Qed.
+
+  (** The location side of a group gives the starts of its rows. *)
+  Lemma loc_side_rows 𝛼 l g m cs :
+    bheap 𝛼 -∗ loc_side l g m cs -∗
+    ⌜∀ (i : nat) c, cs !! i = Some c → ∃ rest v, 𝛼 !! inl (l +ₗ i) = Some (c :: rest, v)⌝.
+  Proof.
+    iIntros "H● [_ Hcs]".
+    iDestruct (bheap_edges _ _ (inl <$> cs) with "H● [Hcs]") as %H.
+    { by rewrite big_sepL_fmap. }
+    iPureIntro. intros i c Hc. move: (H i (inl c)). rewrite list_lookup_fmap Hc /=.
+    intros Hp. specialize (Hp eq_refl). rewrite /𝛼_fine_pair in Hp.
+    destruct (𝛼 !! inl (l +ₗ i)) as [[[|c' rest] v]|]; try done. subst. eauto.
+  Qed.
+
+
+  (** ** D3 and the compositionality lemma *)
 
   (** The final byte of a byte-cell: the byte of the value of its row. *)
   Definition cell_final 𝛼 (c : positive) : abyte :=
@@ -2907,14 +3083,15 @@ Section cells.
       rewrite /cell_final. erewrite row_of_spec; [|done..]. done.
   Qed.
 
-  Lemma gcontents_facts 𝛼 R ρ :
-    bheap 𝛼 -∗ ([∗ map] g ↦ fv ∈ ρ, gcontents R g fv) -∗
+  Lemma gcontents_facts 𝛼 R CW ρ :
+    bheap 𝛼 -∗ ([∗ map] g ↦ fv ∈ ρ, gcontents R CW g fv) -∗
     ⌜map_Forall (λ g fv, ∃ m cs fbs, R !! g = Some (m, cs) ∧ frepr R m fbs fv ∧
        cell_final 𝛼 <$> cs = fin_bytes (cell_final 𝛼) fbs) ρ⌝.
   Proof.
     iIntros "H● Hρ". iInduction ρ as [|g fv ρ Hg] "IH" using map_ind.
     { iPureIntro. apply map_Forall_empty. }
-    rewrite big_sepM_insert //. iDestruct "Hρ" as "[(%m & %cs & %fbs & [%HR %Hrep] & Hcs) Hρ]".
+    rewrite big_sepM_insert //.
+    iDestruct "Hρ" as "[(%m & %cs & %fbs & (%HR & %Hrep & _) & Hcs) Hρ]".
     iDestruct (bcells_final with "H● Hcs") as %Hfin.
     iDestruct ("IH" with "H● Hρ") as %Hrest. iPureIntro.
     apply map_Forall_insert; [done|]. split; [|done]. eauto 10.
@@ -2922,8 +3099,8 @@ Section cells.
 
   (** The compositionality lemma in the byte context: the final bytes of every live group
       decode to the erasure of its fancy value. *)
-  Lemma cells_decode 𝛼 R ρ :
-    bheap 𝛼 -∗ ([∗ map] g ↦ fv ∈ ρ, gcontents R g fv) -∗ ⌜cells_wf R ρ⌝ -∗
+  Lemma cells_decode 𝛼 R CW ρ NC :
+    bheap 𝛼 -∗ ([∗ map] g ↦ fv ∈ ρ, gcontents R CW g fv) -∗ ⌜cells_wf R ρ NC CW⌝ -∗
     ⌜∀ g fv m cs, ρ !! g = Some fv → R !! g = Some (m, cs) →
        ∃ v, fval_erase ρ fv v ∧ decode_value m (cell_final 𝛼 <$> cs) = Some v⌝.
   Proof.
@@ -2931,7 +3108,7 @@ Section cells.
     intros g fv m cs Hg HR. eapply (registry_decode R ρ (cell_final 𝛼) (λ _, True)); [|done..].
     intros g' fv' Hg' _. destruct (Hf g' fv' Hg') as (m' & cs' & fbs & HR' & Hrep & Hfin).
     exists m', cs', fbs. split_and!; [done..|]. intros g'' Hg''.
-    destruct Hwf as (_ & _ & Hlt). destruct (Hlt g' fv' Hg' g'' Hg''). done.
+    destruct Hwf as (_ & _ & Hlt & _). destruct (Hlt g' fv' Hg' g'' Hg''). done.
   Qed.
 End cells.
 

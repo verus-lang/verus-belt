@@ -2665,6 +2665,30 @@ Section Cmap.
     intros (cs1 & cs2 & ->)%list_has_pair_destruct. split; set_solver.
   Qed.
 
+  Lemma row_nodup 𝛼 k cs v : cells_no_dupes 𝛼 → 𝛼 !! k = Some (cs, v) → NoDup cs.
+  Proof. intros. by eapply cells_no_dupes_get_no_dupes. Qed.
+
+  Lemma list_ends_with_snoc (cs : list C) c : list_ends_with cs c → ∃ cs', cs = cs' ++ [c].
+  Proof. apply facts_from_list_ends_with. Qed.
+
+  (** A row whose first cell is followed by a value has that cell only. *)
+  Lemma row_single 𝛼 k c rest v cv :
+    cells_no_dupes 𝛼 → 𝛼 !! k = Some (c :: rest, v) → 𝛼_fine_pair 𝛼 (inr c) (inr cv) →
+    rest = [] ∧ v = cv.
+  Proof using C EqDecision0 EqDecision1 H0 L V.
+    intros Hnd Hk (k' & cs' & Hk' & Hend).
+    have Hc' := list_ends_with_elem_of _ _ Hend.
+    have Hr1 := row_of_spec 𝛼 k (c :: rest) v c Hnd Hk ltac:(set_solver).
+    have Hr2 := row_of_spec 𝛼 k' cs' cv c Hnd Hk' Hc'.
+    rewrite Hr1 in Hr2. simplify_eq. split; [|done].
+    destruct (list_ends_with_snoc _ _ Hend) as [cs'' Heq].
+    have Hnd' := row_nodup _ _ _ _ Hnd Hk.
+    destruct cs'' as [|c0 cs'']; simpl in Heq.
+    - by injection Heq as ->.
+    - injection Heq as -> Hrest. exfalso. apply NoDup_cons in Hnd' as [Hnot _]. apply Hnot.
+      rewrite Hrest. set_solver.
+  Qed.
+
   (** Public versions of the lemmas about the physical heap [𝜙 𝛼]. *)
   Lemma phi_empty : 𝜙 ∅ = ∅.
   Proof. apply map_fold_empty. Qed.
@@ -3332,13 +3356,15 @@ Section Cmap.
     iModIntro. iExists cs. iSplit; [done|]. iFrame.
   Qed.
 
-  Lemma fcmap_insert_front γ 𝛼 l cs v cv0 :
+  Lemma fcmap_insert_front γ 𝛼 l cs v cv0 (X : list C) :
     𝛼 !! inl l = Some (cs, v) →
-    fheap γ 𝛼 -∗ fpt γ (inl l) cv0 ==∗ ∃ nc, ⌜fresh_cell_id 𝛼 nc⌝ ∗
+    fheap γ 𝛼 -∗ fpt γ (inl l) cv0 ==∗ ∃ nc, ⌜fresh_cell_id 𝛼 nc ∧ nc ∉ X⌝ ∗
       fheap γ (<[inl l := (nc :: cs, v)]> 𝛼) ∗ fpt γ (inl l) (inl nc) ∗ fpt γ (inr nc) cv0.
   Proof using Infinite_C.
     iIntros (Hk) "A B". iDestruct (fheap_frag_valid with "A B") as %Hinv0.
-    destruct (exists_fresh_cell_id 𝛼) as [nc Hnc].
+    set (nc := fresh (cell_list 𝛼 ++ X)).
+    have [Hnc HncX] : fresh_cell_id 𝛼 nc ∧ nc ∉ X.
+    { have Hf : nc ∉ cell_list 𝛼 ++ X := infinite_is_fresh _. apply not_elem_of_app in Hf. done. }
     have Hne : inl l ≠ (inr nc : L + C) by done.
     iMod (own_update_2 _ _ _ (FOk (Some (<[inl l := (nc :: cs, v)]> 𝛼)) ∅ ∅ ⋅
       FOk None ({[inl l := inl nc]} ∪ {[inr nc := cv0]}) ∅) with "A B") as "[A B]".
@@ -3360,7 +3386,7 @@ Section Cmap.
           by rewrite ?(left_id_L None union) ?(right_id_L None union).
         + rewrite lookup_insert_ne // !lookup_union !lookup_singleton_ne //;
           by rewrite ?(left_id_L None union). }
-    iModIntro. iExists nc. iSplit; [done|]. iFrame "A".
+    iModIntro. iExists nc. iSplit; [iPureIntro; by split|]. iFrame "A".
     by iApply fpt_fpt_own.
   Qed.
 
