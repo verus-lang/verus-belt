@@ -593,3 +593,35 @@ only `functional_extensionality_dep`.
 |---|---|
 | `res_pair_b_type`: `x: Box<(Box<i32>, &mut (i32,i32))>` is resolved, then `*x.0` and `( *x.1).0` are read; `fin(x.1) = cur(x.1)` | 8.1 s |
 | `res_nested_b_type`: `x: Box<&mut &mut (i32,i32)>` is resolved while `( **x).0` is reborrowed; `( **x).1` is read; `*r = 3`; the local lifetime ends and the leaf is unblocked in the view, then read; `fin(x) = ((3, c.2), fin( *x))` | 27.0 s |
+
+### 3. Function types on root values (`typing/bfunction.v`)
+
+`bfn fp spec : type (exec_funₛ ℭ)` is a parallel byte version of `fn`.
+- It has the same `fn_params`, now read as the types of the argument values.
+- The body is typed with the arguments `w ◁ᵥ ty`, MiniRust values, instead of
+  `w ◁ box ty`.
+- The return continuation takes `v ◁ᵥ oty`.
+- The specification `bfn_spec 𝔄l 𝔅 ℭ := ~~ℭ → predl_trans' 𝔄l 𝔅` is a predicate
+  transformer on the values, not on boxes.
+- Boxes are still passed when wanted, as values of type `own_bytes n ty`.
+- The function value is a closure (`RecV`), so it is still typed by the legacy element
+  `f ◁ bfn …`: closures have no MiniRust value (decision 3).
+
+The notations are `bfn<p>(E; ity, …) → oty`, and the rules are:
+- `type_bcall_iris'` and `type_bcall`: `call: p ql → k`, with arguments `q ◁ᵥ ty` and the
+  result `ret ◁ᵥ oty`;
+- `type_bletcall`;
+- `type_bfnrec` and `type_bfn`;
+- `bfn_resolve`.
+
+The proofs are those of `function.v`, except for `wp_app_hasty_val`, which evaluates
+the arguments as values.
+
+Examples (`typing/examples/bfn.v`). `Print Assumptions` shows only
+`functional_extensionality_dep` for the first two; `call_get_snd_type` is closed.
+
+| Example | Qed |
+|---|---|
+| `get_snd_f_type`: `typed_val get_snd_f (bfn<(α, β)>(∅; &shrb{α} (&shrb{β} (i32 * i32))) → i32)` | 1.3 s |
+| `first_ref_f_type`: `bfn<(α, β)>(∅; &uniqb{α} (&shrb{β} (i32 * i32))) → &shrb{β} i32` | 6.7 s |
+| `call_get_snd_type`: `letcall: "r" := f ["x"]` with `f ◁ bfn …` (`type_bletcall`) | 0.7 s |
