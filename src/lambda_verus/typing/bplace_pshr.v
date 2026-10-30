@@ -927,3 +927,199 @@ Section typing.
         pctx_get K2 (pctx_get K x.1.2).2); x]).
   Proof. intros. by apply (type_share_vplace_pshr_instr _ _ _ _ (POwn n K)). Qed.
 End typing.
+
+(** * (d) Case analysis on a sum below a shared reference *)
+
+Section case.
+  Context `{!typeG Σ}.
+
+  (** The guarded typed load of the tag of a sum from its shared view. *)
+  Lemma wp_load_tag_shr_view {𝔄l} E κ (tyl: typel 𝔄l) j a pad dh D tid (l: cloc)
+      (G: iProp Σ) (Φ: val → iProp Σ) :
+    ↑NllftG ⊆ E →
+    (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £(2 * (D + 1)) -∗
+    shr_view κ (Σ! tyl)%T (pinj j a, pad) dh D tid l -∗
+    (G -∗ Φ (MLitV (VInt (Z.of_nat (fin_to_nat j))))) -∗
+    WP Load Na1Ord (MInt (sum_tag 𝔄l)) #(l.1) @ E {{ Φ }}.
+  Proof.
+    iIntros (?) "#Gκ G £ #(Pt & _ & _) HΦ".
+    iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt".
+    iDestruct (guards_weaken_rhs_sep_l with "Pt") as "Pt'".
+    iApply (wp_load_na_guarded_gen _ _ _ (VInt (Z.of_nat j)) G
+      (tag_cell 𝔄l (cloc_take l (tag_size 𝔄l)) j)
+      (λ bs, decode_value (MInt (sum_tag 𝔄l)) bs = Some (VInt (Z.of_nat j))) (D + 1)
+      with "[$G $£]"); [done|done| |].
+    { iSplit; [iApply (guards_transitive_right with "Gκ Pt'")|].
+      iIntros "!> (%bs & Hbs & %Hbs)". iExists 1%Qp, bs. iFrame "Hbs".
+      iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
+    iIntros "!> G". by iApply "HΦ".
+  Qed.
+
+  (** At the root: case analysis on the sum at the hole of [K2], below the shared reference
+      at the root; the branch of the variant [i] gets the view
+      [SumLty tyl i (OfTy (tyl +!! i))] at the hole. *)
+  Lemma type_case_vplace_pshr_root {𝔄l 𝔅 𝔅l 𝔇} E L I (C: cctx 𝔇) p κ (K2: pctx (Σ! 𝔄l) 𝔅)
+      (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
+    IntoPlistc el el' →
+    lctx_lft_alive E L (pctx_salv K2 κ) →
+    ([∗ nat] i < length 𝔄l, typed_body E L I C
+      (p ◁ₗ ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ +:: T)
+      (el' -!! i) (trl -!! i)) -∗
+    typed_body E L I C (p ◁ₗ ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ +:: T)
+      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K2 (ToLit p))) of el)
+      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 x.1.2).1 in
+        (trl -!! i) post (x -:: cl))%type.
+  Proof.
+    move=> -> Alv. iIntros "el".
+    iIntros (tid [x xl] mask post iκs) "#LFT #TIME #PROPH #UNIQ #E L I C /=[Tp T] #Obs".
+    destruct x as [x ζm].
+    iDestruct "Tp" as (v Hp) "Tp". rewrite vplace_own_eq.
+    iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
+    iDestruct (Alv with "L E") as "#Alv".
+    remember (pctx_get K2 x.2) as z eqn:Hz. destruct z as [s pad].
+    destruct (to_xsum s) as [j a] eqn:Hj.
+    have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
+    subst s.
+    wp_bind (Load Na1Ord (MInt (sum_tag 𝔄l)) _)%E.
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
+    iIntros "£ #⧖S". iApply wp_fupd.
+    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
+    { iApply (guards_transitive with "Ghalf Alv"). }
+    iDestruct (lc_weaken (pshr_cred D + 2 * (D + 1)) with "£") as "[£a £r]";
+      [have := pshr_cred_step D; lia|].
+    set lt'' := pctx_plug K2 (SumLty tyl j (OfTy (tyl +!! j))).
+    wp_bind (pctx_expr K2 (ToLit p)).
+    iApply (wp_pshr_open_root _ κ K2 (OfTy (Σ! tyl)) lt'' x D tid v p (fractional.half γh)
+      with "Hs H1 £a [] Own"); [solve_ndisj| |..].
+    { apply lty_fold_plug_eq'. by rewrite lty_fold_sum_ofty. }
+    { rewrite !lty_vin_plug -Hz /= psum_proj_pinj. naive_solver. }
+    { iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
+    iIntros (dh Hdh [Hin2 Hvin]) "H1 Own #V".
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
+    { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
+    rewrite -Hz.
+    iApply (wp_load_tag_shr_view with "Hsl H1 £r V"); [solve_ndisj|].
+    iIntros "H1".
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    iModIntro. wp_pure _.
+    wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
+    iDestruct (big_sepN_lookup _ _ j with "el") as "el".
+    iApply ("el" $! _ ((x, ζm) -:: xl)
+      with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
+    { iApply proph_obs_impl; [|done]=>/= ?. by rewrite to_xsum_pinj. }
+    iFrame "T". iExists _. iSplit; [done|]. rewrite vplace_own_eq. iExists D. iFrame "⧖ Own".
+    rewrite /lty_vnrc /= /lt'' !lty_nrc_plug /=. iFrame "⧗p".
+  Qed.
+
+  (** Case analysis on the sum at the hole of [K2], below the shared reference at the hole
+      of [K]: the tag is read through the view (a guarded typed load), and the branch of the
+      variant [i] gets the place with the view [SumLty tyl i (OfTy (tyl +!! i))] at the
+      hole (the referent does not change, so the variant is recorded in the place type,
+      [lty_vin]). *)
+  Lemma type_case_vplace_pshr {𝔄l 𝔅 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p (K: pctx (at_clocₛ 𝔅) 𝔄)
+      `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx (Σ! 𝔄l) 𝔅) (tyl: typel 𝔄l) (T: tctx 𝔅l)
+      el el' trl :
+    IntoPlistc el el' →
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)) →
+    lctx_lft_alive E L (pctx_salv K2 κ) →
+    ([∗ nat] i < length 𝔄l, typed_body E L I C
+      (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ) +:: T)
+      (el' -!! i) (trl -!! i)) -∗
+    typed_body E L I C (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
+      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l))
+        (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K p))))) of el)
+      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1).2).1 in
+        (trl -!! i) post (x -:: cl))%type.
+  Proof.
+    move=> -> Alv1 Alv2. iIntros "el".
+    iIntros (tid [x xl] mask post iκs) "#LFT #TIME #PROPH #UNIQ #E L I C /=[Tp T] #Obs".
+    destruct x as [x₀ ζm].
+    iDestruct "Tp" as (v Hp) "Tp". iEval (rewrite vplace_own_open) in "Tp".
+    iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
+    iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
+    set y := pctx_get K x₀.
+    remember (pctx_get K2 y.2) as z eqn:Hz. destruct z as [s pad].
+    destruct (to_xsum s) as [j a] eqn:Hj.
+    have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
+    subst s.
+    wp_bind (Load Na1Ord (MInt (sum_tag 𝔄l)) _)%E.
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
+    iIntros "£ #⧖S". iApply wp_fupd.
+    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iAssert (fractional.half γh &&{↑NllftG}&&>
+      @[pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)])%I
+      as "#Hu". { iApply (guards_transitive with "Ghalf Alv1"). }
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
+    { iApply (guards_transitive with "Ghalf Alv2"). }
+    iDestruct (lc_weaken (pshr_cred D + 2 * (D + 1)) with "£") as "[£a £r]";
+      [have := pshr_cred_step D; lia|].
+    set lt'' := pctx_plug K2 (SumLty tyl j (OfTy (tyl +!! j))).
+    wp_bind (pctx_expr K2 _).
+    iApply (wp_pshr_open _ K κ K2 (OfTy (Σ! tyl)) lt'' x₀ ζm D tid _ p (fractional.half γh)
+      with "LFT PROPH UNIQ Hu Hs H1 £a ⧖ [] Own"); [solve_ndisj| |..].
+    { apply lty_fold_plug_eq'. by rewrite lty_fold_sum_ofty. }
+    { rewrite !lty_vin_plug -/y -Hz /= psum_proj_pinj. naive_solver. }
+    { iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
+    iIntros (dh Hdh [Hin1 [Hin2 Hvin]]) "H1 Own #V".
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
+    { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
+    rewrite -Hz.
+    iApply (wp_load_tag_shr_view with "Hsl H1 £r V"); [solve_ndisj|].
+    iIntros "H1".
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    iModIntro. wp_pure _.
+    wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
+    iDestruct (big_sepN_lookup _ _ j with "el") as "el".
+    iApply ("el" $! _ ((x₀, ζm) -:: xl)
+      with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
+    { iApply proph_obs_impl; [|done]=>/= ?. by rewrite to_xsum_pinj. }
+    iFrame "T". iExists _. iSplit; [done|].
+    iApply (vplace_own_close with "⧖ [⧗p]"); [|done].
+    rewrite (lty_vnrc_plug_eq K (ShrLty lt'' κ) (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)) //.
+    by rewrite /= /lt'' (lty_nrc_plug_eq K2 (SumLty tyl j (OfTy (tyl +!! j))) (OfTy (Σ! tyl))).
+  Qed.
+
+  Lemma type_case_oplace_pshr {𝔄l 𝔅 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (at_clocₛ 𝔅) 𝔄)
+      `{!PctxNoShr K} κ (K2: pctx (Σ! 𝔄l) 𝔅) (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
+    IntoPlistc el el' →
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)) →
+    lctx_lft_alive E L (pctx_salv K2 κ) →
+    ([∗ nat] i < length 𝔄l, typed_body E L I C
+      (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ) +:: T)
+      (el' -!! i) (trl -!! i)) -∗
+    typed_body E L I C (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
+      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l))
+        (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p)))))) of el)
+      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1.2).2).1 in
+        (trl -!! i) post (x -:: cl))%type.
+  Proof.
+    iIntros (???) "el".
+    iApply (type_case_vplace_pshr E L I C p (POwn n K) κ K2 tyl T el el' trl with "el"); done.
+  Qed.
+End case.
+
+(** * (e) Resolving and dropping places with shared references *)
+
+Section rslv.
+  Context `{!typeG Σ}.
+
+  (** A shared reference (with any view of its referent) is a leaf: it is forgotten (its
+      ownership is persistent; nothing below it is owned), and its memory, the bytes of the
+      pointer, is given back ([lty_omem]). With [type_drop_oplace_deep_instr] and
+      [resolve_tctx_cons_oplace_deep], owned places containing shared references are
+      dropped and resolved. *)
+  Lemma lty_rslv_shr {𝔄} E L (lt: lty 𝔄) κ : lty_rslv E L (ShrLty lt κ) (λ _ _ _ _, True).
+  Proof. apply (lty_rslv_of _ _ _ (λ _ _, True)), lty_resolve_just. Qed.
+
+  (** A place rooted at a shared reference is dropped: its ownership is persistent. *)
+  Lemma tctx_drop_vplace_shr {𝔄} E L p κ (lt: lty 𝔄) :
+    tctx_incl E L +[p ◁ₗ ShrLty lt κ] +[] (λ post _, post -[]).
+  Proof.
+    split; [intros ?? Eq [? []] ??; by apply Eq|].
+    iIntros (G tid [x []] mask post ?) "_ _ _ _ _ $ _ Obs".
+    iModIntro. iExists -[]. by iFrame "Obs".
+  Qed.
+End rslv.
