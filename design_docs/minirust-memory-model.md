@@ -531,3 +531,65 @@ only `functional_extensionality_dep`. The Qed times are from `coqc -time`.
 | `get_boxed_pb_type` (`*( **b).1`, `b: Box<&(i32, Box<i32>)>`) | box (`K1 = POwn`) | 2.6 s |
 | `get_or_zero_pb_type` (`match **b`, `b: Box<&Option<i32>>`) | box | 5.5 s |
 | `first_ref_pb_type` (`&( **x).0`, `x: &mut &(i32,i32)`, then resolve `x`) | `&uniqb` value (`K1 = PUniq`) | 6.0 s |
+
+### 2. Resolution places on bytes (`typing/bplace_res*.v`)
+
+The model (`OfRes`, `ResUniqLty`, `res_leaf`, `lty_view`, `view_leaf`) was already in
+`bltype.v`. The five legacy files are ported next to the legacy ones:
+
+- `bplace_res.v` (`place_res.v`). It covers the conversions of resolved leaves:
+  - `tctx_oplace_res_to_ofty`, for `ResOwn`;
+  - `tctx_unfold_oplace_res_prod`, which splits the bytes with `cbytes_pair`;
+  - `tctx_unfold_oplace_res_own`, for `own_bytes`;
+  - `tctx_unfold_oplace_res_shr`;
+  - `type_oplace_res_uniq_to_shr_instr`, which re-reads `OfRes (&uniqb{κ} ty)` as
+    `ShrLty (OfTy ty) κ`, through `resolve_uniq_body` on bytes.
+
+  It also covers case analysis on resolved sums (`type_case_oplace_res`, a typed `Load`
+  of the tag) and folding them back.
+- `bplace_res_view.v`: the laws of views and `lty_share_view`, which shares a place in a
+  borrow into its view. On bytes the view of an unblocked leaf is a guard of its bytes
+  (`leaf_share_view`), and the view of a pointer is a guard of its pointer bytes
+  (`ptr_cell_view`).
+- `bplace_res_rslv.v`: `lty_res` and its instances, together with the rule
+  `type_resolve_oplace_res_instr` (`skipn k`). The instances are:
+  - `lty_res_id`, `lty_res_impl`, `lty_res_ofty`, `lty_res_copy`;
+  - `lty_res_prod`, `lty_res_own`, `lty_res_sum`;
+  - `lty_res_uniq_leaf`, `lty_res_uniq_cpd`.
+- `bplace_res_ops.v`: the operations below `ResUniqLty`. It has the access
+  `view_pctx_acc`, and these rules:
+  - `type_read_oplace_res_(leaf_|shrblk_)instr`: a guarded typed `Load` of a `Copy` leaf
+    of any size, through `wp_load_shr_view`. The address is
+    `pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p))))`. There is no
+    `Skip`: the first step gives the credits.
+  - `type_share_oplace_res_instr`.
+  - `unblock_tctx_oplace_res` and `unblock_tctx_oplace_res_shr`.
+  - `type_drop_oplace_res_instr`.
+  - `tctx_fold_oplace_res_uniq_leaf`.
+- `bplace_res_copy.v`: `type_memcpy_copy_from_oplace_res_instr`, a guarded `MemCopy`
+  of a `Copy` leaf in a view into a box. The old contents of the box are resolved. The
+  first step gives the credits for the address and the copy step the rest.
+- New in `own_bytes.v`: `own_bytes_res_own`, an instance of `ResOwn`, and
+  `own_bytes_resolve_keep`.
+
+**Not ported: folding a resolved borrow with a compound referent.** This covers
+`lty_view_fold`, `tctx_fold_oplace_res_uniq` and `type_fold_oplace_res_uniq_meta_instr`.
+- The legacy fold combines the guards of the cells of the components into a guard of the
+  cells of the whole (`guard_cells_app_combine_fancy`, through `guards_and_point`).
+- On bytes the guarded resource is `cbytes ty x l = ∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝`.
+  The bytes are existential, so it is not a point property (`point_prop`), and two
+  guards of adjacent existential byte ranges cannot be combined into a guard of their
+  separating conjunction.
+- Possible fix: shared views and `&shrb` that guard fixed bytes
+  (`∃ bs, ⌜ty_bytes ty x bs⌝ ∗ guard (l ↦b bs)`, chosen when the leaf is shared, with
+  `κ` alive). That is a redesign of `shr_bytes_own`, `shr_blocked_owned` and
+  `view_leaf`, so it is left for later.
+- Leaf referents fold as before. Compound referents stay readable through the view.
+
+Examples (`typing/examples/bplace_res.v`). Each has a `Qed`, and `Print Assumptions` shows
+only `functional_extensionality_dep`.
+
+| Example | Qed |
+|---|---|
+| `res_pair_b_type`: `x: Box<(Box<i32>, &mut (i32,i32))>` is resolved, then `*x.0` and `( *x.1).0` are read; `fin(x.1) = cur(x.1)` | 8.1 s |
+| `res_nested_b_type`: `x: Box<&mut &mut (i32,i32)>` is resolved while `( **x).0` is reborrowed; `( **x).1` is read; `*r = 3`; the local lifetime ends and the leaf is unblocked in the view, then read; `fin(x) = ((3, c.2), fin( *x))` | 27.0 s |

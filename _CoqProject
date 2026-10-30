@@ -336,6 +336,11 @@ src/lambda_verus/typing/bplace_puniq.v
 src/lambda_verus/typing/bplace_sum.v
 src/lambda_verus/typing/bplace_deep.v
 src/lambda_verus/typing/bplace_pshr.v
+src/lambda_verus/typing/bplace_res.v
+src/lambda_verus/typing/bplace_res_view.v
+src/lambda_verus/typing/bplace_res_rslv.v
+src/lambda_verus/typing/bplace_res_ops.v
+src/lambda_verus/typing/bplace_res_copy.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/tracked.v
@@ -392,6 +397,7 @@ src/lambda_verus/typing/examples/bplace_deep.v
 src/lambda_verus/typing/examples/bget_some_first.v
 src/lambda_verus/typing/examples/bget_snd.v
 src/lambda_verus/typing/examples/bplace_pshr.v
+src/lambda_verus/typing/examples/bplace_res.v
 
 
 -arg -w -arg -argument-scope-delimiter
