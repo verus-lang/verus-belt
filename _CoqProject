@@ -343,6 +343,8 @@ src/lambda_verus/typing/bplace_res_ops.v
 src/lambda_verus/typing/bplace_res_copy.v
 src/lambda_verus/typing/bfunction.v
 src/lambda_verus/typing/bsubtype.v
+src/lambda_verus/typing/bplace_xprod.v
+src/lambda_verus/typing/bsoundness.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/tracked.v
@@ -402,6 +404,7 @@ src/lambda_verus/typing/examples/bplace_pshr.v
 src/lambda_verus/typing/examples/bplace_res.v
 src/lambda_verus/typing/examples/bfn.v
 src/lambda_verus/typing/examples/bnew.v
+src/lambda_verus/typing/examples/bplace_struct.v
 
 
 -arg -w -arg -argument-scope-delimiter

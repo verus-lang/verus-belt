@@ -658,3 +658,68 @@ Examples (`typing/examples/bnew.v`):
 |---|---|---|
 | `swap_snd_n_type`: `swap_snd` allocating its result, `let: "c" := OfLit (Alloc #8)`, then two `MemCopy`s | 17.3 s | `functional_extensionality_dep` |
 | `shorten_b_type`: `&shrb{α} (i32,i32)` returned as `&shrb{β} (i32,i32)` for `β ⊑ α` | 0.3 s | closed |
+
+**Soundness** (`typing/bsoundness.v`). `type_soundness_b` and `type_soundness_b_closed`
+are `type_soundness` for a `main` typed with `bmain_type := bfn(∅) → unit_ty`. Their
+`Print Assumptions` shows only `functional_extensionality_dep`.
+
+### 5. `Π!` products on bytes (`typing/bplace_xprod.v`)
+
+`Π! (𝔅 :: 𝔅l)` and `𝔅 * Π! 𝔅l` have different MiniRust types: a flat `seq_tuple`, and a
+pair whose second field is a tuple. Their bytes are the same, though.
+- `syn_bytes_xprod_cons` proves this from `syn_iso_bytes` of `isoₛ_cons_prod` and from
+  `syn_val_cons_prod_some`, which shows that one value exists exactly when the other does.
+- `cbytes_xprod_cons` splits the bytes of an n-ary product into those of its head and
+  those of its tail.
+- `xprod_ofty_own` turns a leaf `OfTy (Π! (ty +:: tyl))` into the pair place
+  `ProdLty (OfTy ty) (OfTy (Π! tyl))`. Its ownership is that of `mod_ty` of the pair.
+- `tctx_unfold_oplace_xprod` and `tctx_fold_oplace_xprod` are the byte versions of the
+  legacy rules: `PctxNoUniq K`, `pctx_nosum K`, the hole retyped by `pctx_retype`, and
+  the value converted by `of_cons_prodₛ`/`to_cons_prodₛ`.
+
+As in the legacy layer, this is for the owned part of a place only. Below a unique
+borrow, the folded type of the referent would change, which the lender fixes.
+Supporting that needs a place type for n-ary products (`ConsLty`, see "6.5 Products" of
+the phase 3 design), which is not attempted.
+
+Example (`typing/examples/bplace_struct.v`). `set_mid_b_type` takes
+`struct S { a, b, c: i32 }` as `Π! +[i32; i32; i32]` in a box of 12 bytes. It unfolds
+the product field by field, writes `x.b = 7` with a typed `Store`, reads `x.c` with a
+typed `Load`, and drops the box. Qed 7.5 s, and `Print Assumptions` shows only
+`functional_extensionality_dep`.
+
+### What still blocks deleting the legacy layer (stage 5)
+
+`pcell` stays on the legacy layer, with `ra`, `protocol` and the pcell examples (user
+decision). These use the legacy core:
+- `own_ptr`/`box`, `&shr`, `&uniq` and `fn`;
+- `borrow.v`, `product_split.v`, `programs_util(_own)` and `type_new`;
+- the cell map of the heap (`↦!∗` cells, `phys_rel`, the `Word` bytes, and legacy
+  `Read`/`Write`/`CAS`).
+
+So, with `pcell` kept:
+- **Can be deleted.**
+  - The legacy place machinery: `ltype`, `lpath`, `pctx_acc`, `vplace` and `place_*.v`,
+    including `place_pshr`, `place_res*` and `place_memcpy`.
+  - Their examples (`examples/place_*.v`, `get_first`, `nested_*`).
+  - No byte file and no pcell file imports them. Every place rule family now has a byte
+    version.
+  - After that, the `b`-files can be renamed.
+- **Cannot be deleted yet.**
+  - `ty_phys`, `syn_phys`, the padding component of `~~(Σ! 𝔄l)`, `↦!∗` cells and the
+    legacy word layer of the heap.
+  - The legacy `own_ptr`/`&shr`/`&uniq`/`fn` types and the core rules listed in
+    decision 6 of the plan.
+  - `ty_size` cannot be redefined as the byte size, because `own_ptr` is one word.
+
+  All of these are needed by `pcell`. They go only with the pcell redesign (stage 6:
+  cells as fancy bytes, `ty_val = None`). `type_incl` and `Send` also still relate
+  `ty_phys`.
+- **Remaining gaps of the byte layer**, besides `pcell`:
+  - folding a resolved borrow with a compound referent (see item 2);
+  - `Π!` below unique borrows (see item 5);
+  - `btype_incl` instances for `mod_ty` isomorphisms;
+  - recursive (`fixpoint.v`) types over `own_bytes`, such as a byte `list` example;
+  - typed CAS and atomics on bytes;
+  - unfolding a box that is the whole referent of a unique borrow (`pctx_uend`), which
+    the legacy place rules cannot do either.
