@@ -1,0 +1,170 @@
+From lrust.typing Require Export type.
+From lrust.typing Require Import programs lft_contexts own_bytes value_ctx.
+From lrust.lifetime Require Import lifetime_full.
+From guarding Require Import guard tactics.
+Set Default Proof Using "Type".
+
+(** * Shared references to bytes (stage 4 of the MiniRust memory model)
+
+[&shrb{κ} ty] is the byte form of [&shr{κ} ty]: its ownership is a guard, by [@[κ]], of
+bytes [bs] at the referent that represent its value ([ty_bytes ty x bs]), together with
+the sharing predicate of [ty] at [κ] and its persistent predicate. The bytes are fixed
+outside the guard (the referent does not change while it is shared), so that a reader
+can load them with the guarded byte load [wp_load_na_guarded] ([wp_shr_bytes_load]).
+As for [&shr], its sharing predicate is the default one. *)
+
+Implicit Type 𝔄 𝔅: syn_type.
+
+Section shr_bytes.
+  Context `{!typeG Σ}.
+
+  (** The bytes at [l] represent [x], under a guard of [@[κ]] with [n] laters. *)
+  Definition shr_bytes_own {𝔄} (κ: lft) (n: nat) (ty: type 𝔄) (l: loc) (x: ~~𝔄) : iProp Σ :=
+    ∃ bs, ⌜ty_bytes ty x bs⌝ ∗ (@[κ] &&{↑NllftG; n}&&> l ↦b bs).
+
+  Global Instance shr_bytes_own_persistent {𝔄} κ n (ty: type 𝔄) l x :
+    Persistent (shr_bytes_own κ n ty l x).
+  Proof. apply _. Qed.
+
+  Lemma shr_bytes_own_same {𝔄} κ n (ty ty': type 𝔄) l x :
+    shr_bytes_own κ n ty l x ⊣⊢ shr_bytes_own κ n ty' l x.
+  Proof. rewrite /shr_bytes_own. by setoid_rewrite (ty_bytes_same ty ty'). Qed.
+
+  Lemma shr_bytes_own_mono {𝔄} κ n n' (ty: type 𝔄) l x :
+    n ≤ n' → shr_bytes_own κ n ty l x -∗ shr_bytes_own κ n' ty l x.
+  Proof.
+    iIntros (?) "(%bs & % & G)". iExists bs. iSplit; [done|].
+    by iApply (lguards_weaken_later with "G").
+  Qed.
+
+  Lemma shr_bytes_own_lft {𝔄} κ κ' n m (ty: type 𝔄) l x :
+    (@[κ'] &&{↑NllftG; m}&&> @[κ]) -∗ shr_bytes_own κ n ty l x -∗ shr_bytes_own κ' (m + n) ty l x.
+  Proof.
+    iIntros "#Incl (%bs & % & #G)". iExists bs. iSplit; [done|].
+    iApply (guards_transitive_additive with "Incl G").
+  Qed.
+
+  Program Definition shr_bytes {𝔄} (κ: lft) (ty: type 𝔄) : type (at_clocₛ 𝔄) :=
+    @ty_of_st _ _ ((at_clocₛ 𝔄)) ({|
+    st_size := 1;
+    st_lfts := κ :: ty.(ty_lfts);
+    st_E := ty.(ty_E) ++ ty_outlives_E ty κ;
+    st_gho x d g tid := [S(d') := d]
+      shr_bytes_own κ (g+1) ty x.1.1 x.2 ∗
+      ty.(ty_shr) κ (snd x) d' g tid ∗
+      ▷^(g+1) (ty.(ty_gho_pers) (snd x) d' g tid);
+    st_phys x tid := [FVal (LitV (x.1).1)];
+  |}%I : simple_type (at_clocₛ 𝔄)).
+  Next Obligation. done. Qed.
+  Next Obligation. done. Qed.
+  Next Obligation. done. Qed.
+  Next Obligation.
+    intros. iIntros "#A". destruct d. { done. } unfold by_succ.
+    destruct d'. { lia. }
+    iDestruct "A" as "[Pt [Shr #Pers]]". iSplit.
+    { iApply (shr_bytes_own_mono with "Pt"). lia. }
+    iSplit.
+    { iApply ty_shr_depth_mono; last by iFrame "Shr". { lia. } { lia. } }
+    iApply (bi.laterN_le (g+1) (g'+1)); first by lia. iNext.
+    iApply ty_gho_pers_depth_mono; last by iFrame "Pers".
+    { lia. } { trivial. }
+  Qed.
+  Next Obligation.
+    intros 𝔄 κ ty κ0 x n d g tid ξ R Hin.
+    iIntros "LFT #Incl #Gho".
+    destruct d as [|d]; [done|]. rewrite /by_succ.
+    iDestruct "Gho" as "[Phys [Shr #InnerPers]]".
+    iDestruct (ty_shr_lft_mono0 ty κ κ0 with "[] Shr") as "#Shr0".
+    { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_l. }
+    iApply (bi.laterN_le (g + 1 + d * (g + 2))); [nia|].
+    rewrite (bi.laterN_add (g + 1) (d * (g + 2))). iNext (g + 1).
+    iDestruct (ty_shr_guard_proph ty κ0 (snd x) n d g tid ξ R with "LFT [] InnerPers Shr0")
+      as "InnerGuardProph"; [done| |].
+    { iApply (llftl_incl_trans with "Incl []"). iApply llftl_intersect_incl_r. }
+    iNext. iIntros "#Rk #Rg".
+    leaf_goal laters to (n + (d + 1) * (g + 1)). { lia. }
+    iApply ("InnerGuardProph" with "Rk").
+  Qed.
+  Next Obligation. done. Qed.
+
+  Global Instance shr_bytes_ne {𝔄} κ : NonExpansive (@shr_bytes 𝔄 κ).
+  Proof.
+    move=> n ty ty' Eqv. apply ty_of_st_ne. constructor; simpl.
+    - done.
+    - f_equal. by eapply ty_lfts_ne.
+    - f_equal; [by eapply ty_E_ne|by eapply ty_outlives_E_ne].
+    - move=> [l x] [|d] g tid //=. rewrite (shr_bytes_own_same κ _ ty ty'). f_equiv.
+      f_equiv; [by eapply ty_shr_ne|]. f_equiv. by eapply ty_gho_pers_ne.
+    - done.
+  Qed.
+End shr_bytes.
+
+Notation "&shrb{ κ }" := (shr_bytes κ) (format "&shrb{ κ }") : lrust_type_scope.
+
+Section shr_bytes_rules.
+  Context `{!typeG Σ}.
+
+  Lemma shr_bytes_copy {𝔄} κ (ty: type 𝔄) : Copy (&shrb{κ} ty).
+  Proof.
+    split. - typeclasses eauto. - iIntros. iPureIntro. done.
+    - intros. by apply copy_shr_default.
+  Qed.
+
+  (** Loading the referent, given a guard [G] of [@[κ]]: a typed [Load] of [ty_mty ty]
+      returns the value of the referent. *)
+  Lemma wp_shr_bytes_load {𝔄} κ (ty: type 𝔄) l x v d g tid G E :
+    ↑naN ⊆ E → ty.(ty_val) x = Some v →
+    {{{ (&shrb{κ} ty).(ty_gho_own) (l, x) (S d) g tid ∗ (G &&{↑NllftG}&&> @[κ]) ∗ G ∗
+        £(2*(g+1)) }}}
+      Load Na1Ord ty.(ty_mty) #l.1 @ E
+    {{{ RET MLitV v; G }}}.
+  Proof.
+    iIntros (? Hv Φ) "(Own & #Gκ & G & £) HΦ". rewrite /= /by_succ.
+    iDestruct "Own" as "((%bs & %Hbs & #Pt) & _)".
+    iApply (wp_load_na_guarded _ _ 1%Qp _ bs v G (g+1) with "[$G $£]");
+      [done|by eapply ty_bytes_decode| |done].
+    iApply (guards_transitive_additive with "Gκ Pt").
+  Qed.
+  (** Reading the referent of a [Copy] type through a shared reference: a guarded typed
+      [Load]. *)
+  Lemma type_load_shr_bytes_copy_instr {𝔄} κ (ty: type 𝔄) p E L I :
+    Copy ty → lctx_lft_alive E L κ →
+    typed_instr E L I +[p ◁ᵥ &shrb{κ} ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
+      (λ v, +[p ◁ᵥ &shrb{κ} ty; v ◁ᵥ ty]) (λ post '-[a], post -[a; a.2]).
+  Proof.
+    iIntros (? Alv tid post mask iκs [[l x] []]) "#LFT #TIME _ _ #E L $ [p _] Obs".
+    wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
+    simpl in Hw. simplify_eq. wp_pure _.
+    destruct d as [|d]; [done|]. rewrite /= /by_succ.
+    iDestruct "Own" as "(#Pt & #Shr & #Pers)".
+    iDestruct (copy_shr with "Shr") as "#GOwn".
+    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Gh #Back]]]"; [solve_ndisj|].
+    iAssert (|={⊤}=> fractional.half γ ∗ (fractional.half γ &&{↑NllftG}&&> @[κ]))%I
+      with "[H1]" as ">[H1 #Gκ]".
+    { leaf_open "Gh" with "H1" as "[InterpL back]". { solve_ndisj. }
+      iDestruct (Alv with "InterpL E") as "#Alv".
+      iMod ("back" with "InterpL") as "$". iModIntro.
+      iApply (guards_transitive with "Gh Alv"). }
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [done|]. iIntros "£ _".
+    iDestruct (lc_weaken ((S d + 1) + 2 * (S d + 1)) with "£") as "[£1 £2]";
+      [rewrite /advance_credits; lia|].
+    iDestruct (guards_transitive_right with "Gκ GOwn") as "GO".
+    iAssert (|={⊤ ∖ ↑advN}=> fractional.half γ ∗ ty.(ty_gho_own) x d (S d) tid)%I
+      with "[H1 £1]" as ">[H1 #Gho]".
+    { iMod (guards_open_later with "GO H1") as "Open"; [solve_ndisj|].
+      iMod (lc_fupd_elim_laterN with "£1 Open") as ">[#Gho Close]".
+      iMod ("Close" with "Gho") as "$". by iModIntro. }
+    destruct (ty_val ty x) as [v|] eqn:Hv; last first.
+    { iDestruct "Pt" as (bs Hbs) "_". destruct (ty_bytes_val _ _ _ Hbs). congruence. }
+    iApply wp_fupd. iApply (wp_shr_bytes_load κ ty l x v d (S d) tid (fractional.half γ)
+      with "[$H1 $£2]"); [solve_ndisj|done| |].
+    { iFrame "Gκ". rewrite /= /by_succ. iFrame "Pt Shr Pers". }
+    iIntros "!> H1". iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
+    iModIntro. iExists -[(l, x); x]. iFrame "Obs".
+    iDestruct (ty_gho_own_depth_mono _ d (S d) (S d) (S d) with "Gho") as "[#Gho' _]"; [lia..|].
+    iSplitR; [|iSplit; [|done]].
+    - iExists _. iSplit; [done|]. iExists (VPtr l.1), (S d). iSplit; [done|]. iFrame "⧖".
+      rewrite /= /by_succ. iFrame "Pt Shr Pers".
+    - iExists _. iSplit; [done|]. iExists v, (S d). by iFrame "⧖ Gho'".
+  Qed.
+End shr_bytes_rules.
