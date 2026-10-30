@@ -1,32 +1,30 @@
-(** * Values of any size and sums below unique and shared borrows
+(** * Byte copies and sums below unique borrows
 
-  The operations of [place_memcpy.v] (memcpy-style copies [e1 <-{n} !e2] of values of any
-  size) and of [place_sum.v] (case analysis on a sum, assigning a variant) for owned
-  places ([p ◁ₗown{n} …]) whose context contains unique borrows ([PUniq], at any depth,
-  interleaved with fields, owned pointers and sums), and copies of any size below shared
-  references ([PShr]).
+  The byte versions of the rules of [typing/place_deep.v] for places rooted at a value
+  ([p ◁ₗ …], hence also owned places, [POwn n K]) whose context contains unique borrows
+  ([PUniq], at any depth, interleaved with fields, owned pointers and sums).
 
-  All rules on a leaf [OfTy ty] at the hole of [K] go through [oplace_leaf_acc]: the
-  access of [pctx_acc.v] (opening the enclosing borrows with the credits of the program
-  step), and, if the hole is the whole referent of the innermost borrow ([Uniq] mode), the
-  opening of its body; in both modes it gives the cells of the leaf (possibly ghost
-  cells, guarded by a token), the ownership of its value without laters, and a closer for
-  a new value of the leaf (of the same type).
+  All rules on a leaf [OfTy ty] at the hole of [K] go through [vplace_leaf_acc]: the
+  access of [bpctx_acc.v] (opening the enclosing borrows with the credits of the program
+  step), and, if the hole is the whole referent of the innermost borrow, the opening of
+  its body; it gives the bytes of the leaf ([cbytes]), the ownership of its value without
+  laters, and a closer for a new value of the leaf (of the same type).
 
-  - [type_memcpy_oplace_deep_instr]: assignment of a value of any size of the type of the
-    leaf (as Rust's assignment through [&mut]), the old value resolved;
-    [type_memcpy_copy_from_oplace_deep_instr]: copy of a [Copy] leaf into any path that
-    can be written; [type_memcpy_copy_from_oplace_pshr_instr]: the same below a shared
-    reference. (Moves out of a leaf and assignments that change the type of the leaf are
-    only sound below no unique borrow: [type_memcpy_from_oplace_instr],
-    [type_memcpy_oplace_instr] of [place_memcpy.v].)
-  - [type_case_oplace_deep]: case analysis on a sum leaf, which becomes the sum place
-    [SumLty tyl i (OfTy (tyl +!! i))] in branch [i]; [type_fold_oplace_sum_deep_instr]
-    folds it back; [type_sum_assign_oplace_deep_instr], [type_sum_unit_oplace_deep_instr],
-    [type_sum_memcpy_oplace_deep_instr]: assigning a variant (payload of size 1, unit
-    variant, payload of any size).
+  - [type_memcpy_vplace_deep_instr]: assignment of the contents of a box ([own_bytes]) of
+    the type of the leaf, a byte-level [MemCopy] (as Rust's assignment through [&mut]):
+    the old value is resolved, the box becomes uninitialized ([↯]: it keeps its bytes);
+    [type_memcpy_copy_from_vplace_deep_instr]: copy of a [Copy] leaf into a box, again a
+    [MemCopy] (no decode/encode). There is no typed memcpy: a round trip through a value
+    is a typed [Load] and a typed [Store].
+  - [type_case_vplace_deep]: case analysis on a sum leaf, which reads the tag with a typed
+    [Load] of the tag [IntType] at offset 0; the leaf becomes the sum place
+    [SumLty tyl i (OfTy (tyl +!! i))] in branch [i]; [type_fold_vplace_sum_deep_instr]
+    folds it back.
 
-  See [design_docs/verus-belt-phase3-design.md], section "Any size and sums below PUniq". *)
+  Not ported: assigning a variant below unique borrows (on bytes it is a typed [Store] of
+  a variant value, [type_mk_variant_val_instr], [type_write_vplace_deep_instr]), and the
+  copies below shared references ([type_memcpy_copy_from_oplace_pshr_instr]: the shared
+  places of [place_pshr.v] are not ported). *)
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
