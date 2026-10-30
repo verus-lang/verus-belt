@@ -127,6 +127,11 @@ End own_bytes.
 Section own_bytes_rules.
   Context `{!typeG Σ}.
 
+  Lemma own_bytes_gho_intro {𝔄} n (ty: type 𝔄) l x d g tid :
+    bytes_own ty l x -∗ freeable_sz n (ty_bsize ty) l -∗ ▷ ty.(ty_gho_own) x d g tid -∗
+    (own_bytes n ty).(ty_gho_own) (l, x) (S d) g tid.
+  Proof. iIntros "$ $ $". Qed.
+
   (** Reading the pointee: a typed [Load] of [ty_mty ty] returns the value of [x]. *)
   Lemma wp_own_bytes_load {𝔄} n (ty: type 𝔄) l x v d g tid E :
     ty.(ty_val) x = Some v →

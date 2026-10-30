@@ -20,6 +20,14 @@ Section own_bytes_tests.
   Proof. intros. rewrite -ty_val_eq /=. by rewrite !decide_True. Qed.
 
   (** Load the pair, store the swapped pair, and load it again. *)
+  (** Re-establishes the ownership of a box whose contents have trivial ownership (the
+      proof mode unfolds it when it is introduced). *)
+  Local Ltac rebuild d g tid :=
+    iDestruct "Own" as "(B & F & _)";
+    iDestruct (own_bytes_gho_intro _ _ _ _ d g tid with "B F []") as "Own";
+    [iNext; repeat iSplit; done|].
+
+  (** Load the pair, store the swapped pair, and load it again. *)
   Lemma test_box_pair_swap n l a b d g tid E :
     int_in_range i32 a → int_in_range i32 b →
     {{{ (own_bytes n pair_ty).(ty_gho_own) (l, (a, b)) (S d) g tid }}}
@@ -29,13 +37,16 @@ Section own_bytes_tests.
     {{{ RET MLitV (VTuple [VInt b; VInt a]);
         (own_bytes n pair_ty).(ty_gho_own) (l, (b, a)) (S d) g tid }}}.
   Proof.
-    iIntros (Ha Hb Φ) "Own HΦ".
-    wp_bind (Load _ _ _). iApply (wp_own_bytes_load with "Own"); [by apply pair_ty_val|].
-    iIntros "!> Own". wp_seq.
-    wp_bind (Store _ _ _ _). iApply (wp_own_bytes_store _ _ _ _ (b, a) with "[$Own]");
-      [by apply pair_ty_val|by iSplit|].
-    iIntros "!> [Own _]". wp_seq.
-    iApply (wp_own_bytes_load with "Own"); [by apply pair_ty_val|]. done.
+    iIntros (Ha Hb Φ) "Own HΦ". rebuild d g tid.
+    wp_bind (Load _ _ _).
+    iApply (wp_own_bytes_load n pair_ty l (a, b) _ (S d) g tid with "Own"); [by apply pair_ty_val|].
+    iIntros "!> Own". wp_seq. rebuild d g tid.
+    wp_bind (Store _ _ _ _).
+    iApply (wp_own_bytes_store n pair_ty l (a, b) (b, a) _ d g tid with "[$Own]");
+      [by apply pair_ty_val|iNext; by iSplit|].
+    iIntros "!> [Own _]". wp_seq. rebuild d g tid.
+    iApply (wp_own_bytes_load n pair_ty l (b, a) _ (S d) g tid with "Own"); [by apply pair_ty_val|].
+    iIntros "!> Own". rebuild d g tid. by iApply "HΦ".
   Qed.
 
   (** ** [Box<Option<i32>>] *)
@@ -59,7 +70,7 @@ Section own_bytes_tests.
   Proof. by rewrite /ty_bsize opt_ty_mty. Qed.
 
   (** [let b = Box::new(Some(5)); let v = *b; *b = None; drop(b); v] *)
-  Lemma test_box_option E :
+  Lemma test_box_option (tid: thread_id) E :
     {{{ True }}}
       let: "b" := (let: "l" := Alloc #(ty_bsize opt_ty) in
                    Store Na1Ord opt_ty.(ty_mty) "l" (MLit (VVariant 1 (VInt 5))) ;; "l") in
@@ -72,15 +83,23 @@ Section own_bytes_tests.
     iIntros (Φ) "_ HΦ".
     have Hin : int_in_range i32 5 by apply (bool_decide_unpack _); vm_compute.
     wp_bind (let: "l" := _ in _)%E.
-    iApply (wp_own_bytes_new opt_ty (some_i32 5) _ 0 0 inhabitant with "[]");
-      [by apply opt_ty_val_some|by rewrite opt_ty_bsize|done|].
-    iIntros "!>" (l) "Own". wp_let.
-    wp_bind (Load _ _ _). iApply (wp_own_bytes_load with "Own"); [by apply opt_ty_val_some|].
-    iIntros "!> Own". wp_let.
+    iApply (wp_own_bytes_new opt_ty (some_i32 5) _ 0 0 tid with "[]");
+      [by apply opt_ty_val_some|unfold ty_bsize; rewrite -ty_mty_eq /=; lia|done|].
+    iIntros "!>" (l) "Own". wp_let. rebuild 0%nat 0%nat tid.
+    wp_bind (Load _ _ _).
+    iApply (wp_own_bytes_load _ opt_ty l (some_i32 5) _ 1 0 tid with "Own");
+      [by apply opt_ty_val_some|].
+    iIntros "!> Own". wp_let. rebuild 0%nat 0%nat tid.
     wp_bind (Store _ _ _ _).
-    iApply (wp_own_bytes_store _ _ _ _ none_i32 with "[$Own]"); [apply opt_ty_val_none|done|].
-    iIntros "!> [Own _]". wp_seq.
-    wp_bind (Free _ _). iApply (wp_own_bytes_delete with "Own"); [by rewrite opt_ty_bsize|].
+    iApply (wp_own_bytes_store _ opt_ty l (some_i32 5) none_i32 _ 0 0 tid with "[$Own]");
+      [apply opt_ty_val_none|done|].
+    iIntros "!> [Own _]". wp_seq. rebuild 0%nat 0%nat tid.
+    wp_bind (Free _ _).
+    iApply (wp_own_bytes_delete opt_ty l none_i32 0 0 tid with "Own");
+      [unfold ty_bsize; rewrite -ty_mty_eq /=; lia|].
     iIntros "!> _". wp_seq. by iApply "HΦ".
   Qed.
 End own_bytes_tests.
+
+Print Assumptions test_box_pair_swap.
+Print Assumptions test_box_option.
