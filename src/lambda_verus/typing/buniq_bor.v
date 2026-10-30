@@ -25,7 +25,7 @@ Section uniq_bytes.
       κ ⊑ ty_lft ty ∗
       match x with
         (l, x0, ξi, d', g', idx) =>
-          ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ uniq_body ty x0 ξi d' g' idx κ tid l
+          ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ buniq_body ty x0 ξi d' g' idx κ tid l
             ∗ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_)
       end;
 
@@ -41,7 +41,7 @@ Section uniq_bytes.
       match x with
         (l, x0, ξi, d', g', idx) =>
           ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_) ∗
-            (uniq_body ty x0 ξi d' g' idx κ tid l ∨
+            (buniq_body ty x0 ξi d' g' idx κ tid l ∨
              (@[κ] &&{↑NllftG; 1}&&> cbytes ty x0 l) ∗
              ty.(ty_shr) κ x0 d' g' tid ∗ ty.(ty_gho_pers) x0 d' g' tid)
       end;
@@ -55,7 +55,7 @@ Section uniq_bytes.
       match x with
         (l, x0, ξi, d', g', idx) =>
             ⌜S d' ≤ d ∧ g' ≤ g⌝
-              ∗ uniq_body_pers_component ty x0 ξi d' g' idx κ tid l
+              ∗ buniq_body_pers_component ty x0 ξi d' g' idx κ tid l
       end;
       
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
@@ -158,15 +158,15 @@ Section uniq_bytes.
     iDestruct (llftl_bor_iff _ _
       ((proph_bor_tok (uniq_prvar x0 ξi) (uniq_cell x0 d' g' γ) idx ∗
         ghost_var γ (1/2) (lstate_triv x0)) ∗
-       (uniq_pat_lft κ κp ∗ ⧗1 ∗ uniq_persγ ty x0 ξi idx κ κp tid l)) with "[] Body") as "Body".
+       (uniq_pat_lft κ κp ∗ ⧗1 ∗ buniq_persγ ty x0 ξi idx κ κp tid l)) with "[] Body") as "Body".
     { iIntros "!> !>". rewrite /uniq_tokγ. iSplit.
       - iIntros "($ & [$ $] & $ & $)".
       - iIntros "[[$ $] ($ & $ & $)]". }
     iMod (llftl_sep_split with "LFT Body") as "[Tok _]"; [solve_ndisj|].
     iMod (proph_bor_tok_share_gen _ κ κ0 (uniq_prvar x0 ξi) (uniq_cell x0 d' g' γ) idx
-      (uniq_gbody κpp ty tid l) (ghost_var γ (1/2) (lstate_triv x0))
+      (buniq_gbody κpp ty tid l) (ghost_var γ (1/2) (lstate_triv x0))
       (ghost_var γ (1/2) (lstate_triv x0) ∗ ghost_var γ (1/2) (lstate_triv x0) ∗
-        uniq_payload ty tid l x0 d' g')
+        buniq_payload ty tid l x0 d' g')
       (λ wπ, ⌜∀ π, (wπ π).1 = vπ x0 π⌝)%I
       with "LFT IdxBor [] Tok") as "[PBor #TokG]"; [solve_ndisj| |].
     { iIntros "!> !>" (wπ). rewrite uniq_gbody_triv_iff. iSplit; iIntros "$". }
@@ -204,9 +204,7 @@ Section uniq_bytes.
     iSplitR "Shr"; last first.
     { iSplitR. { leaf_goal laters to 1. { lia. } iFrame "TokG". }
       iSplitL; [iNext; iApply (ty_shr_depth_mono with "Shr"); lia|]. by iFrame "InnerPers". }
-    iApply guard_cloc_combine_fancy.
-    - iApply (guards_transitive_right with "[] PtBase"). iApply llftl_intersect_incl_r.
-    - leaf_goal laters to 1. { lia. } iFrame "Pt".
+    leaf_goal laters to 1. { lia. } iFrame "Pt".
   Qed.
   Next Obligation.
     intros 𝔄 κ ty κ0 x n d g tid ξ R. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
@@ -255,7 +253,7 @@ Section uniq_bytes.
        rewrite (ty_lfts_ne _ _ _ Heqv). apply lft_equiv_refl.
      - intros x tid. done.
      - intros κ0 x d g tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
-       destruct Heqv as [_ _ _ _ EqPers EqPhys EqShr]. rewrite EqPhys.
+       destruct Heqv as [_ _ _ _ EqPers EqPhys EqShr]. rewrite (cbytes_same ty ty').
        do 4 f_equiv; [f_equiv; apply EqShr|]. do 2 f_equiv. apply EqPers.
   Qed.
 End uniq_bytes.
@@ -279,7 +277,7 @@ Section typing.
        apply uniq_pers_component_contractive; [done|intros; apply Heq3|intros; apply Heq5].
      - intros ???? x tid. by destruct x as [[[[[l x0] ξi] d'] g'] idx].
      - intros n ty ty' _ _ _ _ EqPers EqPhys EqShr κ0 x d g tid.
-       destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. rewrite EqPhys.
+       destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. rewrite (cbytes_same ty ty').
        do 3 f_equiv. f_equiv; [apply later_contractive; apply EqShr|].
        (* The persistent predicate of the referent is only [pred n]-close, hence the
           two laters. *)
@@ -308,7 +306,7 @@ Section typing.
       apply uniq_pers_component_proper; [apply lft_equiv_refl|done..]. }
     intros κ0. simpl. destruct (SyncTy tid tid' x0 d' g) as [H'phys [_ [_ H'shr]]].
     destruct (SyncTy tid tid' x0 d' g') as [_ [_ [H'pers _]]].
-    by rewrite H'phys H'shr H'pers.
+    by rewrite H'shr H'pers.
   Qed.
 
   Global Instance uniq_just_loc {𝔄} κ (ty: type 𝔄) : JustLoc (&uniqb{κ} ty).

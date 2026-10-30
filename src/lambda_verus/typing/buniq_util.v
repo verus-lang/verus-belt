@@ -37,7 +37,7 @@ Section buniq_util.
     - iIntros "(%bs & Hbs & %Hbs)". rewrite ty_bytes_syn syn_bytes_pair in Hbs.
       destruct Hbs as (bs1 & bs2 & -> & H1 & H2).
       rewrite heap_mapsto_bytes_app. iDestruct "Hbs" as "[B1 B2]".
-      rewrite (syn_bytes_length _ _ H1) -ty_bsize_eq.
+      rewrite (syn_bytes_length _ _ H1) -(ty_bsize_eq ty1).
       iSplitL "B1"; iExists _; iFrame; iPureIntro; by apply ty_bytes_syn.
     - iIntros "[(%bs1 & B1 & %H1) (%bs2 & B2 & %H2)]". iExists (bs1 ++ bs2).
       rewrite heap_mapsto_bytes_app (ty_bytes_length _ _ _ H1). iFrame.
@@ -83,33 +83,33 @@ Section buniq_util.
     above it can be folded back at depths increased by one per pointer (see
     [ltype_owned_unblock_fold] in [typing/ltype.v]). For [m = 0], this is the usual
     receipt [⧖(S d' `max` g')]. *)
-  Definition ofty_owned {𝔄} (m: nat) (ty: type 𝔄) (x: ~~𝔄) (d g: nat)
+  Definition bofty_owned {𝔄} (m: nat) (ty: type 𝔄) (x: ~~𝔄) (d g: nat)
       (tid: thread_id) (l: cloc) : iProp Σ :=
     cbytes ty x l ∗ ▷^m ty.(ty_gho_own) x d g tid.
 
-  Definition blocked_owned {𝔄} (m: nat) (ty: type 𝔄) (α: lft) (lr: place_rfn 𝔄)
+  Definition bblocked_owned {𝔄} (m: nat) (ty: type 𝔄) (α: lft) (lr: place_rfn 𝔄)
       (tid: thread_id) (l: cloc) : iProp Σ :=
     [†α] ={lazyE}=∗ guarded_upd lazyE @[ty_lft ty]
-      (∃ x d' g', place_rfn_rel lr x ∗ ⧖((m + S d') `max` g') ∗ ofty_owned m ty x d' g' tid l).
+      (∃ x d' g', place_rfn_rel lr x ∗ ⧖((m + S d') `max` g') ∗ bofty_owned m ty x d' g' tid l).
 
   (** [c] selects the core interpretation, in which blocked leaves are unblocked. *)
-  Definition leaf_owned {𝔄} (c: bool) (m: nat) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
+  Definition bleaf_owned {𝔄} (c: bool) (m: nat) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
       (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
     match r with
     | inr _ => False
     | inl lr =>
         match p with
         | PatBlocked α =>
-            if c then ∃ x, place_rfn_rel lr x ∗ ofty_owned m ty x d g tid l
-            else blocked_owned m ty α lr tid l
-        | _ => ∃ x, place_rfn_rel lr x ∗ ofty_owned m ty x d g tid l
+            if c then ∃ x, place_rfn_rel lr x ∗ bofty_owned m ty x d g tid l
+            else bblocked_owned m ty α lr tid l
+        | _ => ∃ x, place_rfn_rel lr x ∗ bofty_owned m ty x d g tid l
         end
     end%I.
 
   Lemma leaf_owned_triv {𝔄} m (ty: type 𝔄) x d g tid l :
-    leaf_owned false m ty PatLeaf (inl (PlaceIn x)) d g tid l ⊣⊢ ofty_owned m ty x d g tid l.
+    bleaf_owned false m ty PatLeaf (inl (PlaceIn x)) d g tid l ⊣⊢ bofty_owned m ty x d g tid l.
   Proof.
-    rewrite /leaf_owned /=. iSplit; [iIntros "(%y & -> & $)"|iIntros "H"; iExists x; by iFrame].
+    rewrite /bleaf_owned /=. iSplit; [iIntros "(%y & -> & $)"|iIntros "H"; iExists x; by iFrame].
   Qed.
 
   (** Unblocking a leaf, inside a lazy update: the blocked lifetime is included in
@@ -117,9 +117,9 @@ Section buniq_util.
   Lemma leaf_owned_unblock {𝔄} κ m (ty: type 𝔄) p lr d g tid l G :
     Timeless G →
     llft_ctx -∗ (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ pat_ok κ p -∗ [†κ] -∗ G -∗
-    ⧖((m + S d) `max` g) -∗ leaf_owned false m ty p (inl lr) d g tid l ={lazyE}=∗
+    ⧖((m + S d) `max` g) -∗ bleaf_owned false m ty p (inl lr) d g tid l ={lazyE}=∗
       G ∗ ∃ x d' g', place_rfn_rel lr x ∗ ⧖((m + S d') `max` g') ∗
-        ofty_owned m ty x d' g' tid l.
+        bofty_owned m ty x d' g' tid l.
   Proof.
     iIntros (?) "#LFT #Gty #Ok #†κ G #⧖ L".
     destruct p; try (iModIntro; iFrame "G"; iDestruct "L" as (x) "[Rel O]";
@@ -132,12 +132,12 @@ Section buniq_util.
   (** The leaf node of the body of a borrow whose membership condition is at [κp]: a
       leaf at a state with a structured refinement (written by an unfolded compound
       place, see [typing/ltype.v]) is blocked at [κp]. *)
-  Definition leaf_node {𝔄} (κp: lft) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
+  Definition bleaf_node {𝔄} (κp: lft) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
       (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
-    leaf_owned false 0 ty (norm_pat κp p r) (inl (prfn_place r)) d g tid l.
+    bleaf_owned false 0 ty (norm_pat κp p r) (inl (prfn_place r)) d g tid l.
 
   Lemma leaf_node_inl {𝔄} κp (ty: type 𝔄) p lr d g tid l :
-    leaf_node κp ty p (inl lr) d g tid l = leaf_owned false 0 ty p (inl lr) d g tid l.
+    bleaf_node κp ty p (inl lr) d g tid l = bleaf_owned false 0 ty p (inl lr) d g tid l.
   Proof. done. Qed.
 
   Lemma pat_ok_norm κ {𝔄} p (r: prfn 𝔄) : pat_ok κ p -∗ pat_ok κ (norm_pat κ p r).
@@ -148,9 +148,9 @@ Section buniq_util.
   Lemma leaf_node_unblock {𝔄} κp (ty: type 𝔄) p r d g tid l G :
     Timeless G →
     llft_ctx -∗ (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ pat_ok κp p -∗ [†κp] -∗ G -∗
-    ⧖(S d `max` g) -∗ leaf_node κp ty p r d g tid l ={lazyE}=∗
+    ⧖(S d `max` g) -∗ bleaf_node κp ty p r d g tid l ={lazyE}=∗
       G ∗ ∃ x d' g', place_rfn_rel (prfn_place r) x ∗ ⧖(S d' `max` g') ∗
-        ofty_owned 0 ty x d' g' tid l.
+        bofty_owned 0 ty x d' g' tid l.
   Proof.
     iIntros (?) "#LFT #Gty #Ok #†κ G #⧖ L". iDestruct (pat_ok_norm _ _ r with "Ok") as "Ok'".
     iApply (leaf_owned_unblock _ 0 with "LFT Gty Ok' †κ G ⧖ L").
@@ -158,12 +158,12 @@ Section buniq_util.
 
   (** ** The payload *)
 
-  Definition uniq_payload {𝔄} (ty: type 𝔄) (tid: thread_id) (l: cloc)
+  Definition buniq_payload {𝔄} (ty: type 𝔄) (tid: thread_id) (l: cloc)
       (x: ~~𝔄) (d g: nat) : iProp Σ :=
     guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗
       ty.(ty_gho_own) x d g tid ∗ cbytes ty x l).
   Lemma uniq_payload_cell {𝔄} (ty: type 𝔄) tid l x d g :
-    uniq_payload ty tid l x d g ⊣⊢
+    buniq_payload ty tid l x d g ⊣⊢
       guarded_upd lazyE @[ty_lft ty]
         (⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ cbytes ty x l).
   Proof. done. Qed.
@@ -171,7 +171,7 @@ Section buniq_util.
   (** A non-lazy payload. *)
   Lemma uniq_payload_intro {𝔄} (ty: type 𝔄) tid l x d g :
     ⧖(S d `max` g) -∗ ty.(ty_gho_own) x d g tid -∗ cbytes ty x l -∗
-    uniq_payload ty tid l x d g.
+    buniq_payload ty tid l x d g.
   Proof.
     rewrite uniq_payload_cell. iIntros "⧖ Gho Pt". iApply guarded_upd_intro.
     iModIntro. iFrame.
@@ -179,15 +179,15 @@ Section buniq_util.
 
   Lemma uniq_payload_intro_later {𝔄} (ty: type 𝔄) tid l x d g :
     ▷ (⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ cbytes ty x l) -∗
-    ▷ uniq_payload ty tid l x d g.
+    ▷ buniq_payload ty tid l x d g.
   Proof. iIntros "(⧖ & Gho & Pt) !>". iApply (uniq_payload_intro with "⧖ Gho Pt"). Qed.
 
   (** Running the lazy update of a payload, given a guard for the lifetime of the
       type. *)
   Lemma uniq_payload_run {𝔄} (ty: type 𝔄) tid l x d g E G :
     Timeless G → lazyE ⊆ E →
-    (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ G -∗ uniq_payload ty tid l x d g ={E}=∗
-      G ∗ ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ cbytes ty x l
+    (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ G -∗ buniq_payload ty tid l x d g ={E}=∗
+      G ∗ ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ cbytes ty x l.
   Proof.
     iIntros (??) "Gk G P". rewrite uniq_payload_cell.
     iApply (guarded_upd_run with "Gk G P"); done.
@@ -198,8 +198,8 @@ Section buniq_util.
   Lemma uniq_payload_force {𝔄} (ty: type 𝔄) tid l x d g E G :
     Timeless G → lazyE ⊆ E →
     (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ G -∗
-    £1 -∗ ▷ uniq_payload ty tid l x d g ={E}=∗
-      G ∗ ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ cbytes ty x l
+    £1 -∗ ▷ buniq_payload ty tid l x d g ={E}=∗
+      G ∗ ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ cbytes ty x l.
   Proof.
     iIntros (??) "Gk G £ P".
     iMod (lc_fupd_elim_later with "£ P") as "P".
@@ -212,7 +212,7 @@ Section buniq_util.
     (⧖(S d `max` g) -∗ ⧖(S d' `max` g')) -∗
     (ty.(ty_gho_own) x d g tid ∗ cbytes ty x l ={lazyE}=∗
       ty'.(ty_gho_own) x' d' g' tid' ∗ cbytes ty' x' l') -∗
-    uniq_payload ty tid l x d g -∗ uniq_payload ty' tid' l' x' d' g'.
+    buniq_payload ty tid l x d g -∗ buniq_payload ty' tid' l' x' d' g'.
   Proof.
     rewrite !uniq_payload_cell. iIntros "#Incl T W Upd".
     iApply (guarded_upd_weaken with "Incl").
@@ -224,51 +224,50 @@ Section buniq_util.
   (** ** Bodies of unique borrows *)
 
   (** The body: the pinned body with the leaf [OfTy ty] as core. *)
-  Definition uniq_gbody {𝔄} (κp: lft) (ty: type 𝔄) (tid: thread_id) (l: cloc)
+  Definition buniq_gbody {𝔄} (κp: lft) (ty: type 𝔄) (tid: thread_id) (l: cloc)
       (c: ~~ (uniq_cellₛ 𝔄)) (wπ: proph (uniq_cellₛ 𝔄)) : iProp Σ :=
-    cpd_body κp (ty_lft ty) (leaf_node κp ty) tid l c wπ.
+    cpd_body κp (ty_lft ty) (bleaf_node κp ty) tid l c wπ.
 
   (** The persistent part of a unique borrow. *)
-  Definition uniq_persγ {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (idx: Idx)
+  Definition buniq_persγ {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (idx: Idx)
       (κ κp: lft) (tid: thread_id) (l: cloc) : iProp Σ :=
-    proph_idx_bor_gen κ (uniq_prvar x ξi) idx (uniq_gbody κp ty tid l).
+    proph_idx_bor_gen κ (uniq_prvar x ξi) idx (buniq_gbody κp ty tid l).
 
-  Definition uniq_bodyγ {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d g: nat) (idx: Idx)
+  Definition buniq_bodyγ {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d g: nat) (idx: Idx)
       (κ κp: lft) (γ: gname) (tid: thread_id) (l: cloc) : iProp Σ :=
-    uniq_tokγ x ξi d g idx γ ∗ ⧗1 ∗ uniq_persγ ty x ξi idx κ κp tid l.
+    uniq_tokγ x ξi d g idx γ ∗ ⧗1 ∗ buniq_persγ ty x ξi idx κ κp tid l.
 
-  Definition uniq_body {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx)
+  Definition buniq_body {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx)
       (κ: lft) (tid: thread_id) (l: cloc) : iProp Σ :=
-    ∃ κp γ, uniq_pat_lft κ κp ∗ uniq_bodyγ ty x ξi d g idx κ κp γ tid l.
+    ∃ κp γ, uniq_pat_lft κ κp ∗ buniq_bodyγ ty x ξi d g idx κ κp γ tid l.
 
-  Definition uniq_body_pers_component {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx)
+  Definition buniq_body_pers_component {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx)
       (κ: lft) (tid: thread_id) (l: cloc) : iProp Σ :=
-    ∃ κp, uniq_pat_lft κ κp ∗ uniq_persγ ty x ξi idx κ κp tid l.
+    ∃ κp, uniq_pat_lft κ κp ∗ buniq_persγ ty x ξi idx κ κp tid l.
 
-  Global Instance uniq_tokγ_timeless {𝔄} (x: ~~ 𝔄) ξi d g idx γ :
-    Timeless (uniq_tokγ x ξi d g idx γ).
-  Proof. apply _. Qed.
+  Global Instance buniq_persγ_persistent {𝔄} (ty: type 𝔄) x ξi idx κ κp tid l :
+    Persistent (buniq_persγ ty x ξi idx κ κp tid l).
+  Proof. rewrite /buniq_persγ. apply proph_idx_bor_gen_persistent. Qed.
 
-  Global Instance uniq_persγ_persistent {𝔄} (ty: type 𝔄) x ξi idx κ κp tid l :
-    Persistent (uniq_persγ ty x ξi idx κ κp tid l).
-  Proof. apply _. Qed.
-
-  Global Instance uniq_body_pers_component_persistent {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l :
-    Persistent (uniq_body_pers_component ty x ξi d g idx κ tid l).
-  Proof. apply _. Qed.
+  Global Instance buniq_body_pers_component_persistent {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l :
+    Persistent (buniq_body_pers_component ty x ξi d g idx κ tid l).
+  Proof.
+    rewrite /buniq_body_pers_component. apply bi.exist_persistent=> κp.
+    apply bi.sep_persistent; [apply _|apply buniq_persγ_persistent].
+  Qed.
 
   Lemma uniq_body_unfold {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l :
-    uniq_body ty x ξi d g idx κ tid l ⊣⊢
-      ∃ κp γ, uniq_pat_lft κ κp ∗ uniq_tokγ x ξi d g idx γ ∗ ⧗1 ∗ uniq_persγ ty x ξi idx κ κp tid l.
+    buniq_body ty x ξi d g idx κ tid l ⊣⊢
+      ∃ κp γ, uniq_pat_lft κ κp ∗ uniq_tokγ x ξi d g idx γ ∗ ⧗1 ∗ buniq_persγ ty x ξi idx κ κp tid l.
   Proof. done. Qed.
 
   Lemma uniq_body_from_parts {𝔄} (ty: type 𝔄) x ξi d g idx κ κp γ tid l :
-    uniq_pat_lft κ κp -∗ uniq_tokγ x ξi d g idx γ -∗ ⧗1 -∗ uniq_persγ ty x ξi idx κ κp tid l -∗
-    uniq_body ty x ξi d g idx κ tid l.
+    uniq_pat_lft κ κp -∗ uniq_tokγ x ξi d g idx γ -∗ ⧗1 -∗ buniq_persγ ty x ξi idx κ κp tid l -∗
+    buniq_body ty x ξi d g idx κ tid l.
   Proof. iIntros "? ? ? ?". iExists κp, γ. iFrame. Qed.
 
   Lemma uniq_body_pers_component_impl {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx) (κ: lft) (tid: thread_id) (l: cloc)
-    : uniq_body ty x ξi d g idx κ tid l -∗ uniq_body_pers_component ty x ξi d g idx κ tid l.
+    : buniq_body ty x ξi d g idx κ tid l -∗ buniq_body_pers_component ty x ξi d g idx κ tid l.
   Proof. iIntros "(%κp & %γ & ? & _ & _ & ?)". iExists κp. iFrame. Qed.
 
   (** ** Retargeting
@@ -307,13 +306,13 @@ Section buniq_util.
   Proof. by rewrite /uniq_tokγ (uniq_bor_tok_retarget x x'). Qed.
 
   Lemma uniq_persγ_retarget {𝔄} (ty: type 𝔄) (x x': ~~ 𝔄) ξi idx κ κp tid l :
-    uniq_persγ ty x ξi idx κ κp tid l ⊣⊢ uniq_persγ ty x' ξi idx κ κp tid l.
+    buniq_persγ ty x ξi idx κ κp tid l ⊣⊢ buniq_persγ ty x' ξi idx κ κp tid l.
   Proof. apply uniq_idx_bor_gen_retarget. Qed.
 
   Lemma uniq_pers_component_retarget {𝔄} (ty: type 𝔄) (x x': ~~ 𝔄) ξi d g d' g' idx κ tid l :
-    uniq_body_pers_component ty x ξi d g idx κ tid l ⊣⊢
-      uniq_body_pers_component ty x' ξi d' g' idx κ tid l.
-  Proof. rewrite /uniq_body_pers_component. by setoid_rewrite (uniq_persγ_retarget ty x x'). Qed.
+    buniq_body_pers_component ty x ξi d g idx κ tid l ⊣⊢
+      buniq_body_pers_component ty x' ξi d' g' idx κ tid l.
+  Proof. rewrite /buniq_body_pers_component. by setoid_rewrite (uniq_persγ_retarget ty x x'). Qed.
 
   Lemma uniq_body_proph_dep {𝔄} (x: ~~𝔄) d g γ :
     @vπ (uniq_cellₛ 𝔄) (uniq_cell x d g γ) ./ ξl x.
@@ -339,9 +338,9 @@ Section buniq_util.
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
-    uniq_payload ty tid l x d g ≡{n}≡ uniq_payload ty' tid l x d g.
+    buniq_payload ty tid l x d g ≡{n}≡ buniq_payload ty' tid l x d g.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_payload (guarded_upd_lft_equiv _ _ _ _ Hl) Hp.
+    intros Hl Hg Hp. rewrite /buniq_payload (guarded_upd_lft_equiv _ _ _ _ Hl) (cbytes_same ty ty' x l).
     f_equiv. f_equiv. f_equiv. apply Hg.
   Qed.
 
@@ -349,9 +348,9 @@ Section buniq_util.
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
-    uniq_payload ty tid l x d g ⊣⊢ uniq_payload ty' tid' l x d g.
+    buniq_payload ty tid l x d g ⊣⊢ buniq_payload ty' tid' l x d g.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_payload (guarded_upd_lft_equiv _ _ _ _ Hl) Hp.
+    intros Hl Hg Hp. rewrite /buniq_payload (guarded_upd_lft_equiv _ _ _ _ Hl) (cbytes_same ty ty' x l).
     f_equiv. f_equiv. f_equiv. apply Hg.
   Qed.
 
@@ -359,15 +358,15 @@ Section buniq_util.
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
-    uniq_gbody κp ty tid l c wπ ≡{n}≡ uniq_gbody κp ty' tid l c wπ.
+    buniq_gbody κp ty tid l c wπ ≡{n}≡ buniq_gbody κp ty' tid l c wπ.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
+    intros Hl Hg Hp. rewrite /buniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
     do 3 f_equiv. rewrite (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv. f_equiv.
-    rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
-    have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ≡{n}≡ ofty_owned 0 ty' x d g tid l.
-    { intros. rewrite /ofty_owned Hp. f_equiv. apply Hg. }
+    rewrite /bleaf_node /bleaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
+    have Hofty: ∀ x d g, bofty_owned 0 ty x d g tid l ≡{n}≡ bofty_owned 0 ty' x d g tid l.
+    { intros x d g. rewrite /bofty_owned (cbytes_same ty ty' x l). f_equiv. apply Hg. }
     (* [PatBlocked] separately: [f_equiv=>?] takes about 25 s to fail on it. *)
-    destruct p; [|rewrite /blocked_owned; f_equiv; f_equiv;
+    destruct p; [|rewrite /bblocked_owned; f_equiv; f_equiv;
       rewrite (guarded_upd_lft_equiv _ _ _ _ Hl); f_equiv; do 3 (f_equiv=>?);
       do 2 f_equiv; apply Hofty|..];
       f_equiv=>?; f_equiv; apply Hofty.
@@ -377,15 +376,15 @@ Section buniq_util.
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
-    uniq_gbody κp ty tid l c wπ ⊣⊢ uniq_gbody κp ty' tid' l c wπ.
+    buniq_gbody κp ty tid l c wπ ⊣⊢ buniq_gbody κp ty' tid' l c wπ.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
+    intros Hl Hg Hp. rewrite /buniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
     do 3 f_equiv. rewrite (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv. f_equiv.
-    rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
-    have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ⊣⊢ ofty_owned 0 ty' x d g tid' l.
-    { intros. rewrite /ofty_owned Hp. f_equiv. apply Hg. }
+    rewrite /bleaf_node /bleaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
+    have Hofty: ∀ x d g, bofty_owned 0 ty x d g tid l ⊣⊢ bofty_owned 0 ty' x d g tid' l.
+    { intros x d g. rewrite /bofty_owned (cbytes_same ty ty' x l). f_equiv. apply Hg. }
     (* [PatBlocked] separately: [f_equiv=>?] takes about 25 s to fail on it. *)
-    destruct p; [|rewrite /blocked_owned; f_equiv; f_equiv;
+    destruct p; [|rewrite /bblocked_owned; f_equiv; f_equiv;
       rewrite (guarded_upd_lft_equiv _ _ _ _ Hl); f_equiv; do 3 (f_equiv=>?);
       do 2 f_equiv; apply Hofty|..];
       f_equiv=>?; f_equiv; apply Hofty.
@@ -393,24 +392,24 @@ Section buniq_util.
 
   Lemma uniq_gbody_loc {𝔄} κp (ty: type 𝔄) tid l l' c wπ :
     (∀ x, cbytes ty x l ⊣⊢ cbytes ty x l') →
-    uniq_gbody κp ty tid l c wπ ⊣⊢ uniq_gbody κp ty tid l' c wπ.
+    buniq_gbody κp ty tid l c wπ ⊣⊢ buniq_gbody κp ty tid l' c wπ.
   Proof.
-    intros Hl. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
+    intros Hl. rewrite /buniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
     do 3 f_equiv. f_equiv. f_equiv.
-    rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
-    have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ⊣⊢ ofty_owned 0 ty x d g tid l'.
-    { intros. by rewrite /ofty_owned Hl. }
+    rewrite /bleaf_node /bleaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
+    have Hofty: ∀ x d g, bofty_owned 0 ty x d g tid l ⊣⊢ bofty_owned 0 ty x d g tid l'.
+    { intros. by rewrite /bofty_owned Hl. }
     (* [PatBlocked] separately: [f_equiv=>?] takes long to fail on it. *)
-    destruct p; [|rewrite /blocked_owned; f_equiv; f_equiv; f_equiv; do 3 (f_equiv=>?);
+    destruct p; [|rewrite /bblocked_owned; f_equiv; f_equiv; f_equiv; do 3 (f_equiv=>?);
       do 2 f_equiv; apply Hofty|..];
       f_equiv=>?; f_equiv; apply Hofty.
   Qed.
 
   Lemma uniq_body_loc {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l l' :
     (∀ x, cbytes ty x l ⊣⊢ cbytes ty x l') →
-    uniq_body ty x ξi d g idx κ tid l ⊣⊢ uniq_body ty x ξi d g idx κ tid l'.
+    buniq_body ty x ξi d g idx κ tid l ⊣⊢ buniq_body ty x ξi d g idx κ tid l'.
   Proof.
-    intros Hl. rewrite /uniq_body /uniq_bodyγ /uniq_persγ. do 2 (f_equiv=>?).
+    intros Hl. rewrite /buniq_body /buniq_bodyγ /buniq_persγ. do 2 (f_equiv=>?).
     do 3 f_equiv. apply proph_idx_bor_gen_proper=> c wπ. by apply uniq_gbody_loc.
   Qed.
 
@@ -418,9 +417,9 @@ Section buniq_util.
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
-    uniq_body ty x ξi d g idx κ tid l ≡{n}≡ uniq_body ty' x ξi d g idx κ tid l.
+    buniq_body ty x ξi d g idx κ tid l ≡{n}≡ buniq_body ty' x ξi d g idx κ tid l.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_body /uniq_bodyγ /uniq_persγ. do 2 (f_equiv=>?).
+    intros Hl Hg Hp. rewrite /buniq_body /buniq_bodyγ /buniq_persγ. do 2 (f_equiv=>?).
     do 3 f_equiv. apply proph_idx_bor_gen_ne=> c wπ. by apply uniq_gbody_ne.
   Qed.
 
@@ -428,9 +427,9 @@ Section buniq_util.
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, dist_later n (ty.(ty_gho_own) x d g tid) (ty'.(ty_gho_own) x d g tid)) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
-    uniq_body ty x ξi d g idx κ tid l ≡{n}≡ uniq_body ty' x ξi d g idx κ tid l.
+    buniq_body ty x ξi d g idx κ tid l ≡{n}≡ buniq_body ty' x ξi d g idx κ tid l.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_body /uniq_bodyγ /uniq_persγ. do 2 (f_equiv=>?).
+    intros Hl Hg Hp. rewrite /buniq_body /buniq_bodyγ /buniq_persγ. do 2 (f_equiv=>?).
     do 3 f_equiv. apply proph_idx_bor_gen_contractive=> c wπ.
     destruct n as [|n]; [split; lia|]. apply dist_later_S.
     apply uniq_gbody_ne; [done| |done]=> x1 d1 g1.
@@ -441,9 +440,9 @@ Section buniq_util.
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
-    uniq_body ty x ξi d g idx κ tid l ⊣⊢ uniq_body ty' x ξi d g idx κ tid' l.
+    buniq_body ty x ξi d g idx κ tid l ⊣⊢ buniq_body ty' x ξi d g idx κ tid' l.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_body /uniq_bodyγ /uniq_persγ. do 2 (f_equiv=>?).
+    intros Hl Hg Hp. rewrite /buniq_body /buniq_bodyγ /buniq_persγ. do 2 (f_equiv=>?).
     do 3 f_equiv. apply proph_idx_bor_gen_proper=> c wπ. by apply uniq_gbody_proper.
   Qed.
 
@@ -451,10 +450,10 @@ Section buniq_util.
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
-    uniq_body_pers_component ty x ξi d g idx κ tid l ≡{n}≡
-      uniq_body_pers_component ty' x ξi d g idx κ tid l.
+    buniq_body_pers_component ty x ξi d g idx κ tid l ≡{n}≡
+      buniq_body_pers_component ty' x ξi d g idx κ tid l.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_body_pers_component /uniq_persγ. f_equiv=>?.
+    intros Hl Hg Hp. rewrite /buniq_body_pers_component /buniq_persγ. f_equiv=>?.
     f_equiv. apply proph_idx_bor_gen_ne=> c wπ. by apply uniq_gbody_ne.
   Qed.
 
@@ -462,10 +461,10 @@ Section buniq_util.
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, dist_later n (ty.(ty_gho_own) x d g tid) (ty'.(ty_gho_own) x d g tid)) →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
-    uniq_body_pers_component ty x ξi d g idx κ tid l ≡{n}≡
-      uniq_body_pers_component ty' x ξi d g idx κ tid l.
+    buniq_body_pers_component ty x ξi d g idx κ tid l ≡{n}≡
+      buniq_body_pers_component ty' x ξi d g idx κ tid l.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_body_pers_component /uniq_persγ. f_equiv=>?.
+    intros Hl Hg Hp. rewrite /buniq_body_pers_component /buniq_persγ. f_equiv=>?.
     f_equiv. apply proph_idx_bor_gen_contractive=> c wπ.
     destruct n as [|n]; [split; lia|]. apply dist_later_S.
     apply uniq_gbody_ne; [done| |done]=> x1 d1 g1.
@@ -476,10 +475,10 @@ Section buniq_util.
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
     (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
-    uniq_body_pers_component ty x ξi d g idx κ tid l ⊣⊢
-      uniq_body_pers_component ty' x ξi d g idx κ tid' l.
+    buniq_body_pers_component ty x ξi d g idx κ tid l ⊣⊢
+      buniq_body_pers_component ty' x ξi d g idx κ tid' l.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_body_pers_component /uniq_persγ. f_equiv=>?.
+    intros Hl Hg Hp. rewrite /buniq_body_pers_component /buniq_persγ. f_equiv=>?.
     f_equiv. apply proph_idx_bor_gen_proper=> c wπ. by apply uniq_gbody_proper.
   Qed.
 
@@ -487,56 +486,56 @@ Section buniq_util.
 
   (** At the trivial state, the body is the payload. *)
   Lemma uniq_gbody_triv_open {𝔄} κp (ty: type 𝔄) γ tid l x d g wπ :
-    ghost_var γ (1/2) (lstate_triv x) -∗ ▷ uniq_gbody κp ty tid l (uniq_cell x d g γ) wπ -∗
+    ghost_var γ (1/2) (lstate_triv x) -∗ ▷ buniq_gbody κp ty tid l (uniq_cell x d g γ) wπ -∗
     ◇ (⌜∀ π, (wπ π).1 = vπ x π⌝ ∗ ghost_var γ (1/2) (lstate_triv x) ∗
-       ghost_var γ (1/2) (lstate_triv x) ∗ ▷ uniq_payload ty tid l x d g).
+       ghost_var γ (1/2) (lstate_triv x) ∗ ▷ buniq_payload ty tid l x d g).
   Proof.
-    iIntros "Gh Body". rewrite /uniq_gbody cpd_body_cell.
+    iIntros "Gh Body". rewrite /buniq_gbody cpd_body_cell.
     iMod (bi.later_exist_except_0 with "Body") as (p) "Body".
     iMod (bi.later_exist_except_0 with "Body") as (r) "(_ & >%Hw & >Gh' & Upd)".
     iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
     iModIntro. iFrame "Gh Gh'". iSplit.
     { iPureIntro. intros π. by rewrite Hw prfn_den_in. }
     iNext. rewrite uniq_payload_cell. iApply (guarded_upd_mono with "[] Upd").
-    iIntros "[$ H] !>". rewrite leaf_node_inl leaf_owned_triv /ofty_owned. iDestruct "H" as "[$ $]".
+    iIntros "[$ H] !>". rewrite leaf_node_inl leaf_owned_triv /bofty_owned. iDestruct "H" as "[$ $]".
   Qed.
 
   Lemma uniq_gbody_triv_open' {𝔄} κp (ty: type 𝔄) γ tid l x d g wπ :
-    ghost_var γ (1/2) (lstate_triv x) -∗ uniq_gbody κp ty tid l (uniq_cell x d g γ) wπ -∗
+    ghost_var γ (1/2) (lstate_triv x) -∗ buniq_gbody κp ty tid l (uniq_cell x d g γ) wπ -∗
     ⌜∀ π, (wπ π).1 = vπ x π⌝ ∗ ghost_var γ (1/2) (lstate_triv x) ∗
-       ghost_var γ (1/2) (lstate_triv x) ∗ uniq_payload ty tid l x d g.
+       ghost_var γ (1/2) (lstate_triv x) ∗ buniq_payload ty tid l x d g.
   Proof.
-    iIntros "Gh Body". rewrite /uniq_gbody cpd_body_cell.
+    iIntros "Gh Body". rewrite /buniq_gbody cpd_body_cell.
     iDestruct "Body" as (p r) "(_ & %Hw & Gh' & Upd)".
     iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
     iFrame "Gh Gh'". iSplit.
     { iPureIntro. intros π. by rewrite Hw prfn_den_in. }
     rewrite uniq_payload_cell. iApply (guarded_upd_mono with "[] Upd").
-    iIntros "[$ H] !>". rewrite leaf_node_inl leaf_owned_triv /ofty_owned. iDestruct "H" as "[$ $]".
+    iIntros "[$ H] !>". rewrite leaf_node_inl leaf_owned_triv /bofty_owned. iDestruct "H" as "[$ $]".
   Qed.
 
   Lemma uniq_gbody_triv_close' {𝔄} κp (ty: type 𝔄) γ tid l x d g wπ :
     (∀ π, (wπ π).1 = vπ x π) →
-    ghost_var γ (1/2) (lstate_triv x) -∗ uniq_payload ty tid l x d g -∗
-    uniq_gbody κp ty tid l (uniq_cell x d g γ) wπ.
+    ghost_var γ (1/2) (lstate_triv x) -∗ buniq_payload ty tid l x d g -∗
+    buniq_gbody κp ty tid l (uniq_cell x d g γ) wπ.
   Proof.
-    iIntros (Hw) "Gh P". rewrite /uniq_gbody cpd_body_cell.
+    iIntros (Hw) "Gh P". rewrite /buniq_gbody cpd_body_cell.
     iExists PatLeaf, (inl (PlaceIn x)). iFrame "Gh". iSplit; [iApply pat_ok_leaf|].
     iSplit. { iPureIntro. intros π. by rewrite Hw prfn_den_in. }
     rewrite uniq_payload_cell. iApply (guarded_upd_mono with "[] P").
-    iIntros "($ & Gho & Pt) !>". rewrite leaf_node_inl leaf_owned_triv /ofty_owned. by iFrame.
+    iIntros "($ & Gho & Pt) !>". rewrite leaf_node_inl leaf_owned_triv /bofty_owned. by iFrame.
   Qed.
 
   Lemma uniq_gbody_triv_close {𝔄} κp (ty: type 𝔄) γ tid l x d g wπ :
     (∀ π, (wπ π).1 = vπ x π) →
-    ghost_var γ (1/2) (lstate_triv x) -∗ ▷ uniq_payload ty tid l x d g -∗
-    ▷ uniq_gbody κp ty tid l (uniq_cell x d g γ) wπ.
+    ghost_var γ (1/2) (lstate_triv x) -∗ ▷ buniq_payload ty tid l x d g -∗
+    ▷ buniq_gbody κp ty tid l (uniq_cell x d g γ) wπ.
   Proof. iIntros (Hw) "Gh P !>". by iApply (uniq_gbody_triv_close' with "Gh P"). Qed.
 
   Lemma uniq_gbody_triv_iff {𝔄} κp (ty: type 𝔄) γ tid l x d g wπ :
-    ghost_var γ (1/2) (lstate_triv x) ∗ uniq_gbody κp ty tid l (uniq_cell x d g γ) wπ ⊣⊢
+    ghost_var γ (1/2) (lstate_triv x) ∗ buniq_gbody κp ty tid l (uniq_cell x d g γ) wπ ⊣⊢
     ⌜∀ π, (wπ π).1 = vπ x π⌝ ∗ (ghost_var γ (1/2) (lstate_triv x) ∗
-       ghost_var γ (1/2) (lstate_triv x) ∗ uniq_payload ty tid l x d g).
+       ghost_var γ (1/2) (lstate_triv x) ∗ buniq_payload ty tid l x d g).
   Proof.
     iSplit.
     - iIntros "[Gh Body]". by iDestruct (uniq_gbody_triv_open' with "Gh Body") as "($ & $ & $ & $)".
@@ -550,10 +549,10 @@ Section buniq_util.
   Lemma uniq_body_acc_lazy {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E G :
     Timeless G → ↑Nllft ⊆ E →
     llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
-    uniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
-      ▷ uniq_payload ty tid l x d g ∗ ⧗1 ∗
-      (∀ x1 d1 g1, ▷ uniq_payload ty tid l x1 d1 g1 -∗ ⧗1
-        ={↑Nllft}=∗ uniq_body ty x1 ξi d1 g1 idx κ tid l ∗ G).
+    buniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
+      ▷ buniq_payload ty tid l x d g ∗ ⧗1 ∗
+      (∀ x1 d1 g1, ▷ buniq_payload ty tid l x1 d1 g1 -∗ ⧗1
+        ={↑Nllft}=∗ buniq_body ty x1 ξi d1 g1 idx κ tid l ∗ G).
   Proof.
     iIntros (??) "#LFT #UNIQ #Gk (%κp & %γ & #Incl & (Gh & Tok) & ⧗ & #Bor) G".
     iMod (proph_idx_bor_gen_acc_idx with "LFT UNIQ Gk Tok Bor G") as (wπ) "[Body Close]";
@@ -573,9 +572,9 @@ Section buniq_util.
   Lemma uniq_body_acc_drop {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E G :
     Timeless G → ↑Nllft ⊆ E →
     llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
-    uniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
-      ▷ uniq_payload ty tid l x d g ∗ ⧗1 ∗
-      (∀ x1 d1 g1, ▷ uniq_payload ty tid l x1 d1 g1 ={↑Nllft}=∗ G).
+    buniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
+      ▷ buniq_payload ty tid l x d g ∗ ⧗1 ∗
+      (∀ x1 d1 g1, ▷ buniq_payload ty tid l x1 d1 g1 ={↑Nllft}=∗ G).
   Proof.
     iIntros (??) "#LFT #UNIQ #Gk (%κp & %γ & #Incl & (Gh & Tok) & ⧗ & #Bor) G".
     iMod (proph_idx_bor_gen_acc_idx with "LFT UNIQ Gk Tok Bor G") as (wπ) "[Body Close]";
@@ -593,10 +592,10 @@ Section buniq_util.
   Lemma uniq_body_acc {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E G :
     Timeless G → ↑Nllft ⊆ E →
     llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
-    uniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
-      ▷ uniq_payload ty tid l x d g ∗ ⧗1 ∗
+    buniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
+      ▷ buniq_payload ty tid l x d g ∗ ⧗1 ∗
       (∀ x1 d1 g1, ▷ (⧖(S d1 `max` g1) ∗ ty.(ty_gho_own) x1 d1 g1 tid ∗ cbytes ty x1 l) -∗ ⧗1
-        ={↑Nllft}=∗ uniq_body ty x1 ξi d1 g1 idx κ tid l ∗ G).
+        ={↑Nllft}=∗ buniq_body ty x1 ξi d1 g1 idx κ tid l ∗ G).
   Proof.
     iIntros (??) "#LFT #UNIQ #Gk Body G".
     iMod (uniq_body_acc_lazy with "LFT UNIQ Gk Body G") as "(P & $ & Close)"; [done..|].
@@ -611,10 +610,10 @@ Section buniq_util.
   Lemma uniq_body_acc_keep {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E G :
     Timeless G → lazyE ⊆ E →
     llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ κ ⊑ ty_lft ty -∗ £1 -∗
-    uniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
+    buniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
       ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ cbytes ty x l ∗
       (▷ (ty.(ty_gho_own) x d g tid ∗ cbytes ty x l)
-        ={↑Nllft}=∗ uniq_body ty x ξi d g idx κ tid l ∗ G).
+        ={↑Nllft}=∗ buniq_body ty x ξi d g idx κ tid l ∗ G).
   Proof.
     iIntros (? HE) "#LFT #Gk #In £ (%κp & %γ & #Incl & (Gh & Tok) & ⧗ & #Bor) G".
     have ?: ↑Nllft ⊆ E. { etrans; [|done]. rewrite /lazyE. set_solver. }
@@ -642,8 +641,8 @@ Section buniq_util.
     ⧖(S d' `max` g') -∗
     (G &&{↑NllftG}&&> @[κ]) -∗
     G -∗
-    uniq_body ty x ξi d g idx κ tid l ={E}=∗
-    G ∗ uniq_body ty x ξi d' g' idx κ tid l.
+    buniq_body ty x ξi d g idx κ tid l ={E}=∗
+    G ∗ buniq_body ty x ξi d' g' idx κ tid l.
   Proof.
     iIntros (Gtimeless Hmask Hle1 Hle2) "#LFT #UNIQ #⧖ #guards G UniqBody".
     iMod (uniq_body_acc_lazy with "LFT UNIQ guards UniqBody G") as "(Inner & ⧗ & Back)";
@@ -663,8 +662,8 @@ Section buniq_util.
   Lemma uniq_body_settle {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E G :
     Timeless G → lazyE ⊆ E →
     llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ κ ⊑ ty_lft ty -∗ £1 -∗
-    uniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
-      ⧖(S d `max` g) ∗ uniq_body ty x ξi d g idx κ tid l ∗ G.
+    buniq_body ty x ξi d g idx κ tid l -∗ G ={E}=∗
+      ⧖(S d `max` g) ∗ buniq_body ty x ξi d g idx κ tid l ∗ G.
   Proof.
     iIntros (? HE) "#LFT #Gk #In £ Body G".
     iMod (uniq_body_acc_keep with "LFT Gk In £ Body G") as "(#⧖ & Gho & Pt & Close)";
@@ -678,8 +677,8 @@ Section buniq_util.
   Lemma uniq_body_settle_step {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E G :
     Timeless G → lazyE ⊆ E →
     llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ κ ⊑ ty_lft ty -∗
-    uniq_body ty x ξi d g idx κ tid l -∗ G -∗ |={E}▷=>
-      ⧖(S d `max` g) ∗ uniq_body ty x ξi d g idx κ tid l ∗ G.
+    buniq_body ty x ξi d g idx κ tid l -∗ G -∗ |={E}▷=>
+      ⧖(S d `max` g) ∗ buniq_body ty x ξi d g idx κ tid l ∗ G.
   Proof.
     iIntros (? HE) "#LFT #Gk #In (%κp & %γ & #Incl & (Gh & Tok) & ⧗ & #Bor) G".
     have ?: ↑Nllft ⊆ E. { etrans; [|done]. rewrite /lazyE. set_solver. }
@@ -702,21 +701,21 @@ Section buniq_util.
 
   (** What the lender of a unique borrow gets back: the controller and the body, at
       some state. *)
-  Definition uniq_lender {𝔄} (κp: lft) (ty: type 𝔄) (x₀: ~~𝔄) (ξi: positive)
+  Definition buniq_lender {𝔄} (κp: lft) (ty: type 𝔄) (x₀: ~~𝔄) (ξi: positive)
       (tid: thread_id) (l: cloc) : iProp Σ :=
-    ∃ c wπ, .PC[uniq_prvar x₀ ξi] c wπ ∗ uniq_gbody κp ty tid l c wπ.
+    ∃ c wπ, .PC[uniq_prvar x₀ ξi] c wπ ∗ buniq_gbody κp ty tid l c wπ.
 
   (** Once [κp] has ended, the lender can settle what it got back, with a guard for
       the lifetime of the type: the contents are unblocked, and the equalizer of the
       controller is composed with the refinement. *)
   Lemma uniq_lender_settle {𝔄} κp (ty: type 𝔄) x₀ ξi tid l :
-    llft_ctx -∗ proph_ctx -∗ [†κp] -∗ uniq_lender κp ty x₀ ξi tid l -∗
+    llft_ctx -∗ proph_ctx -∗ [†κp] -∗ buniq_lender κp ty x₀ ξi tid l -∗
     guarded_upd lazyE @[ty_lft ty] (∃ x d g,
       ▷ ((λ π, (π (uniq_prvar x₀ ξi)).1) :== vπ x) ∗ ⧖(S d `max` g) ∗
       ty.(ty_gho_own) x d g tid ∗ cbytes ty x l).
   Proof.
     iIntros "#LFT #PROPH #†κ (%c & %wπ & Pc & Body)".
-    rewrite /uniq_gbody (uniq_cell_surj c) cpd_body_cell.
+    rewrite /buniq_gbody (uniq_cell_surj c) cpd_body_cell.
     iDestruct "Body" as (p r) "(#Ok & %Hw & _ & Upd)".
     iIntros (G ?) "#Gty G". iMod (guarded_upd_run with "Gty G Upd") as "[G [#⧖ Node]]";
       [done|].
@@ -743,9 +742,9 @@ Section buniq_util.
       ∃ ξi ζi idx,
         let ξ := uniq_prvar x ξi in
         let ζ := PrVar (at_locₛ 𝔄 ↾ prval_to_inh (@vπ (at_locₛ 𝔄) (l.1, x))) ζi in
-        uniq_body ty x ξi d g idx κ tid l ∗
+        buniq_body ty x ξi d g idx κ tid l ∗
         ⟨π, π ζ = (l.1, (π ξ).1)⟩ ∗
-        ([†κ] ={↑Nllft}=∗ ▷ uniq_lender κ ty x ξi tid l).
+        ([†κ] ={↑Nllft}=∗ ▷ buniq_lender κ ty x ξi tid l).
   Proof.
     intros Hmask. iIntros "#LFT #PROPH #UNIQ #⧖ gho pt ⧗".
     iMod (ghost_var_alloc (lstate_triv x)) as (γ) "[Gh Gh']".
@@ -764,7 +763,7 @@ Section buniq_util.
     rewrite big_sepL_singleton.
     iDestruct ("ToLoan" with "ξtok") as "Loan".
     iMod (proph_loan_borrow_gen_pc E κ ξ (uniq_cell x d g γ) (vπ (uniq_cell x d g γ))
-      (uniq_gbody κ ty tid l) with "LFT UNIQ Loan [Gh' gho pt]") as (idx) "(Tok & #Bor & Back)";
+      (buniq_gbody κ ty tid l) with "LFT UNIQ Loan [Gh' gho pt]") as (idx) "(Tok & #Bor & Back)";
       [set_solver| |].
     { iApply (uniq_gbody_triv_close with "Gh'"); [done|].
       iApply uniq_payload_intro_later. iNext. iFrame "∗#". }
@@ -789,7 +788,7 @@ Section buniq_util.
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ κ ⊑ ty_lft ty -∗ elctx_interp E -∗
     (G &&{↑NllftG}&&> llctx_interp L) -∗
     G -∗ ⧖(S d `max` g) -∗
-    uniq_body ty x ξi d g idx κ tid l ={F}=∗
+    buniq_body ty x ξi d g idx κ tid l ={F}=∗
       ⟨π, (π (uniq_prvar x ξi)).1 = (vπ x π)⟩ ∗ G ∗
       ty.(ty_shr) κ x d g tid ∗ (@[κ] &&{↑NllftG; 1}&&> cbytes ty x l) ∗
       ty.(ty_gho_pers) x d g tid.
@@ -802,7 +801,7 @@ Section buniq_util.
     iMod ("Back" with "L") as "G".
     iDestruct (guards_transitive with "Guard Alv") as "#Guard_K".
     iMod (proph_idx_bor_gen_resolve_share F κ (uniq_prvar x ξi) (uniq_cell x d g γ) idx _
-      (ghost_var γ (1/2) (lstate_triv x) ∗ uniq_payload ty tid l x d g) (ξl x)
+      (ghost_var γ (1/2) (lstate_triv x) ∗ buniq_payload ty tid l x d g) (ξl x)
       (ty.(ty_shr) κ x d g tid ∗ (@[κ] &&{↑NllftG; 1}&&> cbytes ty x l) ∗
         ty.(ty_gho_pers) x d g tid)%I G
       (0 + (d+1)*(g+1)) with "LFT PROPH UNIQ Guard_K [Gh] [⧗] G Tok IBor") as "(#Obs & $ & $)".
@@ -849,17 +848,17 @@ Section buniq_util.
     ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d g tid, ty.(ty_gho_own) x d g tid ↔ ty'.(ty_gho_own) x d g tid) -∗
     (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
-    leaf_owned false m ty p r d g tid l -∗ leaf_owned false m ty' p r d g tid l.
+    bleaf_owned false m ty p r d g tid l -∗ bleaf_owned false m ty' p r d g tid l.
   Proof.
     iIntros "#[_ Incl'] #EqOwn %EqPhys L".
-    iAssert (□ ∀ x d g, ofty_owned m ty x d g tid l -∗ ofty_owned m ty' x d g tid l)%I
+    iAssert (□ ∀ x d g, bofty_owned m ty x d g tid l -∗ bofty_owned m ty' x d g tid l)%I
       as "#Hofty".
-    { iIntros "!>" (x' d' g') "[Pt Gho]". rewrite /ofty_owned EqPhys. iFrame "Pt".
+    { iIntros "!>" (x' d' g') "[Pt Gho]". rewrite /bofty_owned (cbytes_same ty ty'). iFrame "Pt".
       iNext. by iApply "EqOwn". }
-    destruct r as [lr|]; [|done]. rewrite /leaf_owned.
+    destruct r as [lr|]; [|done]. rewrite /bleaf_owned.
     destruct p; try (iDestruct "L" as (x') "[Rel O]"; iExists x'; iFrame "Rel";
       by iApply "Hofty").
-    rewrite /blocked_owned. iIntros "†α". iMod ("L" with "†α") as "Upd". iModIntro.
+    rewrite /bblocked_owned. iIntros "†α". iMod ("L" with "†α") as "Upd". iModIntro.
     iApply (guarded_upd_weaken with "Incl'"). iApply (guarded_upd_mono with "[] Upd").
     iIntros "(%x' & %d' & %g' & Rel & ⧖ & O) !>". iExists x', d', g'. iFrame.
     by iApply "Hofty".
@@ -869,9 +868,9 @@ Section buniq_util.
     ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d g tid, ty.(ty_gho_own) x d g tid ↔ ty'.(ty_gho_own) x d g tid) -∗
     (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
-    uniq_gbody κp ty tid l c wπ -∗ uniq_gbody κp ty' tid l c wπ.
+    buniq_gbody κp ty tid l c wπ -∗ buniq_gbody κp ty' tid l c wπ.
   Proof.
-    iIntros "#[Incl Incl'] #EqOwn %EqPhys". rewrite /uniq_gbody /cpd_body.
+    iIntros "#[Incl Incl'] #EqOwn %EqPhys". rewrite /buniq_gbody /cpd_body.
     iIntros "(%p & %r & $ & $ & $ & Upd)".
     iApply (guarded_upd_weaken with "Incl'"). iApply (guarded_upd_mono with "[] Upd").
     iIntros "[$ L] !>". iApply (leaf_owned_iff with "[] EqOwn [] L"); [by iSplit|done].
@@ -881,7 +880,7 @@ Section buniq_util.
     κ' ⊑ κ -∗ ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d tid vl, ty.(ty_gho_own) x d tid vl ↔ ty'.(ty_gho_own) x d tid vl) -∗
     (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
-    uniq_persγ ty x ξi idx κ κp tid l -∗ uniq_persγ ty' x ξi idx κ' κp tid l.
+    buniq_persγ ty x ξi idx κ κp tid l -∗ buniq_persγ ty' x ξi idx κ' κp tid l.
   Proof.
     iIntros "#InLft #Lfts #EqOwn %EqPhys Pc".
     iApply (proph_idx_bor_gen_shorten with "InLft [] Pc").
@@ -897,7 +896,7 @@ Section buniq_util.
     κ' ⊑ κ -∗ ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d tid vl, ty.(ty_gho_own) x d tid vl ↔ ty'.(ty_gho_own) x d tid vl) -∗
     (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
-    uniq_body_pers_component ty x ξi d g idx κ tid l -∗ uniq_body_pers_component ty' x ξi d g idx κ' tid l.
+    buniq_body_pers_component ty x ξi d g idx κ tid l -∗ buniq_body_pers_component ty' x ξi d g idx κ' tid l.
   Proof.
     iIntros "#InLft #Lfts #EqOwn %EqPhys (%κp & #Incl & Pc)".
     iExists κp. iSplit; [iApply (llftl_incl_trans with "InLft Incl")|].
@@ -908,7 +907,7 @@ Section buniq_util.
     κ' ⊑ κ -∗ ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d tid vl, ty.(ty_gho_own) x d tid vl ↔ ty'.(ty_gho_own) x d tid vl) -∗
     (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
-    uniq_body ty x ξi d g idx κ tid l -∗ uniq_body ty' x ξi d g idx κ' tid l.
+    buniq_body ty x ξi d g idx κ tid l -∗ buniq_body ty' x ξi d g idx κ' tid l.
   Proof.
     iIntros "#InLft #Lfts #EqOwn %EqPhys (%κp & %γ & #Incl & Tok & ⧗ & Pc)".
     iExists κp, γ. iFrame "Tok ⧗".
@@ -921,13 +920,13 @@ Section buniq_util.
   Lemma uniq_body_acc_static_tid {𝔄} (ty: type 𝔄) x ξi d g idx tid tid' l E :
     ↑Nllft ⊆ E →
     llft_ctx -∗ uniq_ctx -∗
-    uniq_body ty x ξi d g idx static tid l ={E}=∗ ▷ ◇ (
-      uniq_payload ty tid l x d g ∗ ⧗1 ∗
-      (∀ x1 d1 g1, ▷ uniq_payload ty tid' l x1 d1 g1 -∗ ⧗1 ={↑Nllft}=∗
-         ∃ idx', uniq_body ty x1 ξi d1 g1 idx' static tid' l)).
+    buniq_body ty x ξi d g idx static tid l ={E}=∗ ▷ ◇ (
+      buniq_payload ty tid l x d g ∗ ⧗1 ∗
+      (∀ x1 d1 g1, ▷ buniq_payload ty tid' l x1 d1 g1 -∗ ⧗1 ={↑Nllft}=∗
+         ∃ idx', buniq_body ty x1 ξi d1 g1 idx' static tid' l)).
   Proof.
     iIntros (?) "#LFT #UNIQ (%κp & %γ & #Incl & (Gh & Tok) & ⧗ & #Bor)".
-    iMod (proph_idx_bor_gen_acc_rebody E static (uniq_prvar x ξi) _ idx _ (uniq_gbody κp ty tid' l)
+    iMod (proph_idx_bor_gen_acc_rebody E static (uniq_prvar x ξi) _ idx _ (buniq_gbody κp ty tid' l)
       with "LFT UNIQ [] Tok Bor") as "Acc"; [done|by iApply llftl_tok_unit|].
     iModIntro. iNext. iMod "Acc" as (wπ) "[Body Close]".
     iDestruct (uniq_gbody_triv_open' with "Gh Body") as "(_ & Gh & Gh' & P)".
@@ -939,14 +938,14 @@ Section buniq_util.
     { iIntros "!>" (??) "[_ static]". iExFalso. iApply (llftl_end_unit with "static"). }
     iModIntro. iExists idx'. iApply (uniq_body_from_parts with "Incl [Gh Tok] ⧗ [Bor']").
     - rewrite -(uniq_tokγ_retarget x1 x). iFrame.
-    - by rewrite /uniq_persγ (uniq_idx_bor_gen_retarget _ x1 x).
+    - by rewrite /buniq_persγ (uniq_idx_bor_gen_retarget _ x1 x).
   Qed.
 
   (** ** Transforming the borrowed contents *)
 
   Lemma leaf_owned_unblocked {𝔄} c m (ty: type 𝔄) p lr d g tid l :
     (∀ α, p ≠ PatBlocked α) →
-    leaf_owned c m ty p (inl lr) d g tid l ⊣⊢ ∃ x, place_rfn_rel lr x ∗ ofty_owned m ty x d g tid l.
+    bleaf_owned c m ty p (inl lr) d g tid l ⊣⊢ ∃ x, place_rfn_rel lr x ∗ bofty_owned m ty x d g tid l.
   Proof. intros Hp. destruct p; try done. by destruct (Hp α). Qed.
 
   Lemma lpat_blocked_dec (p: lpat) : {α | p = PatBlocked α} + (∀ α, p ≠ PatBlocked α).
@@ -968,14 +967,14 @@ Section buniq_util.
     (∀ d1 g1, ⧖(S d1 `max` g1) ={lazyE}=∗ ⧖(S (h d1 g1).1 `max` (h d1 g1).2)) -∗
     (∀ y1 d1 g1, ty_gho_own ty' y1 d1 g1 tid ∗ cbytes ty' y1 l' ={lazyE}=∗
        ty_gho_own ty (fv y1) (h d1 g1).1 (h d1 g1).2 tid ∗ cbytes ty (fv y1) l) -∗
-    ▷ .PC[uniq_prvar y₀ ζi] y wζ -∗ ▷ uniq_gbody κp ty' tid l' y wζ ={E}=∗
-    ▷ ∃ c', uniq_gbody κp ty tid l c' uπ.
+    ▷ .PC[uniq_prvar y₀ ζi] y wζ -∗ ▷ buniq_gbody κp ty' tid l' y wζ ={E}=∗
+    ▷ ∃ c', buniq_gbody κp ty tid l c' uπ.
   Proof.
     iIntros (Hf Hcomm Hu) "#LFT #PROPH #Incl Gh Gh' Bump Back Pc Body".
-    rewrite /uniq_gbody (uniq_cell_surj y) cpd_body_cell.
+    rewrite /buniq_gbody (uniq_cell_surj y) cpd_body_cell.
     iMod (bi.later_exist_except_0 with "Body") as (p) "Body".
     iMod (bi.later_exist_except_0 with "Body") as (r) "(#Ok0 & >%Hw0 & _ & Upd)".
-    rewrite /leaf_node. set pn := norm_pat κp p r. set lrn := prfn_place r.
+    rewrite /bleaf_node. set pn := norm_pat κp p r. set lrn := prfn_place r.
     iAssert (▷ pat_ok κp pn)%I as "#Ok". { iNext. by iApply pat_ok_norm. }
     have Hw: ∀ π, (wζ π).1 = place_rfn_den lrn π. { intros π. by rewrite Hw0 prfn_place_den. }
     clearbody pn lrn.
@@ -1002,7 +1001,7 @@ Section buniq_util.
       iMod (guarded_upd_run with "[] G Upd") as "[$ [⧖ Node]]"; [done| |].
       { iApply (guards_transitive with "Gty Incl"). }
       iModIntro. iFrame "⧖".
-      rewrite /leaf_owned /blocked_owned. iIntros "†α". iMod ("Node" with "†α") as "Upd".
+      rewrite /bleaf_owned /bblocked_owned. iIntros "†α". iMod ("Node" with "†α") as "Upd".
       iModIntro. iIntros (G2 ?) "#G2ty G2".
       iMod (guarded_upd_run with "[] G2 Upd") as "[$ (%x & %d2 & %g2 & R & ⧖2 & Pt & Gho)]";
         [done| |].
@@ -1042,18 +1041,18 @@ Section buniq_util.
       uniq_ctx -∗
       ty_lft ty ⊑ ty_lft ty' -∗
       (∀ G', ⌜Timeless G'⌝ -∗ (G' &&{↑NllftG}&&> @[κ]) -∗ G' -∗
-        ▷ uniq_payload ty tid l x d g ={E}=∗
-        G' ∗ ▷ uniq_payload ty' tid l' x' d g ∗
+        ▷ buniq_payload ty tid l x d g ={E}=∗
+        G' ∗ ▷ buniq_payload ty' tid l' x' d g ∗
         (∀ d1 g1, ⧖(S d1 `max` g1) ={lazyE}=∗ ⧖(S (h d1 g1).1 `max` (h d1 g1).2)) ∗
         (∀ y1 d1 g1, ty_gho_own ty' y1 d1 g1 tid ∗ cbytes ty' y1 l' ={lazyE}=∗
           ty_gho_own ty (fv y1) (h d1 g1).1 (h d1 g1).2 tid ∗
           cbytes ty (fv y1) l)) -∗
       (G &&{↑NllftG}&&> @[κ]) -∗
       G -∗
-      uniq_body ty x ξi d g ξidx κ tid l
+      buniq_body ty x ξi d g ξidx κ tid l
       ={E}=∗ ∃ ζi ζidx ,
       ⟨π, (π (uniq_prvar x ξi)).1 = fp ((π (uniq_prvar x' ζi)).1)⟩ ∗
-      uniq_body ty' x' ζi d g ζidx κ tid l' ∗ G.
+      buniq_body ty' x' ζi d g ζidx κ tid l' ∗ G.
   Proof.
     intros Htimeless Hinj Hcomm Hmask.
     iIntros "#LFT #PROPH #UNIQ #Incl wand #GuardsK G (%κp & %γ & #Incl' & (Gh & Tok) & ⧗ & #Bor)".
@@ -1064,8 +1063,8 @@ Section buniq_util.
     set fπ := λ (c: (uniq_cellₛ 𝔅)),
       ((fp c.1, (1%positive, (1%positive, 1%positive))) : uniq_cellₛ 𝔄).
     iMod (proph_idx_bor_gen_map E κ (uniq_prvar x ξi) (uniq_cell x d g γ) ξidx
-      (uniq_gbody κp ty tid l) (uniq_prvar x' ζi) (uniq_cell x' d g γ')
-      (uniq_gbody κp ty' tid l') fπ G
+      (buniq_gbody κp ty tid l) (uniq_prvar x' ζi) (uniq_cell x' d g γ')
+      (buniq_gbody κp ty' tid l') fπ G
       with "LFT PROPH UNIQ GuardsK [wand Gh Gh2'] G Loan Tok Bor") as "(#Obs & Bor' & G)".
     { solve_ndisj. }
     { iIntros (G' wπ ?) "#G'κ G' Body".
@@ -1105,10 +1104,10 @@ Section buniq_util.
       (G &&{↑NllftG}&&> @[κ]) -∗
       G -∗
       £1 -∗
-      uniq_body ty x ξi d g ξidx κ tid l
+      buniq_body ty x ξi d g ξidx κ tid l
       ={E}=∗ ∃ ζi ζidx ,
       ⟨π, (π (uniq_prvar x ξi)).1 = (!ₛ) f ((π (uniq_prvar x' ζi)).1)⟩ ∗
-      uniq_body ty' x' ζi d g ζidx κ tid l' ∗ G.
+      buniq_body ty' x' ζi d g ζidx κ tid l' ∗ G.
   Proof.
     intros Htimeless Hinj Hmask.
     iIntros "#LFT #PROPH #UNIQ #In #Incl wand #GuardsK G £ Body".
@@ -1143,10 +1142,10 @@ Section buniq_util.
         ty_gho_own ty (f ~~$ₛ x'1) d1 g1 tid ∗ cbytes ty (f ~~$ₛ x'1) l) -∗
       (G &&{↑NllftG}&&> @[κ]) -∗
       G -∗
-      uniq_body ty x ξi d g ξidx κ tid l
+      buniq_body ty x ξi d g ξidx κ tid l
       ={E}=∗ ∃ ζi ζidx ,
       ⟨π, (π (uniq_prvar x ξi)).1 = (!ₛ) f ((π (uniq_prvar x' ζi)).1)⟩ ∗
-      uniq_body ty' x' ζi d g ζidx κ tid l' ∗ G.
+      buniq_body ty' x' ζi d g ζidx κ tid l' ∗ G.
   Proof.
     intros Htimeless Hinj Hmask.
     iIntros "#LFT #PROPH #UNIQ #[Incl Incl'] FwGho BkGho #GuardsK G Body".
@@ -1168,23 +1167,23 @@ Section buniq_util.
       copied: its blocked lifetimes are included in [κ'], hence in [κ ⊑ κp]), together
       with the outer half of the ghost variable (at that state) and the reborrow's
       controller. It is settled with [uniq_restored_settle]. *)
-  Definition uniq_restored {𝔄} (ty: type 𝔄) (x₀: ~~𝔄) (ξi ζi: positive) (κ κ': lft)
+  Definition buniq_restored {𝔄} (ty: type 𝔄) (x₀: ~~𝔄) (ξi ζi: positive) (κ κ': lft)
       (tid: thread_id) (l: cloc) : iProp Σ :=
     ∃ κp γ γk c wπ idx p (lr: place_rfn 𝔄), κ ⊑ κp ∗
       proph_bor_tok (uniq_prvar x₀ ξi) (uniq_cell c.1 (cell_d c) (cell_g c) γ) idx ∗ ⧗1 ∗
-      uniq_persγ ty x₀ ξi idx κ κp tid l ∗
+      buniq_persγ ty x₀ ξi idx κ κp tid l ∗
       ▷ (.PC[uniq_prvar x₀ ζi] c wπ ∗ ghost_var γ (1/2) (lstate p (inl lr)) ∗
          ⌜∀ π, (wπ π).1 = place_rfn_den lr π⌝ ∗ pat_ok κ' p ∗
          ghost_var γk (1/2) (lstate p (inl lr))).
 
   (** Reborrowing records no summary of the final value: the inheritance only gives
-      back the restored borrow (see [uniq_restored]). *)
+      back the restored borrow (see [buniq_restored]). *)
   Lemma uniq_body_reborrow {𝔄} (ty: type 𝔄) x ξi d g idx κ κ' tid l E :
     ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ κ' ⊑ κ -∗ ⧗1 -∗
-    uniq_body ty x ξi d g idx κ tid l ={E}=∗ ∃ ζi idx',
-      uniq_body ty x ζi d g idx' κ' tid l ∗
-      ([†κ'] ={↑Nllft}=∗ uniq_restored ty x ξi ζi κ κ' tid l).
+    buniq_body ty x ξi d g idx κ tid l ={E}=∗ ∃ ζi idx',
+      buniq_body ty x ζi d g idx' κ' tid l ∗
+      ([†κ'] ={↑Nllft}=∗ buniq_restored ty x ξi ζi κ κ' tid l).
   Proof.
     iIntros (?) "#LFT #PROPH #UNIQ #κ'⊑κ ⧗ (%κp & %γ & #Incl & (Gh & Tok) & ⧗o & #Bor)".
     iMod (ghost_var_alloc (lstate_triv x)) as (γζ) "[Ghζ Ghζ']".
@@ -1196,7 +1195,7 @@ Section buniq_util.
         ⌜∀ π, (w π).1 = place_rfn_den lr π⌝ ∗
         pat_ok κ' p ∗ ghost_var γk (1/2) (lstate p (inl lr)))%I.
     iMod (proph_idx_bor_gen_reborrow E κ κ' (uniq_prvar x ξi) (uniq_cell x d g γ) idx
-      (uniq_gbody κp ty tid l) (uniq_gbody κ' ty tid l) R
+      (buniq_gbody κp ty tid l) (buniq_gbody κ' ty tid l) R
       (λ c, uniq_cell c.1 (cell_d c) (cell_g c) γ) (uniq_cell x d g γζ) ζi
       with "LFT PROPH UNIQ κ'⊑κ [Ghk' Ghζ'] [Gh Ghk] Loan Tok Bor") as "[Bor' Inh]";
       [solve_ndisj|by rewrite /= cell_d_uniq_cell cell_g_uniq_cell| | |].
@@ -1208,10 +1207,10 @@ Section buniq_util.
       iMod (uniq_gbody_triv_open with "Gh Body") as "(_ & Gh & Gh' & P)".
       iModIntro. iSplitL "Ghζ' P".
       { iApply (uniq_gbody_triv_close with "Ghζ' P"). intros π. by rewrite Hw. }
-      iNext. iIntros (c2 w2) "Body †κ'". rewrite /uniq_gbody cpd_body_cell {1}/cpd_body.
+      iNext. iIntros (c2 w2) "Body †κ'". rewrite /buniq_gbody cpd_body_cell {1}/cpd_body.
       iMod (bi.later_exist_except_0 with "Body") as (p2) "Body".
       iMod (bi.later_exist_except_0 with "Body") as (r2) "(#Ok2 & >%Hw2 & >Ghζ2 & Upd)".
-      (* The state is copied, normalized for a leaf (see [leaf_node]). *)
+      (* The state is copied, normalized for a leaf (see [bleaf_node]). *)
       set p3 := norm_pat κ' p2 r2. set lr3 := prfn_place r2.
       iAssert (▷ pat_ok κ' p3)%I as "#Ok3". { iNext. by iApply pat_ok_norm. }
       have Hw3: ∀ π, (w2 π).1 = place_rfn_den lr3 π.
@@ -1230,7 +1229,7 @@ Section buniq_util.
     iIntros "†κ'". iMod ("Inh" with "†κ'") as (c wπ idx'') "(Tok & #Bor'' & Pc & R)".
     iMod (bi.later_exist_except_0 with "R") as (p) "R".
     iMod (bi.later_exist_except_0 with "R") as (lr) "(Gh & Hw & Ok & Ghk)".
-    iModIntro. iExists κp, γ, γk, c, wπ, idx'', p, lr. iFrame "∗#".
+    iModIntro. iExists κp, γ, γk, c, wπ, idx'', p, lr. iFrame "∗#". iExact "Incl".
   Qed.
 
   (** Settling a restored borrow: open it (with a guard for [κ]), unblock its contents
@@ -1240,8 +1239,8 @@ Section buniq_util.
   Lemma uniq_restored_settle {𝔄} (ty: type 𝔄) x₀ ξi ζi κ κ' tid l E G :
     Timeless G → lazyE ⊆ E →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ κ ⊑ ty_lft ty -∗
-    [†κ'] -∗ £1 -∗ £1 -∗ uniq_restored ty x₀ ξi ζi κ κ' tid l -∗ G ={E}=∗
-      ∃ x d g idx, ⧖(S d `max` g) ∗ uniq_body ty x ξi d g idx κ tid l ∗
+    [†κ'] -∗ £1 -∗ £1 -∗ buniq_restored ty x₀ ξi ζi κ κ' tid l -∗ G ={E}=∗
+      ∃ x d g idx, ⧖(S d `max` g) ∗ buniq_body ty x ξi d g idx κ tid l ∗
         ▷ ((λ π, (π (uniq_prvar x₀ ζi)).1) :== vπ x) ∗ G.
   Proof.
     iIntros (? HE) "#LFT #PROPH #UNIQ #Gk #In #†κ' £ £' Rst G".
@@ -1252,7 +1251,7 @@ Section buniq_util.
       [solve_ndisj|].
     iMod (proph_idx_bor_gen_acc_idx with "LFT UNIQ Gh2 Tok Bor H1") as (wπ') "[Body Close]";
       [done|].
-    rewrite /uniq_gbody cpd_body_cell.
+    rewrite /buniq_gbody cpd_body_cell.
     iMod (lc_fupd_elim_later with "£' Body") as "Body".
     iDestruct "Body" as (p' r') "(_ & %Hw' & Gh' & Upd)".
     iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
