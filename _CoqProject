@@ -336,6 +336,7 @@ src/lambda_verus/typing/bplace_puniq.v
 src/lambda_verus/typing/bplace_sum.v
 src/lambda_verus/typing/bplace_deep.v
 src/lambda_verus/typing/bplace_pshr.v
+src/lambda_verus/typing/bplace_res.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/tracked.v
