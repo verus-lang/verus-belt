@@ -4012,6 +4012,20 @@ Section cells.
     - intros i ls b. rewrite list_lookup_fmap. destruct (bs' !! i); simpl; intros Heq;
         simplify_eq. by rewrite /cw_ls HgCW.
   Qed.
+
+  Lemma brepr_plain_inv m fbs v :
+    brepr m fbs (fv_lift v) -∗ ⌜∃ bs, fbs = inr <$> bs ∧ decode_value m bs = Some v⌝.
+  Proof.
+    iIntros "(%R & %Hrep & _)". iPureIntro.
+    have Hpl := frepr_plain_of_nocells _ _ _ _ Hrep (fv_cells_lift v).
+    destruct (frepr_decode R ∅ (λ _, Uninit) m fbs (fv_lift v) Hrep) as (v' & Her & Hd).
+    { intros g m' cs Hg. rewrite fv_cells_lift in Hg. by apply not_elem_of_nil in Hg. }
+    have Heq := fval_erase_det _ _ _ _ (fval_erase_lift ∅ v) Her. subst v'.
+    exists (fin_bytes (λ _, Uninit) fbs). split; [|done].
+    apply list_eq. intros i. rewrite /fin_bytes !list_lookup_fmap.
+    destruct (fbs !! i) as [fb|] eqn:Hfb; [|done].
+    destruct (Hpl fb ltac:(by eapply elem_of_list_lookup_2)) as [b ->]. done.
+  Qed.
 End cells.
 
 Section bytes_ctx.

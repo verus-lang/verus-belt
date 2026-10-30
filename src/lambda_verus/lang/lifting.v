@@ -1318,7 +1318,7 @@ Qed.
 
 Lemma wp_load_sc_post E l m bs v Φ :
   decode_value m bs = Some v →
-  ▷ l ↦b bs -∗ (l ↦b bs -∗ ∀ σB, bytes_ctx σB ={E}=∗ bytes_ctx σB ∗ Φ (MLitV v)) -∗
+  ▷ l ↦b bs -∗ ▷ (l ↦b bs -∗ ∀ σB, bytes_ctx σB ={E}=∗ bytes_ctx σB ∗ Φ (MLitV v)) -∗
   WP Load ScOrd m (Lit $ LitLoc l) @ E {{ Φ }}.
 Proof.
   iIntros (Hdec) ">Hbs HΦ". have Hlen := decode_value_length _ _ _ Hdec.
@@ -1338,7 +1338,7 @@ Qed.
 
 Lemma wp_load_na_post E l m bs v Φ :
   decode_value m bs = Some v →
-  ▷ l ↦b bs -∗ (l ↦b bs -∗ ∀ σB, bytes_ctx σB ={E}=∗ bytes_ctx σB ∗ Φ (MLitV v)) -∗
+  ▷ l ↦b bs -∗ ▷ (l ↦b bs -∗ ∀ σB, bytes_ctx σB ={E}=∗ bytes_ctx σB ∗ Φ (MLitV v)) -∗
   WP Load Na1Ord m (Lit $ LitLoc l) @ E {{ Φ }}.
 Proof.
   iIntros (Hdec) ">Hbs HΦ". have Hlen := decode_value_length _ _ _ Hdec.
@@ -1376,7 +1376,7 @@ Qed.
 Lemma wp_store_sc_post E l m bs e v Φ :
   ↑naN ⊆ E → IntoVal e (MLitV v) → val_wf m v → length bs = mty_size m →
   ▷ l ↦b bs -∗
-  (l ↦b encode_value m v -∗ ∀ σB, bytes_ctx σB ={E}=∗ bytes_ctx σB ∗ Φ (LitV LitPoison)) -∗
+  ▷ (l ↦b encode_value m v -∗ ∀ σB, bytes_ctx σB ={E}=∗ bytes_ctx σB ∗ Φ (LitV LitPoison)) -∗
   WP Store ScOrd m (Lit $ LitLoc l) e @ E {{ Φ }}.
 Proof.
   iIntros (? <- Hwf Hlen) ">Hbs HΦ".
@@ -1399,7 +1399,7 @@ Qed.
 Lemma wp_store_na_post E l m bs e v Φ :
   ↑naN ⊆ E → IntoVal e (MLitV v) → val_wf m v → length bs = mty_size m →
   ▷ l ↦b bs -∗
-  (l ↦b encode_value m v -∗ ∀ σB, bytes_ctx σB ={E}=∗ bytes_ctx σB ∗ Φ (LitV LitPoison)) -∗
+  ▷ (l ↦b encode_value m v -∗ ∀ σB, bytes_ctx σB ={E}=∗ bytes_ctx σB ∗ Φ (LitV LitPoison)) -∗
   WP Store Na1Ord m (Lit $ LitLoc l) e @ E {{ Φ }}.
 Proof.
   iIntros (? <- Hwf Hlen) ">Hbs HΦ".
@@ -1438,7 +1438,7 @@ Qed.
 Lemma wp_memcopy_post E l1 l2 bs1 bs2 (n : nat) Φ :
   ↑naN ⊆ E → length bs1 = n → length bs2 = n →
   ▷ l1 ↦b bs1 -∗ ▷ l2 ↦b bs2 -∗
-  (l1 ↦b bs2 -∗ l2 ↦b bs2 -∗ ∀ σB, bytes_ctx σB ={E}=∗ bytes_ctx σB ∗ Φ (LitV LitPoison)) -∗
+  ▷ (l1 ↦b bs2 -∗ l2 ↦b bs2 -∗ ∀ σB, bytes_ctx σB ={E}=∗ bytes_ctx σB ∗ Φ (LitV LitPoison)) -∗
   WP MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2) @ E {{ Φ }}.
 Proof.
   iIntros (? Hlen1 Hlen2) ">Hbs1 >Hbs2 HΦ". subst n.
@@ -1484,6 +1484,135 @@ Proof.
   simpl. rewrite is_Some_mem_write'; [by rewrite !is_Some_mem_alter|].
   intros i Hi. rewrite is_Some_mem_alter.
   destruct (mem_range_lookup_1 _ _ _ _ i Hrange1') as (?&?&Hl&_); [lia|]. eexists. exact Hl.
+Qed.
+
+(** ** Cells of the byte region *)
+
+(** Creating a cell group ([PCellFromOwn]) and destroying it ([PCell2Own]) are updates of the
+    byte context; they can be done before any step. *)
+Lemma wp_pcell_create E e l m fbs fv Φ :
+  TCEq (to_val e) None → ↑naN ⊆ E → (0 < mty_size m)%nat → length fbs = mty_size m →
+  heap_mapsto_fbytes l fbs -∗ brepr m fbs fv -∗
+  (∀ g cs, loc_side l g m cs -∗ gdyn g fv -∗
+     (if bool_decide (fv_cells fv = []) then gnocell g else True) -∗ WP e @ E {{ Φ }}) -∗
+  WP e @ E {{ Φ }}.
+Proof.
+  iIntros (Hv ???) "Hl Hrep Hwp". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+  iMod (bytes_ctx_pcell_create with "HB Hl Hrep") as (g cs) "(HB & Hls & Hgd & Hnc)"; [done..|].
+  iModIntro. iFrame "HB". iApply ("Hwp" with "Hls Hgd Hnc").
+Qed.
+
+Lemma wp_pcell_create_plain E e l m bs v Φ :
+  TCEq (to_val e) None → ↑naN ⊆ E → (0 < mty_size m)%nat → decode_value m bs = Some v →
+  l ↦b bs -∗ (∀ g cs, loc_side l g m cs -∗ gdyn g (fv_lift v) -∗ gnocell g -∗ WP e @ E {{ Φ }}) -∗
+  WP e @ E {{ Φ }}.
+Proof.
+  iIntros (Hv ? ? Hd) "Hl Hwp". rewrite heap_mapsto_fbytes_bytes.
+  iApply (wp_pcell_create with "Hl []"); [done|done|by rewrite length_fmap (decode_value_length _ _ _ Hd)|..].
+  { by iApply brepr_plain. }
+  iIntros (g cs) "Hls Hgd". rewrite bool_decide_eq_true_2; [|apply fv_cells_lift].
+  iApply ("Hwp" with "Hls Hgd").
+Qed.
+
+Lemma wp_pcell_destroy E e l g m cs fv Φ :
+  TCEq (to_val e) None →
+  loc_side l g m cs -∗ gdyn g fv -∗
+  (∀ fbs, heap_mapsto_fbytes l fbs -∗ brepr m fbs fv -∗ WP e @ E {{ Φ }}) -∗ WP e @ E {{ Φ }}.
+Proof.
+  iIntros (Hv) "Hls Hgd Hwp". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+  iMod (bytes_ctx_pcell_destroy with "HB Hls Hgd") as (fbs) "(HB & Hl & Hrep)".
+  iModIntro. iFrame "HB". iApply ("Hwp" with "Hl Hrep").
+Qed.
+
+Lemma wp_pcell_destroy_plain E e l g m cs v Φ :
+  TCEq (to_val e) None →
+  loc_side l g m cs -∗ gdyn g (fv_lift v) -∗
+  (∀ bs, l ↦b bs -∗ ⌜decode_value m bs = Some v⌝ -∗ WP e @ E {{ Φ }}) -∗ WP e @ E {{ Φ }}.
+Proof.
+  iIntros (Hv) "Hls Hgd Hwp". iApply (wp_pcell_destroy with "Hls Hgd").
+  iIntros (fbs) "Hl Hrep". iDestruct (brepr_plain_inv with "Hrep") as %(bs & -> & Hd).
+  rewrite -heap_mapsto_fbytes_bytes. by iApply ("Hwp" with "Hl").
+Qed.
+
+(** Reads and writes through a cell whose location side is owned: the group is untethered
+    for the duration of the access, so the location holds plain bytes. *)
+Lemma wp_pcell_load_na E l g m cs fv :
+  ↑naN ⊆ E →
+  {{{ loc_side l g m cs ∗ gdyn g fv }}} Load Na1Ord m (Lit $ LitLoc l) @ E
+  {{{ v, RET MLitV v; loc_side l g m cs ∗ gdyn g fv ∗ ⌜fv_cells fv = [] → fv = fv_lift v⌝ }}}.
+Proof.
+  iIntros (? Φ) "[Hls Hgd] HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+  iMod (bytes_ctx_pcell_untether with "HB Hls") as (bs v) "(HB & Hl & %Hd & Hu)"; [done|].
+  iDestruct (bytes_ctx_untethered_val with "HB Hu Hgd") as %(v' & Hd' & Hfv).
+  rewrite Hd in Hd'. injection Hd' as <-.
+  iModIntro. iFrame "HB". iApply (wp_load_na_post with "Hl"); [done|].
+  iIntros "!> Hl" (σB') "HB".
+  iMod (bytes_ctx_pcell_retether_eq with "HB Hu Hl") as "[HB Hls]"; [done|].
+  iModIntro. iFrame "HB". iApply "HΦ". by iFrame.
+Qed.
+
+Lemma wp_pcell_load_sc E l g m cs fv :
+  ↑naN ⊆ E →
+  {{{ loc_side l g m cs ∗ gdyn g fv }}} Load ScOrd m (Lit $ LitLoc l) @ E
+  {{{ v, RET MLitV v; loc_side l g m cs ∗ gdyn g fv ∗ ⌜fv_cells fv = [] → fv = fv_lift v⌝ }}}.
+Proof.
+  iIntros (? Φ) "[Hls Hgd] HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+  iMod (bytes_ctx_pcell_untether with "HB Hls") as (bs v) "(HB & Hl & %Hd & Hu)"; [done|].
+  iDestruct (bytes_ctx_untethered_val with "HB Hu Hgd") as %(v' & Hd' & Hfv).
+  rewrite Hd in Hd'. injection Hd' as <-.
+  iModIntro. iFrame "HB". iApply (wp_load_sc_post with "Hl"); [done|].
+  iIntros "!> Hl" (σB') "HB".
+  iMod (bytes_ctx_pcell_retether_eq with "HB Hu Hl") as "[HB Hls]"; [done|].
+  iModIntro. iFrame "HB". iApply "HΦ". by iFrame.
+Qed.
+
+Lemma wp_pcell_store_na E l g m cs fv e v :
+  ↑naN ⊆ E → IntoVal e (MLitV v) → mty_wf m → val_wf m v →
+  {{{ loc_side l g m cs ∗ gdyn g fv ∗ gnocell g }}} Store Na1Ord m (Lit $ LitLoc l) e @ E
+  {{{ RET LitV LitPoison; loc_side l g m cs ∗ gdyn g (fv_lift v) }}}.
+Proof.
+  iIntros (? He Hm Hv Φ) "(Hls & Hgd & #Hnc) HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+  iMod (bytes_ctx_pcell_untether with "HB Hls") as (bs v0) "(HB & Hl & %Hd & Hu)"; [done|].
+  iModIntro. iFrame "HB".
+  iApply (wp_store_na_post with "Hl"); [done..|by eapply decode_value_length|].
+  iIntros "!> Hl" (σB') "HB".
+  iMod (bytes_ctx_untethered_set _ _ _ _ _ (encode_value m v) with "HB Hu Hnc Hgd")
+    as "(HB & Hu & Hgd)"; [by apply decode_encode_value|].
+  iMod (bytes_ctx_pcell_retether_eq with "HB Hu Hl") as "[HB Hls]"; [done|].
+  iModIntro. iFrame "HB". iApply "HΦ". by iFrame.
+Qed.
+
+Lemma wp_pcell_store_sc E l g m cs fv e v :
+  ↑naN ⊆ E → IntoVal e (MLitV v) → mty_wf m → val_wf m v →
+  {{{ loc_side l g m cs ∗ gdyn g fv ∗ gnocell g }}} Store ScOrd m (Lit $ LitLoc l) e @ E
+  {{{ RET LitV LitPoison; loc_side l g m cs ∗ gdyn g (fv_lift v) }}}.
+Proof.
+  iIntros (? He Hm Hv Φ) "(Hls & Hgd & #Hnc) HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+  iMod (bytes_ctx_pcell_untether with "HB Hls") as (bs v0) "(HB & Hl & %Hd & Hu)"; [done|].
+  iModIntro. iFrame "HB".
+  iApply (wp_store_sc_post with "Hl"); [done..|by eapply decode_value_length|].
+  iIntros "!> Hl" (σB') "HB".
+  iMod (bytes_ctx_untethered_set _ _ _ _ _ (encode_value m v) with "HB Hu Hnc Hgd")
+    as "(HB & Hu & Hgd)"; [by apply decode_encode_value|].
+  iMod (bytes_ctx_pcell_retether_eq with "HB Hu Hl") as "[HB Hls]"; [done|].
+  iModIntro. iFrame "HB". iApply "HΦ". by iFrame.
+Qed.
+
+(** Moving a [PCell] from [l] to [l'], by a verbatim copy. The old location keeps its
+    bytes, as plain bytes. *)
+Lemma wp_pcell_memcopy E l l' g m cs bs0 :
+  ↑naN ⊆ E → length bs0 = mty_size m →
+  {{{ loc_side l g m cs ∗ ▷ l' ↦b bs0 }}}
+    MemCopy Na1Ord (mty_size m) (Lit $ LitLoc l') (Lit $ LitLoc l) @ E
+  {{{ bs, RET LitV LitPoison; l ↦b bs ∗ loc_side l' g m cs }}}.
+Proof.
+  iIntros (? Hlen Φ) "[Hls Hl'] HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+  iMod (bytes_ctx_pcell_untether with "HB Hls") as (bs v) "(HB & Hl & %Hd & Hu)"; [done|].
+  iModIntro. iFrame "HB".
+  iApply (wp_memcopy_post with "Hl' Hl"); [done|done|by eapply decode_value_length|].
+  iIntros "!> Hl' Hl" (σB') "HB".
+  iMod (bytes_ctx_pcell_retether_eq with "HB Hu Hl'") as "[HB Hls]"; [done|].
+  iModIntro. iFrame "HB". iApply "HΦ". by iFrame.
 Qed.
 
 End lifting.
