@@ -262,11 +262,13 @@ src/lambda_verus/prophecy/prophecy.v
 
 src/lambda_verus/lang/adequacy.v
 src/lambda_verus/lang/heap.v
+src/lambda_verus/lang/minirust.v
 src/lambda_verus/lang/lang.v
 src/lambda_verus/lang/lifting.v
 src/lambda_verus/lang/notation.v
 src/lambda_verus/lang/proofmode.v
 src/lambda_verus/lang/races.v
+src/lambda_verus/lang/minirust_tests.v
 src/lambda_verus/lang/tactics.v
 src/lambda_verus/lang/time.v
 src/lambda_verus/lang/lib/new_delete.v
