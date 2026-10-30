@@ -1,5 +1,6 @@
 From lrust.typing Require Export type.
 From lrust.typing Require Import freeable_util.
+From lrust.util Require Export non_atomic_cell_map.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
@@ -148,29 +149,29 @@ Section own_bytes_rules.
   (** Writing the pointee: a typed [Store] of the value of [y] replaces [x] by [y];
       the ownership of [x] is given back. *)
   Lemma wp_own_bytes_store {𝔄} n (ty: type 𝔄) l x y v d g tid E :
-    ty.(ty_val) y = Some v →
+    ↑naN ⊆ E → ty.(ty_val) y = Some v →
     {{{ (own_bytes n ty).(ty_gho_own) (l, x) (S d) g tid ∗ ▷ ty.(ty_gho_own) y d g tid }}}
       Store Na1Ord ty.(ty_mty) #l (MLit v) @ E
     {{{ RET #☠; (own_bytes n ty).(ty_gho_own) (l, y) (S d) g tid ∗
                 ▷ ty.(ty_gho_own) x d g tid }}}.
   Proof.
-    iIntros (Hv Φ) "[Own Gho'] HΦ".
+    iIntros (? Hv Φ) "[Own Gho'] HΦ".
     iDestruct "Own" as "((%bs & Hbs & %Hbs) & Free & Gho)". destruct Hbs as [Hlen _].
-    iApply (wp_store_na with "Hbs"); [by eapply ty_val_wf|done|].
+    iApply (wp_store_na with "Hbs"); [done|by eapply ty_val_wf|done|].
     iIntros "!> Hbs". iApply "HΦ". iFrame. iPureIntro. by apply ty_bytes_encode.
   Qed.
 
   (** Allocating a box and initialising it with a typed [Store]. *)
   Lemma wp_own_bytes_new {𝔄} (ty: type 𝔄) x v d g tid E :
-    ty.(ty_val) x = Some v → (0 < ty_bsize ty)%nat →
+    ↑naN ⊆ E → ty.(ty_val) x = Some v → (0 < ty_bsize ty)%nat →
     {{{ ▷ ty.(ty_gho_own) x d g tid }}}
       let: "l" := Alloc #(ty_bsize ty) in Store Na1Ord ty.(ty_mty) "l" (MLit v) ;; "l" @ E
     {{{ l, RET #l; (own_bytes (ty_bsize ty) ty).(ty_gho_own) (l, x) (S d) g tid }}}.
   Proof.
-    iIntros (Hv Hsz Φ) "Gho HΦ".
+    iIntros (? Hv Hsz Φ) "Gho HΦ".
     wp_apply (wp_alloc_bytes with "[//]"); [rewrite /ty_bsize in Hsz; lia|]. iIntros (l sz) "(%Hn & Free & Hbs)".
     have ? : sz = mty_size (ty_mty ty) by lia. subst sz. wp_let.
-    wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hbs"); [by eapply ty_val_wf| |].
+    wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hbs"); [done|by eapply ty_val_wf| |].
     { by rewrite length_replicate. }
     iIntros "!> Hbs". wp_seq. iApply "HΦ". iFrame "Gho". iSplitL "Hbs".
     - iExists _. iFrame. iPureIntro. by apply ty_bytes_encode.
@@ -179,14 +180,14 @@ Section own_bytes_rules.
 
   (** Deallocating a box; the ownership of its contents is given back. *)
   Lemma wp_own_bytes_delete {𝔄} (ty: type 𝔄) l x d g tid E :
-    (0 < ty_bsize ty)%nat →
+    ↑naN ⊆ E → (0 < ty_bsize ty)%nat →
     {{{ (own_bytes (ty_bsize ty) ty).(ty_gho_own) (l, x) (S d) g tid }}}
       Free #(ty_bsize ty) #l @ E
     {{{ RET #☠; ▷ ty.(ty_gho_own) x d g tid }}}.
   Proof.
-    iIntros (Hsz Φ) "((%bs & Hbs & %Hbs) & Free & Gho) HΦ". destruct Hbs as [Hlen _].
+    iIntros (? Hsz Φ) "((%bs & Hbs & %Hbs) & Free & Gho) HΦ". destruct Hbs as [Hlen _].
     rewrite freeable_sz_full. iDestruct "Free" as "[Free|%Hz]".
-    - iApply (wp_free_bytes with "[$Hbs Free]"); [by rewrite Hlen|by rewrite Hlen|].
+    - iApply (wp_free_bytes with "[$Hbs Free]"); [done|by rewrite Hlen|by rewrite Hlen|].
       iIntros "!> _". by iApply "HΦ".
     - lia.
   Qed.

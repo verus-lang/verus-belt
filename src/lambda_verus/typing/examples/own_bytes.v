@@ -29,7 +29,7 @@ Section own_bytes_tests.
 
   (** Load the pair, store the swapped pair, and load it again. *)
   Lemma test_box_pair_swap n l a b d g tid E :
-    int_in_range i32 a → int_in_range i32 b →
+    ↑naN ⊆ E → int_in_range i32 a → int_in_range i32 b →
     {{{ (own_bytes n pair_ty).(ty_gho_own) (l, (a, b)) (S d) g tid }}}
       Load Na1Ord pair_ty.(ty_mty) #l ;;
       Store Na1Ord pair_ty.(ty_mty) #l (MLit (VTuple [VInt b; VInt a])) ;;
@@ -37,13 +37,13 @@ Section own_bytes_tests.
     {{{ RET MLitV (VTuple [VInt b; VInt a]);
         (own_bytes n pair_ty).(ty_gho_own) (l, (b, a)) (S d) g tid }}}.
   Proof.
-    iIntros (Ha Hb Φ) "Own HΦ". rebuild d g tid.
+    iIntros (? Ha Hb Φ) "Own HΦ". rebuild d g tid.
     wp_bind (Load _ _ _).
     iApply (wp_own_bytes_load n pair_ty l (a, b) _ (S d) g tid with "Own"); [by apply pair_ty_val|].
     iIntros "!> Own". wp_seq. rebuild d g tid.
     wp_bind (Store _ _ _ _).
     iApply (wp_own_bytes_store n pair_ty l (a, b) (b, a) _ d g tid with "[$Own]");
-      [by apply pair_ty_val|iNext; by iSplit|].
+      [done|by apply pair_ty_val|iNext; by iSplit|].
     iIntros "!> [Own _]". wp_seq. rebuild d g tid.
     iApply (wp_own_bytes_load n pair_ty l (b, a) _ (S d) g tid with "Own"); [by apply pair_ty_val|].
     iIntros "!> Own". rebuild d g tid. by iApply "HΦ".
@@ -71,6 +71,7 @@ Section own_bytes_tests.
 
   (** [let b = Box::new(Some(5)); let v = *b; *b = None; drop(b); v] *)
   Lemma test_box_option (tid: thread_id) E :
+    ↑naN ⊆ E →
     {{{ True }}}
       let: "b" := (let: "l" := Alloc #(ty_bsize opt_ty) in
                    Store Na1Ord opt_ty.(ty_mty) "l" (MLit (VVariant 1 (VInt 5))) ;; "l") in
@@ -80,11 +81,11 @@ Section own_bytes_tests.
       "v" @ E
     {{{ RET MLitV (VVariant 1 (VInt 5)); True }}}.
   Proof.
-    iIntros (Φ) "_ HΦ".
+    iIntros (? Φ) "_ HΦ".
     have Hin : int_in_range i32 5 by apply (bool_decide_unpack _); vm_compute.
     wp_bind (let: "l" := _ in _)%E.
     iApply (wp_own_bytes_new opt_ty (some_i32 5) _ 0 0 tid with "[]");
-      [by apply opt_ty_val_some|unfold ty_bsize; rewrite -ty_mty_eq /=; lia|done|].
+      [done|by apply opt_ty_val_some|unfold ty_bsize; rewrite -ty_mty_eq /=; lia|done|].
     iIntros "!>" (l) "Own". wp_let. rebuild 0%nat 0%nat tid.
     wp_bind (Load _ _ _).
     iApply (wp_own_bytes_load _ opt_ty l (some_i32 5) _ 1 0 tid with "Own");
@@ -92,11 +93,11 @@ Section own_bytes_tests.
     iIntros "!> Own". wp_let. rebuild 0%nat 0%nat tid.
     wp_bind (Store _ _ _ _).
     iApply (wp_own_bytes_store _ opt_ty l (some_i32 5) none_i32 _ 0 0 tid with "[$Own]");
-      [apply opt_ty_val_none|done|].
+      [done|apply opt_ty_val_none|done|].
     iIntros "!> [Own _]". wp_seq. rebuild 0%nat 0%nat tid.
     wp_bind (Free _ _).
     iApply (wp_own_bytes_delete opt_ty l none_i32 0 0 tid with "Own");
-      [unfold ty_bsize; rewrite -ty_mty_eq /=; lia|].
+      [done|unfold ty_bsize; rewrite -ty_mty_eq /=; lia|].
     iIntros "!> _". wp_seq. by iApply "HΦ".
   Qed.
 End own_bytes_tests.
