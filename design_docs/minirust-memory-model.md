@@ -110,3 +110,36 @@ typed memcpy.
    - Copying a place is `MemCopy`.
 5. **Delete** the legacy word layer and the redundant core typing rules, and port the examples.
 6. **Later:** redesign `pcell` (`ty_val = None`, fancy bytes with cells).
+
+## Outcome: stages 1–2 (merge `3801e8a`)
+
+**Semantics** (`lang/minirust.v`):
+- `PTR_SIZE` is sealed (abstract, `0 < PTR_SIZE`); `IntType`.
+- `Value := VInt | VBool | VPtr | VTuple | VVariant`.
+- The type fragment `mty := MInt | MBool | MPtr | MTuple fields size | MEnum variants tag size`,
+  with the tag at offset 0.
+- `AbstractByte W := Uninit | Init | PtrFrag l i | Word w`.
+- `encode_value`/`decode_value`, with the laws `length_encode_value`, `decode_encode_value` and
+  `decode_value_mono`. These are axiom-free.
+
+**`lang.v`:**
+- The heap holds `abyte`. Legacy words are `word_to_byte v`, with poison as `Uninit`.
+- `val` gains `MLitV Value`.
+- New expressions: `Load`, `Store`, `MemCopy` (byte-verbatim), `MkTuple`/`Proj`/`MkVariant`/
+  `VariantTag`/`VariantData`, and `ToLit`/`OfLit`.
+
+**Program logic:**
+- A byte points-to `l ↦b{q} bs`.
+- WP rules: `wp_load_sc/na`, `wp_store_sc/na`, `wp_memcopy`, `wp_alloc_bytes`, `wp_free_bytes`.
+- Race detection over byte ranges.
+
+**Deviations:**
+- The ghost heap has two regions, legacy words (the cell map, `val`-valued) and bytes, related by
+  `phys_rel`. Locations move between them without a step (`wp_words_to_bytes` /
+  `wp_bytes_to_words`), because the cell-untethering lemmas need a `val`-valued cell map.
+- Closures stay a `val` case.
+
+**Open for later stages:**
+- typed CAS;
+- guarded (shared-borrow) byte loads;
+- proofmode tactics.
