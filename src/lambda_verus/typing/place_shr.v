@@ -232,7 +232,7 @@ Section typing.
     destruct Hv as [w Hw].
     iApply (wp_load_na_guarded_gen _ _ _ w (fractional.half γh) (cbytes ty y lK) (ty_bytes ty y)
       (g + 1) with "[$H1 $£r]"); [solve_ndisj|intros; by eapply ty_bytes_decode| |].
-    { iSplit; [done|]. iIntros "!> (%bs & Hbs & %Hbs)". iExists 1%Qp, bs. iFrame "Hbs".
+    { iSplit; [done|]. iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
       iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
     iIntros "!> H1".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].

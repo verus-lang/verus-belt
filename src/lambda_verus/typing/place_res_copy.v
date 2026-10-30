@@ -142,7 +142,7 @@ Section memcpy_res.
       (cbytes ty zh lh) (ty_bytes ty zh) (gh + 1) with "[$Hbsw $H1 $£l]");
       [solve_ndisj|by rewrite (ty_bytes_length _ _ _ Hbsw) Hszw|intros ?; apply ty_bytes_length|..].
     { iSplit; [iApply (guards_transitive_right with "Hsl Gpt")|].
-      iIntros "!> (%bs' & Hbs' & %Hbs')". iExists 1%Qp, bs'. iFrame "Hbs'".
+      iIntros "!> (%bs' & Hbs' & %Hbs')". iExists bs'. iFrame "Hbs'".
       iSplit; [done|]. iIntros "Hbs'". iExists bs'. by iFrame. }
     iIntros "!>" (bs2) "(%Hbs2 & Hbsw & H1)".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
