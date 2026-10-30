@@ -2665,6 +2665,71 @@ Section Cmap.
     intros (cs1 & cs2 & ->)%list_has_pair_destruct. split; set_solver.
   Qed.
 
+  Lemma row_nodup 𝛼 k cs v : cells_no_dupes 𝛼 → 𝛼 !! k = Some (cs, v) → NoDup cs.
+  Proof. intros. by eapply cells_no_dupes_get_no_dupes. Qed.
+
+  Lemma list_ends_with_snoc (cs : list C) c : list_ends_with cs c → ∃ cs', cs = cs' ++ [c].
+  Proof. apply facts_from_list_ends_with. Qed.
+
+  (** A row whose first cell is followed by a value has that cell only. *)
+  Lemma row_single 𝛼 k c rest v cv :
+    cells_no_dupes 𝛼 → 𝛼 !! k = Some (c :: rest, v) → 𝛼_fine_pair 𝛼 (inr c) (inr cv) →
+    rest = [] ∧ v = cv.
+  Proof using C EqDecision0 EqDecision1 H0 L V.
+    intros Hnd Hk (k' & cs' & Hk' & Hend).
+    have Hc' := list_ends_with_elem_of _ _ Hend.
+    have Hr1 := row_of_spec 𝛼 k (c :: rest) v c Hnd Hk ltac:(set_solver).
+    have Hr2 := row_of_spec 𝛼 k' cs' cv c Hnd Hk' Hc'.
+    rewrite Hr1 in Hr2. simplify_eq. split; [|done].
+    destruct (list_ends_with_snoc _ _ Hend) as [cs'' Heq].
+    have Hnd' := row_nodup _ _ _ _ Hnd Hk.
+    destruct cs'' as [|c0 cs'']; simpl in Heq.
+    - by injection Heq as ->.
+    - injection Heq as -> Hrest. exfalso. apply NoDup_cons in Hnd' as [Hnot _]. apply Hnot.
+      rewrite Hrest. set_solver.
+  Qed.
+
+  Lemma rows_disjoint 𝛼 k1 k2 cs1 v1 cs2 v2 c :
+    cells_no_dupes 𝛼 → k1 ≠ k2 → 𝛼 !! k1 = Some (cs1, v1) → 𝛼 !! k2 = Some (cs2, v2) →
+    c ∈ cs1 → c ∉ cs2.
+  Proof. intros. by eapply cells_no_dupes_different_rows_disjoint. Qed.
+
+  Lemma is_row_for_lc_loc 𝛼 l k cells1 c cells2 v :
+    is_row_for_lc 𝛼 (inl l) k cells1 c cells2 v → k = inl l ∧ cells1 = [] ∧
+      𝛼 !! inl l = Some (c :: cells2, v).
+  Proof.
+    intros [Hk Hlc]. destruct k as [l'|u].
+    - destruct (facts_from_last_lc_is_l _ _ _ Hlc) as [-> ->]. done.
+    - by destruct (last_c cells1).
+  Qed.
+
+  Lemma has_pair_last_contra (pre : list C) c c2 :
+    NoDup (pre ++ [c]) → list_has_pair (pre ++ [c]) c c2 → False.
+  Proof using C EqDecision0 EqDecision1 H0 L V.
+    intros Hnd Hp. destruct (list_has_pair_destruct _ _ _ Hp) as (cs1 & cs2 & Heq).
+    have Hl : last (c2 :: cs2) = Some c.
+    { have Hs := last_snoc c pre. rewrite Heq last_app_cons last_cons_cons in Hs. done. }
+    apply last_Some_elem_of in Hl. rewrite Heq in Hnd.
+    apply NoDup_app in Hnd as (_ & _ & Hnd). apply NoDup_cons in Hnd as [Hnc _]. done.
+  Qed.
+
+  (** The last cell of a row points to the value of the row. *)
+  Lemma row_end_pair 𝛼 k pre c v fb :
+    cells_no_dupes 𝛼 → 𝛼 !! k = Some (pre ++ [c], v) → 𝛼_fine_pair 𝛼 (inr c) fb → fb = inr v.
+  Proof using C EqDecision0 EqDecision1 H0 L V.
+    intros Hnd Hk Hfb. have Hc : c ∈ pre ++ [c] by set_solver.
+    destruct fb as [c2|v']; simpl in Hfb.
+    - destruct Hfb as (lu & cs & v0 & Hlu & Hp). destruct (decide (lu = k)) as [->|Hne].
+      + rewrite Hk in Hlu. injection Hlu as <- <-. exfalso.
+        eapply has_pair_last_contra; [|done]. by eapply row_nodup.
+      + exfalso. apply list_has_pair_elem_of in Hp as [Hc' _].
+        by eapply (rows_disjoint 𝛼 lu k cs v0 (pre ++ [c]) v c).
+    - destruct Hfb as (lu & cs & Hlu & Hend). destruct (decide (lu = k)) as [->|Hne].
+      + rewrite Hk in Hlu. by injection Hlu as _ ->.
+      + exfalso. apply list_ends_with_elem_of in Hend.
+        by eapply (rows_disjoint 𝛼 lu k cs v' (pre ++ [c]) v c).
+  Qed.
+
   (** Public versions of the lemmas about the physical heap [𝜙 𝛼]. *)
   Lemma phi_empty : 𝜙 ∅ = ∅.
   Proof. apply map_fold_empty. Qed.
@@ -3332,13 +3397,15 @@ Section Cmap.
     iModIntro. iExists cs. iSplit; [done|]. iFrame.
   Qed.
 
-  Lemma fcmap_insert_front γ 𝛼 l cs v cv0 :
+  Lemma fcmap_insert_front γ 𝛼 l cs v cv0 (X : list C) :
     𝛼 !! inl l = Some (cs, v) →
-    fheap γ 𝛼 -∗ fpt γ (inl l) cv0 ==∗ ∃ nc, ⌜fresh_cell_id 𝛼 nc⌝ ∗
+    fheap γ 𝛼 -∗ fpt γ (inl l) cv0 ==∗ ∃ nc, ⌜fresh_cell_id 𝛼 nc ∧ nc ∉ X⌝ ∗
       fheap γ (<[inl l := (nc :: cs, v)]> 𝛼) ∗ fpt γ (inl l) (inl nc) ∗ fpt γ (inr nc) cv0.
   Proof using Infinite_C.
     iIntros (Hk) "A B". iDestruct (fheap_frag_valid with "A B") as %Hinv0.
-    destruct (exists_fresh_cell_id 𝛼) as [nc Hnc].
+    set (nc := fresh (cell_list 𝛼 ++ X)).
+    have [Hnc HncX] : fresh_cell_id 𝛼 nc ∧ nc ∉ X.
+    { have Hf : nc ∉ cell_list 𝛼 ++ X := infinite_is_fresh _. apply not_elem_of_app in Hf. done. }
     have Hne : inl l ≠ (inr nc : L + C) by done.
     iMod (own_update_2 _ _ _ (FOk (Some (<[inl l := (nc :: cs, v)]> 𝛼)) ∅ ∅ ⋅
       FOk None ({[inl l := inl nc]} ∪ {[inr nc := cv0]}) ∅) with "A B") as "[A B]".
@@ -3360,7 +3427,7 @@ Section Cmap.
           by rewrite ?(left_id_L None union) ?(right_id_L None union).
         + rewrite lookup_insert_ne // !lookup_union !lookup_singleton_ne //;
           by rewrite ?(left_id_L None union). }
-    iModIntro. iExists nc. iSplit; [done|]. iFrame "A".
+    iModIntro. iExists nc. iSplit; [iPureIntro; by split|]. iFrame "A".
     by iApply fpt_fpt_own.
   Qed.
 

@@ -1,6 +1,6 @@
 # PCell on the byte memory model: multi-byte cells
 
-Status: design draft (2026-10-30), branch `memory-model`.
+Status: steps 1–3 implemented (2026-10-30), branch `memory-model`; see §9 Outcome.
 Context: `design_docs/minirust-memory-model.md` (stages 1–5). `pcell` is the last user of the
 legacy word layer.
 
@@ -288,3 +288,130 @@ such as `fval_erase`.
   (e.g. `encode m_g v` turns padding into `Uninit`). Decoding is field-wise (alignment requirement
   A), so at each nested cell's position the sub-range of `bs'` decodes to `⌊fv_{g'}⌋_ρ`. Every
   group's invariant (§7) therefore holds again for the new bytes.
+
+## 9. Outcome (2026-10-30)
+
+Plan steps 1–3 are done and merged into `memory-model`. Step 4 was not attempted as designed:
+it is a redesign of the byte typing layer, not a port (see "Step 4" below). Step 5 is blocked
+on step 4. No `Admitted`; no new axioms (the tests are closed under the global context).
+
+### Step 1: byte cell map
+
+- `util/cellmap.v` gains a full-authority RA, **`fcmap`**. Its authority is the whole full map
+  `𝛼`; its fragments are edges (`fpt`) and untethered rows (`funt`). It has update lemmas for
+  alloc, delete, write at the end of a row, untether, retether, and insert/delete of a front
+  cell, all over the unchanged `big_inv`.
+- The byte region is `fcmap` at `V = bval = lock_state * abyte`, with `bheap` / `bpt` / `bunt`.
+  `l ↦b bs` lost its fraction (the users in `typing/` were adjusted).
+- The guarded-read bank of stage 4 is kept. Its entries now carry a *witness*: the edges of the
+  read range, together with `cells_wit` (either all bytes, or all byte-cells of one group
+  whose permission the reader has).
+- **Deviation.** `non_atomic_cell_map` was not instantiated:
+  - its write bank owns cell contents word by word;
+  - its points-to are fractional.
+
+  The new RA plus the existing bank was simpler.
+
+### Step 2: groups and fancy values
+
+- **`lang/fvalue.v`:**
+  - `FValue`;
+  - erasure as an inductive relation `fval_erase ρ fv v`;
+  - `represents_R` as the inductive `frepr R m fbs fv`, with alignment requirement A built in;
+  - compositionality: `frepr_decode` (one level) and `registry_decode` (whole registry);
+  - `fv_upd` / `frepr_upd`, for future sub-position writes.
+- **`lang/heap.v`:**
+  - static registry `greg g m cs` (persistent);
+  - dynamic registry `gdyn g fv` (the permission, exclusive);
+  - `gnocell g` (persistent: the group's value never has cells);
+  - `gcontents` (D3), and the invariants `cells_wf` / `cells_live`;
+  - `cells_decode`: D3 plus compositionality gives `decode m_g (final bytes) = Some ⌊fv_g⌋_ρ`.
+- **Deviations:**
+  - The byte context owns the contents edges of all live groups, so the permission is only
+    `gdyn g fv`.
+  - D3 is unconditional: contents bytes change only at a write's commit, and their lock
+    states mirror the cell-write bank `CW`. So the `WSt` exemption is not needed.
+  - Groups need `0 < mty_size m`.
+
+### Step 3: D5 lemmas and WP-level tests
+
+**Context lemmas (`heap.v`):**
+- `bytes_ctx_pcell_create`, `bytes_ctx_pcell_destroy`.
+- `bytes_ctx_pcell_untether`, which gives `l ↦b bs`, `decode m bs = Some v` and
+  `untethered g m cs bs`.
+- `bytes_ctx_pcell_retether`, which takes `bs'` with `decode m bs' = decode m bs`, and
+  `bs' = bs ∨ gnocell g`.
+- `bytes_ctx_untethered_val`, `bytes_ctx_untethered_set`.
+- `bytes_ctx_cell_lookup`, `bytes_ctx_cell_read_begin_guarded`.
+- `bytes_ctx_cell_write_begin` / `_end`, the two phases through the bank of cell writes `CW`.
+
+**WP rules (`lifting.v`):**
+- `wp_bytes_ctx_pre`, and the `_post` variants of the load, store and memcopy rules (context
+  updates after the last step);
+- `wp_pcell_create(_plain)`, `wp_pcell_destroy(_plain)`;
+- `wp_pcell_load_na/_sc` and `wp_pcell_store_na/_sc`, with the location side owned;
+- `wp_pcell_load_na_guarded/_sc_guarded` and `wp_pcell_store_na_guarded/_sc_guarded`, with the
+  location side only guarded;
+- `wp_pcell_memcopy` (moving a cell).
+
+**Tests (`lang/pcell_tests.v`, all closed under the global context):**
+- `test_pcell_read`, `test_pcell_lifecycle` (create, write, move by `MemCopy`, destroy, load);
+- `test_pcell_atomic`;
+- `test_pcell_read_guarded`, `test_pcell_write_guarded`, `test_pcell_atomic_guarded`;
+- `test_pcell_typed_move` (untether, `Load`, `Store`, retether), via `wp_pcell_move`;
+- `test_pcell_nested`: create a `PCell<PCell<i32>>` over an existing cell, move it, destroy the
+  outer cell, and read through the inner one.
+
+**Deviations and limits:**
+- **Untether/retether are context updates, not free-standing fupds.** They are used through
+  `wp_bytes_ctx_pre` and the `_post` rules.
+- **`untethered g m cs bs` records the bytes, not `v`.** `v` is recovered by decoding.
+- **Retether with changed bytes needs `gnocell g`.** When a group embeds cells, the bytes of
+  the embedded groups are those groups' own contents and can't be rewritten by the mover. Such
+  a group can only be moved verbatim (`MemCopy`), and the nested test does this.
+- **Reads and writes through a cell are whole-value, at the group's mty.** Writes also need a
+  group without cells: the new fancy value is `fv_lift v`.
+  - Sub-position writes (what `borrow_mut` needs for a field of the content) are not done.
+  - `CW` keys already carry an offset and length, and `frepr_upd` is proved; the context
+    lemma is what's missing.
+- **Accesses through an inner cell work only while its byte-cells head their rows**, i.e.
+  once the outer cell is destroyed.
+- **Reads report the value only for groups without cells:** `fv_cells fv = [] → fv = fv_lift v`.
+- **No CAS.** The language has no byte-level CAS construct.
+- **Exclusive accesses untether the group for the duration of the access.** Guarded accesses
+  use the two banks.
+- **`wp_pcell_move` (typed move) takes `∀ bs v, decode m bs = Some v → val_wf m v` as a
+  hypothesis.** There is no general lemma saying that decoded values are well-formed.
+
+### Step 4: not done, and why
+
+1. **`pcellₛ n` doesn't know its content type.** Its syntactic mty is an opaque `n`-byte
+   `MTuple [] n`, and `~~(pcellₛ n) = list positive` (one legacy cell id per word).
+   - D6 needs `ty_mty (pcell_ty) = m`, the content mty, and a fancy value `FVCell g` (one
+     group id).
+   - So `pcellₛ` must change to carry the content mty, and its semantic type must become a
+     group id. That touches `prophecy/syn_type.v` (decidable equality, `syn_mty` / `syn_val`,
+     layout lemmas) and every user of `pcellₛ`.
+2. **"Parents own fancy bytes" replaces `bytes_own` everywhere.**
+   - Today `bytes_own` is `∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝`. It would become fancy-byte
+     ownership with `frepr` and `ty_fval`.
+   - Its users span the byte typing layer: `own_bytes`, `shr_bytes`, `uniq_bytes(_util)`,
+     `ltype`, `place_*`, `subtype`, about 5000 lines.
+   - `&shrb` / `&uniqb` into a cell's contents need guarded access to cell contents, not to
+     location bytes. So their sharing and borrowing constructions change too.
+3. **`typing/pcell.v` is stated over the legacy word types.** Its rules (`from_own`, `to_own`,
+   `borrow`, `borrow_mut`, atomics) use `own_ptr`, `shr_bor` and `uniq_bor`. Porting means
+   re-proving them over `bown` / `&shrb` / `&uniqb` with groups, after 1 and 2.
+   `pcell_example`, `ra` and `protocol` follow.
+
+These need design decisions, so step 4 is not a mechanical port and is left for a separate
+plan. The open decisions are:
+- the representation of `~~pcellₛ` and of the content type;
+- how `ty_fval` threads through the sharing and uniq-borrow predicates;
+- whether to stage it through a byte-only `pcell_ty` first.
+
+### What remains for step 5
+
+All of it. `pcell.v` and its examples still run on the legacy word layer, so `ty_phys`, `Word`
+bytes, the legacy `Read`/`Write`/`CAS`, `phys_rel` and the second ghost region can't be deleted
+yet.
