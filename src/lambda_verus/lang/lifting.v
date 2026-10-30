@@ -1615,4 +1615,75 @@ Proof.
   iModIntro. iFrame "HB". iApply "HΦ". by iFrame.
 Qed.
 
+(** Reads through a cell whose location side and permission are only guarded (e.g. by the
+    lifetime token of shared references to the [PCell] and to its permission). *)
+Lemma wp_pcell_load_sc_guarded E l g m cs fv G P d :
+  ↑naN ⊆ E →
+  {{{ (G &&{↑naN; d}&&> P) ∗
+      □ (P -∗ (loc_side l g m cs ∗ gdyn g fv) ∗ (loc_side l g m cs -∗ gdyn g fv -∗ P)) ∗
+      G ∗ £d }}}
+    Load ScOrd m (Lit $ LitLoc l) @ E
+  {{{ v, RET MLitV v; G ∗ ⌜fv_cells fv = [] → fv = fv_lift v⌝ }}}.
+Proof.
+  iIntros (? Φ) "(#Guard & #HP & G & £) HΦ".
+  iApply wp_lift_atomic_base_step_no_fork; auto.
+  iIntros (σ1 stepcnt κ κs n') "[Hσ Ht]". heap_split.
+  iMod (guards_open_later with "Guard G") as "Open"; [done|].
+  iMod (lc_fupd_elim_laterN with "£ Open") as ">[P Back]".
+  iDestruct ("HP" with "P") as "[[Hls Hgd] Ret]".
+  iDestruct (bytes_ctx_cell_lookup with "HB Hls Hgd") as %(bs & v & Hrange & Hlen & Hdec & Hfv).
+  iMod ("Back" with "(Ret Hls Hgd)") as "G".
+  have Hrange' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange.
+  iModIntro. iSplit. { iPureIntro. eexists _, _, _, _. by eapply LoadScS. }
+  iNext; iIntros (e2 σ2 efs Hstep) "credit"; inv_head_step.
+  match goal with H : mem_range _ _ _ ?bs' |- _ =>
+    have Heq := mem_range_det _ _ _ _ _ _ Hrange' H ltac:(lia) end. subst.
+  match goal with H : decode_value _ _ = Some _ |- _ => rewrite Hdec in H; simplify_eq end.
+  iMod (time_interp_step with "Ht") as "$". iModIntro. iSplit; [done|].
+  iSplitR "HΦ G"; [by iFrame|]. iApply "HΦ". by iFrame.
+Qed.
+
+Lemma wp_pcell_load_na_guarded E l g m cs fv G P d :
+  ↑naN ⊆ E →
+  {{{ (G &&{↑naN; d}&&> P) ∗
+      □ (P -∗ (loc_side l g m cs ∗ gdyn g fv) ∗ (loc_side l g m cs -∗ gdyn g fv -∗ P)) ∗
+      G ∗ £(2*d) }}}
+    Load Na1Ord m (Lit $ LitLoc l) @ E
+  {{{ v, RET MLitV v; G ∗ ⌜fv_cells fv = [] → fv = fv_lift v⌝ }}}.
+Proof.
+  iIntros (? Φ) "(#Guard & #HP & G & £) HΦ".
+  iApply wp_lift_base_step; auto.
+  iIntros (σ1 stepcnt κ κs n) "[Hσ Ht]". heap_split.
+  iMod (bytes_ctx_cell_read_begin_guarded with "£ Guard HP G HB")
+    as (i bs v) "([%Hdec %Hfv] & %Hrange & HB & Tok)"; [done|].
+  have Hlen := decode_value_length _ _ _ Hdec.
+  have Hrange' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange.
+  iApply fupd_mask_intro; first set_solver. iIntros "Hclose". iSplit.
+  { iPureIntro. eexists _, _, _, _. by eapply LoadNa1S. }
+  iNext; iIntros (e2 σ2 efs Hstep); inv_head_step. iMod "Hclose" as "_".
+  iMod (time_interp_step with "Ht") as "$". iIntros "credit !>".
+  iSplitR "HΦ Tok credit".
+  { iExists hF. rewrite -Hlen. iFrame. iPureIntro. split.
+    - by eapply phys_rel_mem_alter.
+    - eapply heap_freeable_rel_dom; [|done]. intros ?. by rewrite is_Some_mem_alter. }
+  iSplit; last done.
+  clear dependent σ1 σL σB hF. iApply wp_lift_atomic_base_step_no_fork; auto.
+  iIntros (σ1 stepcnt' κ' κs' n') "[Hσ Ht]".
+  iMod (time_interp_step with "Ht") as "$". heap_split.
+  iMod (bytes_ctx_read_end_guarded with "HB Tok") as "(%Hrange & HB & G)".
+  iMod (lc_fupd_elim_later with "credit G") as "G".
+  have Hrange' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange.
+  iModIntro; iSplit.
+  { iPureIntro. eexists _, _, _, _. by eapply LoadNa2S. }
+  iNext. iIntros (e2 σ2 efs Hstep) "credit2 !>"; inv_head_step.
+  match goal with H : mem_range _ _ _ ?bs' |- _ =>
+    have Heq := mem_range_det _ _ _ _ _ _ Hrange' H ltac:(lia) end. subst.
+  match goal with H : decode_value _ _ = Some _ |- _ => rewrite Hdec in H; simplify_eq end.
+  iSplit; [done|]. iSplitR "HΦ G".
+  { iExists hF. rewrite -Hlen. iFrame. iPureIntro. split.
+    - by eapply phys_rel_mem_alter.
+    - eapply heap_freeable_rel_dom; [|done]. intros ?. by rewrite is_Some_mem_alter. }
+  iApply "HΦ". by iFrame.
+Qed.
+
 End lifting.

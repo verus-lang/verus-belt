@@ -4,6 +4,7 @@
     contains a cell. *)
 From lrust.lang Require Import proofmode notation.
 From lrust.util Require Import non_atomic_cell_map.
+From guarding Require Import guard.
 Set Default Proof Using "Type".
 
 Section pcell_tests.
@@ -101,6 +102,34 @@ Section pcell_tests.
     iApply "HΦ". iExists g, cs. iFrame.
   Qed.
 
+  (** Reads through a cell whose location side and permission are only guarded. *)
+  Lemma test_pcell_read_guarded E l bs :
+    ↑naN ⊆ E → length bs = 4%nat →
+    {{{ ▷ l ↦b bs }}}
+      Store Na1Ord (MInt i32) (#l) (MLit (VInt 5)) ;;
+      Load Na1Ord (MInt i32) (#l) ;; Load ScOrd (MInt i32) (#l) @ E
+    {{{ RET MLitV (VInt 5); ∃ g cs, loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 5) }}}.
+  Proof.
+    iIntros (? Hlen Φ) "Hl HΦ".
+    wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done|apply int5_wf|done|].
+    iIntros "!> Hl". wp_seq.
+    iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl");
+      [done|apply Nat.ltb_lt; reflexivity|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
+    iIntros (g cs) "Hls Hgd _".
+    set P := (loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 5))%I.
+    iAssert (P &&{↑naN; 0}&&> P)%I as "#Guard"; [iApply guards_refl|].
+    iAssert (□ (P -∗ (loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 5)) ∗
+      (loc_side l g (MInt i32) cs -∗ gdyn g (FVInt 5) -∗ P)))%I as "#HP".
+    { iIntros "!> [Hls Hgd]". iFrame. iIntros "Hls Hgd". iFrame. }
+    iMod lc_zero as "£".
+    wp_bind (Load _ _ _).
+    iApply (wp_pcell_load_na_guarded with "[$Guard $HP $Hls $Hgd $£]"); [done|].
+    iIntros "!>" (v) "[[Hls Hgd] _]". wp_seq. iMod lc_zero as "£".
+    iApply (wp_pcell_load_sc_guarded with "[$Guard $HP $Hls $Hgd $£]"); [done|].
+    iIntros "!>" (v') "[[Hls Hgd] %Hv]". have -> : v' = VInt 5 by apply fv_lift_int, Hv.
+    iApply "HΦ". iExists g, cs. iFrame.
+  Qed.
+
   Lemma decode_ptr_wf (bs : list abyte) v : decode_value MPtr bs = Some v → val_wf MPtr v.
   Proof. simpl. destruct (decode_ptr bs); simpl; [|done]. intros [= <-]. constructor. Qed.
 
@@ -162,5 +191,6 @@ End pcell_tests.
 Print Assumptions test_pcell_read.
 Print Assumptions test_pcell_lifecycle.
 Print Assumptions test_pcell_atomic.
+Print Assumptions test_pcell_read_guarded.
 Print Assumptions test_pcell_typed_move.
 Print Assumptions test_pcell_nested.

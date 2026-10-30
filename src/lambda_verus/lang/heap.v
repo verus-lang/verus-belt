@@ -4027,6 +4027,94 @@ Section cells.
     destruct (fbs !! i) as [fb|] eqn:Hfb; [|done].
     destruct (Hpl fb ltac:(by eapply elem_of_list_lookup_2)) as [b ->]. done.
   Qed.
+
+  (** ** Reads through a cell *)
+
+  (** With the permission of [g] and its location side, the final bytes of [g] are not being
+      written, and decode to the erasure of the fancy value of [g]. *)
+  Lemma cells_ctx_read 𝛼 l g m cs fv :
+    bheap 𝛼 -∗ cells_ctx 𝛼 -∗ loc_side l g m cs -∗ gdyn g fv -∗
+    ⌜∃ v, mem_range (.= RSt 0) (bphi 𝛼) l (cell_final 𝛼 <$> cs) ∧ length cs = mty_size m ∧
+       decode_value m (cell_final 𝛼 <$> cs) = Some v ∧ (fv_cells fv = [] → fv = fv_lift v)⌝.
+  Proof.
+    iIntros "H● Cells [#Hg Hls] Hgd".
+    iDestruct "Cells" as (R ρ NC CW) "(Hreg & Hdyn & Hnc & Hcw & [%Hcwf %Hlive] & #HR & Hcwe & Hρ)".
+    iDestruct (greg_lookup with "Hreg Hg") as %HRg.
+    iDestruct (gdyn_lookup with "Hdyn Hgd") as %Hfv.
+    iAssert ⌜CW !! g = None⌝%I as %HgCW.
+    { destruct (CW !! g) as [e|] eqn:He; [|done].
+      iDestruct (big_sepM_lookup with "Hcwe") as "(%m' & %cs' & _ & Hgd' & _)"; [done|].
+      iDestruct (gdyn_excl with "Hgd Hgd'") as "[]". }
+    have HgCW' : (fst <$> CW) !! g = None by rewrite lookup_fmap HgCW.
+    iDestruct (fheap_no_dupes with "H●") as %Hnd.
+    iDestruct (loc_side_rows with "H● [$Hg $Hls]") as %Hrows0.
+    iDestruct (gcontents_edges with "H● Hρ") as %Hedges.
+    iDestruct (cells_decode with "H● Hρ []") as %Hdec; [by iPureIntro|].
+    iPureIntro.
+    have Hends := row_end_rst 𝛼 R ρ NC (fst <$> CW) g m cs Hnd Hcwf Hlive Hedges HRg HgCW'.
+    destruct (Hdec g fv m cs Hfv HRg) as (v & Herase & Hd).
+    exists v. split_and!; [|by eapply (proj1 Hcwf)|done|by intros; eapply fval_erase_nocells].
+    apply mem_range_lookup. intros j b. rewrite list_lookup_fmap.
+    destruct (cs !! j) as [c|] eqn:Hc; [|done]. simpl. intros [= <-].
+    destruct (Hrows0 j c Hc) as (rest & [ls b] & Hrow).
+    have /= Hls := Hends _ c rest (ls, b) Hrow ltac:(by eapply elem_of_list_lookup_2). subst ls.
+    exists (RSt 0). rewrite phi_lookup Hrow /cell_final. erewrite row_of_spec; [|done|done|set_solver].
+    done.
+  Qed.
+
+  Lemma bytes_ctx_cell_lookup σB l g m cs fv :
+    bytes_ctx σB -∗ loc_side l g m cs -∗ gdyn g fv -∗
+    ⌜∃ bs v, mem_range is_reading σB l bs ∧ length bs = mty_size m ∧
+       decode_value m bs = Some v ∧ (fv_cells fv = [] → fv = fv_lift v)⌝.
+  Proof.
+    iIntros "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hls Hgd".
+    iDestruct (cells_ctx_read with "H● Cells Hls Hgd") as %(v & Hrd & Hlen & Hd & Hfv).
+    iPureIntro. exists (cell_final 𝛼 <$> cs), v. split_and!; [|by rewrite length_fmap|done|done].
+    eapply bank_rel_reading; [done|]. eapply mem_range_impl; [|done]. intros ? ->. by eexists.
+  Qed.
+
+  (** A non-atomic read through a cell whose location side and permission are guarded:
+      the guard is deposited in the bank of guarded reads, with the location side and the
+      permission as the witness. *)
+  Lemma bytes_ctx_cell_read_begin_guarded E σB l g m cs fv G P d :
+    ↑naN ⊆ E →
+    £(2*d) -∗ (G &&{↑naN; d}&&> P) -∗
+    □ (P -∗ (loc_side l g m cs ∗ gdyn g fv) ∗ (loc_side l g m cs -∗ gdyn g fv -∗ P)) -∗ G -∗
+    bytes_ctx σB ={E}=∗ ∃ i bs v,
+      ⌜decode_value m bs = Some v ∧ (fv_cells fv = [] → fv = fv_lift v)⌝ ∗
+      ⌜mem_range is_reading σB l bs⌝ ∗
+      bytes_ctx (mem_alter ls_inc l (mty_size m) σB) ∗ bread_tok i l bs G.
+  Proof.
+    iIntros (?) "[£1 £2] #Guard #HP G (%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells)".
+    replace (d + 0)%nat with d by lia.
+    iMod (guards_open_later with "Guard G") as "Open"; [done|].
+    iMod (lc_fupd_elim_laterN with "£1 Open") as ">[P Back]".
+    iDestruct ("HP" with "P") as "[[Hls Hgd] Ret]".
+    iDestruct (cells_ctx_read with "H● Cells Hls Hgd") as %(v & Hrd0 & Hlen & Hd & Hfv).
+    iMod ("Back" with "(Ret Hls Hgd)") as "G".
+    set bs := cell_final 𝛼 <$> cs.
+    have Hrd : mem_range is_reading (bphi 𝛼) l bs.
+    { eapply mem_range_impl; [|done]. intros ? ->. by eexists. }
+    have Hn : length bs = mty_size m by rewrite length_fmap.
+    set i := fresh (dom M).
+    have Hi : M !! i = None by apply not_elem_of_dom, is_fresh.
+    iMod (own_update _ _ (gmap_view_auth (DfracOwn 1)
+        ((λ e, to_agree (bbank_elt e.1 e.2)) <$> <[i := ((l, bs), G)]> M) ⋅
+      gmap_view_frag i (DfracOwn 1) (to_agree (bbank_elt (l, bs) G))) with "Hbank")
+      as "[Hbank Tok]".
+    { rewrite fmap_insert. apply gmap_view_alloc; [|done..]. by rewrite lookup_fmap Hi. }
+    iModIntro. iExists i, bs, v. iFrame "Tok". iSplit; [done|].
+    iSplit; [iPureIntro; by eapply bank_rel_reading|].
+    iExists 𝛼, (<[i := ((l, bs), G)]> M). iFrame "H● Hbank Cells". iSplit.
+    { iPureIntro. rewrite -Hn fmap_insert. apply bank_rel_add; [done| |done].
+      by rewrite lookup_fmap Hi. }
+    iSplit. { iPureIntro. rewrite fmap_insert. by apply bank_wf_add. }
+    rewrite big_sepM_insert //. iFrame "Entries G". iExists P, d. iFrame "£2 Guard".
+    iIntros "!> P". iDestruct ("HP" with "P") as "[[[#Hg' Hls] Hgd] _]".
+    iExists (inl <$> cs). iSplit; [by rewrite /= !length_fmap|].
+    rewrite big_sepL_fmap. iFrame "Hls". iRight. iExists g, m, cs, fv. iFrame "Hg' Hgd".
+    iPureIntro. apply Forall_fmap, Forall_forall. intros c Hc. eauto.
+  Qed.
 End cells.
 
 Section bytes_ctx.
