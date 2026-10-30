@@ -397,6 +397,7 @@ src/lambda_verus/typing/examples/bplace_deep.v
 src/lambda_verus/typing/examples/bget_some_first.v
 src/lambda_verus/typing/examples/bget_snd.v
 src/lambda_verus/typing/examples/bplace_pshr.v
+src/lambda_verus/typing/examples/bplace_res.v
 
 
 -arg -w -arg -argument-scope-delimiter

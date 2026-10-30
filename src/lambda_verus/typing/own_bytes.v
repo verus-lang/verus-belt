@@ -191,4 +191,25 @@ Section own_bytes_rules.
       iIntros "!> _". by iApply "HΦ".
     - lia.
   Qed.
+  Global Instance own_bytes_res_own {𝔄} n (ty: type 𝔄) : ResOwn ty → ResOwn (own_bytes n ty).
+  Proof. move=> ? x [|d] g tid //=. by rewrite res_own. Qed.
+
+  Lemma own_bytes_resolve_keep {𝔄} E L n (ty: type 𝔄) Φ :
+    resolve_keep E L ty Φ → resolve_keep E L (own_bytes n ty) (λ '(l, v), Φ v).
+  Proof.
+    iIntros (Rslv G F x d g tid ??) "LFT PROPH UNIQ TIME E L G Hgho".
+    destruct d as [|d] => //=.
+    iDestruct "Hgho" as "(Hown & Hfree & Hgho)".
+    iModIntro.
+    replace (g + 1 + d * (g + 1)) with (S (g + d * (g + 1))) by lia.
+    simpl. iModIntro. iNext.
+    iMod (Rslv G F (snd x) d g tid with "LFT PROPH UNIQ TIME E L G Hgho") as "Hrslv";
+      [done..|].
+    iModIntro.
+    iDestruct (step_fupdN_nmono with "Hrslv") as "Hrslv"; last first.
+    - iApply (step_fupdN_wand with "Hrslv"). iIntros ">(Obs & $ & Res) !>".
+      iFrame "Hown Hfree Res". iApply (proph_obs_impl with "Obs").
+      intros π Ha. destruct x. apply Ha.
+    - lia.
+  Qed.
 End own_bytes_rules.
