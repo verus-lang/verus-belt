@@ -625,3 +625,36 @@ Examples (`typing/examples/bfn.v`). `Print Assumptions` shows only
 | `get_snd_f_type`: `typed_val get_snd_f (bfn<(α, β)>(∅; &shrb{α} (&shrb{β} (i32 * i32))) → i32)` | 1.3 s |
 | `first_ref_f_type`: `bfn<(α, β)>(∅; &uniqb{α} (&shrb{β} (i32 * i32))) → &shrb{β} i32` | 6.7 s |
 | `call_get_snd_type`: `letcall: "r" := f ["x"]` with `f ◁ bfn …` (`type_bletcall`) | 0.7 s |
+
+### 4. Byte `new` and subtyping (`typing/bsubtype.v`)
+
+**Allocation.** `type_new_bytes_instr`/`type_new_bytes`: `OfLit (Alloc #n)` (for `0 < n`)
+gives `v ◁ᵥ own_bytes n (↯ n)`. The uninitialized bytes represent any value of `↯ n`
+(`uninit_bytes`). The new box is then initialized by a typed `Store` or a `MemCopy`.
+
+**Subtyping.** `btype_incl ty ty' f` is `type_incl ty ty' f` together with two pure facts:
+- `ty_bsize ty = ty_bsize ty'`;
+- `∀ x bs, ty_bytes ty x bs ↔ ty_bytes ty' (f x) bs`.
+
+`bsubtype` is the corresponding judgement. The parents own bytes, so a parent can be
+retyped only if the bytes of its referent also represent the value at the new type.
+- `subtype_bsubtype_id`: every `subtype … idₛ` between types of the same syntactic type is
+  a byte subtyping (`ty_bytes_same`). This covers all lifetime subtyping.
+- `own_bytes_bsubtype`: covariant, with `at_loc_mapₛ f`.
+- `shr_bytes_bsubtype`: the lifetime may shorten, covariant, with `at_cloc_mapₛ f`.
+- `uniq_bytes_subtype` and `uniq_bytes_bsubtype`: the lifetime may shorten, and the
+  referent is invariant (`eqtype … idₛ idₛ`), as `uniq_subtype`.
+- `tctx_bsubtype_val`: `p ◁ᵥ ty ⇒ p ◁ᵥ ty'`, when the MiniRust values agree. The instances
+  `tctx_bsubtype_own_bytes`, `tctx_bsubtype_shr_bytes` and `tctx_bsubtype_uniq_bytes` are
+  for pointers, whose values always agree.
+
+A general `f` with different MiniRust types (e.g. `mod_ty` isomorphisms) is allowed in
+`btype_incl`, which only relates the bytes (`syn_iso_bytes`), but not in
+`tctx_bsubtype_val`. No `mod_ty` instance of `btype_incl` is proved yet.
+
+Examples (`typing/examples/bnew.v`):
+
+| Example | Qed | `Print Assumptions` |
+|---|---|---|
+| `swap_snd_n_type`: `swap_snd` allocating its result, `let: "c" := OfLit (Alloc #8)`, then two `MemCopy`s | 17.3 s | `functional_extensionality_dep` |
+| `shorten_b_type`: `&shrb{α} (i32,i32)` returned as `&shrb{β} (i32,i32)` for `β ⊑ α` | 0.3 s | closed |
