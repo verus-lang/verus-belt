@@ -933,6 +933,111 @@ Proof.
   by destruct (decode_seq ms _).
 Qed.
 
+(** Three-way binds, for the associativity of products. *)
+Definition bind3 {A} (f : A → A → A → A) (o1 o2 o3 : option A) : option A :=
+  a ← o1; b ← o2; c ← o3; Some (f a b c).
+
+Lemma bind3_iff {A} (f g : A → A → A → A) o1 o2 o3 p1 p2 p3 :
+  (∀ a b c a' b' c', f a b c = f a' b' c' → a = a' ∧ b = b' ∧ c = c') →
+  (∀ a b c a' b' c', g a b c = g a' b' c' → a = a' ∧ b = b' ∧ c = c') →
+  bind3 f o1 o2 o3 = bind3 f p1 p2 p3 ↔ bind3 g o1 o2 o3 = bind3 g p1 p2 p3.
+Proof.
+  intros Hf Hg. rewrite /bind3.
+  destruct o1, o2, o3, p1, p2, p3; simpl; split; intros H; simplify_eq; try done;
+    [apply Hf in H|apply Hg in H]; destruct H as (->&->&->); done.
+Qed.
+
+Lemma bind3_None {A} (f g : A → A → A → A) o1 o2 o3 :
+  None = bind3 f o1 o2 o3 ↔ None = bind3 g o1 o2 o3.
+Proof. rewrite /bind3. destruct o1, o2, o3; simpl; split; done. Qed.
+
+Lemma decode_assoc_l {W} a b c (bs : list (AbstractByte W)) :
+  decode_value (seq_tuple [a; seq_tuple [b; c]]) bs =
+  if decide (length bs = mty_size a + mty_size b + mty_size c)%nat then
+    bind3 (λ x y z, VTuple [x; VTuple [y; z]])
+      (decode_value a (take (mty_size a) bs))
+      (decode_value b (take (mty_size b) (drop (mty_size a) bs)))
+      (decode_value c (take (mty_size c) (drop (mty_size a + mty_size b) bs)))
+  else None.
+Proof.
+  rewrite decode_seq_tuple ?seq_size_cons ?mty_size_seq_tuple ?seq_size_cons ?seq_size_nil.
+  destruct (decide (length bs = _)) as [H1|H1];
+    destruct (decide (length bs = _)) as [H2|H2]; try lia; [|done].
+  rewrite /decode_seq -/decode_seq ?mty_size_seq_tuple ?seq_size_cons ?seq_size_nil.
+  rewrite (decode_seq_tuple [b; c]) length_take length_drop decide_True; [|rewrite ?seq_size_cons ?seq_size_nil; lia].
+  rewrite (take_ge (drop _ _)); [|rewrite length_drop ?seq_size_cons ?seq_size_nil; lia].
+  rewrite /decode_seq !drop_drop /bind3.
+  destruct (decode_value a _); [|done]. simpl. destruct (decode_value b _); [|done]. simpl.
+  by destruct (decode_value c _).
+Qed.
+
+Lemma decode_assoc_r {W} a b c (bs : list (AbstractByte W)) :
+  decode_value (seq_tuple [seq_tuple [a; b]; c]) bs =
+  if decide (length bs = mty_size a + mty_size b + mty_size c)%nat then
+    bind3 (λ x y z, VTuple [VTuple [x; y]; z])
+      (decode_value a (take (mty_size a) bs))
+      (decode_value b (take (mty_size b) (drop (mty_size a) bs)))
+      (decode_value c (take (mty_size c) (drop (mty_size a + mty_size b) bs)))
+  else None.
+Proof.
+  rewrite decode_seq_tuple ?seq_size_cons ?mty_size_seq_tuple ?seq_size_cons ?seq_size_nil.
+  destruct (decide (length bs = _)) as [H1|H1];
+    destruct (decide (length bs = _)) as [H2|H2]; try lia; [|done].
+  rewrite /decode_seq -/decode_seq ?mty_size_seq_tuple ?seq_size_cons ?seq_size_nil.
+  rewrite (decode_seq_tuple [a; b]) length_take decide_True; [|rewrite ?seq_size_cons ?seq_size_nil; lia].
+  rewrite /decode_seq /bind3 !Nat.add_0_r -(take_drop_commute bs (mty_size b) (mty_size a)).
+  rewrite !take_take Nat.min_id (_: (mty_size a `min` (mty_size a + mty_size b) = mty_size a)%nat); [|lia].
+  destruct (decode_value a _); [|done]. simpl. destruct (decode_value b _); [|done]. simpl.
+  by destruct (decode_value c _).
+Qed.
+
+(** The byte laws of the associativity of products. *)
+Lemma prod_assoc_bsize 𝔄 𝔅 ℭ : syn_bsize (𝔄 * (𝔅 * ℭ)) = syn_bsize (𝔄 * 𝔅 * ℭ).
+Proof.
+  change (seq_size [syn_mty 𝔄; seq_tuple [syn_mty 𝔅; syn_mty ℭ]] =
+    seq_size [seq_tuple [syn_mty 𝔄; syn_mty 𝔅]; syn_mty ℭ]).
+  rewrite !seq_size_cons !mty_size_seq_tuple !seq_size_cons !seq_size_nil. lia.
+Qed.
+
+Lemma prod_assoc_bytes 𝔄 𝔅 ℭ (x: ~~(𝔄 * (𝔅 * ℭ))) (bs: list abyte) :
+  decode_value (syn_mty (𝔄 * (𝔅 * ℭ))) bs = syn_val x ↔
+  decode_value (syn_mty (𝔄 * 𝔅 * ℭ)) bs = @syn_val (𝔄 * 𝔅 * ℭ) (prod_assoc x).
+Proof.
+  destruct x as [x [y z]].
+  change (decode_value (seq_tuple [syn_mty 𝔄; seq_tuple [syn_mty 𝔅; syn_mty ℭ]]) bs =
+      (v₀ ← syn_val x; v₁ ← (v₀ ← syn_val y; v₁ ← syn_val z; Some (VTuple [v₀; v₁]));
+       Some (VTuple [v₀; v₁])) ↔
+    decode_value (seq_tuple [seq_tuple [syn_mty 𝔄; syn_mty 𝔅]; syn_mty ℭ]) bs =
+      (v₀ ← (v₀ ← syn_val x; v₁ ← syn_val y; Some (VTuple [v₀; v₁])); v₁ ← syn_val z;
+       Some (VTuple [v₀; v₁]))).
+  rewrite (_: (v₀ ← syn_val x; v₁ ← (v₀ ← syn_val y; v₁ ← syn_val z; Some (VTuple [v₀; v₁]));
+       Some (VTuple [v₀; v₁])) =
+    bind3 (λ x y z, VTuple [x; VTuple [y; z]]) (syn_val x) (syn_val y) (syn_val z)); last first.
+  { rewrite /bind3. destruct (syn_val x), (syn_val y), (syn_val z); done. }
+  rewrite (_: (v₀ ← (v₀ ← syn_val x; v₁ ← syn_val y; Some (VTuple [v₀; v₁])); v₁ ← syn_val z;
+       Some (VTuple [v₀; v₁])) =
+    bind3 (λ x y z, VTuple [VTuple [x; y]; z]) (syn_val x) (syn_val y) (syn_val z)); last first.
+  { rewrite /bind3. destruct (syn_val x), (syn_val y), (syn_val z); done. }
+  rewrite (decode_assoc_l (W:=val)) (decode_assoc_r (W:=val)). case_decide.
+  - apply bind3_iff; intros; by simplify_eq.
+  - apply bind3_None.
+Qed.
+
+(** [n + m] bytes of padding are a pair of [n] and [m] bytes of padding. *)
+Lemma decode_pad {W} n (bs : list (AbstractByte W)) :
+  decode_value (MTuple [] n) bs = if decide (length bs = n) then Some (VTuple []) else None.
+Proof. rewrite decode_value_tuple. by case_decide. Qed.
+
+Lemma decode_pad_pair {W} n m (bs : list (AbstractByte W)) :
+  decode_value (seq_tuple [MTuple [] n; MTuple [] m]) bs =
+  if decide (length bs = n + m)%nat then Some (VTuple [VTuple []; VTuple []]) else None.
+Proof.
+  rewrite decode_seq_tuple !seq_size_cons seq_size_nil /=.
+  destruct (decide (length bs = _)) as [H1|H1];
+    destruct (decide (length bs = _)) as [H2|H2]; try lia; [|done].
+  rewrite length_take length_drop length_take. rewrite !decide_True //; lia.
+Qed.
+
 Record syn_type_morphism (𝔄 𝔅 : syn_type) := {
     syn_type_morphism_fn : ~~𝔄 → ~~𝔅;
     syn_type_morphism_proph_fn : 𝔄 → 𝔅;

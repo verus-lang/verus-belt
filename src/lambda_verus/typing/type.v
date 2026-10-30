@@ -411,10 +411,19 @@ Record type `{!typeG Σ} 𝔄 := {
   ty_gho_res: ~~𝔄 → nat → nat → thread_id → iProp Σ;
   (* TODO: no type has actually phys depending on tid, we should remove it *)
   ty_phys: ~~𝔄 → thread_id → list fancy_val;
+  (* The MiniRust type of the values of the type, and the MiniRust value of [x] (if any,
+     see [syn_val]). Like [ty_size] and [ty_phys], they are determined by the syntactic
+     type ([ty_mty_eq], [ty_val_eq]). They will replace [ty_phys]: a parent owns bytes that
+     decode to [ty_val x] at [ty_mty] (see [ty_bytes]). Note that [ty_size] still counts
+     legacy words; the size in bytes is [ty_bsize = mty_size ty_mty]. *)
+  ty_mty: mty;
+  ty_val: ~~𝔄 → option Value;
   
   ty_size_eq x tid : length (ty_phys x tid) = ty_size;
   ty_size_eq2 : size_of 𝔄 = ty_size;
   ty_phys_eq2 x tid : syn_phys x = ty_phys x tid;
+  ty_mty_eq : syn_mty 𝔄 = ty_mty;
+  ty_val_eq x : syn_val x = ty_val x;
   
   ty_gho_own_depth_mono d g d' g' x tid :
     (d ≤ d')%nat → (g ≤ g')%nat → ty_gho_own x d g tid -∗
@@ -534,6 +543,8 @@ Global Instance: Params (@ty_gho_own) 3 := {}.
 Global Instance: Params (@ty_gho_pers) 3 := {}.
 Global Instance: Params (@ty_gho_res) 3 := {}.
 Global Instance: Params (@ty_phys) 3 := {}.
+Global Instance: Params (@ty_mty) 3 := {}.
+Global Instance: Params (@ty_val) 3 := {}.
 Arguments ty_size {_ _ _} _ / : simpl nomatch.
 Arguments ty_lfts {_ _ _} _ / : simpl nomatch.
 Arguments ty_E {_ _ _} _ / : simpl nomatch.
@@ -541,6 +552,10 @@ Arguments ty_gho_own {_ _ _} _ _ _ _ / : simpl nomatch.
 Arguments ty_gho_pers {_ _ _} _ _ _ _ / : simpl nomatch.
 Arguments ty_gho_res {_ _ _} _ _ _ _ / : simpl nomatch.
 Arguments ty_phys {_ _ _} _ _ _ / : simpl nomatch.
+Arguments ty_mty {_ _ _} _ / : simpl nomatch.
+Arguments ty_val {_ _ _} _ _ / : simpl nomatch.
+Arguments ty_mty_eq {_ _ _}.
+Arguments ty_val_eq {_ _ _}.
 Arguments ty_size_eq {_ _ _}.
 Arguments ty_gho_own_depth_mono {_ _ _}.
 Arguments ty_gho_pers_depth_mono {_ _ _}.
@@ -555,6 +570,60 @@ Arguments ty_shr_guard_proph {_ _ _}.
 Arguments ty_gho_res_of_own {_ _ _}.
 
 Notation ty_lft ty := (lft_intersect_list ty.(ty_lfts)).
+
+(** * MiniRust types and values of semantic types *)
+
+(** The size in bytes. *)
+Definition ty_bsize `{!typeG Σ} {𝔄} (ty: type 𝔄) : nat := mty_size ty.(ty_mty).
+Global Arguments ty_bsize {_ _ _} _ / : simpl nomatch.
+
+(** [ty_bytes ty x bs]: the bytes [bs] represent the value [x] of [ty], i.e. they have
+    the size of [ty] and decode to [ty_val x]. This is what a parent owns for its
+    pointee (see [own_bytes] in [typing/own_bytes.v]). *)
+Definition ty_bytes `{!typeG Σ} {𝔄} (ty: type 𝔄) (x: ~~𝔄) (bs: list abyte) : Prop :=
+  length bs = ty_bsize ty ∧ decode_value ty.(ty_mty) bs = ty.(ty_val) x.
+
+Section ty_mty_lemmas.
+  Context `{!typeG Σ}.
+
+  Lemma ty_mty_wf {𝔄} (ty: type 𝔄) : mty_wf ty.(ty_mty).
+  Proof. rewrite -ty_mty_eq. apply syn_mty_wf. Qed.
+
+  Lemma ty_val_wf {𝔄} (ty: type 𝔄) x v : ty.(ty_val) x = Some v → val_wf ty.(ty_mty) v.
+  Proof. rewrite -ty_mty_eq -ty_val_eq. apply syn_val_wf. Qed.
+
+  Lemma ty_bsize_eq {𝔄} (ty: type 𝔄) : ty_bsize ty = syn_bsize 𝔄.
+  Proof. by rewrite /ty_bsize -ty_mty_eq. Qed.
+
+  (** Types of the same syntactic type have the same MiniRust types and values. *)
+  Lemma ty_mty_same {𝔄} (ty ty': type 𝔄) : ty.(ty_mty) = ty'.(ty_mty).
+  Proof. by rewrite -!ty_mty_eq. Qed.
+  Lemma ty_val_same {𝔄} (ty ty': type 𝔄) x : ty.(ty_val) x = ty'.(ty_val) x.
+  Proof. by rewrite -!ty_val_eq. Qed.
+  Lemma ty_bytes_same {𝔄} (ty ty': type 𝔄) x bs : ty_bytes ty x bs ↔ ty_bytes ty' x bs.
+  Proof. by rewrite /ty_bytes /ty_bsize (ty_mty_same ty ty') (ty_val_same ty ty'). Qed.
+
+  Lemma ty_bytes_decode {𝔄} (ty: type 𝔄) x bs v :
+    ty_bytes ty x bs → ty.(ty_val) x = Some v → decode_value ty.(ty_mty) bs = Some v.
+  Proof. by intros [_ ->] ->. Qed.
+
+  (** The encoding of the value of [x] represents [x]. *)
+  Lemma ty_bytes_encode {𝔄} (ty: type 𝔄) x v :
+    ty.(ty_val) x = Some v → ty_bytes ty x (encode_value ty.(ty_mty) v).
+  Proof.
+    intros Hv. split; [apply length_encode_value|]. rewrite Hv.
+    apply decode_encode_value; [apply ty_mty_wf|by eapply ty_val_wf].
+  Qed.
+
+  (** Defining more bytes keeps the representation (of a value that has one). *)
+  Lemma ty_bytes_mono {𝔄} (ty: type 𝔄) x bs bs' :
+    is_Some (ty.(ty_val) x) → bytes_le bs bs' → ty_bytes ty x bs → ty_bytes ty x bs'.
+  Proof.
+    intros [v Hv] Hle [Hlen Hdec]. split.
+    - by rewrite -(Forall2_length _ _ _ Hle).
+    - rewrite Hv. apply (decode_value_mono _ bs); [done|]. by rewrite Hdec.
+  Qed.
+End ty_mty_lemmas.
 
 Section ty_shr_lemmas.
   Context `{!typeG Σ}.
@@ -721,6 +790,7 @@ Program Definition ty_of_st `{!typeG Σ} {𝔄} (st: simple_type 𝔄) : type �
   ty_gho_res := st.(st_gho);
   ty_gho_pers := st.(st_gho);
   ty_phys := st.(st_phys);
+  ty_mty := syn_mty 𝔄; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
   ty_shr := default_shr st.(st_gho);
 |}%I.
 Next Obligation. move=> >. apply st_size_eq. Qed.
@@ -804,6 +874,7 @@ Program Definition ty_of_gt `{!typeG Σ} {𝔄} (gt: ghost_type 𝔄) : type �
   ty_gho_res x d g tid := gt.(gt_gho) x tid;
   ty_gho_pers x d g tid := True%I;
   ty_phys x tid := [];
+  ty_mty := syn_mty 𝔄; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
   ty_shr := default_shr (λ x d g tid, gt.(gt_gho) x tid);
 |}%I.
 Next Obligation. move=> * //=. Qed.

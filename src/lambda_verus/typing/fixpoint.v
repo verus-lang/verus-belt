@@ -116,6 +116,7 @@ Section S.
   Program Definition Tn' n : type 𝔄 := {|
     ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
     ty_gho_own := (Tn n).(ty_gho_own);  ty_gho_res := (Tn n).(ty_gho_res);  ty_gho_pers := (Tn n).(ty_gho_pers);
+    ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_phys := (Tn 0).(ty_phys);
     ty_shr := (Tn n).(ty_shr);
   |}.
@@ -143,6 +144,7 @@ Section S.
   Program Definition fix_ty: type 𝔄 := {|
     ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
     ty_gho_own := (compl gho_chain).1.1;  ty_gho_res := (compl gho_chain).1.1;  ty_gho_pers := (compl gho_chain).1.2;
+    ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_phys := (Tn 0).(ty_phys);
     ty_shr := (compl gho_chain).2;
   |}.

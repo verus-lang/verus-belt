@@ -51,6 +51,7 @@ Section uniq_bor.
               ∗ uniq_body_pers_component ty x0 ξi d' g' idx κ tid l
       end;
       
+    ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_phys (x : ~~ (uniq_borₛ 𝔄)) tid :=
       match x with
         (l, x0, ξi, d', g', idx) =>

@@ -86,6 +86,8 @@ Proof.
       + fun_ext. intros [loc0 [[|[[a b] c] xl] np]]; trivial.
     - trivial.
     - destruct x as [loc0 [[[]|[[elem [loc [l np]]]|[]]] p]]; done.
+    - done.
+    - intros x bs. destruct x as [loc0 [[[]|[[elem [loc [l np]]]|[]]] p]]; done.
 Qed.
     
     

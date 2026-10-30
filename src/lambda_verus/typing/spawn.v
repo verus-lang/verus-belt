@@ -33,6 +33,7 @@ Section spawn.
         join_handle spawnN x.1 (join_future ty (spec x.2));
       ty_gho_pers (x : ~~ (at_locₛ ℭ)) d g tid :=
         True;
+      ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
       ty_phys (x : ~~ (at_locₛ ℭ)) tid := 
         [FVal (#x.1)];
       ty_shr := default_shr (𝔄 := at_locₛ (join_handleₛ ℭ))
