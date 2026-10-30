@@ -1175,16 +1175,22 @@ Proof.
   iSplitR "HΦ G"; [by iFrame|]. by iApply "HΦ".
 Qed.
 
-Lemma wp_load_na_guarded E l q m bs v G d :
-  ↑naN ⊆ E → decode_value m bs = Some v →
-  {{{ (G &&{↑naN; d}&&> l ↦b{q} bs) ∗ G ∗ £(2*d) }}} Load Na1Ord m (Lit $ LitLoc l) @ E
+(** The general form: [G] guards some [P] that contains a fraction of bytes [bs] with
+    [Ψ bs], which all decode to [v]. *)
+Lemma wp_load_na_guarded_gen E l m v G P (Ψ : list abyte → Prop) d :
+  ↑naN ⊆ E → (∀ bs, Ψ bs → decode_value m bs = Some v) →
+  {{{ (G &&{↑naN; d}&&> P) ∗ □ (P -∗ ∃ q bs, ⌜Ψ bs⌝ ∗ l ↦b{q} bs ∗ (l ↦b{q} bs -∗ P)) ∗
+      G ∗ £(2*d) }}}
+    Load Na1Ord m (Lit $ LitLoc l) @ E
   {{{ RET MLitV v; G }}}.
 Proof.
-  iIntros (? Hdec Φ) "(#Guard & G & £) HΦ". have Hlen := decode_value_length _ _ _ Hdec.
+  iIntros (? HΨ Φ) "(#Guard & #HP & G & £) HΦ".
   iApply wp_lift_base_step; auto.
   iIntros (σ1 stepcnt κ κs n) "[Hσ Ht]". heap_split.
-  iMod (bytes_ctx_read_begin_guarded with "£ Guard G HB") as (i) "(%Hrange & HB & Tok)";
-    [done|].
+  iMod (bytes_ctx_read_begin_guarded _ _ _ Ψ (mty_size m) with "£ Guard HP G HB")
+    as (i bs) "(%HΨbs & %Hrange & HB & Tok)";
+    [done|intros ??; by eapply decode_value_length, HΨ|].
+  have Hdec := HΨ _ HΨbs. have Hlen := decode_value_length _ _ _ Hdec.
   have Hrange' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange.
   iApply fupd_mask_intro; first set_solver. iIntros "Hclose". iSplit.
   { iPureIntro. eexists _, _, _, _. by eapply LoadNa1S. }
@@ -1214,23 +1220,36 @@ Proof.
   by iApply "HΦ".
 Qed.
 
-Lemma wp_memcopy_guarded E l1 l2 q bs1 bs2 (n : nat) G d :
-  ↑naN ⊆ E → length bs1 = n → length bs2 = n →
-  {{{ ▷ l1 ↦b bs1 ∗ (G &&{↑naN; d}&&> l2 ↦b{q} bs2) ∗ G ∗ £(2*d) }}}
-    MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2) @ E
-  {{{ RET LitV LitPoison; l1 ↦b bs2 ∗ G }}}.
+Lemma wp_load_na_guarded E l q m bs v G d :
+  ↑naN ⊆ E → decode_value m bs = Some v →
+  {{{ (G &&{↑naN; d}&&> l ↦b{q} bs) ∗ G ∗ £(2*d) }}} Load Na1Ord m (Lit $ LitLoc l) @ E
+  {{{ RET MLitV v; G }}}.
 Proof.
-  iIntros (? Hlen1 Hlen2 Φ) "(>Hbs1 & #Guard & G & £) HΦ". subst n.
+  iIntros (? Hdec Φ) "(#Guard & G & £) HΦ".
+  iApply (wp_load_na_guarded_gen _ _ _ _ _ _ (.= bs) with "[$Guard $G $£]"); [done|by intros ? ->| |done].
+  iIntros "!> Pt". iExists q, bs. iFrame. iSplit; [done|]. by iIntros "$".
+Qed.
+
+Lemma wp_memcopy_guarded_gen E l1 l2 bs1 (n : nat) G P (Ψ : list abyte → Prop) d :
+  ↑naN ⊆ E → length bs1 = n → (∀ bs, Ψ bs → length bs = n) →
+  {{{ ▷ l1 ↦b bs1 ∗ (G &&{↑naN; d}&&> P) ∗
+      □ (P -∗ ∃ q bs, ⌜Ψ bs⌝ ∗ l2 ↦b{q} bs ∗ (l2 ↦b{q} bs -∗ P)) ∗ G ∗ £(2*d) }}}
+    MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2) @ E
+  {{{ bs2, RET LitV LitPoison; ⌜Ψ bs2⌝ ∗ l1 ↦b bs2 ∗ G }}}.
+Proof.
+  iIntros (? <- HΨ Φ) "(>Hbs1 & #Guard & #HP & G & £) HΦ".
   iApply wp_lift_base_step; auto.
   iIntros (σ1 stepcnt κ κs n') "[Hσ Ht]". heap_split.
   iEval (rewrite heap_mapsto_bytes_st_vec) in "Hbs1".
   iMod (bytes_ctx_lookup_1 with "HB Hbs1") as "(%Hrange1 & HB & Hbs1)"; [done|].
   iEval (rewrite -heap_mapsto_bytes_st_vec) in "Hbs1".
   have Hrange1' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange1.
-  iMod (bytes_ctx_read_begin_guarded with "£ Guard G HB") as (i) "(%Hrange2 & HB & Tok)";
-    [done|].
+  iMod (bytes_ctx_read_begin_guarded _ _ _ Ψ (length bs1) with "£ Guard HP G HB")
+    as (i bs2) "(%HΨbs & %Hrange2 & HB & Tok)"; [done..|].
+  have Hlen2 : length bs2 = length bs1 := HΨ _ HΨbs.
   have Hrange2' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange2.
   have Hr2 := phys_rel_mem_alter _ ls_inc _ _ _ _ _ Hr Hrange2.
+  rewrite Hlen2 in Hr2.
   iMod (bytes_ctx_write_begin with "HB Hbs1") as "(%Hrange1b & HB & Hbs1)"; [done|].
   have Hr1 := phys_rel_mem_alter _ (λ _, WSt) _ _ _ _ _ Hr2 Hrange1b.
   iApply fupd_mask_intro; first set_solver. iIntros "Hclose". iSplit.
@@ -1238,7 +1257,7 @@ Proof.
   iNext; iIntros (e2 σ2 efs Hstep); inv_head_step. iMod "Hclose" as "_".
   iMod (time_interp_step with "Ht") as "$". iIntros "credit !>".
   iSplitR "HΦ Hbs1 Tok credit".
-  { rewrite Hlen2 in Hr1. rewrite Hlen2. iExists hF. iFrame. iPureIntro. split; [done|].
+  { iExists hF. iFrame. iPureIntro. split; [done|].
     eapply heap_freeable_rel_dom; [|done]. intros ?. by rewrite !is_Some_mem_alter. }
   iSplit; last done.
   clear dependent σ1 σL σB hF. iApply wp_lift_atomic_base_step_no_fork; auto.
@@ -1259,12 +1278,25 @@ Proof.
   match goal with H : mem_range is_reading_S _ l2 ?bs' |- _ =>
     have Heq := mem_range_det _ _ _ _ _ _ Hrange2' H ltac:(lia) end. subst.
   iSplit; [done|]. iSplitR "HΦ Hbs1 G".
-  { rewrite Hlen2 in Hr1. rewrite Hlen2. iExists hF. iFrame. iPureIntro. split; [done|].
+  { iExists hF. iFrame. iPureIntro. split; [by rewrite -Hlen'|].
     eapply heap_freeable_rel_dom; [|done]. intros ?.
     simpl. rewrite is_Some_mem_write'; [by rewrite !is_Some_mem_alter|].
     intros i' Hi. rewrite is_Some_mem_alter.
     destruct (mem_range_lookup_1 _ _ _ _ i' Hrange1') as (?&?&Hl&_); [lia|]. eexists. exact Hl. }
-  iApply "HΦ". iFrame.
+  iApply "HΦ". by iFrame.
+Qed.
+
+Lemma wp_memcopy_guarded E l1 l2 q bs1 bs2 (n : nat) G d :
+  ↑naN ⊆ E → length bs1 = n → length bs2 = n →
+  {{{ ▷ l1 ↦b bs1 ∗ (G &&{↑naN; d}&&> l2 ↦b{q} bs2) ∗ G ∗ £(2*d) }}}
+    MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2) @ E
+  {{{ RET LitV LitPoison; l1 ↦b bs2 ∗ G }}}.
+Proof.
+  iIntros (? Hlen1 Hlen2 Φ) "(Hbs1 & #Guard & G & £) HΦ".
+  iApply (wp_memcopy_guarded_gen _ _ _ _ _ _ _ (.= bs2) with "[$Hbs1 $Guard $G $£]");
+    [done|done|by intros ? ->| |].
+  { iIntros "!> Pt". iExists q, bs2. iFrame. iSplit; [done|]. by iIntros "$". }
+  iIntros "!>" (bs) "(-> & ? & ?)". iApply "HΦ". iFrame.
 Qed.
 
 End lifting.

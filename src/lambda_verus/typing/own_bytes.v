@@ -156,7 +156,7 @@ Section own_bytes_rules.
                 ▷ ty.(ty_gho_own) x d g tid }}}.
   Proof.
     iIntros (? Hv Φ) "[Own Gho'] HΦ".
-    iDestruct "Own" as "((%bs & Hbs & %Hbs) & Free & Gho)". destruct Hbs as [Hlen _].
+    iDestruct "Own" as "((%bs & Hbs & %Hbs) & Free & Gho)". have Hlen := ty_bytes_length _ _ _ Hbs.
     iApply (wp_store_na with "Hbs"); [done|by eapply ty_val_wf|done|].
     iIntros "!> Hbs". iApply "HΦ". iFrame. iPureIntro. by apply ty_bytes_encode.
   Qed.
@@ -185,7 +185,7 @@ Section own_bytes_rules.
       Free #(ty_bsize ty) #l @ E
     {{{ RET #☠; ▷ ty.(ty_gho_own) x d g tid }}}.
   Proof.
-    iIntros (? Hsz Φ) "((%bs & Hbs & %Hbs) & Free & Gho) HΦ". destruct Hbs as [Hlen _].
+    iIntros (? Hsz Φ) "((%bs & Hbs & %Hbs) & Free & Gho) HΦ". have Hlen := ty_bytes_length _ _ _ Hbs.
     rewrite freeable_sz_full. iDestruct "Free" as "[Free|%Hz]".
     - iApply (wp_free_bytes with "[$Hbs Free]"); [done|by rewrite Hlen|by rewrite Hlen|].
       iIntros "!> _". by iApply "HΦ".

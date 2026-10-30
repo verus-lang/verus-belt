@@ -577,11 +577,13 @@ Notation ty_lft ty := (lft_intersect_list ty.(ty_lfts)).
 Definition ty_bsize `{!typeG Σ} {𝔄} (ty: type 𝔄) : nat := mty_size ty.(ty_mty).
 Global Arguments ty_bsize {_ _ _} _ / : simpl nomatch.
 
-(** [ty_bytes ty x bs]: the bytes [bs] represent the value [x] of [ty], i.e. they have
-    the size of [ty] and decode to [ty_val x]. This is what a parent owns for its
-    pointee (see [own_bytes] in [typing/own_bytes.v]). *)
+(** [ty_bytes ty x bs]: the bytes [bs] represent the value [x] of [ty], i.e. [x] has a
+    MiniRust value ([ty_val x]) and [bs] decode to it at [ty_mty] (so they have the size
+    [ty_bsize ty], [ty_bytes_length]). A value without a MiniRust value (a closure, a
+    cell) has no byte representation. This is what a parent owns for its pointee (see
+    [own_bytes] in [typing/own_bytes.v]). *)
 Definition ty_bytes `{!typeG Σ} {𝔄} (ty: type 𝔄) (x: ~~𝔄) (bs: list abyte) : Prop :=
-  length bs = ty_bsize ty ∧ decode_value ty.(ty_mty) bs = ty.(ty_val) x.
+  ∃ v, ty.(ty_val) x = Some v ∧ decode_value ty.(ty_mty) bs = Some v.
 
 Section ty_mty_lemmas.
   Context `{!typeG Σ}.
@@ -601,27 +603,32 @@ Section ty_mty_lemmas.
   Lemma ty_val_same {𝔄} (ty ty': type 𝔄) x : ty.(ty_val) x = ty'.(ty_val) x.
   Proof. by rewrite -!ty_val_eq. Qed.
   Lemma ty_bytes_same {𝔄} (ty ty': type 𝔄) x bs : ty_bytes ty x bs ↔ ty_bytes ty' x bs.
-  Proof. by rewrite /ty_bytes /ty_bsize (ty_mty_same ty ty') (ty_val_same ty ty'). Qed.
+  Proof. by rewrite /ty_bytes (ty_mty_same ty ty') (ty_val_same ty ty'). Qed.
 
   Lemma ty_bytes_decode {𝔄} (ty: type 𝔄) x bs v :
     ty_bytes ty x bs → ty.(ty_val) x = Some v → decode_value ty.(ty_mty) bs = Some v.
-  Proof. by intros [_ ->] ->. Qed.
+  Proof. intros (w & Hw & Hd) Hv. by rewrite Hd -Hw Hv. Qed.
+
+  Lemma ty_bytes_length {𝔄} (ty: type 𝔄) x bs : ty_bytes ty x bs → length bs = ty_bsize ty.
+  Proof. intros (v & _ & Hd). by eapply decode_value_length. Qed.
+
+  Lemma ty_bytes_val {𝔄} (ty: type 𝔄) x bs : ty_bytes ty x bs → is_Some (ty.(ty_val) x).
+  Proof. intros (v & Hv & _). by eexists. Qed.
 
   (** The encoding of the value of [x] represents [x]. *)
   Lemma ty_bytes_encode {𝔄} (ty: type 𝔄) x v :
     ty.(ty_val) x = Some v → ty_bytes ty x (encode_value ty.(ty_mty) v).
   Proof.
-    intros Hv. split; [apply length_encode_value|]. rewrite Hv.
+    intros Hv. exists v. split; [done|].
     apply decode_encode_value; [apply ty_mty_wf|by eapply ty_val_wf].
   Qed.
 
-  (** Defining more bytes keeps the representation (of a value that has one). *)
+  (** Defining more bytes keeps the representation. *)
   Lemma ty_bytes_mono {𝔄} (ty: type 𝔄) x bs bs' :
-    is_Some (ty.(ty_val) x) → bytes_le bs bs' → ty_bytes ty x bs → ty_bytes ty x bs'.
+    bytes_le bs bs' → ty_bytes ty x bs → ty_bytes ty x bs'.
   Proof.
-    intros [v Hv] Hle [Hlen Hdec]. split.
-    - by rewrite -(Forall2_length _ _ _ Hle).
-    - rewrite Hv. apply (decode_value_mono _ bs); [done|]. by rewrite Hdec.
+    intros Hle (v & Hv & Hdec). exists v. split; [done|].
+    by apply (decode_value_mono _ bs).
   Qed.
 End ty_mty_lemmas.
 

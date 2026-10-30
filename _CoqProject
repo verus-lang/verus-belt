@@ -302,7 +302,12 @@ src/lambda_verus/typing/uniq_bor.v
 src/lambda_verus/typing/uninit.v
 src/lambda_verus/typing/freeable_util.v
 src/lambda_verus/typing/own.v
+src/lambda_verus/typing/bytes_layout.v
 src/lambda_verus/typing/own_bytes.v
+src/lambda_verus/typing/value_ctx.v
+src/lambda_verus/typing/shr_bytes.v
+src/lambda_verus/typing/buniq_util.v
+src/lambda_verus/typing/buniq_bor.v
 src/lambda_verus/typing/ltype.v
 src/lambda_verus/typing/lpath.v
 src/lambda_verus/typing/pctx_acc.v
