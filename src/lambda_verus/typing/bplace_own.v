@@ -208,8 +208,9 @@ Section typing.
       hole). *)
   Lemma type_borrow_oplace_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
     elctx_sat E L (ty_outlives_E ty α) →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Seq (Seq Skip Skip) (pctx_expr K (ToLit p)))
-      (λ w, +[w ◁ &uniqb{α} ty; p ◁ₗown{n} pctx_plug K (Blocked ty α)])
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)]
+      (Seq (Seq Skip Skip) (OfLit (pctx_expr K (ToLit p))))
+      (λ w, +[w ◁ᵥ &uniqb{α} ty; p ◁ₗown{n} pctx_plug K (Blocked ty α)])
       (λ post '-[x], λ mask π, ∀ m1: ~~ (uniq_borₛ 𝔅),
         uniq_bor_current m1 = pctx_get K x.1.2 →
         post -[m1; (x.1, (pctx_path K [], uniq_bor_ξi m1) :: x.2)] mask π).
@@ -245,14 +246,14 @@ Section typing.
     iDestruct (cumulative_time_receipt_sep with "⧗") as "[⧗b ⧗k]".
     (* The address of the hole. *)
     iMod lc_zero as "£0".
-    iApply wp_fupd.
+    iApply wp_fupd. wp_bind (pctx_expr K (ToLit p)).
     iApply (wp_wand with "[Rest £0]").
     { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
         with "[] £0 [] Rest").
       - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
-    iIntros (w) "(-> & _ & _ & Rest)".
+    iIntros (w) "(-> & _ & _ & Rest)". wp_pure _.
     (* The new borrow. *)
     iEval (rewrite pctx_mode_add bi.laterN_later) in "Gho1".
     iMod (lc_fupd_elim_laterN with "£k Gho1") as "Gho1".
@@ -263,8 +264,8 @@ Section typing.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
     iSplitL "Body".
-    { iExists _, D. iSplit; [by rewrite eval_path_of_val|]. iFrame "⧖". iSplit; [|done].
-      iFrame "Incl Body".
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists (VPtr lK.1), D.
+      iSplit; [done|]. iFrame "⧖". iFrame "Incl Body".
       iSplit; [iPureIntro; lia|]. iApply (oplace_loc_guard K (OfTy ty)). }
     iSplit; [|done]. rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|].
     iExists D, d, g. iFrame "⧖".

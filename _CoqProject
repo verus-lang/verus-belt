@@ -325,6 +325,11 @@ src/lambda_verus/typing/place_res_view.v
 src/lambda_verus/typing/place_res_rslv.v
 src/lambda_verus/typing/place_res_ops.v
 src/lambda_verus/typing/place_res_copy.v
+src/lambda_verus/typing/bltype.v
+src/lambda_verus/typing/blpath.v
+src/lambda_verus/typing/bpctx_acc.v
+src/lambda_verus/typing/bvplace.v
+src/lambda_verus/typing/bplace_own.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/tracked.v
