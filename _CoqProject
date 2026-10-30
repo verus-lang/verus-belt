@@ -302,6 +302,7 @@ src/lambda_verus/typing/uniq_bor.v
 src/lambda_verus/typing/uninit.v
 src/lambda_verus/typing/freeable_util.v
 src/lambda_verus/typing/own.v
+src/lambda_verus/typing/own_bytes.v
 src/lambda_verus/typing/ltype.v
 src/lambda_verus/typing/lpath.v
 src/lambda_verus/typing/pctx_acc.v
@@ -368,6 +369,7 @@ src/lambda_verus/typing/examples/place_res_copy.v
 src/lambda_verus/typing/examples/place_res_shr_end.v
 src/lambda_verus/typing/examples/place_res_sum_fold.v
 src/lambda_verus/typing/examples/place_res_nested_fold.v
+src/lambda_verus/typing/examples/own_bytes.v
 
 
 -arg -w -arg -argument-scope-delimiter
