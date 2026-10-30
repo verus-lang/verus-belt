@@ -1123,3 +1123,195 @@ Section rslv.
     iModIntro. iExists -[]. by iFrame "Obs".
   Qed.
 End rslv.
+
+(** * Byte copies below shared references *)
+
+Section memcpy.
+  Context `{!typeG Σ}.
+
+  (** Copying the value of a [Copy] type out of the hole of [K2] below the shared reference
+      at the hole of [K] into a box: a byte-level [MemCopy] whose source is guarded
+      ([wp_memcopy_guarded_gen]). The old contents of the box are resolved; the place does
+      not change. The first step (the address of the box) gives the credits for the
+      address of the source, the copy itself those for the box. *)
+  Lemma type_memcpy_copy_from_vplace_pshr_instr {ℭ 𝔅 𝔄 𝔅'} E L I pw p n
+      (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) (lt: lty ℭ)
+      (tyw: type 𝔅') Φ (sz: nat) :
+    Copy (lty_fold lt) → resolve E L tyw Φ → sz = ty_bsize (lty_fold lt) → ty_bsize tyw = sz →
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
+    lctx_lft_alive E L (pctx_salv K2 κ) →
+    typed_instr E L I +[pw ◁ᵥ own_bytes n tyw; p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 lt) κ)]
+      (MemCopy Na1Ord sz (ToLit pw) (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K p)))))
+      (λ _, +[pw ◁ᵥ own_bytes n (lty_fold lt); p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 lt) κ)])
+      (λ post '-[b; x], λ mask π, Φ b.2 π →
+        post -[(b.1, pctx_get K2 (pctx_get K x.1).2); x] mask π).
+  Proof.
+    iIntros (Hcopy Rslv -> Hszw Alv1 Alv2 tid post mask iκs [[lw z] [x []]])
+      "#LFT #TIME #PROPH #UNIQ #E L I (Tw & Tp & _) Obs".
+    destruct x as [x₀ ζm].
+    iDestruct "Tp" as (v Hp) "Tp". iEval (rewrite vplace_own_open) in "Tp".
+    iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
+    iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
+    destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
+    iDestruct "Bs" as (bsw) "[Hbsw %Hbsw]".
+    iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
+    iCombine "⧖ ⧖w" as "⧖m".
+    set M := D `max` (S dw).
+    have HM: D ≤ M ∧ S dw ≤ M by rewrite /M; lia.
+    iDestruct (vroot_own_depth_mono _ _ D M with "Own") as "Own"; [lia|].
+    (* The first step (the address of the box): credits for the address of the source. *)
+    wp_bind (ToLit pw).
+    iApply (wp_persistent_time_receipt with "TIME ⧖m"); [solve_ndisj|].
+    iIntros "£ #⧖S". wp_bind pw. iApply wp_wand; [by iApply wp_eval_path|].
+    iIntros (?) "->". wp_pure _.
+    (* The copy: credits for the box and the copy. *)
+    iApply (wp_persistent_time_receipt with "TIME ⧖S"); [solve_ndisj|].
+    iIntros "£' #⧖SS". iApply wp_fupd.
+    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)])%I
+      as "#Hu". { iApply (guards_transitive with "Ghalf Alv1"). }
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
+    { iApply (guards_transitive with "Ghalf Alv2"). }
+    iDestruct (lc_weaken (pshr_cred M) with "£") as "£a"; [have := pshr_cred_step M; lia|].
+    iDestruct (lc_weaken (((M + 1) + (M + 1)) + (1 + ((1 + M * (M + 1)) + (1 + 2 * (M + 1)))))
+      with "£'") as "(£c & £r & £s & £b & £m)"; [rewrite /advance_credits; nia|].
+    set y := pctx_get K x₀.
+    wp_bind (pctx_expr K2 _).
+    iApply (wp_pshr_open _ K κ K2 lt (pctx_plug K2 lt) x₀ ζm M tid _ p (fractional.half γh)
+      with "LFT PROPH UNIQ Hu Hs H1 £a ⧖m [] Own"); [solve_ndisj|done|done|..].
+    { iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
+    iIntros (dh Hdh [Hin1 [Hin2 Hvin]]) "H1 Own #V".
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
+    { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
+    set zz := pctx_get K2 y.2.
+    set lK := pctx_loc K2 (lty_size lt) y.2 y.1.
+    iMod (shr_view_copy with "Hsl H1 £c V") as (w Hw) "[#Gho H1]"; [solve_ndisj|].
+    (* Resolve the old contents of the box. *)
+    iMod (lc_fupd_elim_later with "£b Gw0") as "Gw0".
+    iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN))
+      with "LFT PROPH UNIQ TIME E Ghalf H2 Gw0") as "ToObs"; [set_solver|].
+    iMod (lc_fupd_elim_later with "£r ToObs") as "ToObs".
+    iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
+    iDestruct (lc_step_fupdN_elim_later with "[£s] ToObs") as "ToObs".
+    { iApply (lc_weaken with "£s"). nia. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
+    iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
+    (* Copy the bytes. *)
+    iDestruct "V" as "(Pt & _ & _)".
+    iApply (wp_memcopy_guarded_gen _ lw lK.1 bsw (ty_bsize (lty_fold lt)) (fractional.half γh)
+      (cbytes (lty_fold lt) zz lK) (ty_bytes (lty_fold lt) zz) (M + 1) with "[$Hbsw $H1 $£m]");
+      [solve_ndisj|by rewrite (ty_bytes_length _ _ _ Hbsw) Hszw|intros ?; apply ty_bytes_length|..].
+    { iSplit; [iApply (guards_transitive_right with "Hsl Pt")|].
+      iIntros "!> (%bs & Hbs & %Hbs)". iExists 1%Qp, bs. iFrame "Hbs".
+      iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
+    iIntros "!>" (bs2) "(%Hbs2 & Hbsw & H1)".
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    iModIntro. iExists -[(lw, zz); (x₀, ζm)]. iFrame "L I".
+    iSplitR "Obs Obs'".
+    { iSplitL "Hbsw Fr"; [|iSplitL; [|done]].
+      - iExists _. iSplit; [done|]. iExists (VPtr lw), (S (S M)). iSplit; [done|].
+        iSplit; [done|].
+        iSplitL "Hbsw"; [iExists bs2; by iFrame|]. iSplitL "Fr".
+        + by rewrite -Hszw.
+        + iNext. iDestruct (ty_gho_own_depth_mono _ dh M (S M) (S (S M)) with "Gho") as "[$ _]";
+            lia.
+      - iExists _. iSplit; [done|]. by iApply (vplace_own_close with "⧖m ⧗p Own"). }
+    iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
+    by apply Hπ.
+  Qed.
+
+  Lemma type_memcpy_copy_from_oplace_pshr_instr {ℭ 𝔅 𝔄 𝔅'} E L I pw p n n'
+      (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K} κ (K2: pctx ℭ 𝔅) (lt: lty ℭ)
+      (tyw: type 𝔅') Φ (sz: nat) :
+    Copy (lty_fold lt) → resolve E L tyw Φ → sz = ty_bsize (lty_fold lt) → ty_bsize tyw = sz →
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
+    lctx_lft_alive E L (pctx_salv K2 κ) →
+    typed_instr E L I
+      +[pw ◁ᵥ own_bytes n tyw; p ◁ₗown{n'} pctx_plug K (ShrLty (pctx_plug K2 lt) κ)]
+      (MemCopy Na1Ord sz (ToLit pw)
+        (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p))))))
+      (λ _, +[pw ◁ᵥ own_bytes n (lty_fold lt);
+        p ◁ₗown{n'} pctx_plug K (ShrLty (pctx_plug K2 lt) κ)])
+      (λ post '-[b; x], λ mask π, Φ b.2 π →
+        post -[(b.1, pctx_get K2 (pctx_get K x.1.2).2); x] mask π).
+  Proof. intros. by apply (type_memcpy_copy_from_vplace_pshr_instr _ _ _ _ _ _ (POwn n' K)). Qed.
+
+  (** The same, below the shared reference at the root. *)
+  Lemma type_memcpy_copy_from_vplace_pshr_root_instr {ℭ 𝔅 𝔅'} E L I pw p n κ
+      (K2: pctx ℭ 𝔅) (lt: lty ℭ) (tyw: type 𝔅') Φ (sz: nat) :
+    Copy (lty_fold lt) → resolve E L tyw Φ → sz = ty_bsize (lty_fold lt) → ty_bsize tyw = sz →
+    lctx_lft_alive E L (pctx_salv K2 κ) →
+    typed_instr E L I +[pw ◁ᵥ own_bytes n tyw; p ◁ₗ ShrLty (pctx_plug K2 lt) κ]
+      (MemCopy Na1Ord sz (ToLit pw) (pctx_expr K2 (ToLit p)))
+      (λ _, +[pw ◁ᵥ own_bytes n (lty_fold lt); p ◁ₗ ShrLty (pctx_plug K2 lt) κ])
+      (λ post '-[b; x], λ mask π, Φ b.2 π → post -[(b.1, pctx_get K2 x.1.2); x] mask π).
+  Proof.
+    iIntros (Hcopy Rslv -> Hszw Alv tid post mask iκs [[lw z] [x []]])
+      "#LFT #TIME #PROPH #UNIQ #E L I (Tw & Tp & _) Obs".
+    destruct x as [x ζm].
+    iDestruct "Tp" as (v Hp) "Tp". rewrite vplace_own_eq.
+    iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
+    iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
+    destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
+    iDestruct "Bs" as (bsw) "[Hbsw %Hbsw]".
+    iDestruct (Alv with "L E") as "#Alv".
+    iCombine "⧖ ⧖w" as "⧖m".
+    set M := D `max` (S dw).
+    have HM: D ≤ M ∧ S dw ≤ M by rewrite /M; lia.
+    iDestruct (vroot_own_depth_mono _ _ D M with "Own") as "Own"; [lia|].
+    wp_bind (ToLit pw).
+    iApply (wp_persistent_time_receipt with "TIME ⧖m"); [solve_ndisj|].
+    iIntros "£ #⧖S". wp_bind pw. iApply wp_wand; [by iApply wp_eval_path|].
+    iIntros (?) "->". wp_pure _.
+    iApply (wp_persistent_time_receipt with "TIME ⧖S"); [solve_ndisj|].
+    iIntros "£' #⧖SS". iApply wp_fupd.
+    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
+    { iApply (guards_transitive with "Ghalf Alv"). }
+    iDestruct (lc_weaken (pshr_cred M) with "£") as "£a"; [have := pshr_cred_step M; lia|].
+    iDestruct (lc_weaken (((M + 1) + (M + 1)) + (1 + ((1 + M * (M + 1)) + (1 + 2 * (M + 1)))))
+      with "£'") as "(£c & £r & £s & £b & £m)"; [rewrite /advance_credits; nia|].
+    wp_bind (pctx_expr K2 (ToLit p)).
+    iApply (wp_pshr_open_root _ κ K2 lt (pctx_plug K2 lt) x M tid v p (fractional.half γh)
+      with "Hs H1 £a [] Own"); [solve_ndisj|done|done|..].
+    { iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
+    iIntros (dh Hdh [Hin2 Hvin]) "H1 Own #V".
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
+    { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
+    set zz := pctx_get K2 x.2.
+    set lK := pctx_loc K2 (lty_size lt) x.2 x.1.
+    iMod (shr_view_copy with "Hsl H1 £c V") as (w Hw) "[#Gho H1]"; [solve_ndisj|].
+    iMod (lc_fupd_elim_later with "£b Gw0") as "Gw0".
+    iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN))
+      with "LFT PROPH UNIQ TIME E Ghalf H2 Gw0") as "ToObs"; [set_solver|].
+    iMod (lc_fupd_elim_later with "£r ToObs") as "ToObs".
+    iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
+    iDestruct (lc_step_fupdN_elim_later with "[£s] ToObs") as "ToObs".
+    { iApply (lc_weaken with "£s"). nia. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
+    iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
+    iDestruct "V" as "(Pt & _ & _)".
+    iApply (wp_memcopy_guarded_gen _ lw lK.1 bsw (ty_bsize (lty_fold lt)) (fractional.half γh)
+      (cbytes (lty_fold lt) zz lK) (ty_bytes (lty_fold lt) zz) (M + 1) with "[$Hbsw $H1 $£m]");
+      [solve_ndisj|by rewrite (ty_bytes_length _ _ _ Hbsw) Hszw|intros ?; apply ty_bytes_length|..].
+    { iSplit; [iApply (guards_transitive_right with "Hsl Pt")|].
+      iIntros "!> (%bs & Hbs & %Hbs)". iExists 1%Qp, bs. iFrame "Hbs".
+      iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
+    iIntros "!>" (bs2) "(%Hbs2 & Hbsw & H1)".
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    iModIntro. iExists -[(lw, zz); (x, ζm)]. iFrame "L I".
+    iSplitR "Obs Obs'".
+    { iSplitL "Hbsw Fr"; [|iSplitL; [|done]].
+      - iExists _. iSplit; [done|]. iExists (VPtr lw), (S (S M)). iSplit; [done|].
+        iSplit; [done|].
+        iSplitL "Hbsw"; [iExists bs2; by iFrame|]. iSplitL "Fr".
+        + by rewrite -Hszw.
+        + iNext. iDestruct (ty_gho_own_depth_mono _ dh M (S M) (S (S M)) with "Gho") as "[$ _]";
+            lia.
+      - iExists _. iSplit; [done|]. rewrite vplace_own_eq. iExists M. by iFrame. }
+    iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
+    by apply Hπ.
+  Qed.
+End memcpy.
