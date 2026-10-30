@@ -122,7 +122,7 @@ Section shr_bytes_rules.
     iApply (wp_load_na_guarded_gen _ _ _ v G (bytes_own ty l.1 x) (ty_bytes ty x) (g+1)
       with "[$G $£]"); [done|intros; by eapply ty_bytes_decode| |done].
     iSplit; [iApply (guards_transitive_additive with "Gκ Pt")|].
-    iIntros "!> (%bs & Hbs & %Hbs)". iExists 1%Qp, bs. iFrame "Hbs". iSplit; [done|].
+    iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs". iSplit; [done|].
     iIntros "Hbs". iExists bs. by iFrame.
   Qed.
   (** Reading the referent of a [Copy] type through a shared reference: a guarded typed

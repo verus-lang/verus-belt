@@ -122,7 +122,7 @@ Section shr_view.
     iIntros (? Φ) "(#Gp & G & £) HΦ".
     iApply (wp_load_na_guarded_gen _ _ _ (VPtr l') G (ptr_cell l l') (ptr_bytes l') k
       with "[$G $£]"); [done|by intros ??|..].
-    { iSplit; [done|]. iIntros "!> (%bs & Hbs & %Hbs)". iExists 1%Qp, bs. iFrame "Hbs".
+    { iSplit; [done|]. iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
       iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
     done.
   Qed.
@@ -726,7 +726,7 @@ Section typing.
     iApply (wp_load_na_guarded_gen _ _ _ w G (cbytes ty z l) (ty_bytes ty z) (D + 1)
       with "[$G $£l]"); [done|intros; by eapply ty_bytes_decode| |].
     { iSplit; [iApply (guards_transitive_right with "Gκ Pt")|].
-      iIntros "!> (%bs & Hbs & %Hbs)". iExists 1%Qp, bs. iFrame "Hbs".
+      iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
       iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
     iIntros "!> G". by iApply ("HΦ" with "[//] Gho G").
   Qed.
@@ -950,7 +950,7 @@ Section case.
       (λ bs, decode_value (MInt (sum_tag 𝔄l)) bs = Some (VInt (Z.of_nat j))) (D + 1)
       with "[$G $£]"); [done|done| |].
     { iSplit; [iApply (guards_transitive_right with "Gκ Pt'")|].
-      iIntros "!> (%bs & Hbs & %Hbs)". iExists 1%Qp, bs. iFrame "Hbs".
+      iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
       iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
     iIntros "!> G". by iApply "HΦ".
   Qed.
@@ -1203,7 +1203,7 @@ Section memcpy.
       (cbytes (lty_fold lt) zz lK) (ty_bytes (lty_fold lt) zz) (M + 1) with "[$Hbsw $H1 $£m]");
       [solve_ndisj|by rewrite (ty_bytes_length _ _ _ Hbsw) Hszw|intros ?; apply ty_bytes_length|..].
     { iSplit; [iApply (guards_transitive_right with "Hsl Pt")|].
-      iIntros "!> (%bs & Hbs & %Hbs)". iExists 1%Qp, bs. iFrame "Hbs".
+      iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
       iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
     iIntros "!>" (bs2) "(%Hbs2 & Hbsw & H1)".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
@@ -1297,7 +1297,7 @@ Section memcpy.
       (cbytes (lty_fold lt) zz lK) (ty_bytes (lty_fold lt) zz) (M + 1) with "[$Hbsw $H1 $£m]");
       [solve_ndisj|by rewrite (ty_bytes_length _ _ _ Hbsw) Hszw|intros ?; apply ty_bytes_length|..].
     { iSplit; [iApply (guards_transitive_right with "Hsl Pt")|].
-      iIntros "!> (%bs & Hbs & %Hbs)". iExists 1%Qp, bs. iFrame "Hbs".
+      iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
       iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
     iIntros "!>" (bs2) "(%Hbs2 & Hbsw & H1)".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].

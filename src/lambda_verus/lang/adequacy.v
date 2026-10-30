@@ -10,7 +10,7 @@ Set Default Proof Using "Type".
 
 Class lrustGpreS Σ := HeapGpreS {
   #[global] lrustGpreS_iris :: invGpreS Σ;
-  #[global] lrustGpreS_heap :: inG Σ (authR heapUR);
+  #[global] lrustGpreS_heap :: fcmap_logicG loc positive bval Σ;
   #[global] lrustGpreS_heap_freeable :: inG Σ (authR heap_freeableUR);
   #[global] lrustGpreS_heap_na_logic :: na_logicG loc lang.val Σ;
   #[global] lrustGpreS_heap_bbank :: inG Σ (gmap_viewR nat (agreeR (prodO
@@ -22,7 +22,7 @@ Class lrustGpreS Σ := HeapGpreS {
 
 Definition lrustΣ : gFunctors :=
   #[invΣ; timeΣ;
-    GFunctor (constRF (authR heapUR));
+    fcmap_logicΣ loc positive bval;
     GFunctor (constRF (authR heap_freeableUR));
     na_logicΣ loc lang.val;
     GFunctor (gmap_viewRF nat (agreeRF (prodOF (leibnizO (loc * list abyte)) (laterOF idOF))));
@@ -40,8 +40,7 @@ Proof.
   (* use a variant that lets us start at step 1 with some later credits *)
   eapply (adequacy_util.wp_strong_adequacy Σ _); [|done]=>?.
   iMod (non_atomic_map_alloc_empty) as (vγ) "Hvγ".
-  iMod (own_alloc (● (∅ : heapUR))) as (bγ) "Hbγ";
-    first by apply auth_auth_valid.
+  iMod (fcmap_init loc positive bval) as (bγ) "Hbγ".
   iMod (own_alloc (● (∅ : heap_freeableUR))) as (fγ) "Hfγ";
     first by apply auth_auth_valid.
   iMod (own_alloc (gmap_view_auth (V:=agreeR (prodO (leibnizO (loc * list abyte))
@@ -54,8 +53,10 @@ Proof.
   set (Hheap := HeapGS _ _ _ _ _ vγ bγ kγ fγ atomic_poolname atomic_lock_ctr_name).
   iModIntro. iExists _, [_], _, _. simpl.
   iDestruct (Hwp (LRustGS _ _ _ _ Hheap Htime) with "H£2 TIME") as "$".
-  iSplitL. { iFrame. iSplitL "Hbγ Hkγ". { iExists ∅. iSplit; [iPureIntro; apply phys_rel_empty|].
-      iApply (bytes_ctx_empty with "[Hbγ] [Hkγ]"); [by rewrite /to_heap fmap_empty|done]. } iPureIntro. intros ?? Hb. by rewrite lookup_empty in Hb. }
+  iSplitL. { iDestruct (@bytes_ctx_empty _ Hheap _ with "Hbγ Hkγ") as "HB". iFrame "Htime".
+    iExists ∅. iFrame "Hfγ". iSplitL "Hvγ HB".
+    { iExists ∅, ∅. iFrame. iPureIntro. apply phys_rel_empty. }
+    iSplit; [iPureIntro; intros ?? Hb; by rewrite lookup_empty in Hb|]. iFrame. }
   iIntros ([|e' [|]]? -> ??) "//".
   iIntros "[??] [?_] _". iApply fupd_mask_weaken; [|iIntros "_ !>"]; [done|].
   iSplit; [|done]. iIntros (v2 t2'' [= -> <-]). by rewrite to_of_val.

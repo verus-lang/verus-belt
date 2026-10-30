@@ -977,10 +977,10 @@ Proof.
 Qed.
 
 (** ** Typed loads *)
-Lemma wp_load_sc E l q m bs v :
+Lemma wp_load_sc E l m bs v :
   decode_value m bs = Some v →
-  {{{ ▷ l ↦b{q} bs }}} Load ScOrd m (Lit $ LitLoc l) @ E
-  {{{ RET MLitV v; l ↦b{q} bs }}}.
+  {{{ ▷ l ↦b bs }}} Load ScOrd m (Lit $ LitLoc l) @ E
+  {{{ RET MLitV v; l ↦b bs }}}.
 Proof.
   iIntros (Hdec Φ) ">Hbs HΦ". have Hlen := decode_value_length _ _ _ Hdec.
   iApply wp_lift_atomic_base_step_no_fork; auto.
@@ -996,10 +996,10 @@ Proof.
   iSplitR "HΦ Hbs"; [by iFrame|]. by iApply "HΦ".
 Qed.
 
-Lemma wp_load_na E l q m bs v :
+Lemma wp_load_na E l m bs v :
   decode_value m bs = Some v →
-  {{{ ▷ l ↦b{q} bs }}} Load Na1Ord m (Lit $ LitLoc l) @ E
-  {{{ RET MLitV v; l ↦b{q} bs }}}.
+  {{{ ▷ l ↦b bs }}} Load Na1Ord m (Lit $ LitLoc l) @ E
+  {{{ RET MLitV v; l ↦b bs }}}.
 Proof.
   iIntros (Hdec Φ) ">Hbs HΦ". have Hlen := decode_value_length _ _ _ Hdec.
   iApply wp_lift_base_step; auto.
@@ -1095,11 +1095,11 @@ Proof.
 Qed.
 
 (** ** Byte-level copy *)
-Lemma wp_memcopy E l1 l2 q bs1 bs2 (n : nat) :
+Lemma wp_memcopy E l1 l2 bs1 bs2 (n : nat) :
   ↑naN ⊆ E → length bs1 = n → length bs2 = n →
-  {{{ ▷ l1 ↦b bs1 ∗ ▷ l2 ↦b{q} bs2 }}}
+  {{{ ▷ l1 ↦b bs1 ∗ ▷ l2 ↦b bs2 }}}
     MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2) @ E
-  {{{ RET LitV LitPoison; l1 ↦b bs2 ∗ l2 ↦b{q} bs2 }}}.
+  {{{ RET LitV LitPoison; l1 ↦b bs2 ∗ l2 ↦b bs2 }}}.
 Proof.
   iIntros (? Hlen1 Hlen2 Φ) "[>Hbs1 >Hbs2] HΦ". subst n.
   iApply wp_lift_base_step; auto.
@@ -1148,14 +1148,14 @@ Qed.
 
 (** ** Guarded loads and copies
 
-The bytes are only guarded ([G &&{↑naN; d}&&> l ↦b{q} bs], e.g. by the lifetime token of
+The bytes are only guarded ([G &&{↑naN; d}&&> l ↦b bs], e.g. by the lifetime token of
 a shared reference). An atomic load opens the guard around its single step. A
 non-atomic load (or copy) deposits [G] in the bank of guarded reads of the byte region
 for the duration of the read ([bytes_ctx_read_begin_guarded]); this costs [£d] to look
 at the bytes and [£d] that stay with [G] in the bank. *)
-Lemma wp_load_sc_guarded E l q m bs v G d :
+Lemma wp_load_sc_guarded E l m bs v G d :
   ↑naN ⊆ E → decode_value m bs = Some v →
-  {{{ (G &&{↑naN; d}&&> l ↦b{q} bs) ∗ G ∗ £d }}} Load ScOrd m (Lit $ LitLoc l) @ E
+  {{{ (G &&{↑naN; d}&&> l ↦b bs) ∗ G ∗ £d }}} Load ScOrd m (Lit $ LitLoc l) @ E
   {{{ RET MLitV v; G }}}.
 Proof.
   iIntros (? Hdec Φ) "(#Guard & G & £) HΦ". have Hlen := decode_value_length _ _ _ Hdec.
@@ -1179,7 +1179,7 @@ Qed.
     [Ψ bs], which all decode to [v]. *)
 Lemma wp_load_na_guarded_gen E l m v G P (Ψ : list abyte → Prop) d :
   ↑naN ⊆ E → (∀ bs, Ψ bs → decode_value m bs = Some v) →
-  {{{ (G &&{↑naN; d}&&> P) ∗ □ (P -∗ ∃ q bs, ⌜Ψ bs⌝ ∗ l ↦b{q} bs ∗ (l ↦b{q} bs -∗ P)) ∗
+  {{{ (G &&{↑naN; d}&&> P) ∗ □ (P -∗ ∃ bs, ⌜Ψ bs⌝ ∗ l ↦b bs ∗ (l ↦b bs -∗ P)) ∗
       G ∗ £(2*d) }}}
     Load Na1Ord m (Lit $ LitLoc l) @ E
   {{{ RET MLitV v; G }}}.
@@ -1220,20 +1220,20 @@ Proof.
   by iApply "HΦ".
 Qed.
 
-Lemma wp_load_na_guarded E l q m bs v G d :
+Lemma wp_load_na_guarded E l m bs v G d :
   ↑naN ⊆ E → decode_value m bs = Some v →
-  {{{ (G &&{↑naN; d}&&> l ↦b{q} bs) ∗ G ∗ £(2*d) }}} Load Na1Ord m (Lit $ LitLoc l) @ E
+  {{{ (G &&{↑naN; d}&&> l ↦b bs) ∗ G ∗ £(2*d) }}} Load Na1Ord m (Lit $ LitLoc l) @ E
   {{{ RET MLitV v; G }}}.
 Proof.
   iIntros (? Hdec Φ) "(#Guard & G & £) HΦ".
   iApply (wp_load_na_guarded_gen _ _ _ _ _ _ (.= bs) with "[$Guard $G $£]"); [done|by intros ? ->| |done].
-  iIntros "!> Pt". iExists q, bs. iFrame. iSplit; [done|]. by iIntros "$".
+  iIntros "!> Pt". iExists bs. iFrame. iSplit; [done|]. by iIntros "$".
 Qed.
 
 Lemma wp_memcopy_guarded_gen E l1 l2 bs1 (n : nat) G P (Ψ : list abyte → Prop) d :
   ↑naN ⊆ E → length bs1 = n → (∀ bs, Ψ bs → length bs = n) →
   {{{ ▷ l1 ↦b bs1 ∗ (G &&{↑naN; d}&&> P) ∗
-      □ (P -∗ ∃ q bs, ⌜Ψ bs⌝ ∗ l2 ↦b{q} bs ∗ (l2 ↦b{q} bs -∗ P)) ∗ G ∗ £(2*d) }}}
+      □ (P -∗ ∃ bs, ⌜Ψ bs⌝ ∗ l2 ↦b bs ∗ (l2 ↦b bs -∗ P)) ∗ G ∗ £(2*d) }}}
     MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2) @ E
   {{{ bs2, RET LitV LitPoison; ⌜Ψ bs2⌝ ∗ l1 ↦b bs2 ∗ G }}}.
 Proof.
@@ -1286,16 +1286,16 @@ Proof.
   iApply "HΦ". by iFrame.
 Qed.
 
-Lemma wp_memcopy_guarded E l1 l2 q bs1 bs2 (n : nat) G d :
+Lemma wp_memcopy_guarded E l1 l2 bs1 bs2 (n : nat) G d :
   ↑naN ⊆ E → length bs1 = n → length bs2 = n →
-  {{{ ▷ l1 ↦b bs1 ∗ (G &&{↑naN; d}&&> l2 ↦b{q} bs2) ∗ G ∗ £(2*d) }}}
+  {{{ ▷ l1 ↦b bs1 ∗ (G &&{↑naN; d}&&> l2 ↦b bs2) ∗ G ∗ £(2*d) }}}
     MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2) @ E
   {{{ RET LitV LitPoison; l1 ↦b bs2 ∗ G }}}.
 Proof.
   iIntros (? Hlen1 Hlen2 Φ) "(Hbs1 & #Guard & G & £) HΦ".
   iApply (wp_memcopy_guarded_gen _ _ _ _ _ _ _ (.= bs2) with "[$Hbs1 $Guard $G $£]");
     [done|done|by intros ? ->| |].
-  { iIntros "!> Pt". iExists q, bs2. iFrame. iSplit; [done|]. by iIntros "$". }
+  { iIntros "!> Pt". iExists bs2. iFrame. iSplit; [done|]. by iIntros "$". }
   iIntros "!>" (bs) "(-> & ? & ?)". iApply "HΦ". iFrame.
 Qed.
 
