@@ -1431,7 +1431,7 @@ Section pctx.
     end.
 
   Lemma pctx_vexpr_closed {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : Closed [] e → Closed [] (pctx_vexpr K e).
-  Proof. destruct K; simpl; try done; apply pctx_expr_closed. Qed.
+  Proof. destruct K; simpl; try done; intros; apply pctx_expr_closed; apply _. Qed.
 
   (** The location of the referent of the root pointer, and of the hole. *)
   Definition cloc_dummy : cloc := ((1%positive, 0%Z), []).
