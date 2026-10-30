@@ -267,3 +267,196 @@ bridged:**
     `semi_iso'`/`fun_ext`);
   - `syn_abstract_val_eq` also uses `eq_rect_eq` (through `dependent destruction`, as
     `syn_abstract_phys_eq` already does). It is not used yet.
+
+## Outcome: stage 4
+
+Stage 4 is done as a parallel byte version of the place machinery. The legacy word
+versions stay in the build next to it, unchanged, until stage 5 deletes them. Every byte
+example has a `Qed` and `Print Assumptions` shows only `functional_extensionality_dep`.
+No new axioms were added; the new heap and adequacy lemmas are closed.
+
+### Decisions
+
+1. **Byte versions next to the legacy files, not a switch in place.** Switching
+   `own_ptr`, `&uniq`, `&shr` and the place files in place would break every legacy
+   example and every legacy core rule (`borrow.v`, `product_split.v`, `type_sum.v`,
+   `programs_util_own`, `function.v`) at once. All of these read and write one-word cells,
+   and stage 3 showed that there is no ghost bridge between words and bytes. So each place
+   file has a `b`-prefixed copy that was ported mechanically and then fixed by hand:
+   - `ltype` → `bltype`, `lpath` → `blpath`, `pctx_acc` → `bpctx_acc`, `vplace` → `bvplace`;
+   - `place_own` → `bplace_own`, `place_shr` → `bplace_shr`, `place_resolve` → `bplace_resolve`;
+   - `place_puniq` → `bplace_puniq`, `place_sum` → `bplace_sum`, `place_deep` → `bplace_deep`;
+   - `uniq_util` → `buniq_util`.
+
+   The byte copies reuse the generic parts of the legacy files: the encoding of depths,
+   `uniq_cell`, `place_rfn_rel`, the patterns, the borrow tokens and `pctx` itself.
+   - Definitions that changed get a `b` prefix (`bofty_owned`, `buniq_body`, …). This is
+     not cosmetic: when two names were the same, typeclass search looped on the legacy
+     `Persistent` instances.
+   - Lemma names are kept, so the legacy and byte versions are told apart by the import.
+   Stage 5 deletes the legacy files and renames the byte ones.
+
+2. **The parents own bytes.** There are three byte types:
+   - `own_bytes n ty` (stage 3), the box.
+   - `&uniqb{κ} ty` (`buniq_bor.v`). This is `&uniq` with the payload of the body being
+     `cbytes ty x l := bytes_own ty l.1 x`, that is, `∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝`.
+   - `&shrb{κ} ty` (`shr_bytes.v`). Its ownership is `@[κ] &&{↑NllftG; g+1}&&> bytes_own ty l x`,
+     together with `ty_shr` and `ty_gho_pers` of `ty`. Because the guard covers
+     `bytes_own` (with the `∃ bs` inside it), a shared leaf of a place (`ShrBlocked`) and a
+     shared reference have the same shape.
+
+   `ty_bytes ty x bs` now means "`ty_val x = Some v` and `bs` decodes to `v`". This needs a
+   MiniRust value, so a type without one (out-of-range integers, closures, cells) has no
+   bytes.
+
+3. **Guarded byte loads use a bank of guarded reads** (`lang/heap.v`), which mirrors the
+   read bank of the legacy `non_atomic_map`.
+   - During a non-atomic read of guarded bytes, the reader puts the guard `G` (with its
+     credits) into a bank entry for the range being read.
+   - The physical lock states of the byte region are those of the authoritative heap plus
+     the number of entries that cover each location (`bank_rel`, `bank_wf`).
+   - A writer owns the full points-to of its range. It opens the guards of the entries to
+     show that none of them overlaps that range (`bbank_disj`).
+
+   The new rules are in `lang/lifting.v`:
+   - `wp_load_sc_guarded`;
+   - `wp_load_na_guarded(_gen)`;
+   - `wp_memcopy_guarded(_gen)`.
+
+   The general (`_gen`) form takes a guard of any `P` with `□ (P -∗ ∃ q bs, ⌜Ψ bs⌝ ∗ l ↦b{q} bs ∗ (l ↦b{q} bs -∗ P))`.
+   This is what `&shrb` and shared leaves need, because their bytes are existential.
+
+   Cost: the byte WP rules that write or free memory now require `↑naN ⊆ E`, and their
+   users were adapted.
+
+4. **Root values.** `p ◁ᵥ ty` (`value_ctx.v`) is a `TCtx_sem` element, so no new case is
+   needed in the type context. It means that `p` evaluates to `MLitV w` with
+   `ty_val x = Some w`, together with `⧖d` and `ty_gho_own x d d`.
+   - Pointers are `MLitV (VPtr l)`. Addresses come from `ToLit`, and borrows return
+     `OfLit (…)`, so a borrow or reborrow returns a MiniRust pointer value.
+   - The value rules are:
+     - `type_val_int_instr`, `type_val_unit_instr`, `type_mk_variant_val_instr`;
+     - `type_load_own_bytes_copy_instr`, `type_store_own_bytes_instr`,
+       `type_load_shr_bytes_copy_instr`;
+     - `type_shr_bytes_fst/snd_instr`, field projections of `&shrb` that are a pointer
+       offset (in `bplace_shr.v`);
+     - `type_resolve_val_instr`.
+   - `bvplace.v` turns `◁ᵥ &uniqb` / `◁ᵥ own_bytes` into value-rooted places and back.
+
+5. **Sizes and offsets are in bytes and syntactic.**
+   - `lty_size lt := syn_bsize 𝔄`.
+   - In `pctx_size`, `PSum` is `tag_size 𝔄l + sum_max 𝔄l`, and `POwn`, `PUniq` and `PShr`
+     are `PTR_SIZE`.
+   - The `PSnd` offset is the byte size of the first field.
+   - The `PSum` payload is at offset `tag_size 𝔄l`, the size of the tag `IntType`.
+   - `pctx_expr` loads each pointer on the path with a typed `Load Na1Ord MPtr`.
+   - `ty_size` (in words) is unchanged and still used by the legacy layer.
+
+6. **Leaf operations.**
+   - **Reading a leaf** is a typed `Load` of `ty_mty ty`. Below shared references it is a
+     guarded typed `Load`.
+   - **Writing a leaf** is a typed `Store`. The writing rule requires
+     `ty_bsize ty' = ty_bsize ty`.
+   - **Moving out of a leaf** is a typed `Load`, which leaves `↯ (ty_bsize ty)` with the
+     old bytes.
+   - **Copying values of any size** below unique borrows is the byte-level `MemCopy` (see
+     `bplace_deep.v`); there is no typed memcpy.
+   - **Case analysis** reads the tag with
+     `case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (address of the leaf))`.
+   - **Assigning a variant** is not a separate rule any more. It is a variant value
+     (`MkVariant`) written with a typed `Store`.
+
+### Rule families ported to bytes
+
+- **Model** (`bltype.v`, `blpath.v`, `bpctx_acc.v`, `bvplace.v`):
+  - place types and their ownership;
+  - fold/unfold;
+  - the leaf access below borrows (`vroot_acc`, `wp_pctx_vptrs`);
+  - root-value places.
+- **Owned places** (`bplace_own.v`):
+  - own ↔ oplace;
+  - product and box unfold/fold;
+  - borrow (`&mut` of a leaf);
+  - read, move, write;
+  - unblock.
+- **Shared leaves** (`bplace_shr.v`):
+  - `type_share_oplace_instr`;
+  - `type_read_oplace_shr_instr` (guarded load);
+  - `unblock_tctx_oplace_shr`;
+  - the `&shrb` field projections.
+- **Resolve and drop** (`bplace_resolve.v`):
+  - `lty_omem` on bytes;
+  - `drop_boxes`;
+  - `type_resolve_oplace_instr`, `type_drop_oplace_instr`;
+  - `tctx_drop_vplace_uniq`, `type_resolve_vplace_uniq_instr`.
+- **Below unique borrows** (`bplace_puniq.v`):
+  - change of view;
+  - product, `&uniqb` and box unfold/fold at any depth;
+  - deep borrow, reborrow through a `&uniqb`, read, write, share;
+  - unblock at depth;
+  - `lty_rslv` and the deep resolve/drop.
+- **Sums** (`bplace_sum.v`, `bplace_deep.v`):
+  - case analysis on owned and deep places (`type_case_oplace`, `type_case_vplace_deep`,
+    `type_case_oplace_deep`);
+  - folds.
+- **Byte copies below unique borrows** (`bplace_deep.v`):
+  - `type_memcpy_vplace_deep_instr` and `type_memcpy_oplace_deep_instr`;
+  - `type_memcpy_copy_from_vplace_deep_instr`.
+
+### Still legacy (stage 5)
+
+- `place_res*`: resolution-carrying places. Because of this, `res_pair` is not ported.
+- `place_pshr.v`: places below shared references, with shared views and reads through
+  `&shr` chains. Its shared views are built on the cell-based structural sharing
+  predicates, so they need to be redesigned on byte guards.
+  - The byte `get_snd` therefore reads through `&shrb` values and a field projection
+    instead.
+  - Also still legacy:
+    - `shr_pctx_split` and `tctx_shr_place` (`place_shr.v`);
+    - the copies of `place_deep.v` below shared references.
+- `place_memcpy.v`: the owned-place copies. On bytes they are replaced by typed
+  `Load`/`Store` of any size and by `MemCopy`.
+- `Π!` products (`tctx_(un)fold_oplace_xprod`). The MiniRust types of `Π! (𝔅 :: 𝔅l)` and
+  `𝔅 * Π! 𝔅l` differ, even though their bytes are the same.
+- Variant assignment (`type_sum_assign/unit/memcpy_*`). It is replaced by
+  `type_mk_variant_val_instr` and a `Store`.
+
+### Examples on bytes
+
+The examples are function bodies (`typed_body`) with a return continuation that takes a
+`◁ᵥ` value. They do not use `typed_val`/`fn` types, because `fn` still takes legacy boxes.
+The Qed times below are from `coqc -time`.
+
+| Example | Qed time | File |
+|---|---|---|
+| `set_snd_b_type` | 13 s | `examples/bplace_own.v` |
+| `box_pair_b_type` | 16 s | `examples/bplace_own.v` |
+| `get_first_b_type` | 6 s | `examples/bget_first.v` |
+| `get_some_first_b_type` | 17 s | `examples/bget_some_first.v` |
+| `swap_snd_b_type` | 17 s | `examples/bplace_deep.v` |
+| `get_snd_b_type` | 6 s | `examples/bget_snd.v` |
+
+Notes on the examples:
+- `box_pair_b_type` borrows `&mut *b.0` through the unfolded inner box, because the place
+  rules (byte and legacy alike) cannot unfold a box that is the whole referent of a unique
+  borrow (`pctx_uend`). The legacy version used a core deref rule instead.
+- In `get_some_first_b_type` the tag is read by a typed `Load`, and the result is a
+  `MkVariant` value.
+- In `swap_snd_b_type` both copies are `MemCopy`, below two `&uniqb`. The result box is
+  passed in uninitialized, because there is no byte `new` rule yet.
+- `get_snd_b_type` does guarded typed loads through `&shrb`.
+
+### Left for stage 5
+
+- Delete the legacy word layer:
+  - `ty_phys`, `syn_phys`, the sum padding, `↦!∗` cells;
+  - the legacy place files and the core rules listed in decision 6 of the plan.
+  Then rename the `b`-files and redefine `ty_size` as the byte size. That turns
+  `cloc` into `loc`, because the cells are always empty for bytes.
+- Move function types (`fn`, `type_fn`, `type_call`) to `◁ᵥ` arguments and results.
+- Add a byte `new` rule.
+- Add subtyping for `own_bytes`, `&uniqb` and `&shrb`. This needs a `ty_bytes` law in
+  `type_incl`.
+- Add shared places on bytes (`place_pshr`), resolution places (`place_res*`) and `Π!`
+  products.
+- Redesign cells (`pcell`, ghost cells) as fancy bytes (stage 6 of the plan).
