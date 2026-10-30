@@ -2713,6 +2713,23 @@ Section Cmap.
     apply NoDup_app in Hnd as (_ & _ & Hnd). apply NoDup_cons in Hnd as [Hnc _]. done.
   Qed.
 
+  (** The last cell of a row points to the value of the row. *)
+  Lemma row_end_pair 𝛼 k pre c v fb :
+    cells_no_dupes 𝛼 → 𝛼 !! k = Some (pre ++ [c], v) → 𝛼_fine_pair 𝛼 (inr c) fb → fb = inr v.
+  Proof using C EqDecision0 EqDecision1 H0 L V.
+    intros Hnd Hk Hfb. have Hc : c ∈ pre ++ [c] by set_solver.
+    destruct fb as [c2|v']; simpl in Hfb.
+    - destruct Hfb as (lu & cs & v0 & Hlu & Hp). destruct (decide (lu = k)) as [->|Hne].
+      + rewrite Hk in Hlu. injection Hlu as <- <-. exfalso.
+        eapply has_pair_last_contra; [|done]. by eapply row_nodup.
+      + exfalso. apply list_has_pair_elem_of in Hp as [Hc' _].
+        by eapply (rows_disjoint 𝛼 lu k cs v0 (pre ++ [c]) v c).
+    - destruct Hfb as (lu & cs & Hlu & Hend). destruct (decide (lu = k)) as [->|Hne].
+      + rewrite Hk in Hlu. by injection Hlu as _ ->.
+      + exfalso. apply list_ends_with_elem_of in Hend.
+        by eapply (rows_disjoint 𝛼 lu k cs v' (pre ++ [c]) v c).
+  Qed.
+
   (** Public versions of the lemmas about the physical heap [𝜙 𝛼]. *)
   Lemma phi_empty : 𝜙 ∅ = ∅.
   Proof. apply map_fold_empty. Qed.
