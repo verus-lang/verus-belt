@@ -1,5 +1,5 @@
 From lrust.typing Require Export type type_context bytes_layout.
-From lrust.typing Require Import programs int own_bytes.
+From lrust.typing Require Import programs int own_bytes product sum.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -58,6 +58,32 @@ Section value_rules.
     iIntros (Hz ?????) "_ _ _ _ _ $$ _ Obs". iMod persistent_time_receipt_0 as "⧖".
     iApply wp_value. iExists -[z]. iFrame "Obs". iSplit; [|done].
     rewrite tctx_val_val. iExists 0%nat. iFrame "⧖". iPureIntro. by apply int_ty_val.
+  Qed.
+
+  (** The unit value [()]: an empty tuple. *)
+  Lemma type_val_unit_instr E L I :
+    typed_instr E L I +[] (MkTuple []) (λ v, +[v ◁ᵥ ()]) (λ post _, post -[()]).
+  Proof.
+    iIntros (?????) "_ _ _ _ _ $$ _ Obs". iMod persistent_time_receipt_0 as "⧖".
+    eapply (tac_wp_pure []); [apply (pure_mk_tuple [])|done|tc_solve|simpl; iApply wp_value].
+    iExists -[()]. iFrame "Obs". iSplit; [|done].
+    rewrite tctx_val_val. iExists 0%nat. by iFrame "⧖".
+  Qed.
+
+  (** A variant value: the payload with the index of the variant. The legacy padding
+      component of the value is arbitrary. *)
+  Lemma type_mk_variant_val_instr {𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (t: Z) p E L I :
+    t = Z.of_nat (fin_to_nat i) →
+    typed_instr E L I +[p ◁ᵥ tyl +!! i] (MkVariant t p) (λ v, +[v ◁ᵥ Σ! tyl])
+      (λ post '-[a], λ mask π, ∀ pad, post -[(pinj i a, pad)] mask π).
+  Proof.
+    iIntros (-> tid post mask iκs [a []]) "_ _ _ _ _ $$ [p _] Obs".
+    wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "⧖ Gho".
+    wp_pure _. iExists -[(pinj i a, [])]. iSplitR "Obs".
+    - iSplit; [|done]. rewrite tctx_val_val. iExists d. iFrame "⧖". iSplit.
+      + iPureIntro. rewrite -ty_val_eq syn_val_pinj (ty_val_eq (tyl +!! i)) Hw //.
+      + rewrite [ty_gho_own (Σ! tyl)]/ty_gho_own /xsum_ty /= to_xsum_pinj. done.
+    - iApply proph_obs_impl; [|done]=> π. by apply.
   Qed.
 
   (** Reading the pointee of a box of a [Copy] type: a typed [Load]. *)
