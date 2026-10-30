@@ -2642,6 +2642,29 @@ Section Cmap.
   Lemma big_inv_eq 𝛼 𝛽 𝛽' 𝜃 : 𝛽' = 𝛽 → big_inv 𝛼 𝛽' 𝜃 → big_inv 𝛼 𝛽 𝜃.
   Proof. by intros ->. Qed.
 
+
+  (** The row that contains a cell. *)
+  Definition row_of (𝛼 : full_map) (c : C) : option (list C * V) :=
+    map_fold (λ k row acc, if decide (c ∈ row.1) then Some row else acc) None 𝛼.
+
+  Lemma row_of_spec 𝛼 k cs v c :
+    cells_no_dupes 𝛼 → 𝛼 !! k = Some (cs, v) → c ∈ cs → row_of 𝛼 c = Some (cs, v).
+  Proof.
+    intros Hnd Hk Hc. rewrite /row_of -(insert_delete 𝛼 k (cs, v)) //.
+    rewrite (map_fold_insert_L _ _ k (cs, v) (delete k 𝛼)); [by rewrite /= decide_True| |by rewrite lookup_delete].
+    intros j1 j2 [cs1 v1] [cs2 v2] y Hne Hj1 Hj2. rewrite insert_delete // in Hj1 Hj2.
+    simpl. destruct (decide (c ∈ cs1)), (decide (c ∈ cs2)); try done.
+    exfalso. by apply (cells_no_dupes_different_rows_disjoint _ _ _ _ _ _ _ Hnd Hne Hj1 Hj2 c).
+  Qed.
+
+  Lemma list_ends_with_elem_of (cells : list C) c : list_ends_with cells c → c ∈ cells.
+  Proof. apply elem_of_from_list_ends_with. Qed.
+  Lemma list_has_pair_elem_of (cells : list C) c1 c2 :
+    list_has_pair cells c1 c2 → c1 ∈ cells ∧ c2 ∈ cells.
+  Proof.
+    intros (cs1 & cs2 & ->)%list_has_pair_destruct. split; set_solver.
+  Qed.
+
   (** Public versions of the lemmas about the physical heap [𝜙 𝛼]. *)
   Lemma phi_empty : 𝜙 ∅ = ∅.
   Proof. apply map_fold_empty. Qed.
