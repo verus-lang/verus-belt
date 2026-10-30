@@ -166,14 +166,17 @@ Lemma next_access_head_bytes e σ σ' a l :
   next_access_head e σ' a l.
 Proof.
   intros Ha Hσ. assert (Hdom : ∀ l', σ.1 !! l' = None ↔ σ'.1 !! l' = None).
-  { intros l'. specialize (Hσ l'). rewrite -!fmap_None. by rewrite Hσ. }
-  destruct Ha; try by econstructor.
-  - specialize (Hσ l). rewrite H2 /= in Hσ.
-    destruct (σ'.1 !! l) as [[st' b]|] eqn:?; simplify_eq/=.
-    econstructor; done.
-  - specialize (Hσ l). rewrite H2 /= in Hσ.
-    destruct (σ'.1 !! l) as [[st' b]|] eqn:?; simplify_eq/=.
-    eapply Access_cas_suc; [done|done| |done]. by eapply lit_eq_state.
+  { intros l'. specialize (Hσ l').
+    by rewrite -(fmap_None snd (σ.1 !! l')) -(fmap_None snd (σ'.1 !! l')) Hσ. }
+  destruct Ha as [| |l st e1 lit1 e2 lit2 litl σ0 Hv1 Hv2 Hne Hl
+    |l st e1 lit1 e2 lit2 litl σ0 Hv1 Hv2 Heq Hl| | | | |].
+  3: { specialize (Hσ l). rewrite Hl /= in Hσ.
+       destruct (σ'.1 !! l) as [[st' b]|] eqn:Hl'; [|done]. injection Hσ as <-.
+       by eapply Access_cas_fail. }
+  3: { specialize (Hσ l). rewrite Hl /= in Hσ.
+       destruct (σ'.1 !! l) as [[st' b]|] eqn:Hl'; [|done]. injection Hσ as <-.
+       eapply Access_cas_suc; [done|done| |done]. by eapply lit_eq_state. }
+  all: by constructor.
 Qed.
 
 Lemma lookup_mem_alter_snd f l n (σ : state') l' :
@@ -181,7 +184,7 @@ Lemma lookup_mem_alter_snd f l n (σ : state') l' :
 Proof.
   revert l. induction n as [|n IH]; intros l; simpl; [done|].
   destruct (decide (l = l')) as [<-|].
-  - rewrite lookup_alter. rewrite -IH. by destruct (mem_alter f (l +ₗ 1) n σ !! l).
+  - rewrite lookup_alter. rewrite -(IH (l +ₗ 1)). rewrite -option_fmap_compose. by apply option_fmap_ext.
   - by rewrite lookup_alter_ne.
 Qed.
 
@@ -192,8 +195,9 @@ Lemma next_access_head_Na1Ord_bytes e1 e2 ef σ1 σ2 κ a l :
 Proof.
   intros Ha Hstep l'. inversion Ha; subst; clear Ha; inv_head_step; simpl;
     rewrite ?lookup_mem_alter_snd //.
-  all: destruct (decide (l0 = l')) as [<-|]; [by rewrite lookup_insert; simplify_map_eq|];
-    by rewrite lookup_insert_ne.
+  all: match goal with |- context [<[?k := _]> _ !! ?l'] =>
+    destruct (decide (k = l')) as [<-|];
+      [rewrite lookup_insert; by simplify_map_eq|by rewrite lookup_insert_ne] end.
 Qed.
 
 (** After the second phase of a non-atomic write, the location is not locked. *)
@@ -203,7 +207,7 @@ Lemma next_access_head_Na2Ord_write_step e1 e2 ef σ1 σ2 κ l :
   ∃ b, σ2.1 !! l = Some (RSt 0, b).
 Proof.
   intros Ha Hstep. inversion Ha; subst; clear Ha; inv_head_step; simpl; eauto.
-  - destruct (lookup_lt_is_Some_2 (encode_value m v) i) as [b Hb]; [by rewrite length_encode_value|].
+  - destruct (lookup_lt_is_Some_2 (@encode_value val m v) i) as [b Hb]; [by rewrite length_encode_value|].
     exists b. by apply lookup_mem_write_in.
   - destruct (lookup_lt_is_Some_2 bs2 i) as [b Hb]; [lia|].
     exists b. by apply lookup_mem_write_in.
@@ -383,7 +387,8 @@ Proof.
       (next_access_head_state_indep _ _ σ1' _ _ Ha2 ltac:(done)) Hrede1_2 Hnse1_2.
     done. }
 
-  destruct Ha1 as [[]|[]| | | |[]|[]|[]|[]], Ha2 as [[]|[]| | | |[]|[]|[]|[]]=>//=; simpl in *;
+  clear Ha1 Ha2 Ha1' Ha2' Ha1'2 Ha2'1.
+  destruct a1 as [[] []], a2 as [[] []]=>//=; simpl in *;
     repeat match goal with
     | H : _ = Na1Ord → _ |- _ => specialize (H (eq_refl Na1Ord)) || clear H
     | H : (WriteAcc, Na2Ord) = (WriteAcc, Na2Ord) → _ |- _ => specialize (H eq_refl)
