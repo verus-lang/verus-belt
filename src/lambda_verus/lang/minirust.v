@@ -61,6 +61,14 @@ Proof. solve_decision. Defined.
 
 Definition usize : IntType := IntTy false PTR_SIZE.
 Definition isize : IntType := IntTy true PTR_SIZE.
+Definition i8 : IntType := IntTy true 1.
+Definition i16 : IntType := IntTy true 2.
+Definition i32 : IntType := IntTy true 4.
+Definition i64 : IntType := IntTy true 8.
+Definition u8 : IntType := IntTy false 1.
+Definition u16 : IntType := IntTy false 2.
+Definition u32 : IntType := IntTy false 4.
+Definition u64 : IntType := IntTy false 8.
 
 (** [2 ^ (8 * int_size it)] *)
 Definition int_modulus (it : IntType) : Z := 256 ^ (Z.of_nat (int_size it)).

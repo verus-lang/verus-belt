@@ -1038,6 +1038,50 @@ Proof.
   rewrite length_take length_drop length_take. rewrite !decide_True //; lia.
 Qed.
 
+(** The MiniRust value only depends on the abstracted value (as [syn_phys], see
+    [syn_abstract_phys_eq]); this is what the [Send] arguments need. *)
+Lemma syn_abstract_val_eq 𝔄 x x' :
+  @syn_abstract 𝔄 x = @syn_abstract 𝔄 x' → (@syn_val 𝔄 x = @syn_val 𝔄 x').
+Proof.
+  move: 𝔄 x x'. fix FIX 1. move=> 𝔄 x x' Hab. destruct 𝔄;
+    try (clear FIX; done);
+    try (clear FIX; simpl in Hab; subst; done).
+  - simpl in Hab. inversion Hab as [[Ha Hb]]. destruct x, x'. simpl.
+    rewrite (FIX _ _ _ Ha). rewrite (FIX _ _ _ Hb). clear FIX; trivial.
+  - simpl. f_equal. f_equal. induction l; first by (clear FIX; destruct x, x'; trivial).
+    destruct x as [x xl]. destruct x' as [x' xl'].
+    simpl. inversion Hab. f_equal.
+      * apply FIX. clear FIX. trivial.
+      * apply IHl. clear FIX. trivial.
+  - assert (∀ (i: fin (length l)) (x1 x2 : ~~ (l !!ₗ i)),
+        syn_abstract x1 = syn_abstract x2 → syn_val x1 = syn_val x2
+    ) as Hall.
+    {
+       clear Hab. clear x. clear x'. induction l as [|𝔄0 𝔄l].
+        - clear FIX. intros i. inversion i.
+        - intros i. dependent destruction i. + apply FIX. + apply IH𝔄l.
+    }
+    clear FIX.
+    destruct x as [x padding]. destruct x' as [x' padding'].
+    simpl. simpl in Hab. inversion Hab as [[Ha Hb]]. subst padding'.
+    replace x with (of_xsum (to_xsum x)) in Ha; last by rewrite semi_iso'.
+    replace x' with (of_xsum (to_xsum x')) in Ha; last by rewrite semi_iso'.
+    replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
+    replace x' with (of_xsum (to_xsum x')); last by rewrite semi_iso'.
+    destruct (to_xsum x). destruct (to_xsum x'). simpl in Ha.
+    do 2 (rewrite psum_map1_pinj in Ha).
+    destruct (pinj_inj _ _ _ _ Ha) as [Hb Hc]. subst i1.
+    have Hd := JMeq_eq Hc.
+    have He := Hall _ _ _ Hd.
+    simpl. do 2 (rewrite psum_map1_pinj). do 2 (rewrite to_xsum_pinj).
+    rewrite He. trivial.
+  - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
+  - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
+  - destruct x as [[[[[[? ?] ?] ?] ?] ?] ?].
+    destruct x' as [[[[[[? ?] ?] ?] ?] ?] ?].
+    inversion Hab as [[Ha Hb]]. clear FIX. simpl. by subst.
+Qed.
+
 Record syn_type_morphism (𝔄 𝔅 : syn_type) := {
     syn_type_morphism_fn : ~~𝔄 → ~~𝔅;
     syn_type_morphism_proph_fn : 𝔄 → 𝔅;

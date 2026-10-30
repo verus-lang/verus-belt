@@ -4,7 +4,6 @@
 From lrust.lang Require Import proofmode notation.
 Set Default Proof Using "Type".
 
-Definition i32 : IntType := IntTy true 4.
 (** A pair [(i32, *const T)] with the pointer at offset 4. *)
 Definition pair_mty : mty := MTuple [(0%nat, MInt i32); (4%nat, MPtr)] (4 + PTR_SIZE).
 (** [Option<i32>], with a one-byte tag. *)
