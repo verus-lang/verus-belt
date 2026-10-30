@@ -3516,6 +3516,89 @@ Section cells.
       apply (Hdisj g' g m' cs' m (c0 :: cs0) Hne HR' HRg cj); [by eapply elem_of_list_lookup_2|].
       by eapply elem_of_list_lookup_2.
   Qed.
+
+  (** ** Untethering and retethering (moving a [PCell]) *)
+
+  Lemma bheap_untethers 𝛼 l cs :
+    bheap 𝛼 -∗ ([∗ list] i ↦ c ∈ cs, bpt (inl (l +ₗ i)) (inl c)) ==∗ ∃ 𝛼' (vs : list bval),
+      ⌜length vs = length cs ∧ bphi 𝛼' = bphi 𝛼 ∧
+       (∀ (i : nat) c v, cs !! i = Some c → vs !! i = Some v →
+          ∃ rest, 𝛼 !! inl (l +ₗ i) = Some (c :: rest, v)) ∧
+       (∀ k cs' v c, 𝛼' !! k = Some (cs', v) → c ∈ cs' →
+          ∃ k' cs'', 𝛼 !! k' = Some (cs'', v) ∧ c ∈ cs'') ∧
+       (∀ l', (∀ i : nat, (i < length cs)%nat → l' ≠ l +ₗ i) → 𝛼' !! inl l' = 𝛼 !! inl l')⌝ ∗
+      bheap 𝛼' ∗ ([∗ list] i ↦ v ∈ vs, bpt (inl (l +ₗ i)) (inr v)) ∗
+      ([∗ list] c; v ∈ cs; vs, ∃ u, bunt u c v).
+  Proof.
+    iInduction cs as [|c cs] "IH" forall (𝛼 l); iIntros "H● Hls".
+    { iModIntro. iExists 𝛼, []. iFrame "H●". iSplit; [|by iSplit]. iPureIntro.
+      split_and!; try done. intros k cs' v c Hk Hc. eauto. }
+    iDestruct "Hls" as "[Hl Hls]". iEval (rewrite shift_loc_0_nat) in "Hl".
+    iMod (fcmap_untether with "H● Hl") as (k cells1 cells2 v u) "([%Hrow %Hu] & H● & Hl & Hu)".
+    destruct (is_row_for_lc_loc _ _ _ _ _ _ _ _ _ _ Hrow) as (-> & -> & Hk).
+    iMod ("IH" $! _ (l +ₗ 1) with "H● [Hls]") as (𝛼' vs) "([%Hlen [%Hphi [%Hvs [%Hcells %Hsame]]]] & H● & Hvs & Hus)".
+    { iApply (big_sepL_impl with "Hls"). iIntros "!>" (i c' _) "H". by rewrite shift_loc_S. }
+    have Hu' : 𝛼 !! inr u = None by done.
+    iModIntro. iExists 𝛼', (v :: vs). iFrame "H●". iSplit; last iSplitL "Hl Hvs".
+    - iPureIntro. split_and!.
+      + by rewrite /= Hlen.
+      + rewrite Hphi /𝛼_untether phi_insert_loc phi_insert_unt insert_id // phi_lookup Hk //.
+      + intros [|i] c' v' Hc' Hv'; simpl in Hc', Hv'; simplify_eq.
+        * rewrite shift_loc_0_nat. eauto.
+        * destruct (Hvs i c' v' Hc' Hv') as (rest & Hr). exists rest.
+          rewrite /𝛼_untether lookup_insert_ne in Hr; [|intros [= Heq]; by apply (shift_loc_ne_S l i)].
+          rewrite lookup_insert_ne // -shift_loc_S in Hr. done.
+      + intros k' cs' v' c' Hk' Hc'. destruct (Hcells k' cs' v' c' Hk' Hc') as (k'' & cs'' & Hk'' & Hc'').
+        rewrite /𝛼_untether in Hk''. destruct (decide (k'' = inl l)) as [->|Hne].
+        { rewrite lookup_insert in Hk''. simplify_eq. by apply not_elem_of_nil in Hc''. }
+        rewrite lookup_insert_ne // in Hk''. destruct (decide (k'' = inr u)) as [->|Hne'].
+        { rewrite lookup_insert in Hk''. simplify_eq. exists (inl l), (c :: cells2). by split. }
+        rewrite lookup_insert_ne // in Hk''. eauto.
+      + intros l' Hl'. rewrite Hsame; last first.
+        { intros i Hi. rewrite -shift_loc_S. apply (Hl' (S i)). simpl. lia. }
+        rewrite /𝛼_untether lookup_insert_ne; last first.
+        { intros [= ->]. apply (Hl' 0%nat); [simpl; lia|]. by rewrite shift_loc_0_nat. }
+        by rewrite lookup_insert_ne.
+    - iSplitL "Hl"; [by rewrite shift_loc_0_nat|].
+      iApply (big_sepL_impl with "Hvs"). iIntros "!>" (i v' _) "H". by rewrite shift_loc_S.
+    - iFrame "Hus". iExists u. by iFrame "Hu".
+  Qed.
+
+  Lemma bheap_retethers 𝛼 l cs (vs : list bval) :
+    bheap 𝛼 -∗ ([∗ list] i ↦ v ∈ vs, bpt (inl (l +ₗ i)) (inr v)) -∗
+    ([∗ list] c; v ∈ cs; vs, ∃ u, bunt u c v) ==∗ ∃ 𝛼',
+      ⌜bphi 𝛼' = bphi 𝛼 ∧
+       (∀ k cs' v c, 𝛼' !! k = Some (cs', v) → c ∈ cs' →
+          ∃ k' cs'', 𝛼 !! k' = Some (cs'', v) ∧ c ∈ cs'') ∧
+       (∀ l', (∀ i : nat, (i < length cs)%nat → l' ≠ l +ₗ i) → 𝛼' !! inl l' = 𝛼 !! inl l')⌝ ∗
+      bheap 𝛼' ∗ [∗ list] i ↦ c ∈ cs, bpt (inl (l +ₗ i)) (inl c).
+  Proof.
+    iInduction cs as [|c cs] "IH" forall (𝛼 l vs); iIntros "H● Hvs Hus";
+      destruct vs as [|v vs]; try by iDestruct (big_sepL2_length with "Hus") as %?.
+    { iModIntro. iExists 𝛼. iFrame "H●". iSplit; [|done]. iPureIntro.
+      split_and!; try done. intros k cs' v c Hk Hc. eauto. }
+    iDestruct "Hvs" as "[Hv Hvs]". iEval (rewrite shift_loc_0_nat) in "Hv".
+    iDestruct "Hus" as "[[%u Hu] Hus]".
+    iMod (fcmap_retether with "H● Hv Hu") as (cs0) "([%Hl %Hu] & H● & Hl)".
+    iMod ("IH" $! _ (l +ₗ 1) vs with "H● [Hvs] Hus") as (𝛼') "([%Hphi [%Hcells %Hsame]] & H● & Hls)".
+    { iApply (big_sepL_impl with "Hvs"). iIntros "!>" (i v' _) "H". by rewrite shift_loc_S. }
+    iModIntro. iExists 𝛼'. iFrame "H●". iSplit; last first.
+    { iSplitL "Hl"; [by rewrite shift_loc_0_nat|].
+      iApply (big_sepL_impl with "Hls"). iIntros "!>" (i c' _) "H". by rewrite shift_loc_S. }
+    iPureIntro. split_and!.
+    - rewrite Hphi phi_insert_loc phi_delete_unt insert_id // phi_lookup Hl //.
+    - intros k cs' v' c' Hk' Hc'. destruct (Hcells k cs' v' c' Hk' Hc') as (k'' & cs'' & Hk'' & Hc'').
+      destruct (decide (k'' = inl l)) as [->|Hne].
+      { rewrite lookup_insert in Hk''. simplify_eq. exists (inr u), (c :: cs0). by split. }
+      rewrite lookup_insert_ne // in Hk''. destruct (decide (k'' = inr u)) as [->|Hne'].
+      { by rewrite lookup_delete in Hk''. }
+      rewrite lookup_delete_ne // in Hk''. eauto.
+    - intros l' Hl'. rewrite Hsame; last first.
+      { intros i Hi. rewrite -shift_loc_S. apply (Hl' (S i)). simpl. lia. }
+      rewrite lookup_insert_ne; last first.
+      { intros [= ->]. apply (Hl' 0%nat); [simpl; lia|]. by rewrite shift_loc_0_nat. }
+      by rewrite lookup_delete_ne.
+  Qed.
 End cells.
 
 Section bytes_ctx.

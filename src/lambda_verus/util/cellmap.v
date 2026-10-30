@@ -2694,6 +2694,25 @@ Section Cmap.
     c ∈ cs1 → c ∉ cs2.
   Proof. intros. by eapply cells_no_dupes_different_rows_disjoint. Qed.
 
+  Lemma is_row_for_lc_loc 𝛼 l k cells1 c cells2 v :
+    is_row_for_lc 𝛼 (inl l) k cells1 c cells2 v → k = inl l ∧ cells1 = [] ∧
+      𝛼 !! inl l = Some (c :: cells2, v).
+  Proof.
+    intros [Hk Hlc]. destruct k as [l'|u].
+    - destruct (facts_from_last_lc_is_l _ _ _ Hlc) as [-> ->]. done.
+    - by destruct (last_c cells1).
+  Qed.
+
+  Lemma has_pair_last_contra (pre : list C) c c2 :
+    NoDup (pre ++ [c]) → list_has_pair (pre ++ [c]) c c2 → False.
+  Proof using C EqDecision0 EqDecision1 H0 L V.
+    intros Hnd Hp. destruct (list_has_pair_destruct _ _ _ Hp) as (cs1 & cs2 & Heq).
+    have Hl : last (c2 :: cs2) = Some c.
+    { have Hs := last_snoc c pre. rewrite Heq last_app_cons last_cons_cons in Hs. done. }
+    apply last_Some_elem_of in Hl. rewrite Heq in Hnd.
+    apply NoDup_app in Hnd as (_ & _ & Hnd). apply NoDup_cons in Hnd as [Hnc _]. done.
+  Qed.
+
   (** Public versions of the lemmas about the physical heap [𝜙 𝛼]. *)
   Lemma phi_empty : 𝜙 ∅ = ∅.
   Proof. apply map_fold_empty. Qed.
