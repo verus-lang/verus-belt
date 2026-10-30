@@ -1491,13 +1491,13 @@ Qed.
 (** Creating a cell group ([PCellFromOwn]) and destroying it ([PCell2Own]) are updates of the
     byte context; they can be done before any step. *)
 Lemma wp_pcell_create E e l m fbs fv Φ :
-  TCEq (to_val e) None → ↑naN ⊆ E → (0 < mty_size m)%nat → length fbs = mty_size m →
+  TCEq (to_val e) None → ↑naN ⊆ E → (0 < mty_size m)%nat →
   heap_mapsto_fbytes l fbs -∗ brepr m fbs fv -∗
   (∀ g cs, loc_side l g m cs -∗ gdyn g fv -∗
      (if bool_decide (fv_cells fv = []) then gnocell g else True) -∗ WP e @ E {{ Φ }}) -∗
   WP e @ E {{ Φ }}.
 Proof.
-  iIntros (Hv ???) "Hl Hrep Hwp". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+  iIntros (Hv ??) "Hl Hrep Hwp". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
   iMod (bytes_ctx_pcell_create with "HB Hl Hrep") as (g cs) "(HB & Hls & Hgd & Hnc)"; [done..|].
   iModIntro. iFrame "HB". iApply ("Hwp" with "Hls Hgd Hnc").
 Qed.
@@ -1508,7 +1508,7 @@ Lemma wp_pcell_create_plain E e l m bs v Φ :
   WP e @ E {{ Φ }}.
 Proof.
   iIntros (Hv ? ? Hd) "Hl Hwp". rewrite heap_mapsto_fbytes_bytes.
-  iApply (wp_pcell_create with "Hl []"); [done|done|by rewrite length_fmap (decode_value_length _ _ _ Hd)|..].
+  iApply (wp_pcell_create with "Hl []"); [done|done|..].
   { by iApply brepr_plain. }
   iIntros (g cs) "Hls Hgd". rewrite bool_decide_eq_true_2; [|apply fv_cells_lift].
   iApply ("Hwp" with "Hls Hgd").

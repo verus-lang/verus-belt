@@ -3279,14 +3279,15 @@ Section cells.
 
   (** ** Creating a cell group ([PCellFromOwn]) *)
   Lemma bytes_ctx_pcell_create E σB l m fbs fv :
-    ↑naN ⊆ E → (0 < mty_size m)%nat → length fbs = mty_size m →
+    ↑naN ⊆ E → (0 < mty_size m)%nat →
     bytes_ctx σB -∗ heap_mapsto_fbytes l fbs -∗ brepr m fbs fv ={E}=∗ ∃ g cs,
       bytes_ctx σB ∗ loc_side l g m cs ∗ gdyn g fv ∗
       (if bool_decide (fv_cells fv = []) then gnocell g else True).
   Proof.
-    iIntros (? Hsz Hlen) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hfbs #Hrep".
+    iIntros (? Hsz) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hfbs #Hrep".
     iDestruct "Cells" as (R ρ NC CW) "(Hreg & Hdyn & Hnc & Hcw & [%Hcwf %Hlive] & #HR & Hcwe & Hρ)".
     iDestruct (brepr_frepr with "Hreg Hrep") as %Hfrep.
+    have Hlen : length fbs = mty_size m by eapply frepr_length; [apply Hcwf|done].
     iDestruct (fheap_no_dupes with "H●") as %Hnd.
     iDestruct (bheap_edges _ l (fb_rst <$> fbs) with "H● [Hfbs]") as %Hedges.
     { rewrite /heap_mapsto_fbytes big_sepL_fmap. done. }
