@@ -460,3 +460,74 @@ Notes on the examples:
 - Add shared places on bytes (`place_pshr`), resolution places (`place_res*`) and `Π!`
   products.
 - Redesign cells (`pcell`, ghost cells) as fancy bytes (stage 6 of the plan).
+
+## Outcome: stage 4f
+
+Stage 4f ports the remaining rule families of the place machinery to bytes, next to the
+legacy versions, as in stage 4. `pcell` (with `ra`, `protocol` and the pcell examples)
+stays on the legacy layer by decision of the user (2026-10-30).
+
+### 1. Shared places on bytes (`typing/bplace_pshr.v`)
+
+The model (`ShrLty`, `PShr`, `lty_vin`) was already in `bltype.v`/`blpath.v`. The new file
+has the shared views and the rules.
+
+- **Shared view on byte guards.** `shr_view κ ty y d g tid l` is the ownership of
+  `&shrb{κ} ty` without its laters: a guard of `cbytes ty y l` (the existential bytes), the
+  sharing predicate and the persistent predicate. `shr_pctx_view` pushes it through any `K2`:
+  - fields split the guard with `cbytes_pair`;
+  - a sum at its variant gives the guard of its payload (`cbytes_sum`);
+  - `POwn`, `PUniq` and `PShr` step through the structural sharing predicates of
+    `own_bytes`, `&uniqb` and `&shrb`.
+
+  The pointers on the path are loaded by `wp_pctx_sexpr`, with guarded typed loads of `MPtr`
+  (`wp_load_ptr_guarded`, an instance of `wp_load_na_guarded_gen`) from the guards of their
+  bytes (`pctx_sguards`).
+- **Two roots.**
+  - `p ◁ₗ ShrLty (K2[lt]) κ`: the shared reference itself is a root value (e.g. an
+    argument `x: &T`). The address of the hole is `pctx_expr K2 (ToLit p)`
+    (`wp_pshr_open_root`).
+  - `p ◁ₗ K1[ShrLty (K2[lt]) κ]`, with `PctxNoShr K1` and `PctxVRoot K1`: below a root box
+    or unique borrow, at any depth. The address is
+    `pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K1 p)))`. Phase 1 (`wp_pshr_open`) is
+    the access of `bpctx_acc.v` to the `ShrLty` leaf, in `Owned` or `Uniq` mode. It loads the
+    pointer from the bytes of the leaf (an owned load, after opening the innermost borrow
+    in `Uniq` mode), copies the persistent ownership of the `&shrb`, and closes the access
+    with the same leaf.
+- **No `Skip`.** All credits come from the first program step of the instruction
+  (`pshr_cred D + 4(D+1) ≤ advance_credits D`, `pshr_cred_step`). The byte copy below a
+  shared reference takes a second batch from the copy step itself.
+- **Rules** (each for both roots, with `oplace` instances through `POwn n K`):
+  - (a) Change of view.
+    - `tctx_change_vplace_shr` at the root, with no step.
+    - `type_change_vplace_shr_instr` below `K1`, an instance of `type_change_vplace_instr`.
+    - `type_(un)fold_vplace_shr_instr`, which converts between `OfTy (&shrb{κ} ty)` and
+      `ShrLty (OfTy ty) κ`.
+  - (b) `type_read_vplace_pshr(_root)_instr`: reads a `Copy` leaf of any size with a
+    guarded typed `Load (ty_mty)`. The result is `v ◁ᵥ lty_fold lt`, and the place is
+    unchanged. The old restriction to size 1 is gone.
+  - (c) `type_share_vplace_pshr(_root)_instr`: `OfLit (address)` gives
+    `v ◁ᵥ &shrb{pctx_slft K2 κ} (lty_fold lt)`.
+  - (d) `type_case_vplace_pshr(_root)`: reads the tag with a guarded typed `Load` of
+    `MInt (sum_tag 𝔄l)`. Branch `i` gets the view `K2[SumLty tyl i (OfTy (tyl +!! i))]`.
+  - (e) Resolving and dropping.
+    - `lty_rslv_shr`: a `ShrLty` is a leaf, for `type_drop_oplace_deep_instr` and
+      `resolve_tctx_cons_oplace_deep`.
+    - `tctx_drop_vplace_shr`: drops a root shared place.
+  - Copies: `type_memcpy_copy_from_vplace_pshr(_root)_instr` (and the `oplace` instance)
+    copy a `Copy` leaf below `PShr` into a box with a guarded `MemCopy`
+    (`wp_memcopy_guarded_gen`). The old contents of the box are resolved.
+- **Field access below shared references.** `shr_pctx_split`/`tctx_shr_place` are not
+  ported as separate rules. They are subsumed by `type_share_vplace_pshr_root_instr` with a
+  fields-only `K2`, which is an instruction because the address is an offset computation,
+  and by `type_shr_bytes_fst/snd_instr` (stage 4).
+
+Examples (`typing/examples/bplace_pshr.v`). Each has a `Qed`, and `Print Assumptions` shows
+only `functional_extensionality_dep`. The Qed times are from `coqc -time`.
+
+| Example | Root | Qed |
+|---|---|---|
+| `get_snd_pb_type` (`( **x).1`, `x: &&(i32,i32)`) | the `&shrb` value | 1.1 s |
+| `get_boxed_pb_type` (`*( **b).1`, `b: Box<&(i32, Box<i32>)>`) | box (`K1 = POwn`) | 2.6 s |
+| `get_or_zero_pb_type` (`match **b`, `b: Box<&Option<i32>>`) | box | 5.5 s |
+| `first_ref_pb_type` (`&( **x).0`, `x: &mut &(i32,i32)`, then resolve `x`) | `&uniqb` value (`K1 = PUniq`) | 6.0 s |
