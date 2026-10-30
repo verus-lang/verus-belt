@@ -330,6 +330,9 @@ src/lambda_verus/typing/blpath.v
 src/lambda_verus/typing/bpctx_acc.v
 src/lambda_verus/typing/bvplace.v
 src/lambda_verus/typing/bplace_own.v
+src/lambda_verus/typing/bplace_shr.v
+src/lambda_verus/typing/bplace_resolve.v
+src/lambda_verus/typing/bplace_puniq.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/tracked.v
@@ -380,6 +383,7 @@ src/lambda_verus/typing/examples/place_res_shr_end.v
 src/lambda_verus/typing/examples/place_res_sum_fold.v
 src/lambda_verus/typing/examples/place_res_nested_fold.v
 src/lambda_verus/typing/examples/own_bytes.v
+src/lambda_verus/typing/examples/bplace_own.v
 
 
 -arg -w -arg -argument-scope-delimiter

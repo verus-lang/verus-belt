@@ -7,10 +7,10 @@ Set Default Proof Using "Type".
 (** * Shared references to bytes (stage 4 of the MiniRust memory model)
 
 [&shrb{κ} ty] is the byte form of [&shr{κ} ty]: its ownership is a guard, by [@[κ]], of
-bytes [bs] at the referent that represent its value ([ty_bytes ty x bs]), together with
-the sharing predicate of [ty] at [κ] and its persistent predicate. The bytes are fixed
-outside the guard (the referent does not change while it is shared), so that a reader
-can load them with the guarded byte load [wp_load_na_guarded] ([wp_shr_bytes_load]).
+bytes at the referent that represent its value ([bytes_own ty l x]), together with the
+sharing predicate of [ty] at [κ] and its persistent predicate. A reader loads the bytes
+with the guarded byte load [wp_load_na_guarded_gen] ([wp_shr_bytes_load]): the bytes
+are only known inside the guard, but all of them decode to the value of [x].
 As for [&shr], its sharing predicate is the default one. *)
 
 Implicit Type 𝔄 𝔅: syn_type.
@@ -20,7 +20,7 @@ Section shr_bytes.
 
   (** The bytes at [l] represent [x], under a guard of [@[κ]] with [n] laters. *)
   Definition shr_bytes_own {𝔄} (κ: lft) (n: nat) (ty: type 𝔄) (l: loc) (x: ~~𝔄) : iProp Σ :=
-    ∃ bs, ⌜ty_bytes ty x bs⌝ ∗ (@[κ] &&{↑NllftG; n}&&> l ↦b bs).
+    @[κ] &&{↑NllftG; n}&&> bytes_own ty l x.
 
   Global Instance shr_bytes_own_persistent {𝔄} κ n (ty: type 𝔄) l x :
     Persistent (shr_bytes_own κ n ty l x).
@@ -28,20 +28,18 @@ Section shr_bytes.
 
   Lemma shr_bytes_own_same {𝔄} κ n (ty ty': type 𝔄) l x :
     shr_bytes_own κ n ty l x ⊣⊢ shr_bytes_own κ n ty' l x.
-  Proof. rewrite /shr_bytes_own. by setoid_rewrite (ty_bytes_same ty ty'). Qed.
+  Proof. by rewrite /shr_bytes_own (bytes_own_same ty ty'). Qed.
 
   Lemma shr_bytes_own_mono {𝔄} κ n n' (ty: type 𝔄) l x :
     n ≤ n' → shr_bytes_own κ n ty l x -∗ shr_bytes_own κ n' ty l x.
   Proof.
-    iIntros (?) "(%bs & % & G)". iExists bs. iSplit; [done|].
-    by iApply (lguards_weaken_later with "G").
+    iIntros (?) "G". by iApply (lguards_weaken_later with "G").
   Qed.
 
   Lemma shr_bytes_own_lft {𝔄} κ κ' n m (ty: type 𝔄) l x :
     (@[κ'] &&{↑NllftG; m}&&> @[κ]) -∗ shr_bytes_own κ n ty l x -∗ shr_bytes_own κ' (m + n) ty l x.
   Proof.
-    iIntros "#Incl (%bs & % & #G)". iExists bs. iSplit; [done|].
-    iApply (guards_transitive_additive with "Incl G").
+    iIntros "#Incl #G". iApply (guards_transitive_additive with "Incl G").
   Qed.
 
   Program Definition shr_bytes {𝔄} (κ: lft) (ty: type 𝔄) : type (at_clocₛ 𝔄) :=
@@ -120,10 +118,12 @@ Section shr_bytes_rules.
     {{{ RET MLitV v; G }}}.
   Proof.
     iIntros (? Hv Φ) "(Own & #Gκ & G & £) HΦ". rewrite /= /by_succ.
-    iDestruct "Own" as "((%bs & %Hbs & #Pt) & _)".
-    iApply (wp_load_na_guarded _ _ 1%Qp _ bs v G (g+1) with "[$G $£]");
-      [done|by eapply ty_bytes_decode| |done].
-    iApply (guards_transitive_additive with "Gκ Pt").
+    iDestruct "Own" as "(#Pt & _)".
+    iApply (wp_load_na_guarded_gen _ _ _ v G (bytes_own ty l.1 x) (ty_bytes ty x) (g+1)
+      with "[$G $£]"); [done|intros; by eapply ty_bytes_decode| |done].
+    iSplit; [iApply (guards_transitive_additive with "Gκ Pt")|].
+    iIntros "!> (%bs & Hbs & %Hbs)". iExists 1%Qp, bs. iFrame "Hbs". iSplit; [done|].
+    iIntros "Hbs". iExists bs. by iFrame.
   Qed.
   (** Reading the referent of a [Copy] type through a shared reference: a guarded typed
       [Load]. *)
@@ -155,7 +155,12 @@ Section shr_bytes_rules.
       iMod (lc_fupd_elim_laterN with "£1 Open") as ">[#Gho Close]".
       iMod ("Close" with "Gho") as "$". by iModIntro. }
     destruct (ty_val ty x) as [v|] eqn:Hv; last first.
-    { iDestruct "Pt" as (bs Hbs) "_". destruct (ty_bytes_val _ _ _ Hbs). congruence. }
+    { iDestruct (guards_transitive_additive with "Gκ Pt") as "GP".
+      iAssert (|={⊤ ∖ ↑advN}=> ⌜False⌝)%I with "[H1 £2]" as ">%Hf"; [|done].
+      iMod (guards_open_later with "GP H1") as "Open"; [solve_ndisj|].
+      iDestruct (lc_weaken (0 + S (d + 1)) with "£2") as "£2"; [lia|].
+      iMod (lc_fupd_elim_laterN with "£2 Open") as ">[(%bs & _ & %Hbs) _]".
+      destruct (ty_bytes_val _ _ _ Hbs). congruence. }
     iApply wp_fupd. iApply (wp_shr_bytes_load κ ty l x v d (S d) tid (fractional.half γ)
       with "[$H1 $£2]"); [solve_ndisj|done| |].
     { iFrame "Gκ". rewrite /= /by_succ. iFrame "Pt Shr Pers". }

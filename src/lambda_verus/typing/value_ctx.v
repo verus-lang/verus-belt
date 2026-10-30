@@ -107,4 +107,43 @@ Section value_rules.
     iNext. iDestruct (ty_gho_own_depth_mono _ d' d' (d `max` d') (S (d `max` d')) with "Gho'")
       as "[$ _]"; lia.
   Qed.
+  (** Resolving a value. *)
+  Lemma type_resolve_val_instr {𝔄} p (ty: type 𝔄) Φ E L I :
+    resolve E L ty Φ →
+    typed_instr E L I +[p ◁ᵥ ty] Skip (λ _, +[]) (λ post '-[a], λ mask π, Φ a π → post -[] mask π).
+  Proof.
+    iIntros (Rslv ????[?[]]) "LFT #TIME PROPH UNIQ E L I /=[(%v & %Hp & %w & %d & _ & ⧖ & tygho) _] Obs".
+    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
+    iDestruct (Rslv _ (⊤∖↑advN) with "LFT PROPH UNIQ TIME E Ghalf H1 tygho") as "Upd"; [solve_ndisj|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|]. iIntros "£ ⧖S".
+    iMod "Upd".
+    iMod (lc_step_fupdN_elim_later with "[£] Upd") as "Upd".
+    { iApply (lc_weaken with "£"). unfold advance_credits. lia. }
+    iMod "Upd" as "[Obs' H1]".
+    iDestruct ("Halfback" with "H1 H2") as "L". iMod (fupd_mask_mono with "L") as "L". { solve_ndisj. }
+    wp_seq.
+    iExists -[]. iCombine "Obs Obs'" as "?".
+    rewrite left_id. iFrame "L I". iApply proph_obs_impl; [|done]=>/= ?[Imp ?]. by apply Imp.
+  Qed.
+
+  Lemma resolve_tctx_cons_val {𝔄 𝔅l} E L p (ty: type 𝔄) Φ (T: tctx 𝔅l) Ψ :
+    resolve E L ty Φ → resolve_tctx E L T Ψ →
+    resolve_tctx E L (p ◁ᵥ ty +:: T) (λ '(a -:: bl) π φ, Φ a π → Ψ bl π φ).
+  Proof.
+    iIntros (Rslv Rslv' ???[??]??).
+    iIntros "#LFT #PROPH #UNIQ #TIME #E #L G /=[(%v & _ & %w & %d & _ & ⧖ & ty) T]".
+    iMod (fractional.frac_split_guard_in_half NllftG with "G L")
+        as (γ) "[F1 [F2 [#guards #back]]]". { solve_ndisj. }
+    iMod (Rslv with "LFT PROPH UNIQ TIME E guards F1 ty") as "ToObs"; [set_solver|].
+    iMod (Rslv' with "LFT PROPH UNIQ TIME E guards F2 T") as (?) "[⧖' ToObs']"; [done|].
+    iCombine "⧖ ⧖'" as "⧖". iCombine "ToObs ToObs'" as "ToObs".
+    iModIntro. iExists _. iFrame "⧖".
+    rewrite lemma_max_mul.
+    iApply (step_fupdN_wand with "ToObs").
+    iIntros "[>[Obs F1] >[Obs' F2]]".
+    iDestruct ("back" with "F1 F2") as "G". iMod (fupd_mask_mono with "G") as "G". { solve_ndisj. }
+    iCombine "Obs Obs'" as "?".
+    iModIntro. iFrame "G".
+    iApply proph_obs_impl; [|done]=>/= ?[? Imp]? Imp'. apply Imp, Imp'. trivial.
+  Qed.
 End value_rules.
