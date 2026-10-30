@@ -3881,6 +3881,137 @@ Section cells.
     - iMod (bytes_ctx_untethered_write with "Hctx Hu Hnc") as "[Hctx Hu]"; [done|].
       by iApply (bytes_ctx_pcell_retether_eq with "Hctx Hu Hl").
   Qed.
+
+  (** ** Values of groups, and fancy bytes of plain values and of cells *)
+  Lemma brepr_plain m bs v : decode_value m bs = Some v → ⊢ brepr m (inr <$> bs) (fv_lift v).
+  Proof.
+    iIntros (Hd). iExists ∅. rewrite big_sepM_empty. iSplit; [|done]. iPureIntro.
+    by apply frepr_plain.
+  Qed.
+
+  Lemma brepr_cell g m cs : greg g m cs -∗ brepr m (inl <$> cs) (FVCell g).
+  Proof.
+    iIntros "#Hg". iExists {[g := (m, cs)]}. rewrite big_sepM_singleton. iFrame "Hg".
+    iPureIntro. apply frepr_cell. by rewrite lookup_singleton.
+  Qed.
+
+  Lemma brepr_cell_inv g m m' fbs cs :
+    brepr m fbs (FVCell g) -∗ greg g m' cs -∗ ⌜m' = m ∧ fbs = inl <$> cs⌝.
+  Proof.
+    iIntros "(%R & %Hrep & #HR) #Hg". inversion Hrep as [m0 g0 cs0 Hg0| m0 bs v Hd Hv| |];
+      subst.
+    - iDestruct (big_sepM_lookup with "HR") as "Hg'"; [done|].
+      iDestruct (greg_agree with "Hg Hg'") as %[-> ->]. done.
+    - by destruct v.
+  Qed.
+
+  Lemma untethered_final 𝛼 cs bs :
+    cells_no_dupes loc positive bval 𝛼 → length cs = length bs →
+    (∀ (i : nat) c b, cs !! i = Some c → bs !! i = Some b →
+       ∃ u rest, 𝛼 !! inr u = Some (c :: rest, (RSt 0, b))) →
+    cell_final 𝛼 <$> cs = bs.
+  Proof.
+    intros Hnd Hlen Hurows. apply list_eq. intros i. rewrite list_lookup_fmap.
+    destruct (cs !! i) as [c|] eqn:Hc; destruct (bs !! i) as [b|] eqn:Hb; simpl; try done.
+    - destruct (Hurows i c b Hc Hb) as (u & rest & Hrow). rewrite /cell_final.
+      erewrite row_of_spec; [|done|done|set_solver]. done.
+    - apply lookup_lt_Some in Hc. apply lookup_ge_None in Hb. lia.
+    - apply lookup_ge_None in Hc. apply lookup_lt_Some in Hb. lia.
+  Qed.
+
+  (** The bytes of a group in transit decode to the erasure of its fancy value. *)
+  Lemma bytes_ctx_untethered_val σB g m cs bs fv :
+    bytes_ctx σB -∗ untethered g m cs bs -∗ gdyn g fv -∗
+    ⌜∃ v, decode_value m bs = Some v ∧ (fv_cells fv = [] → fv = fv_lift v)⌝.
+  Proof.
+    iIntros "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) [#Hg Hus] Hgd".
+    iDestruct "Cells" as (R ρ NC CW) "(Hreg & Hdyn & Hnc & Hcw & [%Hcwf %Hlive] & #HR & Hcwe & Hρ)".
+    iDestruct (greg_lookup with "Hreg Hg") as %HRg.
+    iDestruct (gdyn_lookup with "Hdyn Hgd") as %Hfv.
+    iDestruct (fheap_no_dupes with "H●") as %Hnd.
+    iDestruct (cells_decode with "H● Hρ []") as %Hdec; [by iPureIntro|].
+    iDestruct (big_sepL2_length with "Hus") as %Hlenbs.
+    iDestruct (untethered_rows with "H● Hus") as %Hurows. iPureIntro.
+    destruct (Hdec g fv m cs Hfv HRg) as (v & Herase & Hd).
+    rewrite (untethered_final 𝛼 cs bs Hnd Hlenbs Hurows) in Hd.
+    exists v. split; [done|]. intros Hc. by eapply fval_erase_nocells.
+  Qed.
+
+  (** Setting the value of a group without cells in transit. *)
+  Lemma bytes_ctx_untethered_set σB g m cs bs bs' fv v' :
+    decode_value m bs' = Some v' →
+    bytes_ctx σB -∗ untethered g m cs bs -∗ gnocell g -∗ gdyn g fv ==∗
+      bytes_ctx σB ∗ untethered g m cs bs' ∗ gdyn g (fv_lift v').
+  Proof.
+    iIntros (Hdec') "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) [#Hg Hus] #Hnc' Hgd".
+    iDestruct "Cells" as (R ρ NC CW) "(Hreg & Hdyn & Hnc & Hcw & [%Hcwf %Hlive] & #HR & Hcwe & Hρ)".
+    iDestruct (greg_lookup with "Hreg Hg") as %HRg.
+    iDestruct (gnocell_lookup with "Hnc Hnc'") as %HgNC.
+    iDestruct (gdyn_lookup with "Hdyn Hgd") as %Hfv.
+    iDestruct (fheap_no_dupes with "H●") as %Hnd.
+    iDestruct (big_sepL2_length with "Hus") as %Hlenbs.
+    iDestruct (untethered_rows with "H● Hus") as %Hurows.
+    destruct Hcwf as (HRwf & HdomR & Hrefs & Hdisj & Hpos & HdomNC & HNC & HCW).
+    destruct Hlive as [Hlive1 Hlive2].
+    have Hcs0 : ∃ c0 cs0 b0 bs0, cs = c0 :: cs0 ∧ bs = b0 :: bs0.
+    { have := Hpos _ _ _ HRg. have := HRwf _ _ _ HRg.
+      intros H1 H2. destruct cs as [|c0 cs0], bs as [|b0 bs0]; simpl in *; try lia.
+      by eexists _, _, _, _. }
+    destruct Hcs0 as (c0 & cs0 & b0 & bs0 & Hcs & Hbs).
+    destruct (Hurows 0%nat c0 b0) as (u0 & rest0 & Hrow0); [by rewrite Hcs|by rewrite Hbs|].
+    have HgCW : (fst <$> CW) !! g = None.
+    { destruct ((fst <$> CW) !! g) as [k|] eqn:Hk; [|done]. exfalso.
+      destruct (Hlive2 g k m cs Hk HRg 0%nat c0 ltac:(by rewrite Hcs)) as (rest' & v0 & Hrow').
+      apply (rows_disjoint loc positive bval 𝛼 (inr u0) (inl (k.1.1.1 +ₗ 0%nat)) (c0 :: rest0)
+        (RSt 0, b0) (c0 :: rest') v0 c0 Hnd); [done|done|done|set_solver|set_solver]. }
+    have Hnocells := HNC g fv Hfv HgNC.
+    iDestruct (big_sepM_delete with "Hρ") as "[(%m' & %cs' & %fbs & (%HR' & %Hrep & %Hls) & Hcs) Hρ]"; [done|].
+    rewrite HRg in HR'. injection HR' as <- <-.
+    have Hpl : ∀ fb, fb ∈ fbs → ∃ x, fb = inr x.
+    { intros fb Hfb. have Hst : fb_strip fb ∈ fb_strip <$> fbs by apply elem_of_list_fmap_1.
+      destruct (frepr_plain_of_nocells _ _ _ _ Hrep Hnocells _ Hst) as [b Hb].
+      destruct fb as [c|x]; [done|eauto]. }
+    have Hlen' : length bs' = length cs.
+    { rewrite (decode_value_length _ _ _ Hdec'). symmetry. by eapply HRwf. }
+    iMod (bheap_write_unts with "H● Hus Hcs") as (𝛼') "([%Hinl %Hcells] & H● & Hus & Hcs)"; [done..|].
+    iMod (ghost_map_update (fv_lift v') with "Hdyn Hgd") as "[Hdyn Hgd]".
+    have Hphi : bphi 𝛼' = bphi 𝛼.
+    { apply (map_eq (M:=gmap loc)). intros l. by rewrite !phi_lookup Hinl. }
+    have Hgdom : g ∈ dom ρ by apply elem_of_dom_2 in Hfv.
+    have Hdom' : dom (<[g := fv_lift v']> ρ) = dom ρ.
+    { rewrite dom_insert_L. set_solver. }
+    iModIntro. iSplitR "Hus Hgd"; last by iFrame "Hg Hgd".
+    iExists 𝛼', M. rewrite Hphi. iFrame "H● Hbank Entries".
+    iSplit; [done|]. iSplit; [done|]. iExists R, (<[g := fv_lift v']> ρ), NC, CW.
+    iFrame "Hreg Hdyn Hnc Hcw HR Hcwe". iSplit.
+    { iPureIntro. split; [split_and!|split].
+      - done.
+      - by rewrite Hdom'.
+      - intros g' fv'' Hg' g'' Hg''. destruct (decide (g' = g)) as [->|Hne].
+        + rewrite lookup_insert in Hg'. injection Hg' as <-. rewrite fv_cells_lift in Hg''. by apply not_elem_of_nil in Hg''.
+        + rewrite lookup_insert_ne // in Hg'. rewrite Hdom'. by eapply Hrefs.
+      - done.
+      - done.
+      - done.
+      - intros g' fv'' Hg' HNC'. destruct (decide (g' = g)) as [->|Hne].
+        + rewrite lookup_insert in Hg'. injection Hg' as <-. apply fv_cells_lift.
+        + rewrite lookup_insert_ne // in Hg'. by eapply HNC.
+      - intros g' k Hk. destruct (HCW g' k Hk) as [Hρg' Hrest]. split; [|done].
+        rewrite lookup_insert_ne //. intros ->. by rewrite HgCW in Hk.
+      - intros k cs' v'' c Hk Hc. destruct (Hcells k cs' v'' c Hk Hc) as (k' & cs'' & v3 & Hk' & Hc').
+        rewrite Hdom'. by eapply Hlive1.
+      - intros g' k m' cs' Hk HR' i c Hc.
+        destruct (Hlive2 g' k m' cs' Hk HR' i c Hc) as (rest & v'' & Hrow).
+        exists rest, v''. by rewrite Hinl. }
+    iApply big_sepM_insert_delete. iFrame "Hρ".
+    iExists m, cs, ((λ b, inr (RSt 0, b)) <$> bs'). iFrame "Hcs". iPureIntro. split_and!.
+    - done.
+    - have -> : fb_strip <$> ((λ b, inr (RSt 0, b)) <$> bs') = inr <$> bs'.
+      { rewrite -list_fmap_compose. apply list_fmap_ext. by intros. }
+      by apply frepr_plain.
+    - intros i ls b. rewrite list_lookup_fmap. destruct (bs' !! i); simpl; intros Heq;
+        simplify_eq. by rewrite /cw_ls HgCW.
+  Qed.
 End cells.
 
 Section bytes_ctx.
