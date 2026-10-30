@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own_bytes uniq_util buniq_bor
+From lrust.typing Require Export type programs cont int product uninit value_ctx own_bytes uniq_util buniq_bor
   bplace_own bplace_puniq bplace_resolve.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
@@ -115,6 +115,110 @@ Section bplace_own.
     simpl in Hc1, Hres, Hfin |- *. subst w1.
     rewrite Hfin /oplace_blk_fin /= (uniq_util.uniq_prvar_app_irrel b 5%Z ζi π) Hres. apply Hspec.
   Qed.
+  (*
+  ```
+  fn box_pair(mut b: Box<(Box<i32>, i32)>) -> Box<(Box<i32>, i32)> {
+      { let r = &mut *b.0; *r = 7; }   // the borrow ends here
+      let c = b.0;                     // move out: b.0 is uninitialized
+      b.0 = c;                         // re-assign
+      b
+  }
+  ```
+
+  The body of [box_pair] of [typing/examples/place_own.v] (with [&mut *b.0] instead of
+  [&mut b.0] and a double dereference), on bytes: the inner box is unfolded in place
+  ([tctx_unfold_oplace_own]) and its pointee borrowed through it (the path
+  [PFst (POwn 4 PHole) _] loads the address of the inner box); the move out of [b.0] is
+  a typed [Load] of [MPtr], which leaves [↯ PTR_SIZE]; the re-assignment a typed
+  [Store]. *)
+  Definition box_pair_b : expr := (
+    Newlft;;
+    let: "r" := ReBor;; OfLit (ToLit (Load Na1Ord MPtr (ToLit "b"))) in  (* &mut *( *b).0 *)
+    let: "seven" := MLit (VInt 7) in
+    Skip;;                                                (* r as a place *)
+    (ReBor;; Store Na1Ord (MInt i32) (ToLit "r") "seven");;  (* *r = 7 *)
+    Skip;;                                                (* resolve r *)
+    Endlft;;                                              (* unblock *( *b).0 *)
+    let: "c" := Load Na1Ord MPtr (ToLit "b") in           (* move ( *b).0 out *)
+    Store Na1Ord MPtr (ToLit "b") "c";;                   (* re-assign ( *b).0 *)
+    jump: "return" ["b"])%E.
+
+  Notation box_pairₛ := (at_locₛ (at_locₛ (intₛ i32) * intₛ i32))%ST.
+
+  Definition ret_box_pair : predl_trans' [box_pairₛ] box_pairₛ := λ post '-[r], post r.
+
+  Lemma box_pair_b_type ϝ (k vb: val) :
+    ⊢ typed_body [] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
+        [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
+          λ v: vec val 1, +[vhd v ◁ᵥ own_bytes (PTR_SIZE + 4) (own_bytes 4 i32t * i32t)] }
+          ret_box_pair]
+        +[vb ◁ᵥ own_bytes (PTR_SIZE + 4) (own_bytes 4 i32t * i32t)%T]
+        (subst "return" k (subst "b" vb box_pair_b))
+        (λ post '-[(l, ((lb, _), w))], λ mask π, post (l, ((lb, 7%Z), w)) mask π).
+  Proof.
+    rewrite /box_pair_b. simpl_subst.
+    iApply (typed_body_impl with "[]"); last first. {
+      (* the pointee of b as an owned place, unfolded, with the inner box unfolded *)
+      iApply typed_body_tctx_incl.
+      { eapply tctx_incl_trans; [apply tctx_own_to_oplace|].
+        eapply tctx_incl_trans; [apply (tctx_unfold_oplace_prod _ _ _ _ PHole (own_bytes 4 i32t) i32t)|].
+        apply (tctx_unfold_oplace_own _ _ _ _ (PFst PHole (OfTy i32t)) 4 i32t). done. }
+      iApply (type_newlft []). iIntros (β).
+      (* &mut *( *b).0 *)
+      iApply (type_let with "[]").
+      { eapply (type_borrow_oplace_instr _ _ _ vb _ β (PFst (POwn 4 PHole) (OfTy i32t)) i32t).
+        solve_typing. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vr). simpl_subst.
+      (* write through the borrow, as a place; resolve it *)
+      iApply (type_let with "[]").
+      { apply (type_val_int_instr i32). apply (bool_decide_unpack _); by vm_compute. }
+      { solve_typing. } { reflexivity. }
+      iIntros (v7). simpl_subst.
+      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vr β i32t). }
+      { solve_typing. } { reflexivity. }
+      iApply type_seq.
+      { apply (type_write_vplace_deep_instr _ _ _ vr v7 (PUniq β PHole) i32t (const (const True)));
+          [apply resolve_just|simpl; solve_typing]. }
+      { solve_typing. } { simpl. reflexivity. }
+      iApply typed_body_tctx_incl.
+      { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
+      iApply type_seq. { apply (type_resolve_val_instr vr (&uniqb{β} i32t)). apply buniq_bor.uniq_resolve. solve_typing. }
+      { solve_typing. } { reflexivity. }
+      (* end β: unblock *( *b).0 *)
+      iApply (type_endlft _ _ _ _ β).
+      { solve_typing. }
+      { apply (unblock_tctx_oplace _ _ _ (PFst (POwn 4 PHole) (OfTy i32t)) i32t); [solve_typing|].
+        apply unblock_tctx_nil. }
+      (* fold the inner box back; move ( *b).0 out *)
+      iApply typed_body_tctx_incl.
+      { apply (tctx_fold_oplace_own _ _ _ _ (PFst PHole (OfTy i32t)) 4 i32t). }
+      iApply (type_let with "[]").
+      { apply (type_move_oplace_instr _ _ _ vb (PTR_SIZE + 4) (PFst PHole (OfTy i32t)) (own_bytes 4 i32t)). done. }
+      { solve_typing. } { reflexivity. }
+      iIntros (vc). simpl_subst.
+      (* re-assign ( *b).0 *)
+      iApply type_seq.
+      { apply (type_write_oplace_instr _ _ _ vb vc (PTR_SIZE + 4) (PFst PHole (OfTy i32t)) (↯ (ty_bsize (own_bytes 4 i32t))) (own_bytes 4 i32t)
+          (const (const True))); [done|apply uninit_resolve|done]. }
+      { solve_typing. } { reflexivity. }
+      (* fold back, return b *)
+      iApply typed_body_tctx_incl.
+      { eapply tctx_incl_trans; [apply (tctx_fold_oplace_prod _ _ _ _ PHole (own_bytes 4 i32t) i32t)|].
+        apply tctx_oplace_to_own. }
+      iApply type_jump.
+      { rewrite elem_of_list_singleton. reflexivity. }
+      { solve_typing. }
+      { solve_typing. }
+      { reflexivity. }
+    }
+    intros post [[l [[lb v0] w]] []] mask π Hspec. rewrite /trans_upper /trans_tail /=.
+    intros [[[[[l1 w1] ζi] d1] g1] idx1] Hc1 _ d g idx Hres
+      [[[l' [[lb' v'] w']] ζm'] []] (-> & Hx & _ & Hfin & _) _ _.
+    simpl in Hc1, Hres, Hx, Hfin |- *. subst w1. injection Hx as -> ->.
+    rewrite Hfin /oplace_blk_fin /= (uniq_util.uniq_prvar_app_irrel v0 7%Z ζi π) Hres. apply Hspec.
+  Qed.
 End bplace_own.
 
 Print Assumptions set_snd_b_type.
+Print Assumptions box_pair_b_type.
