@@ -87,16 +87,6 @@ Section pctx_fun.
     | PUniq κ K => κ ⊓ pctx_blft K α
     end.
 
-  (** The lifetime whose token guards the cells of the hole, if the cells of the root are
-      guarded by [b]: the lifetime of the innermost enclosing unique borrow (the cells of a
-      pointee of an owned pointer are not ghost cells). *)
-  Fixpoint pctx_hlft {𝔅 𝔄} (K: pctx 𝔅 𝔄) (b: lft) : lft :=
-    match K with
-    | PHole => b
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K => pctx_hlft K b
-    | PUniq κ K => pctx_hlft K κ
-    end.
-
   (** The number of owned pointers and unique borrows on the path (the depth decreases by
       at least one at each). *)
   Fixpoint pctx_dlev {𝔅 𝔄} (K: pctx 𝔅 𝔄) : nat :=
@@ -266,19 +256,6 @@ Section pctx_fun.
   Lemma pctx_blft_dead {𝔅 𝔄} (K: pctx 𝔅 𝔄) α : [†α] -∗ [†pctx_blft K α].
   Proof.
     induction K; simpl; try by auto. iIntros "†". rewrite llftl_end_inter. iRight. by iApply IHK.
-  Qed.
-
-  Lemma pctx_blft_hlft_meet {𝔅 𝔄} (K: pctx 𝔅 𝔄) α b : ⊢ b ⊓ pctx_blft K α ⊑ pctx_hlft K b.
-  Proof.
-    induction K in b |- *; simpl; [iApply llftl_intersect_incl_l|iApply IHK|iApply IHK|iApply IHK|
-      iApply IHK| |iApply IHK].
-    iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply IHK.
-  Qed.
-
-  Lemma pctx_blft_hlft {𝔅 𝔄} (K: pctx 𝔅 𝔄) α : ⊢ pctx_blft K α ⊑ pctx_hlft K α.
-  Proof.
-    induction K; simpl; [iApply guards_refl|iApply IHK|iApply IHK|iApply IHK|iApply IHK| |iApply IHK].
-    iApply pctx_blft_hlft_meet.
   Qed.
 
   (** The new blocked lifetime is below every enclosing borrow lifetime. *)

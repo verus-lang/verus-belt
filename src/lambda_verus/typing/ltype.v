@@ -62,7 +62,7 @@
   indexed by depths [d g], exactly as [ty_gho_own]. Borrow kinds
   ([bor_kind]):
   - [Owned m]: the place is owned. For [OfTy ty] this is [ty_own] at the
-    location ([l #↦!∗ ty_phys] and [ty_gho_own]); [m] is the number of laters
+    location ([cbytes] and [ty_gho_own]); [m] is the number of laters
     guarding the ghost parts (one per enclosing [own_bytes]). [Blocked ty κ]
     holds an inheritance that gives back _pending_ ownership
     ([blocked_owned]): once [κ] is dead, the contents are obtained by a lazy

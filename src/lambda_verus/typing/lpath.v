@@ -1229,26 +1229,6 @@ Section pctx.
     lty_nblk (pctx_plug (pctx_retype K 𝔅') lt') = lty_nblk (pctx_plug K lt).
   Proof. intros Hn. by rewrite !lty_nblk_plug pctx_nblk_retype Hn. Qed.
 
-  (** ** Locations without ghost cells
-
-      A place rooted at an owned location has no ghost cells, nor have its subplaces. *)
-  Lemma take_repeat_add {A} (a: A) n k : take n (repeat a (n + k)) = repeat a n.
-  Proof. induction n; simpl; by f_equal. Qed.
-
-  Lemma drop_repeat_add {A} (a: A) n k : drop n (repeat a (n + k)) = repeat a k.
-  Proof. induction n; simpl; done. Qed.
-
-  Lemma syn_bsize_pair 𝔄1 𝔄2 : syn_bsize (𝔄1 * 𝔄2) = (syn_bsize 𝔄1 + syn_bsize 𝔄2)%nat.
-  Proof. rewrite /syn_bsize /= /seq_size /=. lia. Qed.
-
-  Lemma pctx_size_syn {𝔅 𝔄} (K: pctx 𝔅 𝔄) : pctx_size K (syn_bsize 𝔅) = syn_bsize 𝔄.
-  Proof.
-    induction K; simpl; try done.
-    - by rewrite syn_bsize_pair IHK.
-    - by rewrite syn_bsize_pair IHK.
-    - by rewrite syn_bsize_sum.
-  Qed.
-
   Global Instance pctx_no_uniq_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' :
     PctxNoUniq K → PctxNoUniq (pctx_retype K 𝔅').
   Proof. rewrite /PctxNoUniq. induction K; simpl; auto. Qed.

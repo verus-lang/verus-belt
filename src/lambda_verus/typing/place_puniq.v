@@ -851,16 +851,6 @@ Section puniq.
   Qed.
   (** * Writing and reading a leaf below unique borrows *)
 
-  Lemma pctx_ulft_hlft {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt b : ⊢ pctx_ulft K lt ⊓ b ⊑ pctx_hlft K b.
-  Proof.
-    induction K in lt, b |- *; simpl; [iApply llftl_intersect_incl_r|iApply IHK|iApply IHK|
-      iApply IHK|iApply IHK| |iApply IHK].
-    iApply llftl_incl_trans; [|iApply IHK]. iApply llftl_incl_glb.
-    - iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
-      iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply pctx_ulft_incl.
-    - iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|]. iApply llftl_intersect_incl_l.
-  Qed.
-
   Lemma pctx_ulft_fold {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
     pctx_ulfts K ≠ [] → ⊢ pctx_ulft K lt ⊑ ty_lft (lty_fold lt).
   Proof.
