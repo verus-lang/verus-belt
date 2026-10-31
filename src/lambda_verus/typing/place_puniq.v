@@ -1556,7 +1556,7 @@ Section puniq.
           x.1.1, pctx_get K x.1.2); x]).
   Proof.
     intros. eapply typed_instr_tr_impl; [|by apply (type_share_vplace_deep_instr _ _ _ _ _ (POwn n K))].
-    intros post [x []] mask π. by rewrite /pctx_vloc /= lty_size_plug.
+    intros post [x []] mask π. by rewrite /pctx_vloc /=.
   Qed.
 
   (** Unblocking a shared leaf below unique borrows, once [α] has ended (as

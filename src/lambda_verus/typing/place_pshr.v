@@ -209,7 +209,7 @@ Section pctx_shr.
           (l +ₗ tag_size 𝔄l)
     | PUniq _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l (uniq_bor_loc y)) ∗
         pctx_sguards K n k G (uniq_bor_current y) (uniq_bor_loc y)
-    | PShr _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l y.1.1) ∗
+    | PShr _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l y.1) ∗
         pctx_sguards K n k G y.2 y.1
     end%I.
 
@@ -255,7 +255,7 @@ Section pctx_shr.
       iIntros (v) "(-> & [#Gp Gs] & £ & G & HΦ)".
       iDestruct (lc_weaken (2 * k + 2 * k * pctx_dlev K) with "£") as "[£1 £]"; [lia|].
       wp_bind (Load _ _ _).
-      iApply (wp_load_ptr_guarded _ l y.1.1 G k with "[$Gp $G $£1]"); [done|].
+      iApply (wp_load_ptr_guarded _ l y.1 G k with "[$Gp $G $£1]"); [done|].
       iIntros "!> G". wp_pure _. by iFrame.
   Qed.
 
@@ -302,7 +302,6 @@ Section pctx_shr.
       rewrite xsum_shr_pinj xsum_pers_pinj hlookup_hlist_set.
       iApply (IH with "Gs £"); [done|]. iFrame "Shr Pers".
       iEval (rewrite (cbytes_sum _ i (lty_fold (pctx_plug K lt)))) in "Pt".
-      rewrite -lty_size_plug.
       iDestruct (guards_weaken_rhs_sep_r with "Pt") as "Pt'".
       by iApply (guards_weaken_rhs_sep_l with "Pt'").
     - iIntros "#Gs £ #(Pt & Shr & Pers)". destruct y as [[[[[l' z] ξi] d'] g'] idx].
@@ -390,7 +389,7 @@ Section pshr_addr.
       (e: expr) (G: iProp Σ) (Φ: val → iProp Σ) :
     ↑NllftG ⊆ E →
     (G &&{↑NllftG}&&> @[pctx_salv K2 κ]) -∗
-    WP e @ E {{ v, ⌜v = #(y.1.1)⌝ ∗ ∃ dh, ⌜dh ≤ D⌝ ∗ ⌜pctx_in K2 y.2⌝ ∗ G ∗
+    WP e @ E {{ v, ⌜v = #(y.1)⌝ ∗ ∃ dh, ⌜dh ≤ D⌝ ∗ ⌜pctx_in K2 y.2⌝ ∗ G ∗
       £(D * (D + 3) + 2 * (D + 1) * D) ∗
       shr_view κ (lty_fold (pctx_plug K2 lt)) y.2 dh D tid y.1 ∗
       (∀ dh', ⌜dh' + pctx_dlev K2 ≤ dh⌝ -∗ G -∗
@@ -500,7 +499,7 @@ Section pshr_addr.
     iIntros (w) "(-> & _ & G' & P)".
     (* The pointer, and the (persistent) ownership of the shared reference; the closed
        access. *)
-    iAssert (WP Load Na1Ord MPtr #lK @ E {{ v, ⌜v = MLitV (VPtr y.1.1)⌝ ∗ G ∗
+    iAssert (WP Load Na1Ord MPtr #lK @ E {{ v, ⌜v = MLitV (VPtr y.1)⌝ ∗ G ∗
       vroot_own (pctx_plug K1 lt1') (pctx_vrfn K1 x₀ ζm (inl (PlaceIn y))) D tid
         (MLitV (VPtr (pctx_vrloc K1 (lty_size lt1) x₀))) ∗
       ⌜lty_vin (pctx_plug K2 lt) y.2⌝ ∗ (shr_bytes κ T).(ty_gho_own) y dh1 gh1 tid }})%I

@@ -82,13 +82,13 @@ Section view_acc.
       iIntros (lt' p' r' dh' gh' dn gn Hsz Hf Hb Hle) "V'". rewrite /prod_node.
       iSplitL "V1"; [iApply (lty_view_depth_mono with "V1"); lia|].
       iApply ("Cl" with "[//] [//] [//] [//] V'").
-    - rewrite /view_own lty_size_plug. iDestruct "V" as "(#Gp & %Hd & V)".
+    - rewrite /view_own. iDestruct "V" as "(#Gp & %Hd & V)".
       iDestruct (IH with "GR V") as (dh gh) "(% & Vh & Gs & Cl)"; [done|].
       iExists dh, gh. iFrame "Vh". iSplit; [iPureIntro; destruct_and!; split_and!; try lia; done|].
       iFrame "Gs". iSplit.
       { iApply (guards_transitive_right with "[] Gp").
         iApply (guards_transitive with "GR"). iApply pctx_salv_incl. }
-      iIntros (lt' p' r' dh' gh' dn gn Hsz Hf Hb Hle) "V'". rewrite /view_own lty_size_plug Hsz.
+      iIntros (lt' p' r' dh' gh' dn gn Hsz Hf Hb Hle) "V'". rewrite /view_own.
       iSplit; [iApply (lguards_weaken_later with "Gp"); lia|]. iSplit; [iPureIntro; lia|].
       iApply ("Cl" with "[//] [//] [//] [%] V'"). lia.
     - rewrite /psum_proj_or. destruct (psum_proj i x.1) as [y|] eqn:Hy; last first.

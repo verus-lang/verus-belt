@@ -111,7 +111,7 @@ Section cell_loc.
 
   Global Instance cell_loc_shr_pin κ m 𝔄 :
     PinPred (λ (x: ~~(at_locₛ (trackedₛ (pcellₛ (syn_mty 𝔄) * 𝔄)))) n,
-      cell_loc κ m x.1.1 x.2.1 n).
+      cell_loc κ m x.1 x.2.1 n).
   Proof. split; [apply _|]. intros. by apply cell_loc_mono. Qed.
 
   Definition cell_uniq_loc κ m {𝔄} (x: ~~(uniq_borₛ (trackedₛ (pcellₛ (syn_mty 𝔄) * 𝔄))))
@@ -132,7 +132,7 @@ Section cell_types.
 
   Definition cell_shr_ty {𝔄} (κ: lft) (ty: type 𝔄) :
       type (at_locₛ (trackedₛ (pcellₛ (syn_mty 𝔄) * 𝔄))) :=
-    pinned_ty (&shr{κ} (cell_points_to_ty ty)) (λ x n, cell_loc κ ty.(ty_mty) x.1.1 x.2.1 n).
+    pinned_ty (&shr{κ} (cell_points_to_ty ty)) (λ x n, cell_loc κ ty.(ty_mty) x.1 x.2.1 n).
 
   Definition cell_uniq_ty {𝔄} (κ: lft) (ty: type 𝔄) :
       type (uniq_borₛ (trackedₛ (pcellₛ (syn_mty 𝔄) * 𝔄))) :=
