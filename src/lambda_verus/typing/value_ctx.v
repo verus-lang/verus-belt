@@ -50,6 +50,17 @@ Section value_rules.
     iIntros (? ->). by iApply ("ToΦ" with "[//] [//] ⧖ Gho").
   Qed.
 
+  (** Duplicating a value of a [Copy] type. *)
+  Lemma copy_val_tctx_incl {𝔄 𝔄l} (ty: type 𝔄) `{!Copy ty} (T: tctx 𝔄l) p E L :
+    tctx_incl E L (p ◁ᵥ ty +:: T) (p ◁ᵥ ty +:: p ◁ᵥ ty +:: T)
+      (λ post '(a -:: al), post (a -:: a -:: al)).
+  Proof.
+    split; [by intros ??? [??]|].
+    iIntros (??[a al]???) "_ _ _ _ _ $ /=[(%v & %Hp & %w & %d & %Hw & #⧖ & #Gho) T] Obs !>".
+    iExists (a -:: a -:: al). iFrame "Obs T".
+    iSplit; iExists v; (iSplit; [done|]); iExists w, d; by iFrame "⧖ Gho".
+  Qed.
+
   (** An integer literal. *)
   Lemma type_val_int_instr it (z: Z) E L I :
     int_in_range it z →
