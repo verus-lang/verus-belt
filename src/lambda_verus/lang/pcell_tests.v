@@ -10,21 +10,22 @@ Set Default Proof Using "Type".
 Section pcell_tests.
   Context `{!lrustGS Σ}.
 
-  (** Moving a [PCell] without cells by a typed copy: [Load m] then [Store m]. The bytes at
-      the new location are [encode_value m v], which may differ from the old bytes. *)
+  (** Moving a [PCell] by a typed copy: [Load m] then [Store m]. The bytes at the new
+      location are [encode_value m v], which may differ from the old bytes; the group may
+      embed cells, whose bytes are rewritten too. *)
   Lemma wp_pcell_move E l l' g m cs bs0 :
     ↑naN ⊆ E → mty_wf m → length bs0 = mty_size m →
-    {{{ loc_side l g m cs ∗ gnocell g ∗ ▷ l' ↦b bs0 }}}
+    {{{ loc_side l g m cs ∗ ▷ l' ↦b bs0 }}}
       Store Na1Ord m (Lit $ LitLoc l') (Load Na1Ord m (Lit $ LitLoc l)) @ E
     {{{ bs, RET LitV LitPoison; l ↦b bs ∗ loc_side l' g m cs }}}.
   Proof.
-    iIntros (? Hm Hlen Φ) "(Hls & #Hnc & Hl') HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+    iIntros (? Hm Hlen Φ) "(Hls & Hl') HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
     iMod (bytes_ctx_pcell_untether with "HB Hls") as (bs v) "(HB & Hl & %Hd & Hu)"; [done|].
     iModIntro. iFrame "HB".
     wp_bind (Load _ _ _). iApply (wp_load_na with "Hl"); [done|]. iIntros "!> Hl".
     iApply (wp_store_na_post with "Hl'"); [done|by eapply decode_value_wf|done|].
     iIntros "!> Hl'" (σB') "HB".
-    iMod (bytes_ctx_pcell_retether with "HB Hu Hl' [$Hnc]") as "[HB Hls]"; [done| |].
+    iMod (bytes_ctx_pcell_retether_gen with "HB Hu Hl'") as "[HB Hls]"; [done| |].
     { rewrite decode_encode_value; [by rewrite Hd|done|by eapply decode_value_wf]. }
     iModIntro. iFrame "HB". iApply "HΦ". by iFrame.
   Qed.
@@ -223,7 +224,7 @@ Section pcell_tests.
       [done|apply PTR_SIZE_pos|constructor|by apply (decode_encode_value MPtr (VPtr lp)); constructor|].
     iIntros (g cs) "Hls Hgd #Hnc".
     wp_bind (Store _ _ _ _).
-    iApply (wp_pcell_move _ l l' with "[$Hls $Hnc $Hl']");
+    iApply (wp_pcell_move _ l l' with "[$Hls $Hl']");
       [done|constructor|done|].
     iIntros "!>" (bs1) "[Hl Hls]". wp_seq.
     iApply (wp_pcell_destroy_plain _ _ _ _ _ _ (VPtr lp) with "Hls Hgd"). iIntros (bs2) "Hl' %Hd".
@@ -497,6 +498,37 @@ Section pcell_tests.
     iIntros "!>" (v) "[[Hls Hgd] %Hv]". have -> : v = VInt 7 by apply fv_lift_int, Hv.
     iApply "HΦ". iExists g, cs. iFrame.
   Qed.
+
+  (** ** A typed move of a [PCell<(i32, PCell<i32>)>] *)
+  Lemma test_pcell_typed_move_nested E l l' bs1 bs2 bs' :
+    ↑naN ⊆ E →
+    decode_value (MInt i32) bs1 = Some (VInt 5) → decode_value (MInt i32) bs2 = Some (VInt 9) →
+    length bs' = 8%nat →
+    {{{ l ↦b bs1 ∗ (l +ₗ 4) ↦b bs2 ∗ ▷ l' ↦b bs' }}}
+      Store Na1Ord pair_mty (#l') (Load Na1Ord pair_mty (#l)) ;;
+      Load Na1Ord (MInt i32) (#(l' +ₗ 4)) @ E
+    {{{ RET MLitV (VInt 9); ∃ bs g0 cs0 g1, l ↦b bs ∗ loc_side l' g0 pair_mty cs0 ∗
+          gdyn g0 (FVTuple [FVInt 5; FVCell g1]) ∗ gdyn g1 (FVInt 9) }}}.
+  Proof.
+    iIntros (? Hd1 Hd2 Hlen Φ) "(Hl1 & Hl2 & Hl') HΦ".
+    iApply (wp_pair_setup with "Hl1 Hl2"); [done..|].
+    iIntros (g0 cs0 g1 cs1) "#Hg0 Hls0 Hgd0 #Hg1 Hgd1 #Hp".
+    (* Move the outer cell (and the inner one along). *)
+    wp_bind (Store _ _ _ _).
+    iApply (wp_pcell_move _ l l' with "[$Hls0 $Hl']"); [done|apply pair_mty_wf|done|].
+    iIntros "!>" (bs) "[Hl Hls0]". wp_seq.
+    (* Read through the inner cell at its new location. *)
+    iMod lc_zero as "£".
+    have -> : (Lit (LitLoc (l' +ₗ 4))) = (Lit (LitLoc (l' +ₗ (4 + 0)%nat))) by done.
+    iAssert ((loc_side l' g0 pair_mty cs0 ∗ gdyn g1 (FVInt 9)) &&{↑naN; 0}&&>
+      (loc_side l' g0 pair_mty cs0 ∗ gdyn g1 (FVInt 9)))%I as "#Guard"; [iApply guards_refl|].
+    iApply (wp_pcell_load_na_sub _ l' g0 pair_mty cs0 g1 4 (MInt i32) cs1 (FVInt 9) 0 (MInt i32)
+      (FVInt 9) with "[$Guard $Hls0 $Hgd1 $£ $Hp $Hg1]").
+    { done. } { apply fv_sub_here. } { done. }
+    { iIntros "!> [Hls Hgd]". iSplitL "Hls Hgd"; [iFrame|]. iIntros "Hls Hgd". iFrame. }
+    iIntros "!>" (v) "[[Hls0 Hgd1] %Hv]". have -> : v = VInt 9 by apply fv_lift_int, Hv.
+    iApply "HΦ". iExists bs, g0, cs0, g1. iFrame.
+  Qed.
 End pcell_tests.
 
 Print Assumptions test_pcell_read.
@@ -511,3 +543,4 @@ Print Assumptions test_pcell_sub_write.
 Print Assumptions test_pcell_inner_access.
 Print Assumptions test_mcas_int.
 Print Assumptions test_pcell_mcas.
+Print Assumptions test_pcell_typed_move_nested.
