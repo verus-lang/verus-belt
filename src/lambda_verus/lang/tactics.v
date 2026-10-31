@@ -36,6 +36,7 @@ Inductive expr :=
 | VariantData (e : expr)
 | ToLit (e : expr)
 | OfLit (e : expr)
+| MCAS (m : mty) (e0 e1 e2 : expr)
 .
 
 Fixpoint to_expr (e : expr) : lang.expr :=
@@ -68,6 +69,7 @@ Fixpoint to_expr (e : expr) : lang.expr :=
   | VariantData e => lang.VariantData (to_expr e)
   | ToLit e => lang.ToLit (to_expr e)
   | OfLit e => lang.OfLit (to_expr e)
+  | MCAS m e0 e1 e2 => lang.MCAS m (to_expr e0) (to_expr e1) (to_expr e2)
   end.
 
 Ltac of_expr e :=
@@ -112,6 +114,9 @@ Ltac of_expr e :=
   | lang.VariantData ?e => let e := of_expr e in constr:(VariantData e)
   | lang.ToLit ?e => let e := of_expr e in constr:(ToLit e)
   | lang.OfLit ?e => let e := of_expr e in constr:(OfLit e)
+  | lang.MCAS ?m ?e0 ?e1 ?e2 =>
+     let e0 := of_expr e0 in let e1 := of_expr e1 in let e2 := of_expr e2 in
+     constr:(MCAS m e0 e1 e2)
   | _ => match goal with
          | H : to_val e = Some ?v |- _ => constr:(Val v e H)
          | H : Closed [] e |- _ => constr:(@ClosedExpr e H)
@@ -130,7 +135,7 @@ Fixpoint is_closed (X : list string) (e : expr) : bool :=
   | MkTuple el => forallb (is_closed X) el
   | Read _ e | Alloc e | Fork e | Load _ _ e | Proj _ e | MkVariant _ e
   | VariantTag e | VariantData e | ToLit e | OfLit e => is_closed X e
-  | CAS e0 e1 e2 => is_closed X e0 && is_closed X e1 && is_closed X e2
+  | CAS e0 e1 e2 | MCAS _ e0 e1 e2 => is_closed X e0 && is_closed X e1 && is_closed X e2
   end.
 Lemma is_closed_correct X e : is_closed X e → lang.is_closed X (to_expr e).
 Proof.
@@ -198,6 +203,7 @@ Fixpoint subst (x : string) (es : expr) (e : expr)  : expr :=
   | VariantData e => VariantData (subst x es e)
   | ToLit e => ToLit (subst x es e)
   | OfLit e => OfLit (subst x es e)
+  | MCAS m e0 e1 e2 => MCAS m (subst x es e0) (subst x es e1) (subst x es e2)
   end.
 Lemma to_expr_subst x er e :
   to_expr (subst x er e) = lang.subst x (to_expr er) (to_expr e).
@@ -214,7 +220,7 @@ Definition is_atomic (e: expr) : bool :=
   | Read (ScOrd | Na2Ord) e | Alloc e => bool_decide (is_Some (to_val e))
   | Write (ScOrd | Na2Ord) e1 e2 | Free e1 e2 =>
     bool_decide (is_Some (to_val e1) ∧ is_Some (to_val e2))
-  | CAS e0 e1 e2 =>
+  | CAS e0 e1 e2 | MCAS _ e0 e1 e2 =>
     bool_decide (is_Some (to_val e0) ∧ is_Some (to_val e1) ∧ is_Some (to_val e2))
   | Load (ScOrd | Na2Ord) _ e => bool_decide (is_Some (to_val e))
   | Store (ScOrd | Na2Ord) _ e1 e2 | MemCopy (ScOrd | Na2Ord) _ e1 e2 =>
@@ -226,8 +232,8 @@ Proof.
   intros He. apply ectx_language_atomic.
   - intros σ e' σ' ef.
     destruct e; simpl; try done; repeat (case_match; try done);
-    inversion 1; try (apply val_irreducible; rewrite ?language.to_of_val; naive_solver eauto); [].
-    rewrite -[stuck_term](fill_empty). apply stuck_irreducible.
+    inversion 1; try (apply val_irreducible; rewrite ?language.to_of_val; naive_solver eauto).
+    all: rewrite -[stuck_term](fill_empty); apply stuck_irreducible.
   - apply ectxi_language_sub_redexes_are_values=> /= Ki e' Hfill.
     revert He. destruct e; simpl; try done; repeat (case_match; try done);
     rewrite ?bool_decide_spec;
@@ -358,5 +364,9 @@ Ltac reshape_expr e tac :=
   | VariantData ?e => go (VariantDataCtx :: K) e
   | ToLit ?e => go (ToLitCtx :: K) e
   | OfLit ?e => go (OfLitCtx :: K) e
+  | MCAS ?m ?e0 ?e1 ?e2 => reshape_val e0 ltac:(fun v0 => first
+     [ reshape_val e1 ltac:(fun v1 => go (MCasRCtx m v0 v1 :: K) e2)
+     | go (MCasMCtx m v0 e2 :: K) e1 ])
+  | MCAS ?m ?e0 ?e1 ?e2 => go (MCasLCtx m e1 e2 :: K) e0
   end
   in go (@nil ectx_item) e.
