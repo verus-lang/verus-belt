@@ -447,105 +447,6 @@ Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   end.
   
   
-Fixpoint size_of 𝔄 : nat :=
-  match 𝔄 return nat with
-  | intₛ _ => 1
-  | boolₛ => 1
-  | unitₛ => 0
-  | Propₛ => 0
-  | positiveₛ => 0
-  | locₛ => 1
-  | optionₛ 𝔄₀ => 0
-  | listₛ 𝔄₀ => 0
-  | vecₛ 𝔄₀ n => 0
-  | prodₛ 𝔄₀ 𝔄₁ => (size_of 𝔄₀ + size_of 𝔄₁)
-  | sumₛ 𝔄₀ 𝔄₁ => 0
-  | xprodₛ 𝔄l => list_sum (fmap size_of 𝔄l)
-  | xsumₛ 𝔄l => S (list_max (fmap size_of 𝔄l))
-  | at_locₛ 𝔄₀  => 1
-  | invₛ 𝔄₀  => 0
-  | local_invₛ 𝔄₀  => 0
-  | uniq_borₛ 𝔄₀  => 1
-  | blockedₛ 𝔄₀ => 0
-  | ghostₛ 𝔄₀ => 0
-  | trackedₛ 𝔄₀ => 0
-  | storableₛ 𝔄₀ => 0
-  | uninitₛ n => n
-  | pcellₛ _ => 0
-  | paddingₛ => 0
-  | funₛ 𝔄₀ 𝔄₁ => 0
-  | join_handleₛ 𝔄₀  => 0
-  | exec_funₛ 𝔄₀  => 1
-  | maskₛ => 0
-  | namespaceₛ => 0
-  end.
-  
-Definition pad (l: list fancy_val) (n: nat) : list fancy_val :=
-  if bool_decide (n < length l) then
-    take n l
-  else
-    l ++ List.repeat (FVal (LitV LitPoison)) (n - length l).
-  
-Fixpoint syn_phys {𝔄} : (~~𝔄) → list fancy_val :=
-  match 𝔄 return (~~𝔄) → list fancy_val with
-  | intₛ _ => λ x, [ FVal (LitV (LitInt x)) ]
-  | boolₛ => λ x, [FVal (LitV (lit_of_bool x))]
-  | unitₛ => λ x, []
-  | Propₛ => λ x, []
-  | positiveₛ => λ x, []
-  | locₛ => λ x, [FVal (LitV (LitLoc x))]
-  | optionₛ 𝔄₀ => λ x, []
-  | listₛ 𝔄₀ => λ x, []
-  | vecₛ 𝔄₀ n => λ x, []
-  | prodₛ 𝔄₀ 𝔄₁ => λ '(x₀, x₁), @syn_phys 𝔄₀ x₀ ++ @syn_phys 𝔄₁ x₁
-  | sumₛ 𝔄₀ 𝔄₁ => λ x, []
-  | xprodₛ 𝔄l => λ x , List.concat (plist_to_list (pmap (λ _ x0 , syn_phys x0) x))
-  | xsumₛ 𝔄l => λ '(x, padding) ,
-      match to_xsum (psum_map1 (λ _ x0, syn_phys x0) x) return (list fancy_val) with
-          xinj i l => pad (FVal (LitV (LitInt i)) :: l ++ (fmap FVal padding)) (size_of 𝔄)
-      end
-  | at_locₛ 𝔄₀  => λ x, [FVal (LitV (LitLoc (x.1)))]
-  | invₛ 𝔄₀  => λ x, []
-  | local_invₛ 𝔄₀  => λ x, []
-  | uniq_borₛ 𝔄₀  =>  λ x,
-      (match x with
-        (l, x₀, ξi, d', g', idx) => [FVal (LitV (LitLoc l))]
-      end)
-  | blockedₛ 𝔄₀ => λ x, []
-  | ghostₛ 𝔄₀ => λ x, []
-  | trackedₛ 𝔄₀ => λ x, []
-  | storableₛ 𝔄₀ => λ x, []
-  | uninitₛ n => λ x, fmap FVal (vec_to_list x)
-  | pcellₛ _ => λ _, []
-  | paddingₛ => λ x, []
-  | funₛ 𝔄₀ 𝔄₁ => λ x, []
-  | join_handleₛ 𝔄₀  => λ x, []
-  | exec_funₛ 𝔄₀  => λ x, [FVal (fst x)]
-  | maskₛ => λ x, []
-  | namespaceₛ => λ x, []
-  end.
-      
-Local Lemma length_pad l n : length (pad l n) = n.
-Proof.
-  unfold pad. case_decide; simpl.
-    - rewrite length_take; lia.
-    - rewrite length_app. rewrite repeat_length. lia.
-Qed.
-Lemma syn_phys_size_eq 𝔄 (x: ~~𝔄) : length (@syn_phys 𝔄 x) = size_of 𝔄.
-  move: 𝔄 x. fix FIX 1. move=> 𝔄 x. destruct 𝔄; try (clear FIX; done).
-  - destruct x. simpl. rewrite List.length_app. do 2 (rewrite FIX). clear FIX; trivial.
-  - induction l.
-    + clear FIX; trivial.
-    + destruct x as [x₀ x']. simpl. rewrite List.length_app. f_equal.
-      * apply FIX.
-      * rewrite IHl. clear FIX; trivial.
-  - destruct x as [x padding].
-    simpl. destruct (to_xsum (psum_map1 (λ (A : syn_type) (x0 : ~~ A), syn_phys x0) x)).
-    apply length_pad.
-  - destruct x as [[[[[[l ?] ?] ?] ?] ?] ?]. clear FIX; trivial.
-  - simpl. rewrite length_fmap. rewrite length_vec_to_list. clear FIX; trivial.
-Qed.
-
 Definition blockedπ {𝔄} : ~~(blockedₛ 𝔄) → proph_asn → 𝔄 :=
   match 𝔄 return ~~(blockedₛ 𝔄) → proph_asn → 𝔄 with
     | uniq_borₛ 𝔄₀ => λ '(x, ξi, ζi) π ,
@@ -622,51 +523,10 @@ Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   | namespaceₛ => λ x , x
   end.
 
-Lemma syn_abstract_phys_eq 𝔄 x x' :
-  @syn_abstract 𝔄 x = @syn_abstract 𝔄 x' → (@syn_phys 𝔄 x = @syn_phys 𝔄 x').
-Proof.
-  move: 𝔄 x x'. fix FIX 1. move=> 𝔄 x x' Hab. destruct 𝔄;
-    try (clear FIX; done);
-    try (clear FIX; simpl in Hab; subst; done).
-  - simpl in Hab. inversion Hab as [[Ha Hb]]. destruct x, x'. simpl.
-    rewrite (FIX _ _ _ Ha). rewrite (FIX _ _ _ Hb). clear FIX; trivial.
-  - induction l; first by (clear FIX; trivial). destruct x as [x xl]. destruct x' as [x' xl'].
-    simpl. inversion Hab. f_equal.
-      * apply FIX. clear FIX. trivial.
-      * apply IHl. clear FIX. trivial.
-  - assert (∀ (i: fin (length l)) (x1 x2 : ~~ (l !!ₗ i)),
-        syn_abstract x1 = syn_abstract x2 → syn_phys x1 = syn_phys x2
-    ) as Hall.
-    { 
-       clear Hab. clear x. clear x'. induction l as [|𝔄0 𝔄l].
-        - clear FIX. intros i. inversion i.
-        - intros i. dependent destruction i. + apply FIX. + apply IH𝔄l.
-    } 
-    clear FIX.
-    destruct x as [x padding]. destruct x' as [x' padding'].
-    simpl. simpl in Hab. inversion Hab as [[Ha Hb]]. subst padding'.
-    replace x with (of_xsum (to_xsum x)) in Ha; last by rewrite semi_iso'.
-    replace x' with (of_xsum (to_xsum x')) in Ha; last by rewrite semi_iso'.
-    replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
-    replace x' with (of_xsum (to_xsum x')); last by rewrite semi_iso'.
-    destruct (to_xsum x). destruct (to_xsum x'). simpl in Ha.
-    do 2 (rewrite psum_map1_pinj in Ha). 
-    destruct (pinj_inj _ _ _ _ Ha) as [Hb Hc]. subst i1.
-    have Hd := JMeq_eq Hc.
-    have He := Hall _ _ _ Hd.
-    simpl. do 2 (rewrite psum_map1_pinj). do 2 (rewrite to_xsum_pinj).
-    rewrite He. trivial.
-  - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
-  - destruct x as [[[[[[? ?] ?] ?] ?] ?] ?].
-    destruct x' as [[[[[[? ?] ?] ?] ?] ?] ?].
-    inversion Hab as [[Ha Hb]]. clear FIX. trivial.
-  - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
-Qed.
-
 (** * MiniRust types and values of syntactic types
 
 The MiniRust type [syn_mty 𝔄] (see [lang/minirust.v]) of a syntactic type, and the
-MiniRust value [syn_val x] (if any) of [x : ~~𝔄]. Like [size_of] and [syn_phys], they
+MiniRust value [syn_val x] (if any) of [x : ~~𝔄]. They
 are determined by the syntactic type: every semantic type [ty : type 𝔄] has
 [ty_mty ty = syn_mty 𝔄] and [ty_val ty = syn_val] (see [typing/type.v]). They are
 shallow: a pointer is [MPtr] whatever its pointee.
@@ -763,7 +623,7 @@ Fixpoint syn_nocell (𝔄: syn_type) : bool :=
   | _ => true
   end.
 
-(** The size in bytes of a syntactic type. (The legacy [size_of] counts words.) *)
+(** The size in bytes of a syntactic type. *)
 Definition syn_bsize (𝔄: syn_type) : nat := mty_size (syn_mty 𝔄).
 
 (** ** Layout lemmas *)
@@ -1084,8 +944,8 @@ Proof.
   rewrite length_take length_drop length_take. rewrite !decide_True //; lia.
 Qed.
 
-(** The MiniRust value only depends on the abstracted value (as [syn_phys], see
-    [syn_abstract_phys_eq]); this is what the [Send] arguments need. *)
+(** The MiniRust value only depends on the abstracted value; this is what the [Send]
+    arguments need. *)
 Lemma syn_abstract_val_eq 𝔄 x x' :
   @syn_abstract 𝔄 x = @syn_abstract 𝔄 x' → (@syn_val 𝔄 x = @syn_val 𝔄 x').
 Proof.
@@ -1394,15 +1254,12 @@ Qed.
 
 Infix "∘ₛ" := (composeₛ) (at level 50).
 
-(** An isomorphism of syntactic types. Besides the legacy [size_of] and [syn_phys], it
-    preserves the byte size and the byte representations: bytes that decode to the
+(** An isomorphism of syntactic types. It preserves the byte size and the byte representations: bytes that decode to the
     MiniRust value of [x] at [𝔄] are exactly those that decode to the value of [f x] at
     [𝔅] (the MiniRust types and values themselves may differ, e.g. [() * 𝔄] and [𝔄]). *)
 Class Isoₛ {𝔄 𝔅 : syn_type} (f : 𝔄 →ₛ 𝔅) (g : 𝔅 →ₛ 𝔄) := {
     syn_iso : Iso (syn_type_morphism_fn f) (syn_type_morphism_fn g) ;
     syn_iso_proph : Iso (syn_type_morphism_proph_fn f) (syn_type_morphism_proph_fn g) ;
-    syn_iso_size_eq : size_of 𝔄 = size_of 𝔅 ;
-    syn_iso_phys_eq : ∀ (x: ~~𝔄), @syn_phys 𝔄 x = @syn_phys 𝔅 (syn_type_morphism_fn f x) ;
     syn_iso_bsize_eq : syn_bsize 𝔄 = syn_bsize 𝔅 ;
     syn_iso_bytes : ∀ (x: ~~𝔄) (bs: list abyte),
       decode_value (syn_mty 𝔄) bs = syn_val x ↔
@@ -1418,8 +1275,7 @@ Global Instance isoₛ_compose {𝔄 𝔅 ℭ} `{!@Isoₛ 𝔄 𝔅 f f'} `{!@Is
     : Isoₛ (g ∘ₛ f) (f' ∘ₛ g').
 Proof.
   inversion H. inversion H0. split.
-    - typeclasses eauto. - typeclasses eauto. - congruence.
-    - intros. simpl. rewrite <- syn_iso_phys_eq1. by rewrite <- syn_iso_phys_eq0.
+    - typeclasses eauto. - typeclasses eauto.
     - congruence.
     - intros x bs. simpl. by rewrite syn_iso_bytes0 syn_iso_bytes1.
 Qed.
@@ -1433,7 +1289,7 @@ Qed.
 
 Global Instance isoₛ_cons_prod {𝔄 𝔅l} : @Isoₛ (𝔄 * Π! 𝔅l) (Π! (𝔄 :: 𝔅l)) to_cons_prodₛ of_cons_prodₛ.
 Proof.
-  split; [apply _|apply _|done|by intros [??]| |].
+  split; [apply _|apply _| |].
   - change (seq_size [syn_mty 𝔄; seq_tuple (syn_mty <$> 𝔅l)] =
       seq_size (syn_mty 𝔄 :: (syn_mty <$> 𝔅l))).
     rewrite !seq_size_cons seq_size_nil mty_size_seq_tuple. lia.
@@ -1452,13 +1308,13 @@ Qed.
 
 Global Instance isoₛ_empty_prod_unit : @Isoₛ (Π! []) unitₛ empty_prod_to_unitₛ empty_prod_of_unitₛ.
 Proof.
-  split; [split; fun_ext; destruct x; done|split; fun_ext; destruct x; done|done|by intros []|done|].
+  split; [split; fun_ext; destruct x; done|split; fun_ext; destruct x; done|done|].
   intros [] bs. done.
 Qed.
 
 Global Instance Isoₛ_prod_left_id {𝔄} : @Isoₛ (() * 𝔄) 𝔄 prod_left_idₛ prod_left_id'ₛ.
 Proof.
-  split; [apply _|apply _|done|by intros [[]?]| |].
+  split; [apply _|apply _| |].
   - change (seq_size [zst_mty; syn_mty 𝔄] = syn_bsize 𝔄).
     rewrite !seq_size_cons seq_size_nil /= /syn_bsize. lia.
   - intros [[] a] bs.
@@ -1473,7 +1329,7 @@ Qed.
 
 Global Instance Isoₛ_prod_right_id {𝔄} : @Isoₛ (𝔄 * ()) 𝔄 prod_right_idₛ prod_right_id'ₛ.
 Proof.
-  split; [apply _|apply _|simpl; lia|intros [?[]]; simpl; by rewrite List.app_nil_r| |].
+  split; [apply _|apply _| |].
   - change (seq_size [syn_mty 𝔄; zst_mty] = syn_bsize 𝔄).
     rewrite !seq_size_cons seq_size_nil /=. rewrite /syn_bsize. lia.
   - intros [a []] bs.
