@@ -1,7 +1,7 @@
 # PCell on the byte memory model: multi-byte cells
 
 Status: steps 1–3 implemented (2026-10-30), branch `memory-model`; see §9 Outcome. §10 step 1
-done (2026-10-31); see §11. §10 steps 2 and 3 done; see §12 and §13.
+done (2026-10-31); see §11. §10 steps 2 and 3 done; see §12 and §13. §10 step 4 done; see §14.
 Context: `design_docs/minirust-memory-model.md` (stages 1–5). `pcell` is the last user of the
 legacy word layer.
 
@@ -605,3 +605,155 @@ The `type` record (`typing/type.v`) gains the fancy value. No `Admitted`; no new
 
 - The OFE structure doesn't change: `ty_fval` is not part of `type_unpack`, just as
   `ty_mty` and `ty_val` aren't.
+
+## 14. Outcome: §10 step 4 (2026-10-31)
+
+Parents own fancy bytes. `bytes_own`, and with it the bodies of `own_bytes`, `&shrb` and the
+leaves of `&uniqb` and of the byte places (`cbytes`), now own fancy bytes. Both halves of the
+step (boxes, products and sums; the borrows) are in one merge: the borrow bodies are defined
+over `bytes_own`, so they needed no separate generalisation. No `Admitted`; no new axioms. No
+example needed a change.
+
+### Definitions
+
+- **`ty_fbytes R ty x fbs`** (`typing/type.v`), next to `ty_bytes`:
+
+      length fbs = ty_bsize ty ∧ ∃ fv, ty_fval x = Some fv ∧ frepr R (ty_mty ty) fbs fv
+
+  `fbs : list (positive + abyte)` (byte-cells or bytes), `R` a static registry.
+  `syn_fbytes R x fbs` (`typing/bytes_layout.v`) is the same over the syntactic type
+  (`ty_fbytes_syn`).
+  - **The length is explicit.** `frepr` gives it only for a well-formed registry
+    (`frepr_length` needs `reg_wf R`), and an `R` owned as fragments is not known to be well
+    formed without the byte context. Combining the fancy bytes of two fields needs the
+    lengths.
+- **`bytes_own`** (`typing/own_bytes.v`), sealed:
+
+      bytes_own ty l x := ∃ R fbs, heap_mapsto_fbytes l fbs ∗ ⌜ty_fbytes R ty x fbs⌝ ∗ greg_map R
+      greg_map R := [∗ map] g ↦ e ∈ R, greg g e.1 e.2
+
+  - **The registry.** Per §7, `frepr` depends only on the static registry, so `bytes_own` owns
+    the (persistent) fragments `greg` of the groups that it uses. The existential `R` is
+    local to each owner. Two fragments agree where they overlap (`greg_agree`), so their union
+    is a fragment containing both (`greg_map_union`); this is what combining needs.
+  - **Equivalently** (`bytes_own_brepr`), it is `heap_mapsto_fbytes l fbs` with
+    `brepr (ty_mty ty) fbs fv`, the form of the lemmas of `lang/heap_cells.v`
+    (`bytes_ctx_pcell_create` etc.).
+  - **Why sealed.** Unfolded, the unifier expands it while trying instances. In
+    `place_pshr.v`, the `Persistent` search for `guard ∗ ty_shr` tried `pctx_sguards` and
+    `shr_view`, and did not finish.
+- **`NoCell 𝔄`** (`typing/type.v`): `syn_nocell 𝔄` as a class. It is solved by
+  `Hint Extern … exact I` whenever the head constructor of `𝔄` is known, and by
+  `prod_nocell` for products of such types.
+
+### The reduction lemmas
+
+    Lemma bytes_own_of_bytes ty l x bs : ty_bytes ty x bs → l ↦b bs -∗ bytes_own ty l x.
+    Lemma bytes_own_to_bytes ty l x v :
+      ty.(ty_val) x = Some v → bytes_own ty l x -∗ ∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝.
+    Lemma bytes_own_nocell `{!NoCell 𝔄} ty l x :
+      bytes_own ty l x ⊣⊢ ∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝.
+
+The first two hold for every type. The second rests on `syn_fval_val`
+(`syn_val x = Some v → syn_fval x = Some (fv_lift v)`): a value with a MiniRust value has no
+cells. The pure versions are `syn_fbytes_bytes`, `syn_fbytes_val` and `syn_fbytes_nocell`.
+Derived forms: `bytes_own_nocell_bytes`, `bytes_own_val` (`is_Some (ty_val x)`),
+`bytes_own_view` and `bytes_own_view_nocell` (the `□ (P -∗ ∃ bs, …)` view that
+`wp_load_na_guarded_gen` and `wp_memcopy_guarded_gen` take), `cbytes_nocell` and
+`shr_bytes_own_nocell`.
+
+**Dropping cells.** Any fancy bytes can be turned into plain bytes by dropping their cells
+(dropping a `PCell` is a no-op). This needs the byte context, so it is a WP-level rule:
+- `bytes_ctx_fbytes_forget` (`heap_cells.v`) untethers every location edge to a byte-cell
+  (`bheap_untether_fbytes`) and leaks the untethered rows. The final bytes are not in a
+  write: the edges are owned, so no cell write is in flight there (`cwentries_disj_fbytes`,
+  `row_end_rst`).
+- `wp_fbytes_forget` (`lifting.v`) and `wp_bytes_own_forget` (`own_bytes.v`) are the WP
+  versions, before any non-value expression.
+
+They are used wherever a value of a *generic* type is overwritten or freed: the `Store` rules
+(`wp_own_bytes_store`, `type_store_own_bytes_instr`, `type_write_oplace_instr`, the two
+`type_write_*place_deep_instr`), the old contents of the target box of the `MemCopy` rules,
+and `wp_own_bytes_delete`. `wp_delete_fbytes` (`place_resolve.v`) frees fancy bytes. The
+memory of a dropped place (`lty_omem`) is now `mem_cell` (fancy bytes of a given length) at
+its leaves, instead of `pad_cell`.
+
+### Splitting along the layout
+
+- **Pairs.** `bytes_own_pair` (generic over the type of the pair, as `cbytes_pair`):
+
+      bytes_own ty l (x1, x2) ⊣⊢ bytes_own ty1 l x1 ∗ bytes_own ty2 (l +ₗ ty_bsize ty1) x2
+
+  from `syn_fbytes_pair` and `frepr_seq_tuple_cons`. A `seq_tuple` has no padding, so its
+  representations are those of its fields (`frepr_seq_tuple`). `cbytes_pair` and the field
+  projections of `&shrb` (`type_shr_bytes_fst/snd_instr`) are corollaries; the
+  `place_shr.v` copy of `bytes_own_pair` is gone.
+- **n-ary products.** `syn_fbytes_xprod_cons` gives `cbytes_xprod_cons`.
+- **Sums.** `cbytes_sum` keeps its statement: the tag (`tag_cell`) and the padding
+  (`pad_cell`) stay plain bytes (`frepr_enum` requires them plain), and only the payload is
+  fancy (`syn_fbytes_sum`).
+- **Supporting lemmas.** `frepr_tuple_iff`, `frepr_enum_iff`, `frepr_seq_tuple(_nil)`,
+  `layout_fields_shift`, `in_field_layout`, `plain_fbytes`.
+- **Pointers.** The pointer lemmas (`cbytes_at_loc`, `cbytes_at_cloc`, `cbytes_uniq_bor`) are
+  the reduction lemma for pointer types.
+
+### Subtyping
+
+`btype_incl` now requires the equivalence of the fancy representations
+(`∀ x R fbs, ty_fbytes R ty x fbs ↔ ty_fbytes R ty' (f x) fbs`). For `f = idₛ` it holds
+by `ty_fbytes_same`; for boxes and references it holds by the reduction lemma.
+`bytes_own_iff` transports `bytes_own` along such an equivalence.
+
+### Sanity lemma for step 5
+
+    Lemma bytes_own_pcellb {m} (ty: type (pcellbₛ m)) l (g: ~~(pcellbₛ m)) :
+      mty_wf m → bytes_own ty l g ⊣⊢ ∃ cs, loc_side l g m cs ∗ ⌜length cs = mty_size m⌝.
+
+For any type of syntactic type `pcellbₛ m`, the byte ownership of the group `g` at `l` is
+exactly the location side of `g` (`frepr_cell_inv`). The length is the one that
+`bytes_ctx_greg_length` gives. Together with `bytes_own_pair`, the `own` of a tuple with a
+cell field splits into the plain bytes of the other fields and the cell's location side.
+
+### Changes to existing rules (deviation)
+
+The rules that `Load` or `MemCopy` the value of a leaf of a *generic* type got an instance
+argument `` `{!NoCell 𝔅} `` for the type of the leaf. Before, owning the bytes of a value
+implied that it has a MiniRust value; with cells it does not. `Copy` doesn't imply `NoCell`
+either: `base`, `simple_type` and `mod_ty` are `Copy` at any syntactic type, including
+`pcellbₛ m`. A `Load` of a value with cells is the typed move of step 5 (untether, `Load`,
+`Store`, retether), so these rules can't simply be generalised.
+
+The rules are:
+- `type_read_oplace_instr`, `type_move_oplace_instr`;
+- `type_read_oplace_shr_instr`, `type_read_{v,o}place_deep_instr`,
+  `type_read_vplace_pshr_root_instr`, `type_read_{v,o}place_pshr_instr`;
+- `type_read_oplace_res(_leaf,_shrblk)_instr`;
+- `type_load_own_bytes_copy_instr`, `type_load_shr_bytes_copy_instr`;
+- the `MemCopy` rules (`type_memcpy_{v,o}place_deep_instr`,
+  `type_memcpy_copy_from_*_instr`);
+- the helpers `shr_view_copy` and `wp_load_shr_view`.
+
+Every caller in the examples has a concrete type, so the instance is found automatically
+and no example changed. The `Store`, free and drop rules stay fully generic, by dropping the
+old cells.
+
+### Size of the change
+
+19 files, about 840 lines added and 175 removed:
+- new lemmas: `bytes_layout.v` (+280), `own_bytes.v` (+220), `heap_cells.v` (+100);
+- the ports, typically one or two lines per proof: a destruct of plain bytes becomes
+  `bytes_own_nocell_bytes` or `wp_bytes_own_forget`, and `iExists bs; iFrame` becomes
+  `bytes_own_of_bytes`.
+
+### Limits, for step 5
+
+- **No pcell types or rules** (by the plan).
+- **Borrows into cell contents.** `&shrb` and `&uniqb` *of values that contain cells* work:
+  their bodies are `bytes_own`/`cbytes`, i.e. fancy bytes at locations. A borrow *of a
+  cell's contents* (`PCell::borrow` / `borrow_mut`) points to bytes that are reached through
+  the group's chains (`gdyn`, `bytes_ctx_cell_*`), not through location edges. Its body is
+  part of the pcell types of step 5.
+- **Moves of values with cells.** Generic moves and copies of values with cells (the
+  `NoCell` rules above) need the untether/retether machinery, also in step 5.
+- **`NoCell` instances.** `NoCell` has instances only for products; `Π!`/`Σ!` of type
+  variables would need a `forallb` instance.
