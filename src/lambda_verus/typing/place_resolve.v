@@ -394,7 +394,7 @@ Section preresolve.
       refinement [r'] (which may depend on the reservation and on [ηl]), and the body is
       closed at the state with [r'], with new contents. *)
   Lemma cpd_preresolve {𝔄} κ ξi (ty: type 𝔄) p
-      (node: lpat → prfn 𝔄 → nat → nat → thread_id → cloc → iProp Σ)
+      (node: lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ)
       (r: prfn 𝔄) d g tid l E G :
     Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
@@ -472,7 +472,7 @@ Section vplace_uniq.
     { intros ?? Eq [? []] ??. split=> H ?; apply Eq, H; done. }
     iIntros (G tid [x []] mask post ?) "#LFT #PROPH #UNIQ #E #GL G [T _] Obs".
     destruct x as [[[[[[l x₀] ξi] d'] g'] idx] ζm].
-    iDestruct "T" as (v ? D) "(_ & _ & %d & %g & %Hle & -> & _ & _ & #Incl & #Pt & %d1 & %g1 & %Hle1 & Own)".
+    iDestruct "T" as (v ? D) "(_ & _ & %d & %g & %Hle & -> & _ & _ & #Incl & %d1 & %g1 & %Hle1 & Own)".
     leaf_open "GL" with "G" as "[L back]"; [set_solver|].
     iDestruct (Alv with "L E") as "#Lκ". iMod ("back" with "L") as "G".
     iDestruct (guards_transitive with "GL Lκ") as "#Gκ".
@@ -511,7 +511,7 @@ Section vplace_uniq.
     iIntros (Alv Hc Hrs Halv tid post mask iκs [x []])
       "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
     destruct x as [[[[[[l x₀] ξi] d'] g'] idx] ζm].
-    iDestruct "T" as (v ? D) "(#⧖0 & _ & %d & %g & %Hle & -> & _ & _ & #Incl & #PtBase & %d1 & %g1 & %Hle1 & Own)".
+    iDestruct "T" as (v ? D) "(#⧖0 & _ & %d & %g & %Hle & -> & _ & _ & #Incl & %d1 & %g1 & %Hle1 & Own)".
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct (lctx_lft_alive_list _ _ _ Halv with "L E") as "#Alvl".
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
@@ -584,8 +584,8 @@ Section lty_mem.
 
   (** [n] bytes of memory at [l], which may be byte-cells (the memory of a leaf whose value
       embeds cells: its cells are dropped when the memory is freed, [wp_delete_fbytes]). *)
-  Definition mem_cell (l: cloc) (n: nat) : iProp Σ :=
-    ∃ fbs, heap_mapsto_fbytes l.1 fbs ∗ ⌜length fbs = n⌝.
+  Definition mem_cell (l: loc) (n: nat) : iProp Σ :=
+    ∃ fbs, heap_mapsto_fbytes l fbs ∗ ⌜length fbs = n⌝.
 
   Lemma pad_cell_mem_cell l n : pad_cell l n -∗ mem_cell l n.
   Proof.
@@ -597,21 +597,21 @@ Section lty_mem.
       (unless a leaf is blocked or shared) and the memory of the pointees of its owned
       pointers that are freed by [drop_boxes]; the right to free a pointee is under [m]
       laters, as in [own_node]. *)
-  Fixpoint lty_omem {𝔄} (m: nat) (lt: lty 𝔄) : cloc → iProp Σ :=
-    match lt in lty 𝔄 return cloc → iProp Σ with
+  Fixpoint lty_omem {𝔄} (m: nat) (lt: lty 𝔄) : loc → iProp Σ :=
+    match lt in lty 𝔄 return loc → iProp Σ with
     | OfTy _ | OfRes _ | UniqLty _ _ | ShrLty _ _ | ResUniqLty _ _ => λ l, mem_cell l (lty_size lt)
     | OwnPtrLty n lt' => λ l, ∃ l': loc, ptr_cell l l' ∗
         if own_freeb n lt' then
           ▷^m freeable_sz n (lty_size lt') l' ∗
-          lty_omem (m + 1) lt' (l', repeat [] (lty_size lt'))
+          lty_omem (m + 1) lt' l'
         else True
     | ProdLty lt1 lt2 => λ l,
-        lty_omem m lt1 (cloc_take l (lty_size lt1)) ∗
-        lty_omem m lt2 (cloc_skip l (lty_size lt1))
+        lty_omem m lt1 l ∗
+        lty_omem m lt2 (l +ₗ lty_size lt1)
     | @SumLty _ _ 𝔄l tyl i lt' => λ l,
-        tag_cell 𝔄l (cloc_take l (tag_size 𝔄l)) i ∗
-        lty_omem m lt' (cloc_take (cloc_skip l (tag_size 𝔄l)) (lty_size lt')) ∗
-        pad_cell (cloc_skip (cloc_skip l (tag_size 𝔄l)) (lty_size lt')) (sum_max 𝔄l - lty_size lt')
+        tag_cell 𝔄l l i ∗
+        lty_omem m lt' (l +ₗ tag_size 𝔄l) ∗
+        pad_cell ((l +ₗ tag_size 𝔄l) +ₗ lty_size lt') (sum_max 𝔄l - lty_size lt')
     | Blocked _ _ | ShrBlocked _ _ => λ _, True
     end%I.
 
@@ -637,7 +637,7 @@ Section lty_mem.
       𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'] in m, r, d, g, l |- *; rewrite /ltype_own /=;
       [..|rewrite /leaf_owned_s /leaf_owned;
         destruct r as [lr|]; [|by iIntros "[[] _]"]; iIntros "[(%x & _ & Pt & _) _]";
-        rewrite cbytes_at_cloc; by iApply ptr_cell_mem_cell
+        rewrite cbytes_at_loc; by iApply ptr_cell_mem_cell
        |rewrite /res_leaf; destruct r as [lr|]; [|by iIntros "[]"];
         iIntros "(%x & _ & Pt & _)"; by iApply cbytes_mem_cell
        |rewrite /res_node; destruct r as [|[[l' r'] ξi]]; [by iIntros "[]"|];
@@ -791,15 +791,8 @@ Section drop_boxes.
       iApply (wp_free_bytes with "[$H↦ $H†]"); [done|done|]. iIntros "!> _". by iApply "HΦ".
   Qed.
 
-  Lemma cloc_take_repeat (l: loc) a b : cloc_take (l, repeat [] (a + b)) a = (l, repeat [] a).
-  Proof. by rewrite /cloc_take /= take_repeat_add. Qed.
-
-  Lemma cloc_skip_repeat (l: loc) a b :
-    cloc_skip (l, repeat [] (a + b)) a = (l +ₗ a, repeat [] b).
-  Proof. by rewrite /cloc_skip /= drop_repeat_add. Qed.
-
-  Lemma mem_cell_app (l: cloc) n1 n2 :
-    mem_cell (cloc_take l n1) n1 ∗ mem_cell (cloc_skip l n1) n2 ⊢ mem_cell l (n1 + n2).
+  Lemma mem_cell_app (l: loc) n1 n2 :
+    mem_cell l n1 ∗ mem_cell (l +ₗ n1) n2 ⊢ mem_cell l (n1 + n2).
   Proof.
     iIntros "[(%fbs1 & B1 & %H1) (%fbs2 & B2 & %H2)]". iExists (fbs1 ++ fbs2).
     rewrite heap_mapsto_fbytes_app H1 /=. iFrame. iPureIntro. rewrite length_app. lia.
@@ -825,8 +818,8 @@ Section drop_boxes.
   Lemma wp_drop_boxes {𝔄} (lt: lty 𝔄) m k (l: loc) (e: expr) (R: iProp Σ) E Φ :
     ↑non_atomic_cell_map.naN ⊆ E → lty_freeb lt = true → Closed [] e → m ≤ k + 1 →
     (⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^k P -∗ (R -∗ P -∗ Ψ #l) -∗ WP e @ E {{ Ψ }}) →
-    R -∗ lty_omem m lt (l, repeat [] (lty_size lt)) -∗
-    (R -∗ mem_cell (l, repeat [] (lty_size lt)) (lty_size lt) -∗ Φ #☠) -∗
+    R -∗ lty_omem m lt l -∗
+    (R -∗ mem_cell l (lty_size lt) -∗ Φ #☠) -∗
     WP drop_boxes lt e @ E {{ Φ }}.
   Proof.
     intros ?. induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ']
@@ -840,8 +833,8 @@ Section drop_boxes.
     - simpl. iDestruct "M" as (l') "[Pt M]". destruct (own_freeb n lt) eqn:Hfb; last first.
       { iApply wp_value. iApply ("HΦ" with "R"). by iApply ptr_cell_mem_cell. }
       apply andb_true_iff in Hfb as [Hf' Hn%bool_decide_eq_true].
-      have Hev': ⊢ ∀ Ψ (P: iProp Σ), (R ∗ ptr_cell (l, repeat [] (lty_size (OwnPtrLty n lt))) l') -∗
-        ▷^(k + 1) P -∗ ((R ∗ ptr_cell (l, repeat [] (lty_size (OwnPtrLty n lt))) l') -∗ P -∗ Ψ #l') -∗
+      have Hev': ⊢ ∀ Ψ (P: iProp Σ), (R ∗ ptr_cell l l') -∗
+        ▷^(k + 1) P -∗ ((R ∗ ptr_cell l l') -∗ P -∗ Ψ #l') -∗
         WP (ToLit (Load Na1Ord MPtr e))%E @ E {{ Ψ }}.
       { iIntros (Ψ P) "[R Pt] P HΨ". wp_bind e.
         iApply (Hev $! _ (▷ P)%I with "R [P]"); [by rewrite bi.laterN_add|]. iIntros "R P".
@@ -850,7 +843,7 @@ Section drop_boxes.
         iApply ("HΨ" with "[R Hbs] P"). by iFrame. }
       iDestruct "M" as "[Fr M]".
       wp_bind (drop_boxes lt (ToLit (Load Na1Ord MPtr e))%E).
-      iApply (IH (m + 1) (k + 1) l' (ToLit (Load Na1Ord MPtr e))%E (R ∗ ptr_cell (l, repeat [] (lty_size (OwnPtrLty n lt))) l')%I
+      iApply (IH (m + 1) (k + 1) l' (ToLit (Load Na1Ord MPtr e))%E (R ∗ ptr_cell l l')%I
         _ Hf' _ ltac:(lia) Hev' with "[$R $Pt] M").
       iIntros "[R Pt] (%bs & Pt' & %Hl)". wp_seq.
       wp_bind (ToLit _). iApply (Hev' with "[$R $Pt] [Fr]").
@@ -860,7 +853,7 @@ Section drop_boxes.
       { iFrame "Pt'". rewrite Hl -Hn. iDestruct "Fr" as "[$|%]"; by iRight. }
       iIntros "!> _". iApply ("HΦ" with "R"). by iApply ptr_cell_mem_cell.
     - apply andb_true_iff in Hf as [Hf1 Hf2]. iDestruct "M" as "[M1 M2]".
-      rewrite lty_size_prod /cloc_take /cloc_skip /= take_repeat_add drop_repeat_add.
+      rewrite lty_size_prod.
       have Hev2: ⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^(k + 1) P -∗ (R -∗ P -∗ Ψ #(l +ₗ lty_size lt1)) -∗
         WP (e +ₗ #(lty_size lt1))%E @ E {{ Ψ }}.
       { iIntros (Ψ P) "R P HΨ". wp_bind e.
@@ -872,10 +865,10 @@ Section drop_boxes.
       iApply (IH2 m (k + 1) (l +ₗ lty_size lt1) (e +ₗ #(lty_size lt1))%E R _ Hf2 _ ltac:(lia)
         Hev2 with "R M2 [Pt1 HΦ]").
       iIntros "R Pt2". iApply ("HΦ" with "R [Pt1 Pt2]").
-      iApply mem_cell_app. rewrite cloc_take_repeat cloc_skip_repeat. iFrame.
+      iApply mem_cell_app. iFrame.
     - have Hsz: lty_size (SumLty tyl i lt) = (tag_size 𝔄l + (lty_size lt + (sum_max 𝔄l - lty_size lt)))%nat.
       { rewrite /lty_size syn_bsize_sum /tag_size. have := sum_max_ge 𝔄l i. lia. }
-      rewrite Hsz. cbn [lty_omem]. rewrite !cloc_take_repeat !cloc_skip_repeat !cloc_take_repeat.
+      rewrite Hsz. cbn [lty_omem].
       iDestruct "M" as "(Tag & M & Pad)".
       have Hev2: ⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^(k + 1) P -∗ (R -∗ P -∗ Ψ #(l +ₗ tag_size 𝔄l)) -∗
         WP (e +ₗ #(tag_size 𝔄l))%E @ E {{ Ψ }}.
@@ -884,10 +877,10 @@ Section drop_boxes.
         wp_op. by iApply ("HΨ" with "R P"). }
       iApply (IH m (k + 1) (l +ₗ tag_size 𝔄l) (e +ₗ #(tag_size 𝔄l))%E R _ Hf _ ltac:(lia) Hev2 with "R M [-]").
       iIntros "R Pt". iApply ("HΦ" with "R [-]").
-      iApply mem_cell_app. rewrite cloc_take_repeat cloc_skip_repeat.
+      iApply mem_cell_app.
       iSplitL "Tag". { iDestruct "Tag" as (bt) "[Bt %Ht]". iApply pad_cell_mem_cell.
         iExists bt. iFrame. iPureIntro. by apply decode_value_length in Ht. }
-      iApply mem_cell_app. rewrite cloc_take_repeat cloc_skip_repeat. iFrame.
+      iApply mem_cell_app. iFrame.
       by iApply pad_cell_mem_cell.
   Qed.
 End drop_boxes.

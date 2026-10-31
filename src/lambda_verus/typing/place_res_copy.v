@@ -81,7 +81,7 @@ Section memcpy_res.
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set y := pctx_get K x₀.
     set q0 := pctx_path K [].
-    set lr := (l, repeat [] (lty_size (pctx_plug K lt1))).
+    set lr := l.
     set lK := pctx_loc K (lty_size lt1) x₀ lr.
     destruct y as [[[[[ly z] ξi] d0] g0] idx0] eqn:Hy.
     rewrite /= /res_node /=. iDestruct "H" as "[Pt N]".
@@ -110,11 +110,9 @@ Section memcpy_res.
     iApply (wp_pctx_sexpr _ K2 (lty_size lt0) (g' + 1) (fractional.half γh) z ly);
       [solve_ndisj|].
     wp_bind (pctx_expr K (ToLit p)).
-    iMod lc_zero as "£0".
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest"); [solve_ndisj|..].
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".
@@ -135,7 +133,7 @@ Section memcpy_res.
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
     (* Copy the bytes. *)
     iDestruct "Vs" as "(Gpt & _ & _)".
-    iApply (wp_memcopy_guarded_gen _ lw lh.1 bsw (ty_bsize ty) (fractional.half γh)
+    iApply (wp_memcopy_guarded_gen _ lw lh bsw (ty_bsize ty) (fractional.half γh)
       (cbytes ty zh lh) (ty_bytes ty zh) (gh + 1) with "[$Hbsw $H1 $£l]");
       [solve_ndisj|by rewrite Hlenw Hszw|intros ?; apply ty_bytes_length|..].
     { iSplit; [iApply (guards_transitive_right with "Hsl Gpt")|].

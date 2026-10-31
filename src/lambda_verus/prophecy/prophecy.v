@@ -129,7 +129,6 @@ Proof.
        * apply (proph_dep_constr (λ '(a, b), (inr a, b)) _ _ h1).
        * simpl. destruct (to_xsum (psum_map1 (λ (A : syn_type) (x0 : ~~ A), ξl x0) x)). trivial.
    - destruct x. apply (proph_dep_constr (λ i, (_,i))). apply (FIX 𝔄).
-   - destruct x. apply (proph_dep_constr (λ i, (_,i))). apply (FIX 𝔄).
    - destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
      set ξ := PrVar ((𝔄 * (positiveₛ * (positiveₛ * positiveₛ)))%ST
        ↾ @to_inh_syn_type ((𝔄 * (positiveₛ * (positiveₛ * positiveₛ)))%ST) (vπ x0 inhabitant, (1%positive, (1%positive, 1%positive)))) ξi.

@@ -568,7 +568,7 @@ Section pcell_atomics.
     iDestruct (guard_cell_combine with "Hg G1D G2D") as "GP"; [done|].
     have Hc : fv_cells fv = [] by eapply ty_fval_nocell_cells.
     iApply wp_fupd.
-    iApply (wp_pcell_load_sc_guarded _ l.1 g ty.(ty_mty) cs fv (fractional.half γ) _ (D + 1)
+    iApply (wp_pcell_load_sc_guarded _ l g ty.(ty_mty) cs fv (fractional.half γ) _ (D + 1)
       with "[H1 £4]"); [solve_ndisj|done| |].
     { iSplitR; [done|]. iSplitR; [iIntros "!> [Hls Hgd]"; iFrame; by iIntros "$ $"|].
       iFrame "Hg H1 £4". }
@@ -594,7 +594,7 @@ Section pcell_atomics.
           cell_own ty g y) -∗ ⧗1 ={↑Nllft}=∗
         uniq_body (cell_points_to_ty ty) (g, y) ξi (S d1) g1 ξidx κ tid l' ∗ G1).
   Proof.
-    iIntros (??) "#LFT #UNIQ #Gκ1 #Gκ2 (#Incl & _ & Body & _) G1 G2 £".
+    iIntros (??) "#LFT #UNIQ #Gκ1 #Gκ2 (#Incl & _ & Body) G1 G2 £".
     iMod (uniq_body_acc with "LFT UNIQ Gκ1 Body G1") as "(Pay & ⧗ & Close)"; [solve_ndisj|].
     iMod (uniq_payload_force with "[] G2 £ Pay") as "(G2 & ⧖ & Gho & _)";
       [rewrite /lazyE; solve_ndisj| |].
@@ -647,7 +647,7 @@ Section pcell_atomics.
     iDestruct (lguards_weaken_later _ _ _ _ (D + 1) with "G1") as "G1D"; [lia|].
     iDestruct (guard_pcell_loc_side with "Hg G1D") as "GL"; [apply ty_mty_wf|].
     have Hc : fv_cells fv = [] by eapply ty_fval_nocell_cells.
-    iApply (wp_pcell_store_sc_guarded _ l.1 g ty.(ty_mty) cs fv _ v (fractional.half γ) _ (D + 1)
+    iApply (wp_pcell_store_sc_guarded _ l g ty.(ty_mty) cs fv _ v (fractional.half γ) _ (D + 1)
       with "[H2 Hgd £2]"); [solve_ndisj|done|apply ty_mty_wf|by eapply ty_val_wf| |].
     { iSplitR; [done|]. iSplitR; [iIntros "!> $"; by iIntros "$"|]. iFrame "Hg H2 Hgd £2". }
     iIntros "!> [H2 Hgd]".
@@ -714,9 +714,9 @@ Section pcell_atomics.
     iDestruct (guard_pcell_loc_side with "Hg G1D") as "GL"; [apply ty_mty_wf|].
     have Hfv' := Hfv. rewrite ty_fval_nocell // in Hfv'.
     apply fmap_Some in Hfv' as (vx & Hvx & ->).
-    have -> : (Lit $ LitLoc l.1) = (Lit $ LitLoc (l.1 +ₗ (0 + 0)%nat))
+    have -> : (Lit $ LitLoc l) = (Lit $ LitLoc (l +ₗ (0 + 0)%nat))
       by rewrite /= shift_loc_0_nat.
-    iApply (wp_pcell_mcas_sub _ l.1 g ty.(ty_mty) cs g 0 ty.(ty_mty) cs (fv_lift vx) 0
+    iApply (wp_pcell_mcas_sub _ l g ty.(ty_mty) cs g 0 ty.(ty_mty) cs (fv_lift vx) 0
       ty.(ty_mty) vx (fv_lift v2) _ v1 _ v2 (fractional.half γ) _ (D + 1)
       with "[H2 Hgd £2]");
       [solve_ndisj|apply fv_sub_here|apply fv_upd_here|apply ty_mty_wf|by eapply ty_val_wf| |].

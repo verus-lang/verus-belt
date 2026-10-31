@@ -129,7 +129,7 @@ Section typing.
   Lemma typed_pptr_borrow {𝔄} κ (ptr perm_ref : path) (ty : type 𝔄) E L I :
     typed_instr E L I +[ptr ◁ᵥ ptr_ty; perm_ref ◁ᵥ &shr{κ} (points_to_ty ty)]
       (PPtrBorrow [ptr; perm_ref]) (λ v, +[v ◁ᵥ &shr{κ} ty])
-      (λ post '-[l; (cl, (l', x))], λ mask π, l = l' ∧ post -[((l, []), x)] mask π).
+      (λ post '-[l; (cl, (l', x))], λ mask π, l = l' ∧ post -[(l, x)] mask π).
   Proof.
     iIntros (tid postπ mask iκs [l [[c [l' x]] []]]) "#LFT #TIME #PROPH #UNIQ #E $ $ (Hptr & Hperm & _) #Obs".
     iDestruct "Hptr" as (vp Hp w d [-> Hw]) "[_ _]". simpl in Hw. simplify_eq.
@@ -148,7 +148,7 @@ Section typing.
     destruct d' as [|d'']; [done|].
     iDestruct "Hshr1" as "[#Hpt #Hshr]".
     wp_rec. iModIntro.
-    iExists -[((l, []), x)]. iSplitL.
+    iExists -[(l, x)]. iSplitL.
     - iSplit; [|done]. rewrite tctx_val_val. iExists (S (S (S d''))).
       iSplit; [done|]. iFrame "Hd''". simpl. iSplit; [|iSplit].
       + rewrite /shr_bytes_own. leaf_goal laters to (S (S d'') + 1). { lia. } iFrame "Hpt".
@@ -169,8 +169,8 @@ Section typing.
         ∀ bor',
         uniq_bor_current bor' = snd (uniq_bor_current bor) →
         uniq_bor_future bor' π = snd (uniq_bor_future bor π) →
-        of_cloc (uniq_bor_loc bor') = fst (uniq_bor_current bor) →
-        of_cloc (uniq_bor_loc bor') = fst (uniq_bor_future bor π) →
+        (uniq_bor_loc bor') = fst (uniq_bor_current bor) →
+        (uniq_bor_loc bor') = fst (uniq_bor_future bor π) →
         post -[bor'] mask π).
   Proof.
     iIntros (Alv tid postπ mask iκs [l [u []]]) "#LFT #TIME #PROPH #UNIQ #E L $ (Hptr & Hperm & _) #Obs".
@@ -178,7 +178,7 @@ Section typing.
     destruct u as [[[[[c [l' x]] ξi] d] g] ξidx].
     iDestruct "Hptr" as (vp Hp w d0 [-> Hw]) "[_ _]". simpl in Hw. simplify_eq.
     iDestruct "Hperm" as (vq Hq w' d'' [-> _]) "[#Hd' Huniq]".
-    iDestruct "Huniq" as "[#Incl [%Hineq [UniqBody _]]]".
+    iDestruct "Huniq" as "[#Incl [%Hineq UniqBody]]".
     rewrite /PPtrMutBorrow.
     wp_bind ptr. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).
     wp_bind perm_ref. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).
@@ -195,7 +195,7 @@ Section typing.
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ Hd'") as "(Hd'' & £)"; [trivial|..].
     iDestruct (lc_weaken (1 + 1) with "£") as "[£1' £f]"; [rewrite /advance_credits; nia|].
 
-    iMod (uniq_body_transform (points_to_ty ty) ty (l, x) x d g ξi ξidx κ tid c (l, []) _ _ (pair_with_loc_trackedₛ l) (λ d g, (S d, g)) with "LFT PROPH UNIQ Incl [] [⧗' £1'] HguardsK H1 £f [UniqBody]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
+    iMod (uniq_body_transform (points_to_ty ty) ty (l, x) x d g ξi ξidx κ tid c l _ _ (pair_with_loc_trackedₛ l) (λ d g, (S d, g)) with "LFT PROPH UNIQ Incl [] [⧗' £1'] HguardsK H1 £f [UniqBody]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
     { iApply guards_refl. }
     { iIntros "[gho _]".
       iMod (lc_fupd_elim_later with "£1' gho") as "gho".
@@ -214,11 +214,10 @@ Section typing.
     iDestruct ("Halfback" with "H1 H2") as "X".
     iMod (fupd_mask_mono with "X") as "L". { set_solver. }
     iModIntro.
-    iExists -[((l, []), x, ζi, d, g, ζidx)].
+    iExists -[(l, x, ζi, d, g, ζidx)].
     iFrame "L". iSplit.
     - iSplit; [|done]. rewrite tctx_val_val. iExists _. iFrame "Hd''".
-      iSplit; [done|]. iFrame "Incl UniqBody". iSplit; [iPureIntro; lia|].
-      rewrite -(heap_cloc_mapsto_empty l 0). iApply guards_true.
+      iSplit; [done|]. iFrame "Incl UniqBody". iPureIntro; lia.
     - iCombine "Obs Obs2" as "Obs3".
       iApply (proph_obs_impl with "Obs3"). intros π [[_ Ha] Hb].
       apply Ha; intuition.

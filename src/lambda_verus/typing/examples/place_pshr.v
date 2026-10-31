@@ -150,7 +150,7 @@ Section place_pshr.
       (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "b"]);;       (* Some(v): drop b *)
       jump: "return" ["v"]])%E.
 
-  Definition get_or_zero_pb_spec : predl_trans' [at_locₛ (at_clocₛ opt_i32ₛ)] (intₛ i32) :=
+  Definition get_or_zero_pb_spec : predl_trans' [at_locₛ (at_locₛ opt_i32ₛ)] (intₛ i32) :=
     λ post '-[(_, m)], λ mask π,
       (∀ pad, m.2 = (pinj (Xl:=[unitₛ; intₛ i32]) 0%fin (), pad) → post 0%Z mask π) ∧
       (∀ v pad, m.2 = (pinj (Xl:=[unitₛ; intₛ i32]) 1%fin v, pad) → post v mask π).
@@ -229,15 +229,15 @@ Section place_pshr.
     Skip;;                                                     (* resolve x *)
     jump: "return" ["r"])%E.
 
-  Definition ret_ref : predl_trans' [at_clocₛ (intₛ i32)] (at_clocₛ (intₛ i32)) :=
+  Definition ret_ref : predl_trans' [at_locₛ (intₛ i32)] (at_locₛ (intₛ i32)) :=
     λ post '-[r], post r.
 
   Definition first_ref_pb_spec :
-      predl_trans' [uniq_borₛ (at_clocₛ (intₛ i32 * intₛ i32))] (at_clocₛ (intₛ i32)) :=
-    λ post '-[m], λ mask π, ∀ r: ~~ (at_clocₛ (intₛ i32)),
-      r.2 = (uniq_bor_current (𝔄:=at_clocₛ (intₛ i32 * intₛ i32)) m).2.1 →
-      uniq_bor_future (𝔄:=at_clocₛ (intₛ i32 * intₛ i32)) m π =
-        vπ (uniq_bor_current (𝔄:=at_clocₛ (intₛ i32 * intₛ i32)) m) π →
+      predl_trans' [uniq_borₛ (at_locₛ (intₛ i32 * intₛ i32))] (at_locₛ (intₛ i32)) :=
+    λ post '-[m], λ mask π, ∀ r: ~~ (at_locₛ (intₛ i32)),
+      r.2 = (uniq_bor_current (𝔄:=at_locₛ (intₛ i32 * intₛ i32)) m).2.1 →
+      uniq_bor_future (𝔄:=at_locₛ (intₛ i32 * intₛ i32)) m π =
+        vπ (uniq_bor_current (𝔄:=at_locₛ (intₛ i32 * intₛ i32)) m) π →
       post r mask π.
 
   Lemma first_ref_pb_type ϝ α β (k vx: val) :

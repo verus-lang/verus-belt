@@ -47,7 +47,7 @@ Section place_shr.
   (** The contents of a leaf (its points-to and its ownership predicate) are borrowed
       at [α] and shared; the leaf becomes shared-blocked. [ty_share] takes [d] steps,
       paid with later credits. *)
-  Lemma ofty_owned_share {𝔄} m (ty: type 𝔄) α x d g tid (l: cloc) G :
+  Lemma ofty_owned_share {𝔄} m (ty: type 𝔄) α x d g tid (l: loc) G :
     Timeless G →
     llft_ctx -∗ α ⊑ ty_lft ty -∗ (G &&{↑NllftG}&&> @[α]) -∗ G -∗ £(d + 1) -∗
     cbytes ty x l -∗ ty.(ty_gho_own) x d g tid ={⊤}=∗
@@ -75,7 +75,7 @@ Section place_shr.
   (** The sharing predicate of [&shr{α} ty] at depth [S d'], from the guard of the
       points-to and the sharing and persistent predicates of [ty] at [d' g'], with
       [d' ≤ d'' ≤ D] and [g' ≤ D]. *)
-  Lemma shr_bor_own_intro {𝔄} α (ty: type 𝔄) (l: cloc) x d g D tid :
+  Lemma shr_bor_own_intro {𝔄} α (ty: type 𝔄) (l: loc) x d g D tid :
     d ≤ D → g ≤ S D →
     (@[α] &&{↑NllftG; S D + 1}&&> cbytes ty x l) -∗
     ty.(ty_shr) α x d g tid -∗ ty.(ty_gho_pers) x d g tid -∗
@@ -106,7 +106,7 @@ Section typing.
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Share;; OfLit (pctx_expr K (ToLit p)))
       (λ w, +[w ◁ᵥ &shr{α} ty; p ◁ₗown{n} pctx_plug K (ShrBlocked ty α)])
       (λ post '-[x], post -[(pctx_loc K (lty_size (OfTy ty)) x.1.2
-          (x.1.1, repeat [] (lty_size (pctx_plug K (OfTy ty)))), pctx_get K x.1.2); x]).
+          x.1.1, pctx_get K x.1.2); x]).
   Proof.
     intros Out Alv tid post mask iκs [x []].
     iIntros "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
@@ -128,19 +128,17 @@ Section typing.
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set k0 := pctx_mode K 0.
     set y := pctx_get K x₀.
-    set lr := (l, repeat [] (lty_size (pctx_plug K (OfTy ty)))).
+    set lr := l.
     set lK := pctx_loc K (lty_size (OfTy ty)) x₀ lr.
     set dh := pctx_depth K d.
     have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
     iDestruct (lc_weaken (pctx_mode K 1 + (dh + 1)) with "£") as "[£k £s]";
       [rewrite /advance_credits pctx_mode_add; nia|].
     (* The address of the hole. *)
-    iMod lc_zero as "£0".
     iApply wp_fupd. wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest").
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)". wp_pure _.
@@ -159,7 +157,7 @@ Section typing.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. exact Hπ. }
     iSplitR.
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists (VPtr lK.1), D.
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists (VPtr lK), D.
       iSplit; [done|]. iFrame "⧖". destruct D as [|D']; [lia|].
       iApply (shr_bor_own_intro with "[] Shr Pers"); [lia|lia|].
       iApply (lguards_weaken_later with "GPt"). lia. }
@@ -192,17 +190,15 @@ Section typing.
     iDestruct "L1" as (? ->) "(#GPt & #Shr & #PersL & Inh)".
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set y := pctx_get K x₀.
-    set lr := (l, repeat [] (lty_size (pctx_plug K (ShrBlocked ty α)))).
+    set lr := l.
     set lK := pctx_loc K (lty_size (OfTy ty)) x₀ lr.
     set dh := pctx_depth K d.
     have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
     (* The address of the hole. *)
-    iMod lc_zero as "£0".
     wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest").
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".
@@ -293,12 +289,12 @@ Section shr_bytes_fields.
   Lemma type_shr_bytes_snd_instr {𝔄 𝔅} κ (ty1: type 𝔄) (ty2: type 𝔅) p E L I :
     typed_instr E L I +[p ◁ᵥ &shr{κ} (ty1 * ty2)] (OfLit (ToLit p +ₗ #(ty_bsize ty1)))%E
       (λ v, +[v ◁ᵥ &shr{κ} ty2])
-      (λ post '-[a], post -[(cloc_skip a.1 (ty_bsize ty1), a.2.2)]).
+      (λ post '-[a], post -[((a.1 +ₗ ty_bsize ty1), a.2.2)]).
   Proof.
     iIntros (tid post mask iκs [[l [x1 x2]] []]) "_ _ _ _ _ $ $ [p _] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
     simpl in Hw. simplify_eq. wp_pure _. wp_op. wp_pure _.
-    iExists -[(cloc_skip l (ty_bsize ty1), x2)]. iFrame "Obs". iSplit; [|done].
+    iExists -[((l +ₗ ty_bsize ty1), x2)]. iFrame "Obs". iSplit; [|done].
     rewrite tctx_val_val. iExists d. iFrame "⧖". iSplit; [done|].
     destruct d as [|d]; [done|]. rewrite /= /by_succ.
     iDestruct "Own" as "(#Pt & [_ Shr] & [_ Pers])". iFrame "Shr Pers".
@@ -308,12 +304,12 @@ Section shr_bytes_fields.
   Lemma type_shr_bytes_fst_instr {𝔄 𝔅} κ (ty1: type 𝔄) (ty2: type 𝔅) p E L I :
     typed_instr E L I +[p ◁ᵥ &shr{κ} (ty1 * ty2)] (OfLit (ToLit p))
       (λ v, +[v ◁ᵥ &shr{κ} ty1])
-      (λ post '-[a], post -[(cloc_take a.1 (ty_bsize ty1), a.2.1)]).
+      (λ post '-[a], post -[(a.1, a.2.1)]).
   Proof.
     iIntros (tid post mask iκs [[l [x1 x2]] []]) "_ _ _ _ _ $ $ [p _] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
     simpl in Hw. simplify_eq. wp_pure _. wp_pure _.
-    iExists -[(cloc_take l (ty_bsize ty1), x1)]. iFrame "Obs". iSplit; [|done].
+    iExists -[(l, x1)]. iFrame "Obs". iSplit; [|done].
     rewrite tctx_val_val. iExists d. iFrame "⧖". iSplit; [done|].
     destruct d as [|d]; [done|]. rewrite /= /by_succ.
     iDestruct "Own" as "(#Pt & [Shr _] & [Pers _])". iFrame "Shr Pers".

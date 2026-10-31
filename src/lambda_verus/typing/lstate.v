@@ -127,7 +127,7 @@ Definition PlaceGhost {𝔄} (x₀: ~~𝔄) (ζi: positive) : place_rfn 𝔄 :=
 (** Structured refinements of compound places. *)
 Fixpoint prfn_struct (𝔄: syn_type) : Type :=
   match 𝔄 with
-  | uniq_borₛ 𝔅 => cloc * (place_rfn 𝔅 + prfn_struct 𝔅) * positive
+  | uniq_borₛ 𝔅 => loc * (place_rfn 𝔅 + prfn_struct 𝔅) * positive
   | at_locₛ 𝔅 => loc * (place_rfn 𝔅 + prfn_struct 𝔅)
   | prodₛ 𝔅 ℭ => (place_rfn 𝔅 + prfn_struct 𝔅) * (place_rfn ℭ + prfn_struct ℭ)
   (* A sum at a fixed variant: the refinement of the payload, and the padding. *)

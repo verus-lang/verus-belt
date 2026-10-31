@@ -278,7 +278,7 @@ Section pctx.
   (* The referent of a unique borrow at [κ] (a nested place, see [UniqLty]). *)
   | PUniq {𝔅 𝔄'} (κ: lft) (K: pctx 𝔅 𝔄') : pctx 𝔅 (uniq_borₛ 𝔄')
   (* The referent of a shared reference at [κ] (a read-only view, see [ShrLty]). *)
-  | PShr {𝔅 𝔄'} (κ: lft) (K: pctx 𝔅 𝔄') : pctx 𝔅 (at_clocₛ 𝔄').
+  | PShr {𝔅 𝔄'} (κ: lft) (K: pctx 𝔅 𝔄') : pctx 𝔅 (at_locₛ 𝔄').
 
   (** The plugged place is compound (the referent of a shared reference is a view, the
       plugged place is a leaf). *)
@@ -415,15 +415,15 @@ Section pctx.
     end.
 
   (** The location of the hole (of size [n]), in a place at [l] with value [x]. *)
-  Fixpoint pctx_loc {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) : ~~𝔄 → cloc → cloc :=
-    match K in pctx 𝔅 𝔄 return ~~𝔄 → cloc → cloc with
+  Fixpoint pctx_loc {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) : ~~𝔄 → loc → loc :=
+    match K in pctx 𝔅 𝔄 return ~~𝔄 → loc → loc with
     | PHole => λ _ l, l
-    | PFst K _ => λ x l, pctx_loc K n x.1 (cloc_take l (pctx_size K n))
-    | PSnd lt1 K => λ x l, pctx_loc K n x.2 (cloc_skip l (lty_size lt1))
-    | POwn _ K => λ x _, pctx_loc K n x.2 (x.1, repeat [] (pctx_size K n))
+    | PFst K _ => λ x l, pctx_loc K n x.1 l
+    | PSnd lt1 K => λ x l, pctx_loc K n x.2 (l +ₗ lty_size lt1)
+    | POwn _ K => λ x _, pctx_loc K n x.2 x.1
     | @PSum _ 𝔄l _ i w K => λ x l,
         pctx_loc K n (psum_proj_or i x.1 w)
-          (cloc_take (cloc_skip l (tag_size 𝔄l)) (pctx_size K n))
+          (l +ₗ tag_size 𝔄l)
     | PUniq _ K => λ x _, pctx_loc K n (uniq_bor_current x) (uniq_bor_loc x)
     | PShr _ K => λ x _, pctx_loc K n x.2 x.1
     end.
@@ -751,7 +751,7 @@ Section pctx.
       rewrite !(prfn_rsv_sum' _ _ x.2). intros H H'. by eapply IHK.
     - intros [H1 H2] H'. split; [by eapply IHK|].
       eapply uniq_prvar_dep_irrel, proph_dep_weaken; [|exact H2]. done.
-    - intros _ _. exact (prfn_rsv_in (𝔄:=at_clocₛ 𝔄') x ζl').
+    - intros _ _. exact (prfn_rsv_in (𝔄:=at_locₛ 𝔄') x ζl').
   Qed.
 
   (** If a new hole refinement [r'] depends on what [r] depends on (and [ζl']), so does
@@ -768,11 +768,11 @@ Section pctx.
       rewrite !(prfn_rsv_sum' _ _ x.2). intros H H'. by eapply IHK.
     - intros H [H1 H2]. split; [by eapply IHK|].
       eapply uniq_prvar_dep_irrel, proph_dep_weaken; [|exact H2]. done.
-    - intros _ _. exact (prfn_rsv_in (𝔄:=at_clocₛ 𝔄') x ζl').
+    - intros _ _. exact (prfn_rsv_in (𝔄:=at_locₛ 𝔄') x ζl').
   Qed.
 
   Lemma pctx_loc_fst {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x l :
-    pctx_noderef K → (pctx_loc K n x l).1 = l.1 +ₗ pctx_off K.
+    pctx_noderef K → (pctx_loc K n x l) = l +ₗ pctx_off K.
   Proof.
     induction K in x, l |- *; simpl; [by rewrite shift_loc_0|intros ?; by rewrite IHK| |done| |done|done].
     - intros ?. rewrite IHK // /= shift_loc_assoc. f_equal. lia.
@@ -834,27 +834,27 @@ Section pctx.
   (** The ownership of the rest of the place (at path [q], with current value [x] and
       blocking map [ζm]), for a hole of size [n]. *)
   Fixpoint pctx_own {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n m: nat) :
-      ~~𝔄 → blk_map → lpath → nat → nat → thread_id → cloc → iProp Σ :=
-    match K in pctx 𝔅 𝔄 return ~~𝔄 → blk_map → lpath → nat → nat → thread_id → cloc → iProp Σ with
+      ~~𝔄 → blk_map → lpath → nat → nat → thread_id → loc → iProp Σ :=
+    match K in pctx 𝔅 𝔄 return ~~𝔄 → blk_map → lpath → nat → nat → thread_id → loc → iProp Σ with
     | PHole => λ _ _ _ _ _ _ _, True
     | PFst K lt2 => λ x ζm q d g tid l,
-        pctx_own K n m x.1 ζm (false :: q) d g tid (cloc_take l (pctx_size K n)) ∗
+        pctx_own K n m x.1 ζm (false :: q) d g tid l ∗
         ltype_own (Owned m) lt2 (lty_rfn lt2 x.2 ζm (true :: q)) d g tid
-          (cloc_skip l (pctx_size K n))
+          (l +ₗ pctx_size K n)
     | PSnd lt1 K => λ x ζm q d g tid l,
         ltype_own (Owned m) lt1 (lty_rfn lt1 x.1 ζm (false :: q)) d g tid
-          (cloc_take l (lty_size lt1)) ∗
-        pctx_own K n m x.2 ζm (true :: q) d g tid (cloc_skip l (lty_size lt1))
+          l ∗
+        pctx_own K n m x.2 ζm (true :: q) d g tid (l +ₗ lty_size lt1)
     | POwn n' K => λ x ζm q d g tid l,
         ptr_cell l x.1 ∗ ⌜d ≠ 0%nat⌝ ∗ ▷^m (freeable_sz n' (pctx_size K n) x.1) ∗
-        pctx_own K n (m + 1) x.2 ζm (false :: q) (pred d) g tid (x.1, repeat [] (pctx_size K n))
+        pctx_own K n (m + 1) x.2 ζm (false :: q) (pred d) g tid x.1
     | @PSum _ 𝔄l tyl i _ K => λ x ζm q d g tid l,
         match psum_proj i x.1 with
         | Some y =>
-            tag_cell 𝔄l (cloc_take l (tag_size 𝔄l)) i ∗
+            tag_cell 𝔄l l i ∗
             pctx_own K n m y ζm (false :: q) d g tid
-              (cloc_take (cloc_skip l (tag_size 𝔄l)) (pctx_size K n)) ∗
-            pad_cell (cloc_skip (cloc_skip l (tag_size 𝔄l)) (pctx_size K n))
+              (l +ₗ tag_size 𝔄l) ∗
+            pad_cell ((l +ₗ tag_size 𝔄l) +ₗ pctx_size K n)
               (sum_max 𝔄l - pctx_size K n)
         | None => False
         end
@@ -968,25 +968,6 @@ Section pctx.
     - destruct (psum_proj i x.1); [|by iIntros "[]"]. iIntros "(_ & A & _)". by iApply IHK.
   Qed.
 
-  (** The location of the hole is part of the location of the place (below an owned
-      pointer, its cells are trivially owned). *)
-  Lemma pctx_loc_guard {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} n x l (G: iProp Σ) E k :
-    (G &&{E; k}&&> l #↦∗_) -∗ (G &&{E; k}&&> pctx_loc K n x l #↦∗_).
-  Proof.
-    rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
-    induction K in HK, x, l |- *; simpl; simpl in HK; [by iIntros "$"| | | | |done|done];
-      iIntros "G"; (iApply IHK; [done|]).
-    - rewrite (heap_cloc_mapsto_emp_vec_app l (pctx_size K n)).
-      iApply (guards_weaken_rhs_sep_l with "G").
-    - rewrite (heap_cloc_mapsto_emp_vec_app l (lty_size lt1)).
-      iApply (guards_weaken_rhs_sep_r with "G").
-    - rewrite -heap_cloc_mapsto_empty. iApply guards_true.
-    - rewrite (heap_cloc_mapsto_emp_vec_app l (tag_size 𝔄l)).
-      iDestruct (guards_weaken_rhs_sep_r with "G") as "G".
-      rewrite (heap_cloc_mapsto_emp_vec_app (cloc_skip l (tag_size 𝔄l)) (pctx_size K n)).
-      iApply (guards_weaken_rhs_sep_l with "G").
-  Qed.
-
   (** ** The address of the hole
 
       [pctx_expr K e] computes the address of the hole, from the address [e] of the
@@ -1004,56 +985,43 @@ Section pctx.
   Lemma pctx_expr_closed {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : Closed [] e → Closed [] (pctx_expr K e).
   Proof. induction K in e |- *; simpl; [done|auto|intros ?; apply IHK; apply _..]. Qed.
 
-  Lemma wp_pctx_expr_mask {𝔅 𝔄} E (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: cloc) (e: expr) (G R: iProp Σ) k :
-    ↑NllftG ⊆ E →
-    (G &&{↑NllftG; k}&&> l #↦∗_) -∗ £(3 * k * pctx_mode K 0) -∗
-    WP e @ E {{ v, ⌜v = #(l.1)⌝ ∗ R ∗ G }} -∗ pctx_own K n m x ζm q d g tid l -∗
-    WP pctx_expr K e @ E {{ v, ⌜v = #(pctx_loc K n x l).1⌝ ∗ R ∗ G ∗ pctx_own K n m x ζm q d g tid l }}.
+  Lemma wp_pctx_expr_mask {𝔅 𝔄} E (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: loc) (e: expr) (G R: iProp Σ) :
+    WP e @ E {{ v, ⌜v = #(l)⌝ ∗ R ∗ G }} -∗ pctx_own K n m x ζm q d g tid l -∗
+    WP pctx_expr K e @ E {{ v, ⌜v = #(pctx_loc K n x l)⌝ ∗ R ∗ G ∗ pctx_own K n m x ζm q d g tid l }}.
   Proof.
-    intros HE. induction K in m, x, q, d, l, e, R |- *; simpl.
-    - iIntros "_ _ WP $". iApply (wp_wand with "WP"). iIntros (v) "($ & $ & $)".
-    - iIntros "#Gl £ WP [Own Sib]". iApply (wp_wand with "[- Sib]").
-      { iApply (IHK m x.1 (false :: q) d (cloc_take l (pctx_size K n)) with "[] £ WP Own").
-        rewrite (heap_cloc_mapsto_emp_vec_app l (pctx_size K n)).
-        iApply (guards_weaken_rhs_sep_l with "Gl"). }
+    induction K in m, x, q, d, l, e, R |- *; simpl.
+    - iIntros "WP $". iApply (wp_wand with "WP"). iIntros (v) "($ & $ & $)".
+    - iIntros "WP [Own Sib]". iApply (wp_wand with "[- Sib]").
+      { iApply (IHK m x.1 (false :: q) d l with "WP Own"). }
       iIntros (v) "($ & $ & $ & $)". iFrame.
-    - iIntros "#Gl £ WP [Sib Own]". iApply (wp_wand with "[- Sib]").
-      { iApply (IHK m x.2 (true :: q) d (cloc_skip l (lty_size lt1)) _ R with "[] £ [WP] Own").
-        - rewrite (heap_cloc_mapsto_emp_vec_app l (lty_size lt1)).
-          iApply (guards_weaken_rhs_sep_r with "Gl").
-        - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
-          iFrame. done. }
+    - iIntros "WP [Sib Own]". iApply (wp_wand with "[- Sib]").
+      { iApply (IHK m x.2 (true :: q) d (l +ₗ lty_size lt1) _ R with "[WP] Own").
+        wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
+        iFrame. done. }
       iIntros (v) "($ & $ & $ & $)". iFrame.
-    - rewrite pctx_mode_add. iIntros "#Gl £ WP (Pt & %Hd & Fr & Own)".
-      iDestruct (lc_weaken (3 * k * pctx_mode K 0) with "£") as "£"; [lia|].
+    - iIntros "WP (Pt & %Hd & Fr & Own)".
       iApply (wp_wand with "[- Fr]").
-      { iApply (IHK (m + 1) x.2 (false :: q) (pred d) (x.1, repeat [] (pctx_size K n)) _
-          (R ∗ ptr_cell l x.1)%I with "[] £ [WP Pt] Own").
-        - rewrite -heap_cloc_mapsto_empty. iApply guards_true.
-        - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
-          iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
-          iApply (wp_load_na with "Hbs"); [exact Hbs|].
-          iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
+      { iApply (IHK (m + 1) x.2 (false :: q) (pred d) x.1 _
+          (R ∗ ptr_cell l x.1)%I with "[WP Pt] Own").
+        wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
+        iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
+        iApply (wp_load_na with "Hbs"); [exact Hbs|].
+        iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
       iIntros (v) "($ & [$ $] & $ & $)". by iFrame.
-    - destruct (psum_proj i x.1) as [y|] eqn:Hy; [|by iIntros "_ _ _ []"].
-      iIntros "#Gl £ WP (Tag & Own & Pad)". iApply (wp_wand with "[- Tag Pad]").
-      { iApply (IHK m y (false :: q) d (cloc_take (cloc_skip l (tag_size 𝔄l)) (pctx_size K n)) _ R
-          with "[] £ [WP] Own").
-        - rewrite (heap_cloc_mapsto_emp_vec_app l (tag_size 𝔄l)).
-          iDestruct (guards_weaken_rhs_sep_r with "Gl") as "Gl'".
-          rewrite (heap_cloc_mapsto_emp_vec_app (cloc_skip l (tag_size 𝔄l)) (pctx_size K n)).
-          iApply (guards_weaken_rhs_sep_l with "Gl'").
-        - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
-          iFrame. done. }
+    - destruct (psum_proj i x.1) as [y|] eqn:Hy; [|by iIntros "_ []"].
+      iIntros "WP (Tag & Own & Pad)". iApply (wp_wand with "[- Tag Pad]").
+      { iApply (IHK m y (false :: q) d (l +ₗ tag_size 𝔄l) _ R
+          with "[WP] Own").
+        wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
+        iFrame. done. }
       rewrite /psum_proj_or Hy. iIntros (v) "($ & $ & $ & $)". iFrame.
-    - by iIntros "_ _ _ []".
-    - by iIntros "_ _ _ []".
+    - by iIntros "_ []".
+    - by iIntros "_ []".
   Qed.
 
-  Lemma wp_pctx_expr {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: cloc) (e: expr) (G R: iProp Σ) k :
-    (G &&{↑NllftG; k}&&> l #↦∗_) -∗ £(3 * k * pctx_mode K 0) -∗
-    WP e {{ v, ⌜v = #(l.1)⌝ ∗ R ∗ G }} -∗ pctx_own K n m x ζm q d g tid l -∗
-    WP pctx_expr K e {{ v, ⌜v = #(pctx_loc K n x l).1⌝ ∗ R ∗ G ∗ pctx_own K n m x ζm q d g tid l }}.
+  Lemma wp_pctx_expr {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: loc) (e: expr) (G R: iProp Σ) :
+    WP e {{ v, ⌜v = #(l)⌝ ∗ R ∗ G }} -∗ pctx_own K n m x ζm q d g tid l -∗
+    WP pctx_expr K e {{ v, ⌜v = #(pctx_loc K n x l)⌝ ∗ R ∗ G ∗ pctx_own K n m x ζm q d g tid l }}.
   Proof. by apply wp_pctx_expr_mask. Qed.
 
   (** ** Patterns *)
@@ -1168,7 +1136,7 @@ Section pctx.
        dropped, see [pctx_nosum]). *)
     | PSum _ _ _ K => pctx_root K 𝔅'
     | PUniq _ K => uniq_borₛ (pctx_root K 𝔅')
-    | PShr _ K => at_clocₛ (pctx_root K 𝔅')
+    | PShr _ K => at_locₛ (pctx_root K 𝔅')
     end.
 
   Fixpoint pctx_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) (𝔅': syn_type) : pctx 𝔅' (pctx_root K 𝔅') :=
@@ -1260,41 +1228,6 @@ Section pctx.
     lty_nblk lt' = lty_nblk lt →
     lty_nblk (pctx_plug (pctx_retype K 𝔅') lt') = lty_nblk (pctx_plug K lt).
   Proof. intros Hn. by rewrite !lty_nblk_plug pctx_nblk_retype Hn. Qed.
-
-  (** ** Locations without ghost cells
-
-      A place rooted at an owned location has no ghost cells, nor have its subplaces. *)
-  Lemma take_repeat_add {A} (a: A) n k : take n (repeat a (n + k)) = repeat a n.
-  Proof. induction n; simpl; by f_equal. Qed.
-
-  Lemma drop_repeat_add {A} (a: A) n k : drop n (repeat a (n + k)) = repeat a k.
-  Proof. induction n; simpl; done. Qed.
-
-  Lemma syn_bsize_pair 𝔄1 𝔄2 : syn_bsize (𝔄1 * 𝔄2) = (syn_bsize 𝔄1 + syn_bsize 𝔄2)%nat.
-  Proof. rewrite /syn_bsize /= /seq_size /=. lia. Qed.
-
-  Lemma pctx_size_syn {𝔅 𝔄} (K: pctx 𝔅 𝔄) : pctx_size K (syn_bsize 𝔅) = syn_bsize 𝔄.
-  Proof.
-    induction K; simpl; try done.
-    - by rewrite syn_bsize_pair IHK.
-    - by rewrite syn_bsize_pair IHK.
-    - by rewrite syn_bsize_sum.
-  Qed.
-
-  Lemma pctx_loc_empty {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} x (l: loc) :
-    ∃ l', pctx_loc K (syn_bsize 𝔅) x (l, repeat [] (pctx_size K (syn_bsize 𝔅))) =
-      (l', repeat [] (syn_bsize 𝔅)).
-  Proof.
-    rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
-    induction K in HK, x, l |- *; simpl; simpl in HK; [by eexists|..|done|done].
-    - rewrite /cloc_take /= take_repeat_add. by apply IHK.
-    - rewrite /cloc_skip /= drop_repeat_add. by apply IHK.
-    - by apply IHK.
-    - rewrite /cloc_take /cloc_skip /= drop_repeat_add.
-      have Hle := sum_max_ge 𝔄l i. rewrite -(pctx_size_syn K) in Hle.
-      rewrite -(Nat.sub_add (pctx_size K (syn_bsize 𝔅)) (sum_max 𝔄l)); [|lia].
-      rewrite Nat.add_comm repeat_app take_app_length'; [by apply IHK|by rewrite repeat_length].
-  Qed.
 
   Global Instance pctx_no_uniq_retype {𝔅 𝔄} (K: pctx 𝔅 𝔄) 𝔅' :
     PctxNoUniq K → PctxNoUniq (pctx_retype K 𝔅').
@@ -1433,18 +1366,18 @@ Section pctx.
   Proof. destruct K; simpl; try done; intros; apply pctx_expr_closed; apply _. Qed.
 
   (** The location of the referent of the root pointer, and of the hole. *)
-  Definition cloc_dummy : cloc := ((1%positive, 0%Z), []).
+  Definition loc_dummy : loc := (1%positive, 0%Z).
 
-  Definition pctx_vrloc {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) : ~~𝔄 → cloc :=
-    match K in pctx 𝔅 𝔄 return ~~𝔄 → cloc with
-    | POwn _ K' => λ x, (x.1, repeat [] (pctx_size K' n))
+  Definition pctx_vrloc {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) : ~~𝔄 → loc :=
+    match K in pctx 𝔅 𝔄 return ~~𝔄 → loc with
+    | POwn _ K' => λ x, x.1
     | PUniq _ K' => λ x, uniq_bor_loc x
     | PShr _ K' => λ x, x.1
-    | _ => λ _, cloc_dummy
+    | _ => λ _, loc_dummy
     end.
 
-  Definition pctx_vloc {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) (x: ~~𝔄) : cloc :=
-    pctx_loc K n x cloc_dummy.
+  Definition pctx_vloc {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) (x: ~~𝔄) : loc :=
+    pctx_loc K n x loc_dummy.
 
   Lemma pctx_vloc_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x y :
     pctx_in K x → pctx_vloc K n (pctx_set K x y) = pctx_vloc K n x.

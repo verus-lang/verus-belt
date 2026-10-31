@@ -163,7 +163,7 @@ Section ghost_vals.
     ty_bsize ty = 0 → is_Some (ty.(ty_val) x) → ty_shr_is_default ty →
     (∀ d g, ⊢ ty.(ty_gho_pers) x d g tid) →
     ⧖(S d) -∗ (@[κ] &&{↑NllftG; S d + 1}&&> ty.(ty_gho_own) x d (S d) tid) -∗
-    tctx_elt_interp tid (MLitV (VPtr l.1) ◁ᵥ &shr{κ} ty) (l, x).
+    tctx_elt_interp tid (MLitV (VPtr l) ◁ᵥ &shr{κ} ty) (l, x).
   Proof.
     iIntros (Hz Hv Hdef Hpers) "⧖ #G". rewrite tctx_val_val. iExists (S d). iFrame "⧖".
     iSplit; [done|]. rewrite /= /by_succ. iSplit; [by iApply shr_bytes_own_zst|].
@@ -530,7 +530,7 @@ Section StorageProtocol_bytes.
     ⧖(S d) -∗
     (@[κ] &&{↑NllftG; S d + 1}&&> (⌜{[γ]} ⊆ (↑NllftG : coPset)⌝ ∗
        sp_sto γ (λ _ c, tyC.(gt_gho) c tid)) ∗ sp_own γ p) -∗
-    tctx_elt_interp tid (MLitV (VPtr l.1) ◁ᵥ &shr{κ} srty) (l, (γ, p)).
+    tctx_elt_interp tid (MLitV (VPtr l) ◁ᵥ &shr{κ} srty) (l, (γ, p)).
   Proof.
     iIntros "⧖ #G". iApply (ghost_shr_intro _ _ srty with "⧖");
       [by rewrite /ty_bsize -ty_mty_eq|done|done|done|]. iSimpl. by rewrite -bi.sep_assoc.
@@ -808,7 +808,7 @@ Section StorageProtocol_bytes.
     destruct d2 as [|d2]; [done|].
     iDestruct (sr_shr_elim with "Own2") as "#Shr".
     iDestruct (Alv with "L E") as "#Alv".
-    iDestruct "Huniq" as "(_ & %Hineq & UB & _)".
+    iDestruct "Huniq" as "(_ & %Hineq & UB)".
     iMod (fractional.frac_split_guard_in_half NllftG with "L Alv")
       as (γ) "[F1 [F2 [#guardHalf #back]]]"; [solve_ndisj|].
     iMod (llftl_begin with "LFT") as (κ1) "[A1 #Kill1]"; [done|].

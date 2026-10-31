@@ -140,7 +140,7 @@ Section new_examples.
   *)
   Definition shorten : expr := (jump: "return" ["x"])%E.
 
-  Definition ret_ref : predl_trans' [at_clocₛ (intₛ i32 * intₛ i32)] (at_clocₛ (intₛ i32 * intₛ i32)) :=
+  Definition ret_ref : predl_trans' [at_locₛ (intₛ i32 * intₛ i32)] (at_locₛ (intₛ i32 * intₛ i32)) :=
     λ post '-[r], post r.
 
   Lemma shorten_type ϝ α β (k vx: val) :

@@ -82,13 +82,13 @@ Section view_acc.
       iIntros (lt' p' r' dh' gh' dn gn Hsz Hf Hb Hle) "V'". rewrite /prod_node.
       iSplitL "V1"; [iApply (lty_view_depth_mono with "V1"); lia|].
       iApply ("Cl" with "[//] [//] [//] [//] V'").
-    - rewrite /view_own lty_size_plug. iDestruct "V" as "(#Gp & %Hd & V)".
+    - rewrite /view_own. iDestruct "V" as "(#Gp & %Hd & V)".
       iDestruct (IH with "GR V") as (dh gh) "(% & Vh & Gs & Cl)"; [done|].
       iExists dh, gh. iFrame "Vh". iSplit; [iPureIntro; destruct_and!; split_and!; try lia; done|].
       iFrame "Gs". iSplit.
       { iApply (guards_transitive_right with "[] Gp").
         iApply (guards_transitive with "GR"). iApply pctx_salv_incl. }
-      iIntros (lt' p' r' dh' gh' dn gn Hsz Hf Hb Hle) "V'". rewrite /view_own lty_size_plug Hsz.
+      iIntros (lt' p' r' dh' gh' dn gn Hsz Hf Hb Hle) "V'". rewrite /view_own.
       iSplit; [iApply (lguards_weaken_later with "Gp"); lia|]. iSplit; [iPureIntro; lia|].
       iApply ("Cl" with "[//] [//] [//] [%] V'"). lia.
     - rewrite /psum_proj_or. destruct (psum_proj i x.1) as [y|] eqn:Hy; last first.
@@ -203,7 +203,7 @@ Section read.
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set y := pctx_get K x₀.
     set q0 := pctx_path K [].
-    set lr := (l, repeat [] (lty_size (pctx_plug K lt1))).
+    set lr := l.
     set lK := pctx_loc K (lty_size lt1) x₀ lr.
     destruct y as [[[[[ly z] ξi] d0] g0] idx0] eqn:Hy.
     rewrite /= /res_node /=. iDestruct "H" as "[Pt N]".
@@ -230,11 +230,9 @@ Section read.
     iApply (wp_pctx_sexpr _ K2 (lty_size lt0) (g' + 1) (fractional.half γh) z ly);
       [solve_ndisj|].
     wp_bind (pctx_expr K (ToLit p)).
-    iMod lc_zero as "£0".
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest"); [solve_ndisj|..].
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".
@@ -373,7 +371,7 @@ Section unblock.
     iDestruct (pctx_own_in with "Rest") as %HinK.
     set y := pctx_get K x₀.
     set q0 := pctx_path K [].
-    set lr := (l, repeat [] (lty_size (pctx_plug K lt1))).
+    set lr := l.
     destruct y as [[[[[ly z] ξi] d0] g0] idx0] eqn:Hy.
     rewrite /= /res_node /=. iDestruct "H" as "[Pt N]".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗a ⧖0") as "[_ £]";
@@ -386,7 +384,7 @@ Section unblock.
     iDestruct (view_pctx_acc K2 κ (Blocked ty β) 0 (PatBlocked β)
       (inl (PlaceGhost w ζi)) z ζm (false :: q0) d' g' tid ly (fractional.half γ1)
       with "Hs V") as (dh gh) "([%Hdh [%Hgh %Hin]] & Vh & #Gs & Cl)".
-    iEval (rewrite /= /view_leaf) in "Vh". iDestruct "Vh" as "[#Gc Bor]".
+    iEval (rewrite /= /view_leaf) in "Vh". iRename "Vh" into "Bor".
     set κh := pctx_slft K2 κ.
     set lh := pctx_loc K2 (lty_size (Blocked ty β)) z ly.
     iMod (fractional.frac_split_guard_in_half NllftG (fractional.half γ1) (fractional.half γ1)
@@ -423,8 +421,7 @@ Section unblock.
     (* Share the leaf into the view. *)
     set g2 := g1 `max` gh.
     iMod (leaf_share_view κh m2 ty x' d1 g1 g2 tid lh (fractional.half γ1) ⊤
-      with "LFT Hsl Lincl [] GP Bor") as "Upd"; [solve_ndisj|lia| |].
-    { iApply (lguards_weaken_later with "Gc"). lia. }
+      with "LFT Hsl Lincl GP Bor") as "Upd"; [solve_ndisj|lia|].
     iMod (lc_step_fupdN_elim_later with "£s Upd") as ">[GP Vh]".
     (* The new depths. *)
     iMod (cumulative_persistent_time_receipt with "TIME ⧗e ⧖1'") as "#⧖2"; [solve_ndisj|].
@@ -531,7 +528,7 @@ Section unblock.
       (inl (PlaceIn w)) z ζm (false :: q0) d' g' tid ly (fractional.half γ1)
       with "Hs V") as (dh gh) "([%Hdh [%Hgh %Hin]] & Vh & #Gs & Cl)".
     iEval (rewrite /= /view_leaf) in "Vh".
-    iDestruct "Vh" as (x1 ->) "(_ & _ & _ & #Gc & %d1 & %g1 & [%Hd1 %Hg1] & Bor)".
+    iDestruct "Vh" as (x1 ->) "(_ & _ & _ & %d1 & %g1 & [%Hd1 %Hg1] & Bor)".
     set κh := pctx_slft K2 κ.
     set lh := pctx_loc K2 (lty_size (ShrBlocked ty β)) z ly.
     have Hdl: pctx_dlev K2 ≤ D.
@@ -551,7 +548,7 @@ Section unblock.
     iMod "Upd" as "_".
     (* Share the leaf into the view. *)
     iMod (leaf_share_view κh m2 ty w d1 g1 gh tid lh (fractional.half γ1) ⊤
-      with "LFT Hsl Lincl Gc GP Bor") as "Upd"; [solve_ndisj|lia|].
+      with "LFT Hsl Lincl GP Bor") as "Upd"; [solve_ndisj|lia|].
     iMod (lc_step_fupdN_elim_later with "£s Upd") as ">[GP Vh]".
     iDestruct ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn w)) d1 gh d' g' with "[//] [//] [//] [%] Vh")
       as "V'"; [lia|].
@@ -635,7 +632,7 @@ Section share_fold.
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set y := pctx_get K x₀.
     set q0 := pctx_path K [].
-    set lr := (l, repeat [] (lty_size (pctx_plug K lt1))).
+    set lr := l.
     set lK := pctx_loc K (lty_size lt1) x₀ lr.
     destruct y as [[[[[ly z] ξi] d0] g0] idx0] eqn:Hy.
     rewrite /= /res_node /=. iDestruct "H" as "[Pt N]".
@@ -662,11 +659,9 @@ Section share_fold.
     iApply (wp_pctx_sexpr _ K2 (lty_size (OfTy ty)) (g' + 1) (fractional.half γh) z ly);
       [solve_ndisj|].
     wp_bind (pctx_expr K (ToLit p)).
-    iMod lc_zero as "£0".
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest"); [solve_ndisj|..].
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".
@@ -700,10 +695,10 @@ Section share_fold.
       `{!PctxNoUniq K} κ (ty: type 𝔅) :
     pctx_nosum K →
     tctx_incl E L +[p ◁ₗown{n} pctx_plug K (ResUniqLty (OfTy ty) κ)]
-      +[p ◁ₗown{n} pctx_plug (pctx_retype K (at_clocₛ 𝔅)) (ShrLty (OfTy ty) κ)]
+      +[p ◁ₗown{n} pctx_plug (pctx_retype K (at_locₛ 𝔅)) (ShrLty (OfTy ty) κ)]
       (λ post '-[x], post -[((x.1.1, pctx_reset K x.1.2
         ((uniq_bor_loc (pctx_get K x.1.2), uniq_bor_current (pctx_get K x.1.2))
-          : ~~ (at_clocₛ 𝔅))), x.2)]).
+          : ~~ (at_locₛ 𝔅))), x.2)]).
   Proof.
     intros Hns. split; [by intros ??? [? []]|].
     iIntros (G tid [[[l x₀] ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
@@ -711,7 +706,7 @@ Section share_fold.
     rewrite /ltype_own !lty_pat_plug !lty_rfn_plug !ltype_own_plug.
     iDestruct "Own" as "[H Rest]".
     set y := pctx_get K x₀.
-    set y' := ((uniq_bor_loc y, uniq_bor_current y) : ~~ (at_clocₛ 𝔅)).
+    set y' := ((uniq_bor_loc y, uniq_bor_current y) : ~~ (at_locₛ 𝔅)).
     iModIntro. iExists -[((l, pctx_reset K x₀ y'), ζm)]. iFrame "Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
     rewrite (lty_nrc_plug_retype K (ResUniqLty (OfTy ty) κ) (ShrLty (OfTy ty) κ)) //.
@@ -723,7 +718,7 @@ Section share_fold.
     destruct y as [[[[[l' x0] ξi] d0] g0] idx0] eqn:Hy.
     rewrite /= /res_node /leaf_owned_s /leaf_owned /ofty_owned /=.
     iDestruct "H" as "[Pt H]". iSplit; [|done]. iExists (l', x0). iSplit; [done|].
-    rewrite cbytes_at_cloc. iFrame "Pt". iNext.
+    rewrite cbytes_at_loc. iFrame "Pt". iNext.
     iDestruct "H" as "(_ & %d' & %g' & %Hle' & %x' & -> & #Gpt & #Shr & #Pers)".
     destruct (pctx_depth K d) as [|dK] eqn:HdK; [lia|]. simpl. iSplit.
     - iApply (lguards_weaken_later with "Gpt"). lia.
