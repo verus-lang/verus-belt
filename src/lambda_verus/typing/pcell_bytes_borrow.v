@@ -49,9 +49,9 @@ Section pinned.
     ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
     ty_shr κ x d g tid := ty.(ty_shr) κ x d g tid ∗ Φ x g;
   |}%I.
-  Next Obligation. intros. apply ty_size_eq. Qed.
-  Next Obligation. intros. apply ty_size_eq2. Qed.
-  Next Obligation. intros. apply ty_phys_eq2. Qed.
+  Next Obligation. intros. first [apply ty_size_eq|apply ty_size_eq2|apply ty_phys_eq2]. Qed.
+  Next Obligation. intros. first [apply ty_size_eq|apply ty_size_eq2|apply ty_phys_eq2]. Qed.
+  Next Obligation. intros. first [apply ty_size_eq|apply ty_size_eq2|apply ty_phys_eq2]. Qed.
   Next Obligation.
     intros 𝔄 ty Φ ? d g d' g' x tid ??. iIntros "[Own #Φ]".
     iDestruct (ty_gho_own_depth_mono with "Own") as "[$ Back]"; [done..|].
@@ -61,11 +61,9 @@ Section pinned.
     intros 𝔄 ty Φ ? d g d' g' x tid ??. iIntros "[Pers #Φ]".
     iSplitL; [by iApply ty_gho_pers_depth_mono|by iApply pin_pred_mono].
   Qed.
-  Next Obligation. intros. apply _. Qed.
   Next Obligation.
     intros. iIntros "[Own $]". by iApply ty_gho_pers_impl.
   Qed.
-  Next Obligation. intros. apply _. Qed.
   Next Obligation.
     intros 𝔄 ty Φ ? κ κ' x n d g tid. iIntros "#Incl [Shr #Φ]".
     iSplitL; [by iApply (ty_shr_lft_mono with "Incl Shr")|]. iApply pin_pred_mono; [|done]. lia.
@@ -144,7 +142,11 @@ Section bcell_types.
   Lemma bcell_uniq_resolve {𝔄} E L κ (ty: type 𝔄) :
     lctx_lft_alive E L κ →
     resolve E L (bcell_uniq_ty κ ty) (λ x π, snd (vπ x π) = fst (vπ x π)).
-  Proof. intros. apply pinned_resolve. by apply uniq_bytes.uniq_resolve. Qed.
+  Proof.
+    intros Alv. rewrite /bcell_uniq_ty.
+    apply (pinned_resolve E L (&uniqb{κ} (bcell_points_to_ty ty)) (bcell_uniq_loc κ ty.(ty_mty))).
+    exact (uniq_bytes.uniq_resolve E L κ (bcell_points_to_ty ty) Alv).
+  Qed.
 
   Lemma bcell_points_to_bsize {𝔄} (ty: type 𝔄) : ty_bsize (bcell_points_to_ty ty) = 0.
   Proof. by rewrite /ty_bsize -ty_mty_eq. Qed.
@@ -170,8 +172,10 @@ Section bcell_shr_rules.
     wp_bind p. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     wp_bind q. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     destruct dp as [|dp]; [done|]. destruct dq as [|dq]; [done|].
-    iDestruct "Own" as "(#Gp & _ & _)". iDestruct "Own'" as "(#Gq & #Shr & #Pers)".
     set D := dp `max` dq.
+    iDestruct (ty_gho_own_depth_mono (&shrb{κ} (bcell_points_to_ty ty)) (S dq) (S dq) (S D) (S D)
+      (l', (g, x)) tid with "Own'") as "[#OwnD _]"; [lia|lia|].
+    iDestruct "Own" as "(#Gp & _ & _)". iDestruct "Own'" as "(#Gq & _ & #Pers)".
     iAssert (⧖(S D))%I as "#⧖D".
     { rewrite /D Nat.succ_max_distr persistent_time_receipt_sep. by iFrame "⧖p ⧖q". }
     iApply wp_fupd.
@@ -184,13 +188,9 @@ Section bcell_shr_rules.
     { iApply (proph_obs_impl with "Obs"). by intros π [_ ?]. }
     iSplit; [|done]. rewrite tctx_val_val. iExists (S D). iSplit; [done|]. iFrame "⧖D".
     iSplit.
-    - rewrite /= /by_succ. iSplit; [|iSplit].
-      + iApply (shr_bytes_own_mono with "[]"); [|rewrite /shr_bytes_own;
-          setoid_rewrite (bytes_own_zst_loc _ l.1 l'.1); [iExact "Gq"|apply bcell_points_to_bsize]].
-        lia.
-      + iApply (ty_shr_depth_mono with "Shr"); lia.
-      + iApply (bi.laterN_le (S (S dq') + 1)); [lia|]. iNext.
-        iApply (ty_gho_pers_depth_mono with "Pers"); lia.
+    - iDestruct "OwnD" as "(Gq' & $ & $)".
+      rewrite /shr_bytes_own (bytes_own_zst_loc (bcell_points_to_ty ty) l.1 l'.1);
+        [done|apply bcell_points_to_bsize].
     - iExists cs. iFrame "Hg". iApply (guard_pcellb_loc_side with "Hg"); [apply ty_mty_wf|].
       iApply (lguards_weaken_later with "Gp"). lia.
   Qed.
@@ -205,7 +205,7 @@ Section bcell_shr_rules.
     iIntros (? Alv tid post mask iκs [[l [g x]] []]) "#LFT #TIME #PROPH _ #E L $ (p & _) #Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
     simpl in Hw. simplify_eq. wp_pure _.
-    destruct d as [|d0]; [done|].
+    destruct d as [|d0]; [by iDestruct "Own" as "[[] _]"|].
     iDestruct "Own" as "[(_ & #Shr & #Pers) (%cs & #Hg & #GL)]".
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Gh #Back]]]"; [solve_ndisj|].
     iAssert (|={⊤}=> fractional.half γ ∗ (fractional.half γ &&{↑NllftG}&&> @[κ]))%I
@@ -291,13 +291,15 @@ Section bcell_uniq_rules.
       iApply (guards_transitive with "Gh Alv"). }
     (* The static registry entry of the group, from the location side. *)
     iDestruct (guards_transitive_right with "Gκ Gp") as "G1".
-    iMod (guards_extract_persistent_later _ _ (∃ cs, greg g ty.(ty_mty) cs)%I
-      with "G1 H1 []") as "Upd"; [solve_ndisj| |].
-    { iIntros "Bytes". rewrite bytes_own_pcellb_ty; [|apply ty_mty_wf].
-      iDestruct "Bytes" as (cs) "[[Hg _] _]". by iExists cs. }
-    iMod (lc_fupd_elim_laterN with "[£] Upd") as "Upd".
-    { iApply (lc_weaken with "£"). rewrite /advance_credits. lia. }
-    iMod "Upd" as "[H1 (%cs & #Hg)]".
+    iAssert (|={⊤ ∖ ↑advN}=> fractional.half γ ∗ ∃ cs, greg g ty.(ty_mty) cs)%I
+      with "[H1 £]" as ">[H1 (%cs & #Hg)]".
+    { iMod (guards_extract_persistent_later _ _ (∃ cs, greg g ty.(ty_mty) cs)%I (⊤ ∖ ↑advN)
+        (↑NllftG) _ ltac:(apply _) ltac:(solve_ndisj) with "G1 H1 []") as "Upd".
+      { iIntros "Bytes". rewrite bytes_own_pcellb_ty; [|apply ty_mty_wf].
+        iDestruct "Bytes" as (cs) "[[Hg _] _]". by iExists cs. }
+      iMod (lc_fupd_elim_laterN with "[£] Upd") as "Upd".
+      { iApply (lc_weaken with "£"). rewrite /advance_credits. lia. }
+      by iMod "Upd". }
     iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
     wp_rec. iModIntro. iExists -[((l.1, []), (g, x), ξi, di, gi, ξidx)].
     iSplitR "Obs"; last first. { iApply (proph_obs_impl with "Obs"). by intros π [_ ?]. }
