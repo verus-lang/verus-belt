@@ -303,10 +303,7 @@ Lemma syn_fval_pinj {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) pad :
   syn_fval (𝔄:=Σ! 𝔄l) (pinj i y, pad) = FVVariant (Z.of_nat (fin_to_nat i)) <$> syn_fval y.
 Proof. by rewrite /= psum_map1_pinj to_xsum_pinj. Qed.
 
-(** ** Fancy bytes of syntactic types *)
-Definition syn_fbytes {𝔄} (R: gmap positive (mty * list positive)) (x: ~~𝔄)
-    (fbs: list (positive + abyte)) : Prop :=
-  length fbs = syn_bsize 𝔄 ∧ ∃ fv, syn_fval x = Some fv ∧ frepr R (syn_mty 𝔄) fbs fv.
+(** ** Fancy bytes of syntactic types ([syn_fbytes], [typing/type.v]) *)
 
 Lemma ty_fbytes_syn `{!typeG Σ} {𝔄} (ty: type 𝔄) R x fbs :
   ty_fbytes R ty x fbs ↔ syn_fbytes R x fbs.

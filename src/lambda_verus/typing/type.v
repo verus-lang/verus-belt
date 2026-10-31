@@ -552,6 +552,31 @@ Definition ty_fbytes `{!typeG Σ} {𝔄} (R: gmap positive (mty * list positive)
     (x: ~~𝔄) (fbs: list (positive + abyte)) : Prop :=
   length fbs = ty_bsize ty ∧ ∃ fv, ty.(ty_fval) x = Some fv ∧ frepr R ty.(ty_mty) fbs fv.
 
+(** [syn_fbytes R x fbs]: the fancy bytes [fbs] represent the value [x] of the syntactic
+    type [𝔄] (so [ty_fbytes R ty x fbs ↔ syn_fbytes R x fbs], [typing/bytes_layout.v]). *)
+Definition syn_fbytes {𝔄} (R: gmap positive (mty * list positive)) (x: ~~𝔄)
+    (fbs: list (positive + abyte)) : Prop :=
+  length fbs = syn_bsize 𝔄 ∧ ∃ fv, syn_fval x = Some fv ∧ frepr R (syn_mty 𝔄) fbs fv.
+
+(** [syn_bincl f]: the map [f] preserves the byte representation: the sizes agree, and
+    fancy bytes represent [x] iff they represent [f x]. A subtyping along [f] needs it,
+    since the parents of a value (boxes, borrows) own its bytes. *)
+Definition syn_bincl {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : Prop :=
+  syn_bsize 𝔄 = syn_bsize 𝔅 ∧ ∀ x R fbs, syn_fbytes R x fbs ↔ syn_fbytes R (f ~~$ₛ x) fbs.
+
+Lemma syn_bincl_id {𝔄} : syn_bincl (idₛ (𝔄:=𝔄)).
+Proof. done. Qed.
+
+Lemma syn_bincl_compose {𝔄 𝔅 ℭ} (f: 𝔄 →ₛ 𝔅) (g: 𝔅 →ₛ ℭ) :
+  syn_bincl f → syn_bincl g → syn_bincl (g ∘ₛ f).
+Proof. intros [Hs Hf] [Hs' Hg]. split; [lia|]. intros. by rewrite Hf Hg. Qed.
+
+Lemma syn_bincl_iso {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) g `{!Isoₛ f g} : syn_bincl f → syn_bincl g.
+Proof.
+  intros [Hs Hf]. split; [done|]. intros y R fbs. rewrite (Hf (g ~~$ₛ y)).
+  destruct Isoₛ0. by rewrite semi_iso'.
+Qed.
+
 (** The syntactic types without cells ([syn_nocell]), as a class: for a syntactic type
     whose head constructor is known, it is solved by computation (or by the instances for
     products and sums). The byte rules that read a value of a generic type ([Load] and
@@ -1629,7 +1654,7 @@ End resolve.
 Set Printing Implicit.
 Definition type_incl `{!typeG Σ} {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅)
   : iProp Σ :=
-  (ty_lft ty' ⊑ ty_lft ty) ∗
+  ⌜syn_bincl f⌝ ∗ (ty_lft ty' ⊑ ty_lft ty) ∗
   (□ ∀x d g tid, ty.(ty_gho_own) x d g tid -∗ ty'.(ty_gho_own) (f ~~$ₛ x) d g tid
                     ∗ (ty'.(ty_gho_own) (f ~~$ₛ x) d g tid -∗ ty.(ty_gho_own) x d g tid)) ∗
   (□ ∀x d g tid, ty.(ty_gho_pers) x d g tid -∗ ty'.(ty_gho_pers) (f ~~$ₛ x) d g tid) ∗
@@ -1662,6 +1687,7 @@ Section subtyping.
   (** Subtyping *)
 
   Lemma eqtype_unfold {𝔄 𝔅} E L f g `{!Isoₛ f g} (ty : type 𝔄) (ty' : type 𝔅) :
+    syn_bincl f →
     (llctx_interp L -∗ □ (elctx_interp E -∗
       ty_lft ty ≡ₗ ty_lft ty' ∗
       (□ ∀x d g tid, ty.(ty_gho_own) x d g tid ↔ ty'.(ty_gho_own) (f ~~$ₛ x) d g tid) ∗
@@ -1669,11 +1695,11 @@ Section subtyping.
       (□ ∀κ x d g tid, ty.(ty_shr) κ x d g tid ↔ ty'.(ty_shr) κ (f ~~$ₛ x) d g tid)))
     ↔ eqtype E L ty ty' f g.
   Proof.
-    split.
+    intros Hb. split.
     - move=> Eqt. split; iIntros "L".
       + iDestruct (Eqt with "L") as "#Eqt". iIntros "!> #E".
         iDestruct ("Eqt" with "E") as "([#EqLft1 #EqLft2] & EqOwn & EqOwnPers & EqShr)".
-        iSplit; [done|]. iSplit.
+        iSplit; [done|]. iSplit; [done|]. iSplit.
         * iIntros "!>". iIntros. iSplitL.
           { iApply "EqOwn". iFrame. }
           { iIntros. iApply "EqOwn". iFrame. }
@@ -1682,7 +1708,7 @@ Section subtyping.
           { iModIntro. iIntros. iApply "EqShr". iFrame "#". }
       + iDestruct (Eqt with "L") as "#Eqt". iIntros "!> #E".
         iDestruct ("Eqt" with "E") as "([#EqLft1 #EqLft2] & EqOwn & EqOwnPers & EqShr)".
-        iSplit; [done|]. iSplit; [|iSplit].
+        iSplit; [iPureIntro; by eapply syn_bincl_iso|]. iSplit; [done|]. iSplit; [|iSplit].
         * iIntros "!>". iIntros. iSplitL. { iApply "EqOwn". iFrame.
             destruct Isoₛ0. rewrite semi_iso'. done. }
           { iIntros "x". iDestruct ("EqOwn" with "x") as "x".
@@ -1693,8 +1719,8 @@ Section subtyping.
             { iIntros. iApply "EqShr". destruct Isoₛ0. rewrite semi_iso'. done. }
     - iIntros ([Sub Sub']) "L". iDestruct (Sub with "L") as "#Sub".
       iDestruct (Sub' with "L") as "#Sub'". iIntros "!> #E".
-      iDestruct ("Sub" with "E") as "[B[InOwn [InPers InShr]]]".
-      iDestruct ("Sub'" with "E") as "[F[InOwn' [InPers' InShr']]]".
+      iDestruct ("Sub" with "E") as "[_ [B[InOwn [InPers InShr]]]]".
+      iDestruct ("Sub'" with "E") as "[_ [F[InOwn' [InPers' InShr']]]]".
       iFrame "B". iFrame "F".
       iSplit; [|iSplit].
       + iIntros "!>*". iSplit.
@@ -1714,6 +1740,7 @@ Section subtyping.
   (** A variant of [eqtype_unfold] for types whose sharing predicate is (equivalent to)
       the default one: the equivalence of the sharing predicates is derived. *)
   Lemma eqtype_unfold_default {𝔄 𝔅} E L f g `{!Isoₛ f g} (ty : type 𝔄) (ty' : type 𝔅) :
+    syn_bincl f →
     (∀κ x d g tid, ty.(ty_shr) κ x d g tid ⊣⊢ default_shr ty.(ty_gho_own) κ x d g tid) →
     (∀κ x d g tid, ty'.(ty_shr) κ x d g tid ⊣⊢ default_shr ty'.(ty_gho_own) κ x d g tid) →
     (llctx_interp L -∗ □ (elctx_interp E -∗
@@ -1722,7 +1749,7 @@ Section subtyping.
       (□ ∀x d g tid, ty.(ty_gho_pers) x d g tid ↔ ty'.(ty_gho_pers) (f ~~$ₛ x) d g tid))) →
     eqtype E L ty ty' f g.
   Proof.
-    move=> Def Def' Eqt. apply eqtype_unfold; [done|]. iIntros "L".
+    move=> Hb Def Def' Eqt. apply (eqtype_unfold E L f g); [done|]. iIntros "L".
     iDestruct (Eqt with "L") as "#Eqt". iIntros "!> #E".
     iDestruct ("Eqt" with "E") as "($ & #EqOwn & $)". iFrame "EqOwn".
     iIntros "!>" (κ x d g' tid). rewrite Def Def' /default_shr. iSplit.
@@ -1744,12 +1771,11 @@ Section subtyping.
       (□ ∀κ vπ d g tid, ty.(ty_shr) κ vπ d g tid ↔ ty'.(ty_shr) κ vπ d g tid))) ↔
     eqtype E L ty ty' idₛ idₛ.
   Proof. split.
-    + intros X. apply eqtype_unfold.
-        - done.
+    + intros X. apply (eqtype_unfold E L idₛ idₛ); [apply syn_bincl_id|].
         - iIntros "L". iDestruct (X with "L") as "#Q".
           iModIntro. iIntros "E". iDestruct ("Q" with "E") as "[C [D [E F]]]".
           iFrame.
-    + intros X. rewrite <- eqtype_unfold in X. apply X. done.
+    + intros X. rewrite <- (eqtype_unfold E L idₛ idₛ) in X; [apply X|apply syn_bincl_id].
   Qed.
 
   Global Instance type_incl_ne {𝔄 𝔅} n :
@@ -1767,14 +1793,14 @@ Section subtyping.
   (** For types with the default sharing predicate, the inclusion of the sharing
       predicates follows from that of the ownership predicates. *)
   Lemma type_incl_default {𝔄 𝔅} (ty : type 𝔄) (ty' : type 𝔅) f :
-    ty_shr_is_default ty → ty_shr_is_default ty' →
+    ty_shr_is_default ty → ty_shr_is_default ty' → syn_bincl f →
     ((ty_lft ty' ⊑ ty_lft ty) ∗
       (□ ∀x d g tid, ty.(ty_gho_own) x d g tid -∗ ty'.(ty_gho_own) (f ~~$ₛ x) d g tid
                     ∗ (ty'.(ty_gho_own) (f ~~$ₛ x) d g tid -∗ ty.(ty_gho_own) x d g tid)) ∗
       (□ ∀x d g tid, ty.(ty_gho_pers) x d g tid -∗ ty'.(ty_gho_pers) (f ~~$ₛ x) d g tid)) -∗
     type_incl ty ty' f.
   Proof.
-    iIntros (Def Def') "($ & #InOwn & $)". iSplit; [done|].
+    iIntros (Def Def' Hb) "($ & #InOwn & $)". iSplit; [done|]. iSplit; [done|].
     iIntros "!>" (κ x d g tid). rewrite !Def Def'.
     iDestruct (default_shr_incl with "InOwn") as "#InShr". iApply "InShr".
   Qed.
@@ -1791,7 +1817,7 @@ Section subtyping.
 
   Lemma type_incl_refl {𝔄} (ty: type 𝔄) : ⊢ type_incl ty ty idₛ.
   Proof.
-    iIntros. 
+    iIntros. iSplit; [done|].
     iSplit; [by iApply lft_incl_refl|].
       iSplit. { iModIntro. iIntros. iFrame. iIntros. done. }
       iSplit. { iModIntro. iIntros. iIntros. iFrame "#". }
@@ -1802,8 +1828,9 @@ Section subtyping.
     type_incl ty ty' f -∗ type_incl ty' ty'' g -∗ type_incl ty ty'' (g ∘ₛ f).
   Proof.
     iIntros "A B".
-    iDestruct "A" as "[#InLft [#InOwn [#InOwnPers #InShr]]]".
-    iDestruct "B" as "[#InLft' [#InOwn' [#InOwnPers' #InShr']]]".
+    iDestruct "A" as "[%Hb [#InLft [#InOwn [#InOwnPers #InShr]]]]".
+    iDestruct "B" as "[%Hb' [#InLft' [#InOwn' [#InOwnPers' #InShr']]]]".
+    iSplit; [iPureIntro; by apply syn_bincl_compose|].
     iSplit; [|iSplit; [|iSplit]].
     - iApply llftl_incl_trans; [iApply "InLft'"|iApply "InLft"].
     - iIntros "!>*". iIntros "x".
@@ -1822,7 +1849,7 @@ Section subtyping.
 
   Lemma equiv_subtype {𝔄} (ty ty': type 𝔄) E L : ty ≡ ty' → subtype E L ty ty' idₛ.
   Proof.
-    move=> Eqv. iIntros "_!>_".
+    move=> Eqv. iIntros "_!>_". iSplit; [done|].
     iSplit. { rewrite Eqv. iApply lft_incl_refl. }
     iSplit. { iIntros "!>*"; rewrite Eqv; iIntros "$". iIntros "x". done. }
     iSplit. { iIntros "!>*"; rewrite Eqv. iIntros. iFrame "#". }
@@ -1923,29 +1950,31 @@ Section subtyping.
   (** Simple Type *)
 
   Lemma type_incl_simple_type {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) (st: simple_type 𝔄) (st': simple_type 𝔅):
+    syn_bincl f →
     ty_lft st' ⊑ ty_lft st -∗
     (□ ∀x d g tid, st.(st_gho) x d g tid -∗ st'.(st_gho) (f ~~$ₛ x) d g tid) -∗
     type_incl st st' f.
   Proof.
-    iIntros "#InLft #InOwn".
+    iIntros (Hb) "#InLft #InOwn".
     iAssert (□ ∀x d g tid, st.(st_gho) x d g tid -∗ st'.(st_gho) (f ~~$ₛ x) d g tid
       ∗ (st'.(st_gho) (f ~~$ₛ x) d g tid -∗ st.(st_gho) x d g tid))%I as "#InOwn'".
     { iModIntro. iIntros (x d g tid) "#Gho".
       iSplit.
         { iApply "InOwn". done. }
         { iIntros. iApply "Gho". } }
-    iSplit; [done|].
+    iSplit; [done|]. iSplit; [done|].
     iSplit; [done|]. iSplit; [done|].
     by iApply type_incl_shr_default.
   Qed.
 
   Lemma subtype_simple_type {𝔄 𝔅} E L (f : 𝔄 →ₛ 𝔅) (st: simple_type 𝔄) (st': simple_type 𝔅) :
+    syn_bincl f →
     (llctx_interp L -∗ □ (elctx_interp E -∗
       ty_lft st' ⊑ ty_lft st ∗
       (□ ∀x d g tid, st.(st_gho) x d g tid -∗ st'.(st_gho) (f ~~$ₛ x) d g tid))) →
     subtype E L st st' f.
   Proof.
-    move=> Sub. iIntros "L". iDestruct (Sub with "L") as "#Incl".
+    move=> Hb Sub. iIntros "L". iDestruct (Sub with "L") as "#Incl".
     iIntros "!> #E". iDestruct ("Incl" with "E") as "[??]".
     by iApply type_incl_simple_type.
   Qed.
@@ -1953,14 +1982,15 @@ Section subtyping.
   (** Plain Type *)
   
   Lemma type_incl_plain_type {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) (pt: plain_type 𝔄) (pt': plain_type 𝔅):
+    syn_bincl f →
     ty_lft pt' ⊑ ty_lft pt -∗
     □ (∀v tid, pt.(pt_gho) v tid -∗ pt'.(pt_gho) (f ~~$ₛ v) tid
             ∗ (pt'.(pt_gho) (f ~~$ₛ v) tid -∗ pt.(pt_gho) v tid)
     ) -∗
     type_incl pt pt' f.
   Proof.
-    iIntros "#InLft #InOwn".
-    do 1 (iSplit; [done|]).
+    iIntros (Hb) "#InLft #InOwn".
+    do 2 (iSplit; [done|]).
       iSplit; [|iSplit].
     - iIntros "!>*/=". iIntros "gho".
       iDestruct ("InOwn" with "gho") as "[x y]". iFrame.
@@ -1969,6 +1999,7 @@ Section subtyping.
   Qed.
 
   Lemma subtype_plain_type {𝔄 𝔅} E L (f : 𝔄 →ₛ 𝔅) (pt: plain_type 𝔄) (pt': plain_type 𝔅) :
+    syn_bincl f →
     (llctx_interp L -∗ □ (elctx_interp E -∗
       ty_lft pt' ⊑ ty_lft pt ∗
       (∀v tid, pt.(pt_gho) v tid -∗ pt'.(pt_gho) (f ~~$ₛ v) tid
@@ -1976,7 +2007,7 @@ Section subtyping.
       ))) →
     subtype E L pt pt' f.
   Proof.
-    move=> Sub. iIntros "L". iDestruct (Sub with "L") as "#Sub".
+    move=> Hb Sub. iIntros "L". iDestruct (Sub with "L") as "#Sub".
     iIntros "!> #E". iDestruct ("Sub" with "E") as "[??]".
     iApply type_incl_plain_type; trivial.
   Qed.
@@ -1984,11 +2015,12 @@ Section subtyping.
   (** Ghost Type *)
 
   Lemma type_incl_ghost_type {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) (gt: ghost_type 𝔄) (gt': ghost_type 𝔅):
+    syn_bincl f →
     □ (∀v tid, gt.(gt_gho) v tid -∗ gt'.(gt_gho) (f ~~$ₛ v) tid
             ∗ (gt'.(gt_gho) (f ~~$ₛ v) tid -∗ gt.(gt_gho) v tid)) -∗
     type_incl gt gt' f.
   Proof.
-    iIntros "#InOwn".
+    iIntros (Hb) "#InOwn". iSplit; [done|].
     do 1 (iSplit; try done).
     { simpl. by iApply lft_incl_static. }
     iAssert (□ ∀x d g tid, ty_gho_own gt x d g tid -∗ ty_gho_own gt' (f ~~$ₛ x) d g tid
@@ -2002,11 +2034,12 @@ Section subtyping.
   Qed.
 
   Lemma subtype_ghost_type {𝔄 𝔅} E L (f : 𝔄 →ₛ 𝔅) (gt: ghost_type 𝔄) (gt': ghost_type 𝔅) :
+    syn_bincl f →
     (llctx_interp L -∗ □ (elctx_interp E -∗
     □ (∀v tid, gt.(gt_gho) v tid -∗ gt'.(gt_gho) (f ~~$ₛ v) tid ∗ (gt'.(gt_gho) (f ~~$ₛ v) tid -∗ gt.(gt_gho) v tid)))) →
     subtype E L gt gt' f.
   Proof.
-    move=> Sub. iIntros "L". iDestruct (Sub with "L") as "#Incl".
+    move=> Hb Sub. iIntros "L". iDestruct (Sub with "L") as "#Incl".
     iIntros "!> #E". iDestruct ("Incl" with "E") as "#H".
     by iApply type_incl_ghost_type.
   Qed.
@@ -2020,7 +2053,7 @@ Section subtyping.
     leaf_open "L" with "G" as "[L1 back]". { solve_ndisj. }
     iDestruct (Sub with "L1") as "#Sub".
     iMod ("back" with "L1") as "G".
-    iDestruct ("Sub" with "E") as "#(_ & #InOwn & _)".
+    iDestruct ("Sub" with "E") as "#(_ & _ & #InOwn & _)".
     iDestruct ("InOwn" with "ty") as "[ty' _]".
     unfold "∘".
     by iApply (Rslv with "LFT PROPH UNIQ TIME E L G ty'").
