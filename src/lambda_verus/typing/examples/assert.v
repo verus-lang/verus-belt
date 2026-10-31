@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs bool cont product value_ctx function_bytes.
+From lrust.typing Require Export type programs bool cont product value_ctx function.
 From lrust.lang Require Import lang notation.
 Set Default Proof Using "Type".
 
@@ -25,11 +25,11 @@ Section assert.
   Lemma assert_type :
     typed_val
         assert
-        ((bfn(∅; bool_ty) → ()) (λ (c: ~~ ()) 𝛷 '-[b] , λ mask π, b ∧ ∀ ret, 𝛷 ret mask π))
+        ((fn(∅; bool_ty) → ()) (λ (c: ~~ ()) 𝛷 '-[b] , λ mask π, b ∧ ∀ ret, 𝛷 ret mask π))
         (assert, ()).
   Proof.
     unfold assert. unlock.
-    opose proof (@type_bfn
+    opose proof (@type_fn
         _ _ _
         [boolₛ]
         ()

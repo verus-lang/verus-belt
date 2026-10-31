@@ -16,17 +16,17 @@
   - [tctx_ty_to_vplace], [tctx_vplace_to_ty]: [p ◁ ty] and [p ◁ₗ OfTy ty];
   - [tctx_vplace_unfold_own], [tctx_vplace_fold_own]: [OfTy (own_bytes n ty)] and
     [OwnPtrLty n (OfTy ty)] (so [p ◁ own_bytes n ty] and [p ◁ₗown{n} OfTy ty]);
-  - [tctx_vplace_unfold_shr], [tctx_vplace_fold_shr]: [OfTy (&shrb{κ} ty)] and
+  - [tctx_vplace_unfold_shr], [tctx_vplace_fold_shr]: [OfTy (&shr{κ} ty)] and
     [ShrLty (OfTy ty) κ];
   - [type_vplace_unfold_uniq_instr] (one [Skip], for the two cumulative time receipts of the
-    node of [UniqLty]), [tctx_vplace_fold_uniq]: [OfTy (&uniqb{κ} ty)] and
+    node of [UniqLty]), [tctx_vplace_fold_uniq]: [OfTy (&uniq{κ} ty)] and
     [UniqLty (OfTy ty) κ]; [type_uniq_to_vplace_instr], [tctx_vplace_to_uniq]: from and to
-    [p ◁ &uniqb{κ} ty] directly. *)
+    [p ◁ &uniq{κ} ty] directly. *)
 
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath pctx_acc.
-From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bytes_util uniq_bytes own_bytes shr_bytes bytes_layout value_ctx product freeable_util.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own shr_bor bytes_layout value_ctx product freeable_util.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -152,7 +152,7 @@ Section conv.
     iExists D, d, g. rewrite /lty_size -(ty_bsize_eq ty). iFrame "⧖ ⧗ Fr".
     iSplit; [by destruct Phys as (w & -> & [= <-])|].
     iSplit; [iPureIntro; lia|].
-    rewrite /ltype_own /= /bofty_owned. iExists x. iSplit; [done|].
+    rewrite /ltype_own /= /ofty_owned. iExists x. iSplit; [done|].
     iDestruct (ty_gho_own_depth_mono _ d g d g with "Gho") as "[$ _]"; [lia..|]. done.
   Qed.
 
@@ -162,7 +162,7 @@ Section conv.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[[l x] ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
     iDestruct "T" as (v Hp D d g) "(⧖ & _ & -> & %Hle & Fr & Own)".
-    rewrite /ltype_own /= /bofty_owned. iDestruct "Own" as (? ->) "[Pt Gho]".
+    rewrite /ltype_own /= /ofty_owned. iDestruct "Own" as (? ->) "[Pt Gho]".
     iMod cumulative_time_receipt_0 as "⧗".
     iModIntro. iExists -[((l, x), ζm)]. iFrame "Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists _. iSplit; [done|].
@@ -174,7 +174,7 @@ Section conv.
   (** * Shared references *)
 
   Lemma tctx_vplace_unfold_shr {𝔄} E L p κ (ty: type 𝔄) :
-    tctx_incl E L +[p ◁ₗ OfTy (&shrb{κ} ty)] +[p ◁ₗ ShrLty (OfTy ty) κ] (λ post '-[x], post -[x]).
+    tctx_incl E L +[p ◁ₗ OfTy (&shr{κ} ty)] +[p ◁ₗ ShrLty (OfTy ty) κ] (λ post '-[x], post -[x]).
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[x ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
@@ -184,7 +184,7 @@ Section conv.
   Qed.
 
   Lemma tctx_vplace_fold_shr {𝔄} E L p κ (ty: type 𝔄) :
-    tctx_incl E L +[p ◁ₗ ShrLty (OfTy ty) κ] +[p ◁ₗ OfTy (&shrb{κ} ty)] (λ post '-[x], post -[x]).
+    tctx_incl E L +[p ◁ₗ ShrLty (OfTy ty) κ] +[p ◁ₗ OfTy (&shr{κ} ty)] (λ post '-[x], post -[x]).
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[x ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
@@ -199,7 +199,7 @@ Section conv.
       unfolding a [&uniq] value takes a program step. *)
 
   Lemma type_vplace_unfold_uniq_instr {𝔄} E L I p κ (ty: type 𝔄) :
-    typed_instr E L I +[p ◁ₗ OfTy (&uniqb{κ} ty)] Skip
+    typed_instr E L I +[p ◁ₗ OfTy (&uniq{κ} ty)] Skip
       (λ _, +[p ◁ₗ UniqLty (OfTy ty) κ]) (λ post '-[x], post -[x]).
   Proof.
     iIntros (tid post mask iκs [[m ζm] []]) "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
@@ -217,7 +217,7 @@ Section conv.
   Qed.
 
   Lemma tctx_vplace_fold_uniq {𝔄} E L p κ (ty: type 𝔄) :
-    tctx_incl E L +[p ◁ₗ UniqLty (OfTy ty) κ] +[p ◁ₗ OfTy (&uniqb{κ} ty)]
+    tctx_incl E L +[p ◁ₗ UniqLty (OfTy ty) κ] +[p ◁ₗ OfTy (&uniq{κ} ty)]
       (λ post '-[x], λ mask π, ∀ d g idx, post -[(uniq_bor_set_meta x.1 d g idx, x.2)] mask π).
   Proof.
     split.
@@ -236,7 +236,7 @@ Section conv.
 
   (** Directly from and to a [&uniq] value. *)
   Lemma type_uniq_to_vplace_instr {𝔄} E L I p κ (ty: type 𝔄) :
-    typed_instr E L I +[p ◁ᵥ &uniqb{κ} ty] Skip
+    typed_instr E L I +[p ◁ᵥ &uniq{κ} ty] Skip
       (λ _, +[p ◁ₗ UniqLty (OfTy ty) κ]) (λ post '-[m], post -[(m, [])]).
   Proof.
     iIntros (tid post mask iκs [m []]) "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
@@ -254,7 +254,7 @@ Section conv.
   Qed.
 
   Lemma tctx_vplace_to_uniq {𝔄} E L p κ (ty: type 𝔄) :
-    tctx_incl E L +[p ◁ₗ UniqLty (OfTy ty) κ] +[p ◁ᵥ &uniqb{κ} ty]
+    tctx_incl E L +[p ◁ₗ UniqLty (OfTy ty) κ] +[p ◁ᵥ &uniq{κ} ty]
       (λ post '-[x], λ mask π, ∀ d g idx, post -[uniq_bor_set_meta x.1 d g idx] mask π).
   Proof.
     eapply tctx_incl_ext; [eapply tctx_incl_trans;

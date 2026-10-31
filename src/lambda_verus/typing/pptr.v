@@ -1,5 +1,5 @@
-From lrust.typing Require Export type tracked product own_bytes shr_bytes uniq_bytes value_ctx.
-From lrust.typing Require Import uniq_util uniq_bytes_util type_context programs ghost.
+From lrust.typing Require Export type tracked product own shr_bor uniq_bor value_ctx.
+From lrust.typing Require Import uniq_util type_context programs ghost.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
@@ -127,8 +127,8 @@ Section typing.
   Definition PPtrBorrow : val := (λ: ["ptr"; "perm_ref"], "ptr")%V.
 
   Lemma typed_pptr_borrow {𝔄} κ (ptr perm_ref : path) (ty : type 𝔄) E L I :
-    typed_instr E L I +[ptr ◁ᵥ ptr_ty; perm_ref ◁ᵥ &shrb{κ} (points_to_ty ty)]
-      (PPtrBorrow [ptr; perm_ref]) (λ v, +[v ◁ᵥ &shrb{κ} ty])
+    typed_instr E L I +[ptr ◁ᵥ ptr_ty; perm_ref ◁ᵥ &shr{κ} (points_to_ty ty)]
+      (PPtrBorrow [ptr; perm_ref]) (λ v, +[v ◁ᵥ &shr{κ} ty])
       (λ post '-[l; (cl, (l', x))], λ mask π, l = l' ∧ post -[((l, []), x)] mask π).
   Proof.
     iIntros (tid postπ mask iκs [l [[c [l' x]] []]]) "#LFT #TIME #PROPH #UNIQ #E $ $ (Hptr & Hperm & _) #Obs".
@@ -163,8 +163,8 @@ Section typing.
 
   Lemma typed_pptr_borrow_mut {𝔄} κ (ptr perm_ref : path) (ty : type 𝔄) E L I :
     lctx_lft_alive E L κ →
-    typed_instr E L I +[ptr ◁ᵥ ptr_ty; perm_ref ◁ᵥ &uniqb{κ} (points_to_ty ty)]
-      (PPtrMutBorrow [ptr; perm_ref]) (λ v, +[v ◁ᵥ &uniqb{κ} ty])
+    typed_instr E L I +[ptr ◁ᵥ ptr_ty; perm_ref ◁ᵥ &uniq{κ} (points_to_ty ty)]
+      (PPtrMutBorrow [ptr; perm_ref]) (λ v, +[v ◁ᵥ &uniq{κ} ty])
       (λ post '-[l; bor], λ mask π, let '(cl, (l', x), ξi, d, g, idx) := bor in l = l' ∧
         ∀ bor',
         uniq_bor_current bor' = snd (uniq_bor_current bor) →

@@ -1,8 +1,8 @@
 (** * Places below shared references, on bytes
 
-  The byte version of the deleted legacy [place_pshr.v]. The referent of a shared reference [&shrb{κ}]
+  The byte version of the deleted legacy [place_pshr.v]. The referent of a shared reference [&shr{κ}]
   in a place rooted at a value is a context step [PShr κ K] ([lpath.v]): the place type
-  [ShrLty lt κ] ([ltype.v]) is the leaf of [&shrb{κ} (lty_fold lt)] together with the
+  [ShrLty lt κ] ([ltype.v]) is the leaf of [&shr{κ} (lty_fold lt)] together with the
   variants of the sums of [lt] at the (unchanging) referent ([lty_vin]). Nothing below a
   shared reference is owned, blocked or written; the referent is only _viewed_, through the
   guards of its bytes and the (persistent, structural) sharing predicates of its folded
@@ -40,7 +40,7 @@
   - (a) [tctx_change_vplace_shr]/[type_change_vplace_shr_instr]: changing the view of the
     referent for one with the same folded type and fewer variant constraints (unfolding
     pairs, boxes, unique borrows and shared references below [PShr]);
-    [type_(un)fold_vplace_shr_instr]: [OfTy (&shrb{κ} ty)] ↔ [ShrLty (OfTy ty) κ] at the
+    [type_(un)fold_vplace_shr_instr]: [OfTy (&shr{κ} ty)] ↔ [ShrLty (OfTy ty) κ] at the
     hole of [K1];
   - (b) [type_read_vplace_pshr_instr]: a guarded typed [Load] of a [Copy] leaf;
   - (c) [type_share_vplace_pshr_instr]: a shared reference to a sub-place, at
@@ -55,8 +55,8 @@
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
-From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bytes.
-From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bytes_util uniq_bytes own_bytes bytes_layout value_ctx product freeable_util sum place_shr place_resolve place_puniq place_sum place_deep.
+From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bor.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own bytes_layout value_ctx product freeable_util sum place_shr place_resolve place_puniq place_sum place_deep.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -70,7 +70,7 @@ Section shr_view.
   Context `{!typeG Σ}.
 
   (** The shared view of the value [y] of type [ty] at [l], at the lifetime [κ]: the
-      ownership predicate of [&shrb{κ} ty] without its laters. *)
+      ownership predicate of [&shr{κ} ty] without its laters. *)
   Definition shr_view {𝔄} (κ: lft) (ty: type 𝔄) (y: ~~𝔄) (d g: nat) (tid: thread_id)
       (l: cloc) : iProp Σ :=
     (@[κ] &&{↑NllftG; g+1}&&> cbytes ty y l) ∗
@@ -90,7 +90,7 @@ Section shr_view.
   (** The ownership predicate of a shared reference gives the shared view of its
       referent, after [g+1] laters. *)
   Lemma shr_bor_gho_view {𝔄} κ (ty: type 𝔄) (l: cloc) y d g tid :
-    (&shrb{κ} ty).(ty_gho_own) (l, y) d g tid -∗
+    (&shr{κ} ty).(ty_gho_own) (l, y) d g tid -∗
       ⌜d ≠ 0%nat⌝ ∗ ▷^(g+1) shr_view κ ty y (pred d) g tid l.
   Proof.
     destruct d as [|d]; [by iIntros "[]"|]. iIntros "#(Pt & Shr & Pers)".
@@ -99,7 +99,7 @@ Section shr_view.
 
   (** And back. *)
   Lemma shr_bor_gho_of_view {𝔄} κ (ty: type 𝔄) (l: cloc) y d g tid :
-    shr_view κ ty y d g tid l -∗ (&shrb{κ} ty).(ty_gho_own) (l, y) (S d) g tid.
+    shr_view κ ty y d g tid l -∗ (&shr{κ} ty).(ty_gho_own) (l, y) (S d) g tid.
   Proof. iIntros "#(Pt & Shr & Pers)". iFrame "Pt Shr". by iNext. Qed.
 
   Lemma xsum_shr_pinj {𝔄l} (tyl: typel 𝔄l) i κ x0 pad d g tid :
@@ -556,7 +556,7 @@ Section pshr_addr.
         { done. }
         { iIntros "_ !>". iSplit; [|done]. iSplit; [|iPureIntro; by apply Hv].
           rewrite /= Hfold. iExists y. iSplit; [done|].
-          rewrite /bofty_owned cbytes_at_cloc. iFrame "Gho1". iExists bs. by iFrame. }
+          rewrite /ofty_owned cbytes_at_cloc. iFrame "Gho1". iExists bs. by iFrame. }
         iModIntro. iSplit; [done|]. by iFrame "G Own Gho1'". }
     wp_bind (Load _ _ _). iApply (wp_wand with "WPr"). iIntros (v) "(-> & G & Own & %Hvin & #Gho)".
     apply lty_vin_plug in Hvin as [Hvin2 Hvin].
@@ -611,7 +611,7 @@ Section typing.
   Qed.
 
   Lemma vplace_conv_shr_unfold {𝔅 𝔄} (K: pctx (at_clocₛ 𝔅) 𝔄) κ (ty: type 𝔅) :
-    vplace_conv K (OfTy (&shrb{κ} ty)%T) (ShrLty (OfTy ty) κ) (=).
+    vplace_conv K (OfTy (&shr{κ} ty)%T) (ShrLty (OfTy ty) κ) (=).
   Proof.
     iIntros (x ζm dh gh D tid lh G E ? HE HdK ?) "_ _ _ _ _ G _ _ _ H".
     iModIntro. iExists (pctx_get K x), [], 1%Qp. iSplit; [done|].
@@ -620,7 +620,7 @@ Section typing.
   Qed.
 
   Lemma vplace_conv_shr_fold {𝔅 𝔄} (K: pctx (at_clocₛ 𝔅) 𝔄) κ (ty: type 𝔅) :
-    vplace_conv K (ShrLty (OfTy ty) κ) (OfTy (&shrb{κ} ty)%T) (=).
+    vplace_conv K (ShrLty (OfTy ty) κ) (OfTy (&shr{κ} ty)%T) (=).
   Proof.
     iIntros (x ζm dh gh D tid lh G E ? HE HdK ?) "_ _ _ _ _ G _ _ _ H".
     iDestruct "H" as "[H _]".
@@ -631,8 +631,8 @@ Section typing.
 
   Lemma type_unfold_vplace_shr_instr {𝔅 𝔄} E L I p (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
       `{!PctxVRoot K} κ (ty: type 𝔅) :
-    lctx_lft_alive E L (pctx_ulft K (OfTy (&shrb{κ} ty)%T) ⊓ ty_lft (&shrb{κ} ty)%T) →
-    typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy (&shrb{κ} ty)%T)] (Seq Skip Skip)
+    lctx_lft_alive E L (pctx_ulft K (OfTy (&shr{κ} ty)%T) ⊓ ty_lft (&shr{κ} ty)%T) →
+    typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy (&shr{κ} ty)%T)] (Seq Skip Skip)
       (const +[p ◁ₗ pctx_plug K (ShrLty (OfTy ty) κ)])
       (λ post '-[x], post -[x]).
   Proof.
@@ -644,17 +644,17 @@ Section typing.
 
   Lemma type_unfold_oplace_shr_instr {𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
       κ (ty: type 𝔅) :
-    lctx_lft_alive E L (pctx_ulft K (OfTy (&shrb{κ} ty)%T) ⊓ ty_lft (&shrb{κ} ty)%T) →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (&shrb{κ} ty)%T)] (Seq Skip Skip)
+    lctx_lft_alive E L (pctx_ulft K (OfTy (&shr{κ} ty)%T) ⊓ ty_lft (&shr{κ} ty)%T) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (&shr{κ} ty)%T)] (Seq Skip Skip)
       (const +[p ◁ₗown{n} pctx_plug K (ShrLty (OfTy ty) κ)])
       (λ post '-[x], post -[x]).
   Proof. intros. by apply (type_unfold_vplace_shr_instr _ _ _ _ (POwn n K)). Qed.
 
   Lemma type_fold_vplace_shr_instr {𝔅 𝔄} E L I p (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
       `{!PctxVRoot K} κ (ty: type 𝔅) :
-    lctx_lft_alive E L (pctx_ulft K (ShrLty (OfTy ty) κ) ⊓ ty_lft (&shrb{κ} ty)%T) →
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (OfTy ty) κ) ⊓ ty_lft (&shr{κ} ty)%T) →
     typed_instr E L I +[p ◁ₗ pctx_plug K (ShrLty (OfTy ty) κ)] (Seq Skip Skip)
-      (const +[p ◁ₗ pctx_plug K (OfTy (&shrb{κ} ty)%T)])
+      (const +[p ◁ₗ pctx_plug K (OfTy (&shr{κ} ty)%T)])
       (λ post '-[x], post -[x]).
   Proof.
     intros Alv. eapply typed_instr_tr_impl;
@@ -665,9 +665,9 @@ Section typing.
 
   Lemma type_fold_oplace_shr_instr {𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
       κ (ty: type 𝔅) :
-    lctx_lft_alive E L (pctx_ulft K (ShrLty (OfTy ty) κ) ⊓ ty_lft (&shrb{κ} ty)%T) →
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (OfTy ty) κ) ⊓ ty_lft (&shr{κ} ty)%T) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrLty (OfTy ty) κ)] (Seq Skip Skip)
-      (const +[p ◁ₗown{n} pctx_plug K (OfTy (&shrb{κ} ty)%T)])
+      (const +[p ◁ₗown{n} pctx_plug K (OfTy (&shr{κ} ty)%T)])
       (λ post '-[x], post -[x]).
   Proof. intros. by apply (type_fold_vplace_shr_instr _ _ _ _ (POwn n K)). Qed.
 
@@ -677,7 +677,7 @@ Section typing.
   Lemma type_change_vplace_shr_instr {ℭ 𝔅 𝔄} E L I p (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
       `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) (lt lt': lty ℭ) :
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ) ⊓
-      ty_lft (&shrb{κ} (lty_fold (pctx_plug K2 lt)))%T) →
+      ty_lft (&shr{κ} (lty_fold (pctx_plug K2 lt)))%T) →
     lty_fold lt' = lty_fold lt → lty_nrc lt' = lty_nrc lt →
     (∀ y, lty_vin lt y → lty_vin lt' y) →
     typed_instr E L I +[p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 lt) κ)] (Seq Skip Skip)
@@ -699,7 +699,7 @@ Section typing.
   Lemma type_change_oplace_shr_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
       κ (K2: pctx ℭ 𝔅) (lt lt': lty ℭ) :
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ) ⊓
-      ty_lft (&shrb{κ} (lty_fold (pctx_plug K2 lt)))%T) →
+      ty_lft (&shr{κ} (lty_fold (pctx_plug K2 lt)))%T) →
     lty_fold lt' = lty_fold lt → lty_nrc lt' = lty_nrc lt →
     (∀ y, lty_vin lt y → lty_vin lt' y) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 lt) κ)] (Seq Skip Skip)
@@ -831,7 +831,7 @@ Section typing.
   Lemma type_share_vplace_pshr_root_instr {ℭ 𝔅} E L I p κ (K2: pctx ℭ 𝔅) (lt: lty ℭ) :
     lctx_lft_alive E L (pctx_salv K2 κ) →
     typed_instr E L I +[p ◁ₗ ShrLty (pctx_plug K2 lt) κ] (OfLit (pctx_expr K2 (ToLit p)))
-      (λ v, +[v ◁ᵥ &shrb{pctx_slft K2 κ} (lty_fold lt); p ◁ₗ ShrLty (pctx_plug K2 lt) κ])
+      (λ v, +[v ◁ᵥ &shr{pctx_slft K2 κ} (lty_fold lt); p ◁ₗ ShrLty (pctx_plug K2 lt) κ])
       (λ post '-[x], post -[(pctx_loc K2 (lty_size lt) x.1.2 x.1.1, pctx_get K2 x.1.2); x]).
   Proof.
     iIntros (Alv tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
@@ -874,7 +874,7 @@ Section typing.
     lctx_lft_alive E L (pctx_salv K2 κ) →
     typed_instr E L I +[p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 lt) κ)]
       (OfLit (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K p)))))
-      (λ v, +[v ◁ᵥ &shrb{pctx_slft K2 κ} (lty_fold lt);
+      (λ v, +[v ◁ᵥ &shr{pctx_slft K2 κ} (lty_fold lt);
         p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 lt) κ)])
       (λ post '-[x], post -[(pctx_loc K2 (lty_size lt) (pctx_get K x.1).2 (pctx_get K x.1).1,
         pctx_get K2 (pctx_get K x.1).2); x]).
@@ -917,7 +917,7 @@ Section typing.
     lctx_lft_alive E L (pctx_salv K2 κ) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 lt) κ)]
       (OfLit (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p))))))
-      (λ v, +[v ◁ᵥ &shrb{pctx_slft K2 κ} (lty_fold lt);
+      (λ v, +[v ◁ᵥ &shr{pctx_slft K2 κ} (lty_fold lt);
         p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 lt) κ)])
       (λ post '-[x], post -[(pctx_loc K2 (lty_size lt) (pctx_get K x.1.2).2 (pctx_get K x.1.2).1,
         pctx_get K2 (pctx_get K x.1.2).2); x]).

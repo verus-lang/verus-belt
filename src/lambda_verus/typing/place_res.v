@@ -12,7 +12,7 @@
   - [OfRes ty]: a leaf whose value has been resolved ([resolve_keep] of [type.v]); it
     holds the bytes and the resolved ownership [ty_gho_res] of the value ([res_leaf]). For
     a type without unique borrows ([ResOwn]) this is the ownership, so [OfRes ty] is
-    converted back to [OfTy ty]; [OfRes (&uniqb{κ} ty)] is re-read as [ShrLty (OfTy ty) κ]
+    converted back to [OfTy ty]; [OfRes (&uniq{κ} ty)] is re-read as [ShrLty (OfTy ty) κ]
     (the referent shared at [κ], retyping the leaf; an instruction, since a borrow resolved
     by the generic [resolve_keep_just] is only resolved then, with κ alive); owned pointers
     and products are unfolded structurally, sums by case analysis.
@@ -28,8 +28,8 @@
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
-From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bytes.
-From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bytes_util uniq_bytes own_bytes bytes_layout value_ctx product freeable_util sum place_shr place_resolve place_puniq place_sum place_pshr.
+From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bor.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own bytes_layout value_ctx product freeable_util sum place_shr place_resolve place_puniq place_sum place_pshr.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -47,7 +47,7 @@ Section res_leaf.
     ltype_own (Owned m) (OfRes ty) (inl lr) d g tid l ⊢
     ltype_own (Owned m) (OfTy ty) (inl lr) d g tid l.
   Proof.
-    rewrite /ltype_own /= /res_leaf /bleaf_owned /bofty_owned.
+    rewrite /ltype_own /= /res_leaf /leaf_owned /ofty_owned.
     iIntros "(%x & Rel & Pt & Gho)". iExists x. iFrame "Rel Pt". iNext.
     iDestruct "Gho" as (d' g' [??]) "Gho". rewrite res_own.
     iDestruct (ty_gho_own_depth_mono _ d' g' d g with "Gho") as "[$ _]"; lia.
@@ -89,7 +89,7 @@ Section res_leaf.
   Qed.
 
   (** A resolved unique borrow is re-read as a shared reference to its referent, at its
-      lifetime: its resolved ownership is either the ownership of [&shrb{κ} ty] at the
+      lifetime: its resolved ownership is either the ownership of [&shr{κ} ty] at the
       current value of the referent, or (when it has been resolved by
       [resolve_keep_just], without knowing that κ is alive) its unresolved body, which
       is resolved now ([resolve_uniq_body], κ alive; the later credits strip the laters
@@ -99,12 +99,12 @@ Section res_leaf.
     Timeless G → lctx_lft_alive E L κ → m ≤ D → d ≤ D → g ≤ D →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
     (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗ ⧖D -∗ £(advance_credits D) -∗
-    ltype_own (Owned m) (OfRes (&uniqb{κ} ty)) (inl (PlaceIn y)) d g tid l ={⊤}=∗
+    ltype_own (Owned m) (OfRes (&uniq{κ} ty)) (inl (PlaceIn y)) d g tid l ={⊤}=∗
     G ∗ ltype_own (Owned m) (ShrLty (OfTy ty) κ)
       (inl (PlaceIn (𝔄:=at_clocₛ 𝔄) (uniq_bor_loc y, uniq_bor_current y))) d g tid l.
   Proof.
     iIntros (? Alv Hm Hd Hg) "#LFT #PROPH #UNIQ #TIME #E #GL G #⧖ £".
-    rewrite /ltype_own /= /res_leaf /leaf_owned_s /bleaf_owned /bofty_owned /=.
+    rewrite /ltype_own /= /res_leaf /leaf_owned_s /leaf_owned /ofty_owned /=.
     iIntros "(%x & -> & Pt & Gho)". destruct y as [[[[[l0 x0] ξi] d0] g0] idx].
     iDestruct (lc_weaken m with "£") as "£"; [rewrite /advance_credits; nia|].
     iMod (lc_fupd_elim_laterN with "£ Gho") as (d' g' [??]) "(#In & %Hle & #Gc & Gho)".
@@ -133,7 +133,7 @@ Section res_conv.
   Context `{!typeG Σ}.
 
   (** A resolved leaf of a type without unique borrows ([ResOwn]) is an unresolved leaf
-      (e.g. [&shrb{κ} ty], [own_bytes n int], products of such types). *)
+      (e.g. [&shr{κ} ty], [own_bytes n int], products of such types). *)
   Lemma tctx_oplace_res_to_ofty {𝔅 𝔄} E L p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K}
       (ty: type 𝔅) `{!ResOwn ty} :
     tctx_incl E L +[p ◁ₗown{n} pctx_plug K (OfRes ty)] +[p ◁ₗown{n} pctx_plug K (OfTy ty)]
@@ -168,7 +168,7 @@ Section res_conv.
   (** A resolved shared reference is a shared reference ([ResOwn]); unfolded. *)
   Lemma tctx_unfold_oplace_res_shr {𝔅 𝔄} E L p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoUniq K}
       κ (ty: type 𝔅) :
-    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (OfRes (&shrb{κ} ty))]
+    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (OfRes (&shr{κ} ty))]
       +[p ◁ₗown{n} pctx_plug K (ShrLty (OfTy ty) κ)] (λ post '-[x], post -[x]).
   Proof.
     apply (tctx_oplace_change_hole _ _ _ _ K); [done|done|].
@@ -181,14 +181,14 @@ Section res_conv_uniq.
   Context `{!typeG Σ}.
 
   (** A resolved unique borrow is re-read as a shared reference at its lifetime, whose
-      referent is its current referent: [OfRes (&uniqb{κ} ty)] becomes
+      referent is its current referent: [OfRes (&uniq{κ} ty)] becomes
       [ShrLty (OfTy ty) κ] (retyping the leaf, below no sum). This is an instruction (one
       program step, for the credits): if the borrow was resolved without κ alive
       ([resolve_keep_just]), it is resolved now, at the (alive) κ. *)
   Lemma type_oplace_res_uniq_to_shr_instr {𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄)
       `{!PctxNoUniq K} κ (ty: type 𝔅) :
     pctx_nosum K → lctx_lft_alive E L κ →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfRes (&uniqb{κ} ty))] (place_resolve.skipn 1)
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfRes (&uniq{κ} ty))] (place_resolve.skipn 1)
       (const +[p ◁ₗown{n} pctx_plug (pctx_retype K (at_clocₛ 𝔅)) (ShrLty (OfTy ty) κ)])
       (λ post '-[x], post -[((x.1.1, pctx_reset K x.1.2
         ((uniq_bor_loc (pctx_get K x.1.2), uniq_bor_current (pctx_get K x.1.2))
@@ -216,12 +216,12 @@ Section res_conv_uniq.
     iIntros "[L H]".
     iExists -[((l, pctx_reset K x₀ y'), ζm)]. iFrame "L I Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
-    rewrite (lty_nrc_plug_retype K (OfRes (&uniqb{κ} ty)) (ShrLty (OfTy ty) κ)) //.
-    rewrite (lty_size_plug_retype K (OfRes (&uniqb{κ} ty)) (ShrLty (OfTy ty) κ)); [|done|done].
+    rewrite (lty_nrc_plug_retype K (OfRes (&uniq{κ} ty)) (ShrLty (OfTy ty) κ)) //.
+    rewrite (lty_size_plug_retype K (OfRes (&uniq{κ} ty)) (ShrLty (OfTy ty) κ)); [|done|done].
     iFrame "⧖ ⧗ Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //
       pctx_loc_reset // pctx_mode_retype pctx_depth_retype. iFrame "Rest".
-    rewrite (_: lty_size (ShrLty (OfTy ty) κ) = lty_size (OfRes (&uniqb{κ} ty))); [|done].
+    rewrite (_: lty_size (ShrLty (OfTy ty) κ) = lty_size (OfRes (&uniq{κ} ty))); [|done].
     iExact "H".
   Qed.
 End res_conv_uniq.

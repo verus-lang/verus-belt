@@ -4,7 +4,7 @@
   borrow, inside the node of [UniqLty]. Across such a step the ownership of the plugged
   place does not split as a separating conjunction ([ltype_own_plug] needs
   [PctxNoUniq]): the referent is held by the borrow at [κ] (a compound place [cpd_own], or
-  a leaf [buniq_body]), which has to be opened. This file gives the generalized split, an
+  a leaf [uniq_body]), which has to be opened. This file gives the generalized split, an
   _access_ to the hole of any context ([pctx_acc]), from the [Owned m] interpretation of the
   plugged place (the root of an owned place is in [Owned 1] mode, see [place_own.v]):
 
@@ -31,8 +31,7 @@ From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath.
-From lrust.typing Require Import uniq_util uniq_bytes_util uniq_bytes own_bytes shr_bytes
-  bytes_layout value_ctx freeable_util.
+From lrust.typing Require Import uniq_util uniq_bor own shr_bor bytes_layout value_ctx freeable_util.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -442,7 +441,7 @@ Section cpd_gen.
          p' (r': prfn 𝔄) d' g' ζl' q (R: iProp Σ),
          ⌜∀ ζl, prfn_rsv r ζl → prfn_rsv r' (ζl ++ ζl')⌝ -∗
          □ (∀ p2 r2 d2 g2, pat_ok κp p2 -∗ ⧖(S d2 `max` g2) -∗ node' p2 r2 d2 g2 tid l -∗
-              bleaf_node κp ty p2 r2 d2 g2 tid l) -∗
+              leaf_node κp ty p2 r2 d2 g2 tid l) -∗
          q:+[ζl'] -∗
          (q:+[ζl'] ={E}=∗ ▷ pat_ok κp p' ∗
            ▷ guarded_upd lazyE @[ty_lft ty] (⧖(S d' `max` g') ∗ node' p' r' d' g' tid l) ∗ R)
@@ -466,7 +465,7 @@ Section cpd_gen.
       ζl' q (cpd_gbody κp γf' ty node' tid l) R with "[Tf] ζl' [Gh' VS]")
       as (idx') "(Tok & #Bor' & $ & $)".
     { iIntros "!>" (c2 w2) "Q". iModIntro. iNext. iRight. iFrame "Tf".
-      iDestruct "Q" as "[Q|[_ $]]". rewrite /buniq_gbody /cpd_body.
+      iDestruct "Q" as "[Q|[_ $]]". rewrite /uniq_gbody /cpd_body.
       iDestruct "Q" as (p2 r2) "(#Ok2 & % & Gh2 & Upd2)". iExists p2, r2. iFrame "Ok2 Gh2".
       iSplit; [done|]. iApply (guarded_upd_mono with "[] Upd2").
       iIntros "[#⧖ N] !>". iFrame "⧖". iApply ("Conv" with "Ok2 ⧖ N"). }

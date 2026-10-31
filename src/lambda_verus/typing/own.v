@@ -196,7 +196,7 @@ Section own_bytes.
   Qed.
 
   (** The fancy bytes of a cell (for the [PCell] types of §10 step 5): a value [g] of
-      [pcellbₛ m] (with a well-formed content type [m]) is a cell group, and its fancy
+      [pcellₛ m] (with a well-formed content type [m]) is a cell group, and its fancy
       bytes at [l] are exactly the location side of the group ([loc_side]): the edges of
       the locations [l], [l +ₗ 1], ... to the byte-cells of [g]. *)
   Lemma frepr_cell_inv {W} (R: gmap positive (mty * list positive)) m
@@ -204,7 +204,7 @@ Section own_bytes.
     frepr R m fbs (FVCell g) → ∃ cs, R !! g = Some (m, cs) ∧ fbs = inl <$> cs.
   Proof. inversion 1 as [? ? cs| ? ? v ? Hv| |]; [by eauto|]. by destruct v. Qed.
 
-  Lemma bytes_own_pcellb {m} (ty: type (pcellbₛ m)) l (g: ~~(pcellbₛ m)) :
+  Lemma bytes_own_pcell {m} (ty: type (pcellₛ m)) l (g: ~~(pcellₛ m)) :
     mty_wf m →
     bytes_own ty l g ⊣⊢ ∃ cs, loc_side l g m cs ∗ ⌜length cs = mty_size m⌝.
   Proof.

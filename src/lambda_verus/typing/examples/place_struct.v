@@ -1,6 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own_bytes
-  place_own place_resolve place_xprod.
+From lrust.typing Require Export type programs cont int product value_ctx own place_own place_resolve place_xprod.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 

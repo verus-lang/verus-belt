@@ -1,6 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product sum value_ctx own_bytes
-  shr_bytes uniq_util uniq_bytes place_own place_puniq place_resolve place_pshr.
+From lrust.typing Require Export type programs cont int product sum value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -37,7 +36,7 @@ Section place_pshr.
   Lemma get_snd_pb_type ϝ α β (k vx: val) :
     ⊢ typed_body [ϝ ⊑ₑ α; α ⊑ₑ β] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
-        +[vx ◁ᵥ &shrb{α} (&shrb{β} (i32t * i32t))]
+        +[vx ◁ᵥ &shr{α} (&shr{β} (i32t * i32t))]
         (subst "return" k (subst "x" vx get_snd_pb))
         (λ post '-[(_, (_, (_, z2)))], λ mask π, post z2 mask π).
   Proof.
@@ -46,7 +45,7 @@ Section place_pshr.
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_ty_to_vplace|].
         eapply tctx_incl_trans; [apply tctx_vplace_unfold_shr|].
-        apply (tctx_change_vplace_shr _ _ vx α PHole (OfTy (&shrb{β} (i32t * i32t)))
+        apply (tctx_change_vplace_shr _ _ vx α PHole (OfTy (&shr{β} (i32t * i32t)))
           (ShrLty (ProdLty (OfTy i32t) (OfTy i32t)) β)); [done|done|by intros]. }
       (* ( **x).1 *)
       iApply (type_let with "[]").
@@ -87,7 +86,7 @@ Section place_pshr.
   Lemma get_boxed_pb_type ϝ α (k vb: val) :
     ⊢ typed_body [ϝ ⊑ₑ α] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
-        +[vb ◁ᵥ own_bytes PTR_SIZE (&shrb{α} (i32t * own_bytes 4 i32t))]
+        +[vb ◁ᵥ own_bytes PTR_SIZE (&shr{α} (i32t * own_bytes 4 i32t))]
         (subst "return" k (subst "b" vb get_boxed_pb))
         (λ post '-[(_, (_, (_, (_, w))))], λ mask π, post w mask π).
   Proof.
@@ -159,7 +158,7 @@ Section place_pshr.
   Lemma get_or_zero_pb_type ϝ α (k vb: val) :
     ⊢ typed_body [ϝ ⊑ₑ α] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
-        +[vb ◁ᵥ own_bytes PTR_SIZE (&shrb{α} opt_i32)]
+        +[vb ◁ᵥ own_bytes PTR_SIZE (&shr{α} opt_i32)]
         (subst "return" k (subst "b" vb get_or_zero_pb)) get_or_zero_pb_spec.
   Proof.
     rewrite /get_or_zero_pb. simpl_subst.
@@ -244,14 +243,14 @@ Section place_pshr.
   Lemma first_ref_pb_type ϝ α β (k vx: val) :
     ⊢ typed_body [ϝ ⊑ₑ α; α ⊑ₑ β] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
-          λ v: vec val 1, +[vhd v ◁ᵥ &shrb{β} i32t] } ret_ref]
-        +[vx ◁ᵥ &uniqb{α} (&shrb{β} (i32t * i32t))]
+          λ v: vec val 1, +[vhd v ◁ᵥ &shr{β} i32t] } ret_ref]
+        +[vx ◁ᵥ &uniq{α} (&shr{β} (i32t * i32t))]
         (subst "return" k (subst "x" vx first_ref_pb)) first_ref_pb_spec.
   Proof.
     rewrite /first_ref_pb. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
       (* x as a place rooted at its value *)
-      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vx α (&shrb{β} (i32t * i32t))). }
+      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vx α (&shr{β} (i32t * i32t))). }
       { solve_typing. } { reflexivity. }
       (* unfold **x *)
       iApply type_seq.
@@ -282,8 +281,8 @@ Section place_pshr.
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
       iApply type_seq.
-      { apply (type_resolve_val_instr vx (&uniqb{α} (&shrb{β} (i32t * i32t)))).
-        apply uniq_bytes.uniq_resolve. solve_typing. }
+      { apply (type_resolve_val_instr vx (&uniq{α} (&shr{β} (i32t * i32t)))).
+        apply uniq_bor.uniq_resolve. solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply type_jump.
       { rewrite elem_of_list_singleton. reflexivity. }

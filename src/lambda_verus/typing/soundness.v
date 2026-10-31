@@ -6,7 +6,7 @@ From lrust.lang Require Import races adequacy proofmode notation.
 From lrust.lifetime Require Import lifetime_full.
 From guarding.lib Require Import fractional cancellable.
 From guarding Require Import guard.
-From lrust.typing Require Import type product programs value_ctx function_bytes.
+From lrust.typing Require Import type product programs value_ctx function.
 Set Default Proof Using "Type".
 
 Class typePreG Σ := PreTypeG {
@@ -29,7 +29,7 @@ Proof. solve_inG. Qed.
 
 (** * Type soundness
 
-A [main] function typed with the function type [bfn] ([typing/function_bytes.v]), whose
+A [main] function typed with the function type [fn] ([typing/function.v]), whose
 result is a MiniRust value of the unit type, runs without data races and does not get
 stuck. *)
 
@@ -38,7 +38,7 @@ Section type_soundness.
 
   (* function type with trivial precondition and postcondition *)
   Definition main_type `{!typeG Σ} :=
-    (bfn(∅) → unit_ty)%T (λ (_: ~~()), (λ post '-[], λ mask π, ∀ x, post x mask π)).
+    (fn(∅) → unit_ty)%T (λ (_: ~~()), (λ post '-[], λ mask π, ∀ x, post x mask π)).
 
   Theorem type_soundness `{!typePreG Σ} (main : val) σ t c :
     (∀ `{!typeG Σ}, typed_val main main_type c) →
@@ -71,7 +71,7 @@ Section type_soundness.
     iDestruct "Hmain" as (f k j e ?) "(EQ & Hmain)". iDestruct "EQ" as %[= ->].
     wp_rec.
     iMod (llftl_begin' with "LFT") as (ϝ) "Hϝ"; first done.
-    iDestruct (function_bytes.invctx_interp_call [] static AtomicClosed tid ⊤ ϝ [] with "[] [] [Invctx]")
+    iDestruct (function.invctx_interp_call [] static AtomicClosed tid ⊤ ϝ [] with "[] [] [Invctx]")
         as (iκs') "[Invctx InvctxBack]".
       { iApply lft_incl_static. }
       { simpl. iApply lft_incl_static. }

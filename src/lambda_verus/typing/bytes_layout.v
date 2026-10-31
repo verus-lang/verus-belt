@@ -146,7 +146,7 @@ Qed.
 
 [syn_fbytes R x fbs]: the fancy bytes [fbs] (each a byte-cell or an abstract byte)
 represent the value [x], with the static registry [R]: they have the size of [𝔄], and
-represent the fancy value of [x] ([syn_fval x], where a cell [pcellbₛ m] is its group) at
+represent the fancy value of [x] ([syn_fval x], where a cell [pcellₛ m] is its group) at
 [syn_mty 𝔄] ([frepr]). For a value with a MiniRust value ([syn_val x = Some v]), and so
 for every value of a type without cells ([syn_nocell 𝔄]), these are the plain bytes of
 [syn_bytes] ([syn_fbytes_val], [syn_fbytes_nocell]). The lemmas below split fancy bytes

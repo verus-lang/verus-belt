@@ -1,16 +1,14 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own_bytes shr_bytes
-  uniq_util uniq_bytes place_own place_puniq place_resolve place_pshr
-  function_bytes.
+From lrust.typing Require Export type programs cont int product value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr function.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
 (** * Function types on MiniRust values
 
 The examples [get_snd] and [first_ref] of [typing/examples/place_pshr.v], as functions of
-the byte function type [bfn] ([typing/function_bytes.v]): the arguments and the results are
+the byte function type [fn] ([typing/function.v]): the arguments and the results are
 MiniRust values ([◁ᵥ]), the specifications are predicate transformers on them
-([bfn_spec]). [call_get_snd] calls [get_snd] ([type_bletcall]). *)
+([fn_spec]). [call_get_snd] calls [get_snd] ([type_letcall]). *)
 
 Section bfn_examples.
   Context `{!typeG Σ}.
@@ -28,17 +26,17 @@ Section bfn_examples.
       return: ["v"].
 
   Definition get_snd_f_spec :
-      bfn_spec [at_clocₛ (at_clocₛ (intₛ i32 * intₛ i32))] (intₛ i32) () :=
+      fn_spec [at_clocₛ (at_clocₛ (intₛ i32 * intₛ i32))] (intₛ i32) () :=
     λ _ post '-[(_, (_, (_, z2)))], λ mask π, post z2 mask π.
 
   Lemma get_snd_f_type :
     typed_val get_snd_f
-      ((bfn<(α, β)>(∅; &shrb{α} (&shrb{β} (i32t * i32t))) → i32t) get_snd_f_spec)
+      ((fn<(α, β)>(∅; &shr{α} (&shr{β} (i32t * i32t))) → i32t) get_snd_f_spec)
       (get_snd_f, ()).
   Proof.
     unfold get_snd_f. unlock.
-    opose proof (@type_bfn _ _ _ [at_clocₛ (at_clocₛ (intₛ i32 * intₛ i32))] (intₛ i32) () ()
-      (λ '(α, β), FP ∅ +[&shrb{α} (&shrb{β} (i32t * i32t))]%T i32t%T AtomicClosed)
+    opose proof (@type_fn _ _ _ [at_clocₛ (at_clocₛ (intₛ i32 * intₛ i32))] (intₛ i32) () ()
+      (λ '(α, β), FP ∅ +[&shr{α} (&shr{β} (i32t * i32t))]%T i32t%T AtomicClosed)
       get_snd_f_spec _ [BNamed "x"] _ _ _) as H.
     unlock in H. apply H. clear H.
     intros [α β] ϝ k wl. destruct wl as [vx []]. simpl_subst.
@@ -46,7 +44,7 @@ Section bfn_examples.
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_ty_to_vplace|].
         eapply tctx_incl_trans; [apply tctx_vplace_unfold_shr|].
-        apply (tctx_change_vplace_shr _ _ vx α PHole (OfTy (&shrb{β} (i32t * i32t)))
+        apply (tctx_change_vplace_shr _ _ vx α PHole (OfTy (&shr{β} (i32t * i32t)))
           (ShrLty (ProdLty (OfTy i32t) (OfTy i32t)) β)); [done|done|by intros]. }
       (* ( **x).1 *)
       iApply (type_let with "[]").
@@ -81,7 +79,7 @@ Section bfn_examples.
       return: ["r"].
 
   Definition first_ref_f_spec :
-      bfn_spec [uniq_borₛ (at_clocₛ (intₛ i32 * intₛ i32))] (at_clocₛ (intₛ i32)) () :=
+      fn_spec [uniq_borₛ (at_clocₛ (intₛ i32 * intₛ i32))] (at_clocₛ (intₛ i32)) () :=
     λ _ post '-[m], λ mask π, ∀ r: ~~ (at_clocₛ (intₛ i32)),
       r.2 = (uniq_bor_current (𝔄:=at_clocₛ (intₛ i32 * intₛ i32)) m).2.1 →
       uniq_bor_future (𝔄:=at_clocₛ (intₛ i32 * intₛ i32)) m π =
@@ -90,18 +88,18 @@ Section bfn_examples.
 
   Lemma first_ref_f_type :
     typed_val first_ref_f
-      ((bfn<(α, β)>(∅; &uniqb{α} (&shrb{β} (i32t * i32t))) → &shrb{β} i32t) first_ref_f_spec)
+      ((fn<(α, β)>(∅; &uniq{α} (&shr{β} (i32t * i32t))) → &shr{β} i32t) first_ref_f_spec)
       (first_ref_f, ()).
   Proof.
     unfold first_ref_f. unlock.
-    opose proof (@type_bfn _ _ _ [uniq_borₛ (at_clocₛ (intₛ i32 * intₛ i32))]
+    opose proof (@type_fn _ _ _ [uniq_borₛ (at_clocₛ (intₛ i32 * intₛ i32))]
       (at_clocₛ (intₛ i32)) () ()
-      (λ '(α, β), FP ∅ +[&uniqb{α} (&shrb{β} (i32t * i32t))]%T (&shrb{β} i32t)%T AtomicClosed)
+      (λ '(α, β), FP ∅ +[&uniq{α} (&shr{β} (i32t * i32t))]%T (&shr{β} i32t)%T AtomicClosed)
       first_ref_f_spec _ [BNamed "x"] _ _ _) as H.
     unlock in H. apply H. clear H.
     intros [α β] ϝ k wl. destruct wl as [vx []]. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
-      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vx α (&shrb{β} (i32t * i32t))). }
+      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vx α (&shr{β} (i32t * i32t))). }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
       { apply (type_unfold_vplace_shr_instr _ _ _ vx (PUniq α PHole) β (i32t * i32t)).
@@ -127,8 +125,8 @@ Section bfn_examples.
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
       iApply type_seq.
-      { apply (type_resolve_val_instr vx (&uniqb{α} (&shrb{β} (i32t * i32t)))).
-        apply uniq_bytes.uniq_resolve. solve_typing. }
+      { apply (type_resolve_val_instr vx (&uniq{α} (&shr{β} (i32t * i32t)))).
+        apply uniq_bor.uniq_resolve. solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply type_jump.
       { rewrite elem_of_list_singleton. reflexivity. }
@@ -155,15 +153,15 @@ Section bfn_examples.
   Lemma call_get_snd_type ϝ α β (k vf vx: val) :
     ⊢ typed_body [ϝ ⊑ₑ α; α ⊑ₑ β] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
-        +[vf ◁ (bfn<(α', β')>(∅; &shrb{α'} (&shrb{β'} (i32t * i32t))) → i32t) get_snd_f_spec;
-          vx ◁ᵥ &shrb{α} (&shrb{β} (i32t * i32t))]
+        +[vf ◁ (fn<(α', β')>(∅; &shr{α'} (&shr{β'} (i32t * i32t))) → i32t) get_snd_f_spec;
+          vx ◁ᵥ &shr{α} (&shr{β} (i32t * i32t))]
         (subst "return" k (subst "f" vf (subst "x" vx call_get_snd)))
         (λ post '-[_; (_, (_, (_, z2)))], λ mask π, post z2 mask π).
   Proof.
     rewrite /call_get_snd. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
-      iApply (type_bletcall (α, β) (λ '(α', β'),
-        FP ∅ +[&shrb{α'} (&shrb{β'} (i32t * i32t))]%T i32t%T AtomicClosed)).
+      iApply (type_letcall (α, β) (λ '(α', β'),
+        FP ∅ +[&shr{α'} (&shr{β'} (i32t * i32t))]%T i32t%T AtomicClosed)).
       { solve_typing. } { apply lctx_ictx_alive_nil. solve_typing. }
       { solve_typing. } { solve_typing. }
       iIntros (vr). simpl_subst.

@@ -1,6 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product uninit value_ctx own_bytes
-  shr_bytes uniq_util uniq_bytes place_own place_puniq place_resolve place_deep subtype.
+From lrust.typing Require Export type programs cont int product uninit value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_deep subtype.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -53,7 +52,7 @@ Section new_examples.
     ⊢ typed_body [ϝ ⊑ₑ α; α ⊑ₑ β] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
           λ v: vec val 1, +[vhd v ◁ᵥ own_bytes 8 (i32t * i32t)] } ret_pair]
-        +[vx ◁ᵥ own_bytes PTR_SIZE (&uniqb{α} (&uniqb{β} (i32t * (i32t * i32t))));
+        +[vx ◁ᵥ own_bytes PTR_SIZE (&uniq{α} (&uniq{β} (i32t * (i32t * i32t))));
           vy ◁ᵥ own_bytes 8 (i32t * i32t)]%T
         (subst "return" k (subst "x" vx (subst "y" vy swap_snd_n)))
         swap_snd_n_spec.
@@ -64,7 +63,7 @@ Section new_examples.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_own_to_oplace. }
       (* unfold *x, **x, **x as a pair *)
       iApply type_seq.
-      { apply (type_unfold_oplace_uniq_instr _ _ _ vx PTR_SIZE PHole (&uniqb{β} (i32t * (i32t * i32t))) α).
+      { apply (type_unfold_oplace_uniq_instr _ _ _ vx PTR_SIZE PHole (&uniq{β} (i32t * (i32t * i32t))) α).
         solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
@@ -100,14 +99,14 @@ Section new_examples.
         solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { apply (type_fold_oplace_uniq_instr _ _ _ vx PTR_SIZE PHole (&uniqb{β} (i32t * (i32t * i32t))) α).
+      { apply (type_fold_oplace_uniq_instr _ _ _ vx PTR_SIZE PHole (&uniq{β} (i32t * (i32t * i32t))) α).
         solve_typing. }
       { solve_typing. } { reflexivity. }
       (* drop x, resolving it *)
       iApply type_seq.
       { apply (type_drop_oplace_deep_instr _ _ _ vx PTR_SIZE (Z.of_nat PTR_SIZE)
-          (OfTy (&uniqb{α} (&uniqb{β} (i32t * (i32t * i32t)))))); [done|done|done|].
-        apply lty_rslv_of, lty_resolve_ofty, uniq_bytes.uniq_resolve. solve_typing. }
+          (OfTy (&uniq{α} (&uniq{β} (i32t * (i32t * i32t)))))); [done|done|done|].
+        apply lty_rslv_of, lty_resolve_ofty, uniq_bor.uniq_resolve. solve_typing. }
       { solve_typing. } { reflexivity. }
       (* drop y *)
       iApply typed_body_tctx_incl.
@@ -147,8 +146,8 @@ Section new_examples.
   Lemma shorten_type ϝ α β (k vx: val) :
     ⊢ typed_body [ϝ ⊑ₑ β; β ⊑ₑ α] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
-          λ v: vec val 1, +[vhd v ◁ᵥ &shrb{β} (i32t * i32t)] } ret_ref]
-        +[vx ◁ᵥ &shrb{α} (i32t * i32t)]%T
+          λ v: vec val 1, +[vhd v ◁ᵥ &shr{β} (i32t * i32t)] } ret_ref]
+        +[vx ◁ᵥ &shr{α} (i32t * i32t)]%T
         (subst "return" k (subst "x" vx shorten))
         (λ post '-[r], post r).
   Proof.

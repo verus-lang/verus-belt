@@ -30,7 +30,7 @@ From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own.
-From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bytes_util uniq_bytes own_bytes shr_bytes bytes_layout value_ctx product uninit freeable_util place_sum place_puniq sum.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own shr_bor bytes_layout value_ctx product uninit freeable_util place_sum place_puniq sum.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -138,7 +138,7 @@ Section leaf_acc.
       { lia. }
       { iApply pat_ok_ulfts_leaf. }
       { done. }
-      { iIntros "_ !>". iSplit; [|done]. iExists y'. iSplit; [done|]. rewrite /bofty_owned.
+      { iIntros "_ !>". iSplit; [|done]. iExists y'. iSplit; [done|]. rewrite /ofty_owned.
         iFrame "Pt". by iApply bi.laterN_intro. }
       by iFrame "G Own".
   Qed.
@@ -443,7 +443,7 @@ Section sum_deep.
       { rewrite /r' prfn_rsv_sum. apply prfn_rsv_in. }
       { intros π. rewrite /r' prfn_den_sum /= prfn_den_in. by rewrite psum_map1_pinj. }
       { iIntros (d0 g0) "[Gho Pt] !>". rewrite lty_fold_sum_ofty.
-        iApply (sum_ofty_unfold_own 0). rewrite /ltype_own /= /bofty_owned.
+        iApply (sum_ofty_unfold_own 0). rewrite /ltype_own /= /ofty_owned.
         iExists _. by iFrame. }
       { rewrite Hf /ltype_own /=. iExists _, idx. by iFrame. }
       iMod ("Cl" $! lt' r' dh gh D [] 1%Qp True%I
@@ -479,7 +479,7 @@ Section sum_deep.
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iApply sum_ofty_unfold_own.
         iExists (pinj j a, pad). iSplit; [done|].
-        rewrite /bofty_owned (cbytes_sum _ j (tyl +!! j)). by iFrame. }
+        rewrite /ofty_owned (cbytes_sum _ j (tyl +!! j)). by iFrame. }
       iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|]. iModIntro.
       wp_pure _. wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
       iDestruct (big_sepN_lookup _ _ j with "el") as "el".
@@ -518,7 +518,7 @@ Section sum_deep.
       iApply (cpd_fold_uniq (SumLty tyl i (OfTy (tyl +!! i))) with "LFT PROPH UNIQ [] G H");
         [done| |trans lazyE; [rewrite /lazyE; solve_ndisj|set_solver]|].
       + iIntros (d' g') "N". iDestruct (sum_ofty_own_rfn 0 with "N") as "N".
-        rewrite lty_fold_sum_ofty /ltype_own /= /bofty_owned. iDestruct "N" as (? ->) "[$ $]".
+        rewrite lty_fold_sum_ofty /ltype_own /= /ofty_owned. iDestruct "N" as (? ->) "[$ $]".
         done.
       + iApply (guards_transitive with "Gk"). iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
         by iApply pctx_ulft_uend.

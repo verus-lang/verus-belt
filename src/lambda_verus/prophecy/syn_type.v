@@ -21,8 +21,7 @@ Inductive syn_type := intₛ (_: IntType) | boolₛ | unitₛ | Propₛ | positi
 | storableₛ (_: syn_type)
 | invₛ (_: syn_type)
 | local_invₛ (_: syn_type)
-| pcellₛ (_: nat)
-| pcellbₛ (_: mty)
+| pcellₛ (_: mty)
 | namespaceₛ
 | uninitₛ (_: nat)
 | locₛ
@@ -74,8 +73,7 @@ Fixpoint indep_interp_of_syn_type (𝔄: syn_type) : Type :=
   | local_invₛ 𝔄₀ => namespace * (gname * gname * nat) * indep_interp_of_syn_type 𝔄₀
   | namespaceₛ => namespace
   | uninitₛ n => vec val n
-  | pcellₛ n => list positive
-  | pcellbₛ _ => positive
+  | pcellₛ _ => positive
   | locₛ => loc
   | paddingₛ => list val
   | funₛ 𝔄₀ 𝔄₁ => (indep_interp_of_syn_type 𝔄₀ → indep_interp_of_syn_type 𝔄₁)
@@ -103,8 +101,7 @@ Fixpoint proph_interp_of_syn_type (𝔄: syn_type) : Type :=
   | trackedₛ 𝔄₀ => proph_interp_of_syn_type 𝔄₀
   | storableₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀ * (nat * nat) * lft
   | uninitₛ n => ()
-  | pcellₛ n => list positive
-  | pcellbₛ _ => positive
+  | pcellₛ _ => positive
   | locₛ => loc
   | paddingₛ => list val
   | invₛ 𝔄₀ => namespace * gname * indep_interp_of_syn_type 𝔄₀
@@ -137,8 +134,7 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
   | local_invₛ 𝔄₀ => namespace * abstracted_syn_type 𝔄₀
   | namespaceₛ => namespace
   | uninitₛ n => vec val n
-  | pcellₛ n => list positive
-  | pcellbₛ _ => positive
+  | pcellₛ _ => positive
   | locₛ => loc
   | paddingₛ => list val
   | funₛ 𝔄₀ 𝔄₁ => (indep_interp_of_syn_type 𝔄₀ → indep_interp_of_syn_type 𝔄₁)
@@ -156,8 +152,7 @@ Fixpoint syn_type_beq 𝔄 𝔅 : bool :=
     => true
   | intₛ it, intₛ it' => bool_decide (it = it')
   | uninitₛ n, uninitₛ m => bool_decide (n = m)
-  | pcellₛ n, pcellₛ m => bool_decide (n = m)
-  | pcellbₛ m, pcellbₛ m' => bool_decide (m = m')
+  | pcellₛ m, pcellₛ m' => bool_decide (m = m')
   | optionₛ 𝔄₀, optionₛ 𝔅₀ | listₛ 𝔄₀, listₛ 𝔅₀ | at_locₛ 𝔄₀, at_locₛ 𝔅₀
   | at_clocₛ 𝔄₀, at_clocₛ 𝔅₀ | uniq_borₛ 𝔄₀, uniq_borₛ 𝔅₀
   | blockedₛ 𝔄₀, blockedₛ 𝔅₀ | ghostₛ 𝔄₀, ghostₛ 𝔅₀ | invₛ 𝔄₀, invₛ 𝔅₀
@@ -405,8 +400,7 @@ Fixpoint vπ {𝔄} : ~~𝔄 → proph_asn → 𝔄 :=
   | trackedₛ 𝔄₀ => λ x π, (@vπ 𝔄₀ x π)
   | storableₛ 𝔄₀ => λ x π, x
   | uninitₛ n => λ x π, ()
-  | pcellₛ n => λ x π, x
-  | pcellbₛ _ => λ x π, x
+  | pcellₛ _ => λ x π, x
   | paddingₛ => λ x π, x
   | funₛ 𝔄₀ 𝔄₁ => λ x π, x
   | join_handleₛ 𝔄₀  => λ x π , x
@@ -453,8 +447,7 @@ Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   | trackedₛ 𝔄₀ => λ x, (@ξl 𝔄₀ x)
   | storableₛ 𝔄₀ => λ x , []
   | uninitₛ n => λ x , []
-  | pcellₛ n => λ x , []
-  | pcellbₛ _ => λ x , []
+  | pcellₛ _ => λ x , []
   | paddingₛ => λ x , []
   | funₛ 𝔄₀ 𝔄₁ => λ x , []
   | join_handleₛ 𝔄₀  => λ x , []
@@ -489,8 +482,7 @@ Fixpoint size_of 𝔄 : nat :=
   | trackedₛ 𝔄₀ => 0
   | storableₛ 𝔄₀ => 0
   | uninitₛ n => n
-  | pcellₛ n => n
-  | pcellbₛ _ => 0
+  | pcellₛ _ => 0
   | paddingₛ => 0
   | funₛ 𝔄₀ 𝔄₁ => 0
   | join_handleₛ 𝔄₀  => 0
@@ -536,8 +528,7 @@ Fixpoint syn_phys {𝔄} : (~~𝔄) → list fancy_val :=
   | trackedₛ 𝔄₀ => λ x, []
   | storableₛ 𝔄₀ => λ x, []
   | uninitₛ n => λ x, fmap FVal (vec_to_list x)
-  | pcellₛ n => λ x, pad (fmap FCell x) n
-  | pcellbₛ _ => λ _, []
+  | pcellₛ _ => λ _, []
   | paddingₛ => λ x, []
   | funₛ 𝔄₀ 𝔄₁ => λ x, []
   | join_handleₛ 𝔄₀  => λ x, []
@@ -564,7 +555,6 @@ Lemma syn_phys_size_eq 𝔄 (x: ~~𝔄) : length (@syn_phys 𝔄 x) = size_of �
     simpl. destruct (to_xsum (psum_map1 (λ (A : syn_type) (x0 : ~~ A), syn_phys x0) x)).
     apply length_pad.
   - destruct x as [[[[[[l ?] ?] ?] ?] ?] ?]. clear FIX; trivial.
-  - apply length_pad.
   - simpl. rewrite length_fmap. rewrite length_vec_to_list. clear FIX; trivial.
 Qed.
 
@@ -636,8 +626,7 @@ Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   | trackedₛ 𝔄₀ => λ x , @syn_abstract 𝔄₀ x
   | storableₛ 𝔄₀ => λ x , (@syn_abstract 𝔄₀ x.1.1, x.1.2, x.2)
   | uninitₛ n => λ x , x
-  | pcellₛ n => λ x , x
-  | pcellbₛ _ => λ x , x
+  | pcellₛ _ => λ x , x
   | paddingₛ => λ x , x
   | funₛ 𝔄₀ 𝔄₁ => λ x , x
   | join_handleₛ 𝔄₀  => λ x , @syn_abstract 𝔄₀ x
@@ -703,15 +692,15 @@ Layouts (sizes are abstract and there is no alignment yet):
 - [Σ! 𝔄l] is an enum with a tag of type [enum_tag (length 𝔄l)] at offset 0 and the
   data of each variant right after the tag ([seq_enum]); the legacy padding component
   of [~~(Σ! 𝔄l)] is ignored;
-- [uninitₛ n] and [pcellₛ n] are [n] bytes of padding ([MTuple [] n]);
-- a cell [pcellbₛ m] (a multi-byte cell, whose value [~~(pcellbₛ m)] is its group, see
+- [uninitₛ n] is [n] bytes of padding ([MTuple [] n]);
+- a cell [pcellₛ m] (a multi-byte cell, whose value [~~(pcellₛ m)] is its group, see
   [lang/heap_cells.v]) is its content's MiniRust type [m], if [m] is well formed (and
   zero-sized otherwise, so that [syn_mty_wf] holds);
 - every other syntactic type is zero-sized ([zst_mty]).
 
 [syn_val x] is [None] for the values that have no MiniRust representation: integers
-out of the range of their [IntType], closures ([exec_funₛ]) and cells ([pcellₛ],
-[pcellbₛ]); so is a product or sum with such a component. *)
+out of the range of their [IntType], closures ([exec_funₛ]) and cells
+([pcellₛ]); so is a product or sum with such a component. *)
 
 Fixpoint layout_fields (o : nat) (ms : list mty) : list (nat * mty) :=
   match ms with [] => [] | m :: ms => (o, m) :: layout_fields (o + mty_size m) ms end.
@@ -735,8 +724,8 @@ Fixpoint syn_mty (𝔄: syn_type) : mty :=
   | prodₛ 𝔄₀ 𝔄₁ => seq_tuple [syn_mty 𝔄₀; syn_mty 𝔄₁]
   | xprodₛ 𝔄l => seq_tuple (syn_mty <$> 𝔄l)
   | xsumₛ 𝔄l => seq_enum (syn_mty <$> 𝔄l)
-  | uninitₛ n | pcellₛ n => MTuple [] n
-  | pcellbₛ m => if decide (mty_wf m) then m else zst_mty
+  | uninitₛ n => MTuple [] n
+  | pcellₛ m => if decide (mty_wf m) then m else zst_mty
   | _ => zst_mty
   end.
 
@@ -749,7 +738,7 @@ Fixpoint syn_val {𝔄} : ~~𝔄 → option Value :=
   | at_clocₛ _ => λ x, Some (VPtr x.1.1)
   | uniq_borₛ _ => λ x, match x with (l, _, _, _, _, _) => Some (VPtr l.1) end
   | exec_funₛ _ => λ _, None
-  | pcellₛ _ | pcellbₛ _ => λ _, None
+  | pcellₛ _ => λ _, None
   | prodₛ 𝔄₀ 𝔄₁ => λ '(x₀, x₁),
       v₀ ← @syn_val 𝔄₀ x₀; v₁ ← @syn_val 𝔄₁ x₁; Some (VTuple [v₀; v₁])
   | xprodₛ 𝔄l => λ x, VTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) x))
@@ -761,13 +750,13 @@ Fixpoint syn_val {𝔄} : ~~𝔄 → option Value :=
   end.
 
 (** [syn_fval x] is the fancy value of [x] (see [lang/fvalue.v]): its MiniRust value,
-    where a cell is its group. So [syn_fval (x: ~~(pcellbₛ m)) = Some (FVCell x)]; it is
+    where a cell is its group. So [syn_fval (x: ~~(pcellₛ m)) = Some (FVCell x)]; it is
     structural on products and sums (as [syn_val]); on every other type it is
     [fv_lift <$> syn_val x]. It agrees with [syn_val] on the types without cells
     ([syn_fval_nocell]). *)
 Fixpoint syn_fval {𝔄} : ~~𝔄 → option FValue :=
   match 𝔄 return ~~𝔄 → option FValue with
-  | pcellbₛ _ => λ g, Some (FVCell g)
+  | pcellₛ _ => λ g, Some (FVCell g)
   | prodₛ 𝔄₀ 𝔄₁ => λ '(x₀, x₁),
       fv₀ ← @syn_fval 𝔄₀ x₀; fv₁ ← @syn_fval 𝔄₁ x₁; Some (FVTuple [fv₀; fv₁])
   | xprodₛ 𝔄l => λ x, FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) x))
@@ -778,12 +767,12 @@ Fixpoint syn_fval {𝔄} : ~~𝔄 → option FValue :=
   | 𝔄 => λ x, fv_lift <$> @syn_val 𝔄 x
   end.
 
-(** The syntactic types whose values embed no cells ([pcellbₛ]): those with no
-    [pcellbₛ] in a product or sum component. (A cell under another type constructor, e.g.
-    [ghostₛ (pcellbₛ m)], is not part of the MiniRust value.) *)
+(** The syntactic types whose values embed no cells ([pcellₛ]): those with no
+    [pcellₛ] in a product or sum component. (A cell under another type constructor, e.g.
+    [ghostₛ (pcellₛ m)], is not part of the MiniRust value.) *)
 Fixpoint syn_nocell (𝔄: syn_type) : bool :=
   match 𝔄 with
-  | pcellbₛ _ => false
+  | pcellₛ _ => false
   | prodₛ 𝔄₀ 𝔄₁ => syn_nocell 𝔄₀ && syn_nocell 𝔄₁
   | xprodₛ 𝔄l | xsumₛ 𝔄l => forallb syn_nocell 𝔄l
   | _ => true
@@ -1304,17 +1293,6 @@ Program Definition pair_with_loc_trackedₛ {𝔄} (l: loc) : 𝔄 →ₛ (track
 |}.
 Next Obligation. intros 𝔄 x π. done. Qed.
 Next Obligation. intros. done. Qed.
-
-Program Definition pair_with_cell_idsₛ {𝔄} n (γs: list positive) : 𝔄 →ₛ (trackedₛ (pcellₛ n * 𝔄)) :=
-  {|
-    syn_type_morphism_fn := (λ x, (γs, x)) ;
-    syn_type_morphism_proph_fn := (λ x, (γs, x)) ;
-  |}.
-Next Obligation. intros 𝔄 γs x π => /=. done. Qed.
-Next Obligation. intros. simpl.
-  replace ((@concat proph_var (@fmap list list_fmap positive (list proph_var) (fun _ : positive => @nil proph_var) γs))) with ([] : list proph_var); first by done.
-  induction γs; done.
-Qed.
 
 Program Definition prod_assocₛ {𝔄 𝔅 ℭ} : (𝔄 * (𝔅 * ℭ)) →ₛ (𝔄 * 𝔅 * ℭ) := {|
   syn_type_morphism_fn := prod_assoc ;

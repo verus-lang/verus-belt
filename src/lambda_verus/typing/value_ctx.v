@@ -1,5 +1,5 @@
 From lrust.typing Require Export type type_context bytes_layout.
-From lrust.typing Require Import programs bool int own_bytes product sum.
+From lrust.typing Require Import programs bool int own product sum.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".

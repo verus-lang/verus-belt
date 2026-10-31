@@ -590,14 +590,14 @@ Global Arguments ty_bsize {_ _ _} _ / : simpl nomatch.
     MiniRust value ([ty_val x]) and [bs] decode to it at [ty_mty] (so they have the size
     [ty_bsize ty], [ty_bytes_length]). A value without a MiniRust value (a closure, a
     cell) has no byte representation. This is what a parent owns for its pointee (see
-    [own_bytes] in [typing/own_bytes.v]). *)
+    [own_bytes] in [typing/own.v]). *)
 Definition ty_bytes `{!typeG Σ} {𝔄} (ty: type 𝔄) (x: ~~𝔄) (bs: list abyte) : Prop :=
   ∃ v, ty.(ty_val) x = Some v ∧ decode_value ty.(ty_mty) bs = Some v.
 
 (** [ty_fbytes R ty x fbs]: the fancy bytes [fbs] (byte-cells or bytes) represent the value
     [x] of [ty], with the static registry [R] of cell groups: they have the size
     [ty_bsize ty], and represent the fancy value [ty_fval x] at [ty_mty] ([frepr]). This
-    is what a parent owns for its pointee (see [bytes_own] in [typing/own_bytes.v]). For a
+    is what a parent owns for its pointee (see [bytes_own] in [typing/own.v]). For a
     value with a MiniRust value, and so for every value of a type without cells, the fancy
     bytes are the plain bytes of [ty_bytes] (see [typing/bytes_layout.v]). *)
 Definition ty_fbytes `{!typeG Σ} {𝔄} (R: gmap positive (mty * list positive)) (ty: type 𝔄)

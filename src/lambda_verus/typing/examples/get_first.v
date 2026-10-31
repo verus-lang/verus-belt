@@ -1,13 +1,12 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own_bytes uniq_util
-  uniq_bytes place_own place_puniq place_resolve.
+From lrust.typing Require Export type programs cont int product value_ctx own uniq_util uniq_bor place_own place_puniq place_resolve.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
 (** * [get_first] on bytes
 
 The body of [get_first] of the deleted legacy example [get_first.v], with the argument a MiniRust
-pointer value of type [&uniqb{α} (i32 * i32)] (a root value, [◁ᵥ]) rather than a box, and
+pointer value of type [&uniq{α} (i32 * i32)] (a root value, [◁ᵥ]) rather than a box, and
 the result returned as a value. *)
 
 Section get_first.
@@ -44,8 +43,8 @@ Section get_first.
   Lemma get_first_type ϝ α (k vb: val) :
     ⊢ typed_body [ϝ ⊑ₑ α] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
-          λ v: vec val 1, +[vhd v ◁ᵥ &uniqb{α ⊓ α} i32t] } ret_uniq]
-        +[vb ◁ᵥ &uniqb{α} (i32t * i32t)%T]
+          λ v: vec val 1, +[vhd v ◁ᵥ &uniq{α ⊓ α} i32t] } ret_uniq]
+        +[vb ◁ᵥ &uniq{α} (i32t * i32t)%T]
         (subst "return" k (subst "b" vb get_first)) get_first_spec.
   Proof.
     rewrite /get_first. simpl_subst.
@@ -70,7 +69,7 @@ Section get_first.
       iIntros (vr1). simpl_subst.
       (* resolve the borrow of field 1 *)
       iApply type_seq.
-      { apply (type_resolve_val_instr vr1 (&uniqb{α ⊓ α} i32t)). apply uniq_bytes.uniq_resolve.
+      { apply (type_resolve_val_instr vr1 (&uniq{α ⊓ α} i32t)). apply uniq_bor.uniq_resolve.
         solve_typing. }
       { solve_typing. } { reflexivity. }
       (* drop b while both fields are blocked *)

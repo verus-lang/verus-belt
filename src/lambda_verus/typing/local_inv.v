@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import type_context programs ghost tracked value_ctx shr_bytes product.
+From lrust.typing Require Import type_context programs ghost tracked value_ctx shr_bor product.
 From guarding Require Import guard tactics.
 From guarding.lib Require Import cancellable.
 From lrust.lifetime Require Import lifetime_full.
@@ -314,7 +314,7 @@ Section local_invariants.
     lctx_ictx_alive E L (InvCtx Il ϝ 𝛼) →
     typed_inv_instr E L
       (InvCtx Il ϝ 𝛼)
-      +[p ◁ᵥ &shrb{κ} (local_inv_ty ty pred)]
+      +[p ◁ᵥ &shr{κ} (local_inv_ty ty pred)]
       GhostOp
       (InvCtx (InvCtx_open κ :: Il) ϝ 𝛼)
       (λ v, +[v ◁ᵥ tracked_ty ty; v ◁ᵥ local_closer_ty κ ty pred])
