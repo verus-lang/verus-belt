@@ -252,7 +252,6 @@ Section own_bytes.
   (** The sharing predicate is structural, as for [own_ptr]: a guard of the bytes and
       the sharing predicate of the contents, under one later. *)
   Program Definition own_bytes {𝔄} (n: nat) (ty: type 𝔄) : type (at_locₛ 𝔄) := {|
-    ty_size := 1;
     ty_lfts := ty.(ty_lfts);
     ty_E := ty.(ty_E);
     ty_gho_own x d g tid := [S(d') := d]
@@ -264,14 +263,10 @@ Section own_bytes.
     ty_gho_pers x d g tid := [S(d') := d] ▷ ty.(ty_gho_pers) x.2 d' g tid;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-    ty_phys x tid := [FVal (LitV x.1)];
     ty_shr κ x d g tid :=
       ▷ [S(d') := d]
         (@[κ] &&{↑NllftG; g+1}&&> bytes_own ty x.1 x.2) ∗ ty.(ty_shr) κ x.2 d' g tid;
   |}%I.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
   Next Obligation.
     move=> 𝔄 n ty [|d] g d' g' x tid ??; iIntros "H" => //=.
     iDestruct "H" as "(Hown & Hfree & Hgho)". destruct d'; first lia => /=.
@@ -331,7 +326,7 @@ Section own_bytes.
 
   Global Instance own_bytes_ne {𝔄} n : NonExpansive (@own_bytes 𝔄 n).
   Proof.
-    move=> m ty ty' Eqv. split=>/=; [done|apply Eqv|apply Eqv| | |done|].
+    move=> m ty ty' Eqv. split=>/=; [apply Eqv|apply Eqv| | |].
     - move=> [l x] [|d] g tid //=. rewrite /ty_bsize (ty_mty_same ty ty') (bytes_own_same ty ty').
       do 3 f_equiv. apply Eqv.
     - move=> [l x] [|d] g tid //=. do 2 f_equiv. apply Eqv.
@@ -341,14 +336,13 @@ Section own_bytes.
 
   Global Instance own_bytes_type_contractive 𝔄 n : TypeContractive (@own_bytes 𝔄 n).
   Proof.
-    split; [by apply type_lft_morphism_id_like|done| | | |].
-    - move=>/= m ty ty' _ _ _ EqOwn _ _ _ [l x] [|d] g tid //=.
+    split; [by apply type_lft_morphism_id_like| | |].
+    - move=>/= m ty ty' _ _ EqOwn _ _ [l x] [|d] g tid //=.
       rewrite /ty_bsize (ty_mty_same ty ty') (bytes_own_same ty ty').
       do 2 f_equiv. f_contractive. by apply EqOwn.
-    - move=>/= m ty ty' _ _ _ _ EqPers _ _ [l x] [|d] g tid //=.
+    - move=>/= m ty ty' _ _ _ EqPers _ [l x] [|d] g tid //=.
       f_contractive. by apply EqPers.
-    - done.
-    - move=>/= m ty ty' _ _ _ _ _ _ EqShr κ [l x] d g tid.
+    - move=>/= m ty ty' _ _ _ _ EqShr κ [l x] d g tid.
       apply later_contractive. split=> m' Hm. destruct d as [|d']; [done|]. simpl.
       rewrite (bytes_own_same ty ty'). f_equiv. eapply dist_later_lt; [apply EqShr|lia].
   Qed.
@@ -425,9 +419,8 @@ Section own_bytes_rules.
     - lia.
   Qed.
   Global Instance own_bytes_send {𝔄} n (ty: type 𝔄) : Send ty → Send (own_bytes n ty).
-  Proof. move=> [Hphys Hgho]. split => //=.
-       - intros tid tid' x x' He. inversion He. trivial.
-       - intros tid tid' x d g G H κs d0 Hineq TG TH.
+  Proof. move=> [Hgho]. split.
+       intros tid tid' x d g G H κs d0 Hineq TG TH.
          iIntros "LFT UNIQ TIME Hg H Gg G Hgho #⧖o".
          destruct d => //=.
          iDestruct "Hgho" as "(Hown&Hfree&Hgho)".
@@ -447,12 +440,12 @@ Section own_bytes_rules.
     move=> HSync tid tid' x d g.
     have EqOwn: ∀ d0 g0, (own_bytes n ty).(ty_gho_own) x d0 g0 tid ⊣⊢
         (own_bytes n ty).(ty_gho_own) x d0 g0 tid'.
-    { move=> [|d0] g0 //=. destruct (HSync tid tid' x.2 d0 g0) as [_ [Hgho _]].
+    { move=> [|d0] g0 //=. destruct (HSync tid tid' x.2 d0 g0) as [Hgho _].
       by rewrite Hgho. }
-    split => //=. split; [apply EqOwn|]. split.
-    - destruct d => //=. destruct (HSync tid tid' x.2 d g) as [_ [_ [-> _]]]. done.
-    - move=> κ. f_equiv.
-      destruct d => //=. destruct (HSync tid tid' x.2 d g) as [_ [_ [_ Hshr]]].
+    split; [apply EqOwn|]. split.
+    - destruct d => //=. destruct (HSync tid tid' x.2 d g) as [_ [-> _]]. done.
+    - move=> κ /=. f_equiv.
+      destruct d as [|d0] => //=. destruct (HSync tid tid' x.2 d0 g) as [_ [_ Hshr]].
       by rewrite Hshr.
   Qed.
 
