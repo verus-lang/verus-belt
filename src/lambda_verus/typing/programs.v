@@ -75,13 +75,9 @@ Section typing.
         llctx_interp L ∗ invctx_interp tid mask' iκs I' ∗ tctx_interp tid (T' v) xl' ∗ ⟨π, post xl' mask' π⟩ }}.
   Global Arguments typed_instr {_ _} _ _ _ _ _%E _ _%type.
 
-  Definition typed_instr_ty {𝔄l 𝔅} (E: elctx) (L: llctx) (I: invctx)
-    (T: tctx 𝔄l) (e: expr) (ty: type 𝔅) (tr: pred' (~~𝔅) → predl 𝔄l) : Prop :=
-    typed_instr E L I T e (λ v, +[v ◁ ty]) (λ post al, tr (λ b, post -[b]) al).
-  Global Arguments typed_instr_ty {_ _} _ _ _ _ _%E _%T _%type.
-
-  Definition typed_val {𝔄} (v: val) (ty: type 𝔄) (a: ~~𝔄) : Prop :=
-    ∀E L I, typed_instr_ty E L I +[] (of_val v) ty (λ post _, post a).
+  (** A function value [v] of the function type [ty], with the value [a]. *)
+  Definition typed_val {ℭ} (v: val) (ty: type (exec_funₛ ℭ)) (a: ~~ (exec_funₛ ℭ)) : Prop :=
+    ∀E L I, typed_instr E L I +[] (of_val v) (λ v', +[v' ◁ᶠ ty]) (λ post _, post -[a]).
   Global Arguments typed_val {_} _%V _%T _%type.
 
   (* This lemma is helpful for specifying the predicate transformer. *)
@@ -211,14 +207,6 @@ Section typing.
     by iApply type_let'_with_inv.
   Qed.
 
-  Lemma type_val {𝔄 𝔅l ℭ} v (a: ~~𝔄) ty (T: tctx 𝔅l) E L (I: invctx) (C: cctx ℭ) xb e tr :
-    Closed (xb :b: []) e → typed_val v ty a →
-    (∀v': val, typed_body E L I C (v' ◁ ty +:: T) (subst' xb v' e) tr) -∗
-    typed_body E L I C T (let: xb := v in e)%E (λ post bl, tr post (a -:: bl)).
-  Proof.
-    iIntros (? Val) "?". iApply type_let; [apply Val|solve_typing|done..].
-  Qed.
-
   (* [type_val_dep] lets the obtained value depend on dynamic values;
     it is derived from [type_dep] and [type_val] *)
   (* 
@@ -307,56 +295,6 @@ Section typing.
     iApply (proph_obs_impl with "Obs"). intros π [Ha Hf]. apply Ha. apply Hf.
   Qed.
 
-  (** Explicit resolution of a path *)
-  Lemma type_resolve_instr {𝔄} p (ty: type 𝔄) Φ E L I :
-    resolve E L ty Φ →
-    typed_instr E L I +[p ◁ ty] Skip (λ _, +[]) (λ post '-[a], λ mask π, Φ a π → post -[] mask π).
-  Proof.
-    iIntros (Rslv ????[?[]]) "LFT #TIME PROPH UNIQ E L I /=[(%&%&%& ⧖ & ty) _] Obs".
-    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
-    iDestruct "ty" as "[tygho typhys]".
-    iDestruct (Rslv _ (⊤∖↑advN) with "LFT PROPH UNIQ TIME E Ghalf H1 tygho") as "Upd"; [solve_ndisj|].
-    
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|]. iIntros "£ ⧖S".
-    iMod "Upd".
-    iMod (lc_step_fupdN_elim_later with "[£] Upd") as "Upd". { iApply (lc_weaken with "£"). unfold advance_credits. lia. }
-    iMod "Upd" as "[Obs' H1]".
-    iDestruct ("Halfback" with "H1 H2") as "L". iMod (fupd_mask_mono with "L") as "L". { solve_ndisj. }
-    wp_seq.
-    iExists -[]. iCombine "Obs Obs'" as "?".
-    rewrite left_id. iFrame "L I". iApply proph_obs_impl; [|done]=>/= ?[Imp ?]. apply Imp.
-    trivial.
-  Qed.
-
-  Lemma type_resolve {𝔄 𝔅l ℭl 𝔇} p (ty: type 𝔄) Φ E L trx e tr
-      (T: tctx 𝔅l) (T': tctx ℭl) (I: invctx) (C: cctx 𝔇) :
-    Closed [] e → tctx_extract_ctx E L +[p ◁ ty] T T' trx → resolve E L ty Φ →
-    typed_body E L I C T' e tr -∗
-    typed_body E L I C T (Skip;; e)
-      (trx ∘ (λ post '(a -:: cl), λ mask π, Φ a π → tr post cl mask π))%type.
-  Proof.
-    iIntros (? Extr ?) "?". iApply type_seq; [by eapply type_resolve_instr|done| |done].
-    move: Extr=> [Htrx _]??/=. apply Htrx. by case.
-  Qed.
-
-  Lemma type_path_instr {𝔄} p (ty: type 𝔄) E L I :
-    typed_instr_ty E L I +[p ◁ ty] p ty (λ post '-[v], post v).
-  Proof.
-    iIntros (????[vπ[]]) "_ _ _ _ _ $$ [T _] Obs". iApply (wp_hasty with "T").
-    iIntros (v d _) "??". iExists -[vπ]. do 2 (iSplit; [|done]). iExists v, d.
-    rewrite eval_path_of_val. by iFrame.
-  Qed.
-
-  Lemma type_letpath {𝔄 𝔅l ℭl 𝔇} (ty: type 𝔄) (T: tctx 𝔅l) (T': tctx ℭl)
-    (I: invctx) (C: cctx 𝔇) x p e trx tr E L :
-    Closed (x :b: []) e → tctx_extract_ctx E L +[p ◁ ty] T T' trx →
-    (∀v: val, typed_body E L I C (v ◁ ty +:: T') (subst' x v e) tr) -∗
-    typed_body E L I C T (let: x := p in e) (trx ∘ tr).
-  Proof.
-    iIntros (? Extr) "?". iApply type_let; [by eapply type_path_instr|done| |done].
-    destruct Extr as [Htrx _]=>?? /=. apply Htrx. by case.
-  Qed.
-  
 End typing.
 
 Ltac via_tr_impl :=

@@ -12,8 +12,8 @@ MiniRust values ([w ◁ᵥ ty], [typing/value_ctx.v]) of the types of [fp]. A bo
 as a value of type [own_bytes n ty]; a shared reference as a value of type [&shr{κ} ty]
 (the root of a shared place, [typing/place_pshr.v]); a unique borrow as a value of type
 [&uniq{κ} ty]. The function value itself is still a closure ([RecV]) typed by the
-legacy element [f ◁ fn fp spec]: closures have no MiniRust value (decision 3 of the
-plan). The specification is a predicate transformer on the values of the arguments and
+function value element [f ◁ᶠ fn fp spec] ([typing/type_context.v]): closures have no
+MiniRust value (decision 3 of the plan). The specification is a predicate transformer on the values of the arguments and
 the result ([fn_spec]), not on boxes of them.
 
 Rules: [type_call] ([call: p ql → k]), [type_letcall], [type_fnrec], [type_fn]. *)
@@ -207,7 +207,7 @@ Section typing.
     (G &&{↑NllftG}&&> llctx_interp L) -∗
     (G &&{↑NllftG}&&> @[lft_intersect_list κl]) -∗ G -∗
     invctx_interp tid mask iκs (InvCtx Il ϝ' (fp_atomic_state (fp x))) -∗
-    tctx_elt_interp tid (p ◁ fn fp spec) efun -∗
+    tctx_elt_interp tid (p ◁ᶠ fn fp spec) efun -∗
     tctx_interp tid (hzip_with (λ _ ty q, q ◁ᵥ ty) (fp x).(fp_ityl) ql') xl -∗
     ⟨π, (spec efun.2) post xl mask π⟩ -∗
     (∀(ret: val) (mask': Mask) w, G -∗
@@ -234,9 +234,8 @@ Section typing.
       iSplit. { iApply (llftl_incl_trans with "Borκl []"). iApply llftl_intersect_incl_l. }
       iApply "IH". iModIntro. iApply llftl_incl_trans; [done|].
       iApply llftl_intersect_incl_r. }
-    iModIntro. wp_apply (wp_hasty with "p"). iIntros "*% _".
-    iDestruct 1 as "[gho %phys]". iDestruct "gho" as (fb kb bl e Hclosed) "[%Hrec #e]".
-    inversion phys as [Eqv].
+    iModIntro. wp_apply (wp_fun with "p"). iIntros (d) "% _".
+    iDestruct 1 as (fb kb bl e Hclosed) "[%Hrec #e]".
     have ->: (λ: ["_r"], Skip;; k' ["_r"])%E = (λ: ["_r"], Skip;; k' ["_r"])%V by unlock.
     iApply (wp_app_hasty_val [] with "ql")=>/=. iIntros (wl) "ityl".
     rewrite Hrec. wp_rec.
@@ -266,7 +265,7 @@ Section typing.
     llft_ctx -∗ time_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
     (G &&{↑NllftG}&&> @[lft_intersect_list κl]) -∗ G -∗
     invctx_interp tid mask [] (InvCtx [] static (fp_atomic_state (fp x))) -∗
-    tctx_elt_interp tid (p ◁ fn fp spec) efun -∗
+    tctx_elt_interp tid (p ◁ᶠ fn fp spec) efun -∗
     tctx_interp tid (hzip_with (λ _ ty q, q ◁ᵥ ty) (fp x).(fp_ityl) ql') xl -∗
     ⟨π, (spec efun.2) post xl mask π⟩ -∗
     (∀(ret: val) (mask': Mask) w, G -∗
@@ -291,7 +290,7 @@ Section typing.
       (Tk: vec val 1 → tctx 𝔈l) :
     IntoPlistc ql ql' → Forall (lctx_lft_alive E L) L.*1 →
     lctx_ictx_alive E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) →
-    tctx_extract_ctx E L (p ◁ fn fp spec +::
+    tctx_extract_ctx E L (p ◁ᶠ fn fp spec +::
       hzip_with (λ _ ty q, q ◁ᵥ ty) (fp x).(fp_ityl) ql') T T' trx →
     (∀ϝ, elctx_sat (map (λ κ, ϝ ⊑ₑ κ) L.*1 ++ E) L (fp_E (fp x) ϝ)) →
     k ◁cont{L, (InvCtx Il ϝ' (fp_atomic_state (fp x))), Tk} trk ∈ C →
@@ -320,7 +319,7 @@ Section typing.
       `{!IntoPlistc ql ql', !Closed (b :b: []) e, !Closed [] p} :
     TCForall (Closed []) ql → Forall (lctx_lft_alive E L) L.*1 →
     lctx_ictx_alive E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) →
-    tctx_extract_ctx E L (p ◁ fn fp spec +::
+    tctx_extract_ctx E L (p ◁ᶠ fn fp spec +::
       hzip_with (λ _ ty q, q ◁ᵥ ty) (fp x).(fp_ityl) ql') T T' trx →
     (∀ϝ, elctx_sat (map (λ κ, ϝ ⊑ₑ κ) L.*1 ++ E) L (fp_E (fp x) ϝ)) →
     (∀ret: val, typed_body E L (InvCtx Il ϝ' (fp_atomic_state (fp x))) C
@@ -358,7 +357,7 @@ Section typing.
         ⊢ typed_body (fp_E (fp x) ϝ) [ϝ ⊑ₗ []] (InvCtx [] ϝ (fp_atomic_state (fp x)))
             [k ◁cont{[ϝ ⊑ₗ []], (InvCtx [] ϝ (fp_atomic_state (fp x))),
               λ v: vec _ 1, +[vhd v ◁ᵥ (fp x).(fp_oty)] } tr_ret]
-            (f ◁ fn fp spec +:: hzip_with (λ _ ty (v: val), v ◁ᵥ ty) (fp x).(fp_ityl) wl)
+            (f ◁ᶠ fn fp spec +:: hzip_with (λ _ ty (v: val), v ◁ᵥ ty) (fp x).(fp_ityl) wl)
             (subst' fb f $ subst "return" k $ subst_plv bl' wl e)
             (λ post '(tr' -:: al), λ mask π, tr'.2 = tr ∧ (spec tr) post al mask π)%type) →
     typed_val (fnrec: fb bl := e)%V (fn fp spec) (@RecV fb ("return" :: bl)%binder e Cl, tr).
@@ -366,9 +365,8 @@ Section typing.
     move: Cl. rewrite Into. iIntros (? Body ????????) "_ _ _ _ _ $$ _ Obs".
     iMod persistent_time_receipt_0 as "#⧖". iApply wp_value.
     iExists -[((@RecV fb ("return" :: bl')%binder e Cl)%V, tr)].
-    iFrame "Obs". iSplit; [|done]. iLöb as "IH". iExists _, 0%nat.
-    iSplit; [by rewrite/= decide_True_pi|]. iFrame "⧖".
-    iSplit; last by done.
+    iFrame "Obs". iSplit; [|done]. iLöb as "IH". iExists _.
+    iSplit; [by rewrite/= decide_True_pi|]. iExists 0%nat. iSplit; [done|]. iFrame "⧖".
     iExists fb, "return", bl', e, _. iSplit; [done|].
     iIntros "!>!> *%%%%% LFT TIME PROPH UNIQ Efp L I C T ?".
     iApply (Body _ _ (RecV _ _ _) $! _ (_-::_) with
