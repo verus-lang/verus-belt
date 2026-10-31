@@ -66,9 +66,6 @@ Section shr_bytes.
       ty.(ty_shr) κ (snd x) d' g tid ∗
       ▷^(g+1) (ty.(ty_gho_pers) (snd x) d' g tid);
   |}%I : simple_type (at_locₛ 𝔄)).
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
   Next Obligation.
     intros. iIntros "#A". destruct d. { done. } unfold by_succ.
     destruct d'. { lia. }
@@ -96,17 +93,14 @@ Section shr_bytes.
     leaf_goal laters to (n + (d + 1) * (g + 1)). { lia. }
     iApply ("InnerGuardProph" with "Rk").
   Qed.
-  Next Obligation. done. Qed.
 
   Global Instance shr_bytes_ne {𝔄} κ : NonExpansive (@shr_bytes 𝔄 κ).
   Proof.
     move=> n ty ty' Eqv. apply ty_of_st_ne. constructor; simpl.
-    - done.
     - f_equal. by eapply ty_lfts_ne.
     - f_equal; [by eapply ty_E_ne|by eapply ty_outlives_E_ne].
     - move=> [l x] [|d] g tid //=. rewrite (shr_bytes_own_same κ _ ty ty'). f_equiv.
       f_equiv; [by eapply ty_shr_ne|]. f_equiv. by eapply ty_gho_pers_ne.
-    - done.
   Qed.
 End shr_bytes.
 
