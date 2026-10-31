@@ -413,6 +413,60 @@ Section own_bytes_rules.
       iIntros "!> _". by iApply "HΦ".
     - lia.
   Qed.
+  Global Instance own_bytes_send {𝔄} n (ty: type 𝔄) : Send ty → Send (own_bytes n ty).
+  Proof. move=> [Hphys Hgho]. split => //=.
+       - intros tid tid' x x' He. inversion He. trivial.
+       - intros tid tid' x d g G H κs d0 Hineq TG TH.
+         iIntros "LFT UNIQ TIME Hg H Gg G Hgho #⧖o".
+         destruct d => //=.
+         iDestruct "Hgho" as "(Hown&Hfree&Hgho)".
+         iModIntro. iNext. iModIntro.
+         iPoseProof (Hgho with "LFT UNIQ TIME Hg H Gg G Hgho ⧖o") as "X"; first lia.
+         iApply (step_fupdN_wand with "X"). iIntros ">X".
+         iDestruct "X" as (x' off) "[gho [#⧖off [%Habs [G H]]]]".
+         iExists (x.1, x'), (off). iModIntro. iFrame "G H ⧖off gho Hfree".
+         iSplitL "Hown".
+         + iApply (bytes_own_iff with "Hown"). intros R fbs.
+           rewrite /ty_fbytes -!ty_fval_eq. by rewrite (syn_abstract_fval_eq _ _ _ Habs).
+         + iPureIntro. simpl. rewrite Habs. trivial.
+  Qed.
+
+  Global Instance own_bytes_sync {𝔄} n (ty: type 𝔄) : Sync ty → Sync (own_bytes n ty).
+  Proof.
+    move=> HSync tid tid' x d g.
+    have EqOwn: ∀ d0 g0, (own_bytes n ty).(ty_gho_own) x d0 g0 tid ⊣⊢
+        (own_bytes n ty).(ty_gho_own) x d0 g0 tid'.
+    { move=> [|d0] g0 //=. destruct (HSync tid tid' x.2 d0 g0) as [_ [Hgho _]].
+      by rewrite Hgho. }
+    split => //=. split; [apply EqOwn|]. split.
+    - destruct d => //=. destruct (HSync tid tid' x.2 d g) as [_ [_ [-> _]]]. done.
+    - move=> κ. f_equiv.
+      destruct d => //=. destruct (HSync tid tid' x.2 d g) as [_ [_ [_ Hshr]]].
+      by rewrite Hshr.
+  Qed.
+
+  Lemma own_bytes_resolve {𝔄} E L n (ty: type 𝔄) Φ :
+    resolve E L ty Φ → resolve E L (own_bytes n ty) (λ '(l, v), Φ v).
+  Proof.
+    iIntros (Rslv G F x d g tid ??) "LFT PROPH UNIQ TIME E L own //".
+    iIntros "Hgho".
+    destruct d => //=.
+    iDestruct "Hgho" as "(Hown&Hfree&Hgho)".
+    iModIntro.
+    replace (g + 1 + d * (g + 1)) with (S (g + d * (g + 1))) by lia.
+    simpl. iModIntro. iNext.
+    iDestruct (Rslv G F (snd x) d g tid _ with "[$] [$] [$] [$] [$] [$] [$] Hgho") as "Hrslv".
+      { trivial. }
+    iMod "Hrslv". iModIntro.
+    iDestruct (step_fupdN_nmono with "Hrslv") as "Hrslv"; last first.
+     - iApply (step_fupdN_wand with "Hrslv []").
+       iIntros "F". iMod "F" as "[Obs G]".
+       iModIntro. iFrame "G".
+       iApply (proph_obs_impl with "Obs").
+       intros π Ha. destruct x. apply Ha.
+     - lia.
+  Qed.
+
   Global Instance own_bytes_res_own {𝔄} n (ty: type 𝔄) : ResOwn ty → ResOwn (own_bytes n ty).
   Proof. move=> ? x [|d] g tid //=. by rewrite res_own. Qed.
 

@@ -1,11 +1,22 @@
-From lrust.lang.lib Require Import memcpy.
-From lrust.typing Require Export type tracked own product sum uniq_bor uniq_util shr_bor.
-From lrust.typing Require Import uninit type_context programs freeable_util.
+From lrust.typing Require Export type tracked product own_bytes shr_bytes uniq_bytes value_ctx.
+From lrust.typing Require Import uniq_util uniq_bytes_util type_context programs ghost.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
 
 Implicit Type 𝔄 𝔅: syn_type.
+
+(** * Verus-style raw pointers ([PPtr]) and their permissions ([PointsTo])
+
+A [PPtr] is a MiniRust pointer value ([ptr_ty]). Its permission [points_to_ty ty] is a
+tracked box of bytes ([tracked_ty (own_bytes (ty_bsize ty) ty)]): a ghost value (the
+empty tuple) that owns the bytes of the pointee. The operations take and return
+MiniRust values ([◁ᵥ]):
+- [typed_pptr_to_own]: a pointer and its permission give a box;
+- [typed_pptr_from_own]: a box gives a pointer (the box's pointer value itself) and its
+  permission;
+- [typed_pptr_borrow], [typed_pptr_borrow_mut]: a pointer and a shared/unique borrow of
+  its permission give a shared/unique borrow of the pointee. *)
 
 Section ptr.
   Context `{!typeG Σ}.
@@ -21,15 +32,12 @@ Section ptr.
   Next Obligation. intros. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  
+
   Global Instance ptr_copy: Copy ptr_ty.
   Proof.
     split. - typeclasses eauto. - iIntros. iPureIntro. done.
     - intros. by apply copy_shr_default.
   Qed.
-  
-  Lemma ptr_stack_okay : StackOkay ptr_ty.
-  Proof. done. Qed.
 
   Global Instance ptr_send: Send ptr_ty.
   Proof.
@@ -39,10 +47,7 @@ Section ptr.
        iExists x, 0%nat. iModIntro. iFrame. simpl.
        replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
   Qed.
-  
-  Global Instance ptr_sync: Sync ptr_ty.
-  Proof. apply sync_default; [done|]. split; trivial. split; iSplit; done. Qed.
-  
+
   Lemma ptr_resolve E L : resolve E L ptr_ty (const (const True)).
   Proof. apply resolve_just. Qed.
 End ptr.
@@ -50,388 +55,170 @@ End ptr.
 Section points_to.
   Context `{!typeG Σ}.
 
-  Program Definition tracked_ty_with_prop {𝔄} (ty: type 𝔄) (P : iProp Σ) : type (trackedₛ 𝔄) := {|
-    ty_size := 0;
-    ty_lfts := ty.(ty_lfts);
-    ty_E := ty.(ty_E);
-    ty_gho_own x d g tid := P ∗ (ty.(ty_gho_own) x d g tid) ;
-    ty_gho_res x d g tid := P ∗ (ty.(ty_gho_res) x d g tid) ;
-    ty_gho_pers x d g tid := (ty.(ty_gho_pers) x d g tid) ;
-    ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
-    ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-    ty_phys x tid := [];
-    ty_shr κ x d g tid := (@[κ] &&{↑NllftG; g+1}&&> P) ∗ ty.(ty_shr) κ x d g tid;
-  |}%I.
-  Next Obligation. intros; done. Qed.
-  Next Obligation. intros; done. Qed.
-  Next Obligation. intros; done. Qed.
-  Next Obligation.
-    intros.
-    iIntros "[? gho]".
-    iDestruct (ty_gho_own_depth_mono ty with "gho") as "[? wand]" => //. 
-    iFrame.
-    iIntros "[$ ?]".
-    by iApply "wand".
-  Qed.
-  Next Obligation. intros. apply (ty_gho_pers_depth_mono ty); trivial. Qed.
-  Next Obligation. iIntros "* [? ?]". iApply (ty_gho_pers_impl 𝔄); trivial. Qed.
-  Next Obligation.
-    intros 𝔄 ty P κ κ' x n d g tid. iIntros "#Incl [P Shr]". iSplit.
-    - replace (g + n + 1) with (n + (g + 1)) by lia.
-      iApply (guards_transitive_additive with "Incl P").
-    - iApply (ty_shr_lft_mono with "Incl Shr").
-  Qed.
-  Next Obligation.
-    intros. iIntros "[P Shr]". iSplit.
-    - leaf_goal laters to (g+1). { lia. } iFrame "P".
-    - iApply (ty_shr_depth_mono with "Shr"); lia.
-  Qed.
-  Next Obligation.
-    intros 𝔄 ty P E κ x d g tid G ??. iIntros "#LFT #Incl #Pers #Gκ G Bor".
-    iMod (llftl_sep_split with "LFT Bor") as "[BP Bor]"; [solve_ndisj|].
-    iMod (llftl_bor_guard with "LFT BP") as "#GP"; [solve_ndisj|].
-    iMod (ty_share with "LFT Incl Pers Gκ G Bor") as "Shr"; [done..|].
-    iModIntro. iApply (step_fupdN_wand with "Shr"). iIntros ">[$ $]". iModIntro.
-    leaf_goal laters to 1. { lia. } iFrame "GP".
-  Qed.
-  Next Obligation.
-    intros. iIntros "LFT Incl Pers [_ Shr]". by iApply (ty_shr_guard_proph with "LFT Incl Pers Shr").
-  Qed.
-  Next Obligation. intros. iIntros "[$ A]". by iApply (ty_gho_res_of_own ty with "A"). Qed.
-
-  Definition points_to_ty {𝔄} ty := tracked_ty (@own_ptr _ _ 𝔄 (ty_size ty) ty).
-
-  Global Instance tracked_ty_ne {𝔄} : NonExpansive (@tracked_ty _ _ 𝔄).
-  Proof. solve_ne_type. Qed.
+  Definition points_to_ty {𝔄} (ty: type 𝔄) := tracked_ty (own_bytes (ty_bsize ty) ty).
 
   Global Instance points_to_ne {𝔄} : NonExpansive (@points_to_ty 𝔄).
   Proof.
-    rewrite /points_to_ty.
-    move => m ty1 ty2 Eq.
-    apply tracked_ty_ne.
-    destruct Eq. rewrite H.
-    by rewrite own.own_ne.
+    rewrite /points_to_ty /ty_bsize. move => m ty1 ty2 Eq.
+    rewrite (ty_mty_same ty1 ty2). by do 2 f_equiv.
   Qed.
 
-  Lemma points_to_stack_okay {𝔄} (ty: type 𝔄) : StackOkay (points_to_ty ty).
-  Proof. done. Qed.
-
-  Global Instance points_to_send {𝔄} (ty: type 𝔄) : Send ty → Send (points_to_ty  ty).
+  Global Instance points_to_send {𝔄} (ty: type 𝔄) : Send ty → Send (points_to_ty ty).
   Proof. exact _. Qed.
 
   Global Instance points_to_sync {𝔄} (ty: type 𝔄) : Sync ty → Sync (points_to_ty ty).
   Proof. exact _. Qed.
 
-  Global Instance tracked_ty_with_prop_res_own {𝔄} (ty: type 𝔄) P :
-    ResOwn ty → ResOwn (tracked_ty_with_prop ty P).
-  Proof. move=> ? x d g tid /=. by rewrite res_own. Qed.
-
   Lemma points_to_resolve {𝔄} E L (ty: type 𝔄) Φ :
     resolve E L ty Φ → resolve E L (points_to_ty ty) (λ '(l, s), Φ s) .
-  Proof.
-    move => Rslv.
-    apply tracked_resolve.
-    by eapply own_resolve.
-  Qed.
+  Proof. move => Rslv. apply tracked_resolve. by eapply own_bytes_resolve. Qed.
 
-  Lemma points_to_type_incl {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) ty1 ty2 :
-    type_incl ty1 ty2 f -∗ type_incl (points_to_ty ty1) (points_to_ty  ty2) (tracked_mapₛ (at_loc_mapₛ f)).
-  Proof.
-    iIntros "Hincl".
-    iApply tracked_type_incl.
-    iDestruct "Hincl" as "(% & ?)".
-    rewrite H.
-    iApply own_type_incl.
-    by iFrame.
-  Qed.
+  (** A permission is a ghost value: its MiniRust value is the empty tuple. *)
+  Lemma points_to_val {𝔄} (ty: type 𝔄) (x: ~~(trackedₛ (at_locₛ 𝔄))) :
+    (points_to_ty ty).(ty_val) x = Some (VTuple []).
+  Proof. done. Qed.
 
-  Lemma points_to_subtype {𝔄 𝔅} E L (f: 𝔄 →ₛ 𝔅) ty ty' :
-    subtype E L ty ty' f → subtype E L (points_to_ty ty) (points_to_ty ty') (tracked_mapₛ (at_loc_mapₛ f)).
-  Proof.
-    move=> Sub. iIntros "L". iDestruct (Sub with "L") as "#Incl".
-    iIntros "!> #E". iApply points_to_type_incl; by [|iApply "Incl"].
-  Qed.
-
+  Lemma points_to_bsize {𝔄} (ty: type 𝔄) : ty_bsize (points_to_ty ty) = 0.
+  Proof. done. Qed.
 End points_to.
 
 Section typing.
-
   Context `{!typeG Σ}.
 
-  (* Not sure if this n makes sense to be an argument at the syntax level *)
-  (* Notation "PPtr2Own: ptr perm" := (Skip;; ptr)%E (at level 102, ptr, perm at level 1): expr_scope. *)
-  Definition PPtr2Own : val :=
-    (λ: ["ptr"; "perm"], "ptr")%V.
+  Definition PPtr2Own : val := (λ: ["ptr"; "perm"], "ptr")%V.
 
   Lemma typed_pptr_to_own {𝔄} (perm ptr : path) (ty : type 𝔄) E L I :
-    typed_instr E L I +[ptr ◁ ptr_ty; perm ◁ own_ptr 0 (points_to_ty ty)] (PPtr2Own [ptr; perm]) (λ v, +[v ◁ own_ptr (ty_size ty) ty]) (λ post '-[l; (_, (l', x))], λ mask π, l = l' ∧ post -[(l, x)] mask π).
+    typed_instr E L I +[ptr ◁ᵥ ptr_ty; perm ◁ᵥ points_to_ty ty] (PPtr2Own [ptr; perm])
+      (λ v, +[v ◁ᵥ own_bytes (ty_bsize ty) ty])
+      (λ post '-[l; (l', x)], λ mask π, l = l' ∧ post -[(l, x)] mask π).
   Proof.
-    move => tid postπ mask iκs vπl.
-    iIntros "#LFT #TIME #PROPH UNIQ E L $ TY #Obs" => /=.
-    destruct vπl as [l [[? [l' x]] []]].
-    iDestruct "TY" as "(Hptr & Hperm & _)".
-    iDestruct "Hptr" as (pl d Heval) "(#Hd & _ & %Hphys)".
-    iDestruct "Hperm" as (pl' d' Heval') "(#Hd' & Hown & %Hphys')".
-    simpl in Hphys, Hphys'.
-    injection Hphys => ?; subst pl.
-    injection Hphys' => ?; subst pl'.
-    destruct d' => //=.
-    iDestruct "Hown" as "(_ & _ & Hown)".
+    iIntros (tid postπ mask iκs [l [[l' x] []]]) "#LFT #TIME #PROPH UNIQ E $ $ (Hptr & Hperm & _) #Obs".
+    iDestruct "Hptr" as (vp Hp w d [-> Hw]) "[_ _]". simpl in Hw. simplify_eq.
+    iDestruct "Hperm" as (vq Hq w' d' [-> _]) "[#Hd' Hown]".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
     rewrite /PPtr2Own.
-    wp_bind ptr.
-    iApply wp_wand.
-    iApply wp_eval_path => //.
-    iIntros (? ->).
-    wp_bind perm.
-    iApply wp_wand.
-    iApply wp_eval_path => //.
-    iIntros (? ->).
+    wp_bind ptr. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).
+    wp_bind perm. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).
     wp_rec.
-    iExists -[(l, x)].
-    iFrame.
-    rewrite /tctx_elt_interp/ty_own/=.
-    iSplitL.
-    - iSplit => //.
-      destruct d' => //=.
-      iExists _, (S (S d')).
-      do 2 iSplit => //=.
-      iDestruct "Hown" as "(? & ? & gho)".
-      iSplitL => //.
-      iFrame.
-      iNext.
-      iDestruct (ty.(ty_gho_own_depth_mono) with "gho") as "($ & ?)"; lia.
-    - iApply (proph_obs_impl with "Obs").
-      intros π' Hpost.
-      apply Hpost.
+    iExists -[(l, x)]. iSplitL.
+    - iSplit; [|done]. rewrite tctx_val_val. iExists d'. iFrame "Hd' Hown". done.
+    - iApply (proph_obs_impl with "Obs"). intros π' Hpost. apply Hpost.
   Qed.
 
-  Definition PPtrFromOwn : val :=
-    (λ: ["p"], 
-      let: "x" := new [ #1 ] in "x" <- "p";; "x")%V.
+  (** The pointer of the box is the [PPtr]; the operation itself is a no-op that returns
+      the (ghost) permission. *)
+  Notation PPtrFromOwn := GhostOp (only parsing).
 
   Lemma typed_pptr_from_own {𝔄} (p : path) (ty : type 𝔄) E L I :
-    typed_instr E L I +[p ◁ own_ptr (ty_size ty) ty] (PPtrFromOwn [p]) (λ v, +[v ◁ own_ptr 1 (prod_ty ptr_ty (points_to_ty ty))]) (λ post '-[(l, x)], λ mask π, ∀ lc, post -[(lc, (l, (l, x)))] mask π).
+    typed_instr E L I +[p ◁ᵥ own_bytes (ty_bsize ty) ty] PPtrFromOwn
+      (λ v, +[p ◁ᵥ ptr_ty; v ◁ᵥ points_to_ty ty])
+      (λ post '-[(l, x)], λ mask π, post -[l; (l, x)] mask π).
   Proof.
-    move => tid postπ mask iκs vπl.
-    iIntros "#LFT #TIME #PROPH UNIQ E L $ TY #Obs" => /=.
-    destruct vπl as [[l x] []].
-    iDestruct "TY" as "(TY & _)".
-    iDestruct "TY" as (pl d Heval) "(#Hd & Hown & %Hphys)".
-    simpl in Hphys.
-    injection Hphys => ?; subst pl.
-    destruct d => //=.
-    iDestruct "Hown" as "(Hl & Hfree & Hgho)".
-    wp_bind p.
-    iApply wp_wand.
-    iApply wp_eval_path => //.
-    iIntros (? ->).
-    iApply (wp_persistent_time_receipt with "TIME Hd"); [done|].
-    iIntros "£ #Hd'".
-    wp_rec.
-    wp_bind (new _).
-    iApply wp_new => //.
-    iNext.
-    iIntros (l') "[Hfree' Hl']".
-    wp_let.
-    rewrite heap_mapsto_vec_singleton.
-    wp_bind (_ <- _)%E.
-    iApply (wp_write_na with "Hl'"); [solve_ndisj|].
-    iNext. iIntros "Hl'". wp_seq.
-    iExists -[(l', (l, (l, x)))].
-    iFrame.
-    rewrite /tctx_elt_interp/ty_own/=.
-    iSplitL.
-    - iSplit => //.
-      iExists _, (S (S d)).
-      do 2 iSplit => //=.
-      iSplitL => //.
-      iFrame.
-      rewrite -heap_mapsto_vec_singleton.
-      rewrite -!(heap_mapsto_fancy_fmap_eq l').
-      iFrame.
-      rewrite freeable_sz_full.
-      iFrame.
-      iNext; iNext; iFrame.
-      iDestruct (ty.(ty_gho_own_depth_mono) with "Hgho") as "($ & ?)"; lia.
-    - iApply (proph_obs_impl with "Obs").
-      intros π' Hpost.
-      apply Hpost.
+    iIntros (tid postπ mask iκs [[l x] []]) "#LFT #TIME #PROPH UNIQ E $ $ [Hp _] #Obs".
+    iDestruct "Hp" as (vp Hp w d [-> Hw]) "[#Hd Hown]". simpl in Hw. simplify_eq.
+    iApply wp_ghost_op. iIntros "!> !>". iExists -[l; (l, x)]. iSplitL.
+    - iSplitR; [|iSplitL; [|done]].
+      + iExists _. iSplit; [done|]. iExists (VPtr l), d. iSplit; [done|].
+        by iFrame "Hd".
+      + rewrite tctx_val_val. iExists d. by iFrame "Hd Hown".
+    - iApply (proph_obs_impl with "Obs"). intros π' Hpost. apply Hpost.
   Qed.
 
-  Definition PPtrBorrow : val :=
-    (λ: ["ptr"; "perm_ref"], "ptr")%V.
+  Definition PPtrBorrow : val := (λ: ["ptr"; "perm_ref"], "ptr")%V.
 
   Lemma typed_pptr_borrow {𝔄} κ (ptr perm_ref : path) (ty : type 𝔄) E L I :
-    (* lctx_lft_alive E L κ → *)
-    typed_instr E L I +[ptr ◁ ptr_ty; perm_ref ◁ shr_bor κ (points_to_ty ty)] (PPtrBorrow [ptr; perm_ref]) (λ v, +[v ◁ shr_bor κ ty]) (λ post '-[l; (cl, (l', x))], λ mask π, l = l' ∧ post -[((l, repeat [] ty.(ty_size)), x)] mask π).
+    typed_instr E L I +[ptr ◁ᵥ ptr_ty; perm_ref ◁ᵥ &shrb{κ} (points_to_ty ty)]
+      (PPtrBorrow [ptr; perm_ref]) (λ v, +[v ◁ᵥ &shrb{κ} ty])
+      (λ post '-[l; (cl, (l', x))], λ mask π, l = l' ∧ post -[((l, []), x)] mask π).
   Proof.
-    move => tid postπ mask iκs vπl.
-    iIntros "#LFT #TIME #PROPH #UNIQ #E L $ TY #Obs" => /=.
-    destruct vπl as [l [[c [l' x]] []]].
-    iDestruct "TY" as "(Hptr & Hperm & _)".
-    iDestruct "Hptr" as (pl d Heval) "(#Hd & _ & %Hphys)".
-    simpl in Hphys.
-    injection Hphys => ?; subst pl.
-    iDestruct "Hperm" as (pl' d' Heval') "(#Hd' & Hshr & %Hphys')".
-    simpl in Hphys'.
-    injection Hphys' => ?; subst pl'.
-    (* destruct d' => //=. *)
+    iIntros (tid postπ mask iκs [l [[c [l' x]] []]]) "#LFT #TIME #PROPH #UNIQ #E $ $ (Hptr & Hperm & _) #Obs".
+    iDestruct "Hptr" as (vp Hp w d [-> Hw]) "[_ _]". simpl in Hw. simplify_eq.
+    iDestruct "Hperm" as (vq Hq w' d' [-> _]) "[#Hd' Hshr]".
+    iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
     rewrite /PPtrBorrow.
-    wp_bind ptr.
-    iApply wp_wand.
-    iApply wp_eval_path => //.
-    iIntros (? ->).
-    wp_bind perm_ref.
-    iApply wp_wand.
-    iApply wp_eval_path => //.
-    iIntros (? ->).
+    wp_bind ptr. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).
+    wp_bind perm_ref. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).
     iApply wp_fupd.
     iApply (wp_persistent_time_receipt with "TIME Hd'"); [done|].
-    destruct d' as [ | [ | d']] => //=; iDestruct "Hshr" as "(_ & #Hshr0 & #Hpers)".
-    { rewrite /advance_credits /=.
-      iIntros "(£ & _) #Hd''".
-      wp_rec.
-      by iMod (lc_fupd_elim_later with "£ Hpers"). }
-    rewrite /advance_credits /=.
-    iIntros "(£ & _) #Hd''".
-    iMod (own_shr_unfold (ty_size ty) ty _ κ (l', x) d' (S (S d')) tid with "£ Hshr0")
-      as "[#Hpt #Hshr]".
-    iClear "Hshr0".
-    wp_rec.
-    iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
-    iModIntro.
-    iExists -[((l, repeat [] ty.(ty_size)), x)].
-    rewrite /tctx_elt_interp/ty_own/=.
-    iFrame.
-    iSplitL.
-    { rewrite /tctx_elt_interp/ty_own/=.
-      iSplit => //; iExists _, (S (S (S d'))).
-      iSplit => //.
-      iFrame "#" => /=.
-      iSplit => //.
-      iSplitR; last iSplitL.
-      - rewrite heap_mapsto_cells_fancy_empty.
-        rewrite (ty.(ty_size_eq) x tid).
-        leaf_goal laters to (S (S d') + 2). { lia. } iFrame "Hpt".
-      - iApply (ty_shr_depth_mono with "Hshr"); lia.
-      - repeat iNext.
-        iApply (ty.(ty_gho_pers_depth_mono) with "Hpers") => //; lia.
-    }
-    iApply (proph_obs_impl with "Obs").
-    by intros π' [_ Hpost].
+    iIntros "£ #Hd''".
+    destruct d' as [|d']; [done|].
+    iDestruct "Hshr" as "(_ & #Hshr0 & #Hpers)". simpl.
+    iDestruct (lc_weaken 1 with "£") as "£"; [rewrite /advance_credits; lia|].
+    iMod (lc_fupd_elim_later with "£ Hshr0") as "Hshr1".
+    destruct d' as [|d'']; [done|].
+    iDestruct "Hshr1" as "[#Hpt #Hshr]".
+    wp_rec. iModIntro.
+    iExists -[((l, []), x)]. iSplitL.
+    - iSplit; [|done]. rewrite tctx_val_val. iExists (S (S (S d''))).
+      iSplit; [done|]. iFrame "Hd''". simpl. iSplit; [|iSplit].
+      + rewrite /shr_bytes_own. leaf_goal laters to (S (S d'') + 1). { lia. } iFrame "Hpt".
+      + iApply (ty_shr_depth_mono with "Hshr"); lia.
+      + iApply (bi.laterN_le (S (d'' + 1) + 1) (3 + (d'' + 1))); [lia|].
+        rewrite bi.laterN_add. iNext.
+        iApply (ty_gho_pers_depth_mono with "Hpers"); lia.
+    - iApply (proph_obs_impl with "Obs"). by intros π' [_ Hpost].
   Qed.
 
-  Definition PPtrMutBorrow : val :=
-    (λ: ["ptr"; "perm_ref"], "ptr")%V.
+  Definition PPtrMutBorrow : val := (λ: ["ptr"; "perm_ref"], "ptr")%V.
 
   Lemma typed_pptr_borrow_mut {𝔄} κ (ptr perm_ref : path) (ty : type 𝔄) E L I :
     lctx_lft_alive E L κ →
-    typed_instr E L I +[ptr ◁ ptr_ty; perm_ref ◁ &uniq{κ} (points_to_ty ty)] (PPtrMutBorrow [ptr; perm_ref]) (λ v, +[v ◁ &uniq{κ} ty]) (λ post '-[l; bor], λ mask π, let '(cl, (l', x), ξi, d, g, idx) := bor in l = l' ∧ ∀ bor',
-    uniq_bor_current bor' = snd (uniq_bor_current bor) →
-    uniq_bor_future bor' π = snd (uniq_bor_future bor π) →
-    of_cloc (uniq_bor_loc bor') = fst (uniq_bor_current bor) →
-    of_cloc (uniq_bor_loc bor') = fst (uniq_bor_future bor π) →
-    post -[bor'] mask π).
+    typed_instr E L I +[ptr ◁ᵥ ptr_ty; perm_ref ◁ᵥ &uniqb{κ} (points_to_ty ty)]
+      (PPtrMutBorrow [ptr; perm_ref]) (λ v, +[v ◁ᵥ &uniqb{κ} ty])
+      (λ post '-[l; bor], λ mask π, let '(cl, (l', x), ξi, d, g, idx) := bor in l = l' ∧
+        ∀ bor',
+        uniq_bor_current bor' = snd (uniq_bor_current bor) →
+        uniq_bor_future bor' π = snd (uniq_bor_future bor π) →
+        of_cloc (uniq_bor_loc bor') = fst (uniq_bor_current bor) →
+        of_cloc (uniq_bor_loc bor') = fst (uniq_bor_future bor π) →
+        post -[bor'] mask π).
   Proof.
-    move => Alv tid postπ mask iκs vπl.
-    iIntros "#LFT #TIME #PROPH #UNIQ #E L $ TY #Obs" => /=.
+    iIntros (Alv tid postπ mask iκs [l [u []]]) "#LFT #TIME #PROPH #UNIQ #E L $ (Hptr & Hperm & _) #Obs".
     iDestruct (Alv with "L E") as "#Alv".
-    destruct vπl as [l [u []]].
     destruct u as [[[[[c [l' x]] ξi] d] g] ξidx].
-    iDestruct "TY" as "(Hptr & Hperm & _)".
-    iDestruct "Hptr" as (pl d' Heval) "(#Hd & _ & %Hphys)".
-    simpl in Hphys.
-    injection Hphys => ?; subst pl.
-    iDestruct "Hperm" as (pl' d'' Heval') "(#Hd' & Huniq & %Hphys')".
-    simpl in Hphys'.
-    injection Hphys' => ?; subst pl'.
-    iDestruct "Huniq" as "[#Incl [%Hineq [UniqBody #PtBase]]]".
+    iDestruct "Hptr" as (vp Hp w d0 [-> Hw]) "[_ _]". simpl in Hw. simplify_eq.
+    iDestruct "Hperm" as (vq Hq w' d'' [-> _]) "[#Hd' Huniq]".
+    iDestruct "Huniq" as "[#Incl [%Hineq [UniqBody _]]]".
     rewrite /PPtrMutBorrow.
-    wp_bind ptr.
-    iApply wp_wand.
-    iApply wp_eval_path => //.
-    iIntros (? ->).
-    wp_bind perm_ref.
-    iApply wp_wand.
-    iApply wp_eval_path => //.
-    iIntros (? ->).
+    wp_bind ptr. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).
+    wp_bind perm_ref. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).
     iApply wp_fupd.
     iApply (wp_cumulative_time_receipt2 with "TIME"); [trivial |]; iIntros "⧗".
-    destruct d'' as [ | ] => //=; first lia.
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
     1: solve_ndisj.
-
-    destruct c as [cl [ | ]] eqn:?.
-    2: {
-      iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf _]]]". { solve_ndisj. }
-      iDestruct (guards_transitive with "Ghalf Alv") as "#HguardsK".
-      iMod (uniq_body_acc with "LFT UNIQ HguardsK UniqBody H1") as "[Hown _]"; [solve_ndisj|..].
-      wp_rec.
-      iMod (uniq_payload_run with "[] H2 Hown") as "(_ & _ & _ & Hfalse)";
-        [rewrite /lazyE; solve_ndisj| |].
-      { iApply (guards_transitive with "HguardsK Incl"). }
-      iDestruct (heap_cloc_mapsto_fancy_vec_length_eq with "Hfalse") as "%Hfalse".
-      by simpl in Hfalse. }
-    destruct d.
-    { (* The contents at depth 0 are absurd. *)
-      iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf _]]]". { solve_ndisj. }
-      iDestruct (guards_transitive with "Ghalf Alv") as "#HguardsK".
-      iMod (uniq_body_acc with "LFT UNIQ HguardsK UniqBody H1") as "[Hown _]"; [solve_ndisj|..].
-      wp_rec.
-      iMod (uniq_payload_run with "[] H2 Hown") as "(_ & _ & Hf & _)";
-        [rewrite /lazyE; solve_ndisj| |].
-      { iApply (guards_transitive with "HguardsK Incl"). }
-      by iDestruct "Hf" as "[]". }
-
     wp_rec.
-    rewrite /tctx_elt_interp/ty_own/=.
 
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
     iDestruct (guards_transitive with "Ghalf Alv") as "HguardsK".
     change 2 with (1 + 1).
     iDestruct "⧗" as "(⧗ & ⧗')".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ Hd'") as "(Hd'' & £)"; [trivial|..].
-    iDestruct "£" as "[£ [£1' £1]]".
-    iDestruct (lc_weaken 1 with "£") as "£f"; [rewrite /advance_credits; nia|].
+    iDestruct (lc_weaken (1 + 1) with "£") as "[£1' £f]"; [rewrite /advance_credits; nia|].
 
-    iMod (uniq_body_transform (points_to_ty ty) ty (l, x) x (S d) g ξi ξidx κ tid (l, []) (l, repeat [] ty.(ty_size)) _ _ (pair_with_loc_trackedₛ l) (λ d g, (S d, g)) with "LFT PROPH UNIQ Incl [] [⧗' £1'] HguardsK H1 £f [UniqBody]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
+    iMod (uniq_body_transform (points_to_ty ty) ty (l, x) x d g ξi ξidx κ tid c (l, []) _ _ (pair_with_loc_trackedₛ l) (λ d g, (S d, g)) with "LFT PROPH UNIQ Incl [] [⧗' £1'] HguardsK H1 £f [UniqBody]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
     { iApply guards_refl. }
-    { iIntros "[gho pt]".
+    { iIntros "[gho _]".
       iMod (lc_fupd_elim_later with "£1' gho") as "gho".
-      iDestruct "gho" as "[phys [free gho]]".
+      destruct d as [|d]; [done|].
+      iDestruct "gho" as "[pt [free gho]]".
       iModIntro.
       iDestruct (ty_gho_own_depth_mono _ _ _ (S d) g with "gho") as "[gho _]". { lia. } { lia. }
-      iFrame "gho".
-      simpl.
-      rewrite -(ty.(ty_size_eq) x tid).
-      rewrite <- heap_cloc_mapsto_fancy_empty.
-      iFrame "phys". iSplitL "⧗'".
+      iFrame "gho". rewrite /cbytes /=. iFrame "pt". iSplitL "⧗'".
       { iIntros (d2 g2) "⧖2".
         iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "#⧖2'".
         { rewrite /lazyE. solve_ndisj. }
         iModIntro. iApply (persistent_time_receipt_mono with "⧖2'"). simpl. lia. }
       iIntros (x2 d2 g2) "(gho & pt2)". iModIntro.
-      iFrame "pt". simpl.
-      replace (length (ty_phys ty x tid)) with (length (ty_phys ty x2 tid)).
-      2: { repeat rewrite ty_size_eq. done. }
-      rewrite <- heap_cloc_mapsto_fancy_empty.
-      iFrame.
-     }
-    { iApply (uniq_body_loc with "UniqBody"). intros ?. simpl.
-      by rewrite !heap_complete_mapsto_fancy_empty. }
+      iFrame "free gho pt2". rewrite /cbytes bytes_own_zst_true //. }
+    { iApply (uniq_body_loc with "UniqBody"). intros ?. rewrite /cbytes !bytes_own_zst_true //. }
     iDestruct ("Halfback" with "H1 H2") as "X".
     iMod (fupd_mask_mono with "X") as "L". { set_solver. }
     iModIntro.
-    iExists -[((l, repeat [] (ty.(ty_size))), x, ζi, (S d), g, ζidx)].
-    iFrame "L". iFrame "UniqBody". iFrame "Incl".
-    iSplit. 
-    - iExists _, _.
-      iSplit => //.
-      iFrame.
-      iSplit => //.
-      iSplitR; first (iPureIntro; lia).
-      rewrite <- heap_cloc_mapsto_empty. iApply guards_true.
+    iExists -[((l, []), x, ζi, d, g, ζidx)].
+    iFrame "L". iSplit.
+    - iSplit; [|done]. rewrite tctx_val_val. iExists _. iFrame "Hd''".
+      iSplit; [done|]. iFrame "Incl UniqBody". iSplit; [iPureIntro; lia|].
+      rewrite -(heap_cloc_mapsto_empty l 0). iApply guards_true.
     - iCombine "Obs Obs2" as "Obs3".
       iApply (proph_obs_impl with "Obs3"). intros π [[_ Ha] Hb].
       apply Ha; intuition.

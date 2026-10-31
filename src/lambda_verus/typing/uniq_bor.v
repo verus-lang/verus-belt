@@ -472,17 +472,6 @@ Section typing.
     eqtype E L (&uniq{κ} ty) (&uniq{κ} ty') idₛ idₛ.
   Proof. move=> [??][??]. by split; apply uniq_subtype. Qed.
   
-  Definition uniq_bor_loc {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : cloc :=
-      match m with (l, x0, ξi, d', g', idx) => l end.
-  
-  Definition uniq_bor_current {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : ~~ 𝔄 :=
-      match m with (l, x0, ξi, d', g', idx) => x0 end.
-      
-  Definition uniq_bor_future {𝔄} (m: ~~ (uniq_borₛ 𝔄)) (π : proph_asn) : 𝔄 := (vπ m π).2.
-      
-  Definition uniq_bor_ξi {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : positive :=
-      match m with (l, x0, ξi, d', g', idx) => ξi end.
-      
   Definition uniq_bor_update {𝔄} (m: ~~ (uniq_borₛ 𝔄)) (new: ~~ 𝔄) (m': ~~ (uniq_borₛ 𝔄)) :=
       match m, m' with
         (l, x0, ξi, _, _, _), (l', x0', ξi', _, _, _) =>
