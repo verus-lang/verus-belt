@@ -12,7 +12,8 @@ This file defines, following MiniRust
 - [encode_value] and [decode_value], and their laws: the round trip
   [decode_value m (encode_value m v) = Some v] for well-formed [v], the length law
   [length (encode_value m v) = mty_size m], and monotonicity of [decode_value] with respect
-  to the "less defined" order on bytes ([Uninit] is below everything).
+  to the "less defined" order on bytes ([Uninit] is below everything), and well-formedness
+  of decoded values ([decode_value_wf]).
 
 Deviations from MiniRust (see [design_docs/minirust-memory-model.md]):
 - Locations are abstract (block, offset) pairs, so a pointer is not an integer
@@ -21,6 +22,9 @@ Deviations from MiniRust (see [design_docs/minirust-memory-model.md]):
 - [PTR_SIZE] is abstract: it is sealed, and only [PTR_SIZE_pos] is exported.
 - Integers of [n] bytes are encoded as [n] little-endian [Init] bytes of the
   two's complement representation.
+- [decode_int] fails on an integer out of the range of its type. This only happens for a
+  signed type of size 0, which MiniRust does not have; it makes every decoded value
+  well-formed.
 - An enum has a simple tag (an integer of type [tag]) at offset 0, and the data
   of variant [i] at offset [int_size tag]; there is no discriminator tree.
 - [AbstractByte] has a case [Word w], for the legacy one-word memory operations
@@ -290,8 +294,9 @@ Section repr.
     if decide (length bs = int_size it) then
       ds ← mapM byte_of bs;
       let u := le_value ds in
-      Some (if int_signed it && bool_decide (int_modulus it / 2 ≤ u)
-            then u - int_modulus it else u)
+      let z := if int_signed it && bool_decide (int_modulus it / 2 ≤ u)
+               then u - int_modulus it else u in
+      if decide (int_in_range it z) then Some z else None
     else None.
 
   (** *** Booleans *)
@@ -469,7 +474,10 @@ Section repr.
     rewrite /encode_int mapM_byte_of_Init; [|apply le_digits_range]. simpl.
     have HM := int_modulus_pos it.
     have Hu := Z.mod_pos_bound z (int_modulus it) HM.
-    rewrite le_value_digits; [|done]. f_equal.
+    rewrite le_value_digits; [|done].
+    assert ((if int_signed it && bool_decide (int_modulus it / 2 ≤ z `mod` int_modulus it)
+             then z `mod` int_modulus it - int_modulus it else z `mod` int_modulus it) = z) as ->;
+      [|by rewrite /= decide_True].
     have Hdiv := Z.div_mod (int_modulus it) 2.
     have Hmod2 := Z.mod_pos_bound (int_modulus it) 2.
     rewrite /int_in_range in Hz. destruct (int_signed it); simpl.
@@ -688,4 +696,39 @@ Section repr.
   Corollary decode_encode_value_le m v bs :
     mty_wf m → val_wf m v → bytes_le (encode_value m v) bs → decode_value m bs = Some v.
   Proof. intros. eapply decode_value_mono; [done|]. by apply decode_encode_value. Qed.
+
+  (** *** Decoded values are well-formed *)
+  Lemma decode_int_in_range it bs z : decode_int it bs = Some z → int_in_range it z.
+  Proof.
+    rewrite /decode_int. case_decide; [|done]. destruct (mapM byte_of bs); simpl; [|done].
+    case_decide; [|done]. by intros [= <-].
+  Qed.
+
+  Theorem decode_value_wf m bs v : mty_wf m → decode_value m bs = Some v → val_wf m v.
+  Proof.
+    revert bs v. induction m as [it| | |fs sz IH|vars tag sz IH] using mty_ind';
+      intros bs v Hm Hd.
+    - apply fmap_Some_1 in Hd as (z & Hz & ->). constructor. by eapply decode_int_in_range.
+    - apply fmap_Some_1 in Hd as (b & _ & ->). constructor.
+    - apply fmap_Some_1 in Hd as (l & _ & ->). constructor.
+    - inversion Hm as [| | |? ? _ _ Hwf|]; simplify_eq.
+      rewrite decode_value_tuple in Hd. case_decide; [|done].
+      apply fmap_Some_1 in Hd as (vs & Hvs & ->). apply mapM_Some in Hvs.
+      have Hlen := Forall2_length _ _ _ Hvs.
+      constructor. apply Forall2_lookup. intros k.
+      destruct (fs !! k) as [f|] eqn:Hf, (vs !! k) as [w|] eqn:Hw; try constructor.
+      + eapply (Forall_lookup_1 _ _ _ _ IH Hf); [exact (Forall_lookup_1 _ _ _ _ Hwf Hf)|].
+        exact (Forall2_lookup_lr _ _ _ _ _ _ Hvs Hf Hw).
+      + exfalso. apply lookup_ge_None in Hw. apply lookup_lt_Some in Hf. lia.
+      + exfalso. apply lookup_ge_None in Hf. apply lookup_lt_Some in Hw. lia.
+    - inversion Hm as [| | | |? ? ? Hvars Htag]; simplify_eq.
+      rewrite decode_value_enum in Hd. case_decide; [|done].
+      destruct (decode_int tag (take (int_size tag) bs)) as [t|] eqn:Ht; simpl in Hd; [|done].
+      case_decide as Ht0; [|done].
+      destruct (vars !! Z.to_nat t) as [vm|] eqn:Hvm; simpl in Hd; [|done].
+      apply fmap_Some_1 in Hd as (d & Hd & ->).
+      destruct (Forall_lookup_1 _ _ _ _ Hvars Hvm) as [_ Hwfvm].
+      econstructor; [done|done|by eapply decode_int_in_range|].
+      by eapply (Forall_lookup_1 _ _ _ _ IH Hvm).
+  Qed.
 End repr.

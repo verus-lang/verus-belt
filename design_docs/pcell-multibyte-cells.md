@@ -1,6 +1,7 @@
 # PCell on the byte memory model: multi-byte cells
 
-Status: steps 1–3 implemented (2026-10-30), branch `memory-model`; see §9 Outcome.
+Status: steps 1–3 implemented (2026-10-30), branch `memory-model`; see §9 Outcome. §10 step 1
+done (2026-10-31); see §11.
 Context: `design_docs/minirust-memory-model.md` (stages 1–5). `pcell` is the last user of the
 legacy word layer.
 
@@ -442,3 +443,87 @@ next to the legacy `pcellₛ n`; the legacy one is deleted in stage 5.
    - the rules `from_own`, `to_own`, `borrow`, `borrow_mut`, the atomics, and the move rule;
    - ports of `pcell_example`, `ra` and `protocol`.
 6. **Stage 5:** delete the legacy layer.
+
+## 11. Outcome: §10 step 1 (2026-10-31)
+
+All five items are done at the lemma level, with no typing-layer changes. No `Admitted`; no
+new axioms (all tests are closed under the global context). The cell lemmas moved from
+`heap.v` to a new file, `lang/heap_cells.v`.
+
+### Changes to the invariants (`heap.v`)
+
+- **Nestings.** A new persistent registry `NS` of nestings `(g0, g, o)`, with fragments
+  `gnest g0 g o` ("`g` is a cell at the offset `o` of the fancy value of `g0`") and their
+  transitive closure `gpath g0 g o` (with `gpath_refl`, `gpath_nest`). D3 (`gc_pure`) now
+  also says that while `g0` is live, its contents at `o` are the byte-cells of `g`. This
+  holds forever because writes through `g0` only replace plain sub-values.
+- **Rows of writes in flight.** `cells_live` now says that the rows of a group with a write
+  in flight *contain* its byte-cells (`row_has`), not that they start with them.
+- **The bank of cell writes.** An entry guards the location side of a *root* `g0` in which
+  the written group sits (at an offset), not the group's own location side.
+- **Read witnesses** (`cells_wit`) are either all plain bytes, or a plain sub-value of a
+  group `g` (whose permission the reader has) nested in a root `g0` whose byte-cells the
+  edges of the range point to.
+- `cells_wf` also records that the mtys of groups are well formed.
+
+### Items
+
+1. **Sub-position writes and reads through cells.** The access target is a plain sub-value
+   (`fv_sub m fv o' m' fvs` with `fv_cells fvs = []`) of a group `g`, which may be nested
+   (`gpath g0 g o`) in a root `g0` whose location side is guarded. The access is at
+   `l0 +ₗ (o + o')`.
+   - Context lemmas: `bytes_ctx_cell_write_begin` / `_end` (the end takes any bytes `bs'`
+     with `decode_value m' bs' = Some v`, and the new fancy value `fvn` with
+     `fv_upd m fv o' m' (fv_lift v) fvn`; it re-proves D3 with `frepr_upd`),
+     `cells_ctx_read_sub`, `bytes_ctx_cell_lookup_sub` and
+     `bytes_ctx_cell_read_begin_guarded`.
+   - WP rules: `wp_pcell_store_na_sub`, `wp_pcell_store_sc_sub`,
+     `wp_pcell_memcopy_into_sub`, `wp_pcell_load_na_sub` and `wp_pcell_load_sc_sub`.
+   - The whole-value guarded rules (`wp_pcell_load_*_guarded` and `wp_pcell_store_*_guarded`)
+     are now corollaries. They need `fv_cells fv = []` instead of `gnocell g`.
+2. **Access to an inner cell while the outer one is live.** `bytes_ctx_gnest` (and the WP
+   rule `wp_pcell_gnest`) record a nesting from `gdyn g0 fv0` and
+   `fv_sub m0 fv0 o m (FVCell g)`. After that the rules of item 1 apply to `g` with root
+   `g0`. D3 of the outer group says nothing about the inner bytes, so it is preserved.
+3. **Typed moves of groups that embed cells.**
+   - `bytes_ctx_untethered_rewrite` rewrites a group in transit with any bytes that decode
+     to the same value. It also rewrites the plain bytes of the embedded groups: each byte is
+     the final value of an untethered row, and the edge is owned by the contents of the
+     innermost group at that position.
+   - D3 is re-proved for every group by well-founded induction from the root down
+     (`rewrite_pure`, using `frepr_rebytes`).
+   - `bytes_ctx_pcell_retether_gen` combines this with retethering; it needs no `gnocell`.
+   - `wp_pcell_move` (in `pcell_tests.v`) is the typed move `Store m (Load m)` for any
+     group. Nestings stay valid across moves.
+4. **`decode_value_wf`** (`minirust.v`, `decode_int` now checks the range of the type).
+   `wp_pcell_move` no longer takes a well-formedness hypothesis.
+5. **Typed compare-and-exchange `MCAS m l e1 e2`** (`lang.v`, with races in `races.v`;
+   `safe_nonracing` and adequacy hold).
+   - The class of mtys compared: any `m`. The comparison is equality of the decoded
+     `Value`s, so padding is not compared and pointers compare as abstract locations. A
+     failure is a sequentially consistent read, and a success an SC write.
+   - WP rules: `wp_mcas` on `l ↦b bs`, and `wp_pcell_mcas_sub` through a cell (the
+     sub-value's own mty, so no mixed-size accesses). Both report success or failure.
+
+### Tests (`lang/pcell_tests.v`, all closed under the global context)
+
+The earlier tests are ported. New tests:
+- `test_pcell_sub_write`: write the first field of a `PCell<(i32, PCell<i32>)>` whose second
+  field is a cell, then read it;
+- `test_pcell_inner_access`: write and read the inner cell, and read the outer field, with
+  the outer cell live;
+- `test_pcell_typed_move_nested`: a typed move of `PCell<(i32, PCell<i32>)>`, then a read
+  through the inner cell at the new location;
+- `test_mcas_int` (a success then a failure on plain bytes) and `test_pcell_mcas`;
+- `test_pcell_memcopy_into`.
+
+### Deviations and limits
+
+- **Accesses through cells read or write only plain sub-values.** A guarded read of a
+  whole group whose value has cells is no longer offered. It would race with writes to the
+  embedded groups, whose permissions the reader does not have. Moves (untether) still handle
+  any group.
+- **Nestings must be recorded explicitly** (`bytes_ctx_gnest`) before accessing an inner
+  cell through its root.
+- **The generalised `wp_pcell_move` lives in `pcell_tests.v`** (it uses `wp_bind`), as
+  before.

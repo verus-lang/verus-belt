@@ -18,8 +18,8 @@ The language has two layers, which coexist until the legacy layer is deleted
   [Word], see [word_to_byte]);
 - the MiniRust layer: values [MLit v] (with [v : Value]), typed loads and
   stores [Load o m e] and [Store o m e1 e2] of any [m : mty] (which decode_value and
-  encode_value [AbstractByte]s), a byte-level [MemCopy], and constructors and
-  projections on [Value]s.
+  encode_value [AbstractByte]s), a byte-level [MemCopy], a typed compare-and-exchange
+  [MCAS m e0 e1 e2], and constructors and projections on [Value]s.
 Memory holds [AbstractByte]s for both layers. *)
 Open Scope loc_scope.
 
@@ -65,7 +65,8 @@ Inductive expr :=
 | VariantTag (e : expr)
 | VariantData (e : expr)
 | ToLit (e : expr)
-| OfLit (e : expr).
+| OfLit (e : expr)
+| MCAS (m : mty) (e0 e1 e2 : expr).
 
 Arguments App _%E _%E.
 Arguments Case _%E _%E.
@@ -82,7 +83,7 @@ Fixpoint is_closed (X : list string) (e : expr) : bool :=
   | MkTuple el => forallb (is_closed X) el
   | Read _ e | Alloc e | Fork e | Load _ _ e | Proj _ e | MkVariant _ e
   | VariantTag e | VariantData e | ToLit e | OfLit e => is_closed X e
-  | CAS e0 e1 e2 => is_closed X e0 && is_closed X e1 && is_closed X e2
+  | CAS e0 e1 e2 | MCAS _ e0 e1 e2 => is_closed X e0 && is_closed X e1 && is_closed X e2
   end.
 
 Class Closed (X : list string) (e : expr) := closed : is_closed X e.
@@ -166,7 +167,10 @@ Inductive ectx_item :=
 | VariantTagCtx
 | VariantDataCtx
 | ToLitCtx
-| OfLitCtx.
+| OfLitCtx
+| MCasLCtx (m : mty) (e1 e2 : expr)
+| MCasMCtx (m : mty) (v0 : val) (e2 : expr)
+| MCasRCtx (m : mty) (v0 : val) (v1 : val).
 
 Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
   match Ki with
@@ -196,6 +200,9 @@ Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
   | VariantDataCtx => VariantData e
   | ToLitCtx => ToLit e
   | OfLitCtx => OfLit e
+  | MCasLCtx m e1 e2 => MCAS m e e1 e2
+  | MCasMCtx m v0 e2 => MCAS m (of_val v0) e e2
+  | MCasRCtx m v0 v1 => MCAS m (of_val v0) (of_val v1) e
   end.
 
 (** Substitution *)
@@ -228,6 +235,7 @@ Fixpoint subst (x : string) (es : expr) (e : expr)  : expr :=
   | VariantData e => VariantData (subst x es e)
   | ToLit e => ToLit (subst x es e)
   | OfLit e => OfLit (subst x es e)
+  | MCAS m e0 e1 e2 => MCAS m (subst x es e0) (subst x es e1) (subst x es e2)
   end.
 
 Definition subst' (mx : binder) (es : expr) : expr → expr :=
@@ -556,6 +564,29 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
 | OfLitS l v σ :
     lit_to_value l = Some v →
     head_step (OfLit (Lit l)) σ [] (MLit v) σ []
+(** MiniRust layer: a typed compare-and-exchange [MCAS m l e1 e2]. It compares the value
+    decoded at [m] from the bytes at [l] with the expected value [e1] (by equality of
+    [Value]s, for any [m]; padding is not compared), and if they are equal, writes the
+    encoding of the new value [e2]. It is atomic (sequentially consistent). As for the
+    legacy [CAS], a failing [MCAS] is a read; a succeeding one is a write, which detects
+    concurrent non-atomic reads by reducing to a stuck term. *)
+| MCasFailS l m e1 v1 e2 v2 bs v σ :
+    to_val e1 = Some (MLitV v1) → to_val e2 = Some (MLitV v2) →
+    mem_range is_reading σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v →
+    v ≠ v1 →
+    head_step (MCAS m (Lit $ LitLoc l) e1 e2) σ [] (MLit (VBool false)) σ []
+| MCasSucS l m e1 v1 e2 v2 bs σ :
+    to_val e1 = Some (MLitV v1) → to_val e2 = Some (MLitV v2) → val_wf m v2 →
+    mem_range (.= RSt 0) σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v1 →
+    head_step (MCAS m (Lit $ LitLoc l) e1 e2) σ
+              []
+              (MLit (VBool true)) (mem_write l (encode_value m v2) σ.1, σ.2)
+              []
+| MCasStuckS l m e1 v1 e2 v2 bs σ :
+    to_val e1 = Some (MLitV v1) → to_val e2 = Some (MLitV v2) → val_wf m v2 →
+    mem_range is_reading σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v1 →
+    ¬ mem_range (.= RSt 0) σ.1 l bs →
+    head_step (MCAS m (Lit $ LitLoc l) e1 e2) σ [] stuck_term σ []
     .
 
 (** Basic properties about the language *)
@@ -606,8 +637,8 @@ Lemma fill_item_no_val_inj Ki1 Ki2 e1 e2 :
   to_val e1 = None → to_val e2 = None →
   fill_item Ki1 e1 = fill_item Ki2 e2 → Ki1 = Ki2.
 Proof.
-  destruct Ki1 as [| | |v1 vl1 el1| | | | | | | | | | | | | | | |vl1 el1| | | | | |],
-           Ki2 as [| | |v2 vl2 el2| | | | | | | | | | | | | | | |vl2 el2| | | | | |];
+  destruct Ki1 as [| | |v1 vl1 el1| | | | | | | | | | | | | | | |vl1 el1| | | | | | | | |],
+           Ki2 as [| | |v2 vl2 el2| | | | | | | | | | | | | | | |vl2 el2| | | | | | | | |];
   intros He1 He2 EQ; try discriminate; simplify_eq/=;
     repeat match goal with
     | H : to_val (of_val _) = None |- _ => by rewrite to_of_val in H
@@ -906,13 +937,15 @@ Fixpoint expr_beq (e : expr) (e' : expr) : bool :=
   | MkVariant t e, MkVariant t' e' => bool_decide (t = t') && expr_beq e e'
   | VariantTag e, VariantTag e' | VariantData e, VariantData e'
   | ToLit e, ToLit e' | OfLit e, OfLit e' => expr_beq e e'
+  | MCAS m e0 e1 e2, MCAS m' e0' e1' e2' =>
+    bool_decide (m = m') && expr_beq e0 e0' && expr_beq e1 e1' && expr_beq e2 e2'
   | _, _ => false
   end.
 Lemma expr_beq_correct (e1 e2 : expr) : expr_beq e1 e2 ↔ e1 = e2.
 Proof.
   revert e1 e2; fix FIX 1.
-    destruct e1 as [ | | | | |? el1 | | | | | |? el1 | | | | | | | |el1 | | | | | |],
-             e2 as [ | | | | |? el2 | | | | | |? el2 | | | | | | | |el2 | | | | | |]; simpl; try done;
+    destruct e1 as [ | | | | |? el1 | | | | | |? el1 | | | | | | | |el1 | | | | | | |],
+             e2 as [ | | | | |? el2 | | | | | |? el2 | | | | | | | |el2 | | | | | | |]; simpl; try done;
   rewrite ?andb_True ?bool_decide_spec ?FIX;
   try (split; intro; [destruct_and?|split_and?]; congruence).
   - match goal with |- context [?F el1 el2] => assert (F el1 el2 ↔ el1 = el2) end.

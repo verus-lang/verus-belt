@@ -18,6 +18,7 @@ Class lrustGpreS Σ := HeapGpreS {
   #[global] lrustGpreS_heap_greg :: ghost_mapG Σ positive (mty * list positive);
   #[global] lrustGpreS_heap_gdyn :: ghost_mapG Σ positive FValue;
   #[global] lrustGpreS_heap_gnc :: ghost_mapG Σ positive ();
+  #[global] lrustGpreS_heap_gnest :: ghost_mapG Σ (positive * positive * nat) ();
   #[global] lrustGpreS_heap_cw :: inG Σ (gmap_viewR positive (agreeR (prodO
     (leibnizO (loc * nat * nat * FValue)) (laterO (iPropO Σ)))));
   #[global] lrustGpreS_heap_na_inv :: na_invG Σ;
@@ -34,6 +35,7 @@ Definition lrustΣ : gFunctors :=
     ghost_mapΣ positive (mty * list positive);
     ghost_mapΣ positive FValue;
     ghost_mapΣ positive ();
+    ghost_mapΣ (positive * positive * nat) ();
     GFunctor (gmap_viewRF positive (agreeRF (prodOF (leibnizO (loc * nat * nat * FValue)) (laterOF idOF))));
     alc_logicΣ;
     na_invΣ
@@ -58,6 +60,7 @@ Proof.
   iMod (ghost_map_alloc_empty (K:=positive) (V:=mty * list positive)) as (rγ) "Hrγ".
   iMod (ghost_map_alloc_empty (K:=positive) (V:=FValue)) as (dγ) "Hdγ".
   iMod (ghost_map_alloc_empty (K:=positive) (V:=())) as (nγ) "Hnγ".
+  iMod (ghost_map_alloc_empty (K:=positive * positive * nat) (V:=())) as (sγ) "Hsγ".
   iMod (own_alloc (gmap_view_auth (V:=agreeR (prodO (leibnizO (loc * nat * nat * FValue))
     (laterO (iPropO Σ)))) (DfracOwn 1) (∅ : gmap positive _))) as (wγ) "Hwγ";
     first by apply gmap_view_auth_valid.
@@ -65,10 +68,10 @@ Proof.
   iMod (time_init with "H£1") as (Htime) "[TIME Htime]"; [done|].
   iMod (na_alloc) as (atomic_poolname) "pool".
   iMod (atomic_lock_ctr_alloc) as (atomic_lock_ctr_name) "ctr".
-  set (Hheap := HeapGS _ _ _ _ _ _ _ _ _ vγ bγ kγ rγ dγ nγ wγ fγ atomic_poolname atomic_lock_ctr_name).
+  set (Hheap := HeapGS _ _ _ _ _ _ _ _ _ _ vγ bγ kγ rγ dγ nγ sγ wγ fγ atomic_poolname atomic_lock_ctr_name).
   iModIntro. iExists _, [_], _, _. simpl.
   iDestruct (Hwp (LRustGS _ _ _ _ Hheap Htime) with "H£2 TIME") as "$".
-  iSplitL. { iDestruct (@bytes_ctx_empty _ Hheap _ with "Hbγ [Hkγ] Hrγ Hdγ Hnγ [Hwγ]") as "HB".
+  iSplitL. { iDestruct (@bytes_ctx_empty _ Hheap _ with "Hbγ [Hkγ] Hrγ Hdγ Hnγ Hsγ [Hwγ]") as "HB".
     { by rewrite /bbank_auth fmap_empty. } { by rewrite /cwbank_auth fmap_empty. } iFrame "Htime".
     iExists ∅. iFrame "Hfγ". iSplitL "Hvγ HB".
     { iExists ∅, ∅. iFrame. iPureIntro. apply phys_rel_empty. }
