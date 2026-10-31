@@ -529,6 +529,44 @@ Section pcell_tests.
     iIntros "!>" (v) "[[Hls0 Hgd1] %Hv]". have -> : v = VInt 9 by apply fv_lift_int, Hv.
     iApply "HΦ". iExists bs, g0, cs0, g1. iFrame.
   Qed.
+
+  (** A verbatim copy of plain bytes into a cell, then a read through the cell. *)
+  Lemma test_pcell_memcopy_into E l l2 bs bs2 :
+    ↑naN ⊆ E → length bs = 4%nat → decode_value (MInt i32) bs2 = Some (VInt 7) →
+    {{{ ▷ l ↦b bs ∗ ▷ l2 ↦b bs2 }}}
+      Store Na1Ord (MInt i32) (#l) (MLit (VInt 5)) ;;
+      MemCopy Na1Ord 4 (#l) (#l2) ;; Load ScOrd (MInt i32) (#l) @ E
+    {{{ RET MLitV (VInt 7); ∃ g cs, loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 7) ∗ l2 ↦b bs2 }}}.
+  Proof.
+    iIntros (? Hlen Hd2 Φ) "[Hl Hl2] HΦ".
+    wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done|apply int5_wf|done|].
+    iIntros "!> Hl". wp_seq.
+    iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl");
+      [done|apply Nat.ltb_lt; reflexivity|constructor|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
+    iIntros (g cs) "Hls Hgd _".
+    iDestruct "Hls" as "[#Hg Hedges]".
+    iAssert (loc_side l g (MInt i32) cs) with "[Hedges]" as "Hls"; [by iFrame "Hg"|].
+    iAssert (loc_side l g (MInt i32) cs &&{↑naN; 0}&&> loc_side l g (MInt i32) cs)%I
+      as "#Guard"; [iApply guards_refl|].
+    iAssert (□ (loc_side l g (MInt i32) cs -∗ loc_side l g (MInt i32) cs ∗
+      (loc_side l g (MInt i32) cs -∗ loc_side l g (MInt i32) cs)))%I as "#HP".
+    { iIntros "!> Hls". iFrame. by iIntros "Hls". }
+    iMod lc_zero as "£".
+    have -> : (Lit (LitLoc l)) = (Lit (LitLoc (l +ₗ (0 + 0)%nat))) by rewrite /= shift_loc_0_nat.
+    wp_bind (MemCopy _ _ _ _).
+    iApply (wp_pcell_memcopy_into_sub _ l g (MInt i32) cs g 0 (MInt i32) cs (FVInt 5) 0 (MInt i32)
+      (FVInt 5) (FVInt 7) l2 bs2 (VInt 7) _ _ 0 with "[$Guard $HP $Hls $Hgd $£ $Hl2]").
+    { done. } { apply fv_sub_here. } { done. } { apply fv_upd_here. } { done. }
+    { iSplitR; [iApply gpath_refl|iExact "Hg"]. }
+    iIntros "!> (Hls & Hgd & Hl2)". wp_seq. rewrite /= shift_loc_0_nat.
+    iMod lc_zero as "£".
+    iAssert ((loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 7)) &&{↑naN; 0}&&>
+      (loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 7)))%I as "#Guard2"; [iApply guards_refl|].
+    iApply (wp_pcell_load_sc_guarded _ l g (MInt i32) cs (FVInt 7) with "[$Guard2 $Hls $Hgd $£]"); [done|done| |].
+    { iSplitR; [|iExact "Hg"]. iIntros "!> [Hls Hgd]". iSplitL "Hls Hgd"; [iFrame|]. iIntros "Hls Hgd". iFrame. }
+    iIntros "!>" (v) "[[Hls Hgd] %Hv]". have -> : v = VInt 7 by apply fv_lift_int, Hv.
+    iApply "HΦ". iExists g, cs. iFrame.
+  Qed.
 End pcell_tests.
 
 Print Assumptions test_pcell_read.
@@ -544,3 +582,4 @@ Print Assumptions test_pcell_inner_access.
 Print Assumptions test_mcas_int.
 Print Assumptions test_pcell_mcas.
 Print Assumptions test_pcell_typed_move_nested.
+Print Assumptions test_pcell_memcopy_into.
