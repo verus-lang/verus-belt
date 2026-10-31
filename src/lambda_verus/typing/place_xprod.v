@@ -54,6 +54,33 @@ Proof.
   simpl in Hiso. rewrite Hiso. done.
 Qed.
 
+(** The same for fancy bytes. *)
+Lemma syn_fbytes_xprod_cons {𝔄 𝔅l} R (y: ~~𝔄) (ys: ~~ (Π! 𝔅l)) fbs :
+  syn_fbytes (𝔄:=Π! (𝔄 :: 𝔅l)) R (y -:: ys) fbs ↔ syn_fbytes (𝔄:=𝔄 * Π! 𝔅l) R (y, ys) fbs.
+Proof.
+  rewrite /syn_fbytes /syn_bsize.
+  set M := mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) ys)).
+  change (syn_mty (Π! (𝔄 :: 𝔅l))) with (seq_tuple (syn_mty 𝔄 :: (syn_mty <$> 𝔅l))).
+  change (syn_mty (𝔄 * Π! 𝔅l)) with (seq_tuple [syn_mty 𝔄; seq_tuple (syn_mty <$> 𝔅l)]).
+  change (syn_fval (𝔄:=Π! (𝔄 :: 𝔅l)) (y -:: ys)) with
+    (FVTuple <$> (fv ← syn_fval y; fvs ← M; Some (fv :: fvs))).
+  change (syn_fval (𝔄:=𝔄 * Π! 𝔅l) (y, ys)) with
+    (fv₀ ← syn_fval y; fv₁ ← FVTuple <$> M; Some (FVTuple [fv₀; fv₁])).
+  rewrite !mty_size_seq_tuple !seq_size_cons seq_size_nil mty_size_seq_tuple.
+  destruct (syn_fval y) as [fv|]; simpl; [|split; by intros (_ & ? & ? & _)].
+  destruct M as [fvs|]; simpl; [|split; by intros (_ & ? & ? & _)].
+  split; intros [Hlen (fv' & [= <-] & Hrep)]; (split; [lia|]); eexists; (split; [done|]).
+  - apply frepr_seq_tuple_cons in Hrep as (f1 & f2 & -> & Hl1 & H1 & H2).
+    apply frepr_seq_tuple_cons. exists f1, f2. split_and!; [done..|].
+    apply frepr_seq_tuple_cons. exists f2, []. rewrite app_nil_r. split_and!; [done| |done|].
+    + apply frepr_seq_tuple in H2 as [? _]. by rewrite mty_size_seq_tuple.
+    + by apply frepr_seq_tuple_nil.
+  - apply frepr_seq_tuple_cons in Hrep as (f1 & f2' & -> & Hl1 & H1 & H2).
+    apply frepr_seq_tuple_cons in H2 as (f2 & f3 & -> & _ & H2 & H3).
+    apply frepr_seq_tuple_nil in H3 as [-> _]. rewrite app_nil_r.
+    apply frepr_seq_tuple_cons. by exists f1, f2.
+Qed.
+
 Section xprod.
   Context `{!typeG Σ}.
 
@@ -62,8 +89,8 @@ Section xprod.
       cbytes ty y (cloc_take l (ty_bsize ty)) ∗ cbytes (Π! tyl) ys (cloc_skip l (ty_bsize ty)).
   Proof.
     rewrite -(cbytes_pair (ty * Π! tyl) ty (Π! tyl)).
-    rewrite /cbytes /bytes_own. setoid_rewrite ty_bytes_syn.
-    by setoid_rewrite syn_bytes_xprod_cons.
+    rewrite /cbytes. apply bytes_own_iff=> R fbs. rewrite !ty_fbytes_syn.
+    apply syn_fbytes_xprod_cons.
   Qed.
 
   Lemma lty_size_xprod_cons {𝔄 𝔅l} (lt: lty 𝔄) (lts: lty (Π! 𝔅l)) (lt': lty (Π! (𝔄 :: 𝔅l))) :

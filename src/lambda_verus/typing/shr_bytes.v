@@ -121,13 +121,11 @@ Section shr_bytes_rules.
     iDestruct "Own" as "(#Pt & _)".
     iApply (wp_load_na_guarded_gen _ _ _ v G (bytes_own ty l.1 x) (ty_bytes ty x) (g+1)
       with "[$G $£]"); [done|intros; by eapply ty_bytes_decode| |done].
-    iSplit; [iApply (guards_transitive_additive with "Gκ Pt")|].
-    iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs". iSplit; [done|].
-    iIntros "Hbs". iExists bs. by iFrame.
+    iSplit; [iApply (guards_transitive_additive with "Gκ Pt")|]. by iApply bytes_own_view.
   Qed.
   (** Reading the referent of a [Copy] type through a shared reference: a guarded typed
       [Load]. *)
-  Lemma type_load_shr_bytes_copy_instr {𝔄} κ (ty: type 𝔄) p E L I :
+  Lemma type_load_shr_bytes_copy_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p E L I :
     Copy ty → lctx_lft_alive E L κ →
     typed_instr E L I +[p ◁ᵥ &shrb{κ} ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
       (λ v, +[p ◁ᵥ &shrb{κ} ty; v ◁ᵥ ty]) (λ post '-[a], post -[a; a.2]).
@@ -159,8 +157,8 @@ Section shr_bytes_rules.
       iAssert (|={⊤ ∖ ↑advN}=> ⌜False⌝)%I with "[H1 £2]" as ">%Hf"; [|done].
       iMod (guards_open_later with "GP H1") as "Open"; [solve_ndisj|].
       iDestruct (lc_weaken (0 + S (d + 1)) with "£2") as "£2"; [lia|].
-      iMod (lc_fupd_elim_laterN with "£2 Open") as ">[(%bs & _ & %Hbs) _]".
-      destruct (ty_bytes_val _ _ _ Hbs). congruence. }
+      iMod (lc_fupd_elim_laterN with "£2 Open") as ">[Bytes _]".
+      iDestruct (bytes_own_val with "Bytes") as %[? ?]. congruence. }
     iApply wp_fupd. iApply (wp_shr_bytes_load κ ty l x v d (S d) tid (fractional.half γ)
       with "[$H1 $£2]"); [solve_ndisj|done| |].
     { iFrame "Gκ". rewrite /= /by_succ. iFrame "Pt Shr Pers". }

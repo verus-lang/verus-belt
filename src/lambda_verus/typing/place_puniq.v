@@ -989,13 +989,13 @@ Section puniq.
       iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
       iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
       (* Write. *)
-      iDestruct "Pt1" as (bs) "[Hbs %Hbs]". have Hlen := ty_bytes_length _ _ _ Hbs.
+      iApply (wp_bytes_own_forget with "Pt1"); [done|solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
       iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf|done|].
       iNext. iIntros "Hbs".
       iMod (cumulative_persistent_time_receipt with "TIME ⧗u ⧖b") as "#⧖b1"; [solve_ndisj|].
       iSpecialize ("CloseB" $! b db db with "[Hbs Gb] ⧗1").
       { iNext. iSplitR. { iApply (persistent_time_receipt_mono with "⧖b1"). lia. }
-        iFrame "Gb". iExists _. iFrame "Hbs". iPureIntro. by apply ty_bytes_encode. }
+        iFrame "Gb". iApply (bytes_own_of_bytes with "Hbs"). by apply ty_bytes_encode. }
       iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [solve_ndisj|].
       iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [solve_ndisj|].
       set Dn := D `max` (S (pctx_dlev K) + db).
@@ -1033,7 +1033,7 @@ Section puniq.
       iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
       iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
       (* Write. *)
-      iDestruct "Pt1" as (bs) "[Hbs %Hbs]". have Hlen := ty_bytes_length _ _ _ Hbs.
+      iApply (wp_bytes_own_forget with "Pt1"); [done|solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
       iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf|done|].
       iNext. iIntros "Hbs".
       set Dn := D `max` (S (pctx_dlev K) + db).
@@ -1046,7 +1046,7 @@ Section puniq.
       { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iExists b. iSplit; [done|]. rewrite /bofty_owned.
-        iSplitL "Hbs". { iExists _. iFrame "Hbs". iPureIntro. by apply ty_bytes_encode. }
+        iSplitL "Hbs". { iApply (bytes_own_of_bytes with "Hbs"). by apply ty_bytes_encode. }
         by iApply bi.laterN_intro. }
       iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
       iModIntro. iExists -[(pctx_set K x₀ b, ζm)]. iFrame "L I".
@@ -1070,7 +1070,8 @@ Section puniq.
   Proof. intros. by apply (type_write_vplace_deep_instr _ _ _ _ _ (POwn n K)). Qed.
   (** Copying a value of size 1 out of the leaf at the hole of [K] (below any number of
       unique borrows, in [Owned] or [Uniq] mode). *)
-  Lemma type_read_vplace_deep_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} (ty: type 𝔅) :
+  Lemma type_read_vplace_deep_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K}
+      `{!NoCell 𝔅} (ty: type 𝔅) :
     Copy ty →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
     typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)]
@@ -1128,11 +1129,12 @@ Section puniq.
       iMod (uniq_body_acc with "LFT UNIQ Aκ Body A") as "(Pl & ⧗1 & CloseB)"; [solve_ndisj|].
       iMod (lc_fupd_elim_later with "£1 Pl") as "Pl".
       iMod (uniq_payload_run with "Aty B Pl") as "(B & #⧖' & #Gho1 & Pt1)"; [solve_ndisj|].
-      iDestruct "Pt1" as (bs) "[Hbs %Hbs]". destruct (ty_bytes_val _ _ _ Hbs) as [wv Hwv].
+      iDestruct (bytes_own_nocell_bytes with "Pt1") as (bs) "[Hbs %Hbs]".
+      destruct (ty_bytes_val _ _ _ Hbs) as [wv Hwv].
       iApply (wp_load_na with "Hbs"); [by eapply ty_bytes_decode|].
       iIntros "!> Hbs".
       iSpecialize ("CloseB" $! y dh gh with "[Hbs] ⧗1").
-      { iNext. iFrame "⧖' Gho1". iExists bs. by iFrame. }
+      { iNext. iFrame "⧖' Gho1". by iApply bytes_own_of_bytes. }
       iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [solve_ndisj|].
       iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [solve_ndisj|].
       iMod ("Cl" $! (OfTy ty) (inl (PlaceIn y)) dh gh D [] 1%Qp True%I
@@ -1155,7 +1157,8 @@ Section puniq.
       iDestruct "H" as (? ->) "[Pt1 #Gho1]".
       iDestruct (lc_weaken mh with "£k") as "£k"; [lia|].
       iMod (lc_fupd_elim_laterN with "£k Gho1") as "#Gho1'".
-      iDestruct "Pt1" as (bs) "[Hbs %Hbs]". destruct (ty_bytes_val _ _ _ Hbs) as [wv Hwv].
+      iDestruct (bytes_own_nocell_bytes with "Pt1") as (bs) "[Hbs %Hbs]".
+      destruct (ty_bytes_val _ _ _ Hbs) as [wv Hwv].
       iApply (wp_load_na with "Hbs"); [by eapply ty_bytes_decode|].
       iIntros "!> Hbs".
       iMod ("Cl" $! (OfTy ty) (inl (PlaceIn y)) dh gh D [] 1%Qp True%I
@@ -1165,7 +1168,7 @@ Section puniq.
       { iApply pat_ok_ulfts_leaf. }
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iExists y. iSplit; [done|].
-        rewrite /bofty_owned. iFrame "Gho1". iExists bs. by iFrame. }
+        rewrite /bofty_owned. iFrame "Gho1". by iApply bytes_own_of_bytes. }
       iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
       iModIntro. iExists -[y; (x₀, ζm)]. iFrame "L I Obs".
       iSplitR "Own ⧗p".
@@ -1176,7 +1179,8 @@ Section puniq.
       by iApply (vplace_own_close with "⧖ ⧗p").
   Qed.
 
-  Lemma type_read_oplace_deep_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (ty: type 𝔅) :
+  Lemma type_read_oplace_deep_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!NoCell 𝔅}
+      (ty: type 𝔅) :
     Copy ty →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)]
@@ -1735,7 +1739,7 @@ Section lty_rslv.
     iIntros (Alv Hc Hb G F m x ζm q d g tid l ? HF) "#LFT #PROPH #UNIQ #TIME #E #GL G Own".
     rewrite /ltype_own /= /uniq_node.
     iDestruct "Own" as "(Pt & ⧗ & _ & N)".
-    iSplitL "Pt". { iModIntro. by iApply ptr_cell_pad_cell. }
+    iSplitL "Pt". { iModIntro. by iApply ptr_cell_mem_cell. }
     iModIntro. iApply step_fupdN_add.
     iApply (step_fupdN_wand with "[N]"); [iApply step_fupdN_intro; [done|]; iExact "N"|].
     iIntros "(_ & _ & %d' & %g' & _ & C)". iApply fupd_step_fupdN_front.

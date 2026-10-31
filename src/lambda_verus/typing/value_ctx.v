@@ -87,7 +87,7 @@ Section value_rules.
   Qed.
 
   (** Reading the pointee of a box of a [Copy] type: a typed [Load]. *)
-  Lemma type_load_own_bytes_copy_instr {𝔄} n (ty: type 𝔄) p E L I :
+  Lemma type_load_own_bytes_copy_instr {𝔄} `{!NoCell 𝔄} n (ty: type 𝔄) p E L I :
     Copy ty →
     typed_instr E L I +[p ◁ᵥ own_bytes n ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
       (λ v, +[p ◁ᵥ own_bytes n ty; v ◁ᵥ ty]) (λ post '-[a], post -[a; a.2]).
@@ -96,7 +96,8 @@ Section value_rules.
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ Own".
     simpl in Hw. simplify_eq. wp_pure _.
     destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & Gho)".
-    iDestruct "Bytes" as (bs) "[Hbs %Hbs]". destruct (ty_bytes_val _ _ _ Hbs) as [v Hv].
+    iDestruct (bytes_own_nocell_bytes with "Bytes") as (bs) "[Hbs %Hbs]".
+    destruct (ty_bytes_val _ _ _ Hbs) as [v Hv].
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [done|]. iIntros "£ _".
     iDestruct (lc_weaken 1 with "£") as "£"; [rewrite /advance_credits; lia|].
     iMod (lc_fupd_elim_later with "£ Gho") as "#Gho".
@@ -105,7 +106,7 @@ Section value_rules.
     iDestruct (ty_gho_own_depth_mono _ d (S d) (S d) (S d) with "Gho") as "[#Gho' _]"; [lia..|].
     iSplitL "Hbs Free".
     - iExists _. iSplit; [done|]. iExists (VPtr l), (S d). iSplit; [done|]. iFrame "⧖ Free".
-      iSplitL "Hbs"; [iExists bs; by iFrame|]. done.
+      iSplitL "Hbs"; [by iApply bytes_own_of_bytes|]. done.
     - iSplit; [|done]. iExists _. iSplit; [done|]. iExists v, (S d). iSplit; [done|].
       iFrame "⧖ Gho'".
   Qed.
@@ -120,16 +121,16 @@ Section value_rules.
     simpl in Hw. simplify_eq. wp_pure _.
     wp_bind q. iApply (wp_val with "q"). iIntros (v d' Hq Hv) "#⧖' Gho'".
     destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & _)".
-    iDestruct "Bytes" as (bs) "[Hbs %Hbs]".
     iApply (wp_persistent_time_receipt with "TIME ⧖'"); [done|]. iIntros "_ #⧖S".
-    iApply wp_fupd. iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf| |].
-    { rewrite (ty_bytes_length _ _ _ Hbs). done. }
+    iApply wp_fupd. iApply (wp_bytes_own_forget with "Bytes"); [done|solve_ndisj|].
+    iIntros (bs) "Hbs %Hlen".
+    iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf|by rewrite Hlen|].
     iIntros "!> Hbs !>". iExists -[(l, y)]. iFrame "Obs".
     iSplit; [|done]. iExists _. iSplit; [done|]. iExists (VPtr l), (S (d `max` d')).
     iSplit; [done|]. iSplitR.
     { rewrite Nat.succ_max_distr persistent_time_receipt_sep. by iFrame "⧖ ⧖S". }
     iFrame "Free".
-    iSplitL "Hbs". { iExists _. iFrame. iPureIntro. by apply ty_bytes_encode. }
+    iSplitL "Hbs". { iApply (bytes_own_of_bytes with "Hbs"). by apply ty_bytes_encode. }
     iNext. iDestruct (ty_gho_own_depth_mono _ d' d' (d `max` d') (S (d `max` d')) with "Gho'")
       as "[$ _]"; lia.
   Qed.

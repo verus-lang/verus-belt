@@ -120,6 +120,28 @@ Section own_bytes.
     - iIntros "(%bs & Hbs & %Hbs)". by iApply bytes_own_of_bytes.
   Qed.
 
+  (** The view of the bytes of a value with a MiniRust value, for the guarded reads
+      ([wp_load_na_guarded_gen]): its plain bytes. *)
+  Lemma bytes_own_view {𝔄} (ty: type 𝔄) l x v :
+    ty.(ty_val) x = Some v →
+    ⊢ □ (bytes_own ty l x -∗ ∃ bs, ⌜ty_bytes ty x bs⌝ ∗ l ↦b bs ∗ (l ↦b bs -∗ bytes_own ty l x)).
+  Proof.
+    iIntros (Hv) "!> Bytes". iDestruct (bytes_own_to_bytes with "Bytes") as (bs) "[Hbs %Hbs]";
+      [done|].
+    iExists bs. iFrame "Hbs". iSplit; [done|]. by iApply bytes_own_of_bytes.
+  Qed.
+
+  Lemma bytes_own_nocell_bytes {𝔄} `{!NoCell 𝔄} (ty: type 𝔄) l x :
+    bytes_own ty l x -∗ ∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝.
+  Proof. by rewrite bytes_own_nocell. Qed.
+
+  Lemma bytes_own_view_nocell {𝔄} `{!NoCell 𝔄} (ty: type 𝔄) l x :
+    ⊢ □ (bytes_own ty l x -∗ ∃ bs, ⌜ty_bytes ty x bs⌝ ∗ l ↦b bs ∗ (l ↦b bs -∗ bytes_own ty l x)).
+  Proof.
+    iIntros "!> Bytes". iDestruct (bytes_own_nocell_bytes with "Bytes") as (bs) "[Hbs %Hbs]".
+    iExists bs. iFrame "Hbs". iSplit; [done|]. by iApply bytes_own_of_bytes.
+  Qed.
+
   (** A value of a type without cells whose bytes are owned has a MiniRust value. *)
   Lemma bytes_own_val {𝔄} `{!NoCell 𝔄} (ty: type 𝔄) l x :
     bytes_own ty l x -∗ ⌜is_Some (ty.(ty_val) x)⌝.

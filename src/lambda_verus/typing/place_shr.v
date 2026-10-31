@@ -174,7 +174,8 @@ Section typing.
 
   (** * Reading a shared-blocked leaf of a place rooted at an owned location *)
 
-  Lemma type_read_oplace_shr_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
+  Lemma type_read_oplace_shr_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} `{!NoCell 𝔅}
+      (ty: type 𝔅) :
     lctx_lft_alive E L α → Copy ty →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrBlocked ty α)]
       (Load Na1Ord ty.(ty_mty) (pctx_expr K (ToLit p)))
@@ -226,14 +227,13 @@ Section typing.
     iAssert (|={⊤ ∖ ↑advN}=> ⌜is_Some (ty.(ty_val) y)⌝ ∗ fractional.half γh)%I
       with "[H1 £v]" as ">[%Hv H1]".
     { iMod (guards_open_later with "GP H1") as "Open"; [solve_ndisj|].
-      iMod (lc_fupd_elim_laterN with "£v Open") as ">[(%bs & Pt & %Hbs) Back]".
-      iMod ("Back" with "[Pt]") as "$"; [iExists bs; by iFrame|].
-      iModIntro. iPureIntro. by eapply ty_bytes_val. }
+      iMod (lc_fupd_elim_laterN with "£v Open") as ">[Pt Back]".
+      iDestruct (bytes_own_val with "Pt") as %Hv.
+      iMod ("Back" with "Pt") as "$". by iModIntro. }
     destruct Hv as [w Hw].
     iApply (wp_load_na_guarded_gen _ _ _ w (fractional.half γh) (cbytes ty y lK) (ty_bytes ty y)
       (g + 1) with "[$H1 $£r]"); [solve_ndisj|intros; by eapply ty_bytes_decode| |].
-    { iSplit; [done|]. iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
-      iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
+    { iSplit; [done|]. by iApply bytes_own_view. }
     iIntros "!> H1".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro. iExists -[y; ((l, x₀), ζm)]. iFrame "L I Obs".
@@ -291,11 +291,6 @@ layer. *)
 Section shr_bytes_fields.
   Context `{!typeG Σ}.
 
-  Lemma bytes_own_pair {𝔄 𝔅} (ty1: type 𝔄) (ty2: type 𝔅) l x1 x2 :
-    bytes_own (ty1 * ty2) l (x1, x2) ⊣⊢
-    bytes_own ty1 l x1 ∗ bytes_own ty2 (l +ₗ ty_bsize ty1) x2.
-  Proof. by rewrite -!/(cbytes _ _ (_, [])) (cbytes_pair (ty1 * ty2) ty1 ty2 x1 x2 (l, [])). Qed.
-
   Lemma type_shr_bytes_snd_instr {𝔄 𝔅} κ (ty1: type 𝔄) (ty2: type 𝔅) p E L I :
     typed_instr E L I +[p ◁ᵥ &shrb{κ} (ty1 * ty2)] (OfLit (ToLit p +ₗ #(ty_bsize ty1)))%E
       (λ v, +[v ◁ᵥ &shrb{κ} ty2])
@@ -308,7 +303,7 @@ Section shr_bytes_fields.
     rewrite tctx_val_val. iExists d. iFrame "⧖". iSplit; [done|].
     destruct d as [|d]; [done|]. rewrite /= /by_succ.
     iDestruct "Own" as "(#Pt & [_ Shr] & [_ Pers])". iFrame "Shr Pers".
-    rewrite /shr_bytes_own bytes_own_pair. by iApply (guards_weaken_rhs_sep_r with "Pt").
+    rewrite /shr_bytes_own (bytes_own_pair _ ty1 ty2). by iApply (guards_weaken_rhs_sep_r with "Pt").
   Qed.
 
   Lemma type_shr_bytes_fst_instr {𝔄 𝔅} κ (ty1: type 𝔄) (ty2: type 𝔅) p E L I :
@@ -323,6 +318,6 @@ Section shr_bytes_fields.
     rewrite tctx_val_val. iExists d. iFrame "⧖". iSplit; [done|].
     destruct d as [|d]; [done|]. rewrite /= /by_succ.
     iDestruct "Own" as "(#Pt & [Shr _] & [Pers _])". iFrame "Shr Pers".
-    rewrite /shr_bytes_own bytes_own_pair. by iApply (guards_weaken_rhs_sep_l with "Pt").
+    rewrite /shr_bytes_own (bytes_own_pair _ ty1 ty2). by iApply (guards_weaken_rhs_sep_l with "Pt").
   Qed.
 End shr_bytes_fields.

@@ -11,7 +11,8 @@ Implicit Type 𝔄 𝔅: syn_type.
 
 This file is [typing/uniq_util.v] (still used by the legacy [&uniq]) with the leaves owning bytes: the points-to of a leaf
 [OfTy ty] at [l] with value [x] is [cbytes ty x l] (bytes at [l.1] that represent [x],
-[ty_bytes]) instead of the legacy [l #↦!∗ ty_phys x]. The generic parts (the encoding
+[bytes_own]: fancy bytes, which may contain cells) instead of the legacy
+[l #↦!∗ ty_phys x]. The generic parts (the encoding
 of depths, [uniq_cell], [lazyE], [place_rfn_rel], [pat_ok], [cpd_body], [uniq_tokγ],
 [uniq_pat_lft], [basically_dead]) are those of [typing/uniq_util.v]. The locations are
 still [cloc]s; their cells are always empty for bytes. *)
@@ -32,18 +33,7 @@ Section uniq_bytes_util.
   Lemma cbytes_pair {𝔄 𝔅} (ty: type (𝔄 * 𝔅)) (ty1: type 𝔄) (ty2: type 𝔅) x1 x2 l :
     cbytes ty (x1, x2) l ⊣⊢
     cbytes ty1 x1 (cloc_take l (ty_bsize ty1)) ∗ cbytes ty2 x2 (cloc_skip l (ty_bsize ty1)).
-  Proof.
-    rewrite /cbytes /bytes_own /=. iSplit.
-    - iIntros "(%bs & Hbs & %Hbs)". rewrite ty_bytes_syn syn_bytes_pair in Hbs.
-      destruct Hbs as (bs1 & bs2 & -> & H1 & H2).
-      rewrite heap_mapsto_bytes_app. iDestruct "Hbs" as "[B1 B2]".
-      rewrite (syn_bytes_length _ _ H1) -(ty_bsize_eq ty1).
-      iSplitL "B1"; iExists _; iFrame; iPureIntro; by apply ty_bytes_syn.
-    - iIntros "[(%bs1 & B1 & %H1) (%bs2 & B2 & %H2)]". iExists (bs1 ++ bs2).
-      rewrite heap_mapsto_bytes_app (ty_bytes_length _ _ _ H1). iFrame.
-      iPureIntro. rewrite ty_bytes_syn syn_bytes_pair. exists bs1, bs2.
-      split; [done|]. by rewrite -!ty_bytes_syn.
-  Qed.
+  Proof. rewrite /cbytes /=. apply bytes_own_pair. Qed.
 
   (** The bytes of a pointer. *)
   Definition ptr_cell (l: cloc) (l': loc) : iProp Σ := ∃ bs, l.1 ↦b bs ∗ ⌜ptr_bytes l' bs⌝.
@@ -53,20 +43,20 @@ Section uniq_bytes_util.
 
   Lemma cbytes_at_loc {𝔄} (ty: type (at_locₛ 𝔄)) x l : cbytes ty x l ⊣⊢ ptr_cell l x.1.
   Proof.
-    rewrite /cbytes /bytes_own /ptr_cell. by setoid_rewrite ty_bytes_syn;
+    rewrite /cbytes bytes_own_nocell /ptr_cell. by setoid_rewrite ty_bytes_syn;
       setoid_rewrite syn_bytes_at_loc.
   Qed.
 
   Lemma cbytes_at_cloc {𝔄} (ty: type (at_clocₛ 𝔄)) x l : cbytes ty x l ⊣⊢ ptr_cell l x.1.1.
   Proof.
-    rewrite /cbytes /bytes_own /ptr_cell. by setoid_rewrite ty_bytes_syn;
+    rewrite /cbytes bytes_own_nocell /ptr_cell. by setoid_rewrite ty_bytes_syn;
       setoid_rewrite syn_bytes_at_cloc.
   Qed.
 
   Lemma cbytes_uniq_bor {𝔄} (ty: type (uniq_borₛ 𝔄)) l' x ξi d g idx l :
     cbytes ty (l', x, ξi, d, g, idx) l ⊣⊢ ptr_cell l l'.1.
   Proof.
-    rewrite /cbytes /bytes_own /ptr_cell. by setoid_rewrite ty_bytes_syn;
+    rewrite /cbytes bytes_own_nocell /ptr_cell. by setoid_rewrite ty_bytes_syn;
       setoid_rewrite syn_bytes_uniq_bor.
   Qed.
 
