@@ -3018,8 +3018,6 @@ Section bank.
   Qed.
 End bank.
 
-(* CELLS-SECTION-PLACEHOLDER *)
-
 Section bytes_ctx.
   Context `{!heapGS Σ}.
   Context `{!invGS Σ}.

@@ -3,7 +3,7 @@ From guarding Require Import guard.
 From iris.proofmode Require Import proofmode.
 From iris.program_logic Require Export weakestpre.
 From iris.program_logic Require Import ectx_lifting.
-From lrust.lang Require Export lang heap time.
+From lrust.lang Require Export lang heap heap_cells time.
 From lrust.lang Require Import tactics.
 From lrust.util Require Import update non_atomic_cell_map atomic_lock_counter.
 Set Default Proof Using "Type".

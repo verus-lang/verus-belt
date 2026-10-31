@@ -13,9 +13,22 @@ From iris.proofmode Require Export proofmode.
 From iris.base_logic.lib Require Export ghost_map.
 From lrust.lang Require Export fvalue.
 From lrust.lang Require Export lang.
-From lrust.lang Require Import heap.
+From lrust.lang Require Export heap.
 From iris.prelude Require Import options.
 Import uPred.
+
+(** * Cell groups of the byte region
+
+The lemmas about the cell groups of [heap.v] (see the comment on cell groups there, and
+[design_docs/pcell-multibyte-cells.md]):
+- the compositionality lemma in the byte context ([cells_decode]);
+- creating and destroying a group ([bytes_ctx_pcell_create], [bytes_ctx_pcell_destroy]);
+- untethering and retethering a group ([bytes_ctx_pcell_untether],
+  [bytes_ctx_pcell_retether]), for moves;
+- accesses through cells: reads ([bytes_ctx_cell_read_begin_guarded]) and two-phase writes
+  ([bytes_ctx_cell_write_begin], [bytes_ctx_cell_write_end]) of a plain sub-value of a group,
+  which may be nested in a live group;
+- nestings ([bytes_ctx_gnest]). *)
 
 Section cells.
   Context `{!heapGS Σ}.
@@ -1972,6 +1985,45 @@ Section cells.
     - iApply (big_sepM_impl with "Hρ"). iIntros "!>" (g' fv' Hg') "H".
       iApply (gcontents_cw_eq with "H"). apply lookup_delete_Some in Hg' as [Hne _].
       rewrite fmap_delete lookup_delete_ne //.
+  Qed.
+
+
+  (** ** Nestings
+
+  A group [g] that is a cell of the fancy value of a live group [g0] (at the offset [o]) is
+  recorded as nested in [g0]. The record is persistent: while [g0] is live, the contents of
+  [g0] at [o] stay the byte-cells of [g] (writes through [g0] only replace plain
+  sub-values). *)
+  Lemma bytes_ctx_gnest σB g0 m0 cs0 fv0 o m g :
+    fv_sub m0 fv0 o m (FVCell g) →
+    bytes_ctx σB -∗ greg g0 m0 cs0 -∗ gdyn g0 fv0 ==∗ bytes_ctx σB ∗ gdyn g0 fv0 ∗ gnest g0 g o.
+  Proof.
+    iIntros (Hsub) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) #Hg0 Hgd".
+    iDestruct "Cells" as (R ρ NC NS CW) "(Hreg & Hdyn & Hnc & Hns & Hcw & [%Hcwf %Hlive] & #HR & #HNS & Hcwe & Hρ)".
+    iDestruct (greg_lookup with "Hreg Hg0") as %HR0.
+    iDestruct (gdyn_lookup with "Hdyn Hgd") as %Hfv.
+    destruct (NS !! (g0, g, o)) as [[]|] eqn:Hk.
+    { iDestruct (big_sepM_lookup with "HNS") as "Hn"; [done|]. iModIntro. iFrame "Hgd Hn".
+      iExists 𝛼, M. iFrame "H● Hbank Entries". iSplit; [done|]. iSplit; [done|]. iExists R, ρ, NC, NS, CW. iFrame "∗ #". done. }
+    have Hcwf' := Hcwf.
+    destruct Hcwf' as (HRwf & HdomR & Hrefs & Hdisj & Hpos & HdomNC & HNC & HCW & Hmwfs & HNSd).
+    iMod (ghost_map_insert_persist (g0, g, o) () with "Hns") as "[Hns #Hn]"; [done|].
+    iModIntro. iFrame "Hgd Hn". iExists 𝛼, M. iFrame "H● Hbank Entries". iSplit; [done|].
+    iSplit; [done|]. iExists R, ρ, NC, (<[(g0, g, o) := ()]> NS), CW.
+    iFrame "Hreg Hdyn Hnc Hns Hcw HR Hcwe". iSplit.
+    { iPureIntro. split; [|done]. split_and!; try done.
+      intros k. rewrite dom_insert_L elem_of_union elem_of_singleton. intros [->|Hk'].
+      - simpl. by apply elem_of_dom_2 in HR0.
+      - by apply HNSd. }
+    iSplitR. { rewrite big_sepM_insert //. by iFrame "Hn HNS". }
+    iApply (big_sepM_impl with "Hρ"). iIntros "!>" (g' fv' Hg') "(%m1 & %cs1 & %fbs & %Hgc & Hcs)".
+    iExists m1, cs1, fbs. iFrame "Hcs". iPureIntro.
+    destruct Hgc as (HR1 & Hrep & Hls & Hns'). split_and!; [done|done|done|].
+    intros g'' o'' Hk'. rewrite dom_insert_L elem_of_union elem_of_singleton in Hk'.
+    destruct Hk' as [[= -> -> ->]|Hk']; [|by apply Hns'].
+    rewrite HR0 in HR1. injection HR1 as <- <-. rewrite Hfv in Hg'. injection Hg' as <-.
+    destruct (frepr_sub_cell _ _ _ _ _ _ _ HRwf Hrep Hsub (Hmwfs _ _ _ HR0)) as (cs & HRg & Hsl).
+    exists m, cs. split; [done|]. by rewrite (HRwf _ _ _ HRg).
   Qed.
 
 End cells.
