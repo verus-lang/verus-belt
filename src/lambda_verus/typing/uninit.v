@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import product.
+From lrust.typing Require Import product bytes_layout.
 Set Default Proof Using "Type".
 
 Open Scope nat.
@@ -81,6 +81,7 @@ Section typing.
         + done.
         + intros. refine (match x with vnil => _ end). done.
     }
+    { by apply syn_bincl_same. }
     iIntros "_!>_". iSplit; [iApply lft_equiv_refl|].
     iSplit; first iModIntro=>/=.
     - iIntros (??? vl). naive_solver. 
@@ -107,6 +108,20 @@ Section typing.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
 
+  Lemma syn_bincl_uninit_split {n m} : syn_bincl (uninit_splitₛ (n:=n) (m:=m)).
+  Proof.
+    split; [by rewrite syn_bsize_prod|]. intros x R fbs.
+    cbn [syn_type_morphism_fn uninit_splitₛ]. destruct (@vsepat _ n m x) as [a b].
+    rewrite syn_fbytes_pair !syn_fbytes_uninit. split.
+    - intros [Hl [bs ->]]. rewrite length_fmap in Hl.
+      exists (inr <$> take n bs), (inr <$> drop n bs). rewrite -fmap_app take_drop.
+      split; [done|]. rewrite !syn_fbytes_uninit !length_fmap length_take length_drop.
+      split; split; [lia|eauto|lia|eauto].
+    - intros (f1 & f2 & -> & Ha & Hb). apply syn_fbytes_uninit in Ha as [Hl1 [b1 ->]].
+      apply syn_fbytes_uninit in Hb as [Hl2 [b2 ->]].
+      split; [rewrite length_app; lia|]. exists (b1 ++ b2). by rewrite fmap_app.
+  Qed.
+
   Lemma uninit_plus_prod E L m n :
     eqtype E L (↯ (m + n)) (↯ m * ↯ n) uninit_splitₛ uninit_joinₛ.
   Proof.
@@ -119,6 +134,7 @@ Section typing.
       - intros x bs. cbn [syn_mty syn_val]. rewrite decode_pad decode_pad_pair.
         destruct (syn_type_morphism_fn _ x). case_decide; naive_solver.
     }
+    { apply syn_bincl_uninit_split. }
     iIntros "_!>_". iSplit; [iApply lft_equiv_refl|].
     iSplit; first iModIntro=>/=.
     - iIntros (????). naive_solver. 

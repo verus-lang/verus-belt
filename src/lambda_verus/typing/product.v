@@ -1,6 +1,6 @@
 From iris.proofmode Require Import proofmode.
 From iris.algebra Require Import list numbers.
-From lrust.typing Require Import lft_contexts.
+From lrust.typing Require Import lft_contexts bytes_layout.
 From lrust.typing Require Export type.
 From guarding Require Import guard tactics guard_later_pers.
 From lrust.lifetime Require Import lifetime_full.
@@ -346,8 +346,9 @@ Section typing.
     move=> Sub Sub'. iIntros "L".
     iDestruct (Sub with "L") as "#Sub".
     iDestruct (Sub' with "L") as "#Sub'". iIntros "!> #E".
-    iDestruct ("Sub" with "E") as "(#? & #InOwn & #InOwnPers & #InShr)".
-    iDestruct ("Sub'" with "E") as "(#? & #InOwn' & #InOwnPers' & #InShr')".
+    iDestruct ("Sub" with "E") as "(%Hb & #? & #InOwn & #InOwnPers & #InShr)".
+    iDestruct ("Sub'" with "E") as "(%Hb' & #? & #InOwn' & #InOwnPers' & #InShr')".
+    iSplit; [iPureIntro; by apply syn_bincl_prod_map|].
     iSplit=>/=; [|iSplit; [|iSplit]].
     - rewrite !lft_intersect_list_app. by iApply lft_intersect_mono.
     - iModIntro. iIntros "* [A B]".
@@ -375,7 +376,7 @@ Section typing.
   Proof.
     move=> Subs. elim Subs. { solve_typing. }
     intros. eapply subtype_eq.
-    { apply mod_ty_subtype. by apply prod_subtype. }
+    { apply mod_ty_subtype; [apply syn_bincl_to_cons_prod..|]. by apply prod_subtype. }
     { simpl. unfold cons_prodₛ, to_cons_prodₛ, of_cons_prodₛ, "∘ₛ". simpl.
       unfold to_cons_prod, of_cons_prod, "∘".
       apply extensₛ; simpl; fun_ext; by case.
@@ -389,11 +390,42 @@ Section typing.
     move=> /eqtypel_subtypel[??]. by split; apply xprod_subtype.
   Qed.
 
+  Lemma syn_bincl_prod_assoc {𝔄 𝔅 ℭ} : syn_bincl (prod_assocₛ (𝔄:=𝔄) (𝔅:=𝔅) (ℭ:=ℭ)).
+  Proof.
+    split; [rewrite !syn_bsize_prod; lia|]. intros [x [y z]] R fbs. rewrite /= !syn_fbytes_pair.
+    split.
+    - intros (f1 & f23 & -> & H1 & H23). apply syn_fbytes_pair in H23 as (f2 & f3 & -> & H2 & H3).
+      exists (f1 ++ f2), f3. split; [by rewrite assoc|]. split; [|done].
+      apply syn_fbytes_pair. by exists f1, f2.
+    - intros (f12 & f3 & -> & H12 & H3). apply syn_fbytes_pair in H12 as (f1 & f2 & -> & H1 & H2).
+      exists f1, (f2 ++ f3). split; [by rewrite assoc|]. split; [done|].
+      apply syn_fbytes_pair. by exists f2, f3.
+  Qed.
+
+  Lemma syn_bincl_prod_left_id {𝔄} : syn_bincl (prod_left_idₛ (𝔄:=𝔄)).
+  Proof.
+    split; [by rewrite syn_bsize_prod|]. intros [[] x] R fbs. rewrite /= syn_fbytes_pair.
+    split.
+    - intros (f1 & f2 & -> & H1 & H2). by apply syn_fbytes_zst in H1 as ->.
+    - intros H. exists [], fbs. split; [done|]. split; [by apply syn_fbytes_zst|done].
+  Qed.
+
+  Lemma syn_bincl_prod_right_id {𝔄} : syn_bincl (prod_right_idₛ (𝔄:=𝔄)).
+  Proof.
+    split; [rewrite syn_bsize_prod; change (syn_bsize ()) with 0%nat; lia|]. intros [x []] R fbs. rewrite /= syn_fbytes_pair.
+    split.
+    - intros (f1 & f2 & -> & H1 & H2). apply syn_fbytes_zst in H2 as ->; [|done..].
+      by rewrite app_nil_r.
+    - intros H. exists fbs, []. rewrite app_nil_r. split; [done|].
+      split; [done|by apply syn_fbytes_zst].
+  Qed.
+
   Lemma prod_ty_assoc {𝔄 𝔅 ℭ} E L (ty1: type 𝔄) (ty2: type 𝔅) (ty3: type ℭ) :
     eqtype E L (ty1 * (ty2 * ty3)) ((ty1 * ty2) * ty3) prod_assocₛ prod_assoc'ₛ.
   Proof.
     apply eqtype_unfold.
       { split. apply _. apply _. apply prod_assoc_bsize. apply prod_assoc_bytes. }
+      { apply syn_bincl_prod_assoc. }
     iIntros "*_!>_/=".
     iSplit; [rewrite (assoc (++)); by iApply lft_equiv_refl|].
     iSplit; [|iSplit].
@@ -411,7 +443,7 @@ Section typing.
   Lemma prod_ty_left_id {𝔄} E L (ty: type 𝔄) :
     eqtype E L (() * ty) ty prod_left_idₛ prod_left_id'ₛ.
   Proof.
-    apply eqtype_unfold; [apply _|].
+    apply eqtype_unfold; [apply _|apply syn_bincl_prod_left_id|].
     iIntros "*_!>_/=".
     iSplit; [by iApply lft_equiv_refl|].
     iSplit. { iModIntro. iIntros (x d g tid). destruct x as [[]x]. iSplit.
@@ -425,7 +457,7 @@ Section typing.
   Lemma prod_ty_right_id {𝔄} E L (ty: type 𝔄) :
     eqtype E L (ty * ()) ty prod_right_idₛ prod_right_id'ₛ.
   Proof.
-    apply eqtype_unfold; [apply _|].
+    apply eqtype_unfold; [apply _|apply syn_bincl_prod_right_id|].
     iIntros "*_!>_/=".
     rewrite !right_id. iSplit; [by iApply lft_equiv_refl|].
     iSplit. { iModIntro. iIntros (x d g tid). destruct x as [x[]]. iSplit.
@@ -436,25 +468,6 @@ Section typing.
     { iIntros "[A _]". iFrame "A". } { iIntros "A". iFrame "A". }
   Qed.
   
-  (*
-  Lemma xprod_ty_app_prod {𝔄l 𝔅l} E L (tyl: typel 𝔄l) (tyl': typel 𝔅l) :
-    eqtype E L (Π! (tyl h++ tyl')) (Π! tyl * Π! tyl') psep (uncurry papp).
-  Proof.
-    elim: tyl=> [|> Eq].
-    - eapply eqtype_eq.
-      + eapply eqtype_trans; [apply eqtype_symm, prod_ty_left_id|].
-        apply prod_eqtype; solve_typing.
-      + done.
-      + done.
-    - eapply eqtype_eq.
-      + eapply eqtype_trans; [by apply mod_ty_outin, _|].
-        eapply eqtype_trans. { eapply prod_eqtype; [solve_typing|apply Eq]. }
-        eapply eqtype_trans; [by apply prod_ty_assoc|].
-        apply prod_eqtype; solve_typing.
-      + fun_ext. by case.
-      + fun_ext. by case=> [[??]?].
-  Qed.
-  *)
 
   Lemma prod_outlives_E {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) κ :
     ty_outlives_E (ty * ty') κ = ty_outlives_E ty κ ++ ty_outlives_E ty' κ.

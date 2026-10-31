@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Import lft_contexts mod_ty.
+From lrust.typing Require Import lft_contexts mod_ty bytes_layout.
 From lrust.typing Require Export type.
 From guarding Require Import guard tactics guard_later_pers.
 From lrust.lifetime Require Import lifetime_full.
@@ -318,6 +318,25 @@ Section typing.
         + intros i x0. simpl. rewrite IH𝔄l. trivial.
   Qed.
 
+  Lemma syn_bincl_psum_map {𝔄l 𝔅l} (fl: plist2 (λ 𝔄 𝔅, 𝔄 →ₛ 𝔅) 𝔄l 𝔅l) :
+    (∀ i, syn_bincl (fl -2!! i)) → syn_bincl (psum_mapₛ fl).
+  Proof.
+    intros Hb. have Hlen := plist2_eq_len fl.
+    have Hsz : syn_bsize <$> 𝔄l = syn_bsize <$> 𝔅l.
+    { clear Hlen. revert 𝔅l fl Hb. induction 𝔄l as [|𝔄 𝔄l IH]; intros [|𝔅 𝔅l] fl Hb;
+        [done|done|done|]. destruct fl as [f fl]. simpl. f_equal; [apply (Hb 0%fin)|].
+      apply (IH _ fl). intros i. apply (Hb (FS i)). }
+    have Htag : sum_tag 𝔄l = sum_tag 𝔅l by rewrite /sum_tag Hlen.
+    have Hmax : sum_max 𝔄l = sum_max 𝔅l by rewrite /sum_max Hsz.
+    split; [by rewrite !syn_bsize_sum Htag Hmax|].
+    intros [x pad] R fbs.
+    replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'.
+    destruct (to_xsum x) as [i y]. simpl.
+    rewrite psum_map_p2lookup_pinj !syn_fbytes_sum.
+    destruct (Hb i) as [Hs Hf].
+    rewrite fin_to_nat_fin_renew -Htag -Hmax -Hs. by setoid_rewrite (Hf y).
+  Qed.
+
   Lemma xsum_subtype {𝔄l 𝔅l} E L (tyl: typel 𝔄l) (tyl': typel 𝔅l) fl :
     subtypel E L tyl tyl' fl → subtype E L (Σ! tyl) (Σ! tyl') ((psum_mapₛ fl)).
   Proof. 
@@ -330,10 +349,10 @@ Section typing.
       { destruct Yl => //. 
         inv_hlist xl; inv_hlist yl => /= _.
         iIntros "!> E /=". 
-        iDestruct ("Sub" with "E") as "#(Hlfts&?)". 
+        iDestruct ("Sub" with "E") as "#(_&Hlfts&?)". 
         by rewrite /tyl_lft/tyl_lfts /= !app_nil_r. }
       iDestruct ("IH" with "L") as "#IH'".
-      iIntros "!> E /=". iDestruct ("Sub" with "E") as "#[?_]".
+      iIntros "!> E /=". iDestruct ("Sub" with "E") as "#[_ [? _]]".
       iDestruct ("IH'" with "E") as "#?".
       rewrite /tyl_lft !lft_intersect_list_app. by iApply lft_intersect_mono. }
     move/subtypel_llctx_lookup in Subs. iDestruct (Subs with "L") as "#InTyl".
@@ -342,13 +361,16 @@ Section typing.
     (* iSplit; simpl; [iPureIntro; by f_equal|]. iSplit; [done|]. *)
     (* iSplit; first iModIntro; iIntros "*". *)
     (* iDestruct ("InTyl" $! i) as (?) "[#?[#InOwn %Hphys]]". *)
+    iAssert ⌜∀ i, syn_bincl (fl -2!! i)⌝%I as %Hb.
+    { rewrite bi.pure_forall. iIntros (i). by iDestruct ("InTyl" $! i) as "[$ _]". }
+    iSplit; [iPureIntro; by apply syn_bincl_psum_map|].
     iSplit; [done|].
     iSplit. { (* gho *)
       iModIntro. iIntros (x d g tid). destruct x as [x pad].
       replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'; trivial.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
     
-      iDestruct ("InTyl" $! i) as "(Incl & #Gho & _)".
+      iDestruct ("InTyl" $! i) as "(_ & Incl & #Gho & _)".
       iSpecialize ("Gho" $! x0 d g tid). simpl.
       
       rewrite psum_map_p2lookup_pinj.
@@ -361,7 +383,7 @@ Section typing.
       iModIntro. iIntros (x d g tid). destruct x as [x pad].
       replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'; trivial.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
-      iDestruct ("InTyl" $! i) as "(Incl & _ & #GhoPers & _)".
+      iDestruct ("InTyl" $! i) as "(_ & Incl & _ & #GhoPers & _)".
       iSpecialize ("GhoPers" $! x0 d g tid). simpl.
       rewrite psum_map_p2lookup_pinj.
       unfold ty_gho_pers, xsum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj. iFrame "GhoPers".
@@ -370,7 +392,7 @@ Section typing.
       iModIntro. iIntros (κ x d g tid). destruct x as [x pad].
       replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'; trivial.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
-      iDestruct ("InTyl" $! i) as "(Incl & _ & _ & #Shr)".
+      iDestruct ("InTyl" $! i) as "(_ & Incl & _ & _ & #Shr)".
       iSpecialize ("Shr" $! κ x0 d g tid). simpl.
       rewrite psum_map_p2lookup_pinj.
       unfold ty_shr, xsum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj. iFrame "Shr".

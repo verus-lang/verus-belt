@@ -12,15 +12,13 @@ Set Default Proof Using "Type".
     [n] uninitialized bytes, [v ◁ᵥ own_bytes n (↯ n)] (a pointer value); it is then
     initialized with a typed [Store] ([type_store_own_bytes_instr] of
     [typing/value_ctx.v], or the place rules).
-  - Subtyping: [btype_incl ty ty' f] is [type_incl ty ty' f] (which relates the ownership
-    and sharing) together with the equality of the byte sizes and the
-    equivalence of the (fancy) byte representations ([ty_fbytes]): the parents own bytes,
-    so a box, a unique borrow or a shared reference can be retyped only if the bytes of its
-    referent represent the value at the new type too. For [f = idₛ] this is always the
-    case ([ty_fbytes_same]), so every subtyping of the same syntactic type is a byte
-    subtyping ([subtype_bsubtype_id]). Rules: [own_bytes_bsubtype],
-    [shr_bytes_bsubtype], [uniq_bytes_bsubtype], and [tctx_bsubtype_val] for MiniRust
-    values (which needs the MiniRust values to agree, as for pointers). *)
+  - Subtyping: [type_incl ty ty' f] ([typing/type.v]) relates the ownership and sharing
+    and requires [f] to preserve the (fancy) byte representations ([syn_bincl]): the
+    parents own bytes, so a box, a unique borrow or a shared reference can be retyped only
+    if the bytes of its referent represent the value at the new type too. Rules:
+    [own_bytes_subtype], [shr_bytes_subtype], [uniq_bytes_subtype], and
+    [tctx_subtype_val] for MiniRust values (which needs the MiniRust values to agree, as
+    for pointers). *)
 
 Implicit Type 𝔄 𝔅: syn_type.
 
@@ -75,93 +73,71 @@ End bnew.
 
 (** * Subtyping *)
 
-Section bsubtype.
+Section subtype.
   Context `{!typeG Σ}.
 
-  Definition btype_incl {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) : iProp Σ :=
-    type_incl ty ty' f ∗ ⌜ty_bsize ty = ty_bsize ty'⌝ ∗
-    ⌜∀ x R fbs, ty_fbytes R ty x fbs ↔ ty_fbytes R ty' (f ~~$ₛ x) fbs⌝.
-
-  Global Instance btype_incl_persistent {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) f :
-    Persistent (btype_incl ty ty' f) := _.
-
-  Definition bsubtype {𝔄 𝔅} E L (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) : Prop :=
-    llctx_interp L -∗ □ (elctx_interp E -∗ btype_incl ty ty' f).
-
-  (** Any subtyping of the same syntactic type, with the identity, is a byte subtyping. *)
-  Lemma subtype_bsubtype_id {𝔄} E L (ty ty': type 𝔄) :
-    subtype E L ty ty' idₛ → bsubtype E L ty ty' idₛ.
+  Lemma bytes_own_bincl {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) l x :
+    syn_bincl f → bytes_own ty l x ⊣⊢ bytes_own ty' l (f ~~$ₛ x).
   Proof.
-    intros Sub. iIntros "L". iDestruct (Sub with "L") as "#Sub". iIntros "!> #E".
-    iSplit; [by iApply "Sub"|]. iPureIntro. split; [by rewrite !ty_bsize_eq|].
-    intros x R fbs. apply ty_fbytes_same.
+    intros [_ Hb]. apply bytes_own_iff. intros. rewrite !ty_fbytes_syn. apply Hb.
   Qed.
-
-  Lemma bytes_own_btype_incl {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) l x :
-    (∀ x R fbs, ty_fbytes R ty x fbs ↔ ty_fbytes R ty' (f ~~$ₛ x) fbs) →
-    bytes_own ty l x ⊣⊢ bytes_own ty' l (f ~~$ₛ x).
-  Proof. intros Hb. by apply bytes_own_iff. Qed.
 
   (** ** Boxes of bytes *)
 
-  Lemma own_bytes_btype_incl {𝔄 𝔅} n (f: 𝔄 →ₛ 𝔅) ty ty' :
-    btype_incl ty ty' f -∗ btype_incl (own_bytes n ty) (own_bytes n ty') (at_loc_mapₛ f).
+  Lemma own_bytes_type_incl {𝔄 𝔅} n (f: 𝔄 →ₛ 𝔅) ty ty' :
+    type_incl ty ty' f -∗ type_incl (own_bytes n ty) (own_bytes n ty') (at_loc_mapₛ f).
   Proof.
-    iIntros "((#Incl & #InOwn & #InOwnPers & #InShr) & %Hsz & %Hb)".
-    iSplit; last first.
-    { iPureIntro. split; [by rewrite !ty_bsize_eq|]. intros [l x] R fbs.
-      rewrite !ty_fbytes_syn !syn_fbytes_nocell; [|exact I..]. by setoid_rewrite syn_bytes_at_loc. }
+    iIntros "(%Hb & #Incl & #InOwn & #InOwnPers & #InShr)".
+    have Hsz : ty_bsize ty = ty_bsize ty' by rewrite !ty_bsize_eq; apply Hb.
+    iSplit; [iPureIntro; apply syn_bincl_at_loc_map|].
     iSplit; [done|].
     iSplit.
     { iIntros "!>" ([l x0] [|d] g tid) "Hown //=".
       iDestruct "Hown" as "(Hown & Hfree & Hgho)".
       iPoseProof ("InOwn" with "Hgho") as "(Hgho & Hwand)".
-      rewrite /ty_bsize in Hsz. rewrite (bytes_own_btype_incl ty ty' f) // Hsz. iFrame.
-      iIntros "(Hown & Hfree & Hgho)". rewrite -(bytes_own_btype_incl ty ty' f) // -Hsz.
+      rewrite /ty_bsize in Hsz. rewrite (bytes_own_bincl ty ty' f) // Hsz. iFrame.
+      iIntros "(Hown & Hfree & Hgho)". rewrite -(bytes_own_bincl ty ty' f) // -Hsz.
       iFrame. iNext. by iApply "Hwand". }
     iSplit.
     { iIntros "!>" ([l x0] [|d] g tid) "Hpers //=". by iApply "InOwnPers". }
     iIntros "!>" (κ [l x0] d g tid) "Shr".
     iNext. destruct d as [|d]; [done|]. simpl. iDestruct "Shr" as "[Pt Shr]".
-    rewrite (bytes_own_btype_incl ty ty' f) //. iFrame "Pt". by iApply "InShr".
+    rewrite (bytes_own_bincl ty ty' f) //. iFrame "Pt". by iApply "InShr".
   Qed.
 
-  Lemma own_bytes_bsubtype {𝔄 𝔅} E L n (f: 𝔄 →ₛ 𝔅) ty ty' :
-    bsubtype E L ty ty' f → bsubtype E L (own_bytes n ty) (own_bytes n ty') (at_loc_mapₛ f).
+  Lemma own_bytes_subtype {𝔄 𝔅} E L n (f: 𝔄 →ₛ 𝔅) ty ty' :
+    subtype E L ty ty' f → subtype E L (own_bytes n ty) (own_bytes n ty') (at_loc_mapₛ f).
   Proof.
     move=> Sub. iIntros "L". iDestruct (Sub with "L") as "#Incl".
-    iIntros "!> #E". iApply own_bytes_btype_incl. by iApply "Incl".
+    iIntros "!> #E". iApply own_bytes_type_incl. by iApply "Incl".
   Qed.
 
   (** ** Shared references to bytes *)
 
-  Lemma shr_bytes_btype_incl {𝔄 𝔅} κ κ' (f: 𝔄 →ₛ 𝔅) ty ty' :
-    κ' ⊑ κ -∗ btype_incl ty ty' f -∗ btype_incl (&shr{κ} ty) (&shr{κ'} ty') (at_loc_mapₛ f).
+  Lemma shr_bytes_type_incl {𝔄 𝔅} κ κ' (f: 𝔄 →ₛ 𝔅) ty ty' :
+    κ' ⊑ κ -∗ type_incl ty ty' f -∗ type_incl (&shr{κ} ty) (&shr{κ'} ty') (at_loc_mapₛ f).
   Proof.
-    iIntros "#Incl ((#Incl2 & #Sub & #SubPers & #SubShr) & %Hsz & %Hb)".
-    iSplit; last first.
-    { iPureIntro. split; [by rewrite !ty_bsize_eq|]. intros [l x] R fbs.
-      rewrite !ty_fbytes_syn !syn_fbytes_nocell; [|exact I..]. by setoid_rewrite syn_bytes_at_loc. }
-    iApply (@type_incl_simple_type Σ _ (at_locₛ 𝔄) (at_locₛ 𝔅) _ _).
+    iIntros "#Incl (%Hb & #Incl2 & #Sub & #SubPers & #SubShr)".
+    iApply (type_incl_simple_type _ _ _ (syn_bincl_at_loc_map f)).
     - unfold ty_lfts, ty_of_st, st_lfts. by iApply lft_intersect_mono.
     - iModIntro. iIntros (x d g tid) "A". destruct x as [l x].
       destruct d as [|d]; [done|].
       rewrite /= /by_succ. iDestruct "A" as "[#Hpt [#Hshr #Hpers]]".
       iSplit.
-      { rewrite /shr_bytes_own -(bytes_own_btype_incl ty ty' f) //.
+      { rewrite /shr_bytes_own -(bytes_own_bincl ty ty' f) //.
         iApply (guards_transitive_right with "Incl Hpt"). }
       iSplit.
       { iApply (ty_shr_lft_mono0 with "Incl"). iApply "SubShr". iFrame "Hshr". }
       iNext. iApply "SubPers". iFrame "Hpers".
   Qed.
 
-  Lemma shr_bytes_bsubtype {𝔄 𝔅} E L κ κ' (f: 𝔄 →ₛ 𝔅) ty ty' :
-    lctx_lft_incl E L κ' κ → bsubtype E L ty ty' f →
-    bsubtype E L (&shr{κ} ty) (&shr{κ'} ty') (at_loc_mapₛ f).
+  Lemma shr_bytes_subtype {𝔄 𝔅} E L κ κ' (f: 𝔄 →ₛ 𝔅) ty ty' :
+    lctx_lft_incl E L κ' κ → subtype E L ty ty' f →
+    subtype E L (&shr{κ} ty) (&shr{κ'} ty') (at_loc_mapₛ f).
   Proof.
     move=> In Sub. iIntros "L". iDestruct (In with "L") as "#In".
     iDestruct (Sub with "L") as "#Sub". iIntros "!> #E".
-    iApply shr_bytes_btype_incl; by [iApply "In"|iApply "Sub"].
+    iApply shr_bytes_type_incl; by [iApply "In"|iApply "Sub"].
   Qed.
 
   (** ** Unique borrows of bytes (invariant in the referent, as [uniq_subtype]) *)
@@ -175,6 +151,7 @@ Section bsubtype.
     iDestruct (Eqt with "L") as "#Eqt". iDestruct (In with "L") as "#In". iIntros "!> #E".
     iDestruct ("Eqt" with "E") as "[[Lfts1 Lfts2][#EqOwn [#EqPers #EqShr]]]".
     iSpecialize ("In" with "E").
+    iSplit; [iPureIntro; apply syn_bincl_id|].
     iSplit; [by iApply lft_intersect_mono|].
     iSplit. {
       iModIntro. iIntros (x d g tid) "[#Incl gho]".
@@ -212,24 +189,19 @@ Section bsubtype.
     iNext. iNext. by iApply "EqPers".
   Qed.
 
-  Lemma uniq_bytes_bsubtype {𝔄} E L κ κ' (ty ty': type 𝔄) :
-    lctx_lft_incl E L κ' κ → eqtype E L ty ty' idₛ idₛ →
-    bsubtype E L (&uniq{κ} ty) (&uniq{κ'} ty') idₛ.
-  Proof. intros. by apply subtype_bsubtype_id, uniq_bytes_subtype. Qed.
-
   (** ** MiniRust values *)
 
   (** A value of [ty] is a value of [ty'], if the MiniRust values agree (e.g. pointers:
       boxes, references). *)
-  Lemma tctx_bsubtype_val {𝔄 𝔅 𝔄l} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) (T: tctx 𝔄l) p E L :
-    bsubtype E L ty ty' f → (∀ x, ty'.(ty_val) (f ~~$ₛ x) = ty.(ty_val) x) →
+  Lemma tctx_subtype_val {𝔄 𝔅 𝔄l} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) (T: tctx 𝔄l) p E L :
+    subtype E L ty ty' f → (∀ x, ty'.(ty_val) (f ~~$ₛ x) = ty.(ty_val) x) →
     tctx_incl E L (p ◁ᵥ ty +:: T) (p ◁ᵥ ty' +:: T)
       (λ post '(a -:: al), post (f ~~$ₛ a -:: al)).
   Proof.
     intros Sub Hval. split; [by intros ??? [??]|].
     iIntros (??[x wπl]???) "#LFT _ _ E #L G /=[(%v & %Hp & %w & %d & [-> %Hw] & ⧖ & Gho) T] Obs".
     leaf_open "L" with "G" as "[L1 back]". { set_solver. }
-    iDestruct (Sub with "L1 E") as "#((_ & #InOwn & _) & _)".
+    iDestruct (Sub with "L1 E") as "#(_ & _ & #InOwn & _)".
     iMod ("back" with "L1") as "G".
     iModIntro. iExists (f ~~$ₛ x -:: wπl). iFrame "G T".
     iSplitR "Obs".
@@ -238,30 +210,30 @@ Section bsubtype.
     - iApply (proph_obs_impl with "Obs"). intros. done.
   Qed.
 
-  Lemma tctx_bsubtype_own_bytes {𝔄 𝔅 𝔄l} n (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅)
+  Lemma tctx_subtype_own_bytes {𝔄 𝔅 𝔄l} n (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅)
       (T: tctx 𝔄l) p E L :
-    bsubtype E L ty ty' f →
+    subtype E L ty ty' f →
     tctx_incl E L (p ◁ᵥ own_bytes n ty +:: T) (p ◁ᵥ own_bytes n ty' +:: T)
       (λ post '(a -:: al), post (at_loc_mapₛ f ~~$ₛ a -:: al)).
   Proof.
-    intros. apply tctx_bsubtype_val; [by apply own_bytes_bsubtype|]. by intros [??].
+    intros. apply tctx_subtype_val; [by apply own_bytes_subtype|]. by intros [??].
   Qed.
 
-  Lemma tctx_bsubtype_shr_bytes {𝔄 𝔅 𝔄l} κ κ' (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅)
+  Lemma tctx_subtype_shr_bytes {𝔄 𝔅 𝔄l} κ κ' (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅)
       (T: tctx 𝔄l) p E L :
-    lctx_lft_incl E L κ' κ → bsubtype E L ty ty' f →
+    lctx_lft_incl E L κ' κ → subtype E L ty ty' f →
     tctx_incl E L (p ◁ᵥ &shr{κ} ty +:: T) (p ◁ᵥ &shr{κ'} ty' +:: T)
       (λ post '(a -:: al), post (at_loc_mapₛ f ~~$ₛ a -:: al)).
   Proof.
-    intros. apply tctx_bsubtype_val; [by apply shr_bytes_bsubtype|]. by intros [??].
+    intros. apply tctx_subtype_val; [by apply shr_bytes_subtype|]. by intros [??].
   Qed.
 
-  Lemma tctx_bsubtype_uniq_bytes {𝔄 𝔄l} κ κ' (ty ty': type 𝔄) (T: tctx 𝔄l) p E L :
+  Lemma tctx_subtype_uniq_bytes {𝔄 𝔄l} κ κ' (ty ty': type 𝔄) (T: tctx 𝔄l) p E L :
     lctx_lft_incl E L κ' κ → eqtype E L ty ty' idₛ idₛ →
     tctx_incl E L (p ◁ᵥ &uniq{κ} ty +:: T) (p ◁ᵥ &uniq{κ'} ty' +:: T)
       (λ post '(a -:: al), post (a -:: al)).
   Proof.
-    intros. apply (tctx_bsubtype_val _ _ idₛ); [by apply uniq_bytes_bsubtype|].
+    intros. apply (tctx_subtype_val _ _ idₛ); [by apply uniq_bytes_subtype|].
     intros x. apply ty_val_same.
   Qed.
-End bsubtype.
+End subtype.

@@ -49,10 +49,10 @@ Section base.
   Proof. done. Qed.
 
   Lemma base_subtype {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) E L :
-    (∀ x, ξl x = ξl ((~~!ₛ) f x)) →
+    syn_bincl f → (∀ x, ξl x = ξl ((~~!ₛ) f x)) →
     subtype E L (base) (base) f.
   Proof.
-    move=> Eq. iIntros "L". iModIntro. iIntros "E".
+    move=> Hb Eq. iIntros "L". iModIntro. iIntros "E". iSplit; [done|].
     iSplit; [|iSplit; [|iSplit]].
       - iApply lft_incl_refl.
       - iModIntro. iIntros. contradiction.
@@ -61,10 +61,11 @@ Section base.
   Qed.
 
   Lemma base_eqtype {𝔄 𝔅} (f : 𝔄 →ₛ 𝔅) (g : 𝔅 →ₛ 𝔄) E L :
+    syn_bincl f → syn_bincl g →
     (∀ x, ξl x = ξl ((~~!ₛ) f x)) →
     (∀ x, ξl x = ξl ((~~!ₛ) g x)) →
     eqtype E L (base) (base) f g.
-  Proof. split; exact: base_subtype. Qed.
+  Proof. split; by apply base_subtype. Qed.
 
 End base.
 

@@ -303,10 +303,7 @@ Lemma syn_fval_pinj {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) pad :
   syn_fval (𝔄:=Σ! 𝔄l) (pinj i y, pad) = FVVariant (Z.of_nat (fin_to_nat i)) <$> syn_fval y.
 Proof. by rewrite /= psum_map1_pinj to_xsum_pinj. Qed.
 
-(** ** Fancy bytes of syntactic types *)
-Definition syn_fbytes {𝔄} (R: gmap positive (mty * list positive)) (x: ~~𝔄)
-    (fbs: list (positive + abyte)) : Prop :=
-  length fbs = syn_bsize 𝔄 ∧ ∃ fv, syn_fval x = Some fv ∧ frepr R (syn_mty 𝔄) fbs fv.
+(** ** Fancy bytes of syntactic types ([syn_fbytes], [typing/type.v]) *)
 
 Lemma ty_fbytes_syn `{!typeG Σ} {𝔄} (ty: type 𝔄) R x fbs :
   ty_fbytes R ty x fbs ↔ syn_fbytes R x fbs.
@@ -416,3 +413,104 @@ Proof.
         change (mty_size (syn_mty (𝔄l !!ₗ i))) with (syn_bsize (𝔄l !!ₗ i)) in Hge'; lia].
       rewrite list_lookup_fmap in Hj. destruct (bq !! _); simplify_eq/=. by eexists.
 Qed.
+
+(** *** Zero-sized values, uninitialized bytes, tuples *)
+Lemma syn_fbytes_zst {𝔄} R (x: ~~𝔄) fbs :
+  syn_mty 𝔄 = zst_mty → syn_fval x = Some (FVTuple []) → syn_fbytes R x fbs ↔ fbs = [].
+Proof.
+  intros Hm Hv. rewrite /syn_fbytes /syn_bsize Hm Hv. split.
+  - intros (Hl & _). by apply nil_length_inv.
+  - intros ->. split; [done|]. eexists. split; [done|].
+    apply frepr_tuple_iff. split_and!; [done|done| |].
+    + intros k f fv Hk. by rewrite lookup_nil in Hk.
+    + intros i fb Hi. by rewrite lookup_nil in Hi.
+Qed.
+
+Lemma syn_fbytes_uninit n R (x: ~~(uninitₛ n)) fbs :
+  syn_fbytes R x fbs ↔ length fbs = n ∧ ∃ bs, fbs = inr <$> bs.
+Proof.
+  rewrite /syn_fbytes /syn_bsize /=. split.
+  - intros (Hl & fv & [= <-] & Hr). apply frepr_tuple_iff in Hr as (_ & _ & _ & Hp).
+    split; [done|]. apply plain_fbytes. intros i fb Hi. apply (Hp i fb Hi).
+    by intros (f & Hf%elem_of_nil & _).
+  - intros [Hl [bs ->]]. split; [done|]. eexists. split; [done|].
+    apply frepr_tuple_iff. split_and!; [done|done| |].
+    + intros k f fv Hk. by rewrite lookup_nil in Hk.
+    + intros i fb Hi _. rewrite list_lookup_fmap in Hi.
+      destruct (bs !! i); simplify_eq/=. by eexists.
+Qed.
+
+Lemma syn_bsize_prod 𝔄 𝔅 : syn_bsize (𝔄 * 𝔅) = (syn_bsize 𝔄 + syn_bsize 𝔅)%nat.
+Proof.
+  rewrite /syn_bsize. change (syn_mty (𝔄 * 𝔅)) with (seq_tuple [syn_mty 𝔄; syn_mty 𝔅]).
+  rewrite mty_size_seq_tuple !seq_size_cons seq_size_nil. lia.
+Qed.
+
+Lemma syn_bsize_xprod_cons 𝔄 𝔄l :
+  syn_bsize (Π! (𝔄 :: 𝔄l)) = (syn_bsize 𝔄 + syn_bsize (Π! 𝔄l))%nat.
+Proof.
+  rewrite /syn_bsize.
+  change (syn_mty (Π! (𝔄 :: 𝔄l))) with (seq_tuple (syn_mty 𝔄 :: (syn_mty <$> 𝔄l))).
+  change (syn_mty (Π! 𝔄l)) with (seq_tuple (syn_mty <$> 𝔄l)).
+  by rewrite !mty_size_seq_tuple seq_size_cons.
+Qed.
+
+Lemma syn_fbytes_xprod_nil R (x: ~~(Π! [])) fbs : syn_fbytes R x fbs ↔ fbs = [].
+Proof. by apply syn_fbytes_zst. Qed.
+
+Lemma syn_fbytes_xprod_cons {𝔄 𝔄l} R (x: ~~𝔄) (xl: ~~(Π! 𝔄l)) fbs :
+  syn_fbytes (𝔄:=Π! (𝔄 :: 𝔄l)) R (x -:: xl) fbs ↔
+  ∃ fbs1 fbs2, fbs = fbs1 ++ fbs2 ∧ syn_fbytes R x fbs1 ∧ syn_fbytes R xl fbs2.
+Proof.
+  rewrite /syn_fbytes syn_bsize_xprod_cons.
+  change (syn_mty (Π! (𝔄 :: 𝔄l))) with (seq_tuple (syn_mty 𝔄 :: (syn_mty <$> 𝔄l))).
+  change (syn_mty (Π! 𝔄l)) with (seq_tuple (syn_mty <$> 𝔄l)).
+  change (syn_fval (𝔄:=Π! (𝔄 :: 𝔄l)) (x -:: xl)) with
+    (FVTuple <$> mapM id (syn_fval x :: plist_to_list (pmap (λ _ x0, syn_fval x0) xl))).
+  change (syn_fval (𝔄:=Π! 𝔄l) xl) with
+    (FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) xl))).
+  generalize (plist_to_list (pmap (λ _ x0, syn_fval x0) xl)) => ol.
+  rewrite /= /syn_bsize. split.
+  - intros (Hlen & fv & Hfv & Hrep).
+    destruct (syn_fval x) as [fv₀|] eqn:H₀; [|done]. simpl in Hfv.
+    destruct (mapM id ol) as [fvs|] eqn:H₁; [|done]. simpl in Hfv. injection Hfv as <-.
+    apply frepr_seq_tuple_cons in Hrep as (fbs1 & fbs2 & -> & Hl1 & Hr1 & Hr2).
+    exists fbs1, fbs2. split; [done|]. rewrite length_app in Hlen.
+    split; [split; [done|eauto]|]. split; [lia|]. eexists. split; [done|]. done.
+  - intros (fbs1 & fbs2 & -> & (Hl1 & fv₀ & H₀ & Hr1) & (Hl2 & fv₁ & H₁ & Hr2)).
+    destruct (mapM id ol) as [fvs|] eqn:H₁'; [|done]. simpl in H₁. injection H₁ as <-.
+    split; [rewrite length_app; lia|]. exists (FVTuple (fv₀ :: fvs)). split.
+    { apply fmap_Some. exists (fv₀ :: fvs). split; [|done]. by rewrite H₀. }
+    apply frepr_seq_tuple_cons. by exists fbs1, fbs2.
+Qed.
+
+(** ** Byte-preserving maps ([syn_bincl], [typing/type.v]) *)
+
+(** A map between two syntactic types of the same MiniRust type that preserves the fancy
+    value preserves the bytes (e.g. on pointers, on zero-sized types). *)
+Lemma syn_bincl_same {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) :
+  syn_mty 𝔄 = syn_mty 𝔅 → (∀ x, syn_fval (f ~~$ₛ x) = syn_fval x) → syn_bincl f.
+Proof.
+  intros Hm Hv. split; [by rewrite /syn_bsize Hm|]. intros x R fbs.
+  by rewrite /syn_fbytes /syn_bsize Hm Hv.
+Qed.
+
+Lemma syn_bincl_at_loc_map {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : syn_bincl (at_loc_mapₛ f).
+Proof. apply syn_bincl_same; [done|]. by intros [??]. Qed.
+
+Lemma syn_bincl_prod_map {𝔄 𝔅 𝔄' 𝔅'} (f: 𝔄 →ₛ 𝔄') (g: 𝔅 →ₛ 𝔅') :
+  syn_bincl f → syn_bincl g → syn_bincl (prod_mapₛ f g).
+Proof.
+  intros [Hs Hf] [Hs' Hg]. split; [rewrite !syn_bsize_prod; lia|].
+  intros [x y] R fbs. rewrite /= !syn_fbytes_pair.
+  setoid_rewrite (Hf x). by setoid_rewrite (Hg y).
+Qed.
+
+Lemma syn_bincl_to_cons_prod {𝔄 𝔅l} : syn_bincl (to_cons_prodₛ (𝔄:=𝔄) (𝔅l:=𝔅l)).
+Proof.
+  split; [by rewrite syn_bsize_prod syn_bsize_xprod_cons|].
+  intros [x xl] R fbs. by rewrite syn_fbytes_pair /= syn_fbytes_xprod_cons.
+Qed.
+
+Lemma syn_bincl_of_cons_prod {𝔄 𝔅l} : syn_bincl (of_cons_prodₛ (𝔄:=𝔄) (𝔅l:=𝔅l)).
+Proof. apply (syn_bincl_iso to_cons_prodₛ); [apply _|apply syn_bincl_to_cons_prod]. Qed.
