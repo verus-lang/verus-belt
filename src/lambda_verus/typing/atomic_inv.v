@@ -54,6 +54,7 @@ Section atomic_invariants.
               ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')⌝)
     end;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
+    ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
     ty_phys x tid := [];
     ty_shr := default_shr (λ (x: ~~(invₛ ℭ)) d g tid, match x with (N, γ, c) =>
           Active γ ∗ external_na_inv γ ATOMIC_POOL N
@@ -89,6 +90,7 @@ Section atomic_invariants.
               ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')⌝)
     end;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
+    ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
     ty_phys x tid := [];
     ty_shr := default_shr (λ (x: ~~(invₛ ℭ)) d g tid, match x with (N, γ, c) =>
           atomic_lock_handle atomic_lock_ctr_name (↑N) ∗

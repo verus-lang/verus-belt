@@ -1,7 +1,7 @@
 # PCell on the byte memory model: multi-byte cells
 
 Status: steps 1–3 implemented (2026-10-30), branch `memory-model`; see §9 Outcome. §10 step 1
-done (2026-10-31); see §11. §10 step 2 done; see §12.
+done (2026-10-31); see §11. §10 steps 2 and 3 done; see §12 and §13.
 Context: `design_docs/minirust-memory-model.md` (stages 1–5). `pcell` is the last user of the
 legacy word layer.
 
@@ -578,3 +578,30 @@ no new axioms.
   ill-formed contents fall back to `zst_mty`. The pcell rules of step 5 will take
   `mty_wf m` as a side condition (decidable, so `by compute`/`done` for concrete `m`), and
   rewrite with `decide_True`.
+
+## 13. Outcome: §10 step 3 (2026-10-31)
+
+The `type` record (`typing/type.v`) gains the fancy value. No `Admitted`; no new axioms;
+`bytes_own` is unchanged (that is step 4).
+
+- **Fields:** `ty_fval : ~~𝔄 → option FValue` and `ty_fval_eq x : syn_fval x = ty_fval x`.
+  - The shape is that of `ty_val` (`option`): a value with no MiniRust representation
+    (a closure, an out-of-range integer) has no fancy value either.
+  - Like `ty_mty` and `ty_val`, it is determined by the syntactic type. So `ty_fval` is
+    `syn_fval`, and the step-2 lemma carries over.
+- **Constructors.** Every type definition already fills the byte-layer fields with the
+  one-liner `ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl;
+  ty_val_eq _ := eq_refl;`. Each of the 23 definitions now has one more line,
+  `ty_fval := syn_fval; ty_fval_eq _ := eq_refl;`. A smart constructor was not needed: this
+  default is the only possible value up to `ty_fval_eq`, and the existing definitions don't
+  go through a common builder.
+- **Lemmas** (`ty_mty_lemmas`):
+
+      Lemma ty_fval_same {𝔄} (ty ty': type 𝔄) x : ty.(ty_fval) x = ty'.(ty_fval) x.
+      Lemma ty_fval_nocell {𝔄} (ty: type 𝔄) x :
+        syn_nocell 𝔄 → ty.(ty_fval) x = fv_lift <$> ty.(ty_val) x.
+      Lemma ty_fval_nocell_cells {𝔄} (ty: type 𝔄) x fv :
+        syn_nocell 𝔄 → ty.(ty_fval) x = Some fv → fv_cells fv = [].
+
+- The OFE structure doesn't change: `ty_fval` is not part of `type_unpack`, just as
+  `ty_mty` and `ty_val` aren't.

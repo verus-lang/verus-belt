@@ -32,6 +32,7 @@ Section own.
       ▷ (ty.(ty_gho_pers) (snd x) d' g tid) ;
     
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
+    ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
     ty_phys x tid := [FVal (LitV (fst x))];
     ty_shr κ x d g tid :=
       ▷ [S(d') := d]

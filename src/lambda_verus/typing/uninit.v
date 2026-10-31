@@ -15,6 +15,7 @@ Section uninit.
     ty_gho_res vπ _ _ _ := True;
     ty_gho_pers vπ _ _ _ := True;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
+    ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
     ty_phys x _ := fmap FVal (vec_to_list x);
     ty_shr := default_shr (λ vπ _ _ _, True);
   |}%I.
