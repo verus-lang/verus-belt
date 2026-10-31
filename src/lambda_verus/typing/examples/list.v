@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import fixpoint product sum mod_ty own.
+From lrust.typing Require Import fixpoint product sum mod_ty own bytes_layout.
 From lrust.prophecy Require Import syn_type.
 Set Default Proof Using "Type".
 
@@ -70,6 +70,10 @@ Next Obligation. intros 𝔄 [loc0 [[[]|[[elem [loc [l np]]]|[]]] p]]; first don
   fold indep_interp_of_syn_type. fold proph_interp_of_syn_type. simpl.
   do 4 (rewrite List.app_nil_r). done.
 Qed.
+
+(** Both are pointers, to the same location: the bytes are the same. *)
+Lemma syn_bincl_sum_to_list {𝔄} : syn_bincl (sum_to_listₛ (𝔄:=𝔄)).
+Proof. apply syn_bincl_same; [done|]. by intros [l [[[]|[[x [loc [xl np]]]|[]]] p]]. Qed.
 
 Local Instance sum_list_isoₛ {𝔄} : @Isoₛ
     (at_locₛ (Σ! [unitₛ ; prodₛ 𝔄 (rlistₛ 𝔄)]))
@@ -146,7 +150,7 @@ Section typing.
     eapply eqtype_eq.
     - eapply eqtype_trans.
       + apply fix_unfold_fold.
-      + apply mod_ty_outin.
+      + apply mod_ty_outin, syn_bincl_sum_to_list.
     - apply extensₛ; trivial.
     - apply extensₛ; trivial.
   Qed.
