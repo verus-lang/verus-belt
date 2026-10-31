@@ -272,7 +272,7 @@ Section cell_uniq_rules.
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
     iDestruct "p" as (vp Hp wp dp [-> Hwp]) "[#⧖p #Own]". simpl in Hwp. simplify_eq.
     iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
-    iDestruct "Uniq" as "(#Incl & [%Hle1 %Hle2] & Body & #PtBase)".
+    iDestruct "Uniq" as "(#Incl & [%Hle1 %Hle2] & Body)".
     rewrite /PCellBorrowMut.
     wp_bind p. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     wp_bind q. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
@@ -304,11 +304,9 @@ Section cell_uniq_rules.
     iSplitR "Obs"; last first. { iApply (proph_obs_impl with "Obs"). by intros π [_ ?]. }
     iSplit; [|done]. rewrite tctx_val_val. iExists D. iSplit; [done|]. iFrame "⧖D".
     iSplitL.
-    - iFrame "Incl". iSplit; [iPureIntro; lia|]. iSplitL "Body".
-      + iApply (uniq_body_loc with "Body"). intros ?. rewrite /cbytes.
-        apply bytes_own_zst_loc, cell_points_to_bsize.
-      + have Hemp : (True ⊣⊢ ((l.1, []) : cloc) #↦∗_) := heap_cloc_mapsto_empty l.1 0.
-        rewrite -Hemp. iApply guards_true.
+    - iFrame "Incl". iSplit; [iPureIntro; lia|].
+      iApply (uniq_body_loc with "Body"). intros ?. rewrite /cbytes.
+      apply bytes_own_zst_loc, cell_points_to_bsize.
     - iExists cs. iFrame "Hg". iApply (guard_pcell_loc_side with "Hg"); [apply ty_mty_wf|].
       iApply (lguards_weaken_later with "Gp"). lia.
   Qed.
@@ -329,7 +327,7 @@ Section cell_uniq_rules.
     simpl in Hw. simplify_eq. wp_pure _.
     wp_bind r. iApply (wp_val with "r"). iIntros (v dy Hr Hv) "#⧖y Gy".
     iDestruct "Φ" as (cs) "[#Hg #GL]".
-    iDestruct "Uniq" as "(#Incl & [%Hle1 %Hle2] & Body & #PtBase)".
+    iDestruct "Uniq" as "(#Incl & [%Hle1 %Hle2] & Body)".
     iApply wp_fupd.
     iApply (wp_cumulative_time_receipt2 with "TIME"); [solve_ndisj|]. iIntros "⧗".
     iDestruct (cumulative_time_receipt_sep 1 1 with "⧗") as "[⧗a ⧗b]".
@@ -343,9 +341,9 @@ Section cell_uniq_rules.
       [rewrite /advance_credits; lia|].
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Gh #Back]]]"; [solve_ndisj|].
     iDestruct (guards_transitive with "Gh Alv") as "#Gκ".
-    iMod (uniq_cell_open with "LFT UNIQ Gκ Gκ [Body] H1 H2 £1")
+    iMod (uniq_cell_open κ ty _ _ _ _ _ _ _ dq with "LFT UNIQ Gκ Gκ [Body] H1 H2 £1")
       as "(H2 & ⧗s & _ & _ & Own & Close)".
-    { iFrame "Incl Body PtBase". iPureIntro. lia. }
+    { iFrame "Incl Body". iPureIntro. lia. }
     iDestruct "Own" as (di' ->) "[Own _]". iDestruct "Own" as (fv cs' Hfv) "[#Hg' Hgd]".
     iDestruct (greg_agree with "Hg Hg'") as %[_ <-].
     iDestruct (guards_transitive_right with "Gκ GL") as "GL'".
@@ -367,8 +365,7 @@ Section cell_uniq_rules.
     { iApply (proph_obs_impl with "Obs"). intros π Hpost. apply Hpost. }
     iSplit; [|done]. iExists _. iSplit; [done|]. iExists (VPtr l.1), (D + 1 + 1).
     iSplit; [done|]. iFrame "⧖D2". iSplitL.
-    - iFrame "Incl UB". iSplit; [iPureIntro; lia|].
-      iApply (lguards_weaken_later with "PtBase"). lia.
+    - iFrame "Incl UB". iPureIntro; lia.
     - iExists cs. iFrame "Hg". iApply (lguards_weaken_later with "GL"). lia.
   Qed.
 End cell_uniq_rules.

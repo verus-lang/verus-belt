@@ -178,7 +178,7 @@ Section typing.
     destruct u as [[[[[c [l' x]] ξi] d] g] ξidx].
     iDestruct "Hptr" as (vp Hp w d0 [-> Hw]) "[_ _]". simpl in Hw. simplify_eq.
     iDestruct "Hperm" as (vq Hq w' d'' [-> _]) "[#Hd' Huniq]".
-    iDestruct "Huniq" as "[#Incl [%Hineq [UniqBody _]]]".
+    iDestruct "Huniq" as "[#Incl [%Hineq UniqBody]]".
     rewrite /PPtrMutBorrow.
     wp_bind ptr. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).
     wp_bind perm_ref. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).
@@ -217,8 +217,7 @@ Section typing.
     iExists -[((l, []), x, ζi, d, g, ζidx)].
     iFrame "L". iSplit.
     - iSplit; [|done]. rewrite tctx_val_val. iExists _. iFrame "Hd''".
-      iSplit; [done|]. iFrame "Incl UniqBody". iSplit; [iPureIntro; lia|].
-      rewrite -(heap_cloc_mapsto_empty l 0). iApply guards_true.
+      iSplit; [done|]. iFrame "Incl UniqBody". iPureIntro; lia.
     - iCombine "Obs Obs2" as "Obs3".
       iApply (proph_obs_impl with "Obs3"). intros π [[_ Ha] Hb].
       apply Ha; intuition.

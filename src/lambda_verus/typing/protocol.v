@@ -808,7 +808,7 @@ Section StorageProtocol_bytes.
     destruct d2 as [|d2]; [done|].
     iDestruct (sr_shr_elim with "Own2") as "#Shr".
     iDestruct (Alv with "L E") as "#Alv".
-    iDestruct "Huniq" as "(_ & %Hineq & UB & _)".
+    iDestruct "Huniq" as "(_ & %Hineq & UB)".
     iMod (fractional.frac_split_guard_in_half NllftG with "L Alv")
       as (γ) "[F1 [F2 [#guardHalf #back]]]"; [solve_ndisj|].
     iMod (llftl_begin with "LFT") as (κ1) "[A1 #Kill1]"; [done|].

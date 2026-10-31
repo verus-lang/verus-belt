@@ -594,7 +594,7 @@ Section pcell_atomics.
           cell_own ty g y) -∗ ⧗1 ={↑Nllft}=∗
         uniq_body (cell_points_to_ty ty) (g, y) ξi (S d1) g1 ξidx κ tid l' ∗ G1).
   Proof.
-    iIntros (??) "#LFT #UNIQ #Gκ1 #Gκ2 (#Incl & _ & Body & _) G1 G2 £".
+    iIntros (??) "#LFT #UNIQ #Gκ1 #Gκ2 (#Incl & _ & Body) G1 G2 £".
     iMod (uniq_body_acc with "LFT UNIQ Gκ1 Body G1") as "(Pay & ⧗ & Close)"; [solve_ndisj|].
     iMod (uniq_payload_force with "[] G2 £ Pay") as "(G2 & ⧖ & Gho & _)";
       [rewrite /lazyE; solve_ndisj| |].

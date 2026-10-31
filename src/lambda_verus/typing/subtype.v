@@ -182,7 +182,7 @@ Section bsubtype.
     iSplit. {
       iModIntro. iIntros (x d g tid) "[#Incl gho]".
       destruct x as [[[[[l x0] ξi] d'] g'] idx].
-      iDestruct "gho" as "[#Hineq [UniqBody #PtBase]]".
+      iDestruct "gho" as "[#Hineq UniqBody]".
       iDestruct (uniq_body_pers_component_impl with "UniqBody") as "#Saved".
       iDestruct (incl_uniq_body ty ty' x0 ξi d' g' with "In [] EqOwn [] UniqBody") as "UniqBody".
       { iFrame "Lfts1 Lfts2". }
@@ -190,11 +190,10 @@ Section bsubtype.
       iDestruct (guards_transitive with "In Incl") as "Incl'".
       iDestruct (guards_transitive with "Incl' Lfts1") as "Incl''".
       iFrame "UniqBody Incl'' Hineq".
-      iSplit. { iApply (guards_transitive_right with "In PtBase"). }
-      iIntros "[Hincl'' [Hineq'' [UniqBody _]]]".
+      iIntros "[Hincl'' [Hineq'' UniqBody]]".
       iDestruct "UniqBody" as (κp' γ') "(_ & Tok & ⧗ & _)".
       iDestruct "Saved" as (κps) "[Inc P]".
-      iSplitR; [iFrame "Incl"|]. iSplitR "PtBase"; [|iFrame "PtBase"].
+      iSplitR; [iFrame "Incl"|].
       iExists κps, γ'. iFrame "∗#".
     }
     iSplit. {
