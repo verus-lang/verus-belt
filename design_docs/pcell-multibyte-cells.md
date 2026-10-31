@@ -2,7 +2,7 @@
 
 Status: steps 1–3 implemented (2026-10-30), branch `memory-model`; see §9 Outcome. §10 step 1
 done (2026-10-31); see §11. §10 steps 2 and 3 done; see §12 and §13. §10 step 4 done; see §14.
-§10 step 5 done except the port of `protocol.v`; see §15.
+§10 step 5 done; see §15 and §16.
 Context: `design_docs/minirust-memory-model.md` (stages 1–5). `pcell` is the last user of the
 legacy word layer.
 
@@ -887,7 +887,26 @@ update_with_shr_non_det.
 - **Generic moves and copies of values containing cells** (the `NoCell` rules of §14) are not
   generalised: the move rules above move a `pcellb_ty` box; a generic typed move of a
   value with several groups would need a multi-group untether/retether lemma.
-- **`protocol.v` is not ported** (see §15.1 below if done).
 - The atomic store/MCAS consume the unique borrow of the permission (as the legacy rules);
   the non-atomic store through `bcell_uniq_ty` keeps it.
+
+## 16. Outcome: §10 step 5, `protocol.v` on bytes (2026-10-31)
+
+`typing/protocol_bytes.v` has the typing rules of `protocol.v` on the byte layer, as
+`ra_bytes.v` for `ra.v`: the definitions (`storable_ty`, `storage_resource_ty`) and the
+storage-protocol lemmas (`proph_protocol.v`) are reused; ghost values are `◁ᵥ` values,
+shared references `&shrb`, unique borrows `&uniqb`. No `Admitted`; no new axioms.
+
+- Storable values: `storable_new_bytes`, `storable_into_inner_bytes`, `storable_borrow_bytes`
+  (the last returns its argument after two steps, `GhostRetS`, to get the cumulative time
+  receipt of the stored value, as `typed_instr_of_skip_linear`).
+- Owned rules (`GhostOp`): `typed_spb_alloc`, `_join`, `_split`, `_exchange`, `_deposit`,
+  `_withdraw`, `_update`, `_exchange_nondeterministic`.
+- Shared rules: `typed_spb_guard`, `_join_shared_to_target`, `_weaken` (they return the
+  pointer of their first argument, `GhostRet`), `_validate` (`GhostOp2`, a pair of ghost
+  values), `_exchange_with_shr`, `_exchange_with_shr_nondeterministic`,
+  `_validate_with_shr` (with `&uniqb`, which it gives up, as the legacy rule).
+- **Deviation**: the rules whose legacy result is a box of a pair (split, exchange,
+  withdraw, the non-deterministic exchanges) keep the first component in their first
+  argument (`p1 ◁ᵥ storage_resource_ty`, with the new value) and return the second one.
 
