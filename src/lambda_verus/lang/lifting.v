@@ -1728,7 +1728,7 @@ Proof.
   iApply wp_lift_base_step; auto.
   iIntros (σ1 stepcnt κ κs n) "[Hσ Ht]". heap_split.
   iMod (bytes_ctx_cell_write_begin with "£ Guard HP Hp Hg G Hgd HB")
-    as (bs) "([%Hrange %Hlen] & HB & Tok)"; [done..|].
+    as (bs) "([%Hrange [%Hlen _]] & HB & Tok)"; [done..|].
   have Hrange' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange.
   iApply fupd_mask_intro; first set_solver. iIntros "Hclose". iSplit.
   { iPureIntro. eexists _, _, _, _. eapply StoreNa1S; eauto. }
@@ -1774,7 +1774,7 @@ Proof.
   iApply wp_lift_atomic_base_step_no_fork; auto.
   iIntros (σ1 stepcnt κ κs n') "[Hσ Ht]". heap_split.
   iMod (bytes_ctx_cell_write_begin with "£ Guard HP Hp Hg G Hgd HB")
-    as (bs) "([%Hrange %Hlen] & HB & Tok)"; [done..|].
+    as (bs) "([%Hrange [%Hlen _]] & HB & Tok)"; [done..|].
   iMod (bytes_ctx_cell_write_end _ _ _ _ _ _ _ _ _ _ _ (encode_value m' v) v fvn with "Hg HB Tok")
     as (bs2) "(_ & HB & Hgd & G)"; [done..|by apply decode_encode_value|].
   rewrite shift_loc_assoc_nat.
@@ -1815,7 +1815,7 @@ Proof.
   have Hrange2' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange2.
   have Hr2 := phys_rel_mem_alter _ ls_inc _ _ _ _ _ Hr Hrange2.
   iMod (bytes_ctx_cell_write_begin with "£ Guard HP Hp Hg G Hgd HB")
-    as (bs) "([%Hrange1 %Hlen] & HB & Tok)"; [done..|].
+    as (bs) "([%Hrange1 [%Hlen _]] & HB & Tok)"; [done..|].
   have Hrange1' := mem_range_rst0_inc _ _ _ _ _ (phys_rel_mem_range _ _ _ _ _ _ Hr2 Hrange1).
   have Hr1 := phys_rel_mem_alter _ (λ _, WSt) _ _ _ _ _ Hr2 Hrange1.
   iApply fupd_mask_intro; first set_solver. iIntros "Hclose". iSplit.
@@ -1928,6 +1928,133 @@ Proof.
   iIntros (Hv) "Hg Hwp". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
   iDestruct (bytes_ctx_greg_length with "HB Hg") as %Hlen.
   iModIntro. iFrame "HB". by iApply "Hwp".
+Qed.
+
+(** ** Typed compare-and-exchange
+
+[MCAS m l e1 e2] compares the value decoded at [m] from the bytes at [l] with [e1], by
+equality of [Value]s (so padding is not compared), and if they are equal writes the
+encoding of [e2]. It is atomic. *)
+Lemma wp_mcas E l m bs v e1 v1 e2 v2 :
+  ↑naN ⊆ E → IntoVal e1 (MLitV v1) → IntoVal e2 (MLitV v2) → val_wf m v2 →
+  decode_value m bs = Some v →
+  {{{ ▷ l ↦b bs }}} MCAS m (Lit $ LitLoc l) e1 e2 @ E
+  {{{ b, RET MLitV (VBool b);
+      (⌜b = true ∧ v = v1⌝ ∗ l ↦b encode_value m v2) ∨ (⌜b = false ∧ v ≠ v1⌝ ∗ l ↦b bs) }}}.
+Proof.
+  iIntros (? <- <- Hwf Hdec Φ) ">Hbs HΦ". have Hlen := decode_value_length _ _ _ Hdec.
+  iApply wp_lift_atomic_base_step_no_fork; auto.
+  iIntros (σ1 stepcnt κ κs n') "[Hσ Ht]". heap_split.
+  destruct (decide (v = v1)) as [<-|Hne].
+  - have Hlen' : length (@encode_value val m v2) = length bs by rewrite length_encode_value.
+    iMod (bytes_ctx_write _ _ _ _ (@encode_value val m v2) with "HB Hbs") as "(%Hrange & HB & Hbs)";
+      [done..|].
+    have Hrange' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange.
+    iModIntro. iSplit.
+    { iPureIntro. eexists _, _, _, _. eapply MCasSucS; [by rewrite to_of_val|by rewrite to_of_val|done|
+        by eapply mem_range_impl; [|done]|lia|done]. }
+    iNext; iIntros (e2' σ2 efs Hstep) "credit"; inv_head_step.
+    + match goal with H : mem_range is_reading _ _ ?bs' |- _ =>
+        have Heq := mem_range_det _ _ _ _ _ _ Hrange' H ltac:(lia) end. subst.
+      match goal with H : decode_value _ _ = Some _ |- _ => rewrite Hdec in H end. congruence.
+    + iMod (time_interp_step with "Ht") as "$". iModIntro. iSplit; [done|].
+      iSplitR "HΦ Hbs".
+      { iExists hF. iFrame. iPureIntro. split.
+        - by eapply phys_rel_mem_write.
+        - eapply heap_freeable_rel_dom; [|done]. intros ?. simpl.
+          by rewrite (is_Some_mem_write _ _ _ _ _ _ Hrange' Hlen'). }
+      iApply "HΦ". iLeft. by iFrame.
+    + exfalso. match goal with H : ¬ mem_range _ _ _ ?bs' |- _ => apply H end.
+      match goal with H : mem_range is_reading _ _ ?bs' |- _ =>
+        have Heq := mem_range_det _ _ _ _ _ _ Hrange' H ltac:(lia) end. by subst.
+  - iDestruct (bytes_ctx_lookup with "HB Hbs") as %Hrange.
+    have Hrange' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange.
+    iModIntro. iSplit.
+    { iPureIntro. eexists _, _, _, _. eapply MCasFailS; by rewrite ?to_of_val. }
+    iNext; iIntros (e2' σ2 efs Hstep) "credit"; inv_head_step;
+      match goal with H : mem_range _ _ _ ?bs' |- _ =>
+        have Heq := mem_range_det _ _ _ _ _ _ Hrange' H ltac:(lia) end; subst;
+      match goal with H : decode_value _ _ = Some _ |- _ => rewrite Hdec in H; injection H as -> end;
+      try done.
+    iMod (time_interp_step with "Ht") as "$". iModIntro. iSplit; [done|].
+    iSplitR "HΦ Hbs"; [by iFrame|]. iApply "HΦ". iRight. by iFrame.
+Qed.
+
+Lemma fv_lift_inj v v' : fv_lift v = fv_lift v' → v = v'.
+Proof.
+  intros Heq. apply (fval_erase_det ∅ (fv_lift v)); [apply fval_erase_lift|].
+  rewrite Heq. apply fval_erase_lift.
+Qed.
+
+(** A typed compare-and-exchange through a cell, of a plain sub-value [vc] of the fancy
+    value of [g], at its MiniRust type [m'] (no mixed-size accesses). A success is an atomic
+    write through the cell; a failure is an atomic read. *)
+Lemma wp_pcell_mcas_sub E l0 g0 m0 cs0 g o m cs fv o' m' vc fvn e1 v1 e2 v2 G P d :
+  ↑naN ⊆ E → IntoVal e1 (MLitV v1) → IntoVal e2 (MLitV v2) →
+  fv_sub m fv o' m' (fv_lift vc) → fv_upd m fv o' m' (fv_lift v2) fvn → mty_wf m' →
+  val_wf m' v2 →
+  {{{ (G &&{↑naN; d}&&> P) ∗ □ (P -∗ loc_side l0 g0 m0 cs0 ∗ (loc_side l0 g0 m0 cs0 -∗ P)) ∗
+      gpath g0 g o ∗ greg g m cs ∗ G ∗ gdyn g fv ∗ £(2*d) }}}
+    MCAS m' (Lit $ LitLoc (l0 +ₗ (o + o')%nat)) e1 e2 @ E
+  {{{ b, RET MLitV (VBool b); G ∗
+      ((⌜b = true ∧ vc = v1⌝ ∗ gdyn g fvn) ∨ (⌜b = false ∧ vc ≠ v1⌝ ∗ gdyn g fv)) }}}.
+Proof.
+  iIntros (? <- <- Hsub Hupd Hm Hwf Φ) "(#Guard & #HP & #Hp & #Hg & G & Hgd & £) HΦ".
+  have Hplain := fv_cells_lift vc.
+  iApply wp_lift_atomic_base_step_no_fork; auto.
+  iIntros (σ1 stepcnt κ κs n') "[Hσ Ht]". heap_split.
+  destruct (decide (vc = v1)) as [<-|Hne].
+  - iMod (bytes_ctx_cell_write_begin with "£ Guard HP Hp Hg G Hgd HB")
+      as (bs) "([%Hrange [%Hlen (%v' & %Hdec & %Hv')]] & HB & Tok)"; [done..|].
+    apply fv_lift_inj in Hv'. subst v'.
+    iMod (bytes_ctx_cell_write_end _ _ _ _ _ _ _ _ _ _ _ (encode_value m' v2) v2 fvn with "Hg HB Tok")
+      as (bs2) "(_ & HB & Hgd & G)"; [done..|by apply decode_encode_value|].
+    rewrite shift_loc_assoc_nat.
+    have Heq : mem_write (l0 +ₗ (o + o')%nat) (@encode_value val m' v2)
+        (mem_alter (λ _, WSt) (l0 +ₗ (o + o')%nat) (mty_size m') σB) =
+      mem_write (l0 +ₗ (o + o')%nat) (encode_value m' v2) σB.
+    { have := mem_alter_mem_write (λ _, WSt) (l0 +ₗ (o + o')%nat) (@encode_value val m' v2) σB.
+      by rewrite length_encode_value. }
+    rewrite Heq.
+    have Hlen' : length (@encode_value val m' v2) = length bs by rewrite length_encode_value.
+    have Hrange' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange.
+    have Hrd' : mem_range is_reading σ1.1 (l0 +ₗ (o + o')%nat) bs.
+    { eapply mem_range_impl; [|exact Hrange']. intros ? ->. by eexists. }
+    iModIntro. iSplit.
+    { iPureIntro. eexists _, _, _, _. eapply MCasSucS; [by rewrite to_of_val|by rewrite to_of_val|done|
+        done|lia|done]. }
+    iNext; iIntros (e2' σ2 efs Hstep) "credit"; inv_head_step.
+    + match goal with H : mem_range is_reading _ _ ?bs' |- _ =>
+        have Heq' := mem_range_det _ _ _ _ _ _ Hrd' H ltac:(lia) end. subst.
+      match goal with H : decode_value _ _ = Some _ |- _ => rewrite Hdec in H end. congruence.
+    + iMod (time_interp_step with "Ht") as "$". iModIntro. iSplit; [done|].
+      iSplitR "HΦ G Hgd".
+      { iExists hF. iFrame. iPureIntro. split.
+        - by eapply phys_rel_mem_write.
+        - eapply heap_freeable_rel_dom; [|done]. intros ?. simpl.
+          by rewrite (is_Some_mem_write _ _ _ _ _ _ Hrange' Hlen'). }
+      iApply "HΦ". iFrame "G". iLeft. by iFrame.
+    + exfalso. match goal with H : ¬ mem_range _ _ _ ?bs' |- _ => apply H end.
+      match goal with H : mem_range is_reading _ _ ?bs' |- _ =>
+        have Heq' := mem_range_det _ _ _ _ _ _ Hrd' H ltac:(lia) end. by subst.
+  - iDestruct "£" as "[£1 _]".
+    iMod (guards_open_later with "Guard G") as "Open"; [done|].
+    iMod (lc_fupd_elim_laterN with "£1 Open") as ">[P Back]".
+    iDestruct ("HP" with "P") as "[Hls Ret]".
+    iDestruct (bytes_ctx_cell_lookup_sub with "HB Hls Hp Hg Hgd")
+      as %(bs & v & Hrange & Hlen & Hdec & Hfv); [done..|].
+    apply fv_lift_inj in Hfv. subst v.
+    iMod ("Back" with "(Ret Hls)") as "G".
+    have Hrange' := phys_rel_mem_range _ _ _ _ _ _ Hr Hrange.
+    iModIntro. iSplit.
+    { iPureIntro. eexists _, _, _, _. eapply MCasFailS; by rewrite ?to_of_val. }
+    iNext; iIntros (e2' σ2 efs Hstep) "credit"; inv_head_step;
+      match goal with H : mem_range _ _ _ ?bs' |- _ =>
+        have Heq := mem_range_det _ _ _ _ _ _ Hrange' H ltac:(lia) end; subst;
+      match goal with H : decode_value _ _ = Some _ |- _ => rewrite Hdec in H; injection H as -> end;
+      try done.
+    iMod (time_interp_step with "Ht") as "$". iModIntro. iSplit; [done|].
+    iSplitR "HΦ G Hgd"; [by iFrame|]. iApply "HΦ". iFrame "G". iRight. by iFrame.
 Qed.
 
 End lifting.

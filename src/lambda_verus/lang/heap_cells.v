@@ -1734,7 +1734,8 @@ Section cells.
     £(2*d) -∗ (G &&{↑naN; d}&&> P) -∗
     □ (P -∗ loc_side l0 g0 m0 cs0 ∗ (loc_side l0 g0 m0 cs0 -∗ P)) -∗
     gpath g0 g o -∗ greg g m cs -∗ G -∗ gdyn g fv -∗ bytes_ctx σB ={E}=∗ ∃ bs,
-      ⌜mem_range (.= RSt 0) σB (l0 +ₗ (o + o')%nat) bs ∧ length bs = mty_size m'⌝ ∗
+      ⌜mem_range (.= RSt 0) σB (l0 +ₗ (o + o')%nat) bs ∧ length bs = mty_size m' ∧
+       ∃ v, decode_value m' bs = Some v ∧ fvs = fv_lift v⌝ ∗
       bytes_ctx (mem_alter (λ _, WSt) (l0 +ₗ (o + o')%nat) (mty_size m') σB) ∗
       cwrite_tok g (l0 +ₗ o, o', mty_size m', fv) G.
   Proof.
@@ -1813,7 +1814,7 @@ Section cells.
     have Hrow_has' : ∀ l' c, row_has 𝛼 l' c → row_has 𝛼' l' c.
     { intros l' c (cells & v1 & Hk & Hc). destruct (Hfw _ _ _ Hk) as [v1' Hk']. by exists cells, v1'. }
     iModIntro. iExists bs. iSplit.
-    { iPureIntro. split; [|done]. eapply bank_rel_disj; [done|by rewrite Hlenbs|done]. }
+    { iPureIntro. split_and!; [|done|by exists v]. eapply bank_rel_disj; [done|by rewrite Hlenbs|done]. }
     iFrame "Tok". iExists 𝛼', M. iFrame "H● Hbank Entries".
     iSplit.
     { iPureIntro. rewrite Hphi -(mem_set_alter (λ _, WSt) (RSt 0)) // Hlenbs.
