@@ -415,3 +415,30 @@ plan. The open decisions are:
 All of it. `pcell.v` and its examples still run on the legacy word layer, so `ty_phys`, `Word`
 bytes, the legacy `Read`/`Write`/`CAS`, `phys_rel` and the second ghost region can't be deleted
 yet.
+
+## 10. Plan after steps 1–3 (approved 2026-10-31)
+
+**User decision on the syntactic type:** `pcell` is parameterised by its content mty, and the
+group id is part of its syntactic type's value. That is, `pcellₛ m` has `~~(pcellₛ m) = group_id`,
+`syn_mty = m`, `syn_val = None` and `syn_fval g = FVCell g`. It is added as a new constructor
+next to the legacy `pcellₛ n`; the legacy one is deleted in stage 5.
+
+**Order** (each step is a separate merge):
+1. **Close the step-3 deviations at the lemma level** (no typing changes):
+   - writes through cells at a sub-position (the basis for `borrow_mut`);
+   - access to an inner cell without destroying the outer cell;
+   - typed moves of groups that contain cells;
+   - a general lemma that decoding gives a well-formed value (`decode_value ⇒ val_wf`);
+   - a byte-level CAS.
+2. **The new syntactic type `pcellₛ m`**, as above.
+3. **A `ty_fval` field** in the `type` record, equal to `lift ∘ ty_val` for every type without
+   cells.
+4. **Parents own fancy bytes.** Generalise `bytes_own` to
+   `∃ fbs, l ↦b[^chains] fbs ∗ ⌜represents_R (ty_mty ty) fbs (ty_fval x)⌝`, with a lemma that
+   for types without cells this reduces to today's form. This includes shared and unique
+   borrows of cell contents.
+5. **PCell types and rules on bytes:**
+   - the types `pcell_ty m` and `cell_points_to_ty`;
+   - the rules `from_own`, `to_own`, `borrow`, `borrow_mut`, the atomics, and the move rule;
+   - ports of `pcell_example`, `ra` and `protocol`.
+6. **Stage 5:** delete the legacy layer.
