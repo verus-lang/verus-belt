@@ -415,15 +415,21 @@ Record type `{!typeG Σ} 𝔄 := {
      see [syn_val]). Like [ty_size] and [ty_phys], they are determined by the syntactic
      type ([ty_mty_eq], [ty_val_eq]). They will replace [ty_phys]: a parent owns bytes that
      decode to [ty_val x] at [ty_mty] (see [ty_bytes]). Note that [ty_size] still counts
-     legacy words; the size in bytes is [ty_bsize = mty_size ty_mty]. *)
+     legacy words; the size in bytes is [ty_bsize = mty_size ty_mty].
+     [ty_fval x] is the fancy value of [x] (see [syn_fval] and [lang/fvalue.v]): its
+     MiniRust value where the cells it embeds are their groups. It is determined by the
+     syntactic type too ([ty_fval_eq]); for a type without cells it is
+     [fv_lift <$> ty_val x] ([ty_fval_nocell]). *)
   ty_mty: mty;
   ty_val: ~~𝔄 → option Value;
+  ty_fval: ~~𝔄 → option FValue;
   
   ty_size_eq x tid : length (ty_phys x tid) = ty_size;
   ty_size_eq2 : size_of 𝔄 = ty_size;
   ty_phys_eq2 x tid : syn_phys x = ty_phys x tid;
   ty_mty_eq : syn_mty 𝔄 = ty_mty;
   ty_val_eq x : syn_val x = ty_val x;
+  ty_fval_eq x : syn_fval x = ty_fval x;
   
   ty_gho_own_depth_mono d g d' g' x tid :
     (d ≤ d')%nat → (g ≤ g')%nat → ty_gho_own x d g tid -∗
@@ -545,6 +551,7 @@ Global Instance: Params (@ty_gho_res) 3 := {}.
 Global Instance: Params (@ty_phys) 3 := {}.
 Global Instance: Params (@ty_mty) 3 := {}.
 Global Instance: Params (@ty_val) 3 := {}.
+Global Instance: Params (@ty_fval) 3 := {}.
 Arguments ty_size {_ _ _} _ / : simpl nomatch.
 Arguments ty_lfts {_ _ _} _ / : simpl nomatch.
 Arguments ty_E {_ _ _} _ / : simpl nomatch.
@@ -554,8 +561,10 @@ Arguments ty_gho_res {_ _ _} _ _ _ _ / : simpl nomatch.
 Arguments ty_phys {_ _ _} _ _ _ / : simpl nomatch.
 Arguments ty_mty {_ _ _} _ / : simpl nomatch.
 Arguments ty_val {_ _ _} _ _ / : simpl nomatch.
+Arguments ty_fval {_ _ _} _ _ / : simpl nomatch.
 Arguments ty_mty_eq {_ _ _}.
 Arguments ty_val_eq {_ _ _}.
+Arguments ty_fval_eq {_ _ _}.
 Arguments ty_size_eq {_ _ _}.
 Arguments ty_gho_own_depth_mono {_ _ _}.
 Arguments ty_gho_pers_depth_mono {_ _ _}.
@@ -604,6 +613,18 @@ Section ty_mty_lemmas.
   Proof. by rewrite -!ty_val_eq. Qed.
   Lemma ty_bytes_same {𝔄} (ty ty': type 𝔄) x bs : ty_bytes ty x bs ↔ ty_bytes ty' x bs.
   Proof. by rewrite /ty_bytes (ty_mty_same ty ty') (ty_val_same ty ty'). Qed.
+  Lemma ty_fval_same {𝔄} (ty ty': type 𝔄) x : ty.(ty_fval) x = ty'.(ty_fval) x.
+  Proof. by rewrite -!ty_fval_eq. Qed.
+
+  (** For a type without cells, the fancy value is the MiniRust value. *)
+  Lemma ty_fval_nocell {𝔄} (ty: type 𝔄) x :
+    syn_nocell 𝔄 → ty.(ty_fval) x = fv_lift <$> ty.(ty_val) x.
+  Proof. rewrite -ty_fval_eq -ty_val_eq. apply syn_fval_nocell. Qed.
+  Lemma ty_fval_nocell_cells {𝔄} (ty: type 𝔄) x fv :
+    syn_nocell 𝔄 → ty.(ty_fval) x = Some fv → fv_cells fv = [].
+  Proof.
+    intros H. rewrite ty_fval_nocell // => /fmap_Some [v [_ ->]]. apply fv_cells_lift.
+  Qed.
 
   Lemma ty_bytes_decode {𝔄} (ty: type 𝔄) x bs v :
     ty_bytes ty x bs → ty.(ty_val) x = Some v → decode_value ty.(ty_mty) bs = Some v.
@@ -798,6 +819,7 @@ Program Definition ty_of_st `{!typeG Σ} {𝔄} (st: simple_type 𝔄) : type �
   ty_gho_pers := st.(st_gho);
   ty_phys := st.(st_phys);
   ty_mty := syn_mty 𝔄; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
+  ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
   ty_shr := default_shr st.(st_gho);
 |}%I.
 Next Obligation. move=> >. apply st_size_eq. Qed.
@@ -882,6 +904,7 @@ Program Definition ty_of_gt `{!typeG Σ} {𝔄} (gt: ghost_type 𝔄) : type �
   ty_gho_pers x d g tid := True%I;
   ty_phys x tid := [];
   ty_mty := syn_mty 𝔄; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
+  ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
   ty_shr := default_shr (λ x d g tid, gt.(gt_gho) x tid);
 |}%I.
 Next Obligation. move=> * //=. Qed.

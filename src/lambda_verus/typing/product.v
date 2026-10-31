@@ -20,6 +20,7 @@ Section product.
        ty_gho_res x d g tid := True%I;
        ty_gho_pers x d g tid := True%I;
        ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
+       ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
        ty_phys x tid := [];
        ty_shr κ x d g tid := True%I;
     |}%I.
@@ -64,6 +65,7 @@ Section product.
     ty_gho_res x d g tid := ty.(ty_gho_res) (fst x) d g tid ∗ ty'.(ty_gho_res) (snd x) d g tid;
     ty_gho_pers x d g tid := ty.(ty_gho_pers) (fst x) d g tid ∗ ty'.(ty_gho_pers) (snd x) d g tid;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
+    ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
     ty_phys x tid := ty.(ty_phys) (fst x) tid ++ ty'.(ty_phys) (snd x) tid;
     ty_shr κ x d g tid := ty.(ty_shr) κ (fst x) d g tid ∗ ty'.(ty_shr) κ (snd x) d g tid;
   |}%I.

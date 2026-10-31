@@ -67,6 +67,7 @@ Section sum.
           xinj i x0 => @ty_gho_pers _ _ (𝔄l !!ₗ i) (tyl +!! i) x0 d g tid
         end ;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
+    ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
     ty_phys x tid :=
         match to_xsum (x.1) return list fancy_val with
           xinj i x0 => pad (FVal #i :: @ty_phys _ _ (𝔄l !!ₗ i) (tyl +!! i) x0 tid ++ (fmap FVal x.2)) (S (max_ty_size tyl))
