@@ -260,6 +260,174 @@ Section pcell_tests.
     iIntros "!>" (v) "(Hls1 & Hgd1 & %Hv)". have -> : v = VInt 5 by apply fv_lift_int, Hv.
     iApply "HΦ". iExists bs1. iFrame.
   Qed.
+
+  (** ** A [PCell<(i32, PCell<i32>)>] *)
+  Definition pair_mty : mty := MTuple [(0%nat, MInt i32); (4%nat, MInt i32)] 8.
+
+  Lemma pair_mty_wf : mty_wf pair_mty.
+  Proof.
+    constructor.
+    - intros [|[|i]] [|[|j]] o1 m1 o2 m2 Hij; simpl; try done;
+        intros [= <- <-] [= <- <-]; simpl; lia.
+    - repeat constructor; simpl; lia.
+    - repeat constructor.
+  Qed.
+
+  Lemma frepr_pair R g1 cs1 (bs : list abyte) z :
+    R !! g1 = Some (MInt i32, cs1) → length cs1 = 4%nat → decode_value (MInt i32) bs = Some (VInt z) →
+    frepr R pair_mty ((inr <$> bs) ++ (inl <$> cs1)) (FVTuple [FVInt z; FVCell g1]).
+  Proof.
+    intros HR Hlen Hd. have Hlb : length bs = 4%nat by apply (decode_value_length _ _ _ Hd).
+    apply frepr_tuple.
+    - rewrite length_app !length_fmap. lia.
+    - done.
+    - intros [|[|k]] f fv; simpl; try done; intros [= <-] [= <-]; simpl.
+      + rewrite /list_slice drop_0 take_app_length'; [|by rewrite length_fmap].
+        exact (frepr_plain R (MInt i32) bs (VInt z) Hd).
+      + rewrite /list_slice drop_app_length'; [|by rewrite length_fmap].
+        rewrite take_ge; [|rewrite length_fmap; simpl; lia]. by constructor.
+    - intros i fb Hi Hnf. exfalso. apply Hnf. apply lookup_lt_Some in Hi.
+      rewrite length_app !length_fmap in Hi. destruct (decide (i < 4)%nat).
+      + exists (0%nat, MInt i32). split; [set_solver|simpl; lia].
+      + exists (4%nat, MInt i32). split; [set_solver|simpl; lia].
+  Qed.
+
+  (** Create the inner cell [g1] (holding [9]) at [l +ₗ 4], then the outer cell [g0] over
+      [l] (holding [(5, g1)]), and record the nesting. *)
+  Lemma wp_pair_setup E e l bs1 bs2 Φ :
+    TCEq (to_val e) None → ↑naN ⊆ E →
+    decode_value (MInt i32) bs1 = Some (VInt 5) → decode_value (MInt i32) bs2 = Some (VInt 9) →
+    l ↦b bs1 -∗ (l +ₗ 4) ↦b bs2 -∗
+    (∀ g0 cs0 g1 cs1, greg g0 pair_mty cs0 -∗ loc_side l g0 pair_mty cs0 -∗
+       gdyn g0 (FVTuple [FVInt 5; FVCell g1]) -∗ greg g1 (MInt i32) cs1 -∗ gdyn g1 (FVInt 9) -∗
+       gpath g0 g1 4 -∗ WP e @ E {{ Φ }}) -∗
+    WP e @ E {{ Φ }}.
+  Proof.
+    iIntros (Hv ? Hd1 Hd2) "Hl1 Hl2 Hwp".
+    have Hlb : length bs1 = 4%nat by apply (decode_value_length _ _ _ Hd1).
+    iApply (wp_pcell_create_plain _ _ (l +ₗ 4) (MInt i32) _ (VInt 9) with "Hl2");
+      [done|apply Nat.ltb_lt; reflexivity|constructor|done|].
+    iIntros (g1 cs1) "[#Hg1 Hls1] Hgd1 _".
+    iApply (wp_greg_length with "Hg1"). iIntros (Hlen1).
+    iApply (wp_pcell_create _ _ l pair_mty ((inr <$> bs1) ++ (inl <$> cs1))
+      (FVTuple [FVInt 5; FVCell g1]) with "[Hl1 Hls1] [] [-]");
+      [done|apply Nat.ltb_lt; reflexivity|apply pair_mty_wf|..].
+    { rewrite heap_mapsto_fbytes_app -heap_mapsto_fbytes_bytes length_fmap Hlb. iFrame "Hl1".
+      rewrite /heap_mapsto_fbytes big_sepL_fmap. done. }
+    { iExists {[g1 := (MInt i32, cs1)]}. rewrite big_sepM_singleton. iFrame "Hg1".
+      iPureIntro. apply frepr_pair; [by rewrite lookup_singleton|done|done]. }
+    iIntros (g0 cs0) "Hls0 Hgd0 _". iDestruct "Hls0" as "[#Hg0 Hedges0]".
+    iApply (wp_pcell_gnest _ _ g0 pair_mty cs0 _ 4 (MInt i32) g1 with "Hg0 Hgd0").
+    { by apply (fv_sub_field _ _ _ 1 4 (MInt i32) (FVCell g1) 0 (MInt i32) (FVCell g1));
+        [|done|constructor]. }
+    iIntros "Hgd0 #Hn". iApply ("Hwp" with "Hg0 [$Hg0 $Hedges0] Hgd0 Hg1 Hgd1").
+    iApply (gpath_nest with "Hn"). iApply gpath_refl.
+  Qed.
+
+  (** Sub-position writes: write the first field of the outer cell (the second one is the
+      inner cell), then read it. *)
+  Lemma test_pcell_sub_write E l bs1 bs2 :
+    ↑naN ⊆ E →
+    decode_value (MInt i32) bs1 = Some (VInt 5) → decode_value (MInt i32) bs2 = Some (VInt 9) →
+    {{{ l ↦b bs1 ∗ (l +ₗ 4) ↦b bs2 }}}
+      Store Na1Ord (MInt i32) (#l) (MLit (VInt 7)) ;; Load Na1Ord (MInt i32) (#l) @ E
+    {{{ RET MLitV (VInt 7); ∃ g0 cs0 g1, loc_side l g0 pair_mty cs0 ∗
+          gdyn g0 (FVTuple [FVInt 7; FVCell g1]) ∗ gdyn g1 (FVInt 9) }}}.
+  Proof.
+    iIntros (? Hd1 Hd2 Φ) "[Hl1 Hl2] HΦ".
+    iApply (wp_pair_setup with "Hl1 Hl2"); [done..|].
+    iIntros (g0 cs0 g1 cs1) "#Hg0 Hls0 Hgd0 #Hg1 Hgd1 #Hp".
+    iAssert (loc_side l g0 pair_mty cs0 &&{↑naN; 0}&&> loc_side l g0 pair_mty cs0)%I
+      as "#Guard"; [iApply guards_refl|].
+    iAssert (□ (loc_side l g0 pair_mty cs0 -∗ loc_side l g0 pair_mty cs0 ∗
+      (loc_side l g0 pair_mty cs0 -∗ loc_side l g0 pair_mty cs0)))%I as "#HP".
+    { iIntros "!> Hls". iFrame. by iIntros "Hls". }
+    iMod lc_zero as "£".
+    have -> : (Lit (LitLoc l)) = (Lit (LitLoc (l +ₗ (0 + 0)%nat))) by rewrite /= shift_loc_0_nat.
+    wp_bind (Store _ _ _ _).
+    iApply (wp_pcell_store_na_sub _ l g0 pair_mty cs0 g0 0 pair_mty cs0
+      (FVTuple [FVInt 5; FVCell g1]) 0 (MInt i32) (FVInt 5) (FVTuple [FVInt 7; FVCell g1]) _
+      (VInt 7) _ _ 0 with "[$Guard $HP $Hls0 $Hgd0 $£]").
+    { done. }
+    { by apply (fv_sub_field _ _ _ 0 0 (MInt i32) (FVInt 5) 0 (MInt i32) (FVInt 5));
+        [|done|constructor]. }
+    { done. }
+    { by apply (fv_upd_field [(0%nat, MInt i32); (4%nat, MInt i32)] 8 [FVInt 5; FVCell g1] 0 0
+        (MInt i32) (FVInt 5) 0 (MInt i32) (FVInt 7) (FVInt 7));
+        [|done|constructor]. }
+    { constructor. }
+    { apply int7_wf. }
+    { iSplitR; [iApply gpath_refl|iExact "Hg0"]. }
+    iIntros "!> [Hls0 Hgd0]". wp_seq. iMod lc_zero as "£".
+    iAssert ((loc_side l g0 pair_mty cs0 ∗ gdyn g0 (FVTuple [FVInt 7; FVCell g1])) &&{↑naN; 0}&&>
+      (loc_side l g0 pair_mty cs0 ∗ gdyn g0 (FVTuple [FVInt 7; FVCell g1])))%I
+      as "#Guard2"; [iApply guards_refl|].
+    iApply (wp_pcell_load_na_sub _ l g0 pair_mty cs0 g0 0 pair_mty cs0
+      (FVTuple [FVInt 7; FVCell g1]) 0 (MInt i32) (FVInt 7) with "[$Guard2 $Hls0 $Hgd0 $£]").
+    { done. }
+    { by apply (fv_sub_field _ _ _ 0 0 (MInt i32) (FVInt 7) 0 (MInt i32) (FVInt 7));
+        [|done|constructor]. }
+    { done. }
+    { iSplitR; [|iSplitR; [iApply gpath_refl|iExact "Hg0"]]. iIntros "!> [Hls Hgd]".
+      iSplitL "Hls Hgd"; [iFrame|]. iIntros "Hls Hgd". iFrame. }
+    iIntros "!>" (v) "[[Hls0 Hgd0] %Hv]". have -> : v = VInt 7 by apply fv_lift_int, Hv.
+    iApply "HΦ". iExists g0, cs0, g1. iFrame.
+  Qed.
+
+  (** Accesses through the inner cell while the outer one is live: write and read the inner
+      cell, and read the first field of the outer one. *)
+  Lemma test_pcell_inner_access E l bs1 bs2 :
+    ↑naN ⊆ E →
+    decode_value (MInt i32) bs1 = Some (VInt 5) → decode_value (MInt i32) bs2 = Some (VInt 9) →
+    {{{ l ↦b bs1 ∗ (l +ₗ 4) ↦b bs2 }}}
+      Store Na1Ord (MInt i32) (#(l +ₗ 4)) (MLit (VInt 11)) ;;
+      Load ScOrd (MInt i32) (#l) ;; Load Na1Ord (MInt i32) (#(l +ₗ 4)) @ E
+    {{{ RET MLitV (VInt 11); ∃ g0 cs0 g1, loc_side l g0 pair_mty cs0 ∗
+          gdyn g0 (FVTuple [FVInt 5; FVCell g1]) ∗ gdyn g1 (FVInt 11) }}}.
+  Proof.
+    iIntros (? Hd1 Hd2 Φ) "[Hl1 Hl2] HΦ".
+    iApply (wp_pair_setup with "Hl1 Hl2"); [done..|].
+    iIntros (g0 cs0 g1 cs1) "#Hg0 Hls0 Hgd0 #Hg1 Hgd1 #Hp".
+    iAssert (loc_side l g0 pair_mty cs0 &&{↑naN; 0}&&> loc_side l g0 pair_mty cs0)%I
+      as "#Guard"; [iApply guards_refl|].
+    iAssert (□ (loc_side l g0 pair_mty cs0 -∗ loc_side l g0 pair_mty cs0 ∗
+      (loc_side l g0 pair_mty cs0 -∗ loc_side l g0 pair_mty cs0)))%I as "#HP".
+    { iIntros "!> Hls". iFrame. by iIntros "Hls". }
+    iMod lc_zero as "£".
+    have -> : (Lit (LitLoc (l +ₗ 4))) = (Lit (LitLoc (l +ₗ (4 + 0)%nat))) by done.
+    have -> : (Lit (LitLoc l)) = (Lit (LitLoc (l +ₗ (0 + 0)%nat))) by rewrite /= shift_loc_0_nat.
+    (* A write through the inner cell. *)
+    wp_bind (Store _ _ _ _).
+    iApply (wp_pcell_store_na_sub _ l g0 pair_mty cs0 g1 4 (MInt i32) cs1 (FVInt 9) 0 (MInt i32)
+      (FVInt 9) (FVInt 11) _ (VInt 11) _ _ 0 with "[$Guard $HP $Hls0 $Hgd1 $£ $Hp $Hg1]").
+    { done. } { apply fv_sub_here. } { done. } { apply fv_upd_here. } { constructor. }
+    { constructor. apply (bool_decide_unpack _); by vm_compute. }
+    iIntros "!> [Hls0 Hgd1]". wp_seq. iMod lc_zero as "£".
+    (* A read of the first field of the outer cell. *)
+    iAssert ((loc_side l g0 pair_mty cs0 ∗ gdyn g0 (FVTuple [FVInt 5; FVCell g1])) &&{↑naN; 0}&&>
+      (loc_side l g0 pair_mty cs0 ∗ gdyn g0 (FVTuple [FVInt 5; FVCell g1])))%I
+      as "#Guard2"; [iApply guards_refl|].
+    wp_bind (Load _ _ _).
+    iApply (wp_pcell_load_sc_sub _ l g0 pair_mty cs0 g0 0 pair_mty cs0
+      (FVTuple [FVInt 5; FVCell g1]) 0 (MInt i32) (FVInt 5) with "[$Guard2 $Hls0 $Hgd0 $£]").
+    { done. }
+    { by apply (fv_sub_field _ _ _ 0 0 (MInt i32) (FVInt 5) 0 (MInt i32) (FVInt 5));
+        [|done|constructor]. }
+    { done. }
+    { iSplitR; [|iSplitR; [iApply gpath_refl|iExact "Hg0"]]. iIntros "!> [Hls Hgd]".
+      iSplitL "Hls Hgd"; [iFrame|]. iIntros "Hls Hgd". iFrame. }
+    iIntros "!>" (v) "[[Hls0 Hgd0] %Hv]". have -> : v = VInt 5 by apply fv_lift_int, Hv.
+    wp_seq. iMod lc_zero as "£".
+    (* A read through the inner cell. *)
+    iAssert ((loc_side l g0 pair_mty cs0 ∗ gdyn g1 (FVInt 11)) &&{↑naN; 0}&&>
+      (loc_side l g0 pair_mty cs0 ∗ gdyn g1 (FVInt 11)))%I as "#Guard3"; [iApply guards_refl|].
+    iApply (wp_pcell_load_na_sub _ l g0 pair_mty cs0 g1 4 (MInt i32) cs1 (FVInt 11) 0 (MInt i32)
+      (FVInt 11) with "[$Guard3 $Hls0 $Hgd1 $£ $Hp $Hg1]").
+    { done. } { apply fv_sub_here. } { done. }
+    { iIntros "!> [Hls Hgd]". iSplitL "Hls Hgd"; [iFrame|]. iIntros "Hls Hgd". iFrame. }
+    iIntros "!>" (v') "[[Hls0 Hgd1] %Hv']". have -> : v' = VInt 11 by apply fv_lift_int, Hv'.
+    iApply "HΦ". iExists g0, cs0, g1. iFrame.
+  Qed.
 End pcell_tests.
 
 Print Assumptions test_pcell_read.
@@ -270,3 +438,5 @@ Print Assumptions test_pcell_write_guarded.
 Print Assumptions test_pcell_atomic_guarded.
 Print Assumptions test_pcell_typed_move.
 Print Assumptions test_pcell_nested.
+Print Assumptions test_pcell_sub_write.
+Print Assumptions test_pcell_inner_access.
