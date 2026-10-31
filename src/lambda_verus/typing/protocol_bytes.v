@@ -687,4 +687,77 @@ Section StorageProtocol_bytes.
     iSplitL "Hown"; [|iSplit; [by iApply (tracked_val_intro with "⧖ HghoC")|done]].
     iApply (val_path_intro _ _ srty with "⧖"); [done|done|]. by iFrame "Hsto Hown".
   Qed.
+
+  Notation "SPb_ValidateWithShr: p1 p2" := GhostOp2 (at level 102, p1,p2 at level 1): expr_scope.
+
+  (** Validating with a unique borrow and a shared reference (the unique borrow is given
+      up). *)
+  Lemma typed_spb_validate_with_shr `{!Inhabited (~~ℭ)} κ (p1 p2 : path) (tyA : type 𝔄) E L I :
+    lctx_lft_alive E L κ →
+    typed_instr E L I +[p1 ◁ᵥ &uniqb{κ} srty; p2 ◁ᵥ &shrb{κ} srty]
+      (SPb_ValidateWithShr: p1 p2) (λ v, +[v ◁ᵥ (ghost_ty tyA * ghost_ty tyC)%T])
+      (λ post '-[(_, (γ1, x1), _, _, _, _); (_, (γ2, x2))], λ mask π, γ1 = γ2 ∧
+        ∀ q t, vsp_rel (vsp_op (vsp_op x1 x2) q) t π →
+          (∀ k s, t !! k = Some s → post -[(q, s)] mask π) ∧
+          (t = ∅ → post -[(q, inhabitant)] mask π)).
+  Proof.
+    iIntros (Alv tid post mask iκs [[[[[[l1 [γ1 x1]] ξi] di] gi] idx] [[l2 [γ2 x2]] []]])
+      "#LFT #TIME #PROPH #UNIQ #E L $ (p1 & p2 & _) #Obs".
+    iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & _)"; [done|].
+    iDestruct "p1" as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 Huniq]".
+    iDestruct "p2" as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 #Own2]".
+    destruct d2 as [|d2]; [done|].
+    iDestruct (sr_shr_elim with "Own2") as "#Shr".
+    iDestruct (Alv with "L E") as "#Alv".
+    iDestruct "Huniq" as "(_ & %Hineq & UB & _)".
+    iMod (fractional.frac_split_guard_in_half NllftG with "L Alv")
+      as (γ) "[F1 [F2 [#guardHalf #back]]]"; [solve_ndisj|].
+    iMod (llftl_begin with "LFT") as (κ1) "[A1 #Kill1]"; [done|].
+    iMod (llftl_begin with "LFT") as (κ2) "[A2 #Kill2]"; [done|].
+    iMod (llftl_borrow_shared _ κ1 with "F1") as "[#G1 F1]"; [done|].
+    iMod (llftl_borrow_shared _ κ2 with "F2") as "[#G2 F2]"; [done|].
+    iDestruct (guards_remove_later_rhs with "G1") as "G1'".
+    iDestruct (guards_remove_later_rhs with "G2") as "G2'".
+    iDestruct (guards_transitive with "G1' guardHalf") as "Incl1".
+    iDestruct (guards_transitive with "G2' guardHalf") as "Incl2".
+    iMod (uniq_body_acc_drop with "LFT UNIQ Incl1 UB A1") as "(Hgho1 & _ & Hclose1)"; [done|].
+    iApply wp_fupd.
+    iApply (wp_persistent_time_receipt with "TIME ⧖2"); [done|]. iIntros "£ _".
+    iDestruct (lc_weaken ((S d2 + 1) + 1 + 1) with "£") as "[[£1 £2] £3]";
+      [rewrite /advance_credits; nia|].
+    iApply wp_ghost_op2. iIntros "!> !>".
+    iMod (uniq_payload_run _ _ _ _ _ _ _ (@[static]) with "[] [] Hgho1")
+      as "(_ & H⧖ & Hgho1 & H↦)"; [rewrite /uniq_util.lazyE; solve_ndisj|iApply guards_refl|
+      iApply llftl_tok_unit|].
+    iDestruct "Hgho1" as "(%Hγ1 & #Hsto1 & Hown1)".
+    iDestruct (guards_transitive_right with "Incl2 Shr") as "Shr2".
+    iPoseProof (guards_weaken_rhs_sep_r with "Shr2") as "Shr3".
+    iMod (sp_validate_with_extra_guard_with_later x1 x2 γ1 _ _ ⊤ (↑NllftG) _
+      ltac:(set_solver) ltac:(solve_ndisj) ltac:(solve_ndisj)
+      with "PROPH Hsto1 Shr3 A2 Hown1") as "J".
+    iMod (lc_fupd_elim_laterN with "£1 J") as ">(%q & %t & #Hobs & A2 & Hown1)".
+    iMod (fupd_mask_subseteq (↑Nllft)) as "Hclose"; [solve_ndisj|].
+    iMod ("Hclose1" $! ((γ1, x1) : ~~ (ghostₛ (positiveₛ * 𝔄))) _ _ with "[H↦ H⧖ Hown1]")
+      as "A1".
+    { iNext. iApply (uniq_payload_intro with "H⧖ [Hown1] H↦"). by iFrame "#%∗". }
+    iMod ("Kill1" with "A1") as "Hkilled1".
+    iMod (lc_fupd_add_later with "£2 Hkilled1") as "Hkilled1".
+    iMod ("Kill2" with "A2") as "Hkilled2".
+    iMod (lc_fupd_add_later with "£3 Hkilled2") as "Hkilled2".
+    iMod "Hclose" as "_".
+    iMod ("F1" with "Hkilled1") as ">Hγ1".
+    iMod ("F2" with "Hkilled2") as ">Hγ2".
+    iMod (fupd_mask_subseteq (↑NllftG)) as "Hclose"; [solve_ndisj|].
+    iMod ("back" with "Hγ1 Hγ2") as "$".
+    iMod "Hclose" as "_".
+    iModIntro. iCombine "Obs Hobs" as "Obs'".
+    destruct (decide (t = ∅)) as [Hempty|Hnempty].
+    - iExists -[(q, inhabitant)]. iSplitL; [iSplit; [by iApply ghost_pair_val_intro|done]|].
+      iApply (proph_obs_impl with "Obs'"). intros π' [[_ Hpost] Hrel].
+      eapply Hpost in Hrel as [? Hpost_empty]. by apply Hpost_empty.
+    - apply map_choose in Hnempty as (k & s & Hlookup).
+      iExists -[(q, s)]. iSplitL; [iSplit; [by iApply ghost_pair_val_intro|done]|].
+      iApply (proph_obs_impl with "Obs'"). intros π' [[_ Hpost] Hrel].
+      eapply Hpost in Hrel as [Hpost_ne _]. by eapply Hpost_ne.
+  Qed.
 End StorageProtocol_bytes.
