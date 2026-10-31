@@ -107,7 +107,7 @@ Section res_leaf.
     rewrite /ltype_own /= /res_leaf /leaf_owned_s /leaf_owned /ofty_owned /=.
     iIntros "(%x & -> & Pt & Gho)". destruct y as [[[[[l0 x0] ξi] d0] g0] idx].
     iDestruct (lc_weaken m with "£") as "£"; [rewrite /advance_credits; nia|].
-    iMod (lc_fupd_elim_laterN with "£ Gho") as (d' g' [??]) "(#In & %Hle & #Gc & Gho)".
+    iMod (lc_fupd_elim_laterN with "£ Gho") as (d' g' [??]) "(#In & %Hle & Gho)".
     iAssert (|={⊤}=> G ∗ (@[κ] &&{↑NllftG; 1}&&> cbytes ty x0 l0) ∗
       ty.(ty_shr) κ x0 d0 g0 tid ∗ ty.(ty_gho_pers) x0 d0 g0 tid)%I
       with "[G Gho]" as ">(G & #Gp & #Shr & #Pers)".
@@ -308,12 +308,10 @@ Section res_sum.
     set lr := (l, repeat [] (lty_size (pctx_plug K (OfRes (Σ! tyl))))).
     set lK := pctx_loc K (lty_size (OfRes (Σ! tyl))) x₀ lr.
     (* The address of the hole. *)
-    iMod lc_zero as "£0".
     wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr K (lty_size (OfRes (Σ! tyl))) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest").
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr K (lty_size (OfRes (Σ! tyl))) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".

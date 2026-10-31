@@ -230,11 +230,9 @@ Section read.
     iApply (wp_pctx_sexpr _ K2 (lty_size lt0) (g' + 1) (fractional.half γh) z ly);
       [solve_ndisj|].
     wp_bind (pctx_expr K (ToLit p)).
-    iMod lc_zero as "£0".
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest"); [solve_ndisj|..].
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".
@@ -386,7 +384,7 @@ Section unblock.
     iDestruct (view_pctx_acc K2 κ (Blocked ty β) 0 (PatBlocked β)
       (inl (PlaceGhost w ζi)) z ζm (false :: q0) d' g' tid ly (fractional.half γ1)
       with "Hs V") as (dh gh) "([%Hdh [%Hgh %Hin]] & Vh & #Gs & Cl)".
-    iEval (rewrite /= /view_leaf) in "Vh". iDestruct "Vh" as "[#Gc Bor]".
+    iEval (rewrite /= /view_leaf) in "Vh". iRename "Vh" into "Bor".
     set κh := pctx_slft K2 κ.
     set lh := pctx_loc K2 (lty_size (Blocked ty β)) z ly.
     iMod (fractional.frac_split_guard_in_half NllftG (fractional.half γ1) (fractional.half γ1)
@@ -423,8 +421,7 @@ Section unblock.
     (* Share the leaf into the view. *)
     set g2 := g1 `max` gh.
     iMod (leaf_share_view κh m2 ty x' d1 g1 g2 tid lh (fractional.half γ1) ⊤
-      with "LFT Hsl Lincl [] GP Bor") as "Upd"; [solve_ndisj|lia| |].
-    { iApply (lguards_weaken_later with "Gc"). lia. }
+      with "LFT Hsl Lincl GP Bor") as "Upd"; [solve_ndisj|lia|].
     iMod (lc_step_fupdN_elim_later with "£s Upd") as ">[GP Vh]".
     (* The new depths. *)
     iMod (cumulative_persistent_time_receipt with "TIME ⧗e ⧖1'") as "#⧖2"; [solve_ndisj|].
@@ -531,7 +528,7 @@ Section unblock.
       (inl (PlaceIn w)) z ζm (false :: q0) d' g' tid ly (fractional.half γ1)
       with "Hs V") as (dh gh) "([%Hdh [%Hgh %Hin]] & Vh & #Gs & Cl)".
     iEval (rewrite /= /view_leaf) in "Vh".
-    iDestruct "Vh" as (x1 ->) "(_ & _ & _ & #Gc & %d1 & %g1 & [%Hd1 %Hg1] & Bor)".
+    iDestruct "Vh" as (x1 ->) "(_ & _ & _ & %d1 & %g1 & [%Hd1 %Hg1] & Bor)".
     set κh := pctx_slft K2 κ.
     set lh := pctx_loc K2 (lty_size (ShrBlocked ty β)) z ly.
     have Hdl: pctx_dlev K2 ≤ D.
@@ -551,7 +548,7 @@ Section unblock.
     iMod "Upd" as "_".
     (* Share the leaf into the view. *)
     iMod (leaf_share_view κh m2 ty w d1 g1 gh tid lh (fractional.half γ1) ⊤
-      with "LFT Hsl Lincl Gc GP Bor") as "Upd"; [solve_ndisj|lia|].
+      with "LFT Hsl Lincl GP Bor") as "Upd"; [solve_ndisj|lia|].
     iMod (lc_step_fupdN_elim_later with "£s Upd") as ">[GP Vh]".
     iDestruct ("Cl" $! (OfTy ty) PatLeaf (inl (PlaceIn w)) d1 gh d' g' with "[//] [//] [//] [%] Vh")
       as "V'"; [lia|].
@@ -662,11 +659,9 @@ Section share_fold.
     iApply (wp_pctx_sexpr _ K2 (lty_size (OfTy ty)) (g' + 1) (fractional.half γh) z ly);
       [solve_ndisj|].
     wp_bind (pctx_expr K (ToLit p)).
-    iMod lc_zero as "£0".
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest"); [solve_ndisj|..].
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".

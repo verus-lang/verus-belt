@@ -228,7 +228,7 @@ Section lty_res_uniq.
     rewrite /ltype_own /= /uniq_node /=. iDestruct "Own" as "(Pt & _ & _ & N)".
     iModIntro. iIntros "£".
     iDestruct (lc_weaken m with "£") as "£"; [rewrite /advance_credits; nia|].
-    iMod (lc_fupd_elim_laterN with "£ N") as "(#Incl & #Gc & %d' & %g' & %Hle & C)".
+    iMod (lc_fupd_elim_laterN with "£ N") as "(#Incl & %d' & %g' & %Hle & C)".
     rewrite /leaf_uniq /ofty_uniq. iDestruct "C" as (x idx ->) "Body".
     iAssert (⧖(S d' `max` g'))%I as "#⧖'".
     { iApply (persistent_time_receipt_mono with "⧖"). lia. }
@@ -264,7 +264,7 @@ Section lty_res_uniq.
     iModIntro. iIntros "£".
     iDestruct (lc_weaken (m + (advance_credits D - m)) with "£") as "[£m £]";
       [rewrite /advance_credits; nia|].
-    iMod (lc_fupd_elim_laterN with "£m N") as "(#Incl & #Gc & %d' & %g' & %Hle & C)".
+    iMod (lc_fupd_elim_laterN with "£m N") as "(#Incl & %d' & %g' & %Hle & C)".
     leaf_open "GL" with "G" as "[L back]"; [solve_ndisj|].
     iDestruct (Alv with "L E") as "#Lκ". iDestruct (Alvs with "L E") as "#Lκs".
     iMod ("back" with "L") as "G".
@@ -307,7 +307,7 @@ Section lty_res_uniq.
         [solve_ndisj|rewrite /lazyE; solve_ndisj|].
       iMod (llftl_sep_split with "LFT Bb") as "[_ Bb]"; [solve_ndisj|].
       iMod (lty_share_view lt Hv κ 0 x0 ζm (false :: q) d' g' g tid l' Hh ⊤ HTh
-        ltac:(solve_ndisj) ltac:(lia) with "LFT PROPH UNIQ Hκ Incl Gc Hh [Bb]") as "Upd".
+        ltac:(solve_ndisj) ltac:(lia) with "LFT PROPH UNIQ Hκ Incl Hh [Bb]") as "Upd".
       { by rewrite /ltype_own. }
       iMod (lc_step_fupdN_elim_later with "£s Upd") as ">[Hh V]".
       iDestruct (lty_view_guard_proph with "LFT Incl V") as "[V (%ηl & %Hdep & T)]".

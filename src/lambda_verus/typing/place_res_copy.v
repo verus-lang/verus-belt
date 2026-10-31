@@ -110,11 +110,9 @@ Section memcpy_res.
     iApply (wp_pctx_sexpr _ K2 (lty_size lt0) (g' + 1) (fractional.half γh) z ly);
       [solve_ndisj|].
     wp_bind (pctx_expr K (ToLit p)).
-    iMod lc_zero as "£0".
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest"); [solve_ndisj|..].
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr_mask _ K (lty_size lt1) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".

@@ -482,7 +482,7 @@ Section pshr_addr.
       as "[£a £]"; [have := pctx_vacc_cred_le K1 D; rewrite /pshr_cred; nia|].
     (* Access the shared reference. *)
     iMod (vroot_acc K1 lt1 with "LFT PROPH UNIQ Gu G £a Own")
-      as (G' dh1 gh1) "(% & G' & #G'G & -> & %Hdh & H & P & #Gp & #HG & Cl)"; [done|].
+      as (G' dh1 gh1) "(% & G' & #G'G & -> & %Hdh & H & P & Cl)"; [done|].
     destruct Hdh as (Hdh1 & Hgh1 & Hin1).
     set lK := pctx_vloc K1 (lty_size lt1) x₀.
     iAssert (G' &&{↑NllftG}&&> @[pctx_ulft K1 lt1])%I as "#G'u".
@@ -495,10 +495,8 @@ Section pshr_addr.
     (* The address of the leaf. *)
     wp_bind (pctx_vexpr K1 e).
     iApply (wp_wand with "[P G' £w WPe]").
-    { iApply (wp_pctx_vptrs E K1 (lty_size lt1) (D + 1) G' x₀ e True%I with "Gp [£w] [G' WPe] P");
-        [done| |].
-      - iApply (lc_weaken with "£w"). nia.
-      - iApply (wp_wand with "WPe"). iIntros (?) "->". by iFrame. }
+    { iApply (wp_pctx_vptrs E K1 (lty_size lt1) G' x₀ e True%I with "[G' WPe] P").
+      iApply (wp_wand with "WPe"). iIntros (?) "->". by iFrame. }
     iIntros (w) "(-> & _ & G' & P)".
     (* The pointer, and the (persistent) ownership of the shared reference; the closed
        access. *)

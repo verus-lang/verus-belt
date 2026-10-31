@@ -135,12 +135,10 @@ Section typing.
     iDestruct (lc_weaken (pctx_mode K 1 + (dh + 1)) with "£") as "[£k £s]";
       [rewrite /advance_credits pctx_mode_add; nia|].
     (* The address of the hole. *)
-    iMod lc_zero as "£0".
     iApply wp_fupd. wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest").
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)". wp_pure _.
@@ -197,12 +195,10 @@ Section typing.
     set dh := pctx_depth K d.
     have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
     (* The address of the hole. *)
-    iMod lc_zero as "£0".
     wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest").
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".

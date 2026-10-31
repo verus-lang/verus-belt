@@ -55,8 +55,8 @@ Section leaf_acc.
 
   (** The access to the leaf [OfTy ty] at the hole of [K] of a place rooted at a value (the
       first step of [K] is the root pointer), below any number of unique borrows, in both
-      modes of the hole. The cells of the leaf are guarded by the returned token [G'], which
-      also guards the lifetime of the enclosing borrows; the pointer cells on the path are
+      modes of the hole. The returned token [G'] guards the lifetime of the enclosing
+      borrows; the pointer cells on the path are
       returned to compute the address ([wp_pctx_vptrs]). *)
   Lemma vplace_leaf_acc {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} (ty: type 𝔅)
       x₀ ζm D tid v E (G: iProp Σ) :
@@ -68,10 +68,9 @@ Section leaf_acc.
     ∃ (G': iProp Σ) dh gh, ⌜Timeless G'⌝ ∗ G' ∗ ⌜v = MLitV (VPtr (pctx_vrloc K (lty_size (OfTy ty)) x₀).1)⌝ ∗
       ⌜dh + pctx_dlev K ≤ D ∧ gh ≤ D ∧ pctx_in K x₀⌝ ∗
       (G' &&{↑NllftG}&&> @[pctx_ulft K (OfTy ty)]) ∗
-      (G' &&{↑NllftG; D + 1}&&> pctx_vloc K (lty_size (OfTy ty)) x₀ #↦∗_) ∗
       cbytes ty (pctx_get K x₀) (pctx_vloc K (lty_size (OfTy ty)) x₀) ∗
       ty_gho_own ty (pctx_get K x₀) dh gh tid ∗
-      pctx_vptrs K (lty_size (OfTy ty)) x₀ ∗ pctx_vpguards K (lty_size (OfTy ty)) (D + 1) G' x₀ ∗
+      pctx_vptrs K (lty_size (OfTy ty)) x₀ ∗
       vplace_leaf_closer K ty x₀ ζm D tid v E G G'.
   Proof.
     iIntros (? HE) "#LFT #PROPH #UNIQ #Gu G £ Own".
@@ -82,11 +81,10 @@ Section leaf_acc.
     iDestruct (lc_weaken (pctx_vacc_cred K D + (D + 2)) with "£") as "[£a £]";
       [have := pctx_vacc_cred_le K D; nia|].
     iMod (vroot_acc K (OfTy ty) with "LFT PROPH UNIQ Gu G £a Own")
-      as (G' dh gh) "(% & G' & #G'G & -> & %Hdh & H & P & #Gs & #HG & Cl)"; [done|].
+      as (G' dh gh) "(% & G' & #G'G & -> & %Hdh & H & P & Cl)"; [done|].
     destruct Hdh as (Hdh & Hgh & Hin).
     iAssert (G' &&{↑NllftG}&&> @[pctx_ulft K (OfTy ty)])%I as "#G'u".
     { iApply (guards_transitive with "G'G Gu"). }
-    iDestruct (pctx_vhguard K (OfTy ty) (lty_size (OfTy ty)) x₀ G' D with "G'u HG") as "#Gw".
     destruct (pctx_uend K) as [κ|] eqn:Hu.
     - (* The hole is the whole referent of the innermost borrow: open its body. *)
       iEval (rewrite (pctx_kind_uniq K κ) //) in "H".
@@ -107,8 +105,6 @@ Section leaf_acc.
       iModIntro. iExists (fractional.half γ2), dh, gh. iSplit; [iPureIntro; apply _|].
       iFrame "B Gho1 Pt1 P". iSplit; [done|]. iSplit; [done|].
       iSplitR. { iApply (guards_transitive with "Gh2 G'u"). }
-      iSplitR. { iApply (guards_transitive_right with "Gh2 Gw"). }
-      iSplitR. { iApply (pctx_pguards_transfer with "Gh2 Gs"). }
       iIntros (y' dh' gh' D' (? & ? & ?)) "#⧖ B P Pt Gho".
       iSpecialize ("CloseB" $! y' dh' gh' with "[Pt Gho] ⧗1").
       { iNext. iFrame "Gho Pt". iApply (persistent_time_receipt_mono with "⧖"). lia. }
@@ -130,7 +126,7 @@ Section leaf_acc.
       iDestruct (lc_weaken mh with "£") as "£"; [lia|].
       iMod (lc_fupd_elim_laterN with "£ Gho1") as "Gho1".
       iModIntro. iExists G', dh, gh. iSplit; [done|]. iFrame "G' Gho1 Pt1 P".
-      iSplit; [done|]. iSplit; [done|]. iSplitR; [done|]. iSplitR; [done|]. iSplitR; [done|].
+      iSplit; [done|]. iSplit; [done|]. iSplitR; [done|].
       iIntros (y' dh' gh' D' (? & ? & ?)) "#⧖ G' P Pt Gho".
       iMod ("Cl" $! (OfTy ty) (inl (PlaceIn y')) dh' gh' D' [] 1%Qp True%I
         with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Pt Gho]") as "(Own & G & _)".
@@ -192,16 +188,14 @@ Section memcpy_deep.
     iDestruct (lc_weaken (((D + 1) * (D + 2) + 1) + (3 * (D + 1) * M + ((1 + (1 + M * (D + 1))) + 1)))
       with "£") as "[£a [£w [[£r £s] £b]]]"; [rewrite /advance_credits; nia|].
     iMod (vplace_leaf_acc K ty x₀ ζm D tid _ (⊤ ∖ ↑advN) with "LFT PROPH UNIQ Hu H1 £a Own")
-      as (G' dh gh) "(% & G' & -> & %Hdh & #G'u & #Gw & Pt1 & Gho1 & P & #Gs & Cl)"; [solve_ndisj|].
+      as (G' dh gh) "(% & G' & -> & %Hdh & #G'u & Pt1 & Gho1 & P & Cl)"; [solve_ndisj|].
     destruct Hdh as (Hdh & Hgh & Hin).
     set lK := pctx_vloc K (lty_size (OfTy ty)) x₀.
     (* The addresses of the hole and of the source. *)
     wp_bind (pctx_vexpr K p).
     iApply (wp_wand with "[P G' £w]").
-    { iApply (wp_pctx_vptrs _ K (lty_size (OfTy ty)) (D + 1) G' x₀ p True%I with "Gs [£w] [G'] P");
-        [solve_ndisj| |].
-      - iApply (lc_weaken with "£w"). nia.
-      - iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
+    { iApply (wp_pctx_vptrs _ K (lty_size (OfTy ty)) G' x₀ p True%I with "[G'] P").
+      iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
     iIntros (w) "(-> & _ & G' & P)".
     wp_bind pr. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". wp_pure _.
     (* Resolve the old value. *)
@@ -299,15 +293,13 @@ Section memcpy_deep.
     (* The address of the box, then of the hole. *)
     wp_bind pw. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". wp_pure _.
     iMod (vplace_leaf_acc K ty x₀ ζm D tid _ (⊤ ∖ ↑advN) with "LFT PROPH UNIQ Hu H1 £a Own")
-      as (G' dh gh) "(% & G' & -> & %Hdh & #G'u & #Gw & Pt1 & #Gho1 & P & #Gs & Cl)"; [solve_ndisj|].
+      as (G' dh gh) "(% & G' & -> & %Hdh & #G'u & Pt1 & #Gho1 & P & Cl)"; [solve_ndisj|].
     destruct Hdh as (Hdh & Hgh & Hin).
     set lK := pctx_vloc K (lty_size (OfTy ty)) x₀.
     wp_bind (pctx_vexpr K p).
     iApply (wp_wand with "[P G' £w]").
-    { iApply (wp_pctx_vptrs _ K (lty_size (OfTy ty)) (D + 1) G' x₀ p True%I with "Gs [£w] [G'] P");
-        [solve_ndisj| |].
-      - iApply (lc_weaken with "£w"). nia.
-      - iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
+    { iApply (wp_pctx_vptrs _ K (lty_size (OfTy ty)) G' x₀ p True%I with "[G'] P").
+      iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
     iIntros (w) "(-> & _ & G' & P)".
     (* Resolve the old contents of the box. *)
     iMod (lc_fupd_elim_later with "£b Gw0") as "Gw0".
@@ -390,23 +382,16 @@ Section sum_deep.
       with "£") as "[£a [£w [£1 £r]]]";
       [have := pctx_vacc_cred_le K D; rewrite /advance_credits; nia|].
     iMod (vroot_acc K (OfTy (Σ! tyl)) with "LFT PROPH UNIQ Hu H1 £a Own")
-      as (G' dh gh) "(% & G' & #G'G & -> & %Hdh & H & P & #Gs & #HG & Cl)"; [solve_ndisj|].
+      as (G' dh gh) "(% & G' & #G'G & -> & %Hdh & H & P & Cl)"; [solve_ndisj|].
     destruct Hdh as (Hdh & Hgh & Hin).
     set lK := pctx_vloc K (lty_size (OfTy (Σ! tyl))) x₀.
     iAssert (G' &&{↑NllftG}&&> @[pctx_ulft K (OfTy (Σ! tyl))])%I as "#G'u".
     { iApply (guards_transitive with "G'G Hu"). }
-    iDestruct (pctx_vhguard K (OfTy (Σ! tyl)) (lty_size (OfTy (Σ! tyl))) x₀ G' D with "G'u HG")
-      as "#Gw".
-    iAssert (G' &&{↑NllftG; D + 1}&&> cloc_take lK 1 #↦∗_)%I as "#Gt".
-    { iEval (rewrite (heap_cloc_mapsto_emp_vec_app lK 1)) in "Gw".
-      iApply (guards_weaken_rhs_sep_l with "Gw"). }
     (* The address of the hole. *)
     wp_bind (pctx_vexpr K p).
     iApply (wp_wand with "[P G' £w]").
-    { iApply (wp_pctx_vptrs _ K (lty_size (OfTy (Σ! tyl))) (D + 1) G' x₀ p True%I with "Gs [£w] [G'] P");
-        [solve_ndisj| |].
-      - iApply (lc_weaken with "£w"). nia.
-      - iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
+    { iApply (wp_pctx_vptrs _ K (lty_size (OfTy (Σ! tyl))) G' x₀ p True%I with "[G'] P").
+      iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
     iIntros (w) "(-> & _ & G' & P)".
     have Hf: lty_fold lt' = lty_fold (OfTy (Σ! tyl)) by apply lty_fold_sum_ofty.
     have Hsz: lty_size lt' = lty_size (OfTy (Σ! tyl)) by apply lty_size_sum_ofty.

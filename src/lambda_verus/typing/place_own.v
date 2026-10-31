@@ -192,13 +192,6 @@ Section typing.
       (l', repeat [] (lty_size lt)).
   Proof. rewrite lty_size_plug. apply (pctx_loc_empty K). Qed.
 
-  Lemma oplace_loc_guard {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (lt: lty 𝔅) x (l: loc) (G: iProp Σ) E k :
-    ⊢ G &&{E; k}&&> pctx_loc K (lty_size lt) x (l, repeat [] (lty_size (pctx_plug K lt))) #↦∗_.
-  Proof.
-    destruct (oplace_loc_empty K lt x l) as [l' ->]. rewrite -heap_cloc_mapsto_empty.
-    iApply guards_true.
-  Qed.
-
   (** A mutable borrow of the leaf at the hole of [K], at a lifetime [α] that the type of
       the leaf outlives. The program computes the address of the leaf ([pctx_expr], a load
       per owned pointer above it). The leaf is blocked until [α] ends, refined by the
@@ -243,12 +236,10 @@ Section typing.
     iDestruct (cumulative_time_receipt_sep with "⧗") as "[⧗a ⧗]".
     iDestruct (cumulative_time_receipt_sep with "⧗") as "[⧗b ⧗k]".
     (* The address of the hole. *)
-    iMod lc_zero as "£0".
     iApply wp_fupd. wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest").
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)". wp_pure _.
@@ -264,7 +255,7 @@ Section typing.
     iSplitL "Body".
     { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists (VPtr lK.1), D.
       iSplit; [done|]. iFrame "⧖". iFrame "Incl Body".
-      iSplit; [iPureIntro; lia|]. iApply (oplace_loc_guard K (OfTy ty)). }
+      iPureIntro; lia. }
     iSplit; [|done]. rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|].
     iExists D, d, g. iFrame "⧖".
     rewrite (lty_size_plug_eq K (Blocked ty α) (OfTy ty)) //. iFrame "Fr".
@@ -382,12 +373,10 @@ Section typing.
     set dh := pctx_depth K d.
     have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
     (* The address of the hole. *)
-    iMod lc_zero as "£0".
     wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest").
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".
@@ -439,12 +428,10 @@ Section typing.
     set dh := pctx_depth K d.
     have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
     (* The address of the hole. *)
-    iMod lc_zero as "£0".
     wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest").
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".
@@ -512,12 +499,10 @@ Section typing.
     set dh := pctx_depth K d.
     have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
     (* The address of the hole, and the value. *)
-    iMod lc_zero as "£0".
     wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest").
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".

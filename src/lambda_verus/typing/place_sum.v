@@ -30,14 +30,6 @@ Section place_sum.
   Lemma pctx_plug_cpd {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt : pctx_nonempty K → lty_is_cpd (pctx_plug K lt).
   Proof. by destruct K. Qed.
 
-  (** A cell of a location without ghost cells is trivially owned. *)
-  Lemma guards_empty_cell (G: iProp Σ) E k (l: loc) : ⊢ G &&{E; k}&&> (l, []) #↦_.
-  Proof.
-    rewrite -heap_complete_mapsto_singleton (_: [[]] = repeat [] 1) //
-      -heap_cloc_mapsto_empty.
-    iApply guards_true.
-  Qed.
-
   Lemma lty_rfn_sum_in {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) a pad ζm q :
     lty_rfn (SumLty tyl i lt) (pinj i a, pad) ζm q = prfn_sum i (lty_rfn lt a ζm (false :: q)) pad.
   Proof. by rewrite lty_rfn_sum /= psum_proj_pinj. Qed.
@@ -111,12 +103,10 @@ Section typing.
     set lr := (l, repeat [] (lty_size (pctx_plug K (OfTy (Σ! tyl))))).
     set lK := pctx_loc K (lty_size (OfTy (Σ! tyl))) x₀ lr.
     (* The address of the hole. *)
-    iMod lc_zero as "£0".
     wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest £0]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy (Σ! tyl))) 1 x₀ ζm [] d g tid lr (ToLit p) True True 0
-        with "[] £0 [] Rest").
-      - rewrite /lr -heap_cloc_mapsto_empty. iApply guards_true.
+    iApply (wp_wand with "[Rest]").
+    { iApply (wp_pctx_expr K (lty_size (OfTy (Σ! tyl))) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+        with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
     iIntros (w) "(-> & _ & _ & Rest)".

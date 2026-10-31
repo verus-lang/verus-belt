@@ -472,7 +472,7 @@ Section vplace_uniq.
     { intros ?? Eq [? []] ??. split=> H ?; apply Eq, H; done. }
     iIntros (G tid [x []] mask post ?) "#LFT #PROPH #UNIQ #E #GL G [T _] Obs".
     destruct x as [[[[[[l x₀] ξi] d'] g'] idx] ζm].
-    iDestruct "T" as (v ? D) "(_ & _ & %d & %g & %Hle & -> & _ & _ & #Incl & #Pt & %d1 & %g1 & %Hle1 & Own)".
+    iDestruct "T" as (v ? D) "(_ & _ & %d & %g & %Hle & -> & _ & _ & #Incl & %d1 & %g1 & %Hle1 & Own)".
     leaf_open "GL" with "G" as "[L back]"; [set_solver|].
     iDestruct (Alv with "L E") as "#Lκ". iMod ("back" with "L") as "G".
     iDestruct (guards_transitive with "GL Lκ") as "#Gκ".
@@ -511,7 +511,7 @@ Section vplace_uniq.
     iIntros (Alv Hc Hrs Halv tid post mask iκs [x []])
       "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
     destruct x as [[[[[[l x₀] ξi] d'] g'] idx] ζm].
-    iDestruct "T" as (v ? D) "(#⧖0 & _ & %d & %g & %Hle & -> & _ & _ & #Incl & #PtBase & %d1 & %g1 & %Hle1 & Own)".
+    iDestruct "T" as (v ? D) "(#⧖0 & _ & %d & %g & %Hle & -> & _ & _ & #Incl & %d1 & %g1 & %Hle1 & Own)".
     iDestruct (Alv with "L E") as "#Alv".
     iDestruct (lctx_lft_alive_list _ _ _ Halv with "L E") as "#Alvl".
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";

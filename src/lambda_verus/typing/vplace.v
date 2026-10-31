@@ -208,12 +208,12 @@ Section conv.
     iMod cumulative_time_receipt_0 as "⧗0".
     iApply (wp_cumulative_time_receipt_linear with "TIME ⧖"); [solve_ndisj|].
     iIntros "⧗". wp_seq.
-    iDestruct "Gho" as "(#Incl & %Hle' & Body & #Gpt)".
+    iDestruct "Gho" as "(#Incl & %Hle' & Body)".
     iExists -[((l', x, ξi, d', g', idx), ζm)]. iFrame "L I Obs". iSplit; [|done].
     iExists v. iSplit; [done|]. iExists D. iFrame "⧖ ⧗0". iExists d, g. iSplit; [done|].
     iSplit; [by destruct Phys as (w & -> & [= <-])|]. iSplitL "⧗".
     { iApply (cumulative_time_receipt_mono with "⧗"). lia. }
-    iFrame "TIME Incl Gpt". iExists d', g'. iSplit; [done|]. iExists x, idx. by iFrame.
+    iFrame "TIME Incl". iExists d', g'. iSplit; [done|]. iExists x, idx. by iFrame.
   Qed.
 
   Lemma tctx_vplace_fold_uniq {𝔄} E L p κ (ty: type 𝔄) :
@@ -224,14 +224,14 @@ Section conv.
     { intros ?? Eq [[m ζm] []] ??. do 3 apply forall_proper=> ?. apply Eq. }
     iIntros (G tid [[m ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
     destruct m as [[[[[l' x] ξi] d0] g0] idx0].
-    iDestruct "T" as (v Hp D) "(⧖ & _ & %d & %g & %Hle & -> & _ & _ & #Incl & #Gpt & H)".
+    iDestruct "T" as (v Hp D) "(⧖ & _ & %d & %g & %Hle & -> & _ & _ & #Incl & H)".
     iDestruct "H" as (d' g' Hle') "(%y & %idx & -> & Body)".
     iMod cumulative_time_receipt_0 as "⧗0".
     iModIntro. iExists -[((l', x, ξi, d', g', idx), ζm)].
     iSplitR "Obs"; [|iApply (proph_obs_impl with "Obs")=> π Hπ; apply (Hπ d' g' idx)].
     iSplit; [|done]. iExists _. iSplit; [done|]. iExists D. iFrame "⧖ ⧗0".
     iExists d, g. iSplit; [done|]. iExists _. iSplit; [done|]. iSplit; [iPureIntro; by eexists|].
-    by iFrame "Incl Gpt Body".
+    by iFrame "Incl Body".
   Qed.
 
   (** Directly from and to a [&uniq] value. *)
@@ -245,12 +245,12 @@ Section conv.
     iMod cumulative_time_receipt_0 as "⧗0".
     iApply (wp_cumulative_time_receipt_linear with "TIME ⧖"); [solve_ndisj|].
     iIntros "⧗". wp_seq.
-    iDestruct "Gho" as "(#Incl & %Hle' & Body & #Gpt)".
+    iDestruct "Gho" as "(#Incl & %Hle' & Body)".
     iExists -[((l', x, ξi, d', g', idx), [])]. iFrame "L I Obs". iSplit; [|done].
     iExists _. iSplit; [done|]. iExists D. iFrame "⧖ ⧗0". iExists D, D. iSplit; [done|].
     iSplit; [iPureIntro; simpl in Hw; by simplify_eq|]. iSplitL "⧗".
     { iApply (cumulative_time_receipt_mono with "⧗"). lia. }
-    iFrame "TIME Incl Gpt". iExists d', g'. iSplit; [done|]. iExists x, idx. by iFrame.
+    iFrame "TIME Incl". iExists d', g'. iSplit; [done|]. iExists x, idx. by iFrame.
   Qed.
 
   Lemma tctx_vplace_to_uniq {𝔄} E L p κ (ty: type 𝔄) :
