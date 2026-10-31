@@ -1,13 +1,12 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product sum value_ctx own_bytes
-  uniq_util uniq_bytes place_own place_puniq place_resolve place_deep.
+From lrust.typing Require Export type programs cont int product sum value_ctx own uniq_util uniq_bor place_own place_puniq place_resolve place_deep.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
 (** * [get_some_first] on bytes
 
 The body of [get_some_first] of the deleted legacy example [place_sum.v], on bytes: the argument is
-a MiniRust pointer value of type [&uniqb{α} Option<(i32, i32)>] (a root value, [◁ᵥ]);
+a MiniRust pointer value of type [&uniq{α} Option<(i32, i32)>] (a root value, [◁ᵥ]);
 the [match] reads the tag with a typed [Load] of the tag [IntType] ([type_case_vplace_deep]);
 the result [Option<&mut i32>] is a MiniRust variant value built with [MkVariant]
 ([type_mk_variant_val_instr]). *)
@@ -18,7 +17,7 @@ Section get_some_first.
   Notation i32t := (int_ty i32).
   Notation opt_pair := (Σ! +[(); i32t * i32t])%T.
   Notation opt_pairₛ := (Σ! [unitₛ; (intₛ i32 * intₛ i32)%ST])%ST.
-  Notation opt_ref α := (Σ! +[(); &uniqb{α} i32t])%T.
+  Notation opt_ref α := (Σ! +[(); &uniq{α} i32t])%T.
   Notation opt_refₛ := (Σ! [unitₛ; uniq_borₛ (intₛ i32)])%ST.
 
   (*
@@ -62,7 +61,7 @@ Section get_some_first.
     ⊢ typed_body [ϝ ⊑ₑ α] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
           λ v: vec val 1, +[vhd v ◁ᵥ opt_ref (α ⊓ α)] } ret_opt]
-        +[vb ◁ᵥ &uniqb{α} opt_pair]
+        +[vb ◁ᵥ &uniq{α} opt_pair]
         (subst "return" k (subst "b" vb get_some_first)) get_some_first_spec.
   Proof.
     rewrite /get_some_first. simpl_subst.
@@ -81,14 +80,14 @@ Section get_some_first.
         iApply typed_body_tctx_incl.
         { apply tctx_vplace_to_uniq. }
         iApply type_seq.
-        { apply (type_resolve_val_instr vb (&uniqb{α} opt_pair)). apply uniq_bytes.uniq_resolve.
+        { apply (type_resolve_val_instr vb (&uniq{α} opt_pair)). apply uniq_bor.uniq_resolve.
           solve_typing. }
         { solve_typing. } { reflexivity. }
         iApply (type_let with "[]"). { apply type_val_unit_instr. }
         { solve_typing. } { reflexivity. }
         iIntros (vu). simpl_subst.
         iApply (type_let with "[]").
-        { apply (type_mk_variant_val_instr +[(); &uniqb{α ⊓ α} i32t]%T 0%fin). done. }
+        { apply (type_mk_variant_val_instr +[(); &uniq{α ⊓ α} i32t]%T 0%fin). done. }
         { solve_typing. } { reflexivity. }
         iIntros (vr). simpl_subst.
         iApply type_jump.
@@ -117,7 +116,7 @@ Section get_some_first.
         iIntros (vr1). simpl_subst.
         (* resolve the borrow of p.1 *)
         iApply type_seq.
-        { apply (type_resolve_val_instr vr1 (&uniqb{α ⊓ α} i32t)). apply uniq_bytes.uniq_resolve.
+        { apply (type_resolve_val_instr vr1 (&uniq{α ⊓ α} i32t)). apply uniq_bor.uniq_resolve.
           solve_typing. }
         { solve_typing. } { reflexivity. }
         (* drop b while both leaves of the payload are blocked *)
@@ -125,7 +124,7 @@ Section get_some_first.
         { apply (tctx_incl_frame_r +[_] +[] +[_]). apply tctx_drop_vplace_uniq; [solve_typing|done|done]. }
         (* the result: Some(&mut p.0) *)
         iApply (type_let with "[]").
-        { apply (type_mk_variant_val_instr +[(); &uniqb{α ⊓ α} i32t]%T 1%fin). done. }
+        { apply (type_mk_variant_val_instr +[(); &uniq{α ⊓ α} i32t]%T 1%fin). done. }
         { solve_typing. } { reflexivity. }
         iIntros (vr). simpl_subst.
         iApply type_jump.

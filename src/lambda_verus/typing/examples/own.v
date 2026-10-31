@@ -1,7 +1,7 @@
 (** Tests for stage 3 of the MiniRust memory model: typed [Load]s and [Store]s of the
-    pointee of a box that owns bytes ([own_bytes], see [typing/own_bytes.v]), for a pair
+    pointee of a box that owns bytes ([own_bytes], see [typing/own.v]), for a pair
     of integers and for [Option<i32>]. *)
-From lrust.typing Require Import int product sum own_bytes.
+From lrust.typing Require Import int product sum own.
 Set Default Proof Using "Type".
 
 Section own_bytes_tests.

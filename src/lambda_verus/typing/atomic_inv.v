@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import type_context programs programs_util_atomic ghost tracked value_ctx shr_bytes product.
+From lrust.typing Require Import type_context programs programs_util_atomic ghost tracked value_ctx shr_bor product.
 From lrust.util Require Import atomic_lock_counter.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
@@ -323,7 +323,7 @@ Section atomic_invariants.
     lctx_ictx_alive E L (InvCtx Il ϝ (AtomicOpen n)) →
     typed_inv_instr E L
       (InvCtx Il ϝ (AtomicOpen n))
-      +[p ◁ᵥ &shrb{κ} (atomic_inv_ty ty pred)]
+      +[p ◁ᵥ &shr{κ} (atomic_inv_ty ty pred)]
       GhostOp
       (InvCtx Il ϝ (AtomicOpen (n+1)))
       (λ v, +[v ◁ᵥ tracked_ty ty; v ◁ᵥ atomic_closer_ty κ ty pred])

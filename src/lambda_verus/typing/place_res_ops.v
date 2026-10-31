@@ -18,11 +18,8 @@ From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.lang.lib Require Import new_delete.
 From lrust.util Require Import update.
-From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bytes.
-From lrust.typing Require Import type_context programs programs_util lft_contexts uniq_util
-  uniq_bytes_util uniq_bytes own_bytes bytes_layout value_ctx product freeable_util sum
-  place_shr place_resolve place_puniq place_sum place_pshr place_res place_res_view
-  place_res_rslv.
+From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bor.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own bytes_layout value_ctx product freeable_util sum place_shr place_resolve place_puniq place_sum place_pshr place_res place_res_view place_res_rslv.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -418,7 +415,7 @@ Section unblock.
     iMod ("Close" $! (cbytes ty x' lh ∗ ▷^m2 ty_gho_own ty x' d1 g1 tid)%I
       with "[Pt1 Gho1]") as "[Bor H1]".
     { iSplitR "Pt1 Gho1"; [|iNext; iFrame "Pt1"; by iApply bi.laterN_intro].
-      iIntros "!> Q !> !>". rewrite /bblocked_owned. iIntros "_ !>".
+      iIntros "!> Q !> !>". rewrite /blocked_owned. iIntros "_ !>".
       iApply guarded_upd_intro. iModIntro. iExists x', d1, g1. iFrame "Q ⧖1".
       iNext. by iApply proph_eqz_obs. }
     iMod "Upd" as "_".
@@ -549,7 +546,7 @@ Section unblock.
     { by iApply pctx_blft_dead. }
     (* Close the borrow at the restored contents. *)
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
-    iMod ("Close" $! (bofty_owned m2 ty w d1 g1 tid lh) with "[Own1]") as "[Bor GP]".
+    iMod ("Close" $! (ofty_owned m2 ty w d1 g1 tid lh) with "[Own1]") as "[Bor GP]".
     { iSplitR; [|by iNext]. iIntros "!> Q !> !>". iIntros "_ !>". iExact "Q". }
     iMod "Upd" as "_".
     (* Share the leaf into the view. *)
@@ -612,7 +609,7 @@ Section share_fold.
     lctx_lft_alive E L (pctx_salv K2 κ) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (OfTy ty)) κ)]
       (OfLit (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p))))))
-      (λ v, +[v ◁ᵥ &shrb{pctx_slft K2 κ} ty;
+      (λ v, +[v ◁ᵥ &shr{pctx_slft K2 κ} ty;
         p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (OfTy ty)) κ)])
       (λ post '-[x], post -[(pctx_loc K2 (lty_size (OfTy ty))
           (uniq_bor_current (pctx_get K x.1.2)) (uniq_bor_loc (pctx_get K x.1.2)),
@@ -724,7 +721,7 @@ Section share_fold.
       pctx_loc_reset // pctx_mode_retype pctx_depth_retype. iFrame "Rest".
     rewrite (_: lty_size (ShrLty (OfTy ty) κ) = lty_size (ResUniqLty (OfTy ty) κ)); [|done].
     destruct y as [[[[[l' x0] ξi] d0] g0] idx0] eqn:Hy.
-    rewrite /= /res_node /leaf_owned_s /bleaf_owned /bofty_owned /=.
+    rewrite /= /res_node /leaf_owned_s /leaf_owned /ofty_owned /=.
     iDestruct "H" as "[Pt H]". iSplit; [|done]. iExists (l', x0). iSplit; [done|].
     rewrite cbytes_at_cloc. iFrame "Pt". iNext.
     iDestruct "H" as "(_ & %d' & %g' & %Hle' & %x' & -> & #Gpt & #Shr & #Pers)".

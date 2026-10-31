@@ -17,7 +17,7 @@
 
   ** Places below shared references
 
-  The ownership of [&shrb{κ} ty] is persistent, so the place type of the referent of a
+  The ownership of [&shr{κ} ty] is persistent, so the place type of the referent of a
   shared reference never changes: there is nothing to block or unblock, and no place
   element (nor a [Shared] borrow kind of [ltype_own]) is needed. A subplace below a
   shared reference is given by a place context [K] (whose siblings are only used for
@@ -31,9 +31,8 @@
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
-From lrust.typing Require Export type ltype lpath place_own shr_bytes.
-From lrust.typing Require Import type_context programs programs_util lft_contexts uniq_util
-  uniq_bytes_util uniq_bytes own_bytes bytes_layout value_ctx product.
+From lrust.typing Require Export type ltype lpath place_own shr_bor.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own bytes_layout value_ctx product.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -73,14 +72,14 @@ Section place_shr.
   Lemma pat_ok_shr_blocked κ α : α ⊑ κ -∗ pat_ok κ (PatShrBlocked α).
   Proof. rewrite /pat_ok /=. iIntros "$". Qed.
 
-  (** The sharing predicate of [&shrb{α} ty] at depth [S d'], from the guard of the
+  (** The sharing predicate of [&shr{α} ty] at depth [S d'], from the guard of the
       points-to and the sharing and persistent predicates of [ty] at [d' g'], with
       [d' ≤ d'' ≤ D] and [g' ≤ D]. *)
   Lemma shr_bor_own_intro {𝔄} α (ty: type 𝔄) (l: cloc) x d g D tid :
     d ≤ D → g ≤ S D →
     (@[α] &&{↑NllftG; S D + 1}&&> cbytes ty x l) -∗
     ty.(ty_shr) α x d g tid -∗ ty.(ty_gho_pers) x d g tid -∗
-    (&shrb{α} ty).(ty_gho_own) (l, x) (S D) (S D) tid.
+    (&shr{α} ty).(ty_gho_own) (l, x) (S D) (S D) tid.
   Proof.
     iIntros (??) "#Pt #Shr #Pers". rewrite /= /by_succ. iFrame "Pt". iSplit.
     - iApply (ty_shr_depth_mono with "Shr"); lia.
@@ -105,7 +104,7 @@ Section typing.
   Lemma type_share_oplace_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
     elctx_sat E L (ty_outlives_E ty α) → lctx_lft_alive E L α →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Share;; OfLit (pctx_expr K (ToLit p)))
-      (λ w, +[w ◁ᵥ &shrb{α} ty; p ◁ₗown{n} pctx_plug K (ShrBlocked ty α)])
+      (λ w, +[w ◁ᵥ &shr{α} ty; p ◁ₗown{n} pctx_plug K (ShrBlocked ty α)])
       (λ post '-[x], post -[(pctx_loc K (lty_size (OfTy ty)) x.1.2
           (x.1.1, repeat [] (lty_size (pctx_plug K (OfTy ty)))), pctx_get K x.1.2); x]).
   Proof.
@@ -283,7 +282,7 @@ End typing.
 
 (** * Fields of shared references to bytes
 
-The referent of [&shrb{κ} (ty1 * ty2)] is the bytes of [ty1] followed by those of [ty2]
+The referent of [&shr{κ} (ty1 * ty2)] is the bytes of [ty1] followed by those of [ty2]
 ([cbytes_pair]), so a shared reference to a field is the shared reference at the offset
 of the field (a pointer offset, no load); together with the shared places of
 [typing/place_pshr.v], this replaces the reads below shared references of the legacy
@@ -292,8 +291,8 @@ Section shr_bytes_fields.
   Context `{!typeG Σ}.
 
   Lemma type_shr_bytes_snd_instr {𝔄 𝔅} κ (ty1: type 𝔄) (ty2: type 𝔅) p E L I :
-    typed_instr E L I +[p ◁ᵥ &shrb{κ} (ty1 * ty2)] (OfLit (ToLit p +ₗ #(ty_bsize ty1)))%E
-      (λ v, +[v ◁ᵥ &shrb{κ} ty2])
+    typed_instr E L I +[p ◁ᵥ &shr{κ} (ty1 * ty2)] (OfLit (ToLit p +ₗ #(ty_bsize ty1)))%E
+      (λ v, +[v ◁ᵥ &shr{κ} ty2])
       (λ post '-[a], post -[(cloc_skip a.1 (ty_bsize ty1), a.2.2)]).
   Proof.
     iIntros (tid post mask iκs [[l [x1 x2]] []]) "_ _ _ _ _ $ $ [p _] Obs".
@@ -307,8 +306,8 @@ Section shr_bytes_fields.
   Qed.
 
   Lemma type_shr_bytes_fst_instr {𝔄 𝔅} κ (ty1: type 𝔄) (ty2: type 𝔅) p E L I :
-    typed_instr E L I +[p ◁ᵥ &shrb{κ} (ty1 * ty2)] (OfLit (ToLit p))
-      (λ v, +[v ◁ᵥ &shrb{κ} ty1])
+    typed_instr E L I +[p ◁ᵥ &shr{κ} (ty1 * ty2)] (OfLit (ToLit p))
+      (λ v, +[v ◁ᵥ &shr{κ} ty1])
       (λ post '-[a], post -[(cloc_take a.1 (ty_bsize ty1), a.2.1)]).
   Proof.
     iIntros (tid post mask iκs [[l [x1 x2]] []]) "_ _ _ _ _ $ $ [p _] Obs".

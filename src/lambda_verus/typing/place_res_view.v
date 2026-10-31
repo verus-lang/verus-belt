@@ -15,10 +15,8 @@
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
-From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bytes.
-From lrust.typing Require Import type_context programs programs_util lft_contexts uniq_util
-  uniq_bytes_util uniq_bytes own_bytes bytes_layout value_ctx product freeable_util sum
-  place_shr place_resolve place_puniq place_sum place_pshr place_res.
+From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bor.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own bytes_layout value_ctx product freeable_util sum place_shr place_resolve place_puniq place_sum place_pshr place_res.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -424,7 +422,7 @@ Section lty_share_view.
     have ?: ↑Nllft ⊆ E by (trans lazyE; [rewrite /lazyE; solve_ndisj|done]).
     iDestruct (llftl_bor_iff _ _ (cbytes ty x l ∗ ▷^m ty.(ty_gho_own) x d g tid)
       with "[] Bor") as "Bor".
-    { iIntros "!> !>". rewrite /ltype_own /= /bofty_owned. iSplit.
+    { iIntros "!> !>". rewrite /ltype_own /= /ofty_owned. iSplit.
       - iIntros "(%x' & -> & $)".
       - iIntros "H". iExists x. by iFrame. }
     iMod (leaf_share_view with "LFT Gκ Incl Gc G Bor") as "Upd"; [done..|].
@@ -447,7 +445,7 @@ Section lty_share_view.
     rewrite /ltype_own /= /shr_blocked_owned.
     iDestruct (llftl_bor_iff _ _
       (((@[α] &&{↑NllftG; g+1}&&> cbytes ty x l) ∗ ty.(ty_shr) α x d g tid ∗
-        ty.(ty_gho_pers) x d g tid) ∗ ([†α] ={lazyE}=∗ bofty_owned m ty x d g tid l))%I
+        ty.(ty_gho_pers) x d g tid) ∗ ([†α] ={lazyE}=∗ ofty_owned m ty x d g tid l))%I
       with "[] Bor") as "Bor".
     { iIntros "!> !>". iSplit.
       - iIntros "(%x' & -> & $ & $ & $ & $)".
@@ -475,7 +473,7 @@ Section lty_share_view.
     set ty := shr_bytes κ' (lty_fold lt).
     iDestruct (llftl_bor_iff _ _ ((cbytes ty x l ∗ ▷^m ty.(ty_gho_own) x d g tid) ∗
       ⌜lty_vin lt x.2⌝) with "[] Bor") as "Bor".
-    { iIntros "!> !>". rewrite /ltype_own /= /bofty_owned. iSplit.
+    { iIntros "!> !>". rewrite /ltype_own /= /ofty_owned. iSplit.
       - iIntros "[(%x' & -> & $) $]".
       - iIntros "[H $]". iExists x. by iFrame. }
     iMod (llftl_sep_split with "LFT Bor") as "[Bor Bv]"; [done|].
@@ -562,7 +560,7 @@ End lty_share_view2.
 Section lty_share_view3.
   Context `{!typeG Σ}.
 
-  (** A nested unique borrow whose referent is a leaf: shared as [&uniqb{κ'} ty] at [κ]
+  (** A nested unique borrow whose referent is a leaf: shared as [&uniq{κ'} ty] at [κ]
       (its sharing predicate gives the view of the referent at [κ ⊓ κ']). *)
   Lemma share_view_uniq_leaf {𝔄} (ty: type 𝔄) κ' : share_view_stmt (UniqLty (OfTy ty) κ').
   Proof.
@@ -590,23 +588,23 @@ Section lty_share_view3.
     iMod (llftl_sep_split with "LFT Bor") as "[Bp Bor]"; [done|].
     iMod (llftl_bor_guarded_pers with "LFT Gκ G Bp") as "[G >[%Hd1 %Hg1]]"; [done|].
     have ?: Inhabited Idx := populate idx_dummy.
-    iDestruct (llftl_bor_iff _ _ (∃ idx, buniq_body ty x0 ξi d1 g1 idx κ' tid l')
+    iDestruct (llftl_bor_iff _ _ (∃ idx, uniq_body ty x0 ξi d1 g1 idx κ' tid l')
       with "[] Bor") as "Bor".
     { iIntros "!> !>". rewrite /leaf_uniq /ofty_uniq. iSplit.
       - iIntros "(%x' & %idx & -> & B)". by iExists idx.
       - iIntros "(%idx & B)". iExists x0, idx. by iFrame. }
     iMod (llftl_bor_freeze with "LFT Bor") as (idx) "Bor"; [done|].
     set y : ~~ (uniq_borₛ 𝔄) := (l', x0, ξi, d1, g1, idx).
-    iDestruct (llftl_bor_iff _ _ ((&uniqb{κ'} ty)%T.(ty_gho_own) y d g tid) with "[] Bor")
+    iDestruct (llftl_bor_iff _ _ ((&uniq{κ'} ty)%T.(ty_gho_own) y d g tid) with "[] Bor")
       as "Bor".
     { iIntros "!>". iDestruct "Pp" as "#[I' C']". iIntros "!>". iSplit.
       - iIntros "B". iFrame "I' B C'". iPureIntro. lia.
       - by iIntros "(_ & _ & $ & _)". }
-    iMod (llftl_bor_guarded_extract _ _ _ _ ((&uniqb{κ'} ty)%T.(ty_gho_pers) y d g tid)
+    iMod (llftl_bor_guarded_extract _ _ _ _ ((&uniq{κ'} ty)%T.(ty_gho_pers) y d g tid)
       with "LFT Gκ G Bor []") as "(G & Bor & Pers)"; [done| |].
     { iIntros "!> Gho". iApply (ty_gho_pers_impl with "Gho"). }
     iModIntro. iNext. iDestruct "Pers" as "#Pers". iDestruct "Pp" as "#[I' C']".
-    iMod (ty_share (&uniqb{κ'} ty)%T with "LFT Incl Pers Gκ G Bor") as "Shr";
+    iMod (ty_share (&uniq{κ'} ty)%T with "LFT Incl Pers Gκ G Bor") as "Shr";
       [rewrite /lazyE in H0; solve_ndisj|].
     iModIntro. iApply (step_fupdN_nmono (d + 2) (S (S (d + d)))); [lia|].
     iApply step_fupdN_add. iApply (step_fupdN_wand with "Shr"). iIntros "Upd".

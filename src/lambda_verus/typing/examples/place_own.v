@@ -1,6 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product uninit value_ctx own_bytes uniq_util uniq_bytes
-  place_own place_puniq place_resolve.
+From lrust.typing Require Export type programs cont int product uninit value_ctx own uniq_util uniq_bor place_own place_puniq place_resolve.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -11,7 +10,7 @@ bytes ([own_bytes]); the leaves are read and written with typed [Load] and [Stor
 borrow [&mut x.1] is a MiniRust pointer value ([&uniqb]); it is written as a place rooted
 at its value ([type_uniq_to_vplace_instr], [type_write_vplace_deep_instr]). The body is
 stated as a function body ([typed_body], with the return continuation [k]), without the
-function type ([fn] still takes legacy boxes). *)
+function type. *)
 
 Section place_own.
   Context `{!typeG Σ}.
@@ -76,7 +75,7 @@ Section place_own.
       { solve_typing. } { simpl. reflexivity. }
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
-      iApply type_seq. { apply (type_resolve_val_instr vr (&uniqb{β} i32t)). apply uniq_bytes.uniq_resolve. solve_typing. }
+      iApply type_seq. { apply (type_resolve_val_instr vr (&uniq{β} i32t)). apply uniq_bor.uniq_resolve. solve_typing. }
       { solve_typing. } { reflexivity. }
       (* end β: unblock x.1 *)
       iApply (type_endlft _ _ _ _ β).
@@ -183,7 +182,7 @@ Section place_own.
       { solve_typing. } { simpl. reflexivity. }
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
-      iApply type_seq. { apply (type_resolve_val_instr vr (&uniqb{β} i32t)). apply uniq_bytes.uniq_resolve. solve_typing. }
+      iApply type_seq. { apply (type_resolve_val_instr vr (&uniq{β} i32t)). apply uniq_bor.uniq_resolve. solve_typing. }
       { solve_typing. } { reflexivity. }
       (* end β: unblock *( *b).0 *)
       iApply (type_endlft _ _ _ _ β).

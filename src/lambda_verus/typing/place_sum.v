@@ -17,9 +17,7 @@
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath place_own sum.
-From lrust.typing Require Import type_context programs programs_util lft_contexts uniq_util
-  uniq_bytes_util uniq_bytes own_bytes shr_bytes bytes_layout value_ctx product uninit
-  freeable_util.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own shr_bor bytes_layout value_ctx product uninit freeable_util.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -139,7 +137,7 @@ Section typing.
     rewrite /ltype_own lty_pat_plug lty_rfn_plug -Hy lty_rfn_sum_in ltype_own_plug.
     iFrame "Rest".
     iApply sum_ofty_unfold_own. iExists (pinj j a, pad). iSplit; [done|].
-    rewrite /bofty_owned (cbytes_sum _ j (tyl +!! j)). by iFrame.
+    rewrite /ofty_owned (cbytes_sum _ j (tyl +!! j)). by iFrame.
   Qed.
 
   (* Assigning a variant ([type_sum_assign_oplace_instr], [type_sum_unit_oplace_instr] of

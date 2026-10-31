@@ -1,6 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product uninit value_ctx own_bytes
-  uniq_util uniq_bytes place_own place_puniq place_resolve place_deep.
+From lrust.typing Require Export type programs cont int product uninit value_ctx own uniq_util uniq_bor place_own place_puniq place_resolve place_deep.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -54,7 +53,7 @@ Section place_deep.
     ⊢ typed_body [ϝ ⊑ₑ α; α ⊑ₑ β] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
           λ v: vec val 1, +[vhd v ◁ᵥ own_bytes 8 (i32t * i32t)] } ret_pair]
-        +[vx ◁ᵥ own_bytes PTR_SIZE (&uniqb{α} (&uniqb{β} (i32t * (i32t * i32t))));
+        +[vx ◁ᵥ own_bytes PTR_SIZE (&uniq{α} (&uniq{β} (i32t * (i32t * i32t))));
           vy ◁ᵥ own_bytes 8 (i32t * i32t); vc ◁ᵥ own_bytes 8 (↯ 8)]%T
         (subst "return" k (subst "x" vx (subst "y" vy (subst "c" vc swap_snd))))
         swap_snd_spec.
@@ -65,7 +64,7 @@ Section place_deep.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_own_to_oplace. }
       (* unfold *x, **x, **x as a pair *)
       iApply type_seq.
-      { apply (type_unfold_oplace_uniq_instr _ _ _ vx PTR_SIZE PHole (&uniqb{β} (i32t * (i32t * i32t))) α).
+      { apply (type_unfold_oplace_uniq_instr _ _ _ vx PTR_SIZE PHole (&uniq{β} (i32t * (i32t * i32t))) α).
         solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
@@ -99,14 +98,14 @@ Section place_deep.
         solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { apply (type_fold_oplace_uniq_instr _ _ _ vx PTR_SIZE PHole (&uniqb{β} (i32t * (i32t * i32t))) α).
+      { apply (type_fold_oplace_uniq_instr _ _ _ vx PTR_SIZE PHole (&uniq{β} (i32t * (i32t * i32t))) α).
         solve_typing. }
       { solve_typing. } { reflexivity. }
       (* drop x, resolving it *)
       iApply type_seq.
       { apply (type_drop_oplace_deep_instr _ _ _ vx PTR_SIZE (Z.of_nat PTR_SIZE)
-          (OfTy (&uniqb{α} (&uniqb{β} (i32t * (i32t * i32t)))))); [done|done|done|].
-        apply lty_rslv_of, lty_resolve_ofty, uniq_bytes.uniq_resolve. solve_typing. }
+          (OfTy (&uniq{α} (&uniq{β} (i32t * (i32t * i32t)))))); [done|done|done|].
+        apply lty_rslv_of, lty_resolve_ofty, uniq_bor.uniq_resolve. solve_typing. }
       { solve_typing. } { reflexivity. }
       (* drop y *)
       iApply typed_body_tctx_incl.

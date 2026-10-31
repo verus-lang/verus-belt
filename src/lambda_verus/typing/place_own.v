@@ -11,7 +11,7 @@
 
   There is no outer borrow: blocking a leaf (a mutable borrow of a subplace at some
   lifetime [α], [type_borrow_oplace_instr]) leaves in the place the inheritance of the
-  new borrow (pending ownership, [bblocked_owned]), which is fired when [α] has ended
+  new borrow (pending ownership, [blocked_owned]), which is fired when [α] has ended
   ([unblock_tctx_oplace]). A leaf can be read (copied, [type_read_oplace_instr]), moved
   out (leaving it uninitialized, [type_move_oplace_instr]) and written
   ([type_write_oplace_instr], which also re-initializes an uninitialized leaf). Moving
@@ -26,9 +26,7 @@
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath vplace.
-From lrust.typing Require Import type_context programs programs_util lft_contexts uniq_util
-  uniq_bytes_util uniq_bytes own_bytes shr_bytes bytes_layout value_ctx product uninit
-  freeable_util.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own shr_bor bytes_layout value_ctx product uninit freeable_util.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -52,7 +50,7 @@ Section typing.
     rewrite /tctx_elt_interp. iExists _. iSplit; [done|].
     iExists (S d), d, (S d). rewrite /lty_size -(ty_bsize_eq ty). iFrame "⧖ ⧗ Fr".
     iSplit; [done|]. iSplit; [iPureIntro; lia|].
-    rewrite /ltype_own /= /bofty_owned. iExists x. iSplit; [done|]. by iFrame "Gho".
+    rewrite /ltype_own /= /ofty_owned. iExists x. iSplit; [done|]. by iFrame "Gho".
   Qed.
 
   Lemma tctx_oplace_to_own {𝔄} E L p n (ty: type 𝔄) :
@@ -61,7 +59,7 @@ Section typing.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[[l x] ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
     iDestruct "T" as (v Hp D d g) "(⧖ & _ & -> & %Hle & Fr & Own)".
-    rewrite /ltype_own /= /bofty_owned. iDestruct "Own" as (? ->) "[Pt Gho]".
+    rewrite /ltype_own /= /ofty_owned. iDestruct "Own" as (? ->) "[Pt Gho]".
     iModIntro. iExists -[(l, x)]. iFrame "Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists _. iSplit; [done|]. iExists (VPtr l), D.
     iSplit; [done|]. iFrame "⧖".
@@ -127,7 +125,7 @@ Section typing.
       ={E}=∗
     ltype_own (Owned 1) (OwnPtrLty n (OfTy ty)) (inr (l', inl (PlaceIn x))) d g tid l.
   Proof.
-    rewrite /ltype_own /= /bofty_owned /=.
+    rewrite /ltype_own /= /ofty_owned /=.
     iIntros "(%v & -> & Pt & H)". destruct d as [|d]; simpl; [by iMod "H"|].
     iDestruct "H" as "(Pt' & Fr & Gho)".
     iEval (rewrite cbytes_at_loc) in "Pt". rewrite /lty_size -(ty_bsize_eq ty).
@@ -182,7 +180,7 @@ Section typing.
     rewrite /ltype_own !lty_pat_plug !lty_rfn_plug !ltype_own_plug Hm Hdh /=.
     iFrame "Rest Pt". iSplit; [done|]. rewrite /lty_size -(ty_bsize_eq ty).
     iSplitL "Fr'"; [by iApply bi.laterN_intro|].
-    iExists y. iSplit; [done|]. rewrite /bofty_owned.
+    iExists y. iSplit; [done|]. rewrite /ofty_owned.
     iFrame "Pt'". rewrite Nat.add_1_r /=. iNext. by iApply bi.laterN_intro.
   Qed.
 
@@ -210,7 +208,7 @@ Section typing.
     elctx_sat E L (ty_outlives_E ty α) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)]
       (Seq (Seq Skip Skip) (OfLit (pctx_expr K (ToLit p))))
-      (λ w, +[w ◁ᵥ &uniqb{α} ty; p ◁ₗown{n} pctx_plug K (Blocked ty α)])
+      (λ w, +[w ◁ᵥ &uniq{α} ty; p ◁ₗown{n} pctx_plug K (Blocked ty α)])
       (λ post '-[x], λ mask π, ∀ m1: ~~ (uniq_borₛ 𝔅),
         uniq_bor_current m1 = pctx_get K x.1.2 →
         post -[m1; (x.1, (pctx_path K [], uniq_bor_ξi m1) :: x.2)] mask π).
@@ -276,7 +274,7 @@ Section typing.
       rewrite cumulative_time_receipt_sep. iFrame. }
     iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug pctx_own_blk_cons. iFrame "Rest".
-    rewrite /= decide_True // /bblocked_owned. iIntros "#†α".
+    rewrite /= decide_True // /blocked_owned. iIntros "#†α".
     iMod (fupd_mask_mono with "(Back †α)") as "Lender"; [rewrite /lazyE; solve_ndisj|].
     iMod (lc_fupd_elim_later with "£' Lender") as "Lender". iModIntro.
     iApply (guarded_upd_mono with "[⧗k] [Lender]");
@@ -284,7 +282,7 @@ Section typing.
     iIntros "(%x & %d1 & %g1 & Eqz & #⧖1 & Gho & Pt)".
     iMod (cumulative_persistent_time_receipt with "TIME ⧗k ⧖1") as "#⧖1'";
       [rewrite /lazyE; solve_ndisj|].
-    iModIntro. iExists x, d1, g1. rewrite /bofty_owned /=. iFrame "Eqz Pt Gho".
+    iModIntro. iExists x, d1, g1. rewrite /ofty_owned /=. iFrame "Eqz Pt Gho".
     iApply (persistent_time_receipt_mono with "⧖1'"). rewrite pctx_mode_add. lia.
   Qed.
 
@@ -409,7 +407,7 @@ Section typing.
     iSplit; [|done]. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
     iFrame "⧖ ⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug. iFrame "Rest".
-    iExists y. iSplit; [done|]. rewrite /bofty_owned. iFrame "Gho1". by iApply bytes_own_of_bytes.
+    iExists y. iSplit; [done|]. rewrite /ofty_owned. iFrame "Gho1". by iApply bytes_own_of_bytes.
   Qed.
 
   (** Moving the value out of the leaf at the hole of [K]: a typed [Load]; the leaf becomes
@@ -477,7 +475,7 @@ Section typing.
     rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //
       pctx_loc_reset // pctx_mode_retype pctx_depth_retype /=.
     rewrite Hsz. iFrame "Rest".
-    iExists junk. iSplit; [done|]. rewrite /bofty_owned /=. iSplitL; [|done].
+    iExists junk. iSplit; [done|]. rewrite /ofty_owned /=. iSplitL; [|done].
     iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].
     rewrite decode_value_tuple decide_True //.
   Qed.
@@ -570,7 +568,7 @@ Section typing.
       iFrame "⧗p Fr". iSplit; [done|]. iSplit; [iPureIntro; lia|].
       rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //
         pctx_loc_reset // pctx_mode_retype pctx_depth_retype /=. rewrite Hsz'. iFrame "Rest".
-      iExists b. iSplit; [done|]. rewrite /bofty_owned. iFrame "Gb".
+      iExists b. iSplit; [done|]. rewrite /ofty_owned. iFrame "Gb".
       iApply (bytes_own_of_bytes with "Hbs"). by apply ty_bytes_encode. }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
     by apply Hπ.

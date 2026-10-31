@@ -1,12 +1,12 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import programs lft_contexts own_bytes value_ctx.
+From lrust.typing Require Import programs lft_contexts own value_ctx.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
 
 (** * Shared references to bytes (stage 4 of the MiniRust memory model)
 
-[&shrb{κ} ty] is the byte form of [&shr{κ} ty]: its ownership is a guard, by [@[κ]], of
+[&shr{κ} ty] is the byte form of [&shr{κ} ty]: its ownership is a guard, by [@[κ]], of
 bytes at the referent that represent its value ([bytes_own ty l x]: fancy bytes, so the
 referent may embed cells; for a type without cells they are plain, [shr_bytes_own_nocell]),
 together with the
@@ -112,12 +112,12 @@ Section shr_bytes.
   Qed.
 End shr_bytes.
 
-Notation "&shrb{ κ }" := (shr_bytes κ) (format "&shrb{ κ }") : lrust_type_scope.
+Notation "&shr{ κ }" := (shr_bytes κ) (format "&shr{ κ }") : lrust_type_scope.
 
 Section shr_bytes_rules.
   Context `{!typeG Σ}.
 
-  Lemma shr_bytes_copy {𝔄} κ (ty: type 𝔄) : Copy (&shrb{κ} ty).
+  Lemma shr_bytes_copy {𝔄} κ (ty: type 𝔄) : Copy (&shr{κ} ty).
   Proof.
     split. - typeclasses eauto. - iIntros. iPureIntro. done.
     - intros. by apply copy_shr_default.
@@ -127,7 +127,7 @@ Section shr_bytes_rules.
       returns the value of the referent. *)
   Lemma wp_shr_bytes_load {𝔄} κ (ty: type 𝔄) l x v d g tid G E :
     ↑naN ⊆ E → ty.(ty_val) x = Some v →
-    {{{ (&shrb{κ} ty).(ty_gho_own) (l, x) (S d) g tid ∗ (G &&{↑NllftG}&&> @[κ]) ∗ G ∗
+    {{{ (&shr{κ} ty).(ty_gho_own) (l, x) (S d) g tid ∗ (G &&{↑NllftG}&&> @[κ]) ∗ G ∗
         £(2*(g+1)) }}}
       Load Na1Ord ty.(ty_mty) #l.1 @ E
     {{{ RET MLitV v; G }}}.
@@ -142,8 +142,8 @@ Section shr_bytes_rules.
       [Load]. *)
   Lemma type_load_shr_bytes_copy_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p E L I :
     Copy ty → lctx_lft_alive E L κ →
-    typed_instr E L I +[p ◁ᵥ &shrb{κ} ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
-      (λ v, +[p ◁ᵥ &shrb{κ} ty; v ◁ᵥ ty]) (λ post '-[a], post -[a; a.2]).
+    typed_instr E L I +[p ◁ᵥ &shr{κ} ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
+      (λ v, +[p ◁ᵥ &shr{κ} ty; v ◁ᵥ ty]) (λ post '-[a], post -[a; a.2]).
   Proof.
     iIntros (? Alv tid post mask iκs [[l x] []]) "#LFT #TIME _ _ #E L $ [p _] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".

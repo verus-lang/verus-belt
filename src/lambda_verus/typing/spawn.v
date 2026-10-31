@@ -1,7 +1,7 @@
 From iris.proofmode Require Import proofmode.
 From lrust.prophecy Require Import syn_type.
 From lrust.lang Require Import spawn.
-From lrust.typing Require Export type function_bytes product.
+From lrust.typing Require Export type function product.
 From lrust.typing Require Import type_context programs value_ctx.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -118,9 +118,9 @@ Section spawn.
   
   Lemma spawn_type {𝔄 𝔅 ℭ} (c: ~~ℭ) (Φ: (~~ℭ) → pred' (~~𝔅)) call_once_val call_once_tr (fty: type 𝔄) (retty: type 𝔅)
       call_once `{!Send fty, !Send retty} :
-    typed_val call_once ((bfn<()>(∅; fty) → retty) call_once_tr) (call_once_val, c) →
+    typed_val call_once ((fn<()>(∅; fty) → retty) call_once_tr) (call_once_val, c) →
     let E ϝ := ty_outlives_E fty static ++ ty_outlives_E retty static in
-    typed_val (spawn call_once) ((bfn(E; fty) → join_handle Φ retty)
+    typed_val (spawn call_once) ((fn(E; fty) → join_handle Φ retty)
       (λ c, (λ post '-[a], λ Mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ b Mask π, Φ c b Mask π) -[a'] ⊤ π ∧ ∀ li, post (li, c) Mask π)))
       (spawn call_once, c).
   Proof.
@@ -128,7 +128,7 @@ Section spawn.
     move=> Tcall_once E.
     unfold spawn.
     unlock.
-    opose proof (@type_bfn _ _ _ [𝔄] (at_locₛ (join_handleₛ ℭ)) ℭ c (λ y: (), FP E +[fty] (join_handle Φ retty) AtomicClosed) (λ c, (λ post '-[a], λ Mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ b mask' π', Φ c b mask' π') -[a'] ⊤ π ∧ ∀ li : loc, post (li, c) Mask π)) (let: "call_once" := call_once in let: "j" := OfLit (lib.spawn.spawn [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish ["c"; "r"]]) in return: ["j"])%E [BNamed "f"] _ _ _ ).
+    opose proof (@type_fn _ _ _ [𝔄] (at_locₛ (join_handleₛ ℭ)) ℭ c (λ y: (), FP E +[fty] (join_handle Φ retty) AtomicClosed) (λ c, (λ post '-[a], λ Mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ b mask' π', Φ c b mask' π') -[a'] ⊤ π ∧ ∀ li : loc, post (li, c) Mask π)) (let: "call_once" := call_once in let: "j" := OfLit (lib.spawn.spawn [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish ["c"; "r"]]) in return: ["j"])%E [BNamed "f"] _ _ _ ).
     unlock in H.
     apply H.
     move => _.
@@ -167,7 +167,7 @@ Section spawn.
 
       iMod (invctx_alloc ⊤) as (tid') "I'".
 
-      rewrite (proj1 (proj2 (@sync_change_tid _ _ _ _ (bfn_sync _ _) tid tid' _ _ _ ))).
+      rewrite (proj1 (proj2 (@sync_change_tid _ _ _ _ (fn_sync _ _) tid tid' _ _ _ ))).
 
       iApply fupd_wp.
       iMod (fupd_mask_subseteq (↑Nllft)) as "Hclose"; first solve_ndisj.
@@ -226,7 +226,7 @@ Section spawn.
       iIntros (?) "fin".
       do 2 wp_let.
 
-      iApply (type_bcall_iris (𝔄l:=[_]) () -[x'] [] _ _ (λ '(), FP ∅ +[fty] retty AtomicClosed)  with "LFT TIME PROPH UNIQ E [] [] I' [Hgho1] [Hgho2]").
+      iApply (type_call_iris (𝔄l:=[_]) () -[x'] [] _ _ (λ '(), FP ∅ +[fty] retty AtomicClosed)  with "LFT TIME PROPH UNIQ E [] [] I' [Hgho1] [Hgho2]").
       3: by iApply guards_refl.
       1: apply _.
       + move => ϝ'.

@@ -1,7 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own_bytes shr_bytes
-  uniq_util uniq_bytes place_own place_puniq place_resolve place_pshr place_res place_res_rslv
-  place_res_ops.
+From lrust.typing Require Export type programs cont int product value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_res place_res_rslv place_res_ops.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -35,11 +33,11 @@ Section place_res.
   `fin(x.1) == cur(x.1)`, learnt when [x] is resolved. The argument is a box of bytes, an
   owned place, unfolded as a pair; it is resolved ([type_resolve_oplace_res_instr],
   [lty_res_prod] of two [lty_res_ofty], two program steps) to
-  [ProdLty (OfRes (own_bytes 4 i32)) (OfRes (&uniqb{'a} (i32 * i32)))], which stays
+  [ProdLty (OfRes (own_bytes 4 i32)) (OfRes (&uniq{'a} (i32 * i32)))], which stays
   readable:
     * [OfRes (own_bytes 4 i32)] is converted back to [OfTy (own_bytes 4 i32)]
       ([tctx_oplace_res_to_ofty]), unfolded and read ([type_read_oplace_instr]);
-    * [OfRes (&uniqb{'a} (i32 * i32))] is re-read as a shared reference to its referent
+    * [OfRes (&uniq{'a} (i32 * i32))] is re-read as a shared reference to its referent
       at ['a] ([type_oplace_res_uniq_to_shr_instr], one step), viewed as a pair and read
       below it ([type_read_oplace_pshr_instr], a guarded typed load);
     * the slot is dropped ([type_drop_oplace_res_instr]), freeing the inner box.
@@ -66,7 +64,7 @@ Section place_res.
     ⊢ typed_body [ϝ ⊑ₑ α] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
           λ v: vec val 2, +[vhd v ◁ᵥ i32t; vhd (vtl v) ◁ᵥ i32t] } ret_zz]
-        +[vx ◁ᵥ own_bytes (PTR_SIZE + PTR_SIZE) (own_bytes 4 i32t * &uniqb{α} (i32t * i32t))]
+        +[vx ◁ᵥ own_bytes (PTR_SIZE + PTR_SIZE) (own_bytes 4 i32t * &uniq{α} (i32t * i32t))]
         (subst "return" k (subst "x" vx res_pair)) res_pair_spec.
   Proof.
     rewrite /res_pair. simpl_subst.
@@ -74,12 +72,12 @@ Section place_res.
       (* x as an owned place, unfolded *)
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_own_to_oplace|].
-        apply (tctx_unfold_oplace_prod _ _ _ _ PHole (own_bytes 4 i32t) (&uniqb{α} (i32t * i32t))). }
+        apply (tctx_unfold_oplace_prod _ _ _ _ PHole (own_bytes 4 i32t) (&uniq{α} (i32t * i32t))). }
       (* resolve x *)
       iApply type_seq.
       { apply (type_resolve_oplace_res_instr _ _ _ vx (PTR_SIZE + PTR_SIZE)
-          (ProdLty (OfTy (own_bytes 4 i32t)) (OfTy (&uniqb{α} (i32t * i32t))))
-          (ProdLty (OfRes (own_bytes 4 i32t)) (OfRes (&uniqb{α} (i32t * i32t)))) (1 + 1)).
+          (ProdLty (OfTy (own_bytes 4 i32t)) (OfTy (&uniq{α} (i32t * i32t))))
+          (ProdLty (OfRes (own_bytes 4 i32t)) (OfRes (&uniq{α} (i32t * i32t)))) (1 + 1)).
         apply lty_res_prod; apply lty_res_ofty.
         - apply resolve_keep_just.
         - apply uniq_resolve_keep. solve_typing. }
@@ -87,13 +85,13 @@ Section place_res.
       (* *x.0: the box is unresolved again, unfolded and read *)
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans;
-          [apply (tctx_oplace_res_to_ofty _ _ _ _ (PFst PHole (OfRes (&uniqb{α} (i32t * i32t))))
+          [apply (tctx_oplace_res_to_ofty _ _ _ _ (PFst PHole (OfRes (&uniq{α} (i32t * i32t))))
             (own_bytes 4 i32t))|].
-        by apply (tctx_unfold_oplace_own _ _ _ _ (PFst PHole (OfRes (&uniqb{α} (i32t * i32t))))
+        by apply (tctx_unfold_oplace_own _ _ _ _ (PFst PHole (OfRes (&uniq{α} (i32t * i32t))))
           4 i32t). }
       iApply (type_let with "[]").
       { apply (type_read_oplace_instr _ _ _ vx (PTR_SIZE + PTR_SIZE)
-          (PFst (POwn 4 PHole) (OfRes (&uniqb{α} (i32t * i32t)))) i32t). apply _. }
+          (PFst (POwn 4 PHole) (OfRes (&uniq{α} (i32t * i32t)))) i32t). apply _. }
       { solve_typing. } { reflexivity. }
       iIntros (va). simpl_subst.
       (* ( *x.1).0: the resolved unique borrow is a shared reference to its referent *)
@@ -187,7 +185,7 @@ Section place_res.
     ⊢ typed_body [ϝ ⊑ₑ α; α ⊑ₑ β] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
           λ v: vec val 2, +[vhd v ◁ᵥ i32t; vhd (vtl v) ◁ᵥ i32t] } ret_zz]
-        +[vx ◁ᵥ own_bytes PTR_SIZE (&uniqb{α} (&uniqb{β} (i32t * i32t)))]
+        +[vx ◁ᵥ own_bytes PTR_SIZE (&uniq{α} (&uniq{β} (i32t * i32t)))]
         (subst "return" k (subst "x" vx res_nested)) res_nested_spec.
   Proof.
     rewrite /res_nested. simpl_subst.
@@ -195,7 +193,7 @@ Section place_res.
       iApply typed_body_tctx_incl; [apply tctx_own_to_oplace|].
       (* unfold *x, **x, **x as a pair *)
       iApply type_seq.
-      { apply (type_unfold_oplace_uniq_instr _ _ _ vx PTR_SIZE PHole (&uniqb{β} (i32t * i32t)) α).
+      { apply (type_unfold_oplace_uniq_instr _ _ _ vx PTR_SIZE PHole (&uniq{β} (i32t * i32t)) α).
         solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
@@ -249,8 +247,8 @@ Section place_res.
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
       iApply type_seq.
-      { apply (type_resolve_val_instr vr (&uniqb{α ⊓ (β ⊓ γ)} i32t)).
-        apply uniq_bytes.uniq_resolve. solve_typing. }
+      { apply (type_resolve_val_instr vr (&uniq{α ⊓ (β ⊓ γ)} i32t)).
+        apply uniq_bor.uniq_resolve. solve_typing. }
       { solve_typing. } { reflexivity. }
       (* end γ: unblock ( **x).0 in the view *)
       iApply (type_endlft _ _ _ _ γ).

@@ -1,6 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own_bytes shr_bytes
-  place_own place_shr place_resolve.
+From lrust.typing Require Export type programs cont int product value_ctx own shr_bor place_own place_shr place_resolve.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -38,7 +37,7 @@ Section get_snd.
   Lemma get_snd_type ϝ α β (k vx: val) :
     ⊢ typed_body [ϝ ⊑ₑ α; α ⊑ₑ β] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
-        +[vx ◁ᵥ own_bytes PTR_SIZE (&shrb{α} (&shrb{β} (i32t * i32t)))%T]
+        +[vx ◁ᵥ own_bytes PTR_SIZE (&shr{α} (&shr{β} (i32t * i32t)))%T]
         (subst "return" k (subst "x" vx get_snd))
         (λ post '-[(_, (_, (_, (_, z2))))], λ mask π, post z2 mask π).
   Proof.
@@ -46,13 +45,13 @@ Section get_snd.
     iApply (typed_body_impl with "[]"); last first. {
       (* *x *)
       iApply (type_let with "[]").
-      { apply (type_load_own_bytes_copy_instr PTR_SIZE (&shrb{α} (&shrb{β} (i32t * i32t)))).
+      { apply (type_load_own_bytes_copy_instr PTR_SIZE (&shr{α} (&shr{β} (i32t * i32t)))).
         apply shr_bytes_copy. }
       { solve_typing. } { reflexivity. }
       iIntros (v1). simpl_subst.
       (* **x *)
       iApply (type_let with "[]").
-      { apply (type_load_shr_bytes_copy_instr α (&shrb{β} (i32t * i32t))); [apply shr_bytes_copy|].
+      { apply (type_load_shr_bytes_copy_instr α (&shr{β} (i32t * i32t))); [apply shr_bytes_copy|].
         solve_typing. }
       { solve_typing. } { reflexivity. }
       iIntros (v2). simpl_subst.
@@ -67,17 +66,17 @@ Section get_snd.
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       (* drop the shared references *)
-      iApply type_seq. { apply (type_resolve_val_instr v1 (&shrb{α} (&shrb{β} (i32t * i32t)))).
+      iApply type_seq. { apply (type_resolve_val_instr v1 (&shr{α} (&shr{β} (i32t * i32t)))).
         apply resolve_just. }
       { solve_typing. } { reflexivity. }
-      iApply type_seq. { apply (type_resolve_val_instr v3 (&shrb{β} i32t)). apply resolve_just. }
+      iApply type_seq. { apply (type_resolve_val_instr v3 (&shr{β} i32t)). apply resolve_just. }
       { solve_typing. } { reflexivity. }
       (* drop x *)
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_tail. apply tctx_own_to_oplace. }
       iApply type_seq.
       { apply (type_drop_oplace_instr _ _ _ vx PTR_SIZE (Z.of_nat PTR_SIZE)
-          (OfTy (&shrb{α} (&shrb{β} (i32t * i32t)))) (const (const True)));
+          (OfTy (&shr{α} (&shr{β} (i32t * i32t)))) (const (const True)));
           [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
       iApply type_jump.

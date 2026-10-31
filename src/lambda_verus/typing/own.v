@@ -10,10 +10,8 @@ Set Default Proof Using "Type".
 [own_bytes n ty] is an owning pointer whose pointee lives in the byte region of the
 heap (see [lang/heap.v]): it owns the bytes that represent the value of the pointee
 ([bytes_own ty l x]), and the freeable token of the [ty_bsize ty] bytes of a block of [n]
-bytes. This is the target form of [own_ptr] (see [design_docs/minirust-memory-model.md],
-"Outcome: stage 3"): [own_ptr] itself still owns legacy words ([l ↦!∗ ty_phys x]),
-because the place machinery reads and writes its leaves with the legacy one-word
-operations until stage 4.
+bytes (see [design_docs/minirust-memory-model.md], "Outcome: stage 3"). It replaced the
+legacy word-level [own_ptr] (deleted in stage 5).
 
 The bytes are _fancy bytes_ (§10 step 4 of [design_docs/pcell-multibyte-cells.md]): the
 edges of the locations [l], [l +ₗ 1], ... point to bytes or to the byte-cells of cell
@@ -196,7 +194,7 @@ Section own_bytes.
   Qed.
 
   (** The fancy bytes of a cell (for the [PCell] types of §10 step 5): a value [g] of
-      [pcellbₛ m] (with a well-formed content type [m]) is a cell group, and its fancy
+      [pcellₛ m] (with a well-formed content type [m]) is a cell group, and its fancy
       bytes at [l] are exactly the location side of the group ([loc_side]): the edges of
       the locations [l], [l +ₗ 1], ... to the byte-cells of [g]. *)
   Lemma frepr_cell_inv {W} (R: gmap positive (mty * list positive)) m
@@ -204,7 +202,7 @@ Section own_bytes.
     frepr R m fbs (FVCell g) → ∃ cs, R !! g = Some (m, cs) ∧ fbs = inl <$> cs.
   Proof. inversion 1 as [? ? cs| ? ? v ? Hv| |]; [by eauto|]. by destruct v. Qed.
 
-  Lemma bytes_own_pcellb {m} (ty: type (pcellbₛ m)) l (g: ~~(pcellbₛ m)) :
+  Lemma bytes_own_pcell {m} (ty: type (pcellₛ m)) l (g: ~~(pcellₛ m)) :
     mty_wf m →
     bytes_own ty l g ⊣⊢ ∃ cs, loc_side l g m cs ∗ ⌜length cs = mty_size m⌝.
   Proof.

@@ -910,3 +910,13 @@ shared references `&shrb`, unique borrows `&uniqb`. No `Admitted`; no new axioms
   withdraw, the non-deterministic exchanges) keep the first component in their first
   argument (`p1 ◁ᵥ storage_resource_ty`, with the new value) and return the second one.
 
+
+## 17. Outcome: §10 step 6 = stage 5 (2026-10-31)
+
+The legacy (word-based) typing layer is deleted after porting what had no byte counterpart
+(atomic and local invariants, ghost operations, `spawn`, `assert`, `PPtr`, the `list`
+example); the byte files took the plain names (`pcell_bytes.v` → `pcell.v`,
+`pcellbₛ` → `pcellₛ`, `pcellb_ty` → `pcell_ty`, `bcell_*` → `cell_*`, `typed_rab_*` →
+`typed_ra_*`, …) and `ra_bytes.v`/`protocol_bytes.v` were merged into `ra.v`/`protocol.v`.
+See "Outcome: stage 5 / §10 step 6" in `minirust-memory-model.md` for the details and
+for what stays legacy (`ty_phys`/`ty_size`, `cloc` and the `#↦∗_` guards, the word heap).

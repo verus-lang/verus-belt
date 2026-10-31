@@ -52,7 +52,7 @@
 
   ** Places below shared references
 
-  These are plain [p ◁ &shrb{κ} ty] elements (see [place_shr.v]); they are dropped as
+  These are plain [p ◁ &shr{κ} ty] elements (see [place_shr.v]); they are dropped as
   any element ([resolve_just]). *)
 
 From iris.proofmode Require Import proofmode.
@@ -61,9 +61,7 @@ From lrust.lang Require Import proofmode.
 From lrust.lang.lib Require Import new_delete.
 From lrust.util Require Import update.
 From lrust.typing Require Export type ltype lpath place_own.
-From lrust.typing Require Import type_context programs programs_util lft_contexts uniq_util
-  uniq_bytes_util uniq_bytes own_bytes shr_bytes bytes_layout value_ctx product uninit
-  freeable_util.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own shr_bor bytes_layout value_ctx product uninit freeable_util.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -211,7 +209,7 @@ Section rslv.
       iSplitL "η"; [by iApply proph_tok_singleton|].
       iIntros (G m d g tid l ?) "#LFT _ #Gty _ G η Own".
       iDestruct (proph_tok_singleton with "η") as "η".
-      rewrite /ltype_own /= /leaf_owned_s /bleaf_owned /=.
+      rewrite /ltype_own /= /leaf_owned_s /leaf_owned /=.
       iDestruct "Own" as (x' Hx) "[Pt Gho]". simpl in Hx. subst x'.
       iIntros "!> £".
       iDestruct (lc_weaken (m + (d + d*(g+2) + (0 + (d+1)*(g+1)) + 1 + 1)) with "£")
@@ -637,14 +635,14 @@ Section lty_mem.
   Proof.
     induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
       𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'] in m, r, d, g, l |- *; rewrite /ltype_own /=;
-      [..|rewrite /leaf_owned_s /bleaf_owned;
+      [..|rewrite /leaf_owned_s /leaf_owned;
         destruct r as [lr|]; [|by iIntros "[[] _]"]; iIntros "[(%x & _ & Pt & _) _]";
         rewrite cbytes_at_cloc; by iApply ptr_cell_mem_cell
        |rewrite /res_leaf; destruct r as [lr|]; [|by iIntros "[]"];
         iIntros "(%x & _ & Pt & _)"; by iApply cbytes_mem_cell
        |rewrite /res_node; destruct r as [|[[l' r'] ξi]]; [by iIntros "[]"|];
         iIntros "[Pt _]"; by iApply ptr_cell_mem_cell]; try by iIntros.
-    - rewrite /leaf_owned_s /bleaf_owned.
+    - rewrite /leaf_owned_s /leaf_owned.
       destruct r as [lr|]; [|by iIntros "[]"]. iIntros "(%x & _ & Pt & _)".
       by iApply cbytes_mem_cell.
     - rewrite /uniq_node. destruct r as [|[[l' r'] ξi]]; [by iIntros "[]"|].
@@ -692,7 +690,7 @@ Section lty_resolve.
     resolve E L ty Φ → lty_resolve E L (OfTy ty) Φ.
   Proof.
     iIntros (Rslv G F m x ζm q d g tid l ??) "LFT PROPH UNIQ TIME E L G Own".
-    rewrite /ltype_own /= /leaf_owned_s /bleaf_owned /=.
+    rewrite /ltype_own /= /leaf_owned_s /leaf_owned /=.
     iDestruct "Own" as (x' Hx) "[Pt Gho]". simpl in Hx. subst x'.
     iSplitL "Pt". { iModIntro. by iApply cbytes_mem_cell. }
     iModIntro. iApply step_fupdN_add.

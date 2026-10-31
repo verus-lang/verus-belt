@@ -1,5 +1,5 @@
 From lrust.lang Require Export notation.
-From lrust.lang Require Import heap proofmode memcpy.
+From lrust.lang Require Import heap proofmode.
 Set Default Proof Using "Type".
 
 Definition new : val :=
@@ -38,15 +38,3 @@ Section specs.
       wp_if; try wp_free; by iApply "HΦ".
   Qed.
 End specs.
-
-Notation "letalloc: x <- e1 'in' e2" :=
-  ((Lam [BNamed x%string%E] (Seq (Var x <- e1) e2))
-    [App (of_val new) [ #(LitInt 1)]])%E
-  (at level 102, x at level 1, e1, e2 at level 150) : expr_scope.
-
-Notation "letalloc: x <-{ n } ! e1 'in' e2" :=
-  ((Lam [BNamed x%string%E%E]
-    (Seq (Var x <-{n%Z%E} !e1) e2))
-    [App (of_val new) [ Lit (LitInt n)]])%E
-  (at level 102, x at level 1, e1, e2 at level 150,
-    format "letalloc:  x  <-{ n }  ! e1  'in'  e2") : expr_scope.

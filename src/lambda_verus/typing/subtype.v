@@ -1,8 +1,7 @@
 From iris.proofmode Require Import proofmode.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type.
-From lrust.typing Require Import programs type_context lft_contexts uniq_util uniq_bytes_util
-  uniq_bytes own_bytes shr_bytes bytes_layout value_ctx uninit freeable_util.
+From lrust.typing Require Import programs type_context lft_contexts uniq_util uniq_bor own shr_bor bytes_layout value_ctx uninit freeable_util.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -138,7 +137,7 @@ Section bsubtype.
   (** ** Shared references to bytes *)
 
   Lemma shr_bytes_btype_incl {𝔄 𝔅} κ κ' (f: 𝔄 →ₛ 𝔅) ty ty' :
-    κ' ⊑ κ -∗ btype_incl ty ty' f -∗ btype_incl (&shrb{κ} ty) (&shrb{κ'} ty') (at_cloc_mapₛ f).
+    κ' ⊑ κ -∗ btype_incl ty ty' f -∗ btype_incl (&shr{κ} ty) (&shr{κ'} ty') (at_cloc_mapₛ f).
   Proof.
     iIntros "#Incl ((_ & #Incl2 & #Sub & #SubPers & %Phys & #SubShr) & %Hsz & %Hb)".
     iSplit; last first.
@@ -161,7 +160,7 @@ Section bsubtype.
 
   Lemma shr_bytes_bsubtype {𝔄 𝔅} E L κ κ' (f: 𝔄 →ₛ 𝔅) ty ty' :
     lctx_lft_incl E L κ' κ → bsubtype E L ty ty' f →
-    bsubtype E L (&shrb{κ} ty) (&shrb{κ'} ty') (at_cloc_mapₛ f).
+    bsubtype E L (&shr{κ} ty) (&shr{κ'} ty') (at_cloc_mapₛ f).
   Proof.
     move=> In Sub. iIntros "L". iDestruct (In with "L") as "#In".
     iDestruct (Sub with "L") as "#Sub". iIntros "!> #E".
@@ -172,7 +171,7 @@ Section bsubtype.
 
   Lemma uniq_bytes_subtype {𝔄} E L κ κ' (ty ty': type 𝔄) :
     lctx_lft_incl E L κ' κ → eqtype E L ty ty' idₛ idₛ →
-    subtype E L (&uniqb{κ} ty) (&uniqb{κ'} ty') idₛ.
+    subtype E L (&uniq{κ} ty) (&uniq{κ'} ty') idₛ.
   Proof.
     move=> In.
     intros Eqt. rewrite <-eqtype_id_unfold in Eqt. iIntros "L".
@@ -222,7 +221,7 @@ Section bsubtype.
 
   Lemma uniq_bytes_bsubtype {𝔄} E L κ κ' (ty ty': type 𝔄) :
     lctx_lft_incl E L κ' κ → eqtype E L ty ty' idₛ idₛ →
-    bsubtype E L (&uniqb{κ} ty) (&uniqb{κ'} ty') idₛ.
+    bsubtype E L (&uniq{κ} ty) (&uniq{κ'} ty') idₛ.
   Proof. intros. by apply subtype_bsubtype_id, uniq_bytes_subtype. Qed.
 
   (** ** MiniRust values *)
@@ -258,7 +257,7 @@ Section bsubtype.
   Lemma tctx_bsubtype_shr_bytes {𝔄 𝔅 𝔄l} κ κ' (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅)
       (T: tctx 𝔄l) p E L :
     lctx_lft_incl E L κ' κ → bsubtype E L ty ty' f →
-    tctx_incl E L (p ◁ᵥ &shrb{κ} ty +:: T) (p ◁ᵥ &shrb{κ'} ty' +:: T)
+    tctx_incl E L (p ◁ᵥ &shr{κ} ty +:: T) (p ◁ᵥ &shr{κ'} ty' +:: T)
       (λ post '(a -:: al), post (at_cloc_mapₛ f ~~$ₛ a -:: al)).
   Proof.
     intros. apply tctx_bsubtype_val; [by apply shr_bytes_bsubtype|]. by intros [??].
@@ -266,7 +265,7 @@ Section bsubtype.
 
   Lemma tctx_bsubtype_uniq_bytes {𝔄 𝔄l} κ κ' (ty ty': type 𝔄) (T: tctx 𝔄l) p E L :
     lctx_lft_incl E L κ' κ → eqtype E L ty ty' idₛ idₛ →
-    tctx_incl E L (p ◁ᵥ &uniqb{κ} ty +:: T) (p ◁ᵥ &uniqb{κ'} ty' +:: T)
+    tctx_incl E L (p ◁ᵥ &uniq{κ} ty +:: T) (p ◁ᵥ &uniq{κ'} ty' +:: T)
       (λ post '(a -:: al), post (a -:: al)).
   Proof.
     intros. apply (tctx_bsubtype_val _ _ idₛ); [by apply uniq_bytes_bsubtype|].

@@ -1,21 +1,19 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product uninit value_ctx own_bytes
-  shr_bytes uniq_util uniq_bytes place_own place_shr place_resolve subtype pcell_bytes
-  pcell_bytes_borrow.
+From lrust.typing Require Export type programs cont int product uninit value_ctx own shr_bor uniq_util uniq_bor place_own place_shr place_resolve subtype pcell pcell_borrow.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
 (** * [PCell] on bytes
 
-The example of [typing/examples/pcell_example.v] on the byte layer (§10 step 5 of
+The legacy [pcell_example] (deleted in stage 5) on the byte layer (§10 step 5 of
 [design_docs/pcell-multibyte-cells.md]): a box is initialized with [17], made into a cell
-([PCellbFromOwn]: the box holds the pair of the cell and its permission), both fields are
-shared, the contents are borrowed through them ([PCellbBorrow]) and read. The body is
+([PCellFromOwn]: the box holds the pair of the cell and its permission), both fields are
+shared, the contents are borrowed through them ([PCellBorrow]) and read. The body is
 stated as a function body ([typed_body], with the return continuation [k]) that returns
 the value read, and its specification says that this value is [17] (instead of the call
 of [assert] of the legacy example). *)
 
-Section pcell_example_bytes.
+Section pcell_example.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
@@ -35,12 +33,12 @@ Section pcell_example_bytes.
     let: "p" := OfLit (Alloc #4) in                         (* a box of 4 bytes *)
     let: "seventeen" := MLit (VInt 17) in
     Store Na1Ord (MInt i32) (ToLit "p") "seventeen";;       (* *p = 17 *)
-    let: "pair" := PCellbFromOwn ["p"] in                    (* (PCell, PointsTo) *)
+    let: "pair" := PCellFromOwn ["p"] in                    (* (PCell, PointsTo) *)
     Newlft;;
     let: "r" := Share;; OfLit (ToLit "pair") in              (* &pair *)
     let: "pcell_ref" := OfLit (ToLit "r") in                 (* &pair.0 *)
     let: "perm_ref" := OfLit (ToLit "r" +ₗ #4) in            (* &pair.1 *)
-    let: "intref" := PCellbBorrow ["pcell_ref"; "perm_ref"] in
+    let: "intref" := PCellBorrow ["pcell_ref"; "perm_ref"] in
     let: "x" := Load Na1Ord (MInt i32) (ToLit "intref") in   (* *intref *)
     Endlft;;
     (#☠;; delete [ #4; ToLit "pair"]);;                      (* drop the pair *)
@@ -48,9 +46,9 @@ Section pcell_example_bytes.
 
   Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.
 
-  Notation pairt := (pcellb_ty (MInt i32) * bcell_points_to_ty i32t)%T.
+  Notation pairt := (pcell_ty (MInt i32) * cell_points_to_ty i32t)%T.
 
-  Lemma pcell_example_b_type ϝ (k: val) :
+  Lemma pcell_example_type ϝ (k: val) :
     ⊢ typed_body [] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
         +[] (subst "return" k pcell_example_b)
@@ -73,7 +71,7 @@ Section pcell_example_bytes.
       iApply typed_body_tctx_incl. { apply tctx_oplace_to_own. }
       (* PCell::new *)
       iApply (type_let with "[]").
-      { apply (type_pcellb_from_own_instr 4 i32t). rewrite /ty_bsize -ty_mty_eq /=. lia. }
+      { apply (type_pcell_from_own_instr 4 i32t). rewrite /ty_bsize -ty_mty_eq /=. lia. }
       { solve_typing. } { reflexivity. }
       iIntros (vpair). simpl_subst.
       iApply (type_newlft []). iIntros (κ).
@@ -86,20 +84,20 @@ Section pcell_example_bytes.
       iApply typed_body_tctx_incl.
       { apply (copy_val_tctx_incl _ _ _ _ _ (Copy0:=shr_bytes_copy κ pairt)). }
       iApply (type_let with "[]").
-      { apply (type_shr_bytes_fst_instr κ (pcellb_ty (MInt i32)) (bcell_points_to_ty i32t)). }
+      { apply (type_shr_bytes_fst_instr κ (pcell_ty (MInt i32)) (cell_points_to_ty i32t)). }
       { solve_typing. } { reflexivity. }
       iIntros (vpc). simpl_subst.
       iApply (type_let with "[]").
-      { apply (type_shr_bytes_snd_instr κ (pcellb_ty (MInt i32)) (bcell_points_to_ty i32t)). }
+      { apply (type_shr_bytes_snd_instr κ (pcell_ty (MInt i32)) (cell_points_to_ty i32t)). }
       { solve_typing. } { reflexivity. }
       iIntros (vpt). simpl_subst.
       (* borrow the contents, and read them *)
       iApply (type_let with "[]").
-      { apply (type_pcellb_borrow_instr κ i32t vpc vpt). }
+      { apply (type_pcell_borrow_instr κ i32t vpc vpt). }
       { solve_typing. } { reflexivity. }
       iIntros (vi). simpl_subst.
       iApply (type_let with "[]").
-      { apply (type_bcell_shr_load_instr κ i32t); [apply _|solve_typing]. }
+      { apply (type_cell_shr_load_instr κ i32t); [apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vx). simpl_subst.
       (* end κ: unblock the pair; drop it *)
@@ -119,6 +117,6 @@ Section pcell_example_bytes.
     intros post [] mask π Hspec. rewrite /trans_upper /trans_tail /ret_z /=.
     intros l junk _ g. split; [done|]. intros [x' [y' []]] [<- _] _. done.
   Qed.
-End pcell_example_bytes.
+End pcell_example.
 
-Print Assumptions pcell_example_b_type.
+Print Assumptions pcell_example_type.

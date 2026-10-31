@@ -1,7 +1,6 @@
 From lrust.lang Require Import heap_cells.
-From lrust.typing Require Export type own_bytes value_ctx shr_bytes uniq_bytes.
-From lrust.typing Require Import programs freeable_util uninit uniq_util uniq_bytes_util bool
-  product.
+From lrust.typing Require Export type own value_ctx shr_bor uniq_bor.
+From lrust.typing Require Import programs freeable_util uninit uniq_util bool product.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
@@ -10,25 +9,25 @@ Set Default Proof Using "Type".
 
 A [PCell<T>] on the byte layer is a cell group ([lang/heap_cells.v]): a multi-byte cell
 whose content has the MiniRust type [m]. Its two halves are two types:
-- [pcellb_ty m : type (pcellbₛ m)], the cell itself. Its value is the group [g]; its
+- [pcell_ty m : type (pcellₛ m)], the cell itself. Its value is the group [g]; its
   ownership is trivial: the location side of the group (the edges from the locations of
   the cell to its byte-cells) is owned by the parent, as the fancy bytes of [g]
-  ([bytes_own_pcellb]). A [pcellb_ty m] has no MiniRust value, so it lives only in memory
+  ([bytes_own_pcell]). A [pcell_ty m] has no MiniRust value, so it lives only in memory
   (in a box, behind a reference, as a field).
-- [bcell_points_to_ty ty : type (trackedₛ (pcellbₛ (syn_mty 𝔄) * 𝔄))], the permission
+- [cell_points_to_ty ty : type (trackedₛ (pcellₛ (syn_mty 𝔄) * 𝔄))], the permission
   ([PointsTo<T>] of Verus): a ghost value [(g, x)] that owns the dynamic registry entry of
   [g] ([gdyn g fv]), whose fancy value [fv] is the fancy value of [x] ([ty_fval x]; it may
   contain the groups of nested cells), together with the ownership of [x].
 
-These are the byte-layer counterparts of the legacy [pcell_ty] and [cell_points_to_ty] of
-[typing/pcell.v]. *)
+They replaced the legacy word-level [pcell_ty] and [cell_points_to_ty] (deleted in
+stage 5). *)
 
 Implicit Type 𝔄 𝔅: syn_type.
 
-Section pcellb.
+Section pcell.
   Context `{!typeG Σ}.
 
-  Program Definition pcellb_ty (m: mty) : type (pcellbₛ m) :=
+  Program Definition pcell_ty (m: mty) : type (pcellₛ m) :=
     {| ty_size := 0;
       ty_gho_own _ _ _ _ := True;
       ty_gho_res _ _ _ _ := True;
@@ -49,10 +48,10 @@ Section pcellb.
   Solve All Obligations with solve_default_shr.
   Next Obligation. intros. iIntros "H". iExact "H". Qed.
 
-  Global Instance pcellb_res_own m : ResOwn (pcellb_ty m).
+  Global Instance pcell_res_own m : ResOwn (pcell_ty m).
   Proof. done. Qed.
 
-  Global Instance pcellb_send m : Send (pcellb_ty m).
+  Global Instance pcell_send m : Send (pcell_ty m).
   Proof.
     intros. split; trivial.
     iIntros. iApply step_fupdN_intro; first done. iNext.
@@ -60,50 +59,50 @@ Section pcellb.
     replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
   Qed.
 
-  Global Instance pcellb_sync m : Sync (pcellb_ty m).
+  Global Instance pcell_sync m : Sync (pcell_ty m).
   Proof. apply sync_default; [done|]. split; trivial. split; iSplit; done. Qed.
 
-  Lemma pcellb_ty_mty m : mty_wf m → (pcellb_ty m).(ty_mty) = m.
+  Lemma pcell_ty_mty m : mty_wf m → (pcell_ty m).(ty_mty) = m.
   Proof. intros. by rewrite -ty_mty_eq /= decide_True. Qed.
 
-  Lemma pcellb_ty_bsize m : mty_wf m → ty_bsize (pcellb_ty m) = mty_size m.
-  Proof. intros. by rewrite /ty_bsize pcellb_ty_mty. Qed.
+  Lemma pcell_ty_bsize m : mty_wf m → ty_bsize (pcell_ty m) = mty_size m.
+  Proof. intros. by rewrite /ty_bsize pcell_ty_mty. Qed.
 
   (** The fancy bytes of a cell are the location side of its group. *)
-  Lemma bytes_own_pcellb_ty m l g :
+  Lemma bytes_own_pcell_ty m l g :
     mty_wf m →
-    bytes_own (pcellb_ty m) l g ⊣⊢ ∃ cs, loc_side l g m cs ∗ ⌜length cs = mty_size m⌝.
-  Proof. apply bytes_own_pcellb. Qed.
-End pcellb.
+    bytes_own (pcell_ty m) l g ⊣⊢ ∃ cs, loc_side l g m cs ∗ ⌜length cs = mty_size m⌝.
+  Proof. apply bytes_own_pcell. Qed.
+End pcell.
 
-Section bcell_points_to.
+Section cell_points_to.
   Context `{!typeG Σ}.
 
   (** The permission of the group [g] whose content is the value [x] of [ty]: the static
       registry entry of [g] (at the MiniRust type of [ty]) and the dynamic one (at the
       fancy value of [x]). *)
-  Definition bcell_own {𝔄} (ty: type 𝔄) (g: positive) (x: ~~𝔄) : iProp Σ :=
+  Definition cell_own {𝔄} (ty: type 𝔄) (g: positive) (x: ~~𝔄) : iProp Σ :=
     ∃ fv cs, ⌜ty.(ty_fval) x = Some fv⌝ ∗ greg g ty.(ty_mty) cs ∗ gdyn g fv.
 
-  Global Instance bcell_own_timeless {𝔄} (ty: type 𝔄) g x : Timeless (bcell_own ty g x).
+  Global Instance cell_own_timeless {𝔄} (ty: type 𝔄) g x : Timeless (cell_own ty g x).
   Proof. apply _. Qed.
 
-  Lemma bcell_own_same {𝔄} (ty ty': type 𝔄) g x : bcell_own ty g x ⊣⊢ bcell_own ty' g x.
-  Proof. by rewrite /bcell_own (ty_mty_same ty ty') (ty_fval_same ty ty'). Qed.
+  Lemma cell_own_same {𝔄} (ty ty': type 𝔄) g x : cell_own ty g x ⊣⊢ cell_own ty' g x.
+  Proof. by rewrite /cell_own (ty_mty_same ty ty') (ty_fval_same ty ty'). Qed.
 
-  Lemma bcell_own_greg {𝔄} (ty: type 𝔄) g x :
-    bcell_own ty g x -∗ ∃ fv cs, ⌜ty.(ty_fval) x = Some fv⌝ ∗ greg g ty.(ty_mty) cs.
+  Lemma cell_own_greg {𝔄} (ty: type 𝔄) g x :
+    cell_own ty g x -∗ ∃ fv cs, ⌜ty.(ty_fval) x = Some fv⌝ ∗ greg g ty.(ty_mty) cs.
   Proof. iIntros "(%fv & %cs & % & $ & _)". by iExists fv. Qed.
 
-  Program Definition bcell_points_to_ty {𝔄} (ty: type 𝔄) :
-      type (trackedₛ (pcellbₛ (syn_mty 𝔄) * 𝔄)) :=
+  Program Definition cell_points_to_ty {𝔄} (ty: type 𝔄) :
+      type (trackedₛ (pcellₛ (syn_mty 𝔄) * 𝔄)) :=
     {| ty_size := 0%nat;
       ty_lfts := ty.(ty_lfts);
       ty_E := ty.(ty_E);
       ty_gho_own x d g tid :=
-        [S(d') := d] bcell_own ty x.1 x.2 ∗ ▷ ty.(ty_gho_own) x.2 d' g tid;
+        [S(d') := d] cell_own ty x.1 x.2 ∗ ▷ ty.(ty_gho_own) x.2 d' g tid;
       ty_gho_res x d g tid :=
-        [S(d') := d] bcell_own ty x.1 x.2 ∗ ▷ ty.(ty_gho_res) x.2 d' g tid;
+        [S(d') := d] cell_own ty x.1 x.2 ∗ ▷ ty.(ty_gho_res) x.2 d' g tid;
       ty_gho_pers x d g tid :=
         [S(d') := d] (∃ fv cs, ⌜ty.(ty_fval) x.2 = Some fv⌝ ∗ greg x.1 ty.(ty_mty) cs) ∗
           ▷ ty.(ty_gho_pers) x.2 d' g tid;
@@ -113,7 +112,7 @@ Section bcell_points_to.
       (* Structural, as for [own_ptr]. *)
       ty_shr κ x d g tid :=
         ▷ [S(d') := d]
-          (@[κ] &&{↑NllftG; g+1}&&> bcell_own ty x.1 x.2) ∗ ty.(ty_shr) κ x.2 d' g tid;
+          (@[κ] &&{↑NllftG; g+1}&&> cell_own ty x.1 x.2) ∗ ty.(ty_shr) κ x.2 d' g tid;
     |}%I.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
@@ -133,7 +132,7 @@ Section bcell_points_to.
   Qed.
   Next Obligation.
     intros 𝔄 ty x d g tid. iIntros "A". destruct d as [|d']; first by done.
-    iDestruct "A" as "[A1 A2]". iSplitL "A1"; [by iApply bcell_own_greg|].
+    iDestruct "A" as "[A1 A2]". iSplitL "A1"; [by iApply cell_own_greg|].
     iApply ty_gho_pers_impl. iFrame.
   Qed.
   Next Obligation.
@@ -178,12 +177,12 @@ Section bcell_points_to.
     by iApply ty_gho_res_of_own.
   Qed.
 
-  Global Instance bcell_points_to_res_own {𝔄} (ty: type 𝔄) :
-    ResOwn ty → ResOwn (bcell_points_to_ty ty).
+  Global Instance cell_points_to_res_own {𝔄} (ty: type 𝔄) :
+    ResOwn ty → ResOwn (cell_points_to_ty ty).
   Proof. move=> ? x [|d] g tid //=. by rewrite res_own. Qed.
 
-  Global Instance bcell_points_to_send {𝔄} (ty: type 𝔄) :
-      Send ty → Send (bcell_points_to_ty ty).
+  Global Instance cell_points_to_send {𝔄} (ty: type 𝔄) :
+      Send ty → Send (cell_points_to_ty ty).
   Proof.
     intros [Hphys Hgho]. split; trivial.
     intros tid tid' x d g G H κs d0 Hineq TG TH.
@@ -196,16 +195,16 @@ Section bcell_points_to.
     iDestruct "X" as (x' off) "[gho [#⧖off [%Habs [G H]]]]".
     iExists (x.1, x'), (off). iModIntro. iFrame. iFrame "#".
     iSplitL "Hown".
-    - rewrite /bcell_own. by rewrite -!ty_fval_eq (syn_abstract_fval_eq _ _ _ Habs).
+    - rewrite /cell_own. by rewrite -!ty_fval_eq (syn_abstract_fval_eq _ _ _ Habs).
     - iPureIntro. simpl. by rewrite Habs.
   Qed.
 
-  Global Instance bcell_points_to_sync {𝔄} (ty: type 𝔄) :
-      Sync ty → Sync (bcell_points_to_ty ty).
+  Global Instance cell_points_to_sync {𝔄} (ty: type 𝔄) :
+      Sync ty → Sync (cell_points_to_ty ty).
   Proof.
       move=> HSync tid tid' x d g.
-      have EqOwn: ∀ d0 g0, (bcell_points_to_ty ty).(ty_gho_own) x d0 g0 tid ⊣⊢
-          (bcell_points_to_ty ty).(ty_gho_own) x d0 g0 tid'.
+      have EqOwn: ∀ d0 g0, (cell_points_to_ty ty).(ty_gho_own) x d0 g0 tid ⊣⊢
+          (cell_points_to_ty ty).(ty_gho_own) x d0 g0 tid'.
       { move=> [|d0] g0 //=. destruct (HSync tid tid' x.2 d0 g0) as [_ [Hgho _]].
         by rewrite Hgho. }
       split => //=. split; [apply EqOwn|]. split.
@@ -218,13 +217,13 @@ Section bcell_points_to.
   Qed.
 
   (** The permission is a ghost value: its MiniRust value is the empty tuple. *)
-  Lemma bcell_points_to_val {𝔄} (ty: type 𝔄) x :
-    (bcell_points_to_ty ty).(ty_val) x = Some (VTuple []).
+  Lemma cell_points_to_val {𝔄} (ty: type 𝔄) x :
+    (cell_points_to_ty ty).(ty_val) x = Some (VTuple []).
   Proof. done. Qed.
-End bcell_points_to.
+End cell_points_to.
 
 (** * WP helpers *)
-Section pcellb_wp.
+Section pcell_wp.
   Context `{!typeG Σ}.
 
   (** Fancy bytes that represent a value have the size of its MiniRust type (an update of
@@ -276,25 +275,25 @@ Section pcellb_wp.
     { rewrite decode_encode_value; [by rewrite Hd|done|by eapply decode_value_wf]. }
     iModIntro. iFrame "HB". iApply "HΦ". iFrame. iPureIntro. by eapply decode_value_length.
   Qed.
-End pcellb_wp.
+End pcell_wp.
 
 (** * Creating, destroying and moving a [PCell] *)
-Section pcellb_rules.
+Section pcell_rules.
   Context `{!typeG Σ}.
 
   (** [PCell::new]: the contents of a box become a cell. The box now holds the cell, and
       the permission is returned (a ghost value). Groups are not zero-sized. *)
-  Definition PCellbNew : val := (λ: ["p"], MkTuple [])%V.
+  Definition PCellNew : val := (λ: ["p"], MkTuple [])%V.
 
-  Lemma type_pcellb_new_instr {𝔄} n (ty: type 𝔄) p E L I :
+  Lemma type_pcell_new_instr {𝔄} n (ty: type 𝔄) p E L I :
     (0 < ty_bsize ty)%nat →
-    typed_instr E L I +[p ◁ᵥ own_bytes n ty] (PCellbNew [p])
-      (λ v, +[p ◁ᵥ own_bytes n (pcellb_ty ty.(ty_mty)); v ◁ᵥ bcell_points_to_ty ty])
+    typed_instr E L I +[p ◁ᵥ own_bytes n ty] (PCellNew [p])
+      (λ v, +[p ◁ᵥ own_bytes n (pcell_ty ty.(ty_mty)); v ◁ᵥ cell_points_to_ty ty])
       (λ post '-[(l, x)], λ mask π, ∀ g, post -[(l, g); (g, x)] mask π).
   Proof.
     iIntros (Hsz tid post mask iκs [[l x] []]) "_ _ _ _ _ $ $ [p _] Obs".
     iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ Own]". simpl in Hw. simplify_eq.
-    rewrite /PCellbNew. wp_bind p.
+    rewrite /PCellNew. wp_bind p.
     iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & Gho)".
     rewrite bytes_own_brepr. iDestruct "Bytes" as (fbs fv) "(Hfbs & [%Hlen %Hfv] & #Hrep)".
@@ -308,36 +307,36 @@ Section pcellb_rules.
     iSplitL "Free Hls"; [|iSplitL; [|done]].
     - iExists _. iSplit; [done|]. iExists (VPtr l), (S d). iSplit; [done|]. iFrame "⧖".
       iSplitL "Hls"; [|iSplitL; [|done]].
-      + rewrite bytes_own_pcellb_ty; [|apply ty_mty_wf]. iExists cs. by iFrame "Hg Hls".
-      + rewrite pcellb_ty_bsize; [|apply ty_mty_wf]. iFrame "Free".
+      + rewrite bytes_own_pcell_ty; [|apply ty_mty_wf]. iExists cs. by iFrame "Hg Hls".
+      + rewrite pcell_ty_bsize; [|apply ty_mty_wf]. iFrame "Free".
     - rewrite tctx_val_val. iExists (S d). iSplit; [done|]. iFrame "⧖ Gho".
       iExists fv, cs. by iFrame "Hg Hgd".
   Qed.
 
-  (** The legacy form of [PCell::new] ([typed_pcell_from_own]): the box holds the cell and
+  (** The form of [PCell::new] of the deleted legacy rule [typed_pcell_from_own]: the box holds the cell and
       the (zero-sized) permission, as a pair. *)
-  Definition PCellbFromOwn : val := (λ: ["p"], "p")%V.
+  Definition PCellFromOwn : val := (λ: ["p"], "p")%V.
 
-  Lemma bcell_points_to_bytes_own {𝔄} (ty: type 𝔄) l x :
-    ⊢ bytes_own (bcell_points_to_ty ty) l x.
+  Lemma cell_points_to_bytes_own {𝔄} (ty: type 𝔄) l x :
+    ⊢ bytes_own (cell_points_to_ty ty) l x.
   Proof. iApply bytes_own_zst_emp; [by rewrite /ty_bsize -ty_mty_eq|done]. Qed.
 
-  Lemma pcellb_pair_bsize {𝔄} (ty: type 𝔄) :
-    ty_bsize (pcellb_ty ty.(ty_mty) * bcell_points_to_ty ty)%T = ty_bsize ty.
+  Lemma pcell_pair_bsize {𝔄} (ty: type 𝔄) :
+    ty_bsize (pcell_ty ty.(ty_mty) * cell_points_to_ty ty)%T = ty_bsize ty.
   Proof.
     rewrite /ty_bsize -ty_mty_eq /= decide_True; [|apply ty_mty_wf].
     rewrite /seq_size /=. lia.
   Qed.
 
-  Lemma type_pcellb_from_own_instr {𝔄} n (ty: type 𝔄) p E L I :
+  Lemma type_pcell_from_own_instr {𝔄} n (ty: type 𝔄) p E L I :
     (0 < ty_bsize ty)%nat →
-    typed_instr E L I +[p ◁ᵥ own_bytes n ty] (PCellbFromOwn [p])
-      (λ v, +[v ◁ᵥ own_bytes n (pcellb_ty ty.(ty_mty) * bcell_points_to_ty ty)%T])
+    typed_instr E L I +[p ◁ᵥ own_bytes n ty] (PCellFromOwn [p])
+      (λ v, +[v ◁ᵥ own_bytes n (pcell_ty ty.(ty_mty) * cell_points_to_ty ty)%T])
       (λ post '-[(l, x)], λ mask π, ∀ g, post -[(l, (g, (g, x)))] mask π).
   Proof.
     iIntros (Hsz tid post mask iκs [[l x] []]) "_ #TIME _ _ _ $ $ [p _] Obs".
     iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ Own]". simpl in Hw. simplify_eq.
-    rewrite /PCellbFromOwn. wp_bind p.
+    rewrite /PCellFromOwn. wp_bind p.
     iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & Gho)".
     rewrite bytes_own_brepr. iDestruct "Bytes" as (fbs fv) "(Hfbs & [%Hlen %Hfv] & #Hrep)".
@@ -350,34 +349,34 @@ Section pcellb_rules.
     { iApply (proph_obs_impl with "Obs"). intros π Hpost. apply Hpost. }
     iSplit; [|done]. rewrite tctx_val_val. iExists (S (S d)). iSplit; [done|]. iFrame "⧖S".
     iSplitL "Hls"; [|iSplitL "Free"].
-    - rewrite (bytes_own_pair _ (pcellb_ty ty.(ty_mty)) (bcell_points_to_ty ty)).
-      iSplitL; [|iApply bcell_points_to_bytes_own].
-      rewrite bytes_own_pcellb_ty; [|apply ty_mty_wf]. iExists cs. by iFrame "Hg Hls".
-    - by rewrite pcellb_pair_bsize.
+    - rewrite (bytes_own_pair _ (pcell_ty ty.(ty_mty)) (cell_points_to_ty ty)).
+      iSplitL; [|iApply cell_points_to_bytes_own].
+      rewrite bytes_own_pcell_ty; [|apply ty_mty_wf]. iExists cs. by iFrame "Hg Hls".
+    - by rewrite pcell_pair_bsize.
     - iNext. iSplit; [done|]. iSplitL "Hgd"; [iExists fv, cs; by iFrame "Hg Hgd"|].
       iNext. iDestruct (ty_gho_own_depth_mono _ d (S d) d (S (S d)) with "Gho") as "[$ _]"; lia.
   Qed.
 
   (** [PCell::into_inner]: a box holding a cell and the permission of its group give back
       a box holding the contents. *)
-  Definition PCellbIntoInner : val := (λ: ["pcell"; "perm"], "pcell")%V.
+  Definition PCellIntoInner : val := (λ: ["pcell"; "perm"], "pcell")%V.
 
-  Lemma type_pcellb_into_inner_instr {𝔄} n (ty: type 𝔄) p q E L I :
-    typed_instr E L I +[p ◁ᵥ own_bytes n (pcellb_ty ty.(ty_mty)); q ◁ᵥ bcell_points_to_ty ty]
-      (PCellbIntoInner [p; q]) (λ v, +[v ◁ᵥ own_bytes n ty])
+  Lemma type_pcell_into_inner_instr {𝔄} n (ty: type 𝔄) p q E L I :
+    typed_instr E L I +[p ◁ᵥ own_bytes n (pcell_ty ty.(ty_mty)); q ◁ᵥ cell_points_to_ty ty]
+      (PCellIntoInner [p; q]) (λ v, +[v ◁ᵥ own_bytes n ty])
       (λ post '-[(l, g); (g', x)], λ mask π, g = g' ∧ post -[(l, x)] mask π).
   Proof.
     iIntros (tid post mask iκs [[l g] [[g' x] []]]) "_ _ #PROPH _ _ $ $ (p & q & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
     iDestruct "p" as (vp Hp wp dp [-> Hwp]) "[#⧖p Own]". simpl in Hwp. simplify_eq.
     iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q Pt]".
-    rewrite /PCellbIntoInner.
+    rewrite /PCellIntoInner.
     wp_bind p. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     wp_bind q. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     destruct dp as [|dp]; [done|]. destruct dq as [|dq]; [done|].
     iDestruct "Own" as "(Bytes & Free & _)".
     iDestruct "Pt" as "[(%fv & %cs' & %Hfv & #Hg' & Hgd) Gho]".
-    rewrite bytes_own_pcellb_ty; [|apply ty_mty_wf]. iDestruct "Bytes" as (cs) "[Hls %Hcs]".
+    rewrite bytes_own_pcell_ty; [|apply ty_mty_wf]. iDestruct "Bytes" as (cs) "[Hls %Hcs]".
     iApply (wp_pcell_destroy with "Hls Hgd"). iIntros (fbs) "Hfbs #Hrep".
     iApply (wp_brepr_length with "Hrep"). iIntros (Hlen).
     wp_rec. iExists -[(l, x)]. iSplitR "Obs"; last first.
@@ -385,7 +384,7 @@ Section pcellb_rules.
     iSplit; [|done]. rewrite tctx_val_val. iExists (S dq). iSplit; [done|]. iFrame "⧖q Gho".
     iSplitL "Hfbs".
     - rewrite bytes_own_brepr. iExists fbs, fv. by iFrame "Hfbs Hrep".
-    - rewrite pcellb_ty_mty; [|apply ty_mty_wf]. done.
+    - rewrite pcell_ty_mty; [|apply ty_mty_wf]. done.
   Qed.
 
   Lemma uninit_bytes_own k l u bs : length bs = k → l ↦b bs -∗ bytes_own (↯ k) l u.
@@ -403,11 +402,11 @@ Section pcellb_rules.
 
   (** Moving a [PCell] from a box into a box of uninitialized bytes, by a verbatim copy
       ([MemCopy]). *)
-  Lemma type_pcellb_memcpy_instr n n' m p q E L I :
+  Lemma type_pcell_memcpy_instr n n' m p q E L I :
     mty_wf m →
-    typed_instr E L I +[p ◁ᵥ own_bytes n (↯ (mty_size m)); q ◁ᵥ own_bytes n' (pcellb_ty m)]
+    typed_instr E L I +[p ◁ᵥ own_bytes n (↯ (mty_size m)); q ◁ᵥ own_bytes n' (pcell_ty m)]
       (MemCopy Na1Ord (mty_size m) (ToLit p) (ToLit q))
-      (λ _, +[p ◁ᵥ own_bytes n (pcellb_ty m); q ◁ᵥ own_bytes n' (↯ (mty_size m))])
+      (λ _, +[p ◁ᵥ own_bytes n (pcell_ty m); q ◁ᵥ own_bytes n' (↯ (mty_size m))])
       (λ post '-[(l, u); (l', g)], post -[(l, g); (l', u)]).
   Proof.
     iIntros (Hm tid post mask iκs [[l u] [[l' g] []]]) "_ _ _ _ _ $ $ (p & q & _) Obs".
@@ -418,28 +417,28 @@ Section pcellb_rules.
     destruct d as [|d]; [done|]. destruct d' as [|d']; [done|].
     iDestruct "Own" as "(Bytes & Free & _)". iDestruct "Own'" as "(Bytes' & Free' & _)".
     iDestruct (bytes_own_uninit with "Bytes") as (bs0) "[Hbs0 %Hlen0]".
-    rewrite bytes_own_pcellb_ty //. iDestruct "Bytes'" as (cs) "[Hls %Hcs]".
+    rewrite bytes_own_pcell_ty //. iDestruct "Bytes'" as (cs) "[Hls %Hcs]".
     iApply (wp_pcell_memcopy_len with "[$Hls $Hbs0]"); [done|done|].
     iIntros "!>" (bs) "(Hbs & %Hlen & Hls)". iExists -[(l, g); (l', u)]. iFrame "Obs".
     iSplitL "Hls Free"; [|iSplitL; [|done]].
     - iExists _. iSplit; [done|]. iExists (VPtr l), (S d). iSplit; [done|]. iFrame "⧖".
       iSplitL "Hls"; [|iSplitL; [|done]].
-      + rewrite bytes_own_pcellb_ty //. iExists cs. by iFrame.
-      + rewrite /ty_bsize pcellb_ty_mty //.
+      + rewrite bytes_own_pcell_ty //. iExists cs. by iFrame.
+      + rewrite /ty_bsize pcell_ty_mty //.
     - iExists _. iSplit; [done|]. iExists (VPtr l'), (S d'). iSplit; [done|]. iFrame "⧖'".
       iSplitL "Hbs"; [|iSplitL; [|done]].
       + by iApply (uninit_bytes_own with "Hbs").
-      + iEval (rewrite /ty_bsize pcellb_ty_mty //) in "Free'". done.
+      + iEval (rewrite /ty_bsize pcell_ty_mty //) in "Free'". done.
   Qed.
 
   (** Moving a [PCell] from a box into a box of uninitialized bytes, by a typed copy
       ([Store m (Load m)]): the bytes at the new location are the encoding of the decoded
       contents (padding becomes uninitialized; the contents may embed cells). *)
-  Lemma type_pcellb_move_instr n n' m p q E L I :
+  Lemma type_pcell_move_instr n n' m p q E L I :
     mty_wf m →
-    typed_instr E L I +[p ◁ᵥ own_bytes n (↯ (mty_size m)); q ◁ᵥ own_bytes n' (pcellb_ty m)]
+    typed_instr E L I +[p ◁ᵥ own_bytes n (↯ (mty_size m)); q ◁ᵥ own_bytes n' (pcell_ty m)]
       (Store Na1Ord m (ToLit p) (Load Na1Ord m (ToLit q)))
-      (λ _, +[p ◁ᵥ own_bytes n (pcellb_ty m); q ◁ᵥ own_bytes n' (↯ (mty_size m))])
+      (λ _, +[p ◁ᵥ own_bytes n (pcell_ty m); q ◁ᵥ own_bytes n' (↯ (mty_size m))])
       (λ post '-[(l, u); (l', g)], post -[(l, g); (l', u)]).
   Proof.
     iIntros (Hm tid post mask iκs [[l u] [[l' g] []]]) "_ _ _ _ _ $ $ (p & q & _) Obs".
@@ -450,84 +449,84 @@ Section pcellb_rules.
     destruct d as [|d]; [done|]. destruct d' as [|d']; [done|].
     iDestruct "Own" as "(Bytes & Free & _)". iDestruct "Own'" as "(Bytes' & Free' & _)".
     iDestruct (bytes_own_uninit with "Bytes") as (bs0) "[Hbs0 %Hlen0]".
-    rewrite bytes_own_pcellb_ty //. iDestruct "Bytes'" as (cs) "[Hls %Hcs]".
+    rewrite bytes_own_pcell_ty //. iDestruct "Bytes'" as (cs) "[Hls %Hcs]".
     iApply (wp_pcell_move_len with "[$Hls $Hbs0]"); [done|done|done|].
     iIntros "!>" (bs) "(Hbs & %Hlen & Hls)". iExists -[(l, g); (l', u)]. iFrame "Obs".
     iSplitL "Hls Free"; [|iSplitL; [|done]].
     - iExists _. iSplit; [done|]. iExists (VPtr l), (S d). iSplit; [done|]. iFrame "⧖".
       iSplitL "Hls"; [|iSplitL; [|done]].
-      + rewrite bytes_own_pcellb_ty //. iExists cs. by iFrame.
-      + rewrite /ty_bsize pcellb_ty_mty //.
+      + rewrite bytes_own_pcell_ty //. iExists cs. by iFrame.
+      + rewrite /ty_bsize pcell_ty_mty //.
     - iExists _. iSplit; [done|]. iExists (VPtr l'), (S d'). iSplit; [done|]. iFrame "⧖'".
       iSplitL "Hbs"; [|iSplitL; [|done]].
       + by iApply (uninit_bytes_own with "Hbs").
-      + iEval (rewrite /ty_bsize pcellb_ty_mty //) in "Free'". done.
+      + iEval (rewrite /ty_bsize pcell_ty_mty //) in "Free'". done.
   Qed.
-End pcellb_rules.
+End pcell_rules.
 
 (** * Guards of a cell and its permission
 
 A shared reference to a cell guards its location side (its fancy bytes,
-[bytes_own_pcellb_ty]), and a shared reference to its permission guards [bcell_own]. An
+[bytes_own_pcell_ty]), and a shared reference to its permission guards [cell_own]. An
 access through the cell needs a guard of both; two guards by the same token are combined
 into a guard of their conjunction ([guards_and_point]), which is their separating
 conjunction ([loc_side_and_gdyn]). *)
-Section bcell_guards.
+Section cell_guards.
   Context `{!typeG Σ}.
 
   Lemma point_prop_loc_side_gdyn l g m cs fv :
     factoring_props.point_prop (loc_side l g m cs ∗ gdyn g fv).
   Proof. apply factoring_props.point_prop_sep; [apply point_prop_loc_side|apply point_prop_gdyn]. Qed.
 
-  Lemma guard_pcellb_loc_side G n m l g cs :
+  Lemma guard_pcell_loc_side G n m l g cs :
     mty_wf m →
-    greg g m cs -∗ (G &&{↑NllftG; n}&&> bytes_own (pcellb_ty m) l g) -∗
+    greg g m cs -∗ (G &&{↑NllftG; n}&&> bytes_own (pcell_ty m) l g) -∗
     (G &&{↑NllftG; n}&&> loc_side l g m cs).
   Proof.
     iIntros (Hm) "#Hg #G1". iDestruct (guards_include_pers with "Hg G1") as "G1g".
     iApply (guards_weaken_rhs_point with "G1g"); [apply point_prop_loc_side|].
-    rewrite bytes_own_pcellb_ty //.
+    rewrite bytes_own_pcell_ty //.
     iIntros "[(%cs' & [#Hg' Hls] & _) #Hg]". iDestruct (greg_agree with "Hg Hg'") as %[_ <-].
     by iFrame "Hg Hls".
   Qed.
 
-  Lemma guard_bcell_own_gdyn {𝔄} (ty: type 𝔄) G n g x fv :
+  Lemma guard_cell_own_gdyn {𝔄} (ty: type 𝔄) G n g x fv :
     ty.(ty_fval) x = Some fv →
-    (G &&{↑NllftG; n}&&> bcell_own ty g x) -∗ (G &&{↑NllftG; n}&&> gdyn g fv).
+    (G &&{↑NllftG; n}&&> cell_own ty g x) -∗ (G &&{↑NllftG; n}&&> gdyn g fv).
   Proof.
     iIntros (Hfv) "#G2". iApply (guards_weaken_rhs_point with "G2"); [apply point_prop_gdyn|].
     iIntros "(%fv' & %cs' & %Hfv' & _ & Hgd)". rewrite Hfv in Hfv'. by injection Hfv' as ->.
   Qed.
 
-  Lemma guard_bcell_combine {𝔄} (ty: type 𝔄) G n l g cs x fv :
+  Lemma guard_cell_combine {𝔄} (ty: type 𝔄) G n l g cs x fv :
     ty.(ty_fval) x = Some fv →
     greg g ty.(ty_mty) cs -∗
-    (G &&{↑NllftG; n}&&> bytes_own (pcellb_ty ty.(ty_mty)) l g) -∗
-    (G &&{↑NllftG; n}&&> bcell_own ty g x) -∗
+    (G &&{↑NllftG; n}&&> bytes_own (pcell_ty ty.(ty_mty)) l g) -∗
+    (G &&{↑NllftG; n}&&> cell_own ty g x) -∗
     (G &&{↑NllftG; n}&&> loc_side l g ty.(ty_mty) cs ∗ gdyn g fv).
   Proof.
     iIntros (Hfv) "#Hg #G1 #G2".
-    iDestruct (guard_pcellb_loc_side with "Hg G1") as "G1'"; [apply ty_mty_wf|].
-    iDestruct (guard_bcell_own_gdyn with "G2") as "G2'"; [done|].
+    iDestruct (guard_pcell_loc_side with "Hg G1") as "G1'"; [apply ty_mty_wf|].
+    iDestruct (guard_cell_own_gdyn with "G2") as "G2'"; [done|].
     iApply (guards_and_point with "G1' G2'"); [apply point_prop_loc_side_gdyn|].
     apply loc_side_and_gdyn.
   Qed.
-End bcell_guards.
+End cell_guards.
 
 (** * Atomic accesses through a cell
 
-As the legacy [typed_pcell_atomic_load], [typed_pcell_atomic_store] and
+As the deleted legacy [typed_pcell_atomic_load], [typed_pcell_atomic_store] and
 [typed_pcell_atomic_CAS]: at the MiniRust type of the contents (no mixed-size accesses), for
 contents without cells ([NoCell]). A load needs shared references to the cell and to its
 permission; a store and a compare-and-exchange need a unique borrow of the permission, which
 they resolve. *)
-Section pcellb_atomics.
+Section pcell_atomics.
   Context `{!typeG Σ}.
 
-  Lemma type_pcellb_load_sc_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p q E L I :
+  Lemma type_pcell_load_sc_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p q E L I :
     Copy ty → lctx_lft_alive E L κ →
     typed_instr E L I
-      +[p ◁ᵥ &shrb{κ} (pcellb_ty ty.(ty_mty)); q ◁ᵥ &shrb{κ} (bcell_points_to_ty ty)]
+      +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &shr{κ} (cell_points_to_ty ty)]
       (Load ScOrd ty.(ty_mty) (ToLit p))
       (λ v, +[v ◁ᵥ ty]) (λ post '-[(_, g); (_, (g', x))], λ mask π, g = g' ∧ post -[x] mask π).
   Proof.
@@ -566,7 +565,7 @@ Section pcellb_atomics.
     iDestruct (guards_transitive_right with "Gκ G2") as "G2'".
     iDestruct (lguards_weaken_later _ _ _ _ (D + 1) with "G1") as "G1D"; [lia|].
     iDestruct (lguards_weaken_later _ _ _ _ (D + 1) with "G2'") as "G2D"; [lia|].
-    iDestruct (guard_bcell_combine with "Hg G1D G2D") as "GP"; [done|].
+    iDestruct (guard_cell_combine with "Hg G1D G2D") as "GP"; [done|].
     have Hc : fv_cells fv = [] by eapply ty_fval_nocell_cells.
     iApply wp_fupd.
     iApply (wp_pcell_load_sc_guarded _ l.1 g ty.(ty_mty) cs fv (fractional.half γ) _ (D + 1)
@@ -584,16 +583,16 @@ Section pcellb_atomics.
   Qed.
   (** Opening a unique borrow of the permission of a cell: the borrow is opened with [G1],
       its payload run with [G2], and it can be closed with new contents [y]. *)
-  Lemma uniq_bcell_open {𝔄} κ (ty: type 𝔄) l' g x ξi di gi ξidx dq tid G1 G2 :
+  Lemma uniq_cell_open {𝔄} κ (ty: type 𝔄) l' g x ξi di gi ξidx dq tid G1 G2 :
     Timeless G1 → Timeless G2 →
     llft_ctx -∗ uniq_ctx -∗ (G1 &&{↑NllftG}&&> @[κ]) -∗ (G2 &&{↑NllftG}&&> @[κ]) -∗
-    (&uniqb{κ} (bcell_points_to_ty ty)).(ty_gho_own) (l', (g, x), ξi, di, gi, ξidx) dq dq tid -∗
+    (&uniq{κ} (cell_points_to_ty ty)).(ty_gho_own) (l', (g, x), ξi, di, gi, ξidx) dq dq tid -∗
     G1 -∗ G2 -∗ £1 -∗ |={⊤ ∖ ↑advN}=> G2 ∗ ⧗1 ∗
-      (κ ⊑ ty_lft (bcell_points_to_ty ty)) ∗ ⧖(S di `max` gi) ∗
-      (∃ di', ⌜di = S di'⌝ ∗ bcell_own ty g x ∗ ▷ ty.(ty_gho_own) x di' gi tid) ∗
+      (κ ⊑ ty_lft (cell_points_to_ty ty)) ∗ ⧖(S di `max` gi) ∗
+      (∃ di', ⌜di = S di'⌝ ∗ cell_own ty g x ∗ ▷ ty.(ty_gho_own) x di' gi tid) ∗
       (∀ y d1 g1, ▷ (⧖(S (S d1) `max` g1) ∗ ty.(ty_gho_own) y d1 g1 tid ∗
-          bcell_own ty g y) -∗ ⧗1 ={↑Nllft}=∗
-        buniq_body (bcell_points_to_ty ty) (g, y) ξi (S d1) g1 ξidx κ tid l' ∗ G1).
+          cell_own ty g y) -∗ ⧗1 ={↑Nllft}=∗
+        uniq_body (cell_points_to_ty ty) (g, y) ξi (S d1) g1 ξidx κ tid l' ∗ G1).
   Proof.
     iIntros (??) "#LFT #UNIQ #Gκ1 #Gκ2 (#Incl & _ & Body & _) G1 G2 £".
     iMod (uniq_body_acc with "LFT UNIQ Gκ1 Body G1") as "(Pay & ⧗ & Close)"; [solve_ndisj|].
@@ -610,10 +609,10 @@ Section pcellb_atomics.
     rewrite -ty_mty_eq /=. by apply (frepr_plain _ _ [] (VTuple [])).
   Qed.
 
-  Lemma type_pcellb_store_sc_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p q r E L I :
+  Lemma type_pcell_store_sc_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p q r E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I
-      +[p ◁ᵥ &shrb{κ} (pcellb_ty ty.(ty_mty)); q ◁ᵥ &uniqb{κ} (bcell_points_to_ty ty); r ◁ᵥ ty]
+      +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &uniq{κ} (cell_points_to_ty ty); r ◁ᵥ ty]
       (Store ScOrd ty.(ty_mty) (ToLit p) r) (λ _, +[])
       (λ post '-[(_, g); bor; y], λ mask π,
         let '(_, (g', _), _, _, _, _) := bor in g = g' ∧
@@ -641,12 +640,12 @@ Section pcellb_atomics.
       [rewrite /advance_credits; lia|].
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Gh #Back]]]"; [solve_ndisj|].
     iDestruct (guards_transitive with "Gh Alv") as "#Gκ".
-    iMod (uniq_bcell_open with "LFT UNIQ Gκ Gκ Uniq H1 H2 £1")
+    iMod (uniq_cell_open with "LFT UNIQ Gκ Gκ Uniq H1 H2 £1")
       as "(H2 & ⧗s & #Incl & _ & Own & Close)".
     iDestruct "Own" as (di' ->) "[Own _]". iDestruct "Own" as (fv cs Hfv) "[#Hg Hgd]".
     iDestruct (guards_transitive_right with "Gκ Gp") as "G1".
     iDestruct (lguards_weaken_later _ _ _ _ (D + 1) with "G1") as "G1D"; [lia|].
-    iDestruct (guard_pcellb_loc_side with "Hg G1D") as "GL"; [apply ty_mty_wf|].
+    iDestruct (guard_pcell_loc_side with "Hg G1D") as "GL"; [apply ty_mty_wf|].
     have Hc : fv_cells fv = [] by eapply ty_fval_nocell_cells.
     iApply (wp_pcell_store_sc_guarded _ l.1 g ty.(ty_mty) cs fv _ v (fractional.half γ) _ (D + 1)
       with "[H2 Hgd £2]"); [solve_ndisj|done|apply ty_mty_wf|by eapply ty_val_wf| |].
@@ -661,21 +660,21 @@ Section pcellb_atomics.
       rewrite ty_fval_nocell // Hv //. }
     iMod "Hback" as "_".
     iMod (fupd_mask_mono with "(Back H1 H2)") as "L"; [solve_ndisj|].
-    iMod (resolve_uniq_body (bcell_points_to_ty ty) (g, y) with
+    iMod (resolve_uniq_body (cell_points_to_ty ty) (g, y) with
       "LFT PROPH UNIQ TIME Incl E [] L [] UB") as "[#Hrslv [L _]]"; [done|solve_ndisj| | |].
     { iApply guards_refl. }
     { iApply (persistent_time_receipt_mono with "⧖D2"). lia. }
     iModIntro. iExists -[]. iFrame "L". iSplit; [done|].
     iCombine "Hrslv Obs" as "Obs2". iApply (proph_obs_impl with "Obs2").
     intros π (Hres & _ & Hpost). apply Hpost. rewrite /uniq_bor_future /=.
-    etrans; [apply (uniq_prvar_app_irrel (𝔄:=trackedₛ (pcellbₛ _ * 𝔄)) (g, x) (g, y) ξi π)|].
+    etrans; [apply (uniq_prvar_app_irrel (𝔄:=trackedₛ (pcellₛ _ * 𝔄)) (g, x) (g, y) ξi π)|].
     by rewrite Hres.
   Qed.
 
-  Lemma type_pcellb_mcas_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p q r1 r2 E L I :
+  Lemma type_pcell_mcas_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p q r1 r2 E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I
-      +[p ◁ᵥ &shrb{κ} (pcellb_ty ty.(ty_mty)); q ◁ᵥ &uniqb{κ} (bcell_points_to_ty ty);
+      +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &uniq{κ} (cell_points_to_ty ty);
         r1 ◁ᵥ ty; r2 ◁ᵥ ty]
       (MCAS ty.(ty_mty) (ToLit p) r1 r2) (λ v, +[v ◁ᵥ bool_ty])
       (λ post '-[(_, g); bor; y1; y2], λ mask π,
@@ -707,12 +706,12 @@ Section pcellb_atomics.
       [rewrite /advance_credits; lia|].
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Gh #Back]]]"; [solve_ndisj|].
     iDestruct (guards_transitive with "Gh Alv") as "#Gκ".
-    iMod (uniq_bcell_open with "LFT UNIQ Gκ Gκ Uniq H1 H2 £1")
+    iMod (uniq_cell_open with "LFT UNIQ Gκ Gκ Uniq H1 H2 £1")
       as "(H2 & ⧗s & #Incl & #⧖x & Own & Close)".
     iDestruct "Own" as (di' ->) "[Own Gx]". iDestruct "Own" as (fv cs Hfv) "[#Hg Hgd]".
     iDestruct (guards_transitive_right with "Gκ Gp") as "G1".
     iDestruct (lguards_weaken_later _ _ _ _ (D + 1) with "G1") as "G1D"; [lia|].
-    iDestruct (guard_pcellb_loc_side with "Hg G1D") as "GL"; [apply ty_mty_wf|].
+    iDestruct (guard_pcell_loc_side with "Hg G1D") as "GL"; [apply ty_mty_wf|].
     have Hfv' := Hfv. rewrite ty_fval_nocell // in Hfv'.
     apply fmap_Some in Hfv' as (vx & Hvx & ->).
     have -> : (Lit $ LitLoc l.1) = (Lit $ LitLoc (l.1 +ₗ (0 + 0)%nat))
@@ -735,7 +734,7 @@ Section pcellb_atomics.
         rewrite ty_fval_nocell // Hv2 //. }
       iMod "Hback" as "_".
       iMod (fupd_mask_mono with "(Back H1 H2)") as "L"; [solve_ndisj|].
-      iMod (resolve_uniq_body (bcell_points_to_ty ty) (g, y2) with
+      iMod (resolve_uniq_body (cell_points_to_ty ty) (g, y2) with
         "LFT PROPH UNIQ TIME Incl E [] L [] UB") as "[#Hrslv [L _]]"; [done|solve_ndisj| | |].
       { iApply guards_refl. }
       { iApply (persistent_time_receipt_mono with "⧖D2"). lia. }
@@ -744,13 +743,13 @@ Section pcellb_atomics.
       iCombine "Hrslv Obs" as "Obs2". iApply (proph_obs_impl with "Obs2").
       intros π (Hres & _ & Hpost). rewrite bool_decide_eq_true_2 in Hpost; [|by rewrite Hvx Hv1].
       apply Hpost. rewrite /uniq_bor_future /=.
-      etrans; [apply (uniq_prvar_app_irrel (𝔄:=trackedₛ (pcellbₛ _ * 𝔄)) (g, x) (g, y2) ξi π)|].
+      etrans; [apply (uniq_prvar_app_irrel (𝔄:=trackedₛ (pcellₛ _ * 𝔄)) (g, x) (g, y2) ξi π)|].
       by rewrite Hres.
     - iMod ("Close" $! x di' gi with "[Gx Hgd] ⧗s") as "[UB H1]".
       { iNext. iFrame "⧖x Gx". iExists (fv_lift vx), cs. by iFrame "Hg Hgd". }
       iMod "Hback" as "_".
       iMod (fupd_mask_mono with "(Back H1 H2)") as "L"; [solve_ndisj|].
-      iMod (resolve_uniq_body (bcell_points_to_ty ty) (g, x) with
+      iMod (resolve_uniq_body (cell_points_to_ty ty) (g, x) with
         "LFT PROPH UNIQ TIME Incl E [] L ⧖x UB") as "[#Hrslv [L _]]"; [done|solve_ndisj| |].
       { iApply guards_refl. }
       iModIntro. iExists -[false]. iFrame "L". iSplitR.
@@ -760,4 +759,4 @@ Section pcellb_atomics.
       { rewrite Hvx Hv1. congruence. }
       apply Hpost. rewrite /uniq_bor_future /=. by rewrite Hres.
   Qed.
-End pcellb_atomics.
+End pcell_atomics.

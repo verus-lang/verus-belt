@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import fixpoint product sum mod_ty own_bytes.
+From lrust.typing Require Import fixpoint product sum mod_ty own.
 From lrust.prophecy Require Import syn_type.
 Set Default Proof Using "Type".
 

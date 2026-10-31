@@ -1,6 +1,6 @@
 From lrust.lang Require Import heap_cells.
-From lrust.typing Require Export pcell_bytes.
-From lrust.typing Require Import programs uniq_util uniq_bytes_util.
+From lrust.typing Require Export pcell.
+From lrust.typing Require Import programs uniq_util.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
@@ -18,8 +18,8 @@ the location side of the group (guarded) and its permission [gdyn] (owned or gua
 [lang/heap_cells.v]. So a borrow of the contents is a borrow of the _permission_ (whose
 ownership is [gdyn] and the ownership of the contents), pinned to the location of the cell
 by a guard of the location side of its group:
-- [bcell_shr_ty κ ty] is [&shrb{κ} (bcell_points_to_ty ty)], at the location of the cell;
-- [bcell_uniq_ty κ ty] is [&uniqb{κ} (bcell_points_to_ty ty)], at the location of the cell.
+- [cell_shr_ty κ ty] is [&shr{κ} (cell_points_to_ty ty)], at the location of the cell;
+- [cell_uniq_ty κ ty] is [&uniq{κ} (cell_points_to_ty ty)], at the location of the cell.
 Both are [pinned_ty]: their ownership, persistent predicate and sharing predicate have the
 guard of the location side (by [@[κ]]) in addition. Their values are those of the borrows
 of the permission: the value [(g, x)] of the permission has the group and the contents.
@@ -92,87 +92,87 @@ Section pinned.
 End pinned.
 
 (** ** The guard of the location side of a cell *)
-Section bcell_loc.
+Section cell_loc.
   Context `{!typeG Σ}.
 
   (** The location side of the group [g] (with byte-cells [cs]) is at [l], while [κ] is
       alive. *)
-  Definition bcell_loc (κ: lft) (m: mty) (l: loc) (g: positive) (n: nat) : iProp Σ :=
+  Definition cell_loc (κ: lft) (m: mty) (l: loc) (g: positive) (n: nat) : iProp Σ :=
     ∃ cs, greg g m cs ∗ (@[κ] &&{↑NllftG; n+1}&&> loc_side l g m cs).
 
-  Global Instance bcell_loc_persistent κ m l g n : Persistent (bcell_loc κ m l g n).
+  Global Instance cell_loc_persistent κ m l g n : Persistent (cell_loc κ m l g n).
   Proof. apply _. Qed.
 
-  Lemma bcell_loc_mono κ m l g n n' : n ≤ n' → bcell_loc κ m l g n ⊢ bcell_loc κ m l g n'.
+  Lemma cell_loc_mono κ m l g n n' : n ≤ n' → cell_loc κ m l g n ⊢ cell_loc κ m l g n'.
   Proof.
     iIntros (?) "(%cs & Hg & G)". iExists cs. iFrame "Hg".
     iApply (lguards_weaken_later with "G"). lia.
   Qed.
 
-  Global Instance bcell_loc_shr_pin κ m 𝔄 :
-    PinPred (λ (x: ~~(at_clocₛ (trackedₛ (pcellbₛ (syn_mty 𝔄) * 𝔄)))) n,
-      bcell_loc κ m x.1.1 x.2.1 n).
-  Proof. split; [apply _|]. intros. by apply bcell_loc_mono. Qed.
+  Global Instance cell_loc_shr_pin κ m 𝔄 :
+    PinPred (λ (x: ~~(at_clocₛ (trackedₛ (pcellₛ (syn_mty 𝔄) * 𝔄)))) n,
+      cell_loc κ m x.1.1 x.2.1 n).
+  Proof. split; [apply _|]. intros. by apply cell_loc_mono. Qed.
 
-  Definition bcell_uniq_loc κ m {𝔄} (x: ~~(uniq_borₛ (trackedₛ (pcellbₛ (syn_mty 𝔄) * 𝔄))))
+  Definition cell_uniq_loc κ m {𝔄} (x: ~~(uniq_borₛ (trackedₛ (pcellₛ (syn_mty 𝔄) * 𝔄))))
       (n: nat) : iProp Σ :=
-    match x with (l, x0, _, _, _, _) => bcell_loc κ m l.1 x0.1 n end.
+    match x with (l, x0, _, _, _, _) => cell_loc κ m l.1 x0.1 n end.
 
-  Global Instance bcell_loc_uniq_pin κ m 𝔄 : PinPred (@bcell_uniq_loc κ m 𝔄).
+  Global Instance cell_loc_uniq_pin κ m 𝔄 : PinPred (@cell_uniq_loc κ m 𝔄).
   Proof.
     split.
     - intros [[[[[??]?]?]?]?] ?. apply _.
-    - intros [[[[[??]?]?]?]?] ???. by apply bcell_loc_mono.
+    - intros [[[[[??]?]?]?]?] ???. by apply cell_loc_mono.
   Qed.
-End bcell_loc.
+End cell_loc.
 
 (** ** The types of borrows of the contents of a cell *)
-Section bcell_types.
+Section cell_types.
   Context `{!typeG Σ}.
 
-  Definition bcell_shr_ty {𝔄} (κ: lft) (ty: type 𝔄) :
-      type (at_clocₛ (trackedₛ (pcellbₛ (syn_mty 𝔄) * 𝔄))) :=
-    pinned_ty (&shrb{κ} (bcell_points_to_ty ty)) (λ x n, bcell_loc κ ty.(ty_mty) x.1.1 x.2.1 n).
+  Definition cell_shr_ty {𝔄} (κ: lft) (ty: type 𝔄) :
+      type (at_clocₛ (trackedₛ (pcellₛ (syn_mty 𝔄) * 𝔄))) :=
+    pinned_ty (&shr{κ} (cell_points_to_ty ty)) (λ x n, cell_loc κ ty.(ty_mty) x.1.1 x.2.1 n).
 
-  Definition bcell_uniq_ty {𝔄} (κ: lft) (ty: type 𝔄) :
-      type (uniq_borₛ (trackedₛ (pcellbₛ (syn_mty 𝔄) * 𝔄))) :=
-    pinned_ty (&uniqb{κ} (bcell_points_to_ty ty)) (bcell_uniq_loc κ ty.(ty_mty)).
+  Definition cell_uniq_ty {𝔄} (κ: lft) (ty: type 𝔄) :
+      type (uniq_borₛ (trackedₛ (pcellₛ (syn_mty 𝔄) * 𝔄))) :=
+    pinned_ty (&uniq{κ} (cell_points_to_ty ty)) (cell_uniq_loc κ ty.(ty_mty)).
 
-  Lemma bcell_uniq_resolve {𝔄} E L κ (ty: type 𝔄) :
+  Lemma cell_uniq_resolve {𝔄} E L κ (ty: type 𝔄) :
     lctx_lft_alive E L κ →
-    resolve E L (bcell_uniq_ty κ ty) (λ x π, snd (vπ x π) = fst (vπ x π)).
+    resolve E L (cell_uniq_ty κ ty) (λ x π, snd (vπ x π) = fst (vπ x π)).
   Proof.
-    intros Alv. rewrite /bcell_uniq_ty.
-    apply (pinned_resolve E L (&uniqb{κ} (bcell_points_to_ty ty)) (bcell_uniq_loc κ ty.(ty_mty))).
-    exact (uniq_bytes.uniq_resolve E L κ (bcell_points_to_ty ty) Alv).
+    intros Alv. rewrite /cell_uniq_ty.
+    apply (pinned_resolve E L (&uniq{κ} (cell_points_to_ty ty)) (cell_uniq_loc κ ty.(ty_mty))).
+    exact (uniq_bor.uniq_resolve E L κ (cell_points_to_ty ty) Alv).
   Qed.
 
-  Lemma bcell_points_to_bsize {𝔄} (ty: type 𝔄) : ty_bsize (bcell_points_to_ty ty) = 0.
+  Lemma cell_points_to_bsize {𝔄} (ty: type 𝔄) : ty_bsize (cell_points_to_ty ty) = 0.
   Proof. by rewrite /ty_bsize -ty_mty_eq. Qed.
-End bcell_types.
+End cell_types.
 
 (** ** [PCell::borrow] and reads through it *)
-Section bcell_shr_rules.
+Section cell_shr_rules.
   Context `{!typeG Σ}.
 
-  Definition PCellbBorrow : val := (λ: ["pcell"; "perm"], "pcell")%V.
+  Definition PCellBorrow : val := (λ: ["pcell"; "perm"], "pcell")%V.
 
-  Lemma type_pcellb_borrow_instr {𝔄} κ (ty: type 𝔄) p q E L I :
+  Lemma type_pcell_borrow_instr {𝔄} κ (ty: type 𝔄) p q E L I :
     typed_instr E L I
-      +[p ◁ᵥ &shrb{κ} (pcellb_ty ty.(ty_mty)); q ◁ᵥ &shrb{κ} (bcell_points_to_ty ty)]
-      (PCellbBorrow [p; q]) (λ v, +[v ◁ᵥ bcell_shr_ty κ ty])
+      +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &shr{κ} (cell_points_to_ty ty)]
+      (PCellBorrow [p; q]) (λ v, +[v ◁ᵥ cell_shr_ty κ ty])
       (λ post '-[(l, g); (_, (g', x))], λ mask π, g = g' ∧ post -[(l, (g, x))] mask π).
   Proof.
     iIntros (tid post mask iκs [[l g] [[l' [g' x]] []]]) "_ #TIME #PROPH _ _ $ $ (p & q & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
     iDestruct "p" as (vp Hp wp dp [-> Hwp]) "[#⧖p #Own]". simpl in Hwp. simplify_eq.
     iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q #Own']".
-    rewrite /PCellbBorrow.
+    rewrite /PCellBorrow.
     wp_bind p. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     wp_bind q. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     destruct dp as [|dp]; [done|]. destruct dq as [|dq]; [done|].
     set D := dp `max` dq.
-    iDestruct (ty_gho_own_depth_mono (&shrb{κ} (bcell_points_to_ty ty)) (S dq) (S dq) (S D) (S D)
+    iDestruct (ty_gho_own_depth_mono (&shr{κ} (cell_points_to_ty ty)) (S dq) (S dq) (S D) (S D)
       (l', (g, x)) tid with "Own'") as "[#OwnD _]"; [lia|lia|].
     iDestruct "Own" as "(#Gp & _ & _)". iDestruct "Own'" as "(#Gq & _ & #Pers)".
     iAssert (⧖(S D))%I as "#⧖D".
@@ -188,17 +188,17 @@ Section bcell_shr_rules.
     iSplit; [|done]. rewrite tctx_val_val. iExists (S D). iSplit; [done|]. iFrame "⧖D".
     iSplit.
     - iDestruct "OwnD" as "(Gq' & $ & $)".
-      rewrite /shr_bytes_own (bytes_own_zst_loc (bcell_points_to_ty ty) l.1 l'.1);
-        [done|apply bcell_points_to_bsize].
-    - iExists cs. iFrame "Hg". iApply (guard_pcellb_loc_side with "Hg"); [apply ty_mty_wf|].
+      rewrite /shr_bytes_own (bytes_own_zst_loc (cell_points_to_ty ty) l.1 l'.1);
+        [done|apply cell_points_to_bsize].
+    - iExists cs. iFrame "Hg". iApply (guard_pcell_loc_side with "Hg"); [apply ty_mty_wf|].
       iApply (lguards_weaken_later with "Gp"). lia.
   Qed.
 
   (** Reading the contents through a shared borrow of them (non-atomically): a guarded
       typed [Load] through the cell. *)
-  Lemma type_bcell_shr_load_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p E L I :
+  Lemma type_cell_shr_load_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p E L I :
     Copy ty → lctx_lft_alive E L κ →
-    typed_instr E L I +[p ◁ᵥ bcell_shr_ty κ ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
+    typed_instr E L I +[p ◁ᵥ cell_shr_ty κ ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
       (λ v, +[v ◁ᵥ ty]) (λ post '-[(_, (_, x))], λ mask π, post -[x] mask π).
   Proof.
     iIntros (? Alv tid post mask iκs [[l [g x]] []]) "#LFT #TIME #PROPH _ #E L $ (p & _) #Obs".
@@ -230,7 +230,7 @@ Section bcell_shr_rules.
       iMod ("Close" with "Gho") as "$". by iModIntro. }
     iDestruct (guards_transitive_right with "Gκ GL") as "G1".
     iDestruct (guards_transitive_right with "Gκ G2") as "G2'".
-    iDestruct (guard_bcell_own_gdyn with "G2'") as "G2g"; [done|].
+    iDestruct (guard_cell_own_gdyn with "G2'") as "G2g"; [done|].
     iDestruct (guards_and_point with "G1 G2g") as "GP";
       [apply point_prop_loc_side_gdyn|apply loc_side_and_gdyn|].
     have Hc : fv_cells fv = [] by eapply ty_fval_nocell_cells.
@@ -250,19 +250,19 @@ Section bcell_shr_rules.
     iDestruct (ty_gho_own_depth_mono _ d'' (S (S d'')) (S (S (S d''))) (S (S (S d'')))
       with "Gho") as "[$ _]"; lia.
   Qed.
-End bcell_shr_rules.
+End cell_shr_rules.
 
 (** ** [PCell::borrow_mut] and writes through it *)
-Section bcell_uniq_rules.
+Section cell_uniq_rules.
   Context `{!typeG Σ}.
 
-  Definition PCellbBorrowMut : val := (λ: ["pcell"; "perm"], "pcell")%V.
+  Definition PCellBorrowMut : val := (λ: ["pcell"; "perm"], "pcell")%V.
 
-  Lemma type_pcellb_borrow_mut_instr {𝔄} κ (ty: type 𝔄) p q E L I :
+  Lemma type_pcell_borrow_mut_instr {𝔄} κ (ty: type 𝔄) p q E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I
-      +[p ◁ᵥ &shrb{κ} (pcellb_ty ty.(ty_mty)); q ◁ᵥ &uniqb{κ} (bcell_points_to_ty ty)]
-      (PCellbBorrowMut [p; q]) (λ v, +[v ◁ᵥ bcell_uniq_ty κ ty])
+      +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &uniq{κ} (cell_points_to_ty ty)]
+      (PCellBorrowMut [p; q]) (λ v, +[v ◁ᵥ cell_uniq_ty κ ty])
       (λ post '-[(l, g); bor], λ mask π,
         let '(_, (g', x), ξi, d, gi, idx) := bor in
         g = g' ∧ post -[((l.1, []), (g, x), ξi, d, gi, idx)] mask π).
@@ -273,7 +273,7 @@ Section bcell_uniq_rules.
     iDestruct "p" as (vp Hp wp dp [-> Hwp]) "[#⧖p #Own]". simpl in Hwp. simplify_eq.
     iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
     iDestruct "Uniq" as "(#Incl & [%Hle1 %Hle2] & Body & #PtBase)".
-    rewrite /PCellbBorrowMut.
+    rewrite /PCellBorrowMut.
     wp_bind p. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     wp_bind q. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     destruct dp as [|dp]; [done|]. iDestruct "Own" as "(#Gp & _ & _)".
@@ -294,7 +294,7 @@ Section bcell_uniq_rules.
       with "[H1 £]" as ">[H1 (%cs & #Hg)]".
     { iMod (guards_extract_persistent_later _ _ (∃ cs, greg g ty.(ty_mty) cs)%I (⊤ ∖ ↑advN)
         (↑NllftG) _ ltac:(apply _) ltac:(solve_ndisj) with "G1 H1 []") as "Upd".
-      { iIntros "Bytes". rewrite bytes_own_pcellb_ty; [|apply ty_mty_wf].
+      { iIntros "Bytes". rewrite bytes_own_pcell_ty; [|apply ty_mty_wf].
         iDestruct "Bytes" as (cs) "[[Hg _] _]". by iExists cs. }
       iMod (lc_fupd_elim_laterN with "[£] Upd") as "Upd".
       { iApply (lc_weaken with "£"). rewrite /advance_credits. lia. }
@@ -306,19 +306,19 @@ Section bcell_uniq_rules.
     iSplitL.
     - iFrame "Incl". iSplit; [iPureIntro; lia|]. iSplitL "Body".
       + iApply (uniq_body_loc with "Body"). intros ?. rewrite /cbytes.
-        apply bytes_own_zst_loc, bcell_points_to_bsize.
+        apply bytes_own_zst_loc, cell_points_to_bsize.
       + have Hemp : (True ⊣⊢ ((l.1, []) : cloc) #↦∗_) := heap_cloc_mapsto_empty l.1 0.
         rewrite -Hemp. iApply guards_true.
-    - iExists cs. iFrame "Hg". iApply (guard_pcellb_loc_side with "Hg"); [apply ty_mty_wf|].
+    - iExists cs. iFrame "Hg". iApply (guard_pcell_loc_side with "Hg"); [apply ty_mty_wf|].
       iApply (lguards_weaken_later with "Gp"). lia.
   Qed.
 
   (** Writing the contents through a unique borrow of them (non-atomically): a guarded
       typed [Store] through the cell. The borrow stays, with the new contents. *)
-  Lemma type_bcell_uniq_store_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p r E L I :
+  Lemma type_cell_uniq_store_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p r E L I :
     lctx_lft_alive E L κ →
-    typed_instr E L I +[p ◁ᵥ bcell_uniq_ty κ ty; r ◁ᵥ ty]
-      (Store Na1Ord ty.(ty_mty) (ToLit p) r) (λ _, +[p ◁ᵥ bcell_uniq_ty κ ty])
+    typed_instr E L I +[p ◁ᵥ cell_uniq_ty κ ty; r ◁ᵥ ty]
+      (Store Na1Ord ty.(ty_mty) (ToLit p) r) (λ _, +[p ◁ᵥ cell_uniq_ty κ ty])
       (λ post '-[bor; y], λ mask π, let '(l, (g, _), ξi, _, _, idx) := bor in
          ∀ d gi, post -[(l, (g, y), ξi, d, gi, idx)] mask π).
   Proof.
@@ -343,7 +343,7 @@ Section bcell_uniq_rules.
       [rewrite /advance_credits; lia|].
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Gh #Back]]]"; [solve_ndisj|].
     iDestruct (guards_transitive with "Gh Alv") as "#Gκ".
-    iMod (uniq_bcell_open with "LFT UNIQ Gκ Gκ [Body] H1 H2 £1")
+    iMod (uniq_cell_open with "LFT UNIQ Gκ Gκ [Body] H1 H2 £1")
       as "(H2 & ⧗s & _ & _ & Own & Close)".
     { iFrame "Incl Body PtBase". iPureIntro. lia. }
     iDestruct "Own" as (di' ->) "[Own _]". iDestruct "Own" as (fv cs' Hfv) "[#Hg' Hgd]".
@@ -371,4 +371,4 @@ Section bcell_uniq_rules.
       iApply (lguards_weaken_later with "PtBase"). lia.
     - iExists cs. iFrame "Hg". iApply (lguards_weaken_later with "GL"). lia.
   Qed.
-End bcell_uniq_rules.
+End cell_uniq_rules.

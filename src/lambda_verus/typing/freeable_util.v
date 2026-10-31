@@ -1,4 +1,3 @@
-From lrust.lang.lib Require Import memcpy.
 From lrust.typing Require Export type.
 From lrust.typing Require Import uninit type_context programs.
 From guarding Require Import guard tactics.

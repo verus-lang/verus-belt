@@ -1,13 +1,13 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import type_context programs mod_ty uniq_util uniq_bytes_util own_bytes.
+From lrust.typing Require Import type_context programs mod_ty uniq_util own.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
 
 (** * Unique borrows of bytes (stage 4 of the MiniRust memory model)
 
-[&uniqb{κ} ty] is [&uniqb{κ} ty] (of [typing/uniq_bytes.v]) with the body of
-[typing/uniq_bytes_util.v]: the referent owns bytes that represent its value ([cbytes]).
+[&uniq{κ} ty] is [&uniq{κ} ty] (of [typing/uniq_bor.v]) with the body of
+[typing/uniq_util.v]: the referent owns bytes that represent its value ([cbytes]).
 It is the parent type of the referents of the byte place machinery
 ([typing/bplace/]). *)
 
@@ -25,7 +25,7 @@ Section uniq_bytes.
       κ ⊑ ty_lft ty ∗
       match x with
         (l, x0, ξi, d', g', idx) =>
-          ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ buniq_body ty x0 ξi d' g' idx κ tid l
+          ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ uniq_body ty x0 ξi d' g' idx κ tid l
             ∗ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_)
       end;
 
@@ -41,7 +41,7 @@ Section uniq_bytes.
       match x with
         (l, x0, ξi, d', g', idx) =>
           ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_) ∗
-            (buniq_body ty x0 ξi d' g' idx κ tid l ∨
+            (uniq_body ty x0 ξi d' g' idx κ tid l ∨
              (@[κ] &&{↑NllftG; 1}&&> cbytes ty x0 l) ∗
              ty.(ty_shr) κ x0 d' g' tid ∗ ty.(ty_gho_pers) x0 d' g' tid)
       end;
@@ -55,7 +55,7 @@ Section uniq_bytes.
       match x with
         (l, x0, ξi, d', g', idx) =>
             ⌜S d' ≤ d ∧ g' ≤ g⌝
-              ∗ buniq_body_pers_component ty x0 ξi d' g' idx κ tid l
+              ∗ uniq_body_pers_component ty x0 ξi d' g' idx κ tid l
       end;
       
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
@@ -66,7 +66,7 @@ Section uniq_bytes.
             [FVal (LitV l.1)]
       end;
     
-    (* The sharing predicate is structural: sharing [&uniqb{κ} ty] at κ0 gives shared
+    (* The sharing predicate is structural: sharing [&uniq{κ} ty] at κ0 gives shared
        access to the referent at [κ0 ⊓ κ]. The guard of the token of the prophecy
        variable is what [ty_shr_guard_proph] needs for it. The guards have [g+1]
        laters and the sharing predicate of the referent is at depth [g] (rather than
@@ -159,15 +159,15 @@ Section uniq_bytes.
     iDestruct (llftl_bor_iff _ _
       ((proph_bor_tok (uniq_prvar x0 ξi) (uniq_cell x0 d' g' γ) idx ∗
         ghost_var γ (1/2) (lstate_triv x0)) ∗
-       (uniq_pat_lft κ κp ∗ ⧗1 ∗ buniq_persγ ty x0 ξi idx κ κp tid l)) with "[] Body") as "Body".
+       (uniq_pat_lft κ κp ∗ ⧗1 ∗ uniq_persγ ty x0 ξi idx κ κp tid l)) with "[] Body") as "Body".
     { iIntros "!> !>". rewrite /uniq_tokγ. iSplit.
       - iIntros "($ & [$ $] & $ & $)".
       - iIntros "[[$ $] ($ & $ & $)]". }
     iMod (llftl_sep_split with "LFT Body") as "[Tok _]"; [solve_ndisj|].
     iMod (proph_bor_tok_share_gen _ κ κ0 (uniq_prvar x0 ξi) (uniq_cell x0 d' g' γ) idx
-      (buniq_gbody κpp ty tid l) (ghost_var γ (1/2) (lstate_triv x0))
+      (uniq_gbody κpp ty tid l) (ghost_var γ (1/2) (lstate_triv x0))
       (ghost_var γ (1/2) (lstate_triv x0) ∗ ghost_var γ (1/2) (lstate_triv x0) ∗
-        buniq_payload ty tid l x0 d' g')
+        uniq_payload ty tid l x0 d' g')
       (λ wπ, ⌜∀ π, (wπ π).1 = vπ x0 π⌝)%I
       with "LFT IdxBor [] Tok") as "[PBor #TokG]"; [solve_ndisj| |].
     { iIntros "!> !>" (wπ). rewrite uniq_gbody_triv_iff. iSplit; iIntros "$". }
@@ -259,7 +259,7 @@ Section uniq_bytes.
   Qed.
 End uniq_bytes.
 
-Notation "&uniqb{ κ }" := (uniq_bytes κ) (format "&uniqb{ κ }") : lrust_type_scope.
+Notation "&uniq{ κ }" := (uniq_bytes κ) (format "&uniq{ κ }") : lrust_type_scope.
 
 Section typing.
   Context `{!typeG Σ}.
@@ -286,10 +286,10 @@ Section typing.
        apply later_contractive. apply EqPers.
   Qed.
   
-  Lemma uniq_stack_okay {𝔄} κ (ty: type 𝔄) : StackOkay (&uniqb{κ} ty).
+  Lemma uniq_stack_okay {𝔄} κ (ty: type 𝔄) : StackOkay (&uniq{κ} ty).
   Proof. intros x tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. done. Qed.
   
-  Global Instance uniq_sync {𝔄} κ (ty: type 𝔄) : Sync ty → Sync (&uniqb{κ} ty).
+  Global Instance uniq_sync {𝔄} κ (ty: type 𝔄) : Sync ty → Sync (&uniq{κ} ty).
   Proof. 
     intros SyncTy tid tid' x d g.
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
@@ -310,7 +310,7 @@ Section typing.
     by rewrite H'shr H'pers.
   Qed.
 
-  Global Instance uniq_just_loc {𝔄} κ (ty: type 𝔄) : JustLoc (&uniqb{κ} ty).
+  Global Instance uniq_just_loc {𝔄} κ (ty: type 𝔄) : JustLoc (&uniq{κ} ty).
   Proof. 
     iIntros (x d g tid) "A".
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
@@ -318,7 +318,7 @@ Section typing.
   Qed.
 
   Lemma uniq_resolve {𝔄} E L κ (ty: type 𝔄) :
-    lctx_lft_alive E L κ → resolve E L (&uniqb{κ} ty) (λ x π, snd (vπ x π) = fst (vπ x π)).
+    lctx_lft_alive E L κ → resolve E L (&uniq{κ} ty) (λ x π, snd (vπ x π) = fst (vπ x π)).
   Proof.
     intros Alive G F x d g tid TimelessRes Hmask.
     iIntros "#LFT PROPH UNIQ TIME E #Lguard G [#In uniq]".
@@ -348,7 +348,7 @@ Section typing.
   (** As [uniq_resolve], keeping the shared view of the referent ([ty_gho_res]). *)
   Lemma uniq_resolve_keep {𝔄} E L κ (ty: type 𝔄) :
     lctx_lft_alive E L κ →
-    resolve_keep E L (&uniqb{κ} ty) (λ x π, snd (vπ x π) = fst (vπ x π)).
+    resolve_keep E L (&uniq{κ} ty) (λ x π, snd (vπ x π) = fst (vπ x π)).
   Proof.
     intros Alive G F x d g tid TimelessRes Hmask.
     iIntros "#LFT PROPH UNIQ TIME E #Lguard G [#In uniq]".
