@@ -968,25 +968,6 @@ Section pctx.
     - destruct (psum_proj i x.1); [|by iIntros "[]"]. iIntros "(_ & A & _)". by iApply IHK.
   Qed.
 
-  (** The location of the hole is part of the location of the place (below an owned
-      pointer, its cells are trivially owned). *)
-  Lemma pctx_loc_guard {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} n x l (G: iProp Σ) E k :
-    (G &&{E; k}&&> l #↦∗_) -∗ (G &&{E; k}&&> pctx_loc K n x l #↦∗_).
-  Proof.
-    rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
-    induction K in HK, x, l |- *; simpl; simpl in HK; [by iIntros "$"| | | | |done|done];
-      iIntros "G"; (iApply IHK; [done|]).
-    - rewrite (heap_cloc_mapsto_emp_vec_app l (pctx_size K n)).
-      iApply (guards_weaken_rhs_sep_l with "G").
-    - rewrite (heap_cloc_mapsto_emp_vec_app l (lty_size lt1)).
-      iApply (guards_weaken_rhs_sep_r with "G").
-    - rewrite -heap_cloc_mapsto_empty. iApply guards_true.
-    - rewrite (heap_cloc_mapsto_emp_vec_app l (tag_size 𝔄l)).
-      iDestruct (guards_weaken_rhs_sep_r with "G") as "G".
-      rewrite (heap_cloc_mapsto_emp_vec_app (cloc_skip l (tag_size 𝔄l)) (pctx_size K n)).
-      iApply (guards_weaken_rhs_sep_l with "G").
-  Qed.
-
   (** ** The address of the hole
 
       [pctx_expr K e] computes the address of the hole, from the address [e] of the
@@ -1004,54 +985,41 @@ Section pctx.
   Lemma pctx_expr_closed {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : Closed [] e → Closed [] (pctx_expr K e).
   Proof. induction K in e |- *; simpl; [done|auto|intros ?; apply IHK; apply _..]. Qed.
 
-  Lemma wp_pctx_expr_mask {𝔅 𝔄} E (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: cloc) (e: expr) (G R: iProp Σ) k :
-    ↑NllftG ⊆ E →
-    (G &&{↑NllftG; k}&&> l #↦∗_) -∗ £(3 * k * pctx_mode K 0) -∗
+  Lemma wp_pctx_expr_mask {𝔅 𝔄} E (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: cloc) (e: expr) (G R: iProp Σ) :
     WP e @ E {{ v, ⌜v = #(l.1)⌝ ∗ R ∗ G }} -∗ pctx_own K n m x ζm q d g tid l -∗
     WP pctx_expr K e @ E {{ v, ⌜v = #(pctx_loc K n x l).1⌝ ∗ R ∗ G ∗ pctx_own K n m x ζm q d g tid l }}.
   Proof.
-    intros HE. induction K in m, x, q, d, l, e, R |- *; simpl.
-    - iIntros "_ _ WP $". iApply (wp_wand with "WP"). iIntros (v) "($ & $ & $)".
-    - iIntros "#Gl £ WP [Own Sib]". iApply (wp_wand with "[- Sib]").
-      { iApply (IHK m x.1 (false :: q) d (cloc_take l (pctx_size K n)) with "[] £ WP Own").
-        rewrite (heap_cloc_mapsto_emp_vec_app l (pctx_size K n)).
-        iApply (guards_weaken_rhs_sep_l with "Gl"). }
+    induction K in m, x, q, d, l, e, R |- *; simpl.
+    - iIntros "WP $". iApply (wp_wand with "WP"). iIntros (v) "($ & $ & $)".
+    - iIntros "WP [Own Sib]". iApply (wp_wand with "[- Sib]").
+      { iApply (IHK m x.1 (false :: q) d (cloc_take l (pctx_size K n)) with "WP Own"). }
       iIntros (v) "($ & $ & $ & $)". iFrame.
-    - iIntros "#Gl £ WP [Sib Own]". iApply (wp_wand with "[- Sib]").
-      { iApply (IHK m x.2 (true :: q) d (cloc_skip l (lty_size lt1)) _ R with "[] £ [WP] Own").
-        - rewrite (heap_cloc_mapsto_emp_vec_app l (lty_size lt1)).
-          iApply (guards_weaken_rhs_sep_r with "Gl").
-        - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
-          iFrame. done. }
+    - iIntros "WP [Sib Own]". iApply (wp_wand with "[- Sib]").
+      { iApply (IHK m x.2 (true :: q) d (cloc_skip l (lty_size lt1)) _ R with "[WP] Own").
+        wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
+        iFrame. done. }
       iIntros (v) "($ & $ & $ & $)". iFrame.
-    - rewrite pctx_mode_add. iIntros "#Gl £ WP (Pt & %Hd & Fr & Own)".
-      iDestruct (lc_weaken (3 * k * pctx_mode K 0) with "£") as "£"; [lia|].
+    - iIntros "WP (Pt & %Hd & Fr & Own)".
       iApply (wp_wand with "[- Fr]").
       { iApply (IHK (m + 1) x.2 (false :: q) (pred d) (x.1, repeat [] (pctx_size K n)) _
-          (R ∗ ptr_cell l x.1)%I with "[] £ [WP Pt] Own").
-        - rewrite -heap_cloc_mapsto_empty. iApply guards_true.
-        - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
-          iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
-          iApply (wp_load_na with "Hbs"); [exact Hbs|].
-          iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
+          (R ∗ ptr_cell l x.1)%I with "[WP Pt] Own").
+        wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
+        iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
+        iApply (wp_load_na with "Hbs"); [exact Hbs|].
+        iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
       iIntros (v) "($ & [$ $] & $ & $)". by iFrame.
-    - destruct (psum_proj i x.1) as [y|] eqn:Hy; [|by iIntros "_ _ _ []"].
-      iIntros "#Gl £ WP (Tag & Own & Pad)". iApply (wp_wand with "[- Tag Pad]").
+    - destruct (psum_proj i x.1) as [y|] eqn:Hy; [|by iIntros "_ []"].
+      iIntros "WP (Tag & Own & Pad)". iApply (wp_wand with "[- Tag Pad]").
       { iApply (IHK m y (false :: q) d (cloc_take (cloc_skip l (tag_size 𝔄l)) (pctx_size K n)) _ R
-          with "[] £ [WP] Own").
-        - rewrite (heap_cloc_mapsto_emp_vec_app l (tag_size 𝔄l)).
-          iDestruct (guards_weaken_rhs_sep_r with "Gl") as "Gl'".
-          rewrite (heap_cloc_mapsto_emp_vec_app (cloc_skip l (tag_size 𝔄l)) (pctx_size K n)).
-          iApply (guards_weaken_rhs_sep_l with "Gl'").
-        - wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
-          iFrame. done. }
+          with "[WP] Own").
+        wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
+        iFrame. done. }
       rewrite /psum_proj_or Hy. iIntros (v) "($ & $ & $ & $)". iFrame.
-    - by iIntros "_ _ _ []".
-    - by iIntros "_ _ _ []".
+    - by iIntros "_ []".
+    - by iIntros "_ []".
   Qed.
 
-  Lemma wp_pctx_expr {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: cloc) (e: expr) (G R: iProp Σ) k :
-    (G &&{↑NllftG; k}&&> l #↦∗_) -∗ £(3 * k * pctx_mode K 0) -∗
+  Lemma wp_pctx_expr {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g tid (l: cloc) (e: expr) (G R: iProp Σ) :
     WP e {{ v, ⌜v = #(l.1)⌝ ∗ R ∗ G }} -∗ pctx_own K n m x ζm q d g tid l -∗
     WP pctx_expr K e {{ v, ⌜v = #(pctx_loc K n x l).1⌝ ∗ R ∗ G ∗ pctx_own K n m x ζm q d g tid l }}.
   Proof. by apply wp_pctx_expr_mask. Qed.

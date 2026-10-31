@@ -362,7 +362,7 @@ Section ltype_own.
     | inl _ => False
     | inr (l', r', ξi) =>
         ptr_cell l l'.1 ∗ ⧗(2 + m) ∗ time_ctx ∗
-        ▷^m (κ' ⊑ ty_lft ty ∗ (@[κ'] &&{↑NllftG; g+1}&&> l' #↦∗_) ∗
+        ▷^m (κ' ⊑ ty_lft ty ∗
           ∃ d' g', ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ child ξi r' d' g' tid l')
     end%I.
 
@@ -458,11 +458,11 @@ Section ltype_own.
         at [κ] and its persistent predicate (the ownership predicate of [&shr{κ} ty]
         without its laters, [shr_view] of [typing/place_pshr.v]);
       - a blocked leaf keeps its inheritance, in a borrow at [κ] (it is shared at [κ] once
-        it has been unblocked), with a guard of the cells of its location;
+        it has been unblocked);
       - a shared-blocked leaf (at [α]) is shared at [κ ⊓ α]: its value does not change,
         and it is shared at [α] already (it is readable while [α] is alive); it also keeps
-        its inheritance, in a borrow at [κ] (at some smaller depths), with a guard of the
-        cells of its location, so that it is shared at [κ] once [α] has ended
+        its inheritance, in a borrow at [κ] (at some smaller depths), so that it is
+        shared at [κ] once [α] has ended
         ([unblock_tctx_oplace_res_shr] of [typing/place_res_ops.v]). *)
   Definition view_leaf {𝔄} (κ: lft) (m: nat) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
       (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
@@ -471,11 +471,10 @@ Section ltype_own.
     | inl lr =>
         match p with
         | PatBlocked α =>
-            (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_) ∗ &{κ} (blocked_owned m ty α lr tid l)
+            &{κ} (blocked_owned m ty α lr tid l)
         | PatShrBlocked α => ∃ x, place_rfn_rel lr x ∗
             (@[κ ⊓ α] &&{↑NllftG; g+1}&&> cbytes ty x l) ∗
             ty.(ty_shr) (κ ⊓ α) x d g tid ∗ ty.(ty_gho_pers) x d g tid ∗
-            (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_) ∗
             ∃ d' g', ⌜d' ≤ d ∧ g' ≤ g⌝ ∗ &{κ} ([†α] ={lazyE}=∗ ofty_owned m ty x d' g' tid l)
         | _ => ∃ x, place_rfn_rel lr x ∗
             (@[κ] &&{↑NllftG; g+1}&&> cbytes ty x l) ∗
@@ -582,7 +581,7 @@ Section ltype_own.
     | inl _ => False
     | inr (l', r', ξi) =>
         ⧗(2 + m) ∗ time_ctx ∗
-        ▷^m (κ' ⊑ ty_lft ty ∗ (@[κ'] &&{↑NllftG; g+1}&&> l' #↦∗_) ∗
+        ▷^m (κ' ⊑ ty_lft ty ∗
           ∃ d' g', ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ child ξi r' d' g' tid l')
     end%I.
 
@@ -734,7 +733,7 @@ Section ltype_lemmas.
     uniq_node m κ' ty c1 r d g tid l ⊢ uniq_node m κ' ty c2 r d g tid l.
   Proof.
     intros Hc. destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /uniq_node.
-    iIntros "($ & $ & $ & H)". iNext. iDestruct "H" as "($ & $ & %d' & %g' & ? & C)".
+    iIntros "($ & $ & $ & H)". iNext. iDestruct "H" as "($ & %d' & %g' & ? & C)".
     iExists d', g'. iFrame. by iApply Hc.
   Qed.
 
@@ -791,7 +790,7 @@ Section ltype_lemmas.
     uniq_nval m κ' ty c1 r d g tid ⊢ uniq_nval m κ' ty c2 r d g tid.
   Proof.
     intros Hc. destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /uniq_nval.
-    iIntros "($ & $ & H)". iNext. iDestruct "H" as "($ & $ & %d' & %g' & ? & C)".
+    iIntros "($ & $ & H)". iNext. iDestruct "H" as "($ & %d' & %g' & ? & C)".
     iExists d', g'. iFrame. by iApply Hc.
   Qed.
 
@@ -937,8 +936,7 @@ Section ltype_lemmas.
       iIntros "($ & H)". iNext. iDestruct "H" as "($ & %d1 & %g1 & %Hle & C)".
       iExists d1, g1. iFrame. iPureIntro. lia. }
     - destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /uniq_node.
-      iIntros "($ & $ & $ & H)". iNext. iDestruct "H" as "($ & #G & %d1 & %g1 & %Hle & C)".
-      iSplitR. { iApply (lguards_weaken_later with "G"). lia. }
+      iIntros "($ & $ & $ & H)". iNext. iDestruct "H" as "($ & %d1 & %g1 & %Hle & C)".
       iExists d1, g1. iFrame. iPureIntro. lia.
     - destruct r as [?|[l' r']]; [done|]. rewrite /own_node.
       iIntros "($ & % & $ & C)". iSplit; [iPureIntro; lia|].
@@ -1377,8 +1375,8 @@ Section unfold.
   Proof.
     rewrite /ltype_own /= /ofty_owned /=.
     iIntros "#TIME ⧗ (%v & -> & Pt & Gho)". rewrite cbytes_uniq_bor. iFrame "Pt ⧗ TIME". iNext.
-    iDestruct "Gho" as "(#Incl & %Hle & Body & #G)".
-    iSplitR; [done|]. iSplitR; [done|].
+    iDestruct "Gho" as "(#Incl & %Hle & Body)".
+    iSplitR; [done|].
     iExists d', g'. iSplit; [done|]. iExists x, idx. iSplit; [done|]. done.
   Qed.
 
@@ -1390,7 +1388,7 @@ Section unfold.
     rewrite /ltype_own /= /ofty_owned /=.
     have ?: Inhabited (~~𝔄) := populate x. have ?: Inhabited Idx := populate idx_dummy.
     iIntros "(Pt & $ & _ & H)".
-    iDestruct "H" as "(Incl & G & %d' & %g' & Hle & %y & %idx & Hy & Body)".
+    iDestruct "H" as "(Incl & %d' & %g' & Hle & %y & %idx & Hy & Body)".
     iExists d', g', idx, _. iSplit; [done|]. rewrite cbytes_uniq_bor. iFrame "Pt". iNext.
     iDestruct "Hy" as %->. iFrame.
   Qed.
@@ -1915,7 +1913,7 @@ Section cpd.
       iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗a ⧖") as "[_ £]";
         [rewrite /lazyE; solve_ndisj|].
       iDestruct (lc_weaken (m + 1) with "£") as "[£m £]"; [rewrite /advance_credits; nia|].
-      iMod (lc_fupd_elim_laterN with "£m N") as "(#Incl' & #Gpt & %d1 & %g1 & %Hle & C)".
+      iMod (lc_fupd_elim_laterN with "£m N") as "(#Incl' & %d1 & %g1 & %Hle & C)".
       iDestruct (pat_ok_uniq with "Ok") as "#Ok'".
       iAssert (G &&{↑NllftG}&&> @[κ'])%I as "#Gκ'".
       { iApply (guards_transitive with "Gty"). iApply llftl_intersect_incl_l. }
@@ -1936,8 +1934,7 @@ Section cpd.
           fun_ext=> π /=. apply (uniq_prvar_app_irrel (prfn_wit r') x ξi π). }
       iSplit. { iCombine "⧖ ⧖1'" as "⧖'". iApply (persistent_time_receipt_mono with "⧖'"). lia. }
       rewrite /ofty_owned /= cbytes_uniq_bor. iFrame "Pt". iApply bi.laterN_intro.
-      iFrame "Incl' Body". iSplit; [iPureIntro; lia|].
-      iApply (lguards_weaken_later with "Gpt"). lia.
+      iFrame "Incl' Body". iPureIntro; lia.
     - iIntros "#LFT #PROPH #UNIQ #Gty #Ok #†κ G #⧖ N".
       destruct r as [lr|[l' r']]; [done|]. iDestruct "N" as "(Pt & %Hd & Fr & N)".
       iDestruct (pat_ok_own with "Ok") as "Ok'".

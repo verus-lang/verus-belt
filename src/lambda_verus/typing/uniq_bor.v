@@ -26,21 +26,20 @@ Section uniq_bytes.
       match x with
         (l, x0, ξi, d', g', idx) =>
           ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ uniq_body ty x0 ξi d' g' idx κ tid l
-            ∗ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_)
       end;
 
     (* The resolved ownership: either the borrow has not been resolved (its body is
        kept: resolving needs κ to be alive, which is not known when an arbitrary value
        is resolved by [resolve_keep_just], e.g. at a dead κ), or the prophecy variable
        has been resolved, and the referent has been shared at κ ([resolve_uniq_body]):
-       a guard of its cells, its sharing predicate and its persistent predicate, i.e.
+       a guard of its bytes, its sharing predicate and its persistent predicate, i.e.
        the ownership of [&shr{κ} ty] at the current value of the referent (see
        [res_leaf_uniq_to_shr]). *)
     ty_gho_res (x : ~~ (uniq_borₛ 𝔄)) d g tid :=
       κ ⊑ ty_lft ty ∗
       match x with
         (l, x0, ξi, d', g', idx) =>
-          ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_) ∗
+          ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗
             (uniq_body ty x0 ξi d' g' idx κ tid l ∨
              (@[κ] &&{↑NllftG; 1}&&> cbytes ty x0 l) ∗
              ty.(ty_shr) κ x0 d' g' tid ∗ ty.(ty_gho_pers) x0 d' g' tid)
@@ -92,10 +91,9 @@ Section uniq_bytes.
   Next Obligation. intros ? ? ? x. destruct x as [[[[[[l ?] ?] ?] ?] ?] ?]. done. Qed.
   Next Obligation. intros 𝔄 κ ty d0 g0 d1 g1 x tid Hle Hle2. simpl.
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
-    iIntros "[#A [%B [C #D]]]".
-    iDestruct (lguards_weaken_later _ _ _ _ (g1+1) with "D") as "D'". { lia. }
+    iIntros "[#A [%B C]]".
     iFrame. iFrame "#".
-    iSplit. { iPureIntro. lia. } iIntros "[#A1 [%B1 [C1 D1]]]". iFrame. iFrame "#". done.
+    iSplit. { iPureIntro. lia. } iIntros "[#A1 [%B1 C1]]". iFrame. iFrame "#". done.
   Qed.
   Next Obligation. intros 𝔄 κ ty d0 g0 d1 g1 x tid Hle Hle2. simpl.
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
@@ -107,7 +105,7 @@ Section uniq_bytes.
   Qed.
   Next Obligation.
     destruct x as [[[[[l x0] ξi] d'] g'] idx]. fold indep_interp_of_syn_type. simpl.
-    intros d g tid. iIntros "[A [B [C D]]]". iFrame "B".
+    intros d g tid. iIntros "[A [B C]]". iFrame "B".
     iApply (uniq_body_pers_component_impl with "C").
   Qed.
   Next Obligation.
@@ -148,11 +146,7 @@ Section uniq_bytes.
     { iApply guards_llft_glb; [done|]. iApply (guards_transitive with "Gκ0 Hκ0κ"). }
     (* Unnest the borrow of the payload, at [κ0 ⊓ κ]. *)
     iMod (llftl_sep_split with "LFT Bor") as "[_ Bor]"; [solve_ndisj|].
-    iMod (llftl_sep_split with "LFT Bor") as "[_ Bor]"; [solve_ndisj|].
-    iMod (llftl_sep_split with "LFT Bor") as "[Body Rest]"; [solve_ndisj|].
-    iMod (llftl_bor_guarded_extract _ _ _ _ (@[κ] &&{↑NllftG; g+1}&&> l #↦∗_)
-      with "LFT Gκ0 G Rest []") as "(G & _ & #PtBase)"; [solve_ndisj| |].
-    { iIntros "!> $". }
+    iMod (llftl_sep_split with "LFT Bor") as "[_ Body]"; [solve_ndisj|].
     rewrite uniq_body_unfold.
     iMod (llftl_bor_freeze with "LFT Body") as (κp) "Body"; [solve_ndisj|].
     iMod (llftl_bor_freeze with "LFT Body") as (γ) "Body"; [solve_ndisj|].
@@ -235,7 +229,7 @@ Section uniq_bytes.
   Qed.
   Next Obligation.
     intros 𝔄 κ ty x d g tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
-    iIntros "($ & $ & Body & $)". by iLeft.
+    iIntros "($ & $ & Body)". by iLeft.
   Qed.
   
   Global Instance uniq_bor_ne {𝔄} κ : NonExpansive (@uniq_bytes 𝔄 κ).
@@ -247,7 +241,7 @@ Section uniq_bytes.
         unfold ty_outlives_E. f_equiv. apply Heqv.
      - intros x d g tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. f_equiv.
         + do 2 f_equiv. apply Heqv.
-        + do 2 f_equiv. apply uniq_body_ne; [|intros; apply Heqv..].
+        + f_equiv. apply uniq_body_ne; [|intros; apply Heqv..].
           rewrite (ty_lfts_ne _ _ _ Heqv). apply lft_equiv_refl.
      - intros x d g tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. f_equiv.
        apply uniq_pers_component_ne; [|intros; apply Heqv..].
@@ -271,7 +265,7 @@ Section typing.
        destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. f_equiv.
         + apply equiv_dist. iDestruct Heq1 as "#[??]".
           iSplit; iIntros "#H"; (iApply llftl_incl_trans; [iApply "H"|done]).
-        + do 2 f_equiv.
+        + f_equiv.
           apply uniq_body_contractive; [done|intros; apply Heq3|intros; apply Heq5].
      - intros n ty ty' Heq Heq1 Heq2 Heq3 Heq4 Heq5 _ x d g tid.
        destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. f_equiv.
@@ -301,7 +295,7 @@ Section typing.
     { intros. apply SyncTy. }
     have Hp: ∀ x, ty.(ty_phys) x tid = ty.(ty_phys) x tid'.
     { intros x. apply (SyncTy tid tid' x 0 0). }
-    split. { unfold uniq_bytes, ty_gho_own. do 3 f_equiv.
+    split. { unfold uniq_bytes, ty_gho_own. do 2 f_equiv.
       apply uniq_body_proper; [apply lft_equiv_refl|done..]. }
     split. { unfold uniq_bytes, ty_gho_pers. f_equiv.
       apply uniq_pers_component_proper; [apply lft_equiv_refl|done..]. }
@@ -323,7 +317,7 @@ Section typing.
     intros Alive G F x d g tid TimelessRes Hmask.
     iIntros "#LFT PROPH UNIQ TIME E #Lguard G [#In uniq]".
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
-    iDestruct "uniq" as "[%Hle [uniq pers]]".
+    iDestruct "uniq" as "[%Hle uniq]".
     (* Settle the borrow first, with a program step, to get the time receipt of its
        contents, which pays for the later credits of the resolution. *)
     leaf_open "Lguard" with "G" as "[L Back]". { solve_ndisj. }
@@ -353,7 +347,7 @@ Section typing.
     intros Alive G F x d g tid TimelessRes Hmask.
     iIntros "#LFT PROPH UNIQ TIME E #Lguard G [#In uniq]".
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
-    iDestruct "uniq" as "[%Hle [uniq #PtBase]]".
+    iDestruct "uniq" as "[%Hle uniq]".
     leaf_open "Lguard" with "G" as "[L Back]". { solve_ndisj. }
     iDestruct (Alive with "L E") as "#Alv".
     iMod ("Back" with "L") as "G".
@@ -368,7 +362,7 @@ Section typing.
       as "(X & G & #Shr & #PtG & #Pers)"; [done|set_solver|].
     iModIntro.
     iApply step_fupdN_intro. { set_solver. }
-    iModIntro. iModIntro. iFrame "G In PtBase". iSplit.
+    iModIntro. iModIntro. iFrame "G In". iSplit.
     - iApply proph_obs_eq; last by done. intros π. simpl. f_equal.
     - iSplit; [iPureIntro; lia|]. iRight. by iFrame "Shr PtG Pers".
   Qed.
