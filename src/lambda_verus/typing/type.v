@@ -2294,41 +2294,6 @@ Notation "[S( d' ) := d ] P" := (by_succ d (λ d', P)) (at level 200,
 Notation "[loc[ l ] := vl ] P" := (by_just_loc vl (λ l, P)) (at level 200,
   right associativity, format "[loc[ l ]  :=  vl ]  P") : bi_scope.
 
-Section type_util.
-  Context `{!typeG Σ}.
-
-  (* Splitting for a standard pointer *)
-  Lemma split_mt_ptr d Φ l' :
-    (l' ↦∗: λ vl, [S(d') := d] [loc[l] := vl] Φ d' l) ⊣⊢
-    [S(d') := d] ∃l: loc, l' ↦ #l ∗ Φ d' l.
-  Proof.
-    iSplit.
-    - iIntros "(%vl & ↦ &?)". case d as [|]=>//. case vl as [|[[]| |][]]=>//.
-      rewrite heap_mapsto_vec_singleton. iExists _. iFrame.
-    - iIntros "big". case d as [|]=>//. iDestruct "big" as (?) "[??]".
-      iExists [_]. rewrite heap_mapsto_vec_singleton. by iFrame.
-  Qed.
-
-  Lemma split_mt_ptr' Φ l' :
-    (l' ↦∗: λ vl, [loc[l] := vl] Φ l) ⊣⊢ ∃l: loc, l' ↦ #l ∗ Φ l.
-  Proof.
-    set Φ' := λ _: nat, Φ. have ->: Φ = Φ' 0%nat by done.
-    by apply (split_mt_ptr (S _)).
-  Qed.
-
-  (*Lemma heap_mapsto_ty_own {𝔄} l (ty: type 𝔄) vπ d tid :
-    l ↦∗: ty.(ty_own) vπ d tid ⊣⊢
-    ∃vl: vec val ty.(ty_size), l ↦∗ vl ∗ ty.(ty_own) vπ d tid vl.
-  Proof.
-    iSplit; iIntros "[%vl[? ty]]"; [|iExists vl; by iFrame].
-    iDestruct (ty_size_eq with "ty") as %<-. iExists (list_to_vec vl).
-    rewrite vec_to_list_to_vec. iFrame.
-  Qed.*)
-
-  Definition freeable_sz' (sz: nat) (l: loc) : iProp Σ :=
-    †{1}l…sz ∨ ⌜Z.of_nat sz = 0%Z⌝.
-End type_util.
-
 Global Hint Resolve ty_outlives_E_elctx_sat tyl_outlives_E_elctx_sat : lrust_typing.
 Global Hint Resolve resolve'_post | 5 : lrust_typing.
 Global Hint Resolve resolvel_nil resolve'_just

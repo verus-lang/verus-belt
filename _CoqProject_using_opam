@@ -75,7 +75,6 @@ src/lambda_verus/lang/minirust_tests.v
 src/lambda_verus/lang/tactics.v
 src/lambda_verus/lang/time.v
 src/lambda_verus/lang/lib/new_delete.v
-src/lambda_verus/lang/lib/memcpy.v
 src/lambda_verus/lang/lib/spawn.v
 
 # Type-specs
@@ -93,7 +92,6 @@ src/lambda_verus/typing/cont_context.v
 src/lambda_verus/typing/cont.v
 src/lambda_verus/typing/product.v
 src/lambda_verus/typing/programs.v
-src/lambda_verus/typing/programs_util.v
 src/lambda_verus/typing/programs_util_atomic.v
 src/lambda_verus/typing/bool.v
 src/lambda_verus/typing/int.v
