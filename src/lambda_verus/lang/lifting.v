@@ -624,8 +624,8 @@ Proof.
   iIntros (? <- Hwf Hlen Φ) ">Hbs HΦ".
   iApply wp_lift_atomic_base_step_no_fork; auto.
   iIntros (σ1 stepcnt κ κs n') "[Hσ Ht]". heap_split.
-  have Hlen' : length (@encode_value val m v) = length bs by rewrite length_encode_value.
-  iMod (bytes_ctx_write _ _ _ _ (@encode_value val m v) with "HB Hbs") as "(%Hrange & HB & Hbs)"; [done..|].
+  have Hlen' : length (encode_value m v) = length bs by rewrite length_encode_value.
+  iMod (bytes_ctx_write _ _ _ _ (encode_value m v) with "HB Hbs") as "(%Hrange & HB & Hbs)"; [done..|].
   have Hrange' := Hrange.
   iModIntro. iSplit. { iPureIntro. eexists _, _, _, _. eapply StoreScS; eauto. }
   iNext; iIntros (e2 σ2 efs Hstep) "credit"; inv_head_step.
@@ -659,8 +659,8 @@ Proof.
   iIntros (σ1 stepcnt' κ' κs' n') "[Hσ Ht]".
   iMod (time_interp_step with "Ht") as "$". heap_split.
   match goal with H : val_wf m ?w |- _ => rename w into v end.
-  have Hlen' : length (@encode_value val m v) = length bs by rewrite length_encode_value.
-  iMod (bytes_ctx_write_end _ _ _ _ (@encode_value val m v) with "HB Hbs") as "(%Hrange & HB & Hbs)";
+  have Hlen' : length (encode_value m v) = length bs by rewrite length_encode_value.
+  iMod (bytes_ctx_write_end _ _ _ _ (encode_value m v) with "HB Hbs") as "(%Hrange & HB & Hbs)";
     [done..|].
   have Hrange' := Hrange.
   iModIntro; iSplit.
@@ -947,8 +947,8 @@ Proof.
   iIntros (? <- Hwf Hlen) ">Hbs HΦ".
   iApply wp_lift_atomic_base_step_no_fork; auto.
   iIntros (σ1 stepcnt κ κs n') "[Hσ Ht]". heap_split.
-  have Hlen' : length (@encode_value val m v) = length bs by rewrite length_encode_value.
-  iMod (bytes_ctx_write _ _ _ _ (@encode_value val m v) with "HB Hbs") as "(%Hrange & HB & Hbs)"; [done..|].
+  have Hlen' : length (encode_value m v) = length bs by rewrite length_encode_value.
+  iMod (bytes_ctx_write _ _ _ _ (encode_value m v) with "HB Hbs") as "(%Hrange & HB & Hbs)"; [done..|].
   have Hrange' := Hrange.
   iModIntro. iSplit. { iPureIntro. eexists _, _, _, _. eapply StoreScS; eauto. }
   iNext; iIntros (e2 σ2 efs Hstep) "credit"; inv_head_step.
@@ -983,8 +983,8 @@ Proof.
   iIntros (σ1 stepcnt' κ' κs' n') "[Hσ Ht]".
   iMod (time_interp_step with "Ht") as "$". heap_split.
   match goal with H : val_wf m ?w |- _ => rename w into v end.
-  have Hlen' : length (@encode_value val m v) = length bs by rewrite length_encode_value.
-  iMod (bytes_ctx_write_end _ _ _ _ (@encode_value val m v) with "HB Hbs") as "(%Hrange & HB & Hbs)";
+  have Hlen' : length (encode_value m v) = length bs by rewrite length_encode_value.
+  iMod (bytes_ctx_write_end _ _ _ _ (encode_value m v) with "HB Hbs") as "(%Hrange & HB & Hbs)";
     [done..|].
   have Hrange' := Hrange.
   iModIntro; iSplit.
@@ -1315,7 +1315,7 @@ Proof.
     as (bs2) "([%Hrange2 %Hlen2] & HB & Hgd & G)"; [done..|by apply decode_encode_value|].
   iMod (lc_fupd_elim_later with "credit G") as "G".
   rewrite shift_loc_assoc_nat in Hrange2 |- *.
-  have Hlen' : length (@encode_value val m' v) = length bs2 by rewrite length_encode_value.
+  have Hlen' : length (encode_value m' v) = length bs2 by rewrite length_encode_value.
   have Hrange' := Hrange2.
   iModIntro; iSplit.
   { iPureIntro. eexists _, _, _, _. eapply StoreNa2S; eauto. }
@@ -1345,13 +1345,13 @@ Proof.
   iMod (bytes_ctx_cell_write_end _ _ _ _ _ _ _ _ _ _ _ (encode_value m' v) v fvn with "Hg HB Tok")
     as (bs2) "(_ & HB & Hgd & G)"; [done..|by apply decode_encode_value|].
   rewrite shift_loc_assoc_nat.
-  have Heq : mem_write (l0 +ₗ (o + o')%nat) (@encode_value val m' v)
+  have Heq : mem_write (l0 +ₗ (o + o')%nat) (encode_value m' v)
       (mem_alter (λ _, WSt) (l0 +ₗ (o + o')%nat) (mty_size m') σ1.1) =
     mem_write (l0 +ₗ (o + o')%nat) (encode_value m' v) σ1.1.
-  { have := mem_alter_mem_write (λ _, WSt) (l0 +ₗ (o + o')%nat) (@encode_value val m' v) σ1.1.
+  { have := mem_alter_mem_write (λ _, WSt) (l0 +ₗ (o + o')%nat) (encode_value m' v) σ1.1.
     by rewrite length_encode_value. }
   rewrite Heq.
-  have Hlen' : length (@encode_value val m' v) = length bs by rewrite length_encode_value.
+  have Hlen' : length (encode_value m' v) = length bs by rewrite length_encode_value.
   have Hrange' := Hrange.
   iModIntro. iSplit. { iPureIntro. eexists _, _, _, _. eapply StoreScS; eauto. }
   iNext; iIntros (e2 σ2 efs Hstep) "credit"; inv_head_step.
@@ -1508,8 +1508,8 @@ Proof.
   iApply wp_lift_atomic_base_step_no_fork; auto.
   iIntros (σ1 stepcnt κ κs n') "[Hσ Ht]". heap_split.
   destruct (decide (v = v1)) as [<-|Hne].
-  - have Hlen' : length (@encode_value val m v2) = length bs by rewrite length_encode_value.
-    iMod (bytes_ctx_write _ _ _ _ (@encode_value val m v2) with "HB Hbs") as "(%Hrange & HB & Hbs)";
+  - have Hlen' : length (encode_value m v2) = length bs by rewrite length_encode_value.
+    iMod (bytes_ctx_write _ _ _ _ (encode_value m v2) with "HB Hbs") as "(%Hrange & HB & Hbs)";
       [done..|].
     have Hrange' := Hrange.
     iModIntro. iSplit.
@@ -1571,13 +1571,13 @@ Proof.
     iMod (bytes_ctx_cell_write_end _ _ _ _ _ _ _ _ _ _ _ (encode_value m' v2) v2 fvn with "Hg HB Tok")
       as (bs2) "(_ & HB & Hgd & G)"; [done..|by apply decode_encode_value|].
     rewrite shift_loc_assoc_nat.
-    have Heq : mem_write (l0 +ₗ (o + o')%nat) (@encode_value val m' v2)
+    have Heq : mem_write (l0 +ₗ (o + o')%nat) (encode_value m' v2)
         (mem_alter (λ _, WSt) (l0 +ₗ (o + o')%nat) (mty_size m') σ1.1) =
       mem_write (l0 +ₗ (o + o')%nat) (encode_value m' v2) σ1.1.
-    { have := mem_alter_mem_write (λ _, WSt) (l0 +ₗ (o + o')%nat) (@encode_value val m' v2) σ1.1.
+    { have := mem_alter_mem_write (λ _, WSt) (l0 +ₗ (o + o')%nat) (encode_value m' v2) σ1.1.
       by rewrite length_encode_value. }
     rewrite Heq.
-    have Hlen' : length (@encode_value val m' v2) = length bs by rewrite length_encode_value.
+    have Hlen' : length (encode_value m' v2) = length bs by rewrite length_encode_value.
     have Hrange' := Hrange.
     have Hrd' : mem_range is_reading σ1.1 (l0 +ₗ (o + o')%nat) bs.
     { eapply mem_range_impl; [|exact Hrange']. intros ? ->. by eexists. }

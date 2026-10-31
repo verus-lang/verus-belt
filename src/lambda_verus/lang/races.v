@@ -203,7 +203,7 @@ Lemma next_access_head_Na2Ord_write_step e1 e2 ef σ1 σ2 κ l :
   ∃ b, σ2.1 !! l = Some (RSt 0, b).
 Proof.
   intros Ha Hstep. inversion Ha; subst; clear Ha; inv_head_step; simpl; eauto.
-  - destruct (lookup_lt_is_Some_2 (@encode_value val m v) i) as [b Hb]; [by rewrite length_encode_value|].
+  - destruct (lookup_lt_is_Some_2 (encode_value m v) i) as [b Hb]; [by rewrite length_encode_value|].
     exists b. by apply lookup_mem_write_in.
   - destruct (lookup_lt_is_Some_2 bs2 i) as [b Hb]; [lia|].
     exists b. by apply lookup_mem_write_in.

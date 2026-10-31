@@ -120,14 +120,13 @@ Qed.
 
 (** ** Fancy bytes and their representation *)
 Section frepr.
-  Context {W : Type}.
-  Implicit Types (fbs : list (positive + AbstractByte W)) (bs : list (AbstractByte W)).
+  Implicit Types (fbs : list (positive + AbstractByte)) (bs : list (AbstractByte)).
   Implicit Types (R : gmap positive (mty * list positive)).
 
-  Definition is_plain (fb : positive + AbstractByte W) : Prop := ∃ b, fb = inr b.
+  Definition is_plain (fb : positive + AbstractByte) : Prop := ∃ b, fb = inr b.
 
   (** The final bytes of fancy bytes, given the final byte [rv c] of every byte-cell [c]. *)
-  Definition fin_bytes (rv : positive → AbstractByte W) fbs : list (AbstractByte W) :=
+  Definition fin_bytes (rv : positive → AbstractByte) fbs : list (AbstractByte) :=
     (λ fb, match fb with inl c => rv c | inr b => b end) <$> fbs.
 
   (** The position [i] is in one of the fields [fs]. *)
@@ -142,7 +141,7 @@ Section frepr.
     - right. intros Hx. apply H. by apply Exists_exists.
   Defined.
 
-  Inductive frepr R : mty → list (positive + AbstractByte W) → FValue → Prop :=
+  Inductive frepr R : mty → list (positive + AbstractByte) → FValue → Prop :=
   | frepr_cell m g cs : R !! g = Some (m, cs) → frepr R m (inl <$> cs) (FVCell g)
   | frepr_plain m bs v : decode_value m bs = Some v → frepr R m (inr <$> bs) (fv_lift v)
   | frepr_tuple fs sz fbs fvs :
@@ -224,7 +223,7 @@ Section frepr.
       groups (e.g. "at rest") that holds of the groups embedded in a group with [ok]; the
       contents of the groups with [ok] represent their fancy values. Groups only embed older
       groups, so the nesting is well-founded. *)
-  Theorem registry_decode R (ρ : gmap positive FValue) (rv : positive → AbstractByte W)
+  Theorem registry_decode R (ρ : gmap positive FValue) (rv : positive → AbstractByte)
       (ok : positive → Prop) :
     (∀ g fv, ρ !! g = Some fv → ok g → ∃ m cs fbs, R !! g = Some (m, cs) ∧ frepr R m fbs fv ∧
        rv <$> cs = fin_bytes rv fbs ∧
@@ -367,8 +366,7 @@ Proof.
 Qed.
 
 Section frepr_ops.
-  Context {W : Type}.
-  Implicit Types (fbs : list (positive + AbstractByte W)) (bs : list (AbstractByte W)).
+  Implicit Types (fbs : list (positive + AbstractByte)) (bs : list (AbstractByte)).
   Implicit Types (R : gmap positive (mty * list positive)).
 
   (** The registry gives each group as many cells as its type has bytes. *)
@@ -570,7 +568,7 @@ Section frepr_ops.
       have Hwffm := Forall_lookup_1 _ _ _ _ Hwfs Hk. simpl in Hwffm.
       have Hb := fv_upd_bound _ _ _ _ _ _ Hupd Hwffm.
       have Hin_k := Forall_lookup_1 _ _ _ _ Hin Hk. simpl in Hin_k.
-      have HlenX : length (inr <$> bs : list (positive + AbstractByte W)) = mty_size m'.
+      have HlenX : length (inr <$> bs : list (positive + AbstractByte)) = mty_size m'.
       { by rewrite length_fmap (decode_value_length _ _ _ Hdec). }
       apply frepr_tuple.
       + by rewrite length_inserts.
@@ -590,7 +588,7 @@ Section frepr_ops.
       destruct (frepr_enum_inv _ _ _ _ _ _ _ Hrep) as (Hlen & (bst & Htk & Ht) & Ht0 & vm' & Hvm' & Hpad).
       rewrite Hvm in Hvm'. simplify_eq.
       have Hb := fv_upd_bound _ _ _ _ _ _ Hupd Hwfvm.
-      have HlenX : length (inr <$> bs : list (positive + AbstractByte W)) = mty_size m'.
+      have HlenX : length (inr <$> bs : list (positive + AbstractByte)) = mty_size m'.
       { by rewrite length_fmap (decode_value_length _ _ _ Hdec). }
       eapply (frepr_enum R vars tag _ _ t vm' d' bst); try done.
       + by rewrite length_inserts.
@@ -685,8 +683,7 @@ Proof.
 Qed.
 
 Section frepr_more.
-  Context {W : Type}.
-  Implicit Types (fbs : list (positive + AbstractByte W)) (bs : list (AbstractByte W)).
+  Implicit Types (fbs : list (positive + AbstractByte)) (bs : list (AbstractByte)).
   Implicit Types (R : gmap positive (mty * list positive)).
 
   (** A plain sub-value is represented by plain bytes; a cell, by its byte-cells. *)
@@ -746,7 +743,7 @@ Section frepr_more.
   positions, and plain bytes elsewhere), and their plain bytes are those of [bs'], which
   decode to the erasure of [fv]. Then [fbs'] represent [fv] too, and the bytes of [bs'] at
   the position of every embedded group decode to the erasure of that group. *)
-  Definition fb_same_shape (fb fb' : positive + AbstractByte W) : Prop :=
+  Definition fb_same_shape (fb fb' : positive + AbstractByte) : Prop :=
     match fb, fb' with inl c, inl c' => c = c' | inr _, inr _ => True | _, _ => False end.
 
   Lemma same_shape_inl cs fbs' : Forall2 fb_same_shape (inl <$> cs) fbs' → fbs' = inl <$> cs.

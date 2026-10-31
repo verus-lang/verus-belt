@@ -98,13 +98,13 @@ Section tests.
     have Hwf : val_wf pair_mty (VTuple [VInt 7; VPtr l']).
     { repeat constructor. apply (bool_decide_unpack _); by vm_compute. }
     have Hdec := decode_encode_value _ _ pair_mty_wf Hwf.
-    have Hlen := length_encode_value (W:=val) pair_mty (VTuple [VInt 7; VPtr l']).
+    have Hlen := length_encode_value pair_mty (VTuple [VInt 7; VPtr l']).
     remember (encode_value pair_mty (VTuple [VInt 7; VPtr l'])) as enc eqn:Henc.
     wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl1"); [done..|].
     iIntros "!> Hl1". rewrite -Henc. wp_seq.
     wp_bind (MemCopy _ _ _ _). iApply (wp_memcopy with "[$Hl2 $Hl1]"); [done|simpl in *; lia..|].
     iIntros "!> [Hl2 Hl1]". wp_seq.
-    iApply (wp_load_na with "Hl2"); [by rewrite Henc|].
+    iApply (wp_load_na with "Hl2"); [done|].
     iIntros "!> Hl2". iApply "HΦ". iFrame.
   Qed.
 End tests.

@@ -110,7 +110,7 @@ Definition to_val (e : expr) : option val :=
   end.
 
 (** The state: heaps of abstract bytes*lockstate. *)
-Notation abyte := (AbstractByte val).
+Notation abyte := AbstractByte.
 
 Inductive lock_state :=
 | WSt | RSt (n : nat).
