@@ -91,12 +91,12 @@ Proof.
   apply (list_max_lookup _ (fin_to_nat i)). rewrite list_lookup_fmap llookup_lookup. done.
 Qed.
 
-Lemma syn_val_pinj {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) pad :
-  syn_val (𝔄:=Σ! 𝔄l) (pinj i y, pad) = VVariant (Z.of_nat (fin_to_nat i)) <$> syn_val y.
+Lemma syn_val_pinj {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) :
+  syn_val (𝔄:=Σ! 𝔄l) (pinj i y) = VVariant (Z.of_nat (fin_to_nat i)) <$> syn_val y.
 Proof. by rewrite /= psum_map1_pinj to_xsum_pinj. Qed.
 
-Lemma syn_bytes_sum {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) pad bs :
-  syn_bytes (𝔄:=Σ! 𝔄l) (pinj i y, pad) bs ↔
+Lemma syn_bytes_sum {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) bs :
+  syn_bytes (𝔄:=Σ! 𝔄l) (pinj i y) bs ↔
   ∃ bt bp bq, bs = bt ++ bp ++ bq ∧
     decode_value (MInt (sum_tag 𝔄l)) bt = Some (VInt (Z.of_nat (fin_to_nat i))) ∧
     syn_bytes y bp ∧ length bq = (sum_max 𝔄l - syn_bsize (𝔄l !!ₗ i))%nat.
@@ -288,10 +288,9 @@ Proof.
         [|done].
       simpl. intros [= <-]. by rewrite (FIX _ _ _ Hw) (IH xl ws Hws). }
     clear FIX. by rewrite (Hall vs Hvs).
-  - destruct x as [x pad].
-    assert (∀ (i: fin (length l)) (x0 : ~~ (l !!ₗ i)) w,
+  - assert (∀ (i: fin (length l)) (x0 : ~~ (l !!ₗ i)) w,
       syn_val x0 = Some w → syn_fval x0 = Some (fv_lift w)) as Hall.
-    { clear x pad. induction l as [|𝔄0 l IH]; intros i; [inv_fin i|].
+    { clear x. induction l as [|𝔄0 l IH]; intros i; [inv_fin i|].
       inv_fin i; [intros x0 w; by apply (FIX _ x0)|by apply IH]. }
     clear FIX.
     replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
@@ -299,8 +298,8 @@ Proof.
     intros (w & Hw & ->)%fmap_Some_1. by rewrite (Hall i x0 w Hw).
 Qed.
 
-Lemma syn_fval_pinj {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) pad :
-  syn_fval (𝔄:=Σ! 𝔄l) (pinj i y, pad) = FVVariant (Z.of_nat (fin_to_nat i)) <$> syn_fval y.
+Lemma syn_fval_pinj {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) :
+  syn_fval (𝔄:=Σ! 𝔄l) (pinj i y) = FVVariant (Z.of_nat (fin_to_nat i)) <$> syn_fval y.
 Proof. by rewrite /= psum_map1_pinj to_xsum_pinj. Qed.
 
 (** ** Fancy bytes of syntactic types ([syn_fbytes], [typing/type.v]) *)
@@ -368,8 +367,8 @@ Proof.
 Qed.
 
 (** *** Sums: the tag and the padding are plain bytes. *)
-Lemma syn_fbytes_sum {𝔄l} R (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) pad fbs :
-  syn_fbytes (𝔄:=Σ! 𝔄l) R (pinj i y, pad) fbs ↔
+Lemma syn_fbytes_sum {𝔄l} R (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) fbs :
+  syn_fbytes (𝔄:=Σ! 𝔄l) R (pinj i y) fbs ↔
   ∃ bt fp bq, fbs = (inr <$> bt) ++ fp ++ (inr <$> bq) ∧
     decode_value (MInt (sum_tag 𝔄l)) bt = Some (VInt (Z.of_nat (fin_to_nat i))) ∧
     syn_fbytes R y fp ∧ length bq = (sum_max 𝔄l - syn_bsize (𝔄l !!ₗ i))%nat.
