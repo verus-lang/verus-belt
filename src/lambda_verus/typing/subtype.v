@@ -12,8 +12,8 @@ Set Default Proof Using "Type".
     [n] uninitialized bytes, [v ◁ᵥ own_bytes n (↯ n)] (a pointer value); it is then
     initialized with a typed [Store] ([type_store_own_bytes_instr] of
     [typing/value_ctx.v], or the place rules).
-  - Subtyping: [btype_incl ty ty' f] is [type_incl ty ty' f] (which relates the ownership,
-    sharing and legacy words) together with the equality of the byte sizes and the
+  - Subtyping: [btype_incl ty ty' f] is [type_incl ty ty' f] (which relates the ownership
+    and sharing) together with the equality of the byte sizes and the
     equivalence of the (fancy) byte representations ([ty_fbytes]): the parents own bytes,
     so a box, a unique borrow or a shared reference can be retyped only if the bytes of its
     referent represent the value at the new type too. For [f = idₛ] this is always the
@@ -107,11 +107,11 @@ Section bsubtype.
   Lemma own_bytes_btype_incl {𝔄 𝔅} n (f: 𝔄 →ₛ 𝔅) ty ty' :
     btype_incl ty ty' f -∗ btype_incl (own_bytes n ty) (own_bytes n ty') (at_loc_mapₛ f).
   Proof.
-    iIntros "((%Eq & #Incl & #InOwn & #InOwnPers & %Phys & #InShr) & %Hsz & %Hb)".
+    iIntros "((#Incl & #InOwn & #InOwnPers & #InShr) & %Hsz & %Hb)".
     iSplit; last first.
     { iPureIntro. split; [by rewrite !ty_bsize_eq|]. intros [l x] R fbs.
       rewrite !ty_fbytes_syn !syn_fbytes_nocell; [|exact I..]. by setoid_rewrite syn_bytes_at_loc. }
-    iSplit; [done|]. iSplit; [done|].
+    iSplit; [done|].
     iSplit.
     { iIntros "!>" ([l x0] [|d] g tid) "Hown //=".
       iDestruct "Hown" as "(Hown & Hfree & Hgho)".
@@ -121,7 +121,6 @@ Section bsubtype.
       iFrame. iNext. by iApply "Hwand". }
     iSplit.
     { iIntros "!>" ([l x0] [|d] g tid) "Hpers //=". by iApply "InOwnPers". }
-    iSplit; [iPureIntro; by move=> [l x0] tid|].
     iIntros "!>" (κ [l x0] d g tid) "Shr".
     iNext. destruct d as [|d]; [done|]. simpl. iDestruct "Shr" as "[Pt Shr]".
     rewrite (bytes_own_btype_incl ty ty' f) //. iFrame "Pt". by iApply "InShr".
@@ -139,12 +138,11 @@ Section bsubtype.
   Lemma shr_bytes_btype_incl {𝔄 𝔅} κ κ' (f: 𝔄 →ₛ 𝔅) ty ty' :
     κ' ⊑ κ -∗ btype_incl ty ty' f -∗ btype_incl (&shr{κ} ty) (&shr{κ'} ty') (at_loc_mapₛ f).
   Proof.
-    iIntros "#Incl ((_ & #Incl2 & #Sub & #SubPers & %Phys & #SubShr) & %Hsz & %Hb)".
+    iIntros "#Incl ((#Incl2 & #Sub & #SubPers & #SubShr) & %Hsz & %Hb)".
     iSplit; last first.
     { iPureIntro. split; [by rewrite !ty_bsize_eq|]. intros [l x] R fbs.
       rewrite !ty_fbytes_syn !syn_fbytes_nocell; [|exact I..]. by setoid_rewrite syn_bytes_at_loc. }
     iApply (@type_incl_simple_type Σ _ (at_locₛ 𝔄) (at_locₛ 𝔅) _ _).
-    - done.
     - unfold ty_lfts, ty_of_st, st_lfts. by iApply lft_intersect_mono.
     - iModIntro. iIntros (x d g tid) "A". destruct x as [l x].
       destruct d as [|d]; [done|].
@@ -155,7 +153,6 @@ Section bsubtype.
       iSplit.
       { iApply (ty_shr_lft_mono0 with "Incl"). iApply "SubShr". iFrame "Hshr". }
       iNext. iApply "SubPers". iFrame "Hpers".
-    - simpl. iPureIntro. intros [l x]. done.
   Qed.
 
   Lemma shr_bytes_bsubtype {𝔄 𝔅} E L κ κ' (f: 𝔄 →ₛ 𝔅) ty ty' :
@@ -176,17 +173,16 @@ Section bsubtype.
     move=> In.
     intros Eqt. rewrite <-eqtype_id_unfold in Eqt. iIntros "L".
     iDestruct (Eqt with "L") as "#Eqt". iDestruct (In with "L") as "#In". iIntros "!> #E".
-    iDestruct ("Eqt" with "E") as (?) "[[Lfts1 Lfts2][#EqOwn [#EqPers [%EqPhys #EqShr]]]]".
+    iDestruct ("Eqt" with "E") as "[[Lfts1 Lfts2][#EqOwn [#EqPers #EqShr]]]".
     iSpecialize ("In" with "E").
-    iSplit; [done|]. iSplit; [by iApply lft_intersect_mono|].
+    iSplit; [by iApply lft_intersect_mono|].
     iSplit. {
       iModIntro. iIntros (x d g tid) "[#Incl gho]".
       destruct x as [[[[[l x0] ξi] d'] g'] idx].
       iDestruct "gho" as "[#Hineq UniqBody]".
       iDestruct (uniq_body_pers_component_impl with "UniqBody") as "#Saved".
-      iDestruct (incl_uniq_body ty ty' x0 ξi d' g' with "In [] EqOwn [] UniqBody") as "UniqBody".
+      iDestruct (incl_uniq_body ty ty' x0 ξi d' g' with "In [] EqOwn UniqBody") as "UniqBody".
       { iFrame "Lfts1 Lfts2". }
-      { done. }
       iDestruct (guards_transitive with "In Incl") as "Incl'".
       iDestruct (guards_transitive with "Incl' Lfts1") as "Incl''".
       iFrame "UniqBody Incl'' Hineq".
@@ -201,11 +197,9 @@ Section bsubtype.
       destruct x as [[[[[l x0] ξi] d'] g'] idx].
       iDestruct "Pers" as "[A C]".
       iSplitR; [iFrame "A"|].
-      iApply (incl_uniq_body_pers_component with "In [] EqOwn [] C").
-      { iFrame "Lfts1 Lfts2". }
-      done.
+      iApply (incl_uniq_body_pers_component with "In [] EqOwn C").
+      iFrame "Lfts1 Lfts2".
     }
-    iSplit; [done|].
     iIntros "!>" (κ0 x d g tid) "Shr". destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
     iDestruct "Shr" as "($ & Pt & Tok & Shr & #Pers)".
     iAssert (κ0 ⊓ κ' ⊑ κ0 ⊓ κ)%I as "#Incl'".
@@ -235,7 +229,7 @@ Section bsubtype.
     intros Sub Hval. split; [by intros ??? [??]|].
     iIntros (??[x wπl]???) "#LFT _ _ E #L G /=[(%v & %Hp & %w & %d & [-> %Hw] & ⧖ & Gho) T] Obs".
     leaf_open "L" with "G" as "[L1 back]". { set_solver. }
-    iDestruct (Sub with "L1 E") as "#((_ & _ & #InOwn & _) & _)".
+    iDestruct (Sub with "L1 E") as "#((_ & #InOwn & _) & _)".
     iMod ("back" with "L1") as "G".
     iModIntro. iExists (f ~~$ₛ x -:: wπl). iFrame "G T".
     iSplitR "Obs".

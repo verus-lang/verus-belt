@@ -193,8 +193,6 @@ Section Ra.
     by f_equal.
   Qed.
   Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
 
   (* Definition ra_ty  : type (at_locₛ (positiveₛ* 𝔄)) := own_ptr 0 (ra_inner). *)
 

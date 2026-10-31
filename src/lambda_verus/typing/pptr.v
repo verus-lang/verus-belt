@@ -26,10 +26,6 @@ Section ptr.
   |}%I.
   Next Obligation. move=> *. trivial. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. intros. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
 
   Global Instance ptr_copy: Copy ptr_ty.
   Proof.

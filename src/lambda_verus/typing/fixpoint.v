@@ -58,44 +58,36 @@ Section S.
       + intros. apply dist_later_0.
       + intros. apply dist_later_0.
       + apply HT=>//.
-        * apply type_contractive_ty_size.
         * apply (Tn_ty_lft_const (S i) 1).
         * apply (Tn_ty_E_const i 0).
         * intros. apply dist_later_0.
         * intros. apply dist_later_0.
-        * intros. do 2 (rewrite <- ty_phys_eq2). trivial.
         * intros. apply dist_later_0.
     - case i as [|]; [lia|]. case (IH i) as [Own [Pers Shr]]; [lia|].
       have EqOwn: ∀x d g tid,
         (Tn (3 + i)).(ty_gho_own) x d g tid ≡{n}≡ (Tn (3 + n)).(ty_gho_own) x d g tid.
       { intros =>/=. apply HT.
-        * apply type_contractive_ty_size.
         * apply (Tn_ty_lft_const (2 + i) (2 + n)).
         * apply (Tn_ty_E_const (S i) (S n)).
         * apply Own.
         * apply Pers.
-        * intros. do 2 (rewrite <- ty_phys_eq2). trivial.
         * apply Shr. }
       have EqPers: ∀x d g tid,
         (Tn (3 + i)).(ty_gho_pers) x d g tid ≡{n}≡ (Tn (3 + n)).(ty_gho_pers) x d g tid.
       { intros =>/=. apply HT.
-        * apply type_contractive_ty_size.
         * apply (Tn_ty_lft_const (2 + i) (2 + n)).
         * apply (Tn_ty_E_const (S i) (S n)).
         * apply Own.
         * apply Pers.
-        * intros. do 2 (rewrite <- ty_phys_eq2). trivial.
         * apply Shr. }
       split; [|split].
       + intros. by apply dist_later_S.
       + intros. by apply dist_later_S.
       + intros. apply HT.
-        * apply type_contractive_ty_size.
         * apply (Tn_ty_lft_const (2 + i) (2 + n)).
         * apply (Tn_ty_E_const (S i) (S n)).
         * apply Own.
         * apply Pers.
-        * intros. do 2 (rewrite <- ty_phys_eq2). trivial.
         * intros. apply dist_later_S, Shr.
   Qed.
 
@@ -114,19 +106,12 @@ Section S.
   Qed.
 
   Program Definition Tn' n : type 𝔄 := {|
-    ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
+    ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
     ty_gho_own := (Tn n).(ty_gho_own);  ty_gho_res := (Tn n).(ty_gho_res);  ty_gho_pers := (Tn n).(ty_gho_pers);
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-    ty_phys := (Tn 0).(ty_phys);
     ty_shr := (Tn n).(ty_shr);
   |}.
-  Next Obligation.
-    move=> *. rewrite ty_size_eq /Tn. (*iIntros "->!%/=". apply type_contractive_ty_size.*)
-    trivial.
-  Qed.
-  Next Obligation. intros. apply ty_size_eq2. Qed.
-  Next Obligation. intros. apply ty_phys_eq2. Qed.
   Next Obligation. move=> >. apply ty_gho_own_depth_mono. Qed.
   Next Obligation. move=> >. apply ty_gho_pers_depth_mono. Qed.
   Next Obligation. move=> >. apply ty_gho_pers_impl. Qed.
@@ -143,16 +128,12 @@ Section S.
   Next Obligation. move=> >. apply ty_gho_res_of_own. Qed.
 
   Program Definition fix_ty: type 𝔄 := {|
-    ty_size := (Tn 0).(ty_size);  ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
+    ty_lfts := (Tn 0).(ty_lfts);  ty_E := (Tn 1).(ty_E);
     ty_gho_own := (compl gho_chain).1.1;  ty_gho_res := (compl gho_chain).1.1;  ty_gho_pers := (compl gho_chain).1.2;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-    ty_phys := (Tn 0).(ty_phys);
     ty_shr := (compl gho_chain).2;
   |}.
-  Next Obligation. intros. apply ty_size_eq. Qed.
-  Next Obligation. intros. apply ty_size_eq2. Qed.
-  Next Obligation. intros. apply ty_phys_eq2. Qed.
   Next Obligation.
     move=> *. apply @limit_preserving; [|move=> ?; by apply ty_gho_own_depth_mono].
     apply limit_preserving_entails=> ??? Eq. { done. } f_equiv. { apply Eq. }
@@ -212,44 +193,41 @@ Section fix_ty.
   Proof.
     have EqOwn: ∀n vπ d tid vl, (T $ Tn T (3 + n)).(ty_gho_own) vπ d tid vl ≡
       (T $ Tn' T (3 + n)).(ty_gho_own) vπ d tid vl.
-    { move=> n *. apply equiv_dist=> ?. apply HT=>//; [apply HT|
-        apply (Tn_ty_lft_const T (3 + n) 0)|apply (Tn_ty_E_const T (2 + n) 0)|].
-      intros. by do 2 (rewrite <- ty_phys_eq2).
+    { move=> n *. apply equiv_dist=> ?. apply HT=>//;
+        [apply (Tn_ty_lft_const T (3 + n) 0)|apply (Tn_ty_E_const T (2 + n) 0)].
     }
     have EqShr: ∀n vπ d tid l, (T $ Tn T (3 + n)).(ty_gho_pers) vπ d tid l ≡
       (T $ Tn' T (3 + n)).(ty_gho_pers) vπ d tid l.
-    { move=> n *. apply equiv_dist=> n'. apply HT=>//; [apply HT|
-        apply (Tn_ty_lft_const T (3 + n) 0)|apply (Tn_ty_E_const T (2 + n) 0)|].
-      intros. by do 2 (rewrite <- ty_phys_eq2).
+    { move=> n *. apply equiv_dist=> n'. apply HT=>//;
+        [apply (Tn_ty_lft_const T (3 + n) 0)|apply (Tn_ty_E_const T (2 + n) 0)].
     }
     have EqShr2: ∀n κ vπ d tid l, (T $ Tn T (3 + n)).(ty_shr) κ vπ d tid l ≡
       (T $ Tn' T (3 + n)).(ty_shr) κ vπ d tid l.
-    { move=> n *. apply equiv_dist=> n'. apply HT=>//; [apply HT|
-        apply (Tn_ty_lft_const T (3 + n) 0)|apply (Tn_ty_E_const T (2 + n) 0)|].
-      intros. by do 2 (rewrite <- ty_phys_eq2).
+    { move=> n *. apply equiv_dist=> n'. apply HT=>//;
+        [apply (Tn_ty_lft_const T (3 + n) 0)|apply (Tn_ty_E_const T (2 + n) 0)].
     }
     have EqOwn': ∀vπ d tid vl, (fix_ty T).(ty_gho_own) vπ d tid vl ≡
       (T (fix_ty T)).(ty_gho_own) vπ d tid vl.
     { move=> *. apply equiv_dist=> n. etrans; [apply dist_S, conv_compl|].
       rewrite/= (EqOwn n). symmetry.
-      case (fix_ty_Tn'_dist T n)=> [_ _ _ EqO EqP _ EqS].
+      case (fix_ty_Tn'_dist T n)=> [_ _ EqO EqP EqS].
       apply HT=>// *; [apply lft_equiv_refl|apply dist_dist_later, EqO
         |apply dist_dist_later, EqP]. }
     have EqShr': ∀vπ d tid l, (fix_ty T).(ty_gho_pers) vπ d tid l ≡
       (T (fix_ty T)).(ty_gho_pers) vπ d tid l.
     { move=> *. apply equiv_dist=> n. etrans; [apply dist_S, conv_compl|].
       rewrite/= (EqShr n). symmetry.
-      case (fix_ty_Tn'_dist T n)=> [_ _ _ EqO EqP _ EqS].
+      case (fix_ty_Tn'_dist T n)=> [_ _ EqO EqP EqS].
       apply HT=>// *; [apply lft_equiv_refl|apply dist_dist_later, EqO
         |apply dist_dist_later, EqP]. }
     have EqShr2': ∀κ vπ d tid l, (fix_ty T).(ty_shr) κ vπ d tid l ≡
       (T (fix_ty T)).(ty_shr) κ vπ d tid l.
     { move=> *. apply equiv_dist=> n. etrans; [apply dist_S, conv_compl|].
       rewrite/= (EqShr2 n). symmetry.
-      case (fix_ty_Tn'_dist T n)=> [_ _ _ EqO EqP _ EqS].
+      case (fix_ty_Tn'_dist T n)=> [_ _ EqO EqP EqS].
       apply HT=>// *; [apply lft_equiv_refl|apply dist_later_pred, dist_dist_later, EqO
         |apply dist_later_pred, dist_dist_later, EqP|apply dist_dist_later, EqS]. }
-    apply eqtype_id_unfold. iIntros "*_!>_". iSplit; [iPureIntro; by apply HT|].
+    apply eqtype_id_unfold. iIntros "*_!>_".
     iSplit.
     { case type_contractive_type_lft_morphism=> [α βs E' Hα HE'|α E' Hα HE'].
       + iApply lft_equiv_trans; [|iApply lft_equiv_sym; iApply Hα].
@@ -262,7 +240,6 @@ Section fix_ty.
     }
     iSplit. { iModIntro. iIntros. rewrite EqOwn'. by iApply bi.equiv_iff. }
     iSplit. { iModIntro. iIntros. rewrite EqShr'. by iApply bi.equiv_iff. }
-    iSplit. { iPureIntro. intros. do 2 (rewrite <- ty_phys_eq2). trivial. }
     { iModIntro. iIntros. rewrite EqShr2'. by iApply bi.equiv_iff. }
   Qed.
   Lemma fix_fold_unfold {𝔄} (T: type 𝔄 → type 𝔄) {HT: TypeContractive T} E L :
@@ -286,8 +263,7 @@ Section fix_ty.
       etrans; [apply conv_compl|]. etrans; [|symmetry; apply conv_compl].
       split; [split|]; repeat move=> ? /=; apply Eq''. }
     move: Eq'=> [[EqO EqP] EqS].
-    split=>/=; [apply Eq|apply Eq|by rewrite /Tn /= (Eq base) Eq|apply EqO|apply EqP
-      |apply Eq|apply EqS].
+    split=>/=; [apply Eq|by rewrite /Tn /= (Eq base) Eq|apply EqO|apply EqP|apply EqS].
   Qed.
 
   Lemma fix_type_ne {𝔄 𝔅} (T : type 𝔄 → type 𝔅 → type 𝔅)
@@ -306,12 +282,10 @@ Section fix_ty.
       + eapply (type_lft_morphism_const _ α E), HE=> ?.
         iApply lft_equiv_trans; [|iApply Hα]. iApply lft_equiv_sym.
         iApply (Tn_ty_lft_const _ 1 0).
-    - apply HT, _.
     - move=> *. etrans; [apply conv_compl|].
       etrans; [|symmetry; apply conv_compl]. by apply Hne.
     - move=> *. etrans; [apply conv_compl|].
       etrans; [|symmetry; apply conv_compl]. by apply Hne.
-    - intros. do 2 (rewrite <- ty_phys_eq2). trivial.
     - move=> *. etrans; [apply conv_compl|].
       etrans; [|symmetry; apply conv_compl]. by apply Hne.
   Qed.
@@ -332,12 +306,10 @@ Section fix_ty.
       + eapply (type_lft_morphism_const _ α E), HE=> ?.
         iApply lft_equiv_trans; [|iApply Hα]. iApply lft_equiv_sym.
         iApply (Tn_ty_lft_const _ 1 0).
-    - apply HT, _.
     - move=> *. etrans; [apply conv_compl|].
       etrans; [|symmetry; apply conv_compl]. by apply Hne.
     - move=> *. etrans; [apply conv_compl|].
       etrans; [|symmetry; apply conv_compl]. by apply Hne.
-    - intros. do 2 (rewrite <- ty_phys_eq2). trivial.
     - move=> *. etrans; [apply conv_compl|].
       etrans; [|symmetry; apply conv_compl]. by apply Hne.
   Qed.
@@ -353,13 +325,6 @@ Section fix_ty.
     split; rewrite /fix_ty /=.
     - move=> >. eapply @limit_preserving; [|apply _].
       apply limit_preserving_Persistent=> ??? Eq. apply Eq.
-    - move=> >. 
-      eapply @limit_preserving.
-      + apply limit_preserving_entails=> ??? Eq.
-        * apply Eq.
-        * done.
-      + intros. iIntros "G". iDestruct (copy_concrete with "G") as "%Hconc".
-        iPureIntro. rewrite <- ty_phys_eq2 in Hconc. rewrite <- ty_phys_eq2. done.
     - move=> >. eapply @limit_preserving; [|intros; apply copy_shr].
       apply limit_preserving_entails=> ??? Eq.
       + apply Eq.
@@ -370,7 +335,6 @@ Section fix_ty.
     (∀`(!Send ty), Send (T ty)) → Send (fix_ty T).
   Proof.
     move=> ?. have ?: ∀n, Send (Tn T n) by elim; apply _. split; rewrite /fix_ty=> > /=.
-    { do 2 (rewrite <- ty_phys_eq2). apply syn_abstract_phys_eq. }
     eapply @limit_preserving.
     + apply limit_preserving_forall. intro.
       apply limit_preserving_forall. intro.
@@ -386,15 +350,12 @@ Section fix_ty.
   Proof.
     move=> ?. have ?: ∀n, Sync (Tn T n) by elim; apply _. rewrite /fix_ty=> > /=.
     eapply @limit_preserving.
-      + apply limit_preserving_and; [|apply limit_preserving_and; [|apply limit_preserving_and]].
-        * do 2 (rewrite <- ty_phys_eq2). done.
+      + apply limit_preserving_and; [|apply limit_preserving_and].
         * apply limit_preserving_equiv=> ??? Eq; apply Eq.
         * apply limit_preserving_equiv=> ??? Eq; apply Eq.
         * apply limit_preserving_forall=> ?.
           apply limit_preserving_equiv=> ??? Eq; apply Eq.
-      + intros. split.
-        * do 2 (rewrite <- ty_phys_eq2). done.
-        * apply sync_change_tid.
+      + intros. apply sync_change_tid.
   Qed.
 
   (** The resolved ownership of [fix_ty] is its ownership (it is not computed as a limit;
@@ -425,12 +386,10 @@ Section fix_subtyping.
     (T : type 𝔄 → type 𝔄) `{!TypeContractive T}
     (T' : type 𝔅 → type 𝔅) `{!TypeContractive T'} E L :
     (∀ x, ξl x = ξl ((~~!ₛ) f x)) →
-    (size_of 𝔄 = size_of 𝔅) →
-    (∀ x, syn_phys x = syn_phys ((~~!ₛ) f x)) →
     (∀ty ty', subtype E L ty ty' f → subtype E L (T ty) (T' ty') f) →
     subtype E L (fix_ty T) (fix_ty T') f.
   Proof.
-    move=> Heq1 Heq2 Heq3 Loop.
+    move=> Heq1 Loop.
     have Incl: llctx_interp L ⊢ □ (elctx_interp E -∗
       ∀n, type_incl (Tn T n) (Tn T' n) f).
     { apply wand_entails.
@@ -443,16 +402,14 @@ Section fix_subtyping.
     rewrite Incl /type_incl -!persistent_and_sep /=. apply entails_wand. do 2 f_equiv.
     (* FIXME : change the definition of limit_preserving so that it
        applies even if the limti is not computed with compl. *)
-    apply and_intro; [|apply and_intro; [|apply and_intro; [|apply and_intro; [|apply and_intro]]]].
+    apply and_intro; [|apply and_intro; [|apply and_intro]].
     - iIntros "H". iDestruct ("H" $! 0%nat) as "($&_)".
-    - iIntros "H". iDestruct ("H" $! 0%nat) as "(_&$&_)".
+    - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
+      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&$&_)".
     - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
       apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&$&_)".
     - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
-      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&_&$&_)".
-    - iIntros. iPureIntro. intros. do 2 (rewrite <- ty_phys_eq2). done.
-    - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
-      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&_&_&_&$)".
+      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&_&$)".
   Qed.
 
   Lemma fix_eqtype_subtype {𝔄 𝔅} f g
@@ -461,12 +418,9 @@ Section fix_subtyping.
     (∀ty ty', eqtype E L ty ty' f g → eqtype E L (T ty) (T' ty') f g) →
     (∀ x, ξl x = ξl ((~~!ₛ) f x)) →
     (∀ x, ξl x = ξl ((~~!ₛ) g x)) →
-    (size_of 𝔄 = size_of 𝔅) →
-    (∀ x, syn_phys x = syn_phys ((~~!ₛ) f x)) →
-    (∀ x, syn_phys x = syn_phys ((~~!ₛ) g x)) →
     subtype E L (fix_ty T) (fix_ty T') f.
   Proof.
-    move=> Loop Eq1 Eq2 Eq3 Eq4 Eq5.
+    move=> Loop Eq1 Eq2.
     have Incl: llctx_interp L ⊢ □ (elctx_interp E -∗
       ∀n, type_incl (Tn T n) (Tn T' n) f).
     { apply wand_entails.
@@ -476,16 +430,14 @@ Section fix_subtyping.
       apply Loop. elim n=> [|??]; [apply base_eqtype|by apply Loop]; done. }
     unfold subtype.
     rewrite Incl /type_incl -!persistent_and_sep /=. apply entails_wand. do 2 f_equiv.
-    apply and_intro; [|apply and_intro; [|apply and_intro; [|apply and_intro; [|apply and_intro]]]].
+    apply and_intro; [|apply and_intro; [|apply and_intro]].
     - iIntros "H". iDestruct ("H" $! 0%nat) as "($&_)".
-    - iIntros "H". iDestruct ("H" $! 0%nat) as "(_&$&_)".
+    - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
+      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&$&_)".
     - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
       apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&$&_)".
     - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
-      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&_&$&_)".
-    - iIntros. iPureIntro. intros. do 2 (rewrite <- ty_phys_eq2). done.
-    - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
-      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&_&_&_&$)".
+      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&_&$)".
   Qed.
 
   Lemma fix_eqtype {𝔄 𝔅} f g
@@ -494,9 +446,6 @@ Section fix_subtyping.
     (∀ty ty', eqtype E L ty ty' f g → eqtype E L (T ty) (T' ty') f g) →
     (∀ x, ξl x = ξl ((~~!ₛ) f x)) →
     (∀ x, ξl x = ξl ((~~!ₛ) g x)) →
-    (size_of 𝔄 = size_of 𝔅) →
-    (∀ x, syn_phys x = syn_phys ((~~!ₛ) f x)) →
-    (∀ x, syn_phys x = syn_phys ((~~!ₛ) g x)) →
     eqtype E L (fix_ty T) (fix_ty T') f g.
   Proof.
     move=> Loop.

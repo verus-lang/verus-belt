@@ -58,7 +58,6 @@ Section local_invariants.
   *)
 
   Program Definition local_inv_ty {𝔄 ℭ} (ty: type 𝔄) (pred: abstracted_syn_type 𝔄 → ~~ℭ → Prop) : type (local_invₛ ℭ) := ({|
-    ty_size := 0;
     ty_lfts := [];
     ty_E := [];
     ty_gho_pers x d g tid := True%I ;
@@ -100,7 +99,6 @@ Section local_invariants.
     end;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-    ty_phys x tid := [];
     ty_shr := default_shr (λ (x: ~~(local_invₛ ℭ)) d g tid, match x with (N, (γ, γt, d1), c) =>
           cna_active γ
             ∗ (⌜d1 < d⌝ ∗ dg_tok γt d1)
@@ -111,10 +109,7 @@ Section local_invariants.
               £(d' - d1) ∗
               ty.(ty_gho_own) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
       end);
-  |})%I.
-  Next Obligation. done. Qed. 
-  Next Obligation. done. Qed. 
-  Next Obligation. done. Qed. 
+  |})%I.   
   Next Obligation.
     destruct x as [[N [[γ γt] d1]] c].
     iIntros (tid Hineq Hineq2) "[A [[%B B'] C]]". iFrame "A". iFrame "C". iFrame "B'".
@@ -127,7 +122,6 @@ Section local_invariants.
   Next Obligation. intros. iIntros "H". iExact "H". Qed.
   
   Program Definition local_closer_ty {𝔄 ℭ} (κ: lft) (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop) : type (local_invₛ ℭ) := ({|
-    ty_size := 0;
     ty_lfts := [];
     ty_E := [];
     ty_gho_pers x d g tid := True%I ;
@@ -151,7 +145,6 @@ Section local_invariants.
     end;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-    ty_phys x tid := [];
     ty_shr := default_shr (λ (x: ~~(local_invₛ ℭ)) d g tid, match x with (N, (γ, γt, d1), c) =>
           dg_tok γt d1 ∗
           cna_closer κ tid N (∃ x' d' g' d1 ,
@@ -161,10 +154,7 @@ Section local_invariants.
               £(d' - d1) ∗
               ty.(ty_gho_own) x' d' g' tid ∗ ⌜pred (syn_abstract x') c⌝)
       end);
-  |})%I.
-  Next Obligation. done. Qed. 
-  Next Obligation. done. Qed. 
-  Next Obligation. done. Qed. 
+  |})%I.   
   Next Obligation. iIntros. iFrame. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.

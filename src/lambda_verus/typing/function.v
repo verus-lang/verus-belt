@@ -104,10 +104,6 @@ Section fn.
   Next Obligation. rewrite /tc_opaque. apply _. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
 End fn.
 
 Notation "fn< p > ( E ; ity , .. , ity' ) → oty" :=
@@ -130,10 +126,8 @@ Section typing.
   Global Instance fn_send {A 𝔄l 𝔅 ℭ} (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ) :
     Send (fn fp spec).
   Proof.
-    intros. split; trivial.
-     - intros. unfold syn_abstract in H. inversion H.
-       unfold ty_phys, fn, ty_of_st. simpl. rewrite H1. trivial.
-     - iIntros. iApply step_fupdN_intro; first done. iNext.
+    intros. split.
+     iIntros. iApply step_fupdN_intro; first done. iNext.
        iExists x, 0%nat. iModIntro. iFrame. simpl.
        replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
   Qed.

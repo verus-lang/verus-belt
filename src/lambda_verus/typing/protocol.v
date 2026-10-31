@@ -31,14 +31,12 @@ Section StorageProtocol.
   |}%I.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
 
   Local Lemma storable_ty_gho_change_tid {𝔄} (ty : type 𝔄) tid tid' x :
     Sync ty → (storable_ty ty).(gt_gho) x tid ⊣⊢ (storable_ty ty).(gt_gho) x tid'.
   Proof.
     intros Hsync. destruct x as [[x0 [d0 g0]] α].
-    destruct (Hsync tid tid' x0 d0 g0) as [_ [Hgho [Hpers Hshr]]]. simpl.
+    destruct (Hsync tid tid' x0 d0 g0) as [Hgho [Hpers Hshr]]. simpl.
     by rewrite Hgho Hpers Hshr.
   Qed.
 
@@ -55,7 +53,7 @@ Section StorageProtocol.
   Qed.
 
   Global Instance storable_ty_sync {𝔄} (ty : type 𝔄) : Sync ty → Sync (storable_ty ty).
-  Proof. intros Hsync. apply sync_default; [done|]. split; trivial.
+  Proof. intros Hsync. apply sync_default; [done|].
     split; last trivial. by apply storable_ty_gho_change_tid.
   Qed.
 
@@ -87,15 +85,13 @@ Section StorageProtocol.
         by f_equal.
       Qed.
       Next Obligation. done. Qed.
-      Next Obligation. done. Qed.
-      Next Obligation. done. Qed.
 
   Lemma storage_ty_sync : Send tyC → Sync tyC → Sync storage_resource_ty.
   Proof.
-    intros Hsend Hsync. apply sync_default; [done|]. split; first by done. split; last by done.
+    intros Hsend Hsync. apply sync_default; [done|]. split; last by done.
     simpl. unfold gt_gho. destruct x as [γ p].
     have Hg : ∀ c, tyC.(gt_gho) c tid ⊣⊢ tyC.(gt_gho) c tid'.
-    { intros c. destruct (Hsync tid tid' c 0 0) as [H1 [H2 [H3 _]]]. apply H2. }
+    { intros c. destruct (Hsync tid tid' c 0 0) as [H2 [H3 _]]. apply H2. }
     rewrite /sp_sto /sp_inv_body. by setoid_rewrite Hg.
   Qed.
 
