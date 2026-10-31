@@ -131,7 +131,7 @@ Section atomic_invariants.
   Lemma atomic_inv_ty_send {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → proph_asn → Prop)
       : Send ty → Send (atomic_inv_ty ty pred).
   Proof.
-    intros Hsend. split; [done|].
+    intros Hsend. split.
     intros.
     rewrite gho_equiv_of_send.
     iIntros. iApply step_fupdN_intro; first by solve_ndisj. iNext. iModIntro.

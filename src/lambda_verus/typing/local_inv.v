@@ -164,7 +164,7 @@ Section local_invariants.
   Lemma local_inv_ty_send {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop)
       : Send ty → Send (local_inv_ty ty pred).
   Proof.
-    intros Hsend. split; [done|]. intros tid tid' x d g G H κs d0 Hineq TG TH.
+    intros Hsend. split. intros tid tid' x d g G H κs d0 Hineq TG TH.
     destruct x as [[N [[γ γt] d1]] c].
     iIntros "LFT UNIQ #TIME #Hg H #Gg G [Active [[%Hineqs DgTok] #Inv]] ⧖o".
     iApply fupd_step_fupdN_front.
