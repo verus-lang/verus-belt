@@ -1921,4 +1921,13 @@ Proof.
   iModIntro. iFrame "HB". iApply ("Hwp" with "Hgd Hn").
 Qed.
 
+Lemma wp_greg_length E e g m cs Φ :
+  TCEq (to_val e) None →
+  greg g m cs -∗ (⌜length cs = mty_size m⌝ -∗ WP e @ E {{ Φ }}) -∗ WP e @ E {{ Φ }}.
+Proof.
+  iIntros (Hv) "Hg Hwp". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+  iDestruct (bytes_ctx_greg_length with "HB Hg") as %Hlen.
+  iModIntro. iFrame "HB". by iApply "Hwp".
+Qed.
+
 End lifting.

@@ -243,6 +243,14 @@ Section cells.
     apply big_sepL_proper. intros i fb' _. by rewrite shift_loc_S.
   Qed.
 
+  Lemma heap_mapsto_fbytes_app l fbs1 fbs2 :
+    heap_mapsto_fbytes l (fbs1 ++ fbs2) ⊣⊢
+    heap_mapsto_fbytes l fbs1 ∗ heap_mapsto_fbytes (l +ₗ length fbs1) fbs2.
+  Proof.
+    rewrite /heap_mapsto_fbytes big_sepL_app. f_equiv.
+    apply big_sepL_proper. intros i fb _. by rewrite shift_loc_assoc_nat.
+  Qed.
+
   (** Fresh group ids, larger than every registered one. *)
   Definition fresh_gid (R : gmap positive (mty * list positive)) : positive :=
     Pos.succ (foldr Pos.max 1%positive (elements (dom R))).
@@ -1987,6 +1995,15 @@ Section cells.
       rewrite fmap_delete lookup_delete_ne //.
   Qed.
 
+
+  (** A group has as many byte-cells as its type has bytes. *)
+  Lemma bytes_ctx_greg_length σB g m cs :
+    bytes_ctx σB -∗ greg g m cs -∗ ⌜length cs = mty_size m⌝.
+  Proof.
+    iIntros "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) #Hg".
+    iDestruct "Cells" as (R ρ NC NS CW) "(Hreg & _ & _ & _ & _ & [%Hcwf _] & _)".
+    iDestruct (greg_lookup with "Hreg Hg") as %HRg. iPureIntro. by eapply (proj1 Hcwf).
+  Qed.
 
   (** ** Nestings
 

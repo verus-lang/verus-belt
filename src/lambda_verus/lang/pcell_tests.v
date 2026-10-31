@@ -13,20 +13,19 @@ Section pcell_tests.
   (** Moving a [PCell] without cells by a typed copy: [Load m] then [Store m]. The bytes at
       the new location are [encode_value m v], which may differ from the old bytes. *)
   Lemma wp_pcell_move E l l' g m cs bs0 :
-    ↑naN ⊆ E → mty_wf m → (∀ (bs : list abyte) v, decode_value m bs = Some v → val_wf m v) →
-    length bs0 = mty_size m →
+    ↑naN ⊆ E → mty_wf m → length bs0 = mty_size m →
     {{{ loc_side l g m cs ∗ gnocell g ∗ ▷ l' ↦b bs0 }}}
       Store Na1Ord m (Lit $ LitLoc l') (Load Na1Ord m (Lit $ LitLoc l)) @ E
     {{{ bs, RET LitV LitPoison; l ↦b bs ∗ loc_side l' g m cs }}}.
   Proof.
-    iIntros (? Hm Hwf Hlen Φ) "(Hls & #Hnc & Hl') HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+    iIntros (? Hm Hlen Φ) "(Hls & #Hnc & Hl') HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
     iMod (bytes_ctx_pcell_untether with "HB Hls") as (bs v) "(HB & Hl & %Hd & Hu)"; [done|].
     iModIntro. iFrame "HB".
     wp_bind (Load _ _ _). iApply (wp_load_na with "Hl"); [done|]. iIntros "!> Hl".
-    iApply (wp_store_na_post with "Hl'"); [done|by eapply Hwf|done|].
+    iApply (wp_store_na_post with "Hl'"); [done|by eapply decode_value_wf|done|].
     iIntros "!> Hl'" (σB') "HB".
     iMod (bytes_ctx_pcell_retether with "HB Hu Hl' [$Hnc]") as "[HB Hls]"; [done| |].
-    { rewrite decode_encode_value; [by rewrite Hd|done|by eapply Hwf]. }
+    { rewrite decode_encode_value; [by rewrite Hd|done|by eapply decode_value_wf]. }
     iModIntro. iFrame "HB". iApply "HΦ". by iFrame.
   Qed.
 
@@ -48,7 +47,7 @@ Section pcell_tests.
     iIntros (? Hlen Φ) "Hl HΦ".
     wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done|apply int5_wf|done|].
     iIntros "!> Hl". wp_seq.
-    iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl"); [done|apply Nat.ltb_lt; reflexivity|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
+    iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl"); [done|apply Nat.ltb_lt; reflexivity|constructor|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
     iIntros (g cs) "Hls Hgd _".
     iApply (wp_pcell_load_na with "[$Hls $Hgd]"); [done|].
     iIntros "!>" (v) "(Hls & Hgd & %Hv)". have -> : v = VInt 5 by apply fv_lift_int, Hv.
@@ -69,7 +68,7 @@ Section pcell_tests.
     iIntros (? Hlen Hlen' Φ) "[Hl Hl'] HΦ".
     wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done|apply int5_wf|done|].
     iIntros "!> Hl". wp_seq.
-    iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl"); [done|apply Nat.ltb_lt; reflexivity|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
+    iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl"); [done|apply Nat.ltb_lt; reflexivity|constructor|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
     iIntros (g cs) "Hls Hgd #Hnc".
     wp_bind (Store _ _ _ _).
     iApply (wp_pcell_store_na with "[$Hls $Hgd $Hnc]"); [done|constructor|apply int7_wf|].
@@ -92,7 +91,7 @@ Section pcell_tests.
     iIntros (? Hlen Φ) "Hl HΦ".
     wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done|apply int5_wf|done|].
     iIntros "!> Hl". wp_seq.
-    iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl"); [done|apply Nat.ltb_lt; reflexivity|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
+    iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl"); [done|apply Nat.ltb_lt; reflexivity|constructor|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
     iIntros (g cs) "Hls Hgd #Hnc".
     wp_bind (Store _ _ _ _).
     iApply (wp_pcell_store_sc with "[$Hls $Hgd $Hnc]"); [done|constructor|apply int7_wf|].
@@ -114,8 +113,9 @@ Section pcell_tests.
     wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done|apply int5_wf|done|].
     iIntros "!> Hl". wp_seq.
     iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl");
-      [done|apply Nat.ltb_lt; reflexivity|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
-    iIntros (g cs) "Hls Hgd _".
+      [done|apply Nat.ltb_lt; reflexivity|constructor|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
+    iIntros (g cs) "Hls Hgd _". iDestruct "Hls" as "[#Hg Hedges]".
+    iAssert (loc_side l g (MInt i32) cs) with "[Hedges]" as "Hls"; [by iFrame "Hg"|].
     set P := (loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 5))%I.
     iAssert (P &&{↑naN; 0}&&> P)%I as "#Guard"; [iApply guards_refl|].
     iAssert (□ (P -∗ (loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 5)) ∗
@@ -123,9 +123,9 @@ Section pcell_tests.
     { iIntros "!> [Hls Hgd]". iFrame. iIntros "Hls Hgd". iFrame. }
     iMod lc_zero as "£".
     wp_bind (Load _ _ _).
-    iApply (wp_pcell_load_na_guarded with "[$Guard $HP $Hls $Hgd $£]"); [done|].
+    iApply (wp_pcell_load_na_guarded with "[$Guard $HP $Hls $Hgd $Hg $£]"); [done|done|].
     iIntros "!>" (v) "[[Hls Hgd] _]". wp_seq. iMod lc_zero as "£".
-    iApply (wp_pcell_load_sc_guarded with "[$Guard $HP $Hls $Hgd $£]"); [done|].
+    iApply (wp_pcell_load_sc_guarded with "[$Guard $HP $Hls $Hgd $Hg $£]"); [done|done|].
     iIntros "!>" (v') "[[Hls Hgd] %Hv]". have -> : v' = VInt 5 by apply fv_lift_int, Hv.
     iApply "HΦ". iExists g, cs. iFrame.
   Qed.
@@ -143,7 +143,7 @@ Section pcell_tests.
     wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done|apply int5_wf|done|].
     iIntros "!> Hl". wp_seq.
     iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl");
-      [done|apply Nat.ltb_lt; reflexivity|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
+      [done|apply Nat.ltb_lt; reflexivity|constructor|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
     iIntros (g cs) "Hls Hgd #Hnc".
     iDestruct "Hls" as "[#Hg Hedges]".
     iAssert (loc_side l g (MInt i32) cs) with "[Hedges]" as "Hls"; [by iFrame "Hg"|].
@@ -155,8 +155,8 @@ Section pcell_tests.
     iMod lc_zero as "£".
     wp_bind (Store _ _ _ _).
     iApply (wp_pcell_store_na_guarded _ l g (MInt i32) cs (FVInt 5) _ (VInt 7)
-      (loc_side l g (MInt i32) cs) (loc_side l g (MInt i32) cs) 0 with "[$Guard $HP $Hls $Hg $Hnc $Hgd $£]");
-      [done|constructor|apply int7_wf|].
+      (loc_side l g (MInt i32) cs) (loc_side l g (MInt i32) cs) 0 with "[$Guard $HP $Hls $Hg $Hgd $£]");
+      [done|done|constructor|apply int7_wf|].
     iIntros "!> [Hls Hgd]". wp_seq.
     set P2 := (loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 7))%I.
     iAssert (P2 &&{↑naN; 0}&&> P2)%I as "#Guard2"; [iApply guards_refl|].
@@ -164,7 +164,7 @@ Section pcell_tests.
       (loc_side l g (MInt i32) cs -∗ gdyn g (FVInt 7) -∗ P2)))%I as "#HP2".
     { iIntros "!> [Hls Hgd]". iFrame. iIntros "Hls Hgd". iFrame. }
     iMod lc_zero as "£".
-    iApply (wp_pcell_load_na_guarded with "[$Guard2 $HP2 $Hls $Hgd $£]"); [done|].
+    iApply (wp_pcell_load_na_guarded with "[$Guard2 $HP2 $Hls $Hgd $Hg $£]"); [done|done|].
     iIntros "!>" (v) "[[Hls Hgd] %Hv]". have -> : v = VInt 7 by apply fv_lift_int, Hv.
     iApply "HΦ". iExists g, cs. iFrame.
   Qed.
@@ -181,7 +181,7 @@ Section pcell_tests.
     wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done|apply int5_wf|done|].
     iIntros "!> Hl". wp_seq.
     iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl");
-      [done|apply Nat.ltb_lt; reflexivity|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
+      [done|apply Nat.ltb_lt; reflexivity|constructor|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
     iIntros (g cs) "Hls Hgd #Hnc".
     iDestruct "Hls" as "[#Hg Hedges]".
     iAssert (loc_side l g (MInt i32) cs) with "[Hedges]" as "Hls"; [by iFrame "Hg"|].
@@ -193,8 +193,8 @@ Section pcell_tests.
     iMod lc_zero as "£".
     wp_bind (Store _ _ _ _).
     iApply (wp_pcell_store_sc_guarded _ l g (MInt i32) cs (FVInt 5) _ (VInt 7)
-      (loc_side l g (MInt i32) cs) (loc_side l g (MInt i32) cs) 0 with "[$Guard $HP $Hls $Hg $Hnc $Hgd $£]");
-      [done|constructor|apply int7_wf|].
+      (loc_side l g (MInt i32) cs) (loc_side l g (MInt i32) cs) 0 with "[$Guard $HP $Hls $Hg $Hgd $£]");
+      [done|done|constructor|apply int7_wf|].
     iIntros "!> [Hls Hgd]". wp_seq.
     set P2 := (loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 7))%I.
     iAssert (P2 &&{↑naN; 0}&&> P2)%I as "#Guard2"; [iApply guards_refl|].
@@ -202,13 +202,10 @@ Section pcell_tests.
       (loc_side l g (MInt i32) cs -∗ gdyn g (FVInt 7) -∗ P2)))%I as "#HP2".
     { iIntros "!> [Hls Hgd]". iFrame. iIntros "Hls Hgd". iFrame. }
     iMod lc_zero as "£".
-    iApply (wp_pcell_load_sc_guarded with "[$Guard2 $HP2 $Hls $Hgd $£]"); [done|].
+    iApply (wp_pcell_load_sc_guarded with "[$Guard2 $HP2 $Hls $Hgd $Hg $£]"); [done|done|].
     iIntros "!>" (v) "[[Hls Hgd] %Hv]". have -> : v = VInt 7 by apply fv_lift_int, Hv.
     iApply "HΦ". iExists g, cs. iFrame.
   Qed.
-
-  Lemma decode_ptr_wf (bs : list abyte) v : decode_value MPtr bs = Some v → val_wf MPtr v.
-  Proof. simpl. destruct (decode_ptr bs); simpl; [|done]. intros [= <-]. constructor. Qed.
 
   (** Move a cell by a typed copy. *)
   Lemma test_pcell_typed_move E l l' lp bs bs' :
@@ -223,11 +220,11 @@ Section pcell_tests.
     wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done|constructor|done|].
     iIntros "!> Hl". wp_seq.
     iApply (wp_pcell_create_plain _ _ _ MPtr _ (VPtr lp) with "Hl");
-      [done|apply PTR_SIZE_pos|by apply (decode_encode_value MPtr (VPtr lp)); constructor|].
+      [done|apply PTR_SIZE_pos|constructor|by apply (decode_encode_value MPtr (VPtr lp)); constructor|].
     iIntros (g cs) "Hls Hgd #Hnc".
     wp_bind (Store _ _ _ _).
     iApply (wp_pcell_move _ l l' with "[$Hls $Hnc $Hl']");
-      [done|constructor|apply decode_ptr_wf|done|].
+      [done|constructor|done|].
     iIntros "!>" (bs1) "[Hl Hls]". wp_seq.
     iApply (wp_pcell_destroy_plain _ _ _ _ _ _ (VPtr lp) with "Hls Hgd"). iIntros (bs2) "Hl' %Hd".
     iApply (wp_load_na with "Hl'"); [done|]. iIntros "!> Hl'". iApply "HΦ". iFrame.
@@ -246,7 +243,7 @@ Section pcell_tests.
     iDestruct "Hls1" as "[#Hg1 Hedges]".
     (* The outer cell, whose content is the inner cell. *)
     iApply (wp_pcell_create _ _ l (MInt i32) (inl <$> cs1 : list (positive + abyte)) (FVCell g1)
-      with "[Hedges] [] [-]"); [done|apply Nat.ltb_lt; reflexivity|..].
+      with "[Hedges] [] [-]"); [done|apply Nat.ltb_lt; reflexivity|constructor|..].
     { rewrite /heap_mapsto_fbytes big_sepL_fmap. done. }
     { by iApply brepr_cell. }
     iIntros (g0 cs0) "Hls0 Hgd0 _".
