@@ -385,11 +385,11 @@ Section fix_subtyping.
   Lemma fix_subtype {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅)
     (T : type 𝔄 → type 𝔄) `{!TypeContractive T}
     (T' : type 𝔅 → type 𝔅) `{!TypeContractive T'} E L :
-    (∀ x, ξl x = ξl ((~~!ₛ) f x)) →
+    syn_bincl f → (∀ x, ξl x = ξl ((~~!ₛ) f x)) →
     (∀ty ty', subtype E L ty ty' f → subtype E L (T ty) (T' ty') f) →
     subtype E L (fix_ty T) (fix_ty T') f.
   Proof.
-    move=> Heq1 Loop.
+    move=> Hb Heq1 Loop.
     have Incl: llctx_interp L ⊢ □ (elctx_interp E -∗
       ∀n, type_incl (Tn T n) (Tn T' n) f).
     { apply wand_entails.
@@ -402,25 +402,27 @@ Section fix_subtyping.
     rewrite Incl /type_incl -!persistent_and_sep /=. apply entails_wand. do 2 f_equiv.
     (* FIXME : change the definition of limit_preserving so that it
        applies even if the limti is not computed with compl. *)
+    apply and_intro; [iIntros "_"; by iPureIntro|].
     apply and_intro; [|apply and_intro; [|apply and_intro]].
-    - iIntros "H". iDestruct ("H" $! 0%nat) as "($&_)".
-    - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
-      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&$&_)".
+    - iIntros "H". iDestruct ("H" $! 0%nat) as "(_&$&_)".
     - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
       apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&$&_)".
     - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
-      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&_&$)".
+      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&_&$&_)".
+    - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
+      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&_&_&$)".
   Qed.
 
   Lemma fix_eqtype_subtype {𝔄 𝔅} f g
     (T : type 𝔄 → type 𝔄) `{!TypeContractive T}
     (T' : type 𝔅 → type 𝔅) `{!TypeContractive T'} E L :
     (∀ty ty', eqtype E L ty ty' f g → eqtype E L (T ty) (T' ty') f g) →
+    syn_bincl f → syn_bincl g →
     (∀ x, ξl x = ξl ((~~!ₛ) f x)) →
     (∀ x, ξl x = ξl ((~~!ₛ) g x)) →
     subtype E L (fix_ty T) (fix_ty T') f.
   Proof.
-    move=> Loop Eq1 Eq2.
+    move=> Loop Hb Hb' Eq1 Eq2.
     have Incl: llctx_interp L ⊢ □ (elctx_interp E -∗
       ∀n, type_incl (Tn T n) (Tn T' n) f).
     { apply wand_entails.
@@ -430,20 +432,22 @@ Section fix_subtyping.
       apply Loop. elim n=> [|??]; [apply base_eqtype|by apply Loop]; done. }
     unfold subtype.
     rewrite Incl /type_incl -!persistent_and_sep /=. apply entails_wand. do 2 f_equiv.
+    apply and_intro; [iIntros "_"; by iPureIntro|].
     apply and_intro; [|apply and_intro; [|apply and_intro]].
-    - iIntros "H". iDestruct ("H" $! 0%nat) as "($&_)".
-    - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
-      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&$&_)".
+    - iIntros "H". iDestruct ("H" $! 0%nat) as "(_&$&_)".
     - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
       apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&$&_)".
     - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
-      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&_&$)".
+      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&_&$&_)".
+    - apply entails_dist_True=> ?. setoid_rewrite conv_compl=>/=.
+      apply entails_dist_True. iIntros "H". iDestruct ("H" $! _) as "(_&_&_&_&$)".
   Qed.
 
   Lemma fix_eqtype {𝔄 𝔅} f g
     (T: type 𝔄 → type 𝔄) `{!TypeContractive T}
     (T': type 𝔅 → type 𝔅) `{!TypeContractive T'} E L :
     (∀ty ty', eqtype E L ty ty' f g → eqtype E L (T ty) (T' ty') f g) →
+    syn_bincl f → syn_bincl g →
     (∀ x, ξl x = ξl ((~~!ₛ) f x)) →
     (∀ x, ξl x = ξl ((~~!ₛ) g x)) →
     eqtype E L (fix_ty T) (fix_ty T') f g.

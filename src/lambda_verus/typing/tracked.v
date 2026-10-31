@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import programs.
+From lrust.typing Require Import programs bytes_layout.
 
 Set Default Proof Using "Type".
 
@@ -58,7 +58,8 @@ Section tracked.
   Lemma tracked_type_incl {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) f :
     type_incl ty ty' f ⊢ type_incl (tracked_ty ty) (tracked_ty ty') (tracked_mapₛ f).
   Proof.
-    iIntros "(#B & #C & #D & #F)". iFrame "B C D F".
+    iIntros "(_ & #B & #C & #D & #F)". iFrame "B C D F".
+    iPureIntro. by apply syn_bincl_same.
   Qed.
   
   Lemma tracked_subtype {𝔄 𝔅} E L (ty: type 𝔄) (ty': type 𝔅) f :

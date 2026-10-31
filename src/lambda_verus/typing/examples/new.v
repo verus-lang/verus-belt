@@ -7,7 +7,7 @@ Set Default Proof Using "Type".
 
 [swap_snd] of [typing/examples/place_deep.v], allocating its result
 ([type_new_bytes]: [OfLit (Alloc #8)] gives [own_bytes 8 (↯ 8)]), and a subtyping of a
-shared reference to bytes ([tctx_bsubtype_shr_bytes]). *)
+shared reference to bytes ([tctx_subtype_shr_bytes]). *)
 
 Section new_examples.
   Context `{!typeG Σ}.
@@ -154,8 +154,8 @@ Section new_examples.
     rewrite /shorten. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
       iApply typed_body_tctx_incl.
-      { apply (tctx_bsubtype_shr_bytes α β (i32t * i32t) (i32t * i32t) idₛ); [solve_typing|].
-        apply subtype_bsubtype_id, subtype_refl. }
+      { apply (tctx_subtype_shr_bytes α β (i32t * i32t) (i32t * i32t) idₛ); [solve_typing|].
+        apply subtype_refl. }
       iApply type_jump.
       { rewrite elem_of_list_singleton. reflexivity. }
       { solve_typing. }
