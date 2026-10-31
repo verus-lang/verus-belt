@@ -594,6 +594,26 @@ Global Arguments ty_bsize {_ _ _} _ / : simpl nomatch.
 Definition ty_bytes `{!typeG Σ} {𝔄} (ty: type 𝔄) (x: ~~𝔄) (bs: list abyte) : Prop :=
   ∃ v, ty.(ty_val) x = Some v ∧ decode_value ty.(ty_mty) bs = Some v.
 
+(** [ty_fbytes R ty x fbs]: the fancy bytes [fbs] (byte-cells or bytes) represent the value
+    [x] of [ty], with the static registry [R] of cell groups: they have the size
+    [ty_bsize ty], and represent the fancy value [ty_fval x] at [ty_mty] ([frepr]). This
+    is what a parent owns for its pointee (see [bytes_own] in [typing/own_bytes.v]). For a
+    value with a MiniRust value, and so for every value of a type without cells, the fancy
+    bytes are the plain bytes of [ty_bytes] (see [typing/bytes_layout.v]). *)
+Definition ty_fbytes `{!typeG Σ} {𝔄} (R: gmap positive (mty * list positive)) (ty: type 𝔄)
+    (x: ~~𝔄) (fbs: list (positive + abyte)) : Prop :=
+  length fbs = ty_bsize ty ∧ ∃ fv, ty.(ty_fval) x = Some fv ∧ frepr R ty.(ty_mty) fbs fv.
+
+(** The syntactic types without cells ([syn_nocell]), as a class: for a syntactic type
+    whose head constructor is known, it is solved by computation (or by the instances for
+    products and sums). The byte rules that read a value of a generic type ([Load] and
+    [MemCopy] of the leaf of a place) need it: the bytes of a value with cells are not
+    plain. *)
+Class NoCell (𝔄: syn_type) : Prop := no_cell : syn_nocell 𝔄.
+Global Hint Extern 1 (NoCell _) => exact I : typeclass_instances.
+Global Instance prod_nocell 𝔄 𝔅 : NoCell 𝔄 → NoCell 𝔅 → NoCell (𝔄 * 𝔅).
+Proof. rewrite /NoCell /=. intros. by apply andb_True. Qed.
+
 Section ty_mty_lemmas.
   Context `{!typeG Σ}.
 
@@ -625,6 +645,10 @@ Section ty_mty_lemmas.
   Proof.
     intros H. rewrite ty_fval_nocell // => /fmap_Some [v [_ ->]]. apply fv_cells_lift.
   Qed.
+
+  Lemma ty_fbytes_same {𝔄} (ty ty': type 𝔄) R x fbs :
+    ty_fbytes R ty x fbs ↔ ty_fbytes R ty' x fbs.
+  Proof. by rewrite /ty_fbytes /ty_bsize (ty_mty_same ty ty') (ty_fval_same ty ty'). Qed.
 
   Lemma ty_bytes_decode {𝔄} (ty: type 𝔄) x bs v :
     ty_bytes ty x bs → ty.(ty_val) x = Some v → decode_value ty.(ty_mty) bs = Some v.
