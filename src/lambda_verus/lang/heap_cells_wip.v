@@ -1842,4 +1842,136 @@ Section cells.
       rewrite fmap_insert lookup_insert_ne //.
   Qed.
 
+
+  (** The second phase: the new bytes [bs'] (which decode to [v] at [m']) are written at the
+      offset [o'] of [g], and the permission (with the fancy value updated at [o']) and the
+      guard come back. *)
+  Lemma bytes_ctx_cell_write_end E σB l g m cs fv o' m' fvs G bs' v fvn :
+    ↑naN ⊆ E → fv_sub m fv o' m' fvs → fv_cells fvs = [] →
+    fv_upd m fv o' m' (fv_lift v) fvn → decode_value m' bs' = Some v →
+    greg g m cs -∗ bytes_ctx σB -∗ cwrite_tok g (l, o', mty_size m', fv) G ={E}=∗
+      ∃ bs, ⌜mem_range (.= WSt) σB (l +ₗ o') bs ∧ length bs = mty_size m'⌝ ∗
+      bytes_ctx (mem_write (l +ₗ o') bs' σB) ∗ gdyn g fvn ∗ ▷ G.
+  Proof.
+    iIntros (? Hsub Hplain Hupd Hdec) "#Hg (%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Tok".
+    iDestruct "Cells" as (R ρ NC NS CW) "(Hreg & Hdyn & Hnc & Hns & Hcw & [%Hcwf %Hlive] & #HR & #HNS & Hcwe & Hρ)".
+    iDestruct (greg_lookup with "Hreg Hg") as %HRg.
+    iDestruct (own_valid_2 with "Hcw Tok") as "#Hvalid".
+    rewrite gmap_view_both_validI lookup_fmap. iDestruct "Hvalid" as "(_ & _ & Hvalid)".
+    destruct (CW !! g) as [[k G']|] eqn:HgCW; last first.
+    { rewrite option_equivI. done. }
+    rewrite option_equivI /= agree_equivI prod_equivI /=.
+    iDestruct "Hvalid" as "[%Heq HGeq]". simplify_eq.
+    iMod (own_update_2 with "Hcw Tok") as "Hcw"; [apply gmap_view_delete|].
+    rewrite (big_sepM_delete _ CW g) //.
+    iDestruct "Hcwe" as "[(%m1 & %cs1 & #Hg' & Hgd & G & %P & %d & £ & #Guard & #HP) Hcwe]".
+    iDestruct (greg_agree with "Hg Hg'") as %[<- <-].
+    set key : cwkey := (l, o', mty_size m', fv).
+    have Hk : (fst <$> CW) !! g = Some key by rewrite lookup_fmap HgCW.
+    iDestruct (fheap_no_dupes with "H●") as %Hnd.
+    have Hcwf' := Hcwf.
+    destruct Hcwf' as (HRwf & HdomR & Hrefs & Hdisj & Hpos & HdomNC & HNC & HCW & Hmwfs & HNSd).
+    destruct Hlive as [Hlive1 Hlive2].
+    destruct (HCW g _ Hk) as [Hfv (m2 & cs2 & HR2 & Hbnd)]. simpl in Hfv, Hbnd.
+    rewrite HRg in HR2. injection HR2 as <- <-.
+    have Hrows0 := Hlive2 g _ m cs Hk HRg. simpl in Hrows0.
+    iDestruct (big_sepM_delete with "Hρ") as "[(%m2 & %cs2 & %fbs & %Hgc & Hcs) Hρ]"; [done|].
+    destruct Hgc as (HR2 & Hrep & Hls & Hns'). rewrite HRg in HR2. injection HR2 as <- <-.
+    iDestruct (bheap_cells with "H● Hcs") as %[Hlenfbs Hfp].
+    have Hmw := Hmwfs _ _ _ HRg.
+    have Hcslen := HRwf _ _ _ HRg.
+    have Hb' := fv_sub_bound _ _ _ _ _ Hsub Hmw.
+    destruct (frepr_sub_plain _ _ _ _ _ _ _ HRwf Hrep Hsub Hmw Hplain) as (bs & v0 & Hsl & Hd0 & _).
+    have Hlenbs := decode_value_length _ _ _ Hd0.
+    have Hlenbs' := decode_value_length _ _ _ Hdec.
+    (* The written contents are plain bytes being written, at the ends of their rows. *)
+    have Hwst : ∀ (j : nat) b, bs !! j = Some b → fbs !! (o' + j)%nat = Some (inr (WSt, b)).
+    { intros j b Hb. have Hj : (j < mty_size m')%nat by rewrite -Hlenbs; eapply lookup_lt_Some.
+      have Hx : (fb_strip <$> fbs) !! (o' + j)%nat = Some (inr b).
+      { eapply list_slice_lookup_eq; [exact Hsl|]. by rewrite list_lookup_fmap Hb. }
+      rewrite list_lookup_fmap in Hx.
+      destruct (fbs !! (o' + j)%nat) as [fb|] eqn:Hfb; [|done].
+      destruct fb as [c'|[ls b']]; simpl in Hx; [done|]. injection Hx as ->.
+      rewrite (Hls _ _ _ Hfb) /cw_ls Hk /= decide_True //. lia. }
+    have Hends : ∀ (j : nat) c, (j < length bs')%nat → cs !! (o' + j)%nat = Some c →
+      ∃ pre v1, fbs !! (o' + j)%nat = Some (inr v1) ∧
+        𝛼 !! inl ((l +ₗ o') +ₗ j) = Some (pre ++ [c], v1).
+    { intros j c Hj Hc. destruct (lookup_lt_is_Some_2 bs j) as [b Hb]; [lia|].
+      have Hfb := Hwst j b Hb.
+      destruct (row_has_end 𝛼 _ c (WSt, b) Hnd (Hrows0 (o' + j)%nat c Hc) (Hfp _ _ _ Hc Hfb))
+        as [pre Hpre].
+      exists pre, (WSt, b). split; [done|]. by rewrite shift_loc_assoc_nat. }
+    have Hrd : mem_range (.= WSt) (bphi 𝛼) (l +ₗ o') bs.
+    { apply mem_range_lookup. intros j b Hb.
+      have Hj : (j < mty_size m')%nat by rewrite -Hlenbs; eapply lookup_lt_Some.
+      destruct (lookup_lt_is_Some_2 cs (o' + j)%nat) as [c Hcj]; [lia|].
+      destruct (Hends j c ltac:(lia) Hcj) as (pre & v1 & Hfb & Hrow).
+      rewrite (Hwst j b Hb) in Hfb. injection Hfb as <-. exists WSt. by rewrite phi_lookup Hrow. }
+    have Hbd := bank_disj_wst _ _ _ _ Hwf Hrd.
+    iMod (bheap_write_ends _ (l +ₗ o') cs fbs o' bs' (RSt 0) with "H● Hcs")
+      as (𝛼') "([%Hphi [%Hfw [%Hbw %Hsame]]] & H● & Hcs)"; [lia|done|].
+    iMod (ghost_map_update fvn with "Hdyn Hgd") as "[Hdyn Hgd]".
+    have Hgdom : g ∈ dom ρ by apply elem_of_dom_2 in Hfv.
+    have Hdom' : dom (<[g := fvn]> ρ) = dom ρ by rewrite dom_insert_L; set_solver.
+    have Hcells_fvn : ∀ g'', g'' ∈ fv_cells fvn → g'' ∈ fv_cells fv.
+    { intros g'' Hg''. destruct (fv_cells_upd _ _ _ _ _ _ _ Hupd Hg'') as [?|Hl]; [done|].
+      rewrite fv_cells_lift in Hl. by apply not_elem_of_nil in Hl. }
+    iModIntro. iExists bs. iSplit.
+    { iPureIntro. split; [|done]. eapply bank_rel_disj; [done|done|done]. }
+    iFrame "Hgd". iSplitR "G HGeq"; last first.
+    { rewrite later_equivI. iNext. by iRewrite "HGeq" in "G". }
+    iExists 𝛼', M. iFrame "H● Hbank Entries".
+    iSplit.
+    { iPureIntro. rewrite Hphi mem_set_write. apply (bank_rel_mem_write _ _ _ _ bs); [lia|done|done]. }
+    iSplit.
+    { iPureIntro. rewrite Hphi mem_set_write. apply bank_wf_mem_write; [by rewrite Hlenbs' -Hlenbs|done]. }
+    iExists R, (<[g := fvn]> ρ), NC, NS, (delete g CW).
+    rewrite {1}/cwbank_auth fmap_delete. iFrame "Hreg Hdyn Hnc Hns Hcw HR HNS Hcwe". iSplitR.
+    { iPureIntro. rewrite fmap_delete. split; [split_and!|split].
+      - done.
+      - by rewrite Hdom'.
+      - intros g' fv'' Hg' g'' Hg''. destruct (decide (g' = g)) as [->|Hne].
+        + rewrite lookup_insert in Hg'. injection Hg' as <-. rewrite Hdom'.
+          by eapply Hrefs, Hcells_fvn.
+        + rewrite lookup_insert_ne // in Hg'. rewrite Hdom'. by eapply Hrefs.
+      - done.
+      - done.
+      - done.
+      - intros g' fv'' Hg' HNC'. destruct (decide (g' = g)) as [->|Hne].
+        + rewrite lookup_insert in Hg'. injection Hg' as <-.
+          have Hc0 := HNC g fv Hfv HNC'. apply elem_of_nil_inv. intros g'' Hg''.
+          have := Hcells_fvn g'' Hg''. rewrite Hc0. apply not_elem_of_nil.
+        + rewrite lookup_insert_ne // in Hg'. by eapply HNC.
+      - intros g' k' Hk'. apply lookup_delete_Some in Hk' as [Hne Hk'].
+        destruct (HCW g' k' Hk') as [Hρg' Hrest]. split; [|done]. by rewrite lookup_insert_ne.
+      - done.
+      - done.
+      - intros k' cs1 v1 c Hk' Hc. destruct (Hbw k' cs1 v1 Hk') as [v1' Hk''].
+        rewrite Hdom'. by eapply Hlive1.
+      - intros g' k' m2 cs' Hk' HR' i c Hc. apply lookup_delete_Some in Hk' as [Hne Hk'].
+        destruct (Hlive2 g' k' m2 cs' Hk' HR' i c Hc) as (cells & v1 & Hrow & Hcr).
+        destruct (Hfw _ _ _ Hrow) as [v1' Hrow']. by exists cells, v1'. }
+    iApply big_sepM_insert_delete. iSplitL "Hcs".
+    - iExists m, cs, _. iFrame "Hcs". iPureIntro. split_and!.
+      + done.
+      + rewrite fb_strip_inserts. by eapply frepr_upd.
+      + intros i ls b Hi. rewrite /cw_ls fmap_delete lookup_delete.
+        rewrite list_lookup_inserts_Some in Hi.
+        destruct Hi as [[Hout Hi]|(Hin & _ & Hi)].
+        * rewrite (Hls _ _ _ Hi) /cw_ls Hk /= decide_False //. rewrite length_fmap in Hout. lia.
+        * rewrite list_lookup_fmap in Hi. destruct (bs' !! (i - o')%nat); simplify_eq/=. done.
+      + intros g' o'' Hkn. destruct (Hns' g' o'' Hkn) as (m3 & cs3 & HR3 & Hsl3).
+        exists m3, cs3. split; [done|]. rewrite fb_strip_inserts.
+        destruct bs' as [|b0 bs0]; [done|].
+        rewrite list_slice_inserts_out; [done|].
+        rewrite length_fmap.
+        destruct bs as [|b1 bs1]; [simpl in *; lia|].
+        have Hpos3 := Hpos _ _ _ HR3. have Hlen3 := HRwf _ _ _ HR3.
+        destruct (slices_disj (fb_strip <$> fbs) o' (b1 :: bs1) o'' cs3) as [?|?];
+          [by rewrite Hlenbs|done|done|intros ->; simpl in *; lia|..]; simpl in *; lia.
+    - iApply (big_sepM_impl with "Hρ"). iIntros "!>" (g' fv' Hg') "H".
+      iApply (gcontents_cw_eq with "H"). apply lookup_delete_Some in Hg' as [Hne _].
+      rewrite fmap_delete lookup_delete_ne //.
+  Qed.
+
 End cells.
