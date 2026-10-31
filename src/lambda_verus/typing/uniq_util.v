@@ -569,30 +569,27 @@ Section uniq_util_bytes.
   Lemma uniq_payload_ne {𝔄} n (ty ty': type 𝔄) tid l x d g :
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
-    (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_payload ty tid l x d g ≡{n}≡ uniq_payload ty' tid l x d g.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_payload (guarded_upd_lft_equiv _ _ _ _ Hl) (cbytes_same ty ty' x l).
+    intros Hl Hg. rewrite /uniq_payload (guarded_upd_lft_equiv _ _ _ _ Hl) (cbytes_same ty ty' x l).
     f_equiv. f_equiv. f_equiv. apply Hg.
   Qed.
 
   Lemma uniq_payload_proper {𝔄} (ty ty': type 𝔄) tid tid' l x d g :
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
-    (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
     uniq_payload ty tid l x d g ⊣⊢ uniq_payload ty' tid' l x d g.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_payload (guarded_upd_lft_equiv _ _ _ _ Hl) (cbytes_same ty ty' x l).
+    intros Hl Hg. rewrite /uniq_payload (guarded_upd_lft_equiv _ _ _ _ Hl) (cbytes_same ty ty' x l).
     f_equiv. f_equiv. f_equiv. apply Hg.
   Qed.
 
   Lemma uniq_gbody_ne {𝔄} n κp (ty ty': type 𝔄) tid l c wπ :
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
-    (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_gbody κp ty tid l c wπ ≡{n}≡ uniq_gbody κp ty' tid l c wπ.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
+    intros Hl Hg. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
     do 3 f_equiv. rewrite (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv. f_equiv.
     rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
     have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ≡{n}≡ ofty_owned 0 ty' x d g tid l.
@@ -607,10 +604,9 @@ Section uniq_util_bytes.
   Lemma uniq_gbody_proper {𝔄} κp (ty ty': type 𝔄) tid tid' l c wπ :
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
-    (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
     uniq_gbody κp ty tid l c wπ ⊣⊢ uniq_gbody κp ty' tid' l c wπ.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
+    intros Hl Hg. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
     do 3 f_equiv. rewrite (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv. f_equiv.
     rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
     have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ⊣⊢ ofty_owned 0 ty' x d g tid' l.
@@ -648,69 +644,63 @@ Section uniq_util_bytes.
   Lemma uniq_body_ne {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
-    (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_body ty x ξi d g idx κ tid l ≡{n}≡ uniq_body ty' x ξi d g idx κ tid l.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_body /uniq_bodyγ /uniq_persγ. do 2 (f_equiv=>?).
+    intros Hl Hg. rewrite /uniq_body /uniq_bodyγ /uniq_persγ. do 2 (f_equiv=>?).
     do 3 f_equiv. apply proph_idx_bor_gen_ne=> c wπ. by apply uniq_gbody_ne.
   Qed.
 
   Lemma uniq_body_contractive {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, dist_later n (ty.(ty_gho_own) x d g tid) (ty'.(ty_gho_own) x d g tid)) →
-    (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_body ty x ξi d g idx κ tid l ≡{n}≡ uniq_body ty' x ξi d g idx κ tid l.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_body /uniq_bodyγ /uniq_persγ. do 2 (f_equiv=>?).
+    intros Hl Hg. rewrite /uniq_body /uniq_bodyγ /uniq_persγ. do 2 (f_equiv=>?).
     do 3 f_equiv. apply proph_idx_bor_gen_contractive=> c wπ.
     destruct n as [|n]; [split; lia|]. apply dist_later_S.
-    apply uniq_gbody_ne; [done| |done]=> x1 d1 g1.
+    apply uniq_gbody_ne; [done|]=> x1 d1 g1.
     have := Hg x1 d1 g1. by rewrite dist_later_S.
   Qed.
 
   Lemma uniq_body_proper {𝔄} (ty ty': type 𝔄) x ξi d g idx κ tid tid' l :
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
-    (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
     uniq_body ty x ξi d g idx κ tid l ⊣⊢ uniq_body ty' x ξi d g idx κ tid' l.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_body /uniq_bodyγ /uniq_persγ. do 2 (f_equiv=>?).
+    intros Hl Hg. rewrite /uniq_body /uniq_bodyγ /uniq_persγ. do 2 (f_equiv=>?).
     do 3 f_equiv. apply proph_idx_bor_gen_proper=> c wπ. by apply uniq_gbody_proper.
   Qed.
 
   Lemma uniq_pers_component_ne {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
-    (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_body_pers_component ty x ξi d g idx κ tid l ≡{n}≡
       uniq_body_pers_component ty' x ξi d g idx κ tid l.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_body_pers_component /uniq_persγ. f_equiv=>?.
+    intros Hl Hg. rewrite /uniq_body_pers_component /uniq_persγ. f_equiv=>?.
     f_equiv. apply proph_idx_bor_gen_ne=> c wπ. by apply uniq_gbody_ne.
   Qed.
 
   Lemma uniq_pers_component_contractive {𝔄} n (ty ty': type 𝔄) x ξi d g idx κ tid l :
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, dist_later n (ty.(ty_gho_own) x d g tid) (ty'.(ty_gho_own) x d g tid)) →
-    (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid) →
     uniq_body_pers_component ty x ξi d g idx κ tid l ≡{n}≡
       uniq_body_pers_component ty' x ξi d g idx κ tid l.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_body_pers_component /uniq_persγ. f_equiv=>?.
+    intros Hl Hg. rewrite /uniq_body_pers_component /uniq_persγ. f_equiv=>?.
     f_equiv. apply proph_idx_bor_gen_contractive=> c wπ.
     destruct n as [|n]; [split; lia|]. apply dist_later_S.
-    apply uniq_gbody_ne; [done| |done]=> x1 d1 g1.
+    apply uniq_gbody_ne; [done|]=> x1 d1 g1.
     have := Hg x1 d1 g1. by rewrite dist_later_S.
   Qed.
 
   Lemma uniq_pers_component_proper {𝔄} (ty ty': type 𝔄) x ξi d g idx κ tid tid' l :
     (⊢ ty_lft ty ≡ₗ ty_lft ty') →
     (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
-    (∀ x, ty.(ty_phys) x tid = ty'.(ty_phys) x tid') →
     uniq_body_pers_component ty x ξi d g idx κ tid l ⊣⊢
       uniq_body_pers_component ty' x ξi d g idx κ tid' l.
   Proof.
-    intros Hl Hg Hp. rewrite /uniq_body_pers_component /uniq_persγ. f_equiv=>?.
+    intros Hl Hg. rewrite /uniq_body_pers_component /uniq_persγ. f_equiv=>?.
     f_equiv. apply proph_idx_bor_gen_proper=> c wπ. by apply uniq_gbody_proper.
   Qed.
 
@@ -1079,10 +1069,9 @@ Section uniq_util_bytes.
   Lemma leaf_owned_iff {𝔄} (ty ty': type 𝔄) m p r d g tid l :
     ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d g tid, ty.(ty_gho_own) x d g tid ↔ ty'.(ty_gho_own) x d g tid) -∗
-    (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
     leaf_owned false m ty p r d g tid l -∗ leaf_owned false m ty' p r d g tid l.
   Proof.
-    iIntros "#[_ Incl'] #EqOwn %EqPhys L".
+    iIntros "#[_ Incl'] #EqOwn L".
     iAssert (□ ∀ x d g, ofty_owned m ty x d g tid l -∗ ofty_owned m ty' x d g tid l)%I
       as "#Hofty".
     { iIntros "!>" (x' d' g') "[Pt Gho]". rewrite /ofty_owned (cbytes_same ty ty'). iFrame "Pt".
@@ -1099,52 +1088,47 @@ Section uniq_util_bytes.
   Lemma uniq_gbody_iff {𝔄} κp (ty ty': type 𝔄) tid l c wπ :
     ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d g tid, ty.(ty_gho_own) x d g tid ↔ ty'.(ty_gho_own) x d g tid) -∗
-    (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
     uniq_gbody κp ty tid l c wπ -∗ uniq_gbody κp ty' tid l c wπ.
   Proof.
-    iIntros "#[Incl Incl'] #EqOwn %EqPhys". rewrite /uniq_gbody /cpd_body.
+    iIntros "#[Incl Incl'] #EqOwn". rewrite /uniq_gbody /cpd_body.
     iIntros "(%p & %r & $ & $ & $ & Upd)".
     iApply (guarded_upd_weaken with "Incl'"). iApply (guarded_upd_mono with "[] Upd").
-    iIntros "[$ L] !>". iApply (leaf_owned_iff with "[] EqOwn [] L"); [by iSplit|done].
+    iIntros "[$ L] !>". iApply (leaf_owned_iff with "[] EqOwn L"). by iSplit.
   Qed.
 
   Lemma incl_uniq_persγ {𝔄} (ty ty': type 𝔄) x ξi idx κ κ' κp tid l :
     κ' ⊑ κ -∗ ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d tid vl, ty.(ty_gho_own) x d tid vl ↔ ty'.(ty_gho_own) x d tid vl) -∗
-    (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
     uniq_persγ ty x ξi idx κ κp tid l -∗ uniq_persγ ty' x ξi idx κ' κp tid l.
   Proof.
-    iIntros "#InLft #Lfts #EqOwn %EqPhys Pc".
+    iIntros "#InLft #Lfts #EqOwn Pc".
     iApply (proph_idx_bor_gen_shorten with "InLft [] Pc").
     iIntros "!> !>" (c wπ). iSplit; iIntros "B".
-    - iApply (uniq_gbody_iff with "Lfts EqOwn [] B"). done.
+    - iApply (uniq_gbody_iff with "Lfts EqOwn B").
     - iDestruct "Lfts" as "[L1 L2]".
-      iApply (uniq_gbody_iff with "[] [] [] B"); [by iSplit| |].
-      + iIntros "!>" (????). iSplit; iIntros "H"; by iApply "EqOwn".
-      + iIntros (??). iPureIntro. by rewrite EqPhys.
+      iApply (uniq_gbody_iff with "[] [] B"); [by iSplit|].
+      iIntros "!>" (????). iSplit; iIntros "H"; by iApply "EqOwn".
   Qed.
 
   Lemma incl_uniq_body_pers_component {𝔄} (ty ty': type 𝔄) x ξi d g idx κ κ' tid l :
     κ' ⊑ κ -∗ ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d tid vl, ty.(ty_gho_own) x d tid vl ↔ ty'.(ty_gho_own) x d tid vl) -∗
-    (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
     uniq_body_pers_component ty x ξi d g idx κ tid l -∗ uniq_body_pers_component ty' x ξi d g idx κ' tid l.
   Proof.
-    iIntros "#InLft #Lfts #EqOwn %EqPhys (%κp & #Incl & Pc)".
+    iIntros "#InLft #Lfts #EqOwn (%κp & #Incl & Pc)".
     iExists κp. iSplit; [iApply (llftl_incl_trans with "InLft Incl")|].
-    by iApply (incl_uniq_persγ with "InLft Lfts EqOwn [] Pc").
+    by iApply (incl_uniq_persγ with "InLft Lfts EqOwn Pc").
   Qed.
 
   Lemma incl_uniq_body {𝔄} (ty ty': type 𝔄) x ξi d g idx κ κ' tid l :
     κ' ⊑ κ -∗ ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d tid vl, ty.(ty_gho_own) x d tid vl ↔ ty'.(ty_gho_own) x d tid vl) -∗
-    (∀x tid, ⌜ ty_phys ty x tid = ty_phys ty' x tid ⌝) -∗
     uniq_body ty x ξi d g idx κ tid l -∗ uniq_body ty' x ξi d g idx κ' tid l.
   Proof.
-    iIntros "#InLft #Lfts #EqOwn %EqPhys (%κp & %γ & #Incl & Tok & ⧗ & Pc)".
+    iIntros "#InLft #Lfts #EqOwn (%κp & %γ & #Incl & Tok & ⧗ & Pc)".
     iExists κp, γ. iFrame "Tok ⧗".
     iSplit; [iApply (llftl_incl_trans with "InLft Incl")|].
-    by iApply (incl_uniq_persγ with "InLft Lfts EqOwn [] Pc").
+    by iApply (incl_uniq_persγ with "InLft Lfts EqOwn Pc").
   Qed.
 
   (** ** Rebodying at [static], changing the thread id *)
