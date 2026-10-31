@@ -22,9 +22,7 @@ Section ptr.
   Context `{!typeG Σ}.
 
   Program Definition ptr_ty : type locₛ := {|
-    pt_size := 1;
     pt_gho (l: ~~locₛ) _ := True%I ;
-    pt_phys (l: ~~locₛ) _ := [ FVal (LitV (LitLoc l)) ] ;
   |}%I.
   Next Obligation. move=> *. trivial. Qed.
   Next Obligation. done. Qed.
@@ -35,15 +33,14 @@ Section ptr.
 
   Global Instance ptr_copy: Copy ptr_ty.
   Proof.
-    split. - typeclasses eauto. - iIntros. iPureIntro. done.
+    split. - typeclasses eauto.
     - intros. by apply copy_shr_default.
   Qed.
 
   Global Instance ptr_send: Send ptr_ty.
   Proof.
-    intros. split; trivial.
-     - intros. unfold syn_abstract in H. subst x'. trivial.
-     - iIntros. iApply step_fupdN_intro; first done. iNext.
+    intros. split.
+     iIntros. iApply step_fupdN_intro; first done. iNext.
        iExists x, 0%nat. iModIntro. iFrame. simpl.
        replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
   Qed.

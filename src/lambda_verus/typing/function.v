@@ -90,7 +90,6 @@ Section fn.
   Program Definition fn {ℭ} (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ)
     : type (exec_funₛ ℭ) :=
     {|
-      pt_size := 1;
       pt_gho (x: ~~ (exec_funₛ ℭ)) tid := tc_opaque
         (∃fb kb (bl: plistc _ _) e H, ⌜fst x = @RecV fb (kb :: bl) e H⌝ ∗
               ▷ □ ∀y ϝ k (wl: plistc _ _),
@@ -101,7 +100,6 @@ Section fn.
                   (subst' fb (RecV fb (kb :: bl) e) $ subst' kb k $ subst_plv bl wl e)
                   (spec (snd x))
         );
-      pt_phys (x: ~~ (exec_funₛ ℭ)) tid := [FVal (fst x)];
     |}%I.
   Next Obligation. rewrite /tc_opaque. apply _. Qed.
   Next Obligation. done. Qed.
@@ -142,7 +140,7 @@ Section typing.
 
   Global Instance fn_sync {A 𝔄l 𝔅 ℭ} (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ) :
     Sync (fn fp spec).
-  Proof. apply sync_default; [done|]. split; trivial. split; iSplit; iIntros "?"; done. Qed.
+  Proof. apply sync_default; [done|]. split; iSplit; iIntros "?"; done. Qed.
 
   Lemma fn_resolve {A 𝔄l 𝔅 ℭ} (fp: A → fn_params 𝔄l 𝔅) (spec: fn_spec 𝔄l 𝔅 ℭ) E L :
     resolve E L (fn fp spec) (const (const True)).
