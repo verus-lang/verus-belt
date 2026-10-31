@@ -349,10 +349,10 @@ Section typing.
       { destruct Yl => //. 
         inv_hlist xl; inv_hlist yl => /= _.
         iIntros "!> E /=". 
-        iDestruct ("Sub" with "E") as "#(Hlfts&?)". 
+        iDestruct ("Sub" with "E") as "#(_&Hlfts&?)". 
         by rewrite /tyl_lft/tyl_lfts /= !app_nil_r. }
       iDestruct ("IH" with "L") as "#IH'".
-      iIntros "!> E /=". iDestruct ("Sub" with "E") as "#[?_]".
+      iIntros "!> E /=". iDestruct ("Sub" with "E") as "#[_ [? _]]".
       iDestruct ("IH'" with "E") as "#?".
       rewrite /tyl_lft !lft_intersect_list_app. by iApply lft_intersect_mono. }
     move/subtypel_llctx_lookup in Subs. iDestruct (Subs with "L") as "#InTyl".

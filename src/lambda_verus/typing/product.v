@@ -394,10 +394,12 @@ Section typing.
   Proof.
     split; [rewrite !syn_bsize_prod; lia|]. intros [x [y z]] R fbs. rewrite /= !syn_fbytes_pair.
     split.
-    - intros (f1 & f23 & -> & H1 & (f2 & f3 & -> & H2 & H3)).
-      exists (f1 ++ f2), f3. split; [by rewrite assoc|]. split; [|done]. by exists f1, f2.
-    - intros (f12 & f3 & -> & (f1 & f2 & -> & H1 & H2) & H3).
-      exists f1, (f2 ++ f3). split; [by rewrite assoc|]. split; [done|]. by exists f2, f3.
+    - intros (f1 & f23 & -> & H1 & H23). apply syn_fbytes_pair in H23 as (f2 & f3 & -> & H2 & H3).
+      exists (f1 ++ f2), f3. split; [by rewrite assoc|]. split; [|done].
+      apply syn_fbytes_pair. by exists f1, f2.
+    - intros (f12 & f3 & -> & H12 & H3). apply syn_fbytes_pair in H12 as (f1 & f2 & -> & H1 & H2).
+      exists f1, (f2 ++ f3). split; [by rewrite assoc|]. split; [done|].
+      apply syn_fbytes_pair. by exists f2, f3.
   Qed.
 
   Lemma syn_bincl_prod_left_id {𝔄} : syn_bincl (prod_left_idₛ (𝔄:=𝔄)).
@@ -410,7 +412,7 @@ Section typing.
 
   Lemma syn_bincl_prod_right_id {𝔄} : syn_bincl (prod_right_idₛ (𝔄:=𝔄)).
   Proof.
-    split; [rewrite syn_bsize_prod /=; lia|]. intros [x []] R fbs. rewrite /= syn_fbytes_pair.
+    split; [rewrite syn_bsize_prod; change (syn_bsize ()) with 0%nat; lia|]. intros [x []] R fbs. rewrite /= syn_fbytes_pair.
     split.
     - intros (f1 & f2 & -> & H1 & H2). apply syn_fbytes_zst in H2 as ->; [|done..].
       by rewrite app_nil_r.

@@ -513,4 +513,4 @@ Proof.
 Qed.
 
 Lemma syn_bincl_of_cons_prod {𝔄 𝔅l} : syn_bincl (of_cons_prodₛ (𝔄:=𝔄) (𝔅l:=𝔅l)).
-Proof. eapply syn_bincl_iso, syn_bincl_to_cons_prod. Qed.
+Proof. apply (syn_bincl_iso to_cons_prodₛ); [apply _|apply syn_bincl_to_cons_prod]. Qed.

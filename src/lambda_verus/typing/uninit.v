@@ -111,13 +111,14 @@ Section typing.
   Lemma syn_bincl_uninit_split {n m} : syn_bincl (uninit_splitₛ (n:=n) (m:=m)).
   Proof.
     split; [by rewrite syn_bsize_prod|]. intros x R fbs.
-    cbn [syn_type_morphism_fn uninit_splitₛ]. destruct (vsepat x) as [a b].
+    cbn [syn_type_morphism_fn uninit_splitₛ]. destruct (@vsepat _ n m x) as [a b].
     rewrite syn_fbytes_pair !syn_fbytes_uninit. split.
     - intros [Hl [bs ->]]. rewrite length_fmap in Hl.
       exists (inr <$> take n bs), (inr <$> drop n bs). rewrite -fmap_app take_drop.
-      split; [done|]. rewrite !length_fmap length_take length_drop.
+      split; [done|]. rewrite !syn_fbytes_uninit !length_fmap length_take length_drop.
       split; split; [lia|eauto|lia|eauto].
-    - intros (f1 & f2 & -> & [Hl1 [b1 ->]] & [Hl2 [b2 ->]]).
+    - intros (f1 & f2 & -> & Ha & Hb). apply syn_fbytes_uninit in Ha as [Hl1 [b1 ->]].
+      apply syn_fbytes_uninit in Hb as [Hl2 [b2 ->]].
       split; [rewrite length_app; lia|]. exists (b1 ++ b2). by rewrite fmap_app.
   Qed.
 
