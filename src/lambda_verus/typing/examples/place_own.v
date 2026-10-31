@@ -10,7 +10,7 @@ bytes ([own_bytes]); the leaves are read and written with typed [Load] and [Stor
 borrow [&mut x.1] is a MiniRust pointer value ([&uniqb]); it is written as a place rooted
 at its value ([type_uniq_to_vplace_instr], [type_write_vplace_deep_instr]). The body is
 stated as a function body ([typed_body], with the return continuation [k]), without the
-function type ([fn] still takes legacy boxes). *)
+function type. *)
 
 Section place_own.
   Context `{!typeG Σ}.

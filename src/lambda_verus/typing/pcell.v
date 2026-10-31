@@ -19,8 +19,8 @@ whose content has the MiniRust type [m]. Its two halves are two types:
   [g] ([gdyn g fv]), whose fancy value [fv] is the fancy value of [x] ([ty_fval x]; it may
   contain the groups of nested cells), together with the ownership of [x].
 
-These are the byte-layer counterparts of the legacy [pcell_ty] and [cell_points_to_ty] of
-[typing/pcell.v]. *)
+They replaced the legacy word-level [pcell_ty] and [cell_points_to_ty] (deleted in
+stage 5). *)
 
 Implicit Type 𝔄 𝔅: syn_type.
 
@@ -313,7 +313,7 @@ Section pcell_rules.
       iExists fv, cs. by iFrame "Hg Hgd".
   Qed.
 
-  (** The legacy form of [PCell::new] ([typed_pcell_from_own]): the box holds the cell and
+  (** The form of [PCell::new] of the deleted legacy rule [typed_pcell_from_own]: the box holds the cell and
       the (zero-sized) permission, as a pair. *)
   Definition PCellFromOwn : val := (λ: ["p"], "p")%V.
 
@@ -515,7 +515,7 @@ End cell_guards.
 
 (** * Atomic accesses through a cell
 
-As the legacy [typed_pcell_atomic_load], [typed_pcell_atomic_store] and
+As the deleted legacy [typed_pcell_atomic_load], [typed_pcell_atomic_store] and
 [typed_pcell_atomic_CAS]: at the MiniRust type of the contents (no mixed-size accesses), for
 contents without cells ([NoCell]). A load needs shared references to the cell and to its
 permission; a store and a compare-and-exchange need a unique borrow of the permission, which

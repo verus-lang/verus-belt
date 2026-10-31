@@ -10,10 +10,8 @@ Set Default Proof Using "Type".
 [own_bytes n ty] is an owning pointer whose pointee lives in the byte region of the
 heap (see [lang/heap.v]): it owns the bytes that represent the value of the pointee
 ([bytes_own ty l x]), and the freeable token of the [ty_bsize ty] bytes of a block of [n]
-bytes. This is the target form of [own_ptr] (see [design_docs/minirust-memory-model.md],
-"Outcome: stage 3"): [own_ptr] itself still owns legacy words ([l ↦!∗ ty_phys x]),
-because the place machinery reads and writes its leaves with the legacy one-word
-operations until stage 4.
+bytes (see [design_docs/minirust-memory-model.md], "Outcome: stage 3"). It replaced the
+legacy word-level [own_ptr] (deleted in stage 5).
 
 The bytes are _fancy bytes_ (§10 step 4 of [design_docs/pcell-multibyte-cells.md]): the
 edges of the locations [l], [l +ₗ 1], ... point to bytes or to the byte-cells of cell

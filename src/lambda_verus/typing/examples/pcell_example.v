@@ -5,7 +5,7 @@ Set Default Proof Using "Type".
 
 (** * [PCell] on bytes
 
-The example of [typing/examples/pcell_example.v] on the byte layer (§10 step 5 of
+The legacy [pcell_example] (deleted in stage 5) on the byte layer (§10 step 5 of
 [design_docs/pcell-multibyte-cells.md]): a box is initialized with [17], made into a cell
 ([PCellFromOwn]: the box holds the pair of the cell and its permission), both fields are
 shared, the contents are borrowed through them ([PCellBorrow]) and read. The body is
@@ -13,7 +13,7 @@ stated as a function body ([typed_body], with the return continuation [k]) that 
 the value read, and its specification says that this value is [17] (instead of the call
 of [assert] of the legacy example). *)
 
-Section pcell_example_bytes.
+Section pcell_example.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
@@ -117,6 +117,6 @@ Section pcell_example_bytes.
     intros post [] mask π Hspec. rewrite /trans_upper /trans_tail /ret_z /=.
     intros l junk _ g. split; [done|]. intros [x' [y' []]] [<- _] _. done.
   Qed.
-End pcell_example_bytes.
+End pcell_example.
 
 Print Assumptions pcell_example_type.
