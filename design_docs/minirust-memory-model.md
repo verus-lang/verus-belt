@@ -802,3 +802,105 @@ All of this is needed by `pcell` (with `pptr`, `ra`, `protocol` and `pcell_examp
 
 These go with the pcell redesign (cells as fancy bytes). The examples `assert.v` and
 `list.v` also stay on the legacy layer.
+
+## Outcome: stage 5 / §10 step 6 (legacy typing layer deleted)
+
+Stage 5, second part (§10 step 6 of `pcell-multibyte-cells.md`). With `pcell`, `ra` and
+`protocol` on bytes (§§14–16 of that document), the user decision was **port, then
+delete**: every legacy feature without a byte counterpart was ported, then the legacy
+typing layer was removed. No `Admitted`; no new axioms. The examples print only
+`functional_extensionality_dep` under `Print Assumptions`.
+
+### Ported to bytes
+
+Ghost values are MiniRust values (`◁ᵥ`, the empty tuple), as in `ra`/`protocol` (§15).
+- **Ghost operations** (`ghost.v`). `GhostOp`, `GhostRet`, `wp_ghost_op` moved here from
+  `ra_bytes.v`. New helpers `typed_inv_instr_ghost_op` / `typed_instr_ghost_op`: a ghost
+  operation is a ghost update at its value `()`, with two cumulative time receipts.
+  `ghost_constant`, `ghost_snapshot`, `ghost_compute` return `v ◁ᵥ ghost_ty ty`; snapshot
+  and compute take any type-context element (`tctx_elt`).
+- **Atomic invariants** (`atomic_inv.v`, helper `typed_atomic_ghost_op` in
+  `programs_util_atomic.v`). `typed_atomic_inv_alloc`
+  (`+[p1 ◁ᵥ ghost_ty tyCN; p2 ◁ᵥ tracked_ty ty]` → `v ◁ᵥ atomic_inv_ty ty pred`),
+  `_destroy` (→ `v ◁ᵥ tracked_ty ty`), `_open`
+  (`p ◁ᵥ &shr{κ} (atomic_inv_ty …)` → `+[v ◁ᵥ tracked_ty ty; v ◁ᵥ atomic_closer_ty κ ty pred]`),
+  `_close`. **Deviation:** `open` returns its two ghost values at the *same* value `v = ()`
+  (both are zero-sized ghost values), instead of a box of a pair.
+- **Local invariants** (`local_inv.v`): the same four rules and the same deviation. `close`
+  takes the cumulative time receipts it stores in the invariant from
+  `wp_cumulative_time_receipt_linear`.
+- **Function types** (`function.v`, formerly `function_bytes.v`): `fn_params`, `subst_plv`,
+  `fp_E`, `tr_ret` moved here from the legacy `function.v`; new `fn_send`, `fn_sync` and
+  `type_call_iris` (empty lifetime context, as in a new thread).
+- **`assert`** (`examples/assert.v`) on `fn` with a `◁ᵥ bool_ty` argument; new
+  `type_if_val` (`value_ctx.v`): `if: ToLit p then … else …` on a boolean value.
+- **`spawn`** (`spawn.v`): `spawn_type` on `fn`; the argument is a value `◁ᵥ fty`, the
+  join handle is returned as a pointer value (`OfLit (spawn …)`), and `join_future` holds a
+  MiniRust value (`syn_val x' = Some w`). The language library `lang/lib/spawn.v` (word
+  `Read`/`Write`) is unchanged.
+- **Soundness** (`soundness.v`): the theorem of `soundness_bytes.v`, now `main_type`,
+  `type_soundness`, `type_soundness_closed`.
+- **`PPtr`** (`pptr.v`): `ptr_ty` (a pointer value) and
+  `points_to_ty ty := tracked_ty (own_bytes (ty_bsize ty) ty)`; `typed_pptr_to_own`,
+  `typed_pptr_from_own` (a `GhostOp`: the box's own pointer value becomes the `PPtr`, the
+  result is the permission), `typed_pptr_borrow` (→ `&shr{κ} ty`), `typed_pptr_borrow_mut`
+  (→ `&uniq{κ} ty`, via `uniq_body_transform`).
+- **Boxes** (`own.v`): `own_bytes_send`, `own_bytes_sync`, `own_bytes_resolve` (hint),
+  `own_bytes_type_contractive`.
+- **Recursive types** (`examples/list.v`): the list type over `own_bytes` boxes
+  (`list_node_size 𝔄 := syn_bsize (Σ! [(); 𝔄 * rlistₛ 𝔄])`); `list_unfold_fold`,
+  `list_resolve`, `list_resolve_just`. **Not ported:** `list_subtype`/`list_eqtype` (they use
+  the legacy `subtype` of boxes; a byte version needs a `bsubtype` for `fix_ty`).
+- The accessors `uniq_bor_loc/current/future/ξi` moved to `uniq_util.v`.
+
+### Deleted
+
+- Files (`typing/`): `pcell.v`, `examples/pcell_example.v` (legacy), `own.v`, `shr_bor.v`,
+  `uniq_bor.v` (legacy pointer types), `function.v` (legacy `fn`), `borrow.v`,
+  `type_sum.v`, `product_split.v` (pre-place core rules: subsumed by the place rules),
+  `programs_util.v`, `programs_util_own.v`, `soundness_bytes.v` (merged); `lang/lib/memcpy.v`.
+- The legacy rules of `ra.v`/`protocol.v`; `typed_read`, `typed_write`, `type_assign`,
+  `type_deref`, `type_memcpy` (`programs.v`); the legacy word-level half of `uniq_util.v`
+  (`uniq_body`, `uniq_payload`, … on `↦!∗`); the legacy `typed_atomic_instr*` helpers;
+  `letalloc`; `split_mt_ptr`; the syntactic type `pcellₛ n` (with `pair_with_cell_idsₛ`).
+- In total about 13 700 lines removed and 3 300 added (from `5601fea`).
+
+### Renamed (no legacy namesake left)
+
+- Files: `own_bytes` → `own`, `shr_bytes` → `shr_bor`, `uniq_bytes` → `uniq_bor`,
+  `function_bytes` → `function`, `pcell_bytes` → `pcell`, `pcell_bytes_borrow` →
+  `pcell_borrow`, examples `pcell_example_bytes` → `pcell_example`, `own_bytes` → `own`,
+  `function_bytes` → `function`. Merged: `uniq_bytes_util` into `uniq_util`, `ra_bytes` into
+  `ra`, `protocol_bytes` into `protocol`.
+- Definitions/lemmas: `pcellbₛ` → `pcellₛ`; `buniq_*` → `uniq_*`; `bofty_owned`,
+  `bleaf_owned`, `bleaf_node`, `bblocked_owned` → without `b`; `bfn*` → `fn*`; `type_bcall`,
+  `type_bletcall`, `type_bfnrec`, `type_bfn` → `type_call`, `type_letcall`, `type_fnrec`,
+  `type_fn`; `pcellb_*`/`PCellb*`/`bcell_*`/`type_pcellb_*`/`type_bcell_*` → `pcell_*`/
+  `PCell*`/`cell_*`/`type_pcell_*`/`type_cell_*`; `typed_rab_*`/`RAb_*` → `typed_ra_*`/`RA_*`;
+  `typed_spb_*`/`SPb_*` → `typed_sp_*`/`SP_*`; `storable_*_bytes` → `storable_*`;
+  `pcell_example_b_type` → `pcell_example_type`. Notations `&uniqb{κ}`/`&shrb{κ}` →
+  `&uniq{κ}`/`&shr{κ}`.
+- **Kept:** the type names `own_bytes`, `shr_bytes`, `uniq_bytes` (descriptive; only the
+  files and notations were renamed); `btype_incl`, `bsubtype` (the legacy `type_incl`,
+  `subtype` of `type.v` are still used by `fixpoint`, `mod_ty`, `tracked`, `uninit`, …).
+
+### Still legacy, and why
+
+- **The word layer of the type record**: `ty_size` (words), `ty_phys`, `syn_phys`,
+  `size_of`, the padding component of `~~(Σ! 𝔄l)`, the legacy element `p ◁ ty` (used by
+  closures: `f ◁ fn …`), `Send`'s `ty_phys` clause, the legacy `type_incl`/`subtype`.
+  Removing them changes the type record and every type definition; not done.
+- **`cloc`** in `~~(at_clocₛ 𝔄)` and `~~(uniq_borₛ 𝔄)`, and the guard
+  `@[κ] &&{…}&&> l #↦∗_` of `&uniq{κ}` and of the place invariants (`ltype`, `lpath`,
+  `pctx_acc`, `place_*`): both run through the whole place machinery (~15 000 lines).
+  The cells are always empty for bytes (`heap_cloc_mapsto_empty`).
+- **The word heap and the word-level language** (`Read`/`Write`/`CAS`, `↦`, `↦!∗`, the
+  cell map of `util/cellmap.v`/`non_atomic_cell_map.v`, `phys_rel`): still used by
+  `#↦∗_` above, by `lang/lib/spawn.v` and by the adequacy/race proofs.
+
+**Axioms.** `Print Assumptions` of the examples shows `functional_extensionality_dep`,
+and, for the results that use `proph_obs_sat` (`prophecy/prophecy.v`: the rules with a
+pure verification condition, e.g. `typed_pptr_*`, `typed_*_inv_*`, `type_pcell_borrow_instr`,
+hence `pcell_example_type`, `spawn_type`, `assert_type`), also `Eqdep.Eq_rect_eq.eq_rect_eq`.
+The atomic invariants use `Classical_Prop.classic` (case on `Send ty`), as before. None
+of these is new.
