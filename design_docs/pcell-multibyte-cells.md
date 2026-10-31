@@ -2,6 +2,7 @@
 
 Status: steps 1–3 implemented (2026-10-30), branch `memory-model`; see §9 Outcome. §10 step 1
 done (2026-10-31); see §11. §10 steps 2 and 3 done; see §12 and §13. §10 step 4 done; see §14.
+§10 step 5 done except the port of `protocol.v`; see §15.
 Context: `design_docs/minirust-memory-model.md` (stages 1–5). `pcell` is the last user of the
 legacy word layer.
 
@@ -757,3 +758,136 @@ old cells.
   `NoCell` rules above) need the untether/retether machinery, also in step 5.
 - **`NoCell` instances.** `NoCell` has instances only for products; `Π!`/`Σ!` of type
   variables would need a `forallb` instance.
+
+## 15. Outcome: §10 step 5 (2026-10-31)
+
+The `PCell` types and rules on bytes, the byte-layer `pcell_example` and the typing rules of
+`ra.v` on bytes. No `Admitted`; no new axioms. Files: `typing/pcell_bytes.v` (types, create,
+destroy, move, atomics), `typing/pcell_bytes_borrow.v` (borrows of the contents),
+`typing/ra_bytes.v`, `typing/examples/pcell_example_bytes.v`. The legacy files are
+unchanged.
+
+### Names
+
+| byte layer | legacy |
+|---|---|
+| `pcellb_ty m : type (pcellbₛ m)` | `pcell_ty n` |
+| `bcell_points_to_ty ty : type (trackedₛ (pcellbₛ (syn_mty 𝔄) * 𝔄))` | `cell_points_to_ty ty` |
+| `bcell_shr_ty κ ty`, `bcell_uniq_ty κ ty` (borrows of the contents) | `shr_bor κ ty`, `&uniq{κ} ty` at `cloc_flat_insert l γs` |
+| `PCellbNew`, `PCellbFromOwn`, `PCellbIntoInner`, `PCellbBorrow`, `PCellbBorrowMut` | `PCellFromOwn`, `PCell2Own`, `PCellBorrow`, `PCellMutBorrow` |
+| `type_pcellb_*_instr`, `type_bcell_*_instr` | `typed_pcell_*` |
+| `typed_rab_*` (`RAb_*:` notations) | `typed_ra_*` (`RA_*:`) |
+
+### Types
+
+- **`pcellb_ty m`**: value the group `g`; trivial ownership; zero legacy size. Its
+  location side is owned by the parent, as its fancy bytes:
+  `bytes_own_pcellb_ty : mty_wf m → bytes_own (pcellb_ty m) l g ⊣⊢ ∃ cs, loc_side l g m cs ∗ ⌜length cs = mty_size m⌝`.
+  A cell has no MiniRust value, so it lives only in memory (boxes, references, fields).
+- **`bcell_points_to_ty ty`**: a ghost value `(g, x)` (its MiniRust value is `VTuple []`),
+  owning `bcell_own ty g x := ∃ fv cs, ⌜ty_fval x = Some fv⌝ ∗ greg g (ty_mty ty) cs ∗ gdyn g fv`
+  and `▷ ty_gho_own x`. The fancy value may contain the groups of nested cells. The sharing
+  predicate is structural (a guard of `bcell_own` and the sharing predicate of `ty`), as the
+  legacy one; `Send`/`Sync`/`ResOwn` are inherited.
+- The rules use `pcellb_ty ty.(ty_mty)`: the side condition `mty_wf m` of §12 is then
+  `ty_mty_wf`.
+
+### Rules (`typing/pcell_bytes.v`)
+
+- `type_pcellb_new_instr` (`0 < ty_bsize ty`): `p ◁ᵥ own_bytes n ty` becomes
+  `p ◁ᵥ own_bytes n (pcellb_ty ty.(ty_mty))`, and the result is the permission
+  `v ◁ᵥ bcell_points_to_ty ty`; post `∀ g, post -[(l, g); (g, x)]`.
+- `type_pcellb_from_own_instr`: the legacy form, the box of the pair
+  `own_bytes n (pcellb_ty _ * bcell_points_to_ty ty)` with value `(l, (g, (g, x)))`.
+- `type_pcellb_into_inner_instr`: `own_bytes n (pcellb_ty _)` and the permission give
+  `own_bytes n ty`; VC `g = g'`.
+- Moves: `type_pcellb_memcpy_instr` (`MemCopy` of the cell into a box `own_bytes n (↯ m)`) and
+  `type_pcellb_move_instr` (typed move `Store m (Load m)`); the source box becomes `↯`. Any
+  contents (with nested cells) can be moved.
+- Atomics, at the content's mty, for `NoCell 𝔄`:
+  `type_pcellb_load_sc_instr` (`&shrb` of the cell and of the permission, `Copy ty`),
+  `type_pcellb_store_sc_instr` and `type_pcellb_mcas_instr` (`&shrb` of the cell, `&uniqb`
+  of the permission, which they resolve, as the legacy rules). The MCAS post branches on
+  `bool_decide (ty_val x = ty_val y1)` (the MiniRust comparison), and the result is
+  `v ◁ᵥ bool_ty`.
+
+### Borrows of the contents (`typing/pcell_bytes_borrow.v`)
+
+The contents of a cell are reached through the byte-cells of its group, not through
+location edges, so `&shrb`/`&uniqb` of `ty` (whose bodies are `bytes_own`) cannot be the
+result of `borrow`/`borrow_mut`. A borrow of the contents is a borrow **of the permission**,
+pinned to the location of the cell:
+
+    pinned_ty ty Φ          (* ownership, persistent and sharing predicates ∗ Φ x g *)
+    bcell_loc κ m l g n := ∃ cs, greg g m cs ∗ (@[κ] &&{↑NllftG; n+1}&&> loc_side l g m cs)
+    bcell_shr_ty κ ty  := pinned_ty (&shrb{κ} (bcell_points_to_ty ty)) (λ x n, bcell_loc κ _ x.1.1 x.2.1 n)
+    bcell_uniq_ty κ ty := pinned_ty (&uniqb{κ} (bcell_points_to_ty ty)) (bcell_uniq_loc κ _)
+
+The pointer of the reference is the location of the cell (the permission is zero-sized, so
+its bytes are at any location, `bytes_own_zst_loc`). The values are those of the borrows of
+the permission, `(l, (g, x))` and `(l, (g, x), ξ, d, g', idx)`: the prophecy of a
+`bcell_uniq_ty` is that of the borrowed permission (resolution: `bcell_uniq_resolve`).
+
+- `type_pcellb_borrow_instr`: `&shrb{κ} (pcellb_ty _)` at `(l, g)` and
+  `&shrb{κ} (bcell_points_to_ty ty)` at `(_, (g', x))` give `bcell_shr_ty κ ty` at
+  `(l, (g, x))`; VC `g = g'`.
+- `type_bcell_shr_load_instr` (`NoCell`, `Copy`): a non-atomic guarded `Load` of the contents.
+- `type_pcellb_borrow_mut_instr`: `&shrb{κ} (pcellb_ty _)` and `&uniqb{κ} (bcell_points_to_ty ty)`
+  give `bcell_uniq_ty κ ty` at `((l.1, []), (g, x), ξ, …)`; VC `g = g'`.
+- `type_bcell_uniq_store_instr` (`NoCell`): a non-atomic `Store` of the whole contents through
+  the cell (`wp_pcell_store_na_guarded`, i.e. the sub-position machinery at offset 0); the
+  borrow stays, with the new contents.
+
+**Combining guards.** A guarded access needs one guard of `loc_side ∗ gdyn`, but the two
+shared references give two guards (by `@[κ]`). Two guards by the same token give a guard of
+the conjunction (`guards_and_point`, the target must be a point prop); the conjunction of
+`loc_side` (edges of the byte region) and `gdyn` is their separating conjunction because
+they live in different ghost cells. For this, `heapGS` has a new field
+`heap_bytes_gdyn_ne : heap_bytes_name ≠ heap_gdyn_name` (allocated fresh in `adequacy.v`),
+and `lang/heap_cells.v` has `own_and_ne` (`own γ1 a ∧ own γ2 b ⊢ own γ1 a ∗ own γ2 b` for
+`γ1 ≠ γ2`, proved in the model), `loc_side_and_gdyn` and the point-prop lemmas.
+
+### Example (`typing/examples/pcell_example_bytes.v`)
+
+`pcell_example_b_type`: allocate a box, store `17`, `PCellbFromOwn`, share the pair at `κ`,
+copy the shared reference (`copy_val_tctx_incl`, new in `value_ctx.v`), project the fields
+(`type_shr_bytes_fst/snd_instr`), `PCellbBorrow`, load, end `κ`, drop the pair, return the
+value; the specification is `post 17`. Instead of calling the legacy `assert` (a legacy
+`fn`), the body returns the value. Its axioms are those of the other examples. It takes
+about 35 s.
+
+### `ra.v` on bytes (`typing/ra_bytes.v`)
+
+The definitions of `ra.v` (`VerusRA`, `ra_ty`, `ra_inv`, `ra_alloc`, `ra_validate`,
+`ra_update…`) are layer-independent and are reused; `proph_protocol.v` depends only on them,
+so it needs no port. The typing rules take ghost values as MiniRust values (`◁ᵥ ra_ty`,
+`◁ᵥ ghost_ty ty`) instead of boxes of size 0, and shared references as `&shrb{κ} ra_ty`.
+A ghost operation is `GhostOp := Skip ;; MkTuple []`; the operations that return a shared
+reference are `GhostRet [p1]` (the pointer of the first argument: a zero-sized referent is
+at any location, `shr_bytes_own_zst`). Ported: alloc, join, split (deviation: `self` keeps
+the first part and the result is the second, instead of a box of the pair), unit, update,
+update_nondeterministic, validate, join_shared_to_target, weaken, update_with_shr,
+update_with_shr_non_det.
+
+### Changes to existing files
+
+- `lang/heap.v` (`heap_bytes_gdyn_ne`), `lang/adequacy.v`, `lang/heap_cells.v` (above).
+- `typing/type.v`: `NoCellL` (lists) with instances for `[]`, `::`, and `NoCell` instances for
+  `Π!` and `Σ!` (the §14 left-over).
+- `typing/own_bytes.v`: zero-sized bytes (`bytes_own_zst_emp`, `bytes_own_zst_true`,
+  `bytes_own_zst_loc`); `typing/shr_bytes.v`: `shr_bytes_own_zst`;
+  `typing/value_ctx.v`: `copy_val_tctx_incl`.
+
+### Limits
+
+- **Whole-contents accesses only, for contents without cells** (`NoCell`). Field-wise
+  accesses through `bcell_shr_ty`/`bcell_uniq_ty` (the sub-position rules exist at the WP
+  level, `wp_pcell_*_sub`) and loads through `bcell_uniq_ty` are not provided; nor are
+  places rooted at cell contents (the place machinery is on `bytes_own` leaves).
+- **Generic moves and copies of values containing cells** (the `NoCell` rules of §14) are not
+  generalised: the move rules above move a `pcellb_ty` box; a generic typed move of a
+  value with several groups would need a multi-group untether/retether lemma.
+- **`protocol.v` is not ported** (see §15.1 below if done).
+- The atomic store/MCAS consume the unique borrow of the permission (as the legacy rules);
+  the non-atomic store through `bcell_uniq_ty` keeps it.
+

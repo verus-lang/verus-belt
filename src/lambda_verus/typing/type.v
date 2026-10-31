@@ -614,6 +614,17 @@ Global Hint Extern 1 (NoCell _) => exact I : typeclass_instances.
 Global Instance prod_nocell 𝔄 𝔅 : NoCell 𝔄 → NoCell 𝔅 → NoCell (𝔄 * 𝔅).
 Proof. rewrite /NoCell /=. intros. by apply andb_True. Qed.
 
+(** Lists of syntactic types without cells, for [Π!] and [Σ!] (of type variables). *)
+Class NoCellL (𝔄l: list syn_type) : Prop := no_cell_l : forallb syn_nocell 𝔄l.
+Global Instance nil_nocell : NoCellL [].
+Proof. done. Qed.
+Global Instance cons_nocell 𝔄 𝔄l : NoCell 𝔄 → NoCellL 𝔄l → NoCellL (𝔄 :: 𝔄l).
+Proof. rewrite /NoCellL /NoCell /=. intros. by apply andb_True. Qed.
+Global Instance xprod_nocell 𝔄l : NoCellL 𝔄l → NoCell (Π! 𝔄l).
+Proof. done. Qed.
+Global Instance xsum_nocell 𝔄l : NoCellL 𝔄l → NoCell (Σ! 𝔄l).
+Proof. done. Qed.
+
 Section ty_mty_lemmas.
   Context `{!typeG Σ}.
 

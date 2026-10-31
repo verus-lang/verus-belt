@@ -333,6 +333,8 @@ src/lambda_verus/typing/place_xprod.v
 src/lambda_verus/typing/soundness_bytes.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
+src/lambda_verus/typing/pcell_bytes.v
+src/lambda_verus/typing/pcell_bytes_borrow.v
 src/lambda_verus/typing/tracked.v
 src/lambda_verus/typing/mod_ty.v
 src/lambda_verus/typing/product_split.v
@@ -340,6 +342,7 @@ src/lambda_verus/typing/type_sum.v
 src/lambda_verus/typing/borrow.v
 src/lambda_verus/typing/sum.v
 src/lambda_verus/typing/ra.v
+src/lambda_verus/typing/ra_bytes.v
 src/lambda_verus/typing/proph_protocol.v
 src/lambda_verus/typing/protocol.v
 src/lambda_verus/typing/local_inv.v
@@ -353,6 +356,7 @@ src/lambda_verus/typing/soundness.v
 src/lambda_verus/typing/examples/assert.v
 src/lambda_verus/typing/examples/list.v
 src/lambda_verus/typing/examples/pcell_example.v
+src/lambda_verus/typing/examples/pcell_example_bytes.v
 src/lambda_verus/typing/examples/own_bytes.v
 src/lambda_verus/typing/examples/place_own.v
 src/lambda_verus/typing/examples/get_first.v

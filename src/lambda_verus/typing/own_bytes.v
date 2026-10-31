@@ -222,6 +222,36 @@ Section own_bytes.
       apply frepr_cell. by rewrite lookup_singleton.
   Qed.
 
+  (** Zero-sized values: their fancy bytes are empty. *)
+  Lemma bytes_own_zst_emp {𝔄} (ty: type 𝔄) l x :
+    ty_bsize ty = 0 → is_Some (ty.(ty_val) x) → ⊢ bytes_own ty l x.
+  Proof.
+    intros Hz [v Hv]. iApply (bytes_own_of_bytes _ _ _ []).
+    - exists v. split; [done|].
+      have Hwf := ty_val_wf _ _ _ Hv.
+      have Hdec := decode_encode_value (W:=val) _ _ (ty_mty_wf ty) Hwf.
+      have Hlen := length_encode_value (W:=val) (ty.(ty_mty)) v.
+      rewrite /ty_bsize in Hz. rewrite Hz in Hlen.
+      apply nil_length_inv in Hlen. by rewrite Hlen in Hdec.
+    - by rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec.
+  Qed.
+
+  Lemma bytes_own_zst_true {𝔄} (ty: type 𝔄) l x :
+    ty_bsize ty = 0 → is_Some (ty.(ty_val) x) → bytes_own ty l x ⊣⊢ True.
+  Proof.
+    intros. iSplit; [by iIntros|]. iIntros "_". by iApply bytes_own_zst_emp.
+  Qed.
+
+  (** The fancy bytes of a zero-sized value do not depend on the location. *)
+  Lemma bytes_own_zst_loc {𝔄} (ty: type 𝔄) l l' x :
+    ty_bsize ty = 0 → bytes_own ty l x ⊣⊢ bytes_own ty l' x.
+  Proof.
+    intros Hz. rewrite bytes_own_unseal /bytes_own_def.
+    iSplit; iIntros "(%R & %fbs & _ & %Hfb & HR)"; iExists R, fbs; iFrame "HR";
+      have Hfb' := Hfb; destruct Hfb' as [Hlen _]; rewrite Hz in Hlen;
+      apply nil_length_inv in Hlen; subst fbs; rewrite /heap_mapsto_fbytes /=; by iSplit.
+  Qed.
+
   (** The sharing predicate is structural, as for [own_ptr]: a guard of the bytes and
       the sharing predicate of the contents, under one later. *)
   Program Definition own_bytes {𝔄} (n: nat) (ty: type 𝔄) : type (at_locₛ 𝔄) := {|
