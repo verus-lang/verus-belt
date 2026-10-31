@@ -1,6 +1,6 @@
 From lrust.lang Require Import heap_cells.
 From lrust.typing Require Export type own_bytes value_ctx shr_bytes uniq_bytes.
-From lrust.typing Require Import programs freeable_util uninit uniq_util uniq_bytes_util.
+From lrust.typing Require Import programs freeable_util uninit uniq_util uniq_bytes_util bool.
 From lrust.typing Require uniq_bor.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
@@ -387,6 +387,38 @@ Section pcellb_rules.
       + by iApply (uninit_bytes_own with "Hbs").
       + iEval (rewrite /ty_bsize pcellb_ty_mty //) in "Free'". done.
   Qed.
+
+  (** Moving a [PCell] from a box into a box of uninitialized bytes, by a typed copy
+      ([Store m (Load m)]): the bytes at the new location are the encoding of the decoded
+      contents (padding becomes uninitialized; the contents may embed cells). *)
+  Lemma type_pcellb_move_instr n n' m p q E L I :
+    mty_wf m →
+    typed_instr E L I +[p ◁ᵥ own_bytes n (↯ (mty_size m)); q ◁ᵥ own_bytes n' (pcellb_ty m)]
+      (Store Na1Ord m (ToLit p) (Load Na1Ord m (ToLit q)))
+      (λ _, +[p ◁ᵥ own_bytes n (pcellb_ty m); q ◁ᵥ own_bytes n' (↯ (mty_size m))])
+      (λ post '-[(l, u); (l', g)], post -[(l, g); (l', u)]).
+  Proof.
+    iIntros (Hm tid post mask iκs [[l u] [[l' g] []]]) "_ _ _ _ _ $ $ (p & q & _) Obs".
+    wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ Own".
+    simpl in Hw. simplify_eq. wp_pure _.
+    wp_bind q. iApply (wp_val with "q"). iIntros (w' d' Hq Hw') "#⧖' Own'".
+    simpl in Hw'. simplify_eq. wp_pure _.
+    destruct d as [|d]; [done|]. destruct d' as [|d']; [done|].
+    iDestruct "Own" as "(Bytes & Free & _)". iDestruct "Own'" as "(Bytes' & Free' & _)".
+    iDestruct (bytes_own_uninit with "Bytes") as (bs0) "[Hbs0 %Hlen0]".
+    rewrite bytes_own_pcellb_ty //. iDestruct "Bytes'" as (cs) "[Hls %Hcs]".
+    iApply (wp_pcell_move_len with "[$Hls $Hbs0]"); [done|done|done|].
+    iIntros "!>" (bs) "(Hbs & %Hlen & Hls)". iExists -[(l, g); (l', u)]. iFrame "Obs".
+    iSplitL "Hls Free"; [|iSplitL; [|done]].
+    - iExists _. iSplit; [done|]. iExists (VPtr l), (S d). iSplit; [done|]. iFrame "⧖".
+      iSplitL "Hls"; [|iSplitL; [|done]].
+      + rewrite bytes_own_pcellb_ty //. iExists cs. by iFrame.
+      + rewrite /ty_bsize pcellb_ty_mty //.
+    - iExists _. iSplit; [done|]. iExists (VPtr l'), (S d'). iSplit; [done|]. iFrame "⧖'".
+      iSplitL "Hbs"; [|iSplitL; [|done]].
+      + by iApply (uninit_bytes_own with "Hbs").
+      + iEval (rewrite /ty_bsize pcellb_ty_mty //) in "Free'". done.
+  Qed.
 End pcellb_rules.
 
 (** * Guards of a cell and its permission
@@ -594,5 +626,94 @@ Section pcellb_atomics.
     intros π (Hres & _ & Hpost). apply Hpost. rewrite /uniq_bor.uniq_bor_future /=.
     etrans; [apply (uniq_prvar_app_irrel (𝔄:=trackedₛ (pcellbₛ _ * 𝔄)) (g, x) (g, y) ξi π)|].
     by rewrite Hres.
+  Qed.
+
+  Lemma type_pcellb_mcas_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p q r1 r2 E L I :
+    lctx_lft_alive E L κ →
+    typed_instr E L I
+      +[p ◁ᵥ &shrb{κ} (pcellb_ty ty.(ty_mty)); q ◁ᵥ &uniqb{κ} (bcell_points_to_ty ty);
+        r1 ◁ᵥ ty; r2 ◁ᵥ ty]
+      (MCAS ty.(ty_mty) (ToLit p) r1 r2) (λ v, +[v ◁ᵥ bool_ty])
+      (λ post '-[(_, g); bor; y1; y2], λ mask π,
+        let '(_, (g', x), _, _, _, _) := bor in g = g' ∧
+        if bool_decide (ty.(ty_val) x = ty.(ty_val) y1)
+        then uniq_bor.uniq_bor_future bor π = (g, vπ y2 π) → post -[true] mask π
+        else uniq_bor.uniq_bor_future bor π = (g, vπ x π) → post -[false] mask π).
+  Proof.
+    iIntros (Alv tid post mask iκs [[l g] [[[[[[l' [g' x]] ξi] di] gi] ξidx] [y1 [y2 []]]]])
+      "#LFT #TIME #PROPH #UNIQ #E L $ (p & q & r1 & r2 & _) #Obs".
+    iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
+    iDestruct (Alv with "L E") as "#Alv".
+    wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
+    simpl in Hw. simplify_eq. wp_pure _.
+    wp_bind r1. iApply (wp_val with "r1"). iIntros (v1 d1 Hr1 Hv1) "_ _".
+    wp_bind r2. iApply (wp_val with "r2"). iIntros (v2 dy Hr2 Hv2) "#⧖y Gy".
+    iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
+    destruct d as [|d0]; [done|]. iDestruct "Own" as "(#Gp & _ & _)".
+    iApply wp_fupd.
+    iApply (wp_cumulative_time_receipt2 with "TIME"); [solve_ndisj|]. iIntros "⧗".
+    iDestruct (cumulative_time_receipt_sep 1 1 with "⧗") as "[⧗a ⧗b]".
+    set D := S d0 `max` dy.
+    iAssert (⧖D)%I as "#⧖D"; [rewrite persistent_time_receipt_sep; by iFrame "⧖ ⧖y"|].
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗a ⧖D") as "[#⧖D1 £]";
+      [solve_ndisj|].
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗b ⧖D1") as "[#⧖D2 _]";
+      [solve_ndisj|].
+    iDestruct (lc_weaken (1 + 2 * (D + 1)) with "£") as "[£1 £2]";
+      [rewrite /advance_credits; lia|].
+    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Gh #Back]]]"; [solve_ndisj|].
+    iDestruct (guards_transitive with "Gh Alv") as "#Gκ".
+    iMod (uniq_bcell_open with "LFT UNIQ Gκ Gκ Uniq H1 H2 £1")
+      as "(H2 & ⧗s & #Incl & #⧖x & Own & Close)".
+    iDestruct "Own" as (di' ->) "[Own Gx]". iDestruct "Own" as (fv cs Hfv) "[#Hg Hgd]".
+    iDestruct (guards_transitive_right with "Gκ Gp") as "G1".
+    iDestruct (lguards_weaken_later _ _ _ _ (D + 1) with "G1") as "G1D"; [lia|].
+    iDestruct (guard_pcellb_loc_side with "Hg G1D") as "GL"; [apply ty_mty_wf|].
+    have Hfv' := Hfv. rewrite ty_fval_nocell // in Hfv'.
+    apply fmap_Some in Hfv' as (vx & Hvx & ->).
+    have -> : (Lit $ LitLoc l.1) = (Lit $ LitLoc (l.1 +ₗ (0 + 0)%nat))
+      by rewrite /= shift_loc_0_nat.
+    iApply (wp_pcell_mcas_sub _ l.1 g ty.(ty_mty) cs g 0 ty.(ty_mty) cs (fv_lift vx) 0
+      ty.(ty_mty) vx (fv_lift v2) _ v1 _ v2 (fractional.half γ) _ (D + 1)
+      with "[H2 Hgd £2]");
+      [solve_ndisj|apply fv_sub_here|apply fv_upd_here|apply ty_mty_wf|by eapply ty_val_wf| |].
+    { iSplitR; [done|]. iSplitR; [iIntros "!> $"; by iIntros "$"|].
+      iSplitR; [iApply gpath_refl|]. iFrame "Hg H2 Hgd £2". }
+    iIntros "!>" (b) "[H2 Hb]".
+    iMod (fupd_mask_subseteq (↑Nllft)) as "Hback"; [solve_ndisj|].
+    iDestruct "Hb" as "[[[-> %Heq] Hgd]|[[-> %Hne] Hgd]]".
+    - subst v1.
+      iMod ("Close" $! y2 D D with "[Gy Hgd] ⧗s") as "[UB H1]".
+      { iNext. iSplitR.
+        { iApply (persistent_time_receipt_mono with "⧖D2"). lia. }
+        iSplitL "Gy"; [by iDestruct (ty_gho_own_depth_mono _ dy dy D D with "Gy") as "[$ _]"; lia|].
+        iExists (fv_lift v2), cs. iFrame "Hg Hgd". iPureIntro.
+        rewrite ty_fval_nocell // Hv2 //. }
+      iMod "Hback" as "_".
+      iMod (fupd_mask_mono with "(Back H1 H2)") as "L"; [solve_ndisj|].
+      iMod (resolve_uniq_body (bcell_points_to_ty ty) (g, y2) with
+        "LFT PROPH UNIQ TIME Incl E [] L [] UB") as "[#Hrslv [L _]]"; [done|solve_ndisj| | |].
+      { iApply guards_refl. }
+      { iApply (persistent_time_receipt_mono with "⧖D2"). lia. }
+      iModIntro. iExists -[true]. iFrame "L". iSplitR.
+      { iSplit; [|done]. rewrite tctx_val_val. iExists D. iSplit; [done|]. by iFrame "⧖D". }
+      iCombine "Hrslv Obs" as "Obs2". iApply (proph_obs_impl with "Obs2").
+      intros π (Hres & _ & Hpost). rewrite bool_decide_eq_true_2 in Hpost; [|by rewrite Hvx Hv1].
+      apply Hpost. rewrite /uniq_bor.uniq_bor_future /=.
+      etrans; [apply (uniq_prvar_app_irrel (𝔄:=trackedₛ (pcellbₛ _ * 𝔄)) (g, x) (g, y2) ξi π)|].
+      by rewrite Hres.
+    - iMod ("Close" $! x di' gi with "[Gx Hgd] ⧗s") as "[UB H1]".
+      { iNext. iFrame "⧖x Gx". iExists (fv_lift vx), cs. by iFrame "Hg Hgd". }
+      iMod "Hback" as "_".
+      iMod (fupd_mask_mono with "(Back H1 H2)") as "L"; [solve_ndisj|].
+      iMod (resolve_uniq_body (bcell_points_to_ty ty) (g, x) with
+        "LFT PROPH UNIQ TIME Incl E [] L ⧖x UB") as "[#Hrslv [L _]]"; [done|solve_ndisj| |].
+      { iApply guards_refl. }
+      iModIntro. iExists -[false]. iFrame "L". iSplitR.
+      { iSplit; [|done]. rewrite tctx_val_val. iExists D. iSplit; [done|]. by iFrame "⧖D". }
+      iCombine "Hrslv Obs" as "Obs2". iApply (proph_obs_impl with "Obs2").
+      intros π (Hres & _ & Hpost). rewrite bool_decide_eq_false_2 in Hpost; last first.
+      { rewrite Hvx Hv1. congruence. }
+      apply Hpost. rewrite /uniq_bor.uniq_bor_future /=. by rewrite Hres.
   Qed.
 End pcellb_atomics.
