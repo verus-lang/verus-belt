@@ -3,7 +3,6 @@
     verbatim copy and by a typed [Load]/[Store]), destroying it, and moving a cell that
     contains a cell. *)
 From lrust.lang Require Import proofmode notation.
-From lrust.util Require Import non_atomic_cell_map.
 From guarding Require Import guard.
 Set Default Proof Using "Type".
 

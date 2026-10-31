@@ -74,7 +74,7 @@ Proof. apply decode_encode_value; constructor. Qed.
 
 (** The main proofs. *)
 Lemma spawn_spec E (Ψ : val → iProp Σ) e (f : val) :
-  ↑non_atomic_cell_map.naN ⊆ E →
+  ↑naN ⊆ E →
   IntoVal e f →
   {{{ ∀ c, finish_handle c Ψ -∗ WP f [ #c] {{ _, True }} }}}
     spawn m [e] @ E {{{ c, RET #c; join_handle c Ψ }}}.
@@ -97,10 +97,10 @@ Proof.
   - iIntros "_". wp_seq. iApply "HΦ". iExists _, _, _.
     iFrame. auto.
 Qed.
-Hypothesis HN : @subseteq coPset set_subseteq_instance ( ↑non_atomic_cell_map.naN ) (⊤ ∖ ↑N).
+Hypothesis HN : @subseteq coPset set_subseteq_instance ( ↑naN ) (⊤ ∖ ↑N).
 
 Lemma finish_spec E (Ψ : val → iProp Σ) c v :
-  ↑non_atomic_cell_map.naN ∪ ↑N ⊆ E → val_wf m v →
+  ↑naN ∪ ↑N ⊆ E → val_wf m v →
   {{{ finish_handle c Ψ ∗ Ψ (MLitV v) ∗ £1 }}} finish m [ #c; MLitV v] @ E {{{ RET #☠; True }}}.
 Proof using HN.
   iIntros (? Hwf Φ) "[Hfin [HΨ £]] HΦ". iDestruct "Hfin" as (γf γj bs) "(Hf & Hd & %Hbs & #?)".

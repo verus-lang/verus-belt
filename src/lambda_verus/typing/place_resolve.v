@@ -781,7 +781,7 @@ Section drop_boxes.
   Qed.
 
   Lemma wp_delete_bytes bs (n: Z) l E :
-    ↑non_atomic_cell_map.naN ⊆ E → n = length bs →
+    ↑naN ⊆ E → n = length bs →
     {{{ l ↦b bs ∗ (†l…(length bs) ∨ ⌜n = 0⌝) }}} new_delete.delete [ #n; #l] @ E
     {{{ RET #☠; True }}}.
   Proof.
@@ -800,7 +800,7 @@ Section drop_boxes.
 
   (** Freeing fancy bytes: their cells are dropped. *)
   Lemma wp_delete_fbytes fbs (n: Z) l E :
-    ↑non_atomic_cell_map.naN ⊆ E → n = length fbs →
+    ↑naN ⊆ E → n = length fbs →
     {{{ heap_mapsto_fbytes l fbs ∗ (†l…(length fbs) ∨ ⌜n = 0⌝) }}} new_delete.delete [ #n; #l] @ E
     {{{ RET #☠; True }}}.
   Proof.
@@ -816,7 +816,7 @@ Section drop_boxes.
       owned pointer is freed after its address has been computed again, i.e. after
       [k + 1] steps. *)
   Lemma wp_drop_boxes {𝔄} (lt: lty 𝔄) m k (l: loc) (e: expr) (R: iProp Σ) E Φ :
-    ↑non_atomic_cell_map.naN ⊆ E → lty_freeb lt = true → Closed [] e → m ≤ k + 1 →
+    ↑naN ⊆ E → lty_freeb lt = true → Closed [] e → m ≤ k + 1 →
     (⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^k P -∗ (R -∗ P -∗ Ψ #l) -∗ WP e @ E {{ Ψ }}) →
     R -∗ lty_omem m lt l -∗
     (R -∗ mem_cell l (lty_size lt) -∗ Φ #☠) -∗

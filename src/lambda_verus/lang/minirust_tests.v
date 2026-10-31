@@ -2,7 +2,6 @@
     of an integer, a pointer, a tuple and an enum, and a byte-level copy
     followed by a load. *)
 From lrust.lang Require Import proofmode notation.
-From lrust.util Require Import non_atomic_cell_map.
 Set Default Proof Using "Type".
 
 (** A pair [(i32, *const T)] with the pointer at offset 4. *)

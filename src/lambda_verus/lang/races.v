@@ -8,24 +8,11 @@ Inductive access_kind : Type := ReadAcc | WriteAcc | FreeAcc.
 (* This is a crucial definition; if we forget to sync it with base_step,
    the results proven here are worthless. *)
 Inductive next_access_head : expr → state → access_kind * order → loc → Prop :=
-| Access_read ord l σ :
-    next_access_head (Read ord (Lit $ LitLoc l)) σ (ReadAcc, ord) l
-| Access_write ord l e σ :
-    is_Some (to_val e) →
-    next_access_head (Write ord (Lit $ LitLoc l) e) σ (WriteAcc, ord) l
-| Access_cas_fail l st e1 lit1 e2 lit2 litl σ :
-    to_val e1 = Some (LitV lit1) → to_val e2 = Some (LitV lit2) →
-    lit_neq lit1 litl → σ.1 !! l = Some (st, word_to_byte (LitV litl)) →
-    next_access_head (CAS (Lit $ LitLoc l) e1 e2) σ (ReadAcc, ScOrd) l
-| Access_cas_suc l st e1 lit1 e2 lit2 litl σ :
-    to_val e1 = Some (LitV lit1) → to_val e2 = Some (LitV lit2) →
-    lit_eq σ lit1 litl → σ.1 !! l = Some (st, word_to_byte (LitV litl)) →
-    next_access_head (CAS (Lit $ LitLoc l) e1 e2) σ (WriteAcc, ScOrd) l
 | Access_free n l σ i :
     0 ≤ i < n →
     next_access_head (Free (Lit $ LitInt n) (Lit $ LitLoc l))
                      σ (FreeAcc, Na2Ord) (l +ₗ i)
-(* The MiniRust layer: accesses to every byte of the range *)
+(* Typed accesses: to every byte of the range *)
 | Access_load ord m l (i : nat) σ :
     (i < mty_size m)%nat →
     next_access_head (Load ord m (Lit $ LitLoc l)) σ (ReadAcc, ord) (l +ₗ i)
@@ -51,23 +38,6 @@ Inductive next_access_head : expr → state → access_kind * order → loc → 
     next_access_head (MCAS m (Lit $ LitLoc l) e1 e2) σ (WriteAcc, ScOrd) (l +ₗ i).
 
 (* Some sanity checks to make sure the definition above is not entirely insensible. *)
-Goal ∀ e1 e2 e3 σ, base_reducible (CAS e1 e2 e3) σ →
-                   ∃ a l, next_access_head (CAS e1 e2 e3) σ a l.
-Proof.
-  intros ??? σ (?&?&?&?&?). inversion H; do 2 eexists;
-    (eapply Access_cas_fail; done) || eapply Access_cas_suc; done.
-Qed.
-Goal ∀ o e σ, base_reducible (Read o e) σ →
-              ∃ a l, next_access_head (Read o e) σ a l.
-Proof.
-  intros ?? σ (?&?&?&?&?). inversion H; do 2 eexists; eapply Access_read; done.
-Qed.
-Goal ∀ o e1 e2 σ, base_reducible (Write o e1 e2) σ →
-              ∃ a l, next_access_head (Write o e1 e2) σ a l.
-Proof.
-  intros ??? σ (?&?&?&?&?). inversion H; do 2 eexists;
-    eapply Access_write; try done; eexists; done.
-Qed.
 Goal ∀ e1 e2 σ, base_reducible (Free e1 e2) σ →
               ∃ a l, next_access_head (Free e1 e2) σ a l.
 Proof.
@@ -151,10 +121,6 @@ Proof.
         repeat match type of HP with ∃ _, _ => destruct HP as [? HP] end;
         subst; by eauto
     end.
-  - destruct n; first by eexists. exfalso. eapply Hrednonstuck; last done.
-    by eapply CasStuckS.
-  - exfalso. eapply Hrednonstuck; last done.
-    eapply CasStuckS; done.
   - match goal with H : ∀ m, _ |- _ => destruct (H i) as [_ [[]?]] end; eauto.
   - exfalso. match goal with
       H1 : mem_range (λ _, True) _ _ ?bs1, H2 : mem_range is_reading _ _ ?bs2 |- _ =>
@@ -201,18 +167,11 @@ Proof.
   intros Ha Hσ. assert (Hdom : ∀ l', σ.1 !! l' = None ↔ σ'.1 !! l' = None).
   { intros l'. specialize (Hσ l').
     by rewrite -(fmap_None snd (σ.1 !! l')) -(fmap_None snd (σ'.1 !! l')) Hσ. }
-  destruct Ha as [| |l st e1 lit1 e2 lit2 litl σ0 Hv1 Hv2 Hne Hl
-    |l st e1 lit1 e2 lit2 litl σ0 Hv1 Hv2 Heq Hl| | | | |
+  destruct Ha as [| | | |
     |m l i e1 v1 e2 v2 bs v σ0 Hv1 Hv2 Hi Hbs Hlen Hd Hne
     |m l i e1 v1 e2 v2 bs σ0 Hv1 Hv2 Hi Hbs Hlen Hd].
-  3: { specialize (Hσ l). rewrite Hl /= in Hσ.
-       destruct (σ'.1 !! l) as [[st' b]|] eqn:Hl'; [|done]. injection Hσ as <-.
-       by eapply Access_cas_fail. }
-  3: { specialize (Hσ l). rewrite Hl /= in Hσ.
-       destruct (σ'.1 !! l) as [[st' b]|] eqn:Hl'; [|done]. injection Hσ as <-.
-       eapply Access_cas_suc; [done|done| |done]. by eapply lit_eq_state. }
-  8: { eapply Access_mcas_fail; try done. by eapply mem_range_true_bytes. }
-  8: { eapply Access_mcas_suc; try done. by eapply mem_range_true_bytes. }
+  6: { eapply Access_mcas_fail; try done. by eapply mem_range_true_bytes. }
+  6: { eapply Access_mcas_suc; try done. by eapply mem_range_true_bytes. }
   all: by constructor.
 Qed.
 

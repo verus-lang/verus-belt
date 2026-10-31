@@ -252,7 +252,6 @@ src/lambda_verus/util/adequacy_util.v
 src/lambda_verus/util/cancellable_na_invariants.v
 src/lambda_verus/util/cancellable.v
 src/lambda_verus/util/cellmap.v
-src/lambda_verus/util/non_atomic_cell_map.v
 src/lambda_verus/util/atomic_lock_counter.v
 
 src/lambda_verus/prophecy/syn_type.v

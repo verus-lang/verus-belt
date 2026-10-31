@@ -1,5 +1,5 @@
 Require Import guarding.internal.na_invariants_fork.
-From lrust.util Require Import non_atomic_cell_map atomic_lock_counter update.
+From lrust.util Require Import atomic_lock_counter update.
 From lrust.util Require Export cellmap.
 From guarding Require Import guard factoring_props.
 From iris.algebra Require Import functions.

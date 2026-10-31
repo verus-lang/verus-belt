@@ -1,6 +1,5 @@
 From lrust.typing Require Export type.
 From lrust.typing Require Import freeable_util bytes_layout.
-From lrust.util Require Export non_atomic_cell_map.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
