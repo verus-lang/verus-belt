@@ -428,6 +428,75 @@ Section pcell_tests.
     iIntros "!>" (v') "[[Hls0 Hgd1] %Hv']". have -> : v' = VInt 11 by apply fv_lift_int, Hv'.
     iApply "HΦ". iExists g0, cs0, g1. iFrame.
   Qed.
+
+  (** ** Typed compare-and-exchange *)
+  Lemma int9_wf : val_wf (MInt i32) (VInt 9).
+  Proof. constructor. apply (bool_decide_unpack _); by vm_compute. Qed.
+
+  (** On plain bytes: a successful and a failing compare-and-exchange of an [i32]. *)
+  Lemma test_mcas_int E l bs :
+    ↑naN ⊆ E → length bs = 4%nat →
+    {{{ ▷ l ↦b bs }}}
+      Store Na1Ord (MInt i32) (#l) (MLit (VInt 5)) ;;
+      MCAS (MInt i32) (#l) (MLit (VInt 5)) (MLit (VInt 7)) ;;
+      MCAS (MInt i32) (#l) (MLit (VInt 5)) (MLit (VInt 9)) ;;
+      Load Na1Ord (MInt i32) (#l) @ E
+    {{{ RET MLitV (VInt 7); ∃ bs', l ↦b bs' }}}.
+  Proof.
+    iIntros (? Hlen Φ) "Hl HΦ".
+    wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done|apply int5_wf|done|].
+    iIntros "!> Hl". wp_seq.
+    wp_bind (MCAS _ _ _ _). iApply (wp_mcas with "Hl"); [done|apply int7_wf|
+      by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
+    iIntros "!>" (b) "[[[-> _] Hl]|[[_ %Hne] _]]"; [|done]. wp_seq.
+    wp_bind (MCAS _ _ _ _). iApply (wp_mcas with "Hl"); [done|apply int9_wf|
+      by apply (decode_encode_value (MInt i32) (VInt 7)); [constructor|apply int7_wf]|].
+    iIntros "!>" (b) "[[[_ %Heq] _]|[[-> _] Hl]]"; [done|]. wp_seq.
+    iApply (wp_load_na with "Hl");
+      [by apply (decode_encode_value (MInt i32) (VInt 7)); [constructor|apply int7_wf]|].
+    iIntros "!> Hl". iApply "HΦ". by iExists _.
+  Qed.
+
+  (** Through a cell: a successful compare-and-exchange of the value of the cell, then a
+      read through the cell. *)
+  Lemma test_pcell_mcas E l bs :
+    ↑naN ⊆ E → length bs = 4%nat →
+    {{{ ▷ l ↦b bs }}}
+      Store Na1Ord (MInt i32) (#l) (MLit (VInt 5)) ;;
+      MCAS (MInt i32) (#l) (MLit (VInt 5)) (MLit (VInt 7)) ;;
+      Load ScOrd (MInt i32) (#l) @ E
+    {{{ RET MLitV (VInt 7); ∃ g cs, loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 7) }}}.
+  Proof.
+    iIntros (? Hlen Φ) "Hl HΦ".
+    wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done|apply int5_wf|done|].
+    iIntros "!> Hl". wp_seq.
+    iApply (wp_pcell_create_plain _ _ _ (MInt i32) _ (VInt 5) with "Hl");
+      [done|apply Nat.ltb_lt; reflexivity|constructor|by apply (decode_encode_value (MInt i32) (VInt 5)); [constructor|apply int5_wf]|].
+    iIntros (g cs) "Hls Hgd _".
+    iDestruct "Hls" as "[#Hg Hedges]".
+    iAssert (loc_side l g (MInt i32) cs) with "[Hedges]" as "Hls"; [by iFrame "Hg"|].
+    iAssert (loc_side l g (MInt i32) cs &&{↑naN; 0}&&> loc_side l g (MInt i32) cs)%I
+      as "#Guard"; [iApply guards_refl|].
+    iAssert (□ (loc_side l g (MInt i32) cs -∗ loc_side l g (MInt i32) cs ∗
+      (loc_side l g (MInt i32) cs -∗ loc_side l g (MInt i32) cs)))%I as "#HP".
+    { iIntros "!> Hls". iFrame. by iIntros "Hls". }
+    iMod lc_zero as "£".
+    have -> : (Lit (LitLoc l)) = (Lit (LitLoc (l +ₗ (0 + 0)%nat))) by rewrite /= shift_loc_0_nat.
+    wp_bind (MCAS _ _ _ _).
+    iApply (wp_pcell_mcas_sub _ l g (MInt i32) cs g 0 (MInt i32) cs (FVInt 5) 0 (MInt i32)
+      (VInt 5) (FVInt 7) _ (VInt 5) _ (VInt 7) _ _ 0 with "[$Guard $HP $Hls $Hgd $£]").
+    { done. } { apply fv_sub_here. } { apply fv_upd_here. } { constructor. } { apply int7_wf. }
+    { iSplitR; [iApply gpath_refl|iExact "Hg"]. }
+    iIntros "!>" (b) "[Hls [[[-> _] Hgd]|[[_ %Hne] _]]]"; [|done]. wp_seq.
+    rewrite /= shift_loc_0_nat.
+    iMod lc_zero as "£".
+    iAssert ((loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 7)) &&{↑naN; 0}&&>
+      (loc_side l g (MInt i32) cs ∗ gdyn g (FVInt 7)))%I as "#Guard2"; [iApply guards_refl|].
+    iApply (wp_pcell_load_sc_guarded _ l g (MInt i32) cs (FVInt 7) with "[$Guard2 $Hls $Hgd $£]"); [done|done| |].
+    { iSplitR; [|iExact "Hg"]. iIntros "!> [Hls Hgd]". iSplitL "Hls Hgd"; [iFrame|]. iIntros "Hls Hgd". iFrame. }
+    iIntros "!>" (v) "[[Hls Hgd] %Hv]". have -> : v = VInt 7 by apply fv_lift_int, Hv.
+    iApply "HΦ". iExists g, cs. iFrame.
+  Qed.
 End pcell_tests.
 
 Print Assumptions test_pcell_read.
@@ -440,3 +509,5 @@ Print Assumptions test_pcell_typed_move.
 Print Assumptions test_pcell_nested.
 Print Assumptions test_pcell_sub_write.
 Print Assumptions test_pcell_inner_access.
+Print Assumptions test_mcas_int.
+Print Assumptions test_pcell_mcas.
