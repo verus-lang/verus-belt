@@ -132,7 +132,6 @@ src/lambda_verus/typing/subtype.v
 src/lambda_verus/typing/place_xprod.v
 src/lambda_verus/typing/soundness_bytes.v
 src/lambda_verus/typing/pptr.v
-src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/pcell_bytes.v
 src/lambda_verus/typing/pcell_bytes_borrow.v
 src/lambda_verus/typing/tracked.v
@@ -156,7 +155,6 @@ src/lambda_verus/typing/soundness.v
 
 src/lambda_verus/typing/examples/assert.v
 src/lambda_verus/typing/examples/list.v
-src/lambda_verus/typing/examples/pcell_example.v
 src/lambda_verus/typing/examples/pcell_example_bytes.v
 src/lambda_verus/typing/examples/own_bytes.v
 src/lambda_verus/typing/examples/place_own.v
