@@ -341,6 +341,20 @@ Section own_bytes.
     - move=> κ [l x] d g tid. f_equiv. destruct d; [done|]. simpl.
       rewrite (bytes_own_same ty ty'). f_equiv. apply Eqv.
   Qed.
+
+  Global Instance own_bytes_type_contractive 𝔄 n : TypeContractive (@own_bytes 𝔄 n).
+  Proof.
+    split; [by apply type_lft_morphism_id_like|done| | | |].
+    - move=>/= m ty ty' _ _ _ EqOwn _ _ _ [l x] [|d] g tid //=.
+      rewrite /ty_bsize (ty_mty_same ty ty') (bytes_own_same ty ty').
+      do 2 f_equiv. f_contractive. by apply EqOwn.
+    - move=>/= m ty ty' _ _ _ _ EqPers _ _ [l x] [|d] g tid //=.
+      f_contractive. by apply EqPers.
+    - done.
+    - move=>/= m ty ty' _ _ _ _ _ _ EqShr κ [l x] d g tid.
+      apply later_contractive. split=> m' Hm. destruct d as [|d']; [done|]. simpl.
+      rewrite (bytes_own_same ty ty'). f_equiv. eapply dist_later_lt; [apply EqShr|lia].
+  Qed.
 End own_bytes.
 
 Section own_bytes_rules.
@@ -489,3 +503,5 @@ Section own_bytes_rules.
     - lia.
   Qed.
 End own_bytes_rules.
+
+Global Hint Resolve own_bytes_resolve : lrust_typing.

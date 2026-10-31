@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import fixpoint product sum own mod_ty.
+From lrust.typing Require Import fixpoint product sum mod_ty own_bytes.
 From lrust.prophecy Require Import syn_type.
 Set Default Proof Using "Type".
 
@@ -119,28 +119,30 @@ Next Obligation. fold indep_interp_of_syn_type. fold proph_interp_of_syn_type. i
 Qed.
 
     
+(** The box of a list node owns the bytes of the sum; its size is syntactic. *)
+Definition list_node_size 𝔄 : nat := syn_bsize (Σ! [unitₛ ; prodₛ 𝔄 (rlistₛ 𝔄)]).
+
 Section list.
   Context `{!typeG Σ}.
 
   Definition list_map {𝔄} (ty: type 𝔄) (ty': type (rlistₛ 𝔄)) : type (rlistₛ 𝔄) :=
-    <{sum_to_listₛ ; list_to_sumₛ}> (box (Σ! +[(); ty * ty']))%T.
+    <{sum_to_listₛ ; list_to_sumₛ}> (own_bytes (list_node_size 𝔄) (Σ! +[(); ty * ty']))%T.
 End list.
 
 (* In Rust:
   enum List<T> { Nil, Cons(T, Box<List<T>>) }
   
-  This example folds at Box<List<T>> instead of List<T> because it's a bit easier
+  This example folds at Box<List<T>> instead of List<T> because it's a bit easier.
+  The boxes are boxes of bytes ([own_bytes]).
 *)
 Notation list_ty ty := (fix_ty (list_map ty)).
-Notation list_cons_ty ty := (box (ty * (list_ty ty)))%T.
-Notation list_xsum_ty ty := (box (Σ! +[(); list_cons_ty ty]))%T.
 
 Section typing.
   Context `{!typeG Σ}.
     
   (* fold and unfold list *)
   Lemma list_unfold_fold {𝔄} (ty: type 𝔄) E L :
-    eqtype E L (list_ty ty) (box (Σ! +[(); ty * list_ty ty]))%T
+    eqtype E L (list_ty ty) (own_bytes (list_node_size 𝔄) (Σ! +[(); ty * list_ty ty]))%T
         list_to_sumₛ sum_to_listₛ.
   Proof.
     eapply eqtype_eq.
@@ -165,25 +167,7 @@ Section typing.
   Proof. move=> ?. apply resolve_just. Qed.
 
   
-  Lemma list_subtype {𝔄 𝔅} E L (f: 𝔄 →ₛ 𝔅) ty ty' :
-    subtype E L ty ty' f → subtype E L (list_ty ty) (list_ty ty') (list_mapₛ f).
-  Proof.
-    move=> ?. apply fix_subtype. 
-      - intros. rewrite <- syn_type_morphism_ξl. trivial.
-      - trivial.
-      - intros [loc0 [x pad]]. trivial.
-      - intros. eapply subtype_eq; [solve_typing|].
-        apply extensₛ.
-        * fun_ext. intros [loc0 [l nil_pad]]. induction l as [|[[x pad] loc] xl]; trivial.
-        * fun_ext. intros [loc0 [l nil_pad]]. induction l as [|[[x pad] loc] xl]; trivial.
-  Qed.
-
-  Lemma list_eqtype {𝔄 𝔅} E L (f: 𝔄 →ₛ 𝔅) (g: 𝔅 →ₛ 𝔄) ty ty' :
-    eqtype E L ty ty' f g → eqtype E L (list_ty ty) (list_ty ty') (list_mapₛ f) (list_mapₛ g).
-  Proof. move=> [??]. by split; apply list_subtype. Qed.
-
 End typing.
 
 Global Hint Resolve list_resolve | 5 : lrust_typing.
-Global Hint Resolve list_resolve_just list_subtype list_eqtype
-  : lrust_typing.
+Global Hint Resolve list_resolve_just : lrust_typing.

@@ -1,7 +1,7 @@
 From lrust.lang Require Import heap_cells.
 From lrust.typing Require Export type own_bytes value_ctx shr_bytes uniq_bytes.
-From lrust.typing Require Import programs freeable_util uninit uniq_util uniq_bytes_util bool product.
-From lrust.typing Require uniq_bor.
+From lrust.typing Require Import programs freeable_util uninit uniq_util uniq_bytes_util bool
+  product.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
@@ -617,7 +617,7 @@ Section pcellb_atomics.
       (Store ScOrd ty.(ty_mty) (ToLit p) r) (λ _, +[])
       (λ post '-[(_, g); bor; y], λ mask π,
         let '(_, (g', _), _, _, _, _) := bor in g = g' ∧
-        (uniq_bor.uniq_bor_future bor π = (g, vπ y π) → post -[] mask π)).
+        (uniq_bor_future bor π = (g, vπ y π) → post -[] mask π)).
   Proof.
     iIntros (Alv tid post mask iκs [[l g] [[[[[[l' [g' x]] ξi] di] gi] ξidx] [y []]]])
       "#LFT #TIME #PROPH #UNIQ #E L $ (p & q & r & _) #Obs".
@@ -667,7 +667,7 @@ Section pcellb_atomics.
     { iApply (persistent_time_receipt_mono with "⧖D2"). lia. }
     iModIntro. iExists -[]. iFrame "L". iSplit; [done|].
     iCombine "Hrslv Obs" as "Obs2". iApply (proph_obs_impl with "Obs2").
-    intros π (Hres & _ & Hpost). apply Hpost. rewrite /uniq_bor.uniq_bor_future /=.
+    intros π (Hres & _ & Hpost). apply Hpost. rewrite /uniq_bor_future /=.
     etrans; [apply (uniq_prvar_app_irrel (𝔄:=trackedₛ (pcellbₛ _ * 𝔄)) (g, x) (g, y) ξi π)|].
     by rewrite Hres.
   Qed.
@@ -681,8 +681,8 @@ Section pcellb_atomics.
       (λ post '-[(_, g); bor; y1; y2], λ mask π,
         let '(_, (g', x), _, _, _, _) := bor in g = g' ∧
         if bool_decide (ty.(ty_val) x = ty.(ty_val) y1)
-        then uniq_bor.uniq_bor_future bor π = (g, vπ y2 π) → post -[true] mask π
-        else uniq_bor.uniq_bor_future bor π = (g, vπ x π) → post -[false] mask π).
+        then uniq_bor_future bor π = (g, vπ y2 π) → post -[true] mask π
+        else uniq_bor_future bor π = (g, vπ x π) → post -[false] mask π).
   Proof.
     iIntros (Alv tid post mask iκs [[l g] [[[[[[l' [g' x]] ξi] di] gi] ξidx] [y1 [y2 []]]]])
       "#LFT #TIME #PROPH #UNIQ #E L $ (p & q & r1 & r2 & _) #Obs".
@@ -743,7 +743,7 @@ Section pcellb_atomics.
       { iSplit; [|done]. rewrite tctx_val_val. iExists D. iSplit; [done|]. by iFrame "⧖D". }
       iCombine "Hrslv Obs" as "Obs2". iApply (proph_obs_impl with "Obs2").
       intros π (Hres & _ & Hpost). rewrite bool_decide_eq_true_2 in Hpost; [|by rewrite Hvx Hv1].
-      apply Hpost. rewrite /uniq_bor.uniq_bor_future /=.
+      apply Hpost. rewrite /uniq_bor_future /=.
       etrans; [apply (uniq_prvar_app_irrel (𝔄:=trackedₛ (pcellbₛ _ * 𝔄)) (g, x) (g, y2) ξi π)|].
       by rewrite Hres.
     - iMod ("Close" $! x di' gi with "[Gx Hgd] ⧗s") as "[UB H1]".
@@ -758,6 +758,6 @@ Section pcellb_atomics.
       iCombine "Hrslv Obs" as "Obs2". iApply (proph_obs_impl with "Obs2").
       intros π (Hres & _ & Hpost). rewrite bool_decide_eq_false_2 in Hpost; last first.
       { rewrite Hvx Hv1. congruence. }
-      apply Hpost. rewrite /uniq_bor.uniq_bor_future /=. by rewrite Hres.
+      apply Hpost. rewrite /uniq_bor_future /=. by rewrite Hres.
   Qed.
 End pcellb_atomics.

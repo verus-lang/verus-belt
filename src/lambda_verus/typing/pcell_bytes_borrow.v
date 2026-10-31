@@ -1,7 +1,6 @@
 From lrust.lang Require Import heap_cells.
 From lrust.typing Require Export pcell_bytes.
 From lrust.typing Require Import programs uniq_util uniq_bytes_util.
-From lrust.typing Require uniq_bor.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
