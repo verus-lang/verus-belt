@@ -159,7 +159,7 @@ Section spawn.
 
       iMod (invctx_alloc ⊤) as (tid') "I'".
 
-      rewrite (proj1 (proj2 (@sync_change_tid _ _ _ _ (fn_sync _ _) tid tid' _ _ _ ))).
+      rewrite (proj1 (@sync_change_tid _ _ _ _ (fn_sync _ _) tid tid' _ _ _ )).
 
       iApply fupd_wp.
       iMod (fupd_mask_subseteq (↑Nllft)) as "Hclose"; first solve_ndisj.
@@ -211,7 +211,6 @@ Section spawn.
         iSplit => //.
         rewrite tctx_val_val. iExists _.
         iFrame "Hsd". iSplit; [done|].
-        rewrite /ty_own.
         unfold ty_gho_own => /=.
         iFrame "join". }
 
