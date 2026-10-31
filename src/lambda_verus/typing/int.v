@@ -8,16 +8,10 @@ Section int_ty.
 
   (** The integers of an [IntType] [it]. Its MiniRust type is [MInt it] (of [int_size it]
       bytes), and [ty_val] is [Some (VInt z)] iff [z] is in the range of [it] (see
-      [syn_val]). In the legacy word layer it is still one word [#z], of any [z]. *)
+      [syn_val]). *)
   Program Definition int_ty (it: IntType) : type (intₛ it) :=
-    {| pt_size := 1;
-       pt_gho (z: ~~(intₛ it)) _ := True%I;
-       pt_phys (z: ~~(intₛ it)) _ := [ FVal #z ];
+    {| pt_gho (z: ~~(intₛ it)) _ := True%I;
     |}.
-  Next Obligation. intros. done. Qed.
-  Next Obligation. intros. done. Qed.
-  Next Obligation. intros. done. Qed.
-  Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.
   Next Obligation. intros. done. Qed.
 
@@ -29,13 +23,12 @@ Section int_ty.
 
   Global Instance int_ty_copy it : Copy (int_ty it).
   Proof.
-    split. - typeclasses eauto. - iIntros. iPureIntro. done.
+    split. - typeclasses eauto.
     - intros. by apply copy_shr_default.
   Qed.
 End int_ty.
 
-(** The legacy integer type, [isize]; the arithmetic rules below are for it (with
-    unbounded results, as before). *)
+(** The integer type [isize]. *)
 Notation int := (int_ty isize).
 
 Section int.
@@ -43,38 +36,24 @@ Section int.
 
   Global Instance int_copy: Copy int.
   Proof.
-    split. - typeclasses eauto. - iIntros. iPureIntro. done.
+    split. - typeclasses eauto.
     - intros. by apply copy_shr_default.
   Qed.
   
   Global Instance int_send: Send int.
   Proof.
-    intros. split; trivial.
-     - intros. unfold syn_abstract in H. subst x'. trivial.
-     - iIntros. iApply step_fupdN_intro; first done. iNext.
+    intros. split.
+     iIntros. iApply step_fupdN_intro; first done. iNext.
        iExists x, 0%nat. iModIntro. iFrame. simpl.
        replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
   Qed.
 
   Global Instance int_sync: Sync int.
-  Proof. apply sync_default; [done|]. split; trivial. split; iSplit; done. Qed.
+  Proof. apply sync_default; [done|]. split; iSplit; done. Qed.
 
   Lemma int_resolve E L : resolve E L int (const (const True)).
   Proof. apply resolve_just. Qed.
   
-  Program Definition Z_of_boolₛ : boolₛ →ₛ Zₛ := {|
-    syn_type_morphism_fn := Z_of_bool ;
-    syn_type_morphism_proph_fn := Z_of_bool ;
-  |}.
-  Next Obligation. intros. done. Qed.
-  Next Obligation. intros. done. Qed.
-
-  Lemma bool_ty_to_int E L : subtype E L bool_ty int Z_of_boolₛ.
-  Proof.
-    apply subtype_plain_type. iIntros "*_!>_/=". iSplit; [done|].
-    iSplit; [iApply lft_incl_refl|]. by iIntros.
-  Qed.
-
 End int.
 
 Global Hint Resolve int_resolve : lrust_typing.

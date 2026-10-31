@@ -39,18 +39,14 @@ Section pinned.
 
   Program Definition pinned_ty {𝔄} (ty: type 𝔄) (Φ: ~~𝔄 → nat → iProp Σ) `{!PinPred Φ} :
       type 𝔄 := {|
-    ty_size := ty.(ty_size); ty_lfts := ty.(ty_lfts); ty_E := ty.(ty_E);
+    ty_lfts := ty.(ty_lfts); ty_E := ty.(ty_E);
     ty_gho_own x d g tid := ty.(ty_gho_own) x d g tid ∗ Φ x g;
     ty_gho_res x d g tid := ty.(ty_gho_res) x d g tid ∗ Φ x g;
     ty_gho_pers x d g tid := ty.(ty_gho_pers) x d g tid ∗ Φ x g;
-    ty_phys := ty.(ty_phys);
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
     ty_shr κ x d g tid := ty.(ty_shr) κ x d g tid ∗ Φ x g;
   |}%I.
-  Next Obligation. intros. first [apply ty_size_eq|apply ty_size_eq2|apply ty_phys_eq2]. Qed.
-  Next Obligation. intros. first [apply ty_size_eq|apply ty_size_eq2|apply ty_phys_eq2]. Qed.
-  Next Obligation. intros. first [apply ty_size_eq|apply ty_size_eq2|apply ty_phys_eq2]. Qed.
   Next Obligation.
     intros 𝔄 ty Φ ? d g d' g' x tid ??. iIntros "[Own #Φ]".
     iDestruct (ty_gho_own_depth_mono with "Own") as "[$ Back]"; [done..|].

@@ -7,43 +7,9 @@ Set Default Proof Using "Type".
 
 Implicit Type (𝔄 𝔅: syn_type) (𝔄l 𝔅l: syn_typel).
 
-Notation max_ty_size := (max_hlist_with (λ _, ty_size)).
-
 Section sum.
   Context `{!typeG Σ}.
         
-  Lemma length_pad l n : length (pad l n) = n.
-  Proof.
-    unfold pad. case_decide; simpl.
-      - rewrite length_take; lia.
-      - rewrite length_app. rewrite repeat_length. lia.
-  Qed.
-  
-  Lemma pad_cons (v: fancy_val) (l: list fancy_val) (n: nat)
-      : pad (v :: l) (S n) = v :: pad l n.
-  Proof.
-    unfold pad. case_decide; simpl; case_decide; simpl; trivial.
-     - simpl in H. lia. - simpl in H. lia.
-  Qed.
-
-  Lemma pad_length l : (pad l (length l)) = l.
-  Proof.
-    unfold pad. case_decide; simpl.
-    - by rewrite firstn_all.
-    - rewrite Nat.sub_diag /= app_nil_r //.
-  Qed.
-
-  Lemma pad_length' l n : n = length l → (pad l n) = l.
-  Proof. move => ->. by rewrite pad_length. Qed.
-
-  Lemma all_concrete_pad l n : all_concrete l → all_concrete (pad l n).
-  Proof.
-    move=> ?. unfold pad. case (bool_decide (n < length l)).
-    - by apply all_concrete_take.
-    - apply all_concrete_app. split=>//. by apply all_concrete_repeat.
-  Qed.
-  Opaque pad.
-
   Lemma lft_intersect_tyl_lfts_lookup_incl {𝔄l} (tyl: typel 𝔄l) i :
     ⊢ lft_intersect_list (tyl_lfts tyl) ⊑ lft_intersect_list (ty_lfts (tyl +!! i)).
   Proof.
@@ -51,7 +17,6 @@ Section sum.
   Qed.
 
   Program Definition xsum_ty {𝔄l} (tyl: typel 𝔄l) : type (Σ! 𝔄l) := {|
-    ty_size := S (max_ty_size tyl);
     ty_lfts := tyl_lfts tyl;
     ty_E := tyl_E tyl;
     ty_gho_own x d g tid :=
@@ -68,33 +33,11 @@ Section sum.
         end ;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-    ty_phys x tid :=
-        match to_xsum (x.1) return list fancy_val with
-          xinj i x0 => pad (FVal #i :: @ty_phys _ _ (𝔄l !!ₗ i) (tyl +!! i) x0 tid ++ (fmap FVal x.2)) (S (max_ty_size tyl))
-        end ;
     ty_shr κ x d g tid :=
         match to_xsum (x.1) return iProp Σ with
           xinj i x0 => @ty_shr _ _ (𝔄l !!ₗ i) (tyl +!! i) κ x0 d g tid
         end ;
   |}%I.
-  Next Obligation.
-    intros 𝔄l tyl [x padding] tid. simpl.
-    refine (match (to_xsum x) with | xinj i x0 => _ end).
-    apply length_pad.
-  Qed.
-  Next Obligation.
-    intros. simpl. f_equal. induction tyl; [done|].
-    simpl. rewrite <- ty_size_eq2. f_equal. apply IHtyl.
-  Qed.
-  Next Obligation.
-    intros 𝔄l tyl [x pad] tid. simpl.
-    replace x with (of_xsum (to_xsum x)) at 1; last by rewrite semi_iso'.
-    refine (match (to_xsum x) with | xinj i x0 => _ end).
-    simpl. rewrite psum_map1_pinj. rewrite to_xsum_pinj.
-      - f_equal. f_equal. f_equal. apply ty_phys_eq2.
-          + f_equal. clear tid. clear x0. clear i. clear pad. clear x. induction tyl; [done|].
-            simpl. rewrite <- ty_size_eq2. f_equal. apply IHtyl.
-  Qed.
   Next Obligation.
     intros 𝔄l tyl d g d' g' [x pad] tid H1 H2. simpl.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
@@ -153,10 +96,8 @@ Section sum.
 
   Global Instance xsum_ty_ne {𝔄l} : NonExpansive (@xsum_ty 𝔄l).
   Proof.
-    move=> n tyl tyl' Eqv. have EqMsz: max_ty_size tyl = max_ty_size tyl'.
-    { elim: Eqv=>/= [|>Eqv ? ->]; [done|]. f_equiv. apply Eqv. }
+    move=> n tyl tyl' Eqv.
     split=>/=.
-    - by rewrite EqMsz.
     - rewrite /tyl_lfts. elim: Eqv=>/= [|>Eqv ? ->]; [done|]. f_equiv. apply Eqv.
     - rewrite /tyl_E. elim: Eqv=>/= [|>Eqv ? ->]; [done|]. f_equiv. apply Eqv.
     - intros [x pad] d g tid.
@@ -171,7 +112,6 @@ Section sum.
       simpl.
       have Eqv': tyl +!! i ≡{n}≡ tyl' +!! i by apply @hlookup_ne.
       unfold ty_gho_pers, xsum_ty. rewrite to_xsum_pinj. apply Eqv'.
-    - intros. do 2 (rewrite <- ty_phys_eq2). trivial.
     - intros κ [x pad] d g tid.
       replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
@@ -238,30 +178,20 @@ Section typing.
   Global Instance xsum_type_ne {𝔄 𝔅l} (T: type 𝔄 → typel 𝔅l) :
     ListTypeNonExpansive T → TypeNonExpansive (Σ! ∘ T)%T.
   Proof.
-    move=> [Tl[->All]]. have EqMsz: ∀ty ty',
-      ty_size ty = ty_size ty' → max_ty_size (Tl +$ ty) = max_ty_size (Tl +$ ty').
-    { move=> *. elim All; [done|]=>/= ???? One _ ->. f_equal. by apply One. }
+    move=> [Tl[->All]].
     split=>/=.
     - apply xsum_lft_morphism. eapply TCHForall_impl; [|done]. by move=> >[].
-    - move=> *. f_equiv. by apply EqMsz.
-    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 H7 [x pad] d g tid.
+    - move=> ? ty ty' H1 H2 H3 H4 H5 [x pad] d g tid.
       unfold xsum_ty, ty_gho_own. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
       by apply All.
-    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 H7 [x pad] d g tid.
+    - move=> ? ty ty' H1 H2 H3 H4 H5 [x pad] d g tid.
       unfold xsum_ty, ty_gho_pers. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
       by apply All.
-    - move=> ty ty' ? ? [x pad] tid.
-      unfold xsum_ty, ty_phys. simpl.
-      refine (match (to_xsum x) with | xinj i x0 => _ end).
-      eapply TCHForall_lookup in All. rewrite !hlookup_apply.
-      rewrite (EqMsz ty ty').
-      + f_equiv. f_equiv. f_equiv. by apply All.
-      + trivial.
-    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 H7 κ [x pad] d g tid.
+    - move=> ? ty ty' H1 H2 H3 H4 H5 κ [x pad] d g tid.
       unfold xsum_ty, ty_shr. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
@@ -272,28 +202,19 @@ Section typing.
     ListTypeContractive T → TypeContractive (Σ! ∘ T)%T.
   Proof.
     move=> [Tl[->All]].
-    have EqMsz: ∀ty ty', max_ty_size (Tl +$ ty) = max_ty_size (Tl +$ ty').
-    { move=> *. elim All; [done|]=>/= ???? One _ ->. f_equal. by apply One. }
     split=>/=.
     - apply xsum_lft_morphism. eapply TCHForall_impl; [|done]. by move=> >[].
-    - move=> *. f_equiv. by apply EqMsz.
-    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 H7 [x pad] d g tid.
+    - move=> ? ty ty' H1 H2 H3 H4 H5 [x pad] d g tid.
       unfold xsum_ty, ty_gho_own. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
       by apply All.
-    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 H7 [x pad] d g tid.
+    - move=> ? ty ty' H1 H2 H3 H4 H5 [x pad] d g tid.
       unfold xsum_ty, ty_gho_pers. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
       by apply All.
-    - move=> ty ty' ? ? [x pad] tid.
-      unfold xsum_ty, ty_phys. simpl.
-      refine (match (to_xsum x) with | xinj i x0 => _ end).
-      eapply TCHForall_lookup in All. rewrite !hlookup_apply.
-      rewrite (EqMsz ty ty').
-      + f_equiv. f_equiv. f_equiv. by apply All.
-    - move=> ? ty ty' H1 H2 H3 H4 H5 H6 H7 κ [x pad] d g tid.
+    - move=> ? ty ty' H1 H2 H3 H4 H5 κ [x pad] d g tid.
       unfold xsum_ty, ty_shr. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
@@ -307,13 +228,6 @@ Section typing.
     split.
     - intros x d g tid. destruct x as [x pad]. unfold ty_gho_own, xsum_ty.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
-    - intros x d g tid. iIntros "G". destruct x as [x pad]. unfold ty_phys, xsum_ty, ty_gho_own.
-      refine (match (to_xsum x) with | xinj i x0 => _ end).
-      have Cpyi := Copy i. inversion Cpyi.
-      iDestruct (copy_concrete with "G") as "%C".
-      iPureIntro. apply all_concrete_pad. simpl. split; trivial.
-      rewrite <- all_concrete_app. split; trivial.
-      apply all_concrete_fmap_fval.
     - intros κ [x pad] d g tid. unfold ty_shr, ty_gho_own, xsum_ty.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       have Cpyi := Copy i. apply copy_shr.
@@ -324,21 +238,7 @@ Section typing.
     move=> ?. have Send: ∀i, Send (hlookup tyl i).
     { move=> *. by apply TCHForall_lookup. }
     split.
-     - intros tid tid' x x'. 
-       destruct x as [x pad]. destruct x' as [x' pad'].
-       unfold ty_gho_own, ty_phys, ty_gho_pers, xsum_ty.
-       intros Ha. replace x with (of_xsum (to_xsum x)) in Ha.
-        2: { apply semi_iso'. typeclasses eauto. }
-       replace x' with (of_xsum (to_xsum x')) in Ha.
-        2: { apply semi_iso'. typeclasses eauto. }
-       generalize Ha.
-       refine (match (to_xsum x) with | xinj i x0 => _ end).
-       refine (match (to_xsum x') with | xinj j x0' => _ end).
-       intros Hb. simpl in Hb. do 2 (rewrite psum_map1_pinj in Hb).
-       inversion Hb. subst pad'. have H1 := pinj_inj _ _ _ _ H0.
-       destruct H1 as [-> JM]. f_equal. f_equal. f_equal.
-       apply send_change_tid_phys. apply JMeq_eq. trivial.
-    - iIntros (tid tid' x d g G H κs d0 Hineq TG TH) "LFT UNIQ TIME Hg H Gg G Gho ⧖".
+    iIntros (tid tid' x d g G H κs d0 Hineq TG TH) "LFT UNIQ TIME Hg H Gg G Gho ⧖".
       destruct x as [x pad]. replace x with (of_xsum (to_xsum x)).
         2: { apply semi_iso'. typeclasses eauto. }
       refine (match (to_xsum x) with | xinj i x0 => _ end).
@@ -357,11 +257,10 @@ Section typing.
     { move=> *. by apply TCHForall_lookup. }
     intros tid tid' x d g.
     destruct x as [x pad].
-    unfold ty_gho_own, ty_phys, ty_gho_pers, ty_shr, xsum_ty.
+    unfold ty_gho_own, ty_gho_pers, ty_shr, xsum_ty.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
-    destruct (Sync i tid tid' x0 d g) as [Ha [Hb [Hc Hd]]].
-    rewrite <- Ha.
-    split; last split; last split; trivial.
+    destruct (Sync i tid tid' x0 d g) as [Hb [Hc Hd]].
+    split; last split; trivial.
   Qed.
 
   Lemma xsum_resolve {𝔄l} E L (tyl: typel 𝔄l) Φl :
@@ -423,44 +322,33 @@ Section typing.
     subtypel E L tyl tyl' fl → subtype E L (Σ! tyl) (Σ! tyl') ((psum_mapₛ fl)).
   Proof. 
     move=> Subs. iIntros "L".
-    iAssert (□ (elctx_interp E -∗ ⌜max_ty_size tyl = max_ty_size tyl'⌝))%I as "#EqSz".
-    { iInduction Subs as [|?????????? Sub Subs] "IH"; [by iIntros "!>_"|].
-      iDestruct (Sub with "L") as "#Sub".
-      destruct Xl.
-      { destruct Yl => //. 
-        inv_hlist xl; inv_hlist yl => /= _.
-        iIntros "!> E /=". 
-        by iDestruct ("Sub" with "E") as (->) "#_". }
-      iDestruct ("IH" with "L") as "#IH'".
-      iIntros "!> E /=". iDestruct ("Sub" with "E") as (->) "#_".
-      by iDestruct ("IH'" with "E") as %->. }
     iAssert (□ (elctx_interp E -∗ tyl_lft tyl' ⊑ tyl_lft tyl))%I as "#InLft".
-    { iClear "EqSz". iInduction Subs as [|?????????? Sub Subs] "IH".
+    { iInduction Subs as [|?????????? Sub Subs] "IH".
       { iIntros "!>_". by iApply lft_incl_refl. }
       iDestruct (Sub with "L") as "#Sub".
       destruct Xl.
       { destruct Yl => //. 
         inv_hlist xl; inv_hlist yl => /= _.
         iIntros "!> E /=". 
-        iDestruct ("Sub" with "E") as "#(?&Hlfts&?)". 
+        iDestruct ("Sub" with "E") as "#(Hlfts&?)". 
         by rewrite /tyl_lft/tyl_lfts /= !app_nil_r. }
       iDestruct ("IH" with "L") as "#IH'".
-      iIntros "!> E /=". iDestruct ("Sub" with "E") as (?) "#[?_]".
+      iIntros "!> E /=". iDestruct ("Sub" with "E") as "#[?_]".
       iDestruct ("IH'" with "E") as "#?".
       rewrite /tyl_lft !lft_intersect_list_app. by iApply lft_intersect_mono. }
     move/subtypel_llctx_lookup in Subs. iDestruct (Subs with "L") as "#InTyl".
-    iIntros "!> #E". iDestruct ("EqSz" with "E") as %EqSz.
+    iIntros "!> #E".
     iSpecialize ("InLft" with "E"). iSpecialize ("InTyl" with "E").
     (* iSplit; simpl; [iPureIntro; by f_equal|]. iSplit; [done|]. *)
     (* iSplit; first iModIntro; iIntros "*". *)
     (* iDestruct ("InTyl" $! i) as (?) "[#?[#InOwn %Hphys]]". *)
-    iSplit; simpl; [iPureIntro; by f_equal|]. iSplit; [done|].
+    iSplit; [done|].
     iSplit. { (* gho *)
       iModIntro. iIntros (x d g tid). destruct x as [x pad].
       replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'; trivial.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
     
-      iDestruct ("InTyl" $! i) as "(%Hsize & Incl & #Gho & _)".
+      iDestruct ("InTyl" $! i) as "(Incl & #Gho & _)".
       iSpecialize ("Gho" $! x0 d g tid). simpl.
       
       rewrite psum_map_p2lookup_pinj.
@@ -473,30 +361,16 @@ Section typing.
       iModIntro. iIntros (x d g tid). destruct x as [x pad].
       replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'; trivial.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
-      iDestruct ("InTyl" $! i) as "(%Hsize & Incl & _ & #GhoPers & _)".
+      iDestruct ("InTyl" $! i) as "(Incl & _ & #GhoPers & _)".
       iSpecialize ("GhoPers" $! x0 d g tid). simpl.
       rewrite psum_map_p2lookup_pinj.
       unfold ty_gho_pers, xsum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj. iFrame "GhoPers".
-    }
-    iSplit. { (* phys *)
-      iIntros (x tid). destruct x as [x pad].
-      replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'; trivial.
-      refine (match (to_xsum x) with | xinj i x0 => _ end).
-      iDestruct ("InTyl" $! i) as "(%Hsize & Incl & _ & _ & %Phys & _)".
-      iDestruct ("EqSz" with "E") as "%Hsize1".
-      have P := Phys x0 tid. simpl. iPureIntro.
-      rewrite psum_map_p2lookup_pinj.
-      unfold ty_phys, xsum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj.
-      f_equal; first f_equal.
-      - unfold fin_renew_by_plist2. rewrite fin_to_nat_fin_renew. trivial.
-      - rewrite P. trivial.
-      - rewrite Hsize1. trivial.
     }
     { (* shr *)
       iModIntro. iIntros (κ x d g tid). destruct x as [x pad].
       replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'; trivial.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
-      iDestruct ("InTyl" $! i) as "(%Hsize & Incl & _ & _ & _ & #Shr)".
+      iDestruct ("InTyl" $! i) as "(Incl & _ & _ & #Shr)".
       iSpecialize ("Shr" $! κ x0 d g tid). simpl.
       rewrite psum_map_p2lookup_pinj.
       unfold ty_shr, xsum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj. iFrame "Shr".

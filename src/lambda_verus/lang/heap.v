@@ -379,14 +379,6 @@ Section definitions.
          ∗ ⌜heap_freeable_rel σ hF⌝
          ∗ (match σ.2 with true => True | false => heap_ato_ctx end))%I.
          
-  (** The values of the physical predicate [ty_phys] of types (until it is deleted):
-      values, or cells. *)
-  Definition cell_id := positive.
-
-  Inductive fancy_val :=
-    | FVal (v: val)
-    | FCell (c: cell_id).
-
 End definitions.
 
 Global Typeclasses Opaque heap_freeable.
@@ -511,36 +503,6 @@ Section heap.
       rewrite lookup_init_mem_ne /=; first by done. right. left. lia.
   Qed.
 
-  (** ** Concrete fancy values *)
-  Definition is_concrete (fv: fancy_val) : Prop :=
-    match fv with
-      | FVal _ => True
-      | FCell _ => False
-    end.
-
-  Fixpoint all_concrete (l: list fancy_val) : Prop :=
-    match l with
-      | [] => True
-      | v :: l' => is_concrete v ∧ all_concrete l'
-    end.
-
-  Lemma all_concrete_app (l l' : list fancy_val) : all_concrete l ∧ all_concrete l' ↔ all_concrete (l ++ l').
-  Proof.
-    induction l; simpl; intuition.
-  Qed.
-
-  Lemma all_concrete_take l n : all_concrete l → all_concrete (take n l).
-  Proof.
-    move: l. elim: n=>//= ? IH [|??]//= [??]. split=>//. by apply IH.
-  Qed.
-
-  Lemma all_concrete_repeat v n : is_concrete v → all_concrete (repeat v n).
-  Proof. move=> ?. by elim: n. Qed.
-
-  Lemma all_concrete_fmap_fval vl : all_concrete (FVal <$> vl).
-  Proof.
-    induction vl; first done. split; first done. apply IHvl.
-  Qed.
 End heap.
 
 

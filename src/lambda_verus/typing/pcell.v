@@ -28,20 +28,15 @@ Section pcell.
   Context `{!typeG Σ}.
 
   Program Definition pcell_ty (m: mty) : type (pcellₛ m) :=
-    {| ty_size := 0;
-      ty_gho_own _ _ _ _ := True;
+    {| ty_gho_own _ _ _ _ := True;
       ty_gho_res _ _ _ _ := True;
       ty_gho_pers _ _ _ _ := True;
       ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
       ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-      ty_phys _ _ := [];
       ty_lfts := [];
       ty_E := [];
       ty_shr := default_shr (λ _ _ _ _, True);
      |}%I.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
   Next Obligation. move => *. iIntros "_". iSplit; auto. Qed.
   Next Obligation. move => *. auto. Qed.
   Next Obligation. move => *. by iIntros "?". Qed.
@@ -53,14 +48,14 @@ Section pcell.
 
   Global Instance pcell_send m : Send (pcell_ty m).
   Proof.
-    intros. split; trivial.
+    intros. split.
     iIntros. iApply step_fupdN_intro; first done. iNext.
     iExists x, 0%nat. iModIntro. iFrame. simpl.
     replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
   Qed.
 
   Global Instance pcell_sync m : Sync (pcell_ty m).
-  Proof. apply sync_default; [done|]. split; trivial. split; iSplit; done. Qed.
+  Proof. apply sync_default; [done|]. split; iSplit; done. Qed.
 
   Lemma pcell_ty_mty m : mty_wf m → (pcell_ty m).(ty_mty) = m.
   Proof. intros. by rewrite -ty_mty_eq /= decide_True. Qed.
@@ -96,8 +91,7 @@ Section cell_points_to.
 
   Program Definition cell_points_to_ty {𝔄} (ty: type 𝔄) :
       type (trackedₛ (pcellₛ (syn_mty 𝔄) * 𝔄)) :=
-    {| ty_size := 0%nat;
-      ty_lfts := ty.(ty_lfts);
+    {| ty_lfts := ty.(ty_lfts);
       ty_E := ty.(ty_E);
       ty_gho_own x d g tid :=
         [S(d') := d] cell_own ty x.1 x.2 ∗ ▷ ty.(ty_gho_own) x.2 d' g tid;
@@ -108,15 +102,11 @@ Section cell_points_to.
           ▷ ty.(ty_gho_pers) x.2 d' g tid;
       ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
       ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-      ty_phys _ _ := [];
       (* Structural, as for [own_ptr]. *)
       ty_shr κ x d g tid :=
         ▷ [S(d') := d]
           (@[κ] &&{↑NllftG; g+1}&&> cell_own ty x.1 x.2) ∗ ty.(ty_shr) κ x.2 d' g tid;
     |}%I.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
   Next Obligation.
     move => 𝔄 ty d g d' g' x tid ??//=.
     iIntros "H". destruct d => //=. destruct d' => //=; first lia.
@@ -184,7 +174,7 @@ Section cell_points_to.
   Global Instance cell_points_to_send {𝔄} (ty: type 𝔄) :
       Send ty → Send (cell_points_to_ty ty).
   Proof.
-    intros [Hphys Hgho]. split; trivial.
+    intros [Hgho]. split.
     intros tid tid' x d g G H κs d0 Hineq TG TH.
     iIntros "LFT UNIQ TIME Hg H Gg G Hgho #⧖o".
     destruct d => //=.
@@ -205,14 +195,14 @@ Section cell_points_to.
       move=> HSync tid tid' x d g.
       have EqOwn: ∀ d0 g0, (cell_points_to_ty ty).(ty_gho_own) x d0 g0 tid ⊣⊢
           (cell_points_to_ty ty).(ty_gho_own) x d0 g0 tid'.
-      { move=> [|d0] g0 //=. destruct (HSync tid tid' x.2 d0 g0) as [_ [Hgho _]].
+      { move=> [|d0] g0 //=. destruct (HSync tid tid' x.2 d0 g0) as [Hgho _].
         by rewrite Hgho. }
-      split => //=. split; [apply EqOwn|]. split.
+      split; [apply EqOwn|]. split.
       - destruct d => //=.
-        pose proof (sync_change_tid tid tid' (snd x) d g) as [_ [Hgho [Hghopers _]]].
+        pose proof (sync_change_tid tid tid' (snd x) d g) as [Hgho [Hghopers _]].
         rewrite Hghopers. trivial.
-      - move=> κ. f_equiv.
-        destruct d => //=. destruct (HSync tid tid' x.2 d g) as [_ [_ [_ Hshr]]].
+      - move=> κ /=. f_equiv.
+        destruct d as [|d0] => //=. destruct (HSync tid tid' x.2 d0 g) as [_ [_ Hshr]].
         by rewrite Hshr.
   Qed.
 

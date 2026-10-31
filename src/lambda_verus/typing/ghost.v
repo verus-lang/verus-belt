@@ -64,18 +64,12 @@ Section ghost.
 
   Program Definition ghost_ty {𝔄} (ty: type 𝔄) : type (ghostₛ 𝔄) := @ty_of_st _ _ (ghostₛ 𝔄)
     ({|
-      st_size := 0;
       st_lfts := ty.(ty_lfts);
       st_E := [];
       st_gho x d g tid := True%I;
-      st_phys x tid := [];
     |}%I : simple_type (ghostₛ 𝔄)).
-  Next Obligation. move=> *. trivial. Qed.
-  Next Obligation. move=> *. trivial. Qed.
-  Next Obligation. move=> *. trivial. Qed.
   Next Obligation. intros. iIntros. done. Qed.
   Next Obligation. intros 𝔄 ty κ x n d g tid ξ R Hin. exfalso. simpl in Hin. set_solver. Qed.
-  Next Obligation. done. Qed.
   
   Global Instance tracked_ne {𝔄} : NonExpansive (@ghost_ty 𝔄).
   Proof. move=> ????. apply ty_of_st_ne. solve_ne_type. Qed.
@@ -88,11 +82,11 @@ Section ghost.
   Qed.
   
   Global Instance ghost_sync {𝔄} (ty : type 𝔄) : Sync (ghost_ty ty).
-  Proof. apply sync_default; [done|]. split; trivial. split; iSplit; done. Qed.
+  Proof. apply sync_default; [done|]. split; iSplit; done. Qed.
   
   Global Instance ghost_copy {𝔄} (ty : type 𝔄) : Copy (ghost_ty ty).
   Proof.
-    split; [typeclasses eauto|done|]. intros. by apply copy_shr_default.
+    split; [typeclasses eauto|]. intros. by apply copy_shr_default.
   Qed.
 
   Lemma ghost_resolve {𝔄} (ty: type 𝔄) E L : resolve E L (ghost_ty ty) (const (const True)).

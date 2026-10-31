@@ -32,7 +32,6 @@ Section atomic_invariants.
   *)
   
   Program Definition atomic_inv_ty {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → proph_asn → Prop) : type (invₛ ℭ) := ({|
-    ty_size := 0;
     ty_lfts := [];
     ty_E := [];
     ty_gho_pers x d g tid := True%I ;
@@ -55,16 +54,12 @@ Section atomic_invariants.
     end;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-    ty_phys x tid := [];
     ty_shr := default_shr (λ (x: ~~(invₛ ℭ)) d g tid, match x with (N, γ, c) =>
           Active γ ∗ external_na_inv γ ATOMIC_POOL N
             (∃ x' d' g' tid' , ⧖(S d' `max` g') ∗ ty.(ty_gho_own) x' d' g' tid'
                 ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')⌝)
       end);
-  |})%I.
-  Next Obligation. done. Qed. 
-  Next Obligation. done. Qed. 
-  Next Obligation. done. Qed. 
+  |})%I.   
   Next Obligation. iIntros. iFrame. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.
@@ -75,7 +70,6 @@ Section atomic_invariants.
       (∀ E, (▷ (P ∨ Active γ)) ∗ na_invariants_fork.na_own ATOMIC_POOL E ={⊤}=∗ na_invariants_fork.na_own ATOMIC_POOL (E ∪ ↑N)).
   
   Program Definition atomic_closer_ty {𝔄 ℭ} (κ: lft) (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → proph_asn → Prop) : type (invₛ ℭ) := ({|
-    ty_size := 0;
     ty_lfts := [];
     ty_E := [];
     ty_gho_pers x d g tid := True%I ;
@@ -91,16 +85,12 @@ Section atomic_invariants.
     end;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-    ty_phys x tid := [];
     ty_shr := default_shr (λ (x: ~~(invₛ ℭ)) d g tid, match x with (N, γ, c) =>
           atomic_lock_handle atomic_lock_ctr_name (↑N) ∗
           atomic_closer γ N (∃ x' d' g' tid' , ⧖(S d' `max` g') ∗ ty.(ty_gho_own) x' d' g' tid'
                 ∗ ⟨ π, pred (syn_abstract x') c π ⟩ ∗ ⌜(Send ty ∧ tid' = null_tid) ∨ (¬(Send ty) ∧ tid = tid')⌝)
       end);
-  |})%I.
-  Next Obligation. done. Qed. 
-  Next Obligation. done. Qed. 
-  Next Obligation. done. Qed. 
+  |})%I.   
   Next Obligation. iIntros. iFrame. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.
   Next Obligation. iIntros. done. Qed.
@@ -141,7 +131,7 @@ Section atomic_invariants.
   Lemma atomic_inv_ty_send {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → proph_asn → Prop)
       : Send ty → Send (atomic_inv_ty ty pred).
   Proof.
-    intros Hsend. split; [done|].
+    intros Hsend. split.
     intros.
     rewrite gho_equiv_of_send.
     iIntros. iApply step_fupdN_intro; first by solve_ndisj. iNext. iModIntro.
@@ -152,7 +142,7 @@ Section atomic_invariants.
       : Send ty → Sync (atomic_inv_ty ty pred).
   Proof.
     intros Hsend. apply sync_default; [done|].
-    split; [done|split; [|done]].
+    split; [|done].
     apply gho_equiv_of_send; trivial.
   Qed.
   

@@ -16,8 +16,7 @@ Implicit Type 𝔄 𝔅: syn_type.
 Section uniq_bytes.
   Context `{!typeG Σ}.
 
-  Program Definition uniq_bytes {𝔄} (κ: lft) (ty: type 𝔄) : type (uniq_borₛ 𝔄) := {|
-    ty_size := 1;  
+  Program Definition uniq_bytes {𝔄} (κ: lft) (ty: type 𝔄) : type (uniq_borₛ 𝔄) := {|  
     ty_lfts := κ :: ty.(ty_lfts);  
     ty_E := ty.(ty_E) ++ ty_outlives_E ty κ;
     
@@ -59,11 +58,6 @@ Section uniq_bytes.
       
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-    ty_phys (x : ~~ (uniq_borₛ 𝔄)) tid :=
-      match x with
-        (l, x0, ξi, d', g', idx) =>
-            [FVal (LitV l)]
-      end;
     
     (* The sharing predicate is structural: sharing [&uniq{κ} ty] at κ0 gives shared
        access to the referent at [κ0 ⊓ κ]. The guard of the token of the prophecy
@@ -86,9 +80,6 @@ Section uniq_bytes.
           ▷ ▷ ty.(ty_gho_pers) x0 d' g' tid
       end;
   |}%I.
-  Next Obligation. intros ? ? ? x. destruct x as [[[[[[l ?] ?] ?] ?] ?] ?]. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. intros ? ? ? x. destruct x as [[[[[[l ?] ?] ?] ?] ?] ?]. done. Qed.
   Next Obligation. intros 𝔄 κ ty d0 g0 d1 g1 x tid Hle Hle2. simpl.
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
     iIntros "[#A [%B C]]".
@@ -235,7 +226,6 @@ Section uniq_bytes.
   Global Instance uniq_bor_ne {𝔄} κ : NonExpansive (@uniq_bytes 𝔄 κ).
   Proof. 
     intros n ty ty' Heqv. split.
-     - done.
      - simpl. f_equiv. apply Heqv.
      - simpl. f_equiv. { apply Heqv. } 
         unfold ty_outlives_E. f_equiv. apply Heqv.
@@ -246,9 +236,8 @@ Section uniq_bytes.
      - intros x d g tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. f_equiv.
        apply uniq_pers_component_ne; [|intros; apply Heqv..].
        rewrite (ty_lfts_ne _ _ _ Heqv). apply lft_equiv_refl.
-     - intros x tid. done.
      - intros κ0 x d g tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.
-       destruct Heqv as [_ _ _ _ EqPers EqPhys EqShr]. rewrite (cbytes_same ty ty').
+       destruct Heqv as [_ _ _ EqPers EqShr]. rewrite (cbytes_same ty ty').
        do 4 f_equiv; [f_equiv; apply EqShr|]. do 2 f_equiv. apply EqPers.
   Qed.
 End uniq_bytes.
@@ -260,18 +249,17 @@ Section typing.
 
   Global Instance uniq_type_contractive {𝔄} κ : TypeContractive (uniq_bytes (𝔄:=𝔄) κ).
   Proof.
-    split; [by apply (type_lft_morphism_add_one κ)|done| | | |].
-     - intros n ty ty' Heq Heq1 Heq2 Heq3 Heq4 Heq5 _ x d g tid.
+    split; [by apply (type_lft_morphism_add_one κ)| | |].
+     - intros n ty ty' Heq1 Heq2 Heq3 Heq4 _ x d g tid.
        destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. f_equiv.
         + apply equiv_dist. iDestruct Heq1 as "#[??]".
           iSplit; iIntros "#H"; (iApply llftl_incl_trans; [iApply "H"|done]).
         + f_equiv.
-          apply uniq_body_contractive; [done|intros; apply Heq3|intros; apply Heq5].
-     - intros n ty ty' Heq Heq1 Heq2 Heq3 Heq4 Heq5 _ x d g tid.
+          apply uniq_body_contractive; [done|intros; apply Heq3].
+     - intros n ty ty' Heq1 Heq2 Heq3 Heq4 _ x d g tid.
        destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. f_equiv.
-       apply uniq_pers_component_contractive; [done|intros; apply Heq3|intros; apply Heq5].
-     - intros ???? x tid. by destruct x as [[[[[l x0] ξi] d'] g'] idx].
-     - intros n ty ty' _ _ _ _ EqPers EqPhys EqShr κ0 x d g tid.
+       apply uniq_pers_component_contractive; [done|intros; apply Heq3].
+     - intros n ty ty' _ _ _ EqPers EqShr κ0 x d g tid.
        destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl. rewrite (cbytes_same ty ty').
        do 3 f_equiv. f_equiv; [apply later_contractive; apply EqShr|].
        (* The persistent predicate of the referent is only [pred n]-close, hence the
@@ -280,35 +268,22 @@ Section typing.
        apply later_contractive. apply EqPers.
   Qed.
   
-  Lemma uniq_stack_okay {𝔄} κ (ty: type 𝔄) : StackOkay (&uniq{κ} ty).
-  Proof. intros x tid. destruct x as [[[[[l x0] ξi] d'] g'] idx]. done. Qed.
-  
   Global Instance uniq_sync {𝔄} κ (ty: type 𝔄) : Sync ty → Sync (&uniq{κ} ty).
   Proof. 
     intros SyncTy tid tid' x d g.
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
-    destruct (SyncTy tid tid' x0 d g) as [Hphys [Hgho [Hpers _]]].
-    split. { done. }
+    destruct (SyncTy tid tid' x0 d g) as [Hgho [Hpers _]].
     have Hg: ∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty.(ty_gho_own) x d g tid'.
     { intros. apply SyncTy. }
     have Hps: ∀ x d g, ty.(ty_gho_pers) x d g tid ⊣⊢ ty.(ty_gho_pers) x d g tid'.
     { intros. apply SyncTy. }
-    have Hp: ∀ x, ty.(ty_phys) x tid = ty.(ty_phys) x tid'.
-    { intros x. apply (SyncTy tid tid' x 0 0). }
     split. { unfold uniq_bytes, ty_gho_own. do 2 f_equiv.
       apply uniq_body_proper; [apply lft_equiv_refl|done..]. }
     split. { unfold uniq_bytes, ty_gho_pers. f_equiv.
       apply uniq_pers_component_proper; [apply lft_equiv_refl|done..]. }
-    intros κ0. simpl. destruct (SyncTy tid tid' x0 d' g) as [H'phys [_ [_ H'shr]]].
-    destruct (SyncTy tid tid' x0 d' g') as [_ [_ [H'pers _]]].
+    intros κ0. simpl. destruct (SyncTy tid tid' x0 d' g) as [_ [_ H'shr]].
+    destruct (SyncTy tid tid' x0 d' g') as [_ [H'pers _]].
     by rewrite H'shr H'pers.
-  Qed.
-
-  Global Instance uniq_just_loc {𝔄} κ (ty: type 𝔄) : JustLoc (&uniq{κ} ty).
-  Proof. 
-    iIntros (x d g tid) "A".
-    destruct x as [[[[[l x0] ξi] d'] g'] idx].
-    iExists (l). done.
   Qed.
 
   Lemma uniq_resolve {𝔄} E L κ (ty: type 𝔄) :

@@ -25,8 +25,7 @@ Section spawn.
 
   (* Rust's thread::JoinHandle<T> *)
   Program Definition join_handle {𝔄 ℭ} (spec: (~~ℭ) → pred' (~~𝔄)) (ty: type 𝔄) : type (at_locₛ (join_handleₛ ℭ))%ST := 
-    {| ty_size := 1;
-      ty_lfts := ty.(ty_lfts);
+    {| ty_lfts := ty.(ty_lfts);
       ty_E := ty.(ty_E);
       ty_gho_own (x : ~~ (at_locₛ ℭ)) d g tid :=
         join_handle spawnN (syn_mty 𝔄) x.1 (join_future ty (spec x.2));
@@ -36,14 +35,9 @@ Section spawn.
         True;
       ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
       ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-      ty_phys (x : ~~ (at_locₛ ℭ)) tid := 
-        [FVal (#x.1)];
       ty_shr := default_shr (𝔄 := at_locₛ (join_handleₛ ℭ))
         (λ (x : ~~ (at_locₛ ℭ)) d g tid, join_handle spawnN (syn_mty 𝔄) x.1 (join_future ty (spec x.2)));
   |}%I.
-  Next Obligation. iIntros (????) => //=. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
   Next Obligation. iIntros (????????????) "$". iIntros "$". Qed.
   Next Obligation. iIntros (????????????) "$". Qed.
   Next Obligation. iIntros (𝔄 ty x ) "**". done. Qed.
@@ -62,10 +56,8 @@ Section spawn.
 
   Global Instance join_handle_send {𝔄 ℭ} (spec: (~~ℭ) → pred' (~~𝔄)) (ty: type 𝔄) : Send (join_handle spec ty).
   Proof.
-    intros. split; trivial.
-     - intros. unfold syn_abstract in H. inversion H.
-       unfold ty_phys, join_handle. by rewrite H1.
-     - iIntros. iApply step_fupdN_intro; first done. iNext.
+    intros. split.
+     iIntros. iApply step_fupdN_intro; first done. iNext.
        iExists x, 0%nat. iModIntro. iFrame. simpl.
        replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
   Qed.
@@ -167,7 +159,7 @@ Section spawn.
 
       iMod (invctx_alloc ⊤) as (tid') "I'".
 
-      rewrite (proj1 (proj2 (@sync_change_tid _ _ _ _ (fn_sync _ _) tid tid' _ _ _ ))).
+      rewrite (proj1 (@sync_change_tid _ _ _ _ (fn_sync _ _) tid tid' _ _ _ )).
 
       iApply fupd_wp.
       iMod (fupd_mask_subseteq (↑Nllft)) as "Hclose"; first solve_ndisj.
@@ -219,7 +211,6 @@ Section spawn.
         iSplit => //.
         rewrite tctx_val_val. iExists _.
         iFrame "Hsd". iSplit; [done|].
-        rewrite /ty_own.
         unfold ty_gho_own => /=.
         iFrame "join". }
 

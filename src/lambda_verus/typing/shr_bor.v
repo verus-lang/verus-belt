@@ -59,18 +59,13 @@ Section shr_bytes.
 
   Program Definition shr_bytes {𝔄} (κ: lft) (ty: type 𝔄) : type (at_locₛ 𝔄) :=
     @ty_of_st _ _ ((at_locₛ 𝔄)) ({|
-    st_size := 1;
     st_lfts := κ :: ty.(ty_lfts);
     st_E := ty.(ty_E) ++ ty_outlives_E ty κ;
     st_gho x d g tid := [S(d') := d]
       shr_bytes_own κ (g+1) ty x.1 x.2 ∗
       ty.(ty_shr) κ (snd x) d' g tid ∗
       ▷^(g+1) (ty.(ty_gho_pers) (snd x) d' g tid);
-    st_phys x tid := [FVal (LitV x.1)];
   |}%I : simple_type (at_locₛ 𝔄)).
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
   Next Obligation.
     intros. iIntros "#A". destruct d. { done. } unfold by_succ.
     destruct d'. { lia. }
@@ -98,17 +93,14 @@ Section shr_bytes.
     leaf_goal laters to (n + (d + 1) * (g + 1)). { lia. }
     iApply ("InnerGuardProph" with "Rk").
   Qed.
-  Next Obligation. done. Qed.
 
   Global Instance shr_bytes_ne {𝔄} κ : NonExpansive (@shr_bytes 𝔄 κ).
   Proof.
     move=> n ty ty' Eqv. apply ty_of_st_ne. constructor; simpl.
-    - done.
     - f_equal. by eapply ty_lfts_ne.
     - f_equal; [by eapply ty_E_ne|by eapply ty_outlives_E_ne].
     - move=> [l x] [|d] g tid //=. rewrite (shr_bytes_own_same κ _ ty ty'). f_equiv.
       f_equiv; [by eapply ty_shr_ne|]. f_equiv. by eapply ty_gho_pers_ne.
-    - done.
   Qed.
 End shr_bytes.
 
@@ -119,7 +111,7 @@ Section shr_bytes_rules.
 
   Lemma shr_bytes_copy {𝔄} κ (ty: type 𝔄) : Copy (&shr{κ} ty).
   Proof.
-    split. - typeclasses eauto. - iIntros. iPureIntro. done.
+    split. - typeclasses eauto.
     - intros. by apply copy_shr_default.
   Qed.
 

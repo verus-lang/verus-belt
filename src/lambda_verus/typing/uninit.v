@@ -8,7 +8,6 @@ Section uninit.
   Context `{!typeG Σ}.
 
   Program Definition uninit n : type (uninitₛ n) := {|
-    ty_size := n;
     ty_lfts := [];
     ty_E := [];
     ty_gho_own vπ _ _ _ := True;
@@ -16,12 +15,8 @@ Section uninit.
     ty_gho_pers vπ _ _ _ := True;
     ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
     ty_fval := syn_fval; ty_fval_eq _ := eq_refl;
-    ty_phys x _ := fmap FVal (vec_to_list x);
     ty_shr := default_shr (λ vπ _ _ _, True);
   |}%I.
-  Next Obligation. intros. rewrite length_fmap. rewrite length_vec_to_list. trivial. Qed.
-  Next Obligation. done. Qed.
-  Next Obligation. done. Qed.
   Next Obligation. by iIntros. Qed.
   Next Obligation. set_solver. Qed.
   Next Obligation. by iIntros. Qed.
@@ -36,15 +31,13 @@ Section typing.
 
   Global Instance uninit_copy n : Copy (↯ n).
   Proof.
-    split; [apply _| |intros; by apply copy_shr_default]=>/= *.
-    iIntros. iPureIntro. apply all_concrete_fmap_fval.
+    split; [apply _|intros; by apply copy_shr_default].
   Qed.
 
   Global Instance uninit_send n : Send (↯ n).
   Proof.
     intros. split.
-      - intros tid tid' x x' Hsyn. unfold syn_abstract in Hsyn. subst x'. trivial.
-      - iIntros. iApply step_fupdN_intro; first done. iNext.
+      iIntros. iApply step_fupdN_intro; first done. iNext.
         iExists x, 0%nat. iModIntro. iFrame. simpl.
         replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
   Qed.
@@ -86,31 +79,19 @@ Section typing.
           * fun_ext. intros x. destruct x. trivial.
           * fun_ext. intros x. destruct x. trivial.
         + done.
-        + intros. refine (match x with vnil => _ end). trivial.
-        + done.
         + intros. refine (match x with vnil => _ end). done.
     }
-    iIntros "_!>_". iSplit; [done|]. iSplit; [iApply lft_equiv_refl|].
+    iIntros "_!>_". iSplit; [iApply lft_equiv_refl|].
     iSplit; first iModIntro=>/=.
     - iIntros (??? vl). naive_solver. 
-    - iSplit; [|iSplit].
+    - iSplit.
     + iIntros (??? vl). naive_solver. 
-    + iPureIntro. intros. refine (match x with vnil => _ end). trivial.
     + iIntros "!>" (?????). iSplit; iIntros; [done|iApply default_shr_True].
   Qed.
   Lemma uninit_unit_1 E L : subtype E L (↯ 0) () (uninit0_to_unitₛ).
   Proof. eapply proj1, uninit_unit. Qed.
   Lemma uninit_unit_2 E L : subtype E L () (↯ 0) (unit_to_uninit0ₛ).
   Proof. eapply proj2, uninit_unit. Qed.
-
-  Lemma uninit_plus_prod_helper1 m n (vl : list val) :
-    length vl = m + n →
-    length (take m vl) = m.
-  Proof. rewrite length_take; lia. Qed.
-  Lemma uninit_plus_prod_helper2 m n (vl : list val) :
-    length vl = m + n →
-    length (drop m vl) = n.
-  Proof. rewrite length_drop; lia. Qed.
 
   Program Definition uninit_joinₛ {n m} : (uninitₛ n * uninitₛ m) →ₛ (uninitₛ (n + m)) := {|
     syn_type_morphism_fn := uncurry vapp ;
@@ -134,23 +115,15 @@ Section typing.
       - split; trivial.
       - split; trivial; fun_ext; intro x.
         + destruct x; done. + destruct x as [[] []]. done.
-      - done.
-      - intros. simpl. destruct (vsepat m x) eqn:Heqn.
-        rewrite <- fmap_app. rewrite <- vec_to_list_app.
-        replace (t) with ((vsepat m x).1); last by rewrite Heqn.
-        replace (t0) with ((vsepat m x).2); last by rewrite Heqn.
-        rewrite <- vsepat_app. trivial.
       - rewrite /syn_bsize /= !seq_size_cons seq_size_nil /=. lia.
       - intros x bs. cbn [syn_mty syn_val]. rewrite decode_pad decode_pad_pair.
         destruct (syn_type_morphism_fn _ x). case_decide; naive_solver.
     }
-    iIntros "_!>_". iSplit; [done|]. iSplit; [iApply lft_equiv_refl|].
+    iIntros "_!>_". iSplit; [iApply lft_equiv_refl|].
     iSplit; first iModIntro=>/=.
     - iIntros (????). naive_solver. 
-    - iSplit; [|iSplit].
+    - iSplit.
       + iIntros "!>" (????). iSplit; iIntros; done.
-      + iPureIntro. rewrite /ty_phys /= .
-        intros x tid. rewrite <- fmap_app. rewrite <- vec_to_list_app. rewrite <- vsepat_app. trivial.
       + iIntros "!>" (?????). iSplit; iIntros; [iSplit|]; iApply default_shr_True.
   Qed.
   Lemma uninit_plus_prod_1 E L m n :

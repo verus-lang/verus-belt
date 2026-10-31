@@ -6,12 +6,11 @@ Set Default Proof Using "Type".
 
 (** * Typing MiniRust values (stage 4 of the MiniRust memory model)
 
-The legacy element [p ◁ ty] types a path that evaluates to a one-word [val] with
-[ty_phys x = [FVal v]]. The element [p ◁ᵥ ty] types a path that evaluates to a MiniRust
-value [MLitV w], the MiniRust value of [x] ([ty_val x = Some w]): it is the result of a
-typed [Load] of [ty_mty ty] and the argument of a typed [Store]. It is a semantic
-element ([TCtx_sem]), so the type context needs no new case; the two forms coexist until
-the legacy word layer is deleted (stage 5).
+The element [p ◁ᵥ ty] types a path that evaluates to a MiniRust value [MLitV w], the
+MiniRust value of [x] ([ty_val x = Some w]): it is the result of a typed [Load] of
+[ty_mty ty] and the argument of a typed [Store]. It is a semantic element ([TCtx_sem]),
+so the type context needs no new case. (The legacy word element [p ◁ ty] was deleted in
+stage 6.)
 
 Pointers are MiniRust values too ([VPtr l]); the address argument of [Load], [Store],
 [MemCopy] and of the offset [+ₗ] is a legacy literal [#l], which [ToLit] gives. *)
