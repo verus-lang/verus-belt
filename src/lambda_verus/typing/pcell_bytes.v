@@ -1,6 +1,6 @@
 From lrust.lang Require Import heap_cells.
 From lrust.typing Require Export type own_bytes value_ctx shr_bytes uniq_bytes.
-From lrust.typing Require Import programs freeable_util uninit uniq_util uniq_bytes_util bool.
+From lrust.typing Require Import programs freeable_util uninit uniq_util uniq_bytes_util bool product.
 From lrust.typing Require uniq_bor.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
@@ -314,6 +314,50 @@ Section pcellb_rules.
       iExists fv, cs. by iFrame "Hg Hgd".
   Qed.
 
+  (** The legacy form of [PCell::new] ([typed_pcell_from_own]): the box holds the cell and
+      the (zero-sized) permission, as a pair. *)
+  Definition PCellbFromOwn : val := (λ: ["p"], "p")%V.
+
+  Lemma bcell_points_to_bytes_own {𝔄} (ty: type 𝔄) l x :
+    ⊢ bytes_own (bcell_points_to_ty ty) l x.
+  Proof. iApply bytes_own_zst_emp; [by rewrite /ty_bsize -ty_mty_eq|done]. Qed.
+
+  Lemma pcellb_pair_bsize {𝔄} (ty: type 𝔄) :
+    ty_bsize (pcellb_ty ty.(ty_mty) * bcell_points_to_ty ty)%T = ty_bsize ty.
+  Proof.
+    rewrite /ty_bsize -ty_mty_eq /= decide_True; [|apply ty_mty_wf].
+    rewrite /seq_size /=. lia.
+  Qed.
+
+  Lemma type_pcellb_from_own_instr {𝔄} n (ty: type 𝔄) p E L I :
+    (0 < ty_bsize ty)%nat →
+    typed_instr E L I +[p ◁ᵥ own_bytes n ty] (PCellbFromOwn [p])
+      (λ v, +[v ◁ᵥ own_bytes n (pcellb_ty ty.(ty_mty) * bcell_points_to_ty ty)%T])
+      (λ post '-[(l, x)], λ mask π, ∀ g, post -[(l, (g, (g, x)))] mask π).
+  Proof.
+    iIntros (Hsz tid post mask iκs [[l x] []]) "_ #TIME _ _ _ $ $ [p _] Obs".
+    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ Own]". simpl in Hw. simplify_eq.
+    rewrite /PCellbFromOwn. wp_bind p.
+    iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
+    destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & Gho)".
+    rewrite bytes_own_brepr. iDestruct "Bytes" as (fbs fv) "(Hfbs & [%Hlen %Hfv] & #Hrep)".
+    iApply (wp_pcell_create with "Hfbs Hrep"); [solve_ndisj|exact Hsz|apply ty_mty_wf|].
+    iIntros (g cs) "Hls Hgd _". iDestruct "Hls" as "[#Hg Hls]".
+    iApply (wp_greg_length with "Hg"). iIntros (Hcs).
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [done|]. iIntros "_ #⧖S".
+    wp_rec.
+    iExists -[(l, (g, (g, x)))]. iSplitR "Obs"; last first.
+    { iApply (proph_obs_impl with "Obs"). intros π Hpost. apply Hpost. }
+    iSplit; [|done]. rewrite tctx_val_val. iExists (S (S d)). iSplit; [done|]. iFrame "⧖S".
+    iSplitL "Hls"; [|iSplitL "Free"].
+    - rewrite (bytes_own_pair _ (pcellb_ty ty.(ty_mty)) (bcell_points_to_ty ty)).
+      iSplitL; [|iApply bcell_points_to_bytes_own].
+      rewrite bytes_own_pcellb_ty; [|apply ty_mty_wf]. iExists cs. by iFrame "Hg Hls".
+    - by rewrite pcellb_pair_bsize.
+    - iNext. iSplit; [done|]. iSplitL "Hgd"; [iExists fv, cs; by iFrame "Hg Hgd"|].
+      iNext. iDestruct (ty_gho_own_depth_mono _ d (S d) d (S (S d)) with "Gho") as "[$ _]"; lia.
+  Qed.
+
   (** [PCell::into_inner]: a box holding a cell and the permission of its group give back
       a box holding the contents. *)
   Definition PCellbIntoInner : val := (λ: ["pcell"; "perm"], "pcell")%V.
@@ -540,7 +584,7 @@ Section pcellb_atomics.
   Qed.
   (** Opening a unique borrow of the permission of a cell: the borrow is opened with [G1],
       its payload run with [G2], and it can be closed with new contents [y]. *)
-  Local Lemma uniq_bcell_open {𝔄} κ (ty: type 𝔄) l' g x ξi di gi ξidx dq tid G1 G2 :
+  Lemma uniq_bcell_open {𝔄} κ (ty: type 𝔄) l' g x ξi di gi ξidx dq tid G1 G2 :
     Timeless G1 → Timeless G2 →
     llft_ctx -∗ uniq_ctx -∗ (G1 &&{↑NllftG}&&> @[κ]) -∗ (G2 &&{↑NllftG}&&> @[κ]) -∗
     (&uniqb{κ} (bcell_points_to_ty ty)).(ty_gho_own) (l', (g, x), ξi, di, gi, ξidx) dq dq tid -∗

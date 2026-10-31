@@ -37,6 +37,14 @@ Section shr_bytes.
     shr_bytes_own κ n ty l x ⊣⊢ (@[κ] &&{↑NllftG; n}&&> ∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝).
   Proof. by rewrite /shr_bytes_own bytes_own_nocell. Qed.
 
+  (** A zero-sized value with a MiniRust value: its bytes are trivially owned, so the
+      reference can be at any location. *)
+  Lemma shr_bytes_own_zst {𝔄} κ n (ty: type 𝔄) l x :
+    ty_bsize ty = 0 → is_Some (ty.(ty_val) x) → ⊢ shr_bytes_own κ n ty l x.
+  Proof.
+    intros. rewrite /shr_bytes_own bytes_own_zst_true //. iApply guards_true.
+  Qed.
+
   Lemma shr_bytes_own_mono {𝔄} κ n n' (ty: type 𝔄) l x :
     n ≤ n' → shr_bytes_own κ n ty l x -∗ shr_bytes_own κ n' ty l x.
   Proof.
