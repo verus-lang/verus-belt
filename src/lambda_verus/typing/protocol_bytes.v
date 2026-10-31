@@ -400,4 +400,151 @@ Section StorageProtocol_bytes.
     iSplitL "Hown"; [|iSplit; [by iApply (tracked_val_intro with "⧖ HghoC")|done]].
     iApply (val_path_intro _ _ srty with "⧖"); [done|done|]. by iFrame "Hsto Hown".
   Qed.
+
+  (** The ownership of a shared reference to a storage resource: a guard of its parts. *)
+  Local Lemma sr_shr_elim tid κ l γ p d :
+    (&shrb{κ} srty).(ty_gho_own) (l, (γ, p)) (S d) (S d) tid -∗
+    (@[κ] &&{↑NllftG; S d + 1}&&> (⌜{[γ]} ⊆ (↑NllftG : coPset)⌝ ∗
+       sp_sto γ (λ _ c, tyC.(gt_gho) c tid)) ∗ sp_own γ p).
+  Proof.
+    iIntros "Own". iDestruct (ghost_shr_elim _ _ srty with "Own") as "#G"; [done|].
+    iSimpl in "G". by rewrite bi.sep_assoc.
+  Qed.
+
+  (** The persistent part of a guarded storage resource, with credits. *)
+  Local Lemma sr_shr_sto L κ γ p n G tid :
+    ↑NllftG ⊆ G →
+    llctx_interp L -∗ (llctx_interp L &&{↑NllftG}&&> @[κ]) -∗
+    (@[κ] &&{↑NllftG; n}&&> (⌜{[γ]} ⊆ (↑NllftG : coPset)⌝ ∗
+       sp_sto γ (λ _ c, tyC.(gt_gho) c tid)) ∗ sp_own γ p) -∗ £n ={G}=∗
+    llctx_interp L ∗ ⌜{[γ]} ⊆ (↑NllftG : coPset)⌝ ∗ sp_sto γ (λ _ c, tyC.(gt_gho) c tid).
+  Proof.
+    iIntros (?) "L #Alv #Shr £". iDestruct (guards_weaken_rhs_sep_l with "Shr") as "Shr1".
+    iDestruct (guards_transitive_right with "Alv Shr1") as "G1".
+    iMod (guards_extract_persistent_later _ _
+      (⌜{[γ]} ⊆ (↑NllftG : coPset)⌝ ∗ sp_sto γ (λ _ c, tyC.(gt_gho) c tid))%I G (↑NllftG) _
+      ltac:(apply _) ltac:(done) with "G1 L []") as "Upd"; [iIntros "$"|].
+    iMod (lc_fupd_elim_laterN with "£ Upd") as ">[$ [$ $]]". done.
+  Qed.
+
+  Local Lemma sr_shr_own_intro tid κ l γ p d :
+    ⧖(S d) -∗
+    (@[κ] &&{↑NllftG; S d + 1}&&> (⌜{[γ]} ⊆ (↑NllftG : coPset)⌝ ∗
+       sp_sto γ (λ _ c, tyC.(gt_gho) c tid)) ∗ sp_own γ p) -∗
+    tctx_elt_interp tid (MLitV (VPtr l.1) ◁ᵥ &shrb{κ} srty) (l, (γ, p)).
+  Proof.
+    iIntros "⧖ #G". iApply (ghost_shr_intro _ _ srty with "⧖");
+      [by rewrite /ty_bsize -ty_mty_eq|done|done|done|]. iSimpl. by rewrite -bi.sep_assoc.
+  Qed.
+
+  Notation "SPb_Guard: p1 p2" := (GhostRet [p1])%E (at level 102, p1,p2 at level 1): expr_scope.
+
+  Lemma typed_spb_guard (k : K) (p1 p2 : path) E L I κ :
+    lctx_lft_alive E L κ →
+    typed_instr E L I +[p1 ◁ᵥ &shrb{κ} srty; p2 ◁ᵥ ghost_ty tyC] (SPb_Guard: p1 p2)
+      (λ v, +[v ◁ᵥ &shrb{κ} (tracked_ty tyC)])
+      (λ post '-[(l, (γ, p)); s], λ mask π, vsp_guards p {[ k := s ]} ∧ post -[(l, s)] mask π).
+  Proof.
+    iIntros (Alv tid post mask iκs [[l [γ p]] [s []]]) "_ #TIME #PROPH _ #E L $ (p1 & _ & _) #Obs".
+    iMod (proph_obs_sat with "PROPH Obs") as "(%π & %guard & _)"; [done|].
+    iDestruct "p1" as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ #Own]". simpl in Hw1. simplify_eq.
+    destruct d as [|d]; [done|].
+    iDestruct (sr_shr_elim with "Own") as "#Hshr".
+    iDestruct (Alv with "L E") as "#Alv".
+    iApply wp_fupd. wp_bind p1. iApply (wp_wand with "[]"); [by iApply wp_eval_path|].
+    iIntros (? ->).
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [done|]. iIntros "£ #⧖S".
+    iDestruct (lc_weaken (S d + 1) with "£") as "£"; [rewrite /advance_credits; nia|].
+    wp_rec.
+    iMod (sr_shr_sto with "L Alv Hshr £") as "($ & %Hγ & #Hsto)"; [solve_ndisj|].
+    iPoseProof (sp_guard _ _ _ {[ γ ]} with "Hsto") as "Hguard'"; [done|set_solver|].
+    iPoseProof (guards_later_absorb_1 with "Hguard'") as "#Hguard''".
+    iPoseProof (guards_weaken_mask _ (↑NllftG) with "Hguard''") as "Hguard"; [set_solver|].
+    iPoseProof (guards_weaken_rhs_sep_r with "Hshr") as "#Hshr'".
+    iDestruct (guards_transitive_additive with "Hshr' Hguard") as "Hshr1".
+    iModIntro. iExists -[(l, s)]. iSplitL; [iSplit; [|done]|].
+    - iApply (ghost_shr_intro _ _ (tracked_ty tyC) with "⧖S");
+        [by rewrite /ty_bsize -ty_mty_eq|done|done|done|].
+      iApply (lguards_weaken_later with "[Hshr1]"); [|by rewrite big_sepM_singleton]. lia.
+    - iApply (proph_obs_impl with "Obs"). by intros π' [_ ?].
+  Qed.
+
+  Notation "SPb_JoinSharedDet: p1 p2 p3" := (GhostRet [p1])%E
+    (at level 102, p1, p2, p3 at level 1): expr_scope.
+
+  Lemma typed_spb_join_shared_to_target κ (p1 p2 p3 : path) (ty : type 𝔄) E L I :
+    lctx_lft_alive E L κ →
+    typed_instr E L I
+      +[p1 ◁ᵥ &shrb{κ} srty; p2 ◁ᵥ &shrb{κ} srty; p3 ◁ᵥ ghost_ty ty]
+      (SPb_JoinSharedDet: p1 p2 p3) (λ v, +[v ◁ᵥ &shrb{κ} srty])
+      (λ post '-[(l1, (γ1, x1)); (_, (γ2, x2)); y], λ mask π, γ1 = γ2 ∧
+        (∀ p, vsp_incl x1 p → vsp_incl x2 p → vsp_incl y p) ∧ post -[(l1, (γ1, y))] mask π).
+  Proof.
+    iIntros (Alv tid post mask iκs [[l1 [γ1 x1]] [[l2 [γ2 x2]] [y []]]])
+      "_ #TIME #PROPH _ #E L $ (p1 & p2 & _ & _) #Obs".
+    iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hy & _)"; [done|].
+    iDestruct "p1" as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 #Own1]". simpl in Hw1. simplify_eq.
+    iDestruct "p2" as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 #Own2]".
+    destruct d1 as [|d1]; [done|]. destruct d2 as [|d2]; [done|].
+    iDestruct (sr_shr_elim with "Own1") as "#Shr1".
+    iDestruct (sr_shr_elim with "Own2") as "#Shr2".
+    iDestruct (Alv with "L E") as "#Alv".
+    set D := d1 `max` d2.
+    iAssert (⧖(S D))%I as "#⧖D".
+    { rewrite /D Nat.succ_max_distr persistent_time_receipt_sep. by iFrame "⧖1 ⧖2". }
+    iApply wp_fupd. wp_bind p1. iApply (wp_wand with "[]"); [by iApply wp_eval_path|].
+    iIntros (? ->).
+    iApply (wp_persistent_time_receipt with "TIME ⧖D"); [done|]. iIntros "£ _".
+    iDestruct (lc_weaken (S D + 1) with "£") as "£"; [rewrite /advance_credits; nia|].
+    wp_rec.
+    iDestruct (lguards_weaken_later _ _ _ _ (S D + 1) with "Shr1") as "Shr1'"; [lia|].
+    iDestruct (lguards_weaken_later _ _ _ _ (S D + 1) with "Shr2") as "Shr2'"; [lia|].
+    iMod (sr_shr_sto with "L Alv Shr1' £") as "($ & %Hγ & #Hsto)"; [solve_ndisj|].
+    iPoseProof (guards_weaken_rhs_sep_r with "Shr1'") as "#Shr1''".
+    iPoseProof (guards_weaken_rhs_sep_r with "Shr2'") as "#Shr2''".
+    iPoseProof (guards_and_point _ _ _ (sp_own γ1 y) with "Shr1'' Shr2''") as "Shr3".
+    { apply point_prop_p_own. }
+    { by iApply sp_own_and_specific. }
+    iPoseProof (guards_include_pers (⌜ {[γ1]} ⊆ ↑NllftG ⌝ ∗ (sp_sto _ _)) with "[] Shr3")
+      as "Shr4".
+    { by iSplit. }
+    iModIntro. iExists -[(l1, (γ1, y))]. iSplitL.
+    - iSplit; [|done]. iApply (sr_shr_own_intro with "⧖D").
+      by rewrite (bi.sep_comm (sp_own γ1 y)).
+    - iApply (proph_obs_impl with "Obs"). by intros π' (_ & _ & ?).
+  Qed.
+
+  Notation "SPb_Weaken: p1 p2" := (GhostRet [p1])%E (at level 102, p1, p2 at level 1): expr_scope.
+
+  Lemma typed_spb_weaken κ (p1 p2 : path) (tyA : type 𝔄) E L I :
+    lctx_lft_alive E L κ →
+    typed_instr E L I +[p1 ◁ᵥ &shrb{κ} srty; p2 ◁ᵥ ghost_ty tyA] (SPb_Weaken: p1 p2)
+      (λ v, +[v ◁ᵥ &shrb{κ} srty])
+      (λ post '-[(l1, (γ, x1)); x2], λ mask π, vsp_incl x2 x1 ∧ post -[(l1, (γ, x2))] mask π).
+  Proof.
+    iIntros (Alv tid post mask iκs [[l1 [γ x1]] [x2 []]])
+      "_ #TIME #PROPH _ #E L $ (p1 & _ & _) #Obs".
+    iMod (proph_obs_sat with "PROPH Obs") as "(% & %Hincl & _)"; [done|].
+    iDestruct "p1" as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ #Own]". simpl in Hw1. simplify_eq.
+    destruct d as [|d]; [done|].
+    iDestruct (sr_shr_elim with "Own") as "#Shr".
+    iDestruct (Alv with "L E") as "#Alv".
+    iApply wp_fupd. wp_bind p1. iApply (wp_wand with "[]"); [by iApply wp_eval_path|].
+    iIntros (? ->).
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [done|]. iIntros "£ _".
+    iDestruct (lc_weaken (S d + 1) with "£") as "£"; [rewrite /advance_credits; nia|].
+    wp_rec.
+    iMod (sr_shr_sto with "L Alv Shr £") as "($ & %Hγ & #Hsto)"; [solve_ndisj|].
+    iPoseProof (guards_weaken_rhs_sep_r with "Shr") as "#Hsp_own1".
+    iPoseProof (guards_weaken_rhs_point with "Hsp_own1") as "Hsp_own2".
+    { apply point_prop_p_own. }
+    { by apply sp_own_mono. }
+    iPoseProof (guards_include_pers (⌜{[γ]} ⊆ ↑NllftG⌝ ∗ sp_sto γ (λ _ c, gt_gho tyC c tid))%I
+      with "[] Hsp_own2") as "Shr'".
+    { by iSplit. }
+    iModIntro. iExists -[(l1, (γ, x2))]. iSplitL.
+    - iSplit; [|done]. iApply (sr_shr_own_intro with "⧖").
+      by rewrite (bi.sep_comm (sp_own _ _)).
+    - iApply (proph_obs_impl with "Obs"). by intros π' [_ ?].
+  Qed.
 End StorageProtocol_bytes.
