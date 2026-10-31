@@ -65,9 +65,8 @@ Section type_soundness.
     { by iApply proph_obs_true. }
     clear Hrtc Hmain main. iIntros (main) "Hmain".
     iDestruct "Hmain" as ([[fxval fx] []]) "/= (Htl & Invctx & [Hmain _] & #Obs)".
-    iDestruct "Hmain" as (??) "(EQ & ? & Hmain)". rewrite eval_path_of_val.
-    iDestruct "EQ" as %[= <-]. iDestruct "Hmain" as "[Hmain %phys]".
-    inversion phys. subst fxval.
+    iDestruct "Hmain" as (?) "(EQ & %d & %Hv & ? & Hmain)". rewrite eval_path_of_val.
+    iDestruct "EQ" as %[= <-]. simpl in Hv. subst fxval.
     iDestruct "Hmain" as (f k j e ?) "(EQ & Hmain)". iDestruct "EQ" as %[= ->].
     wp_rec.
     iMod (llftl_begin' with "LFT") as (ϝ) "Hϝ"; first done.

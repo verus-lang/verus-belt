@@ -159,8 +159,8 @@ Section spawn.
       destruct xl as [[call_once_val c'] [a []]].
       iDestruct "T" as "(T1 & T2 & _)".
       iSimpl in "T1".
-      rewrite !tctx_hasty_val /ty_own.
-      iDestruct "T1" as "(%d1 & #Hd1 & Hgho1 & %Hphys1)".
+      rewrite !tctx_fun_val.
+      iDestruct "T1" as "(%d1 & %Hphys1 & #Hd1 & Hgho1)".
       iDestruct "T2" as (vp Hp wx d2 [-> Hval2]) "[#Hd2 Hgho2]".
       rewrite eval_path_of_val in Hp. simplify_eq.
       iCombine "Hd1 Hd2" as "Hd".
@@ -243,12 +243,11 @@ Section spawn.
         * iApply (guards_transitive _ _ @[static] ) => //.
           iApply lft_incl_static.
       + simpl. by iApply static_alive_true.
-      + rewrite/= !tctx_hasty_val.
-        iExists _. iFrame "Hd".
-        iSplitL.
-        * iDestruct (ty_gho_own_depth_mono with "Hgho1") as "[H _]"; last iFrame.
-          all:lia.
-        * iPureIntro. done.
+      + rewrite/= !tctx_fun_val.
+        iExists _. iSplitR; last first.
+        { iFrame "Hd". iDestruct (ty_gho_own_depth_mono with "Hgho1") as "[H _]"; last iFrame.
+          all:lia. }
+        done.
       + rewrite/=. iSplit => //. rewrite tctx_val_val.
         iExists _. iFrame "⧖off". iSplit; [by rewrite Hval'|].
         iDestruct (ty_gho_own_depth_mono with "Hgho2") as "[H _]"; last iFrame.

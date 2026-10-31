@@ -153,7 +153,7 @@ Section bfn_examples.
   Lemma call_get_snd_type ϝ α β (k vf vx: val) :
     ⊢ typed_body [ϝ ⊑ₑ α; α ⊑ₑ β] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
-        +[vf ◁ (fn<(α', β')>(∅; &shr{α'} (&shr{β'} (i32t * i32t))) → i32t) get_snd_f_spec;
+        +[vf ◁ᶠ (fn<(α', β')>(∅; &shr{α'} (&shr{β'} (i32t * i32t))) → i32t) get_snd_f_spec;
           vx ◁ᵥ &shr{α} (&shr{β} (i32t * i32t))]
         (subst "return" k (subst "f" vf (subst "x" vx call_get_snd)))
         (λ post '-[_; (_, (_, (_, z2)))], λ mask π, post z2 mask π).
