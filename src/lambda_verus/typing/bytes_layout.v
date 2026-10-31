@@ -151,8 +151,7 @@ along the layout, as those above do for plain bytes: pairs ([syn_fbytes_pair]) a
 
 (** ** Representations at the MiniRust types of products and sums *)
 Section frepr_layout.
-  Context {W : Type}.
-  Implicit Types (fbs : list (positive + AbstractByte W)) (R : gmap positive (mty * list positive)).
+  Implicit Types (fbs : list (positive + AbstractByte)) (R : gmap positive (mty * list positive)).
 
   Lemma plain_fbytes fbs :
     (∀ i fb, fbs !! i = Some fb → is_plain fb) → ∃ bs, fbs = inr <$> bs.

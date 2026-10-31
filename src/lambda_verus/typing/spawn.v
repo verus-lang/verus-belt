@@ -29,9 +29,9 @@ Section spawn.
       ty_lfts := ty.(ty_lfts);
       ty_E := ty.(ty_E);
       ty_gho_own (x : ~~ (at_locₛ ℭ)) d g tid :=
-        join_handle spawnN x.1 (join_future ty (spec x.2));
+        join_handle spawnN (syn_mty 𝔄) x.1 (join_future ty (spec x.2));
       ty_gho_res (x : ~~ (at_locₛ ℭ)) d g tid :=
-        join_handle spawnN x.1 (join_future ty (spec x.2));
+        join_handle spawnN (syn_mty 𝔄) x.1 (join_future ty (spec x.2));
       ty_gho_pers (x : ~~ (at_locₛ ℭ)) d g tid :=
         True;
       ty_mty := syn_mty _; ty_val := syn_val; ty_mty_eq := eq_refl; ty_val_eq _ := eq_refl;
@@ -39,7 +39,7 @@ Section spawn.
       ty_phys (x : ~~ (at_locₛ ℭ)) tid := 
         [FVal (#x.1)];
       ty_shr := default_shr (𝔄 := at_locₛ (join_handleₛ ℭ))
-        (λ (x : ~~ (at_locₛ ℭ)) d g tid, join_handle spawnN x.1 (join_future ty (spec x.2)));
+        (λ (x : ~~ (at_locₛ ℭ)) d g tid, join_handle spawnN (syn_mty 𝔄) x.1 (join_future ty (spec x.2)));
   |}%I.
   Next Obligation. iIntros (????) => //=. Qed.
   Next Obligation. done. Qed.
@@ -107,11 +107,11 @@ Section spawn.
   (* Proof. move=> [??]. split; by apply join_handle_subtype. Qed. *)
 
   (* Rust's thread::spawn. The join handle is returned as a MiniRust pointer value. *)
-  Definition spawn (call_once: val) : val :=
+  Definition spawn (m: mty) (call_once: val) : val :=
     fn: ["f"] :=
       let: "call_once" := call_once in
-      let: "j" := OfLit (spawn
-        [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish ["c"; "r"]]) in
+      let: "j" := OfLit (spawn m
+        [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish m ["c"; "r"]]) in
       return: ["j"].
       
   Arguments ty_gho_own {_ _ _} _ _ _ _ : simpl never.
@@ -120,15 +120,15 @@ Section spawn.
       call_once `{!Send fty, !Send retty} :
     typed_val call_once ((fn<()>(∅; fty) → retty) call_once_tr) (call_once_val, c) →
     let E ϝ := ty_outlives_E fty static ++ ty_outlives_E retty static in
-    typed_val (spawn call_once) ((fn(E; fty) → join_handle Φ retty)
+    typed_val (spawn (syn_mty 𝔅) call_once) ((fn(E; fty) → join_handle Φ retty)
       (λ c, (λ post '-[a], λ Mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ b Mask π, Φ c b Mask π) -[a'] ⊤ π ∧ ∀ li, post (li, c) Mask π)))
-      (spawn call_once, c).
+      (spawn (syn_mty 𝔅) call_once, c).
   Proof.
     fold indep_interp_of_syn_type.
     move=> Tcall_once E.
     unfold spawn.
     unlock.
-    opose proof (@type_fn _ _ _ [𝔄] (at_locₛ (join_handleₛ ℭ)) ℭ c (λ y: (), FP E +[fty] (join_handle Φ retty) AtomicClosed) (λ c, (λ post '-[a], λ Mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ b mask' π', Φ c b mask' π') -[a'] ⊤ π ∧ ∀ li : loc, post (li, c) Mask π)) (let: "call_once" := call_once in let: "j" := OfLit (lib.spawn.spawn [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish ["c"; "r"]]) in return: ["j"])%E [BNamed "f"] _ _ _ ).
+    opose proof (@type_fn _ _ _ [𝔄] (at_locₛ (join_handleₛ ℭ)) ℭ c (λ y: (), FP E +[fty] (join_handle Φ retty) AtomicClosed) (λ c, (λ post '-[a], λ Mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ b mask' π', Φ c b mask' π') -[a'] ⊤ π ∧ ∀ li : loc, post (li, c) Mask π)) (let: "call_once" := call_once in let: "j" := OfLit (lib.spawn.spawn (syn_mty 𝔅) [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish (syn_mty 𝔅) ["c"; "r"]]) in return: ["j"])%E [BNamed "f"] _ _ _ ).
     unlock in H.
     apply H.
     move => _.
@@ -208,8 +208,8 @@ Section spawn.
       have Hval' : fty.(ty_val) x' = fty.(ty_val) a.
       { rewrite -!ty_val_eq. by apply syn_abstract_val_eq. }
 
-      iModIntro. wp_bind (lib.spawn.spawn _).
-      iApply (spawn_spec spawnN _ (join_future retty (Φ c')) with "[- L I1 I2 cna_lifetimes]"); [solve_ndisj|..]; last first.
+      iModIntro. wp_bind (lib.spawn.spawn _ _).
+      iApply (spawn_spec spawnN (syn_mty 𝔅) _ (join_future retty (Φ c')) with "[- L I1 I2 cna_lifetimes]"); [solve_ndisj|..]; last first.
       { iIntros "!> %c0 join". wp_pure _. iExists -[(c0, c')]. iFrame "L I1 I2 cna_lifetimes fnincl".
         iSplit; last first.
         { iApply (proph_obs_impl with "Obs"). move => π Hpost.
@@ -263,7 +263,8 @@ Section spawn.
         iApply (wp_persistent_time_receipt with "TIME Hd"); [trivial|].
         iIntros "£ #Hsd".
 
-        iApply (finish_spec with "[$fin ret Obs £ I]"); [solve_ndisj..| | ].
+        iApply (finish_spec with "[$fin ret Obs £ I]"); [solve_ndisj..| | | ].
+        { apply (syn_val_wf _ w). by rewrite (ty_val_eq retty). }
         { iDestruct "£" as "[£ [£1 £']]".
           iFrame. unfold join_future.
           iIntros (tid'').

@@ -11,16 +11,13 @@ Open Scope Z_scope.
 [block], [loc], the MiniRust values [Value], the MiniRust types [mty] and the
 abstract bytes [AbstractByte] are defined in [minirust.v].
 
-The language has two layers, which coexist until the legacy layer is deleted
-(see [design_docs/minirust-memory-model.md]):
-- the legacy lambda-Rust layer: [base_lit]/[val] values, and one-word memory
-  operations [Read], [Write], [CAS] (a word is stored in one byte of kind
-  [Word], see [word_to_byte]);
-- the MiniRust layer: values [MLit v] (with [v : Value]), typed loads and
-  stores [Load o m e] and [Store o m e1 e2] of any [m : mty] (which decode_value and
-  encode_value [AbstractByte]s), a byte-level [MemCopy], a typed compare-and-exchange
-  [MCAS m e0 e1 e2], and constructors and projections on [Value]s.
-Memory holds [AbstractByte]s for both layers. *)
+The values are the lambda-Rust literals [base_lit] (integers, locations and poison, used
+for addresses, arithmetic and control flow) and closures, and the MiniRust values
+[MLit v] (with [v : Value], see [design_docs/minirust-memory-model.md]). Memory holds
+[AbstractByte]s; it is accessed by typed loads and stores [Load o m e] and
+[Store o m e1 e2] of any [m : mty] (which decode_value and encode_value bytes), a
+byte-level [MemCopy] and a typed compare-and-exchange [MCAS m e0 e1 e2]. (The legacy
+one-word operations [Read], [Write] and [CAS] were deleted in stage 6.) *)
 Open Scope loc_scope.
 
 Inductive base_lit : Set :=
@@ -45,9 +42,6 @@ Inductive expr :=
 | BinOp (op : bin_op) (e1 e2 : expr)
 | NdInt
 | App (e : expr) (el : list expr)
-| Read (o : order) (e : expr)
-| Write (o : order) (e1 e2: expr)
-| CAS (e0 e1 e2 : expr)
 | Alloc (e : expr)
 | Free (e1 e2 : expr)
 | Case (e : expr) (el : list expr)
@@ -77,13 +71,13 @@ Fixpoint is_closed (X : list string) (e : expr) : bool :=
   | Var x => bool_decide (x ∈ X)
   | Lit _ | NdInt | GlobalLock | GlobalUnlock | MLit _ => true
   | Rec f xl e => is_closed (f :b: xl +b+ X) e
-  | BinOp _ e1 e2 | Write _ e1 e2 | Free e1 e2 | Store _ _ e1 e2 | MemCopy _ _ e1 e2 =>
+  | BinOp _ e1 e2 | Free e1 e2 | Store _ _ e1 e2 | MemCopy _ _ e1 e2 =>
     is_closed X e1 && is_closed X e2
   | App e el | Case e el => is_closed X e && forallb (is_closed X) el
   | MkTuple el => forallb (is_closed X) el
-  | Read _ e | Alloc e | Fork e | Load _ _ e | Proj _ e | MkVariant _ e
+  | Alloc e | Fork e | Load _ _ e | Proj _ e | MkVariant _ e
   | VariantTag e | VariantData e | ToLit e | OfLit e => is_closed X e
-  | CAS e0 e1 e2 | MCAS _ e0 e1 e2 => is_closed X e0 && is_closed X e1 && is_closed X e2
+  | MCAS _ e0 e1 e2 => is_closed X e0 && is_closed X e1 && is_closed X e2
   end.
 
 Class Closed (X : list string) (e : expr) := closed : is_closed X e.
@@ -116,20 +110,7 @@ Definition to_val (e : expr) : option val :=
   end.
 
 (** The state: heaps of abstract bytes*lockstate. *)
-Notation abyte := (AbstractByte val).
-
-(** A legacy word is stored as one byte: [Word v], except that [LitPoison] is
-    stored as [Uninit]. Hence [Alloc] (which yields [Uninit] bytes) is seen by
-    the legacy layer as yielding poison, as before. *)
-Definition word_to_byte (v : val) : abyte :=
-  match v with LitV LitPoison => Uninit | _ => Word v end.
-Global Arguments word_to_byte : simpl never.
-Definition byte_to_word (b : abyte) : option val :=
-  match b with Uninit => Some (LitV LitPoison) | Word v => Some v | _ => None end.
-Lemma byte_to_word_to_byte v : byte_to_word (word_to_byte v) = Some v.
-Proof. by destruct v as [[]| |]. Qed.
-Global Instance word_to_byte_inj : Inj (=) (=) word_to_byte.
-Proof. intros v1 v2 Heq. apply (inj Some). by rewrite -!byte_to_word_to_byte Heq. Qed.
+Notation abyte := AbstractByte.
 
 Inductive lock_state :=
 | WSt | RSt (n : nat).
@@ -146,12 +127,6 @@ Inductive ectx_item :=
 | BinOpRCtx (op : bin_op) (v1 : val)
 | AppLCtx (e2 : list expr)
 | AppRCtx (v : val) (vl : list val) (el : list expr)
-| ReadCtx (o : order)
-| WriteLCtx (o : order) (e2 : expr)
-| WriteRCtx (o : order) (v1 : val)
-| CasLCtx (e1 e2: expr)
-| CasMCtx (v0 : val) (e2 : expr)
-| CasRCtx (v0 : val) (v1 : val)
 | AllocCtx
 | FreeLCtx (e2 : expr)
 | FreeRCtx (v1 : val)
@@ -178,12 +153,6 @@ Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
   | BinOpRCtx op v1 => BinOp op (of_val v1) e
   | AppLCtx e2 => App e e2
   | AppRCtx v vl el => App (of_val v) ((of_val <$> vl) ++ e :: el)
-  | ReadCtx o => Read o e
-  | WriteLCtx o e2 => Write o e e2
-  | WriteRCtx o v1 => Write o (of_val v1) e
-  | CasLCtx e1 e2 => CAS e e1 e2
-  | CasMCtx v0 e2 => CAS (of_val v0) e e2
-  | CasRCtx v0 v1 => CAS (of_val v0) (of_val v1) e
   | AllocCtx => Alloc e
   | FreeLCtx e2 => Free e e2
   | FreeRCtx v1 => Free (of_val v1) e
@@ -215,9 +184,6 @@ Fixpoint subst (x : string) (es : expr) (e : expr)  : expr :=
   | BinOp op e1 e2 => BinOp op (subst x es e1) (subst x es e2)
   | NdInt => NdInt
   | App e el => App (subst x es e) (map (subst x es) el)
-  | Read o e => Read o (subst x es e)
-  | Write o e1 e2 => Write o (subst x es e1) (subst x es e2)
-  | CAS e0 e1 e2 => CAS (subst x es e0) (subst x es e1) (subst x es e2)
   | Alloc e => Alloc (subst x es e)
   | Free e1 e2 => Free (subst x es e1) (subst x es e2)
   | Case e el => Case (subst x es e) (map (subst x es) el)
@@ -386,77 +352,6 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
     Closed (f :b: xl +b+ []) e →
     subst_l (f::xl) (Rec f xl e :: el) e = Some e' →
     head_step (App (Rec f xl e) el) σ [] e' σ []
-| ReadScS l n v σ:
-    σ.1 !! l = Some (RSt n, word_to_byte v) →
-    head_step (Read ScOrd (Lit $ LitLoc l)) σ [] (of_val v) σ []
-| ReadNa1S l n b σ:
-    σ.1 !! l = Some (RSt n, b) →
-    head_step (Read Na1Ord (Lit $ LitLoc l)) σ
-              []
-              (Read Na2Ord (Lit $ LitLoc l)) ((<[l:=(RSt $ S n, b)]>σ.1), σ.2)
-              []
-| ReadNa2S l n v σ:
-    σ.1 !! l = Some (RSt $ S n, word_to_byte v) →
-    head_step (Read Na2Ord (Lit $ LitLoc l)) σ
-              []
-              (of_val v) ((<[l:=(RSt n, word_to_byte v)]>σ.1), σ.2)
-              []
-| WriteScS l e v b' σ:
-    to_val e = Some v →
-    σ.1 !! l = Some (RSt 0, b') →
-    head_step (Write ScOrd (Lit $ LitLoc l) e) σ
-              []
-              (Lit LitPoison) ((<[l:=(RSt 0, word_to_byte v)]>σ.1, σ.2))
-              []
-| WriteNa1S l e v b' σ:
-    to_val e = Some v →
-    σ.1 !! l = Some (RSt 0, b') →
-    head_step (Write Na1Ord (Lit $ LitLoc l) e) σ
-              []
-              (Write Na2Ord (Lit $ LitLoc l) e) ((<[l:=(WSt, b')]>σ.1, σ.2))
-              []
-| WriteNa2S l e v b' σ:
-    to_val e = Some v →
-    σ.1 !! l = Some (WSt, b') →
-    head_step (Write Na2Ord (Lit $ LitLoc l) e) σ
-              []
-              (Lit LitPoison) ((<[l:=(RSt 0, word_to_byte v)]>σ.1, σ.2))
-              []
-| CasFailS l n e1 lit1 e2 lit2 litl σ :
-    to_val e1 = Some $ LitV lit1 → to_val e2 = Some $ LitV lit2 →
-    σ.1 !! l = Some (RSt n, word_to_byte (LitV litl)) →
-    lit_neq lit1 litl →
-    head_step (CAS (Lit $ LitLoc l) e1 e2) σ [] (Lit $ lit_of_bool false) σ  []
-| CasSucS l e1 lit1 e2 lit2 litl σ :
-    to_val e1 = Some $ LitV lit1 → to_val e2 = Some $ LitV lit2 →
-    σ.1 !! l = Some (RSt 0, word_to_byte (LitV litl)) →
-    lit_eq σ lit1 litl →
-    head_step (CAS (Lit $ LitLoc l) e1 e2) σ
-              []
-              (Lit $ lit_of_bool true) (<[l:=(RSt 0, word_to_byte (LitV lit2))]>σ.1, σ.2)
-              []
-(* A succeeding CAS has to detect concurrent non-atomic read accesses, and
-   trigger UB if there is one.  In lambdaRust, succeeding and failing CAS are
-   not mutually exclusive, so it could happen that a CAS can both fail (and
-   hence not be stuck) but also succeed (and hence be racing with a concurrent
-   non-atomic read).  In that case, we have to explicitly reduce to a stuck
-   state; due to the possibility of failing CAS, we cannot rely on the current
-   state being stuck like we could in a language where failing and succeeding
-   CAS are mutually exclusive.
-
-   This means that CAS is atomic (it always reducs to an irreducible
-   expression), but not strongly atomic (it does not always reduce to a value).
-
-   If there is a concurrent non-atomic write, the CAS itself is stuck: All its
-   reductions are blocked.  *)
-| CasStuckS l n e1 lit1 e2 lit2 litl σ :
-    to_val e1 = Some $ LitV lit1 → to_val e2 = Some $ LitV lit2 →
-    σ.1 !! l = Some (RSt n, word_to_byte (LitV litl)) → 0 < n →
-    lit_eq σ lit1 litl →
-    head_step (CAS (Lit $ LitLoc l) e1 e2) σ
-              []
-              stuck_term σ
-              []
 | AllocS n l σ :
     0 < n →
     (∀ m, σ.1 !! (l +ₗ m) = None) →
@@ -488,9 +383,8 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
     head_step (Case (Lit $ LitInt i) el) σ [] e σ []
 | ForkS e σ:
     head_step (Fork e) σ [] (Lit LitPoison) σ [e]
-(** MiniRust layer: typed loads and stores of any size, with the same
-    two-phase race detection as the legacy word operations, over the whole
-    byte range. *)
+(** Typed loads and stores of any size, with a two-phase race detection (as in
+    lambda-Rust), over the whole byte range. *)
 | LoadScS l m bs v σ :
     mem_range is_reading σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v →
     head_step (Load ScOrd m (Lit $ LitLoc l)) σ [] (MLit v) σ []
@@ -564,12 +458,14 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
 | OfLitS l v σ :
     lit_to_value l = Some v →
     head_step (OfLit (Lit l)) σ [] (MLit v) σ []
-(** MiniRust layer: a typed compare-and-exchange [MCAS m l e1 e2]. It compares the value
+(** A typed compare-and-exchange [MCAS m l e1 e2]. It compares the value
     decoded at [m] from the bytes at [l] with the expected value [e1] (by equality of
     [Value]s, for any [m]; padding is not compared), and if they are equal, writes the
     encoding of the new value [e2]. It is atomic (sequentially consistent). As for the
-    legacy [CAS], a failing [MCAS] is a read; a succeeding one is a write, which detects
-    concurrent non-atomic reads by reducing to a stuck term. *)
+    [CAS] of lambda-Rust, a failing [MCAS] is a read; a succeeding one is a write, which
+    detects concurrent non-atomic reads by reducing to a stuck term (a succeeding and a
+    failing [MCAS] are not mutually exclusive, so the racy case has to reduce explicitly
+    to a stuck term). *)
 | MCasFailS l m e1 v1 e2 v2 bs v σ :
     to_val e1 = Some (MLitV v1) → to_val e2 = Some (MLitV v2) →
     mem_range is_reading σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v →
@@ -637,8 +533,8 @@ Lemma fill_item_no_val_inj Ki1 Ki2 e1 e2 :
   to_val e1 = None → to_val e2 = None →
   fill_item Ki1 e1 = fill_item Ki2 e2 → Ki1 = Ki2.
 Proof.
-  destruct Ki1 as [| | |v1 vl1 el1| | | | | | | | | | | | | | | |vl1 el1| | | | | | | | |],
-           Ki2 as [| | |v2 vl2 el2| | | | | | | | | | | | | | | |vl2 el2| | | | | | | | |];
+  destruct Ki1 as [| | |v1 vl1 el1| | | | | | | | | |vl1 el1| | | | | | | | |],
+           Ki2 as [| | |v2 vl2 el2| | | | | | | | | |vl2 el2| | | | | | | | |];
   intros He1 He2 EQ; try discriminate; simplify_eq/=;
     repeat match goal with
     | H : to_val (of_val _) = None |- _ => by rewrite to_of_val in H
@@ -918,11 +814,6 @@ Fixpoint expr_beq (e : expr) (e' : expr) : bool :=
   | GlobalUnlock, GlobalUnlock => true
   | App e el, App e' el' | Case e el, Case e' el' =>
     expr_beq e e' && expr_list_beq el el'
-  | Read o e, Read o' e' => bool_decide (o = o') && expr_beq e e'
-  | Write o e1 e2, Write o' e1' e2' =>
-    bool_decide (o = o') && expr_beq e1 e1' && expr_beq e2 e2'
-  | CAS e0 e1 e2, CAS e0' e1' e2' =>
-    expr_beq e0 e0' && expr_beq e1 e1' && expr_beq e2 e2'
   | Alloc e, Alloc e' | Fork e, Fork e' => expr_beq e e'
   | Free e1 e2, Free e1' e2' => expr_beq e1 e1' && expr_beq e2 e2'
   | MLit v, MLit v' => bool_decide (v = v')
@@ -944,8 +835,8 @@ Fixpoint expr_beq (e : expr) (e' : expr) : bool :=
 Lemma expr_beq_correct (e1 e2 : expr) : expr_beq e1 e2 ↔ e1 = e2.
 Proof.
   revert e1 e2; fix FIX 1.
-    destruct e1 as [ | | | | |? el1 | | | | | |? el1 | | | | | | | |el1 | | | | | | |],
-             e2 as [ | | | | |? el2 | | | | | |? el2 | | | | | | | |el2 | | | | | | |]; simpl; try done;
+    destruct e1 as [ | | | | |? el1 | | |? el1 | | | | | | | |el1 | | | | | | |],
+             e2 as [ | | | | |? el2 | | |? el2 | | | | | | | |el2 | | | | | | |]; simpl; try done;
   rewrite ?andb_True ?bool_decide_spec ?FIX;
   try (split; intro; [destruct_and?|split_and?]; congruence).
   - match goal with |- context [?F el1 el2] => assert (F el1 el2 ↔ el1 = el2) end.

@@ -27,9 +27,8 @@ Deviations from MiniRust (see [design_docs/minirust-memory-model.md]):
   well-formed.
 - An enum has a simple tag (an integer of type [tag]) at offset 0, and the data
   of variant [i] at offset [int_size tag]; there is no discriminator tree.
-- [AbstractByte] has a case [Word w], for the legacy one-word memory operations
-  of lambda-Rust ([lang.v] instantiates [W] with [val]). It is not part of
-  MiniRust, and [decode_value] fails on it. *)
+- The legacy case [Word w] of [AbstractByte] (for the one-word memory operations of
+  lambda-Rust) was deleted in stage 6. *)
 
 From stdpp Require Export strings gmap list.
 From stdpp Require Import ssreflect.
@@ -314,31 +313,25 @@ Inductive val_wf : mty → Value → Prop :=
     val_wf (MEnum vars tag sz) (VVariant t d).
 
 (** ** Abstract bytes *)
-Inductive AbstractByte (W : Type) :=
+Inductive AbstractByte :=
 | Uninit
 | Init (b : Z)  (* a byte, in [0, 256) *)
-| PtrFrag (l : loc) (i : nat)  (* the [i]-th byte of the pointer [l] *)
-| Word (w : W).  (* legacy: a whole lambda-Rust word *)
-Global Arguments Uninit {W}.
-Global Arguments Init {W} b.
-Global Arguments PtrFrag {W} l i.
-Global Arguments Word {W} w.
+| PtrFrag (l : loc) (i : nat).  (* the [i]-th byte of the pointer [l] *)
 
-Global Instance AbstractByte_eq_dec `{!EqDecision W} : EqDecision (AbstractByte W).
+Global Instance AbstractByte_eq_dec : EqDecision AbstractByte.
 Proof. solve_decision. Defined.
-Global Instance AbstractByte_inhabited W : Inhabited (AbstractByte W) := populate Uninit.
+Global Instance AbstractByte_inhabited : Inhabited AbstractByte := populate Uninit.
 
 (** The "less defined" order on bytes: [Uninit] is below everything. *)
-Definition byte_le {W} (b1 b2 : AbstractByte W) : Prop := b1 = Uninit ∨ b1 = b2.
-Definition bytes_le {W} : list (AbstractByte W) → list (AbstractByte W) → Prop :=
+Definition byte_le (b1 b2 : AbstractByte) : Prop := b1 = Uninit ∨ b1 = b2.
+Definition bytes_le : list (AbstractByte) → list (AbstractByte) → Prop :=
   Forall2 byte_le.
 
 (** The slice of [len] elements starting at [off]. *)
 Definition list_slice {A} (off len : nat) (l : list A) : list A := take len (drop off l).
 
 Section repr.
-  Context {W : Type}.
-  Implicit Types bs : list (AbstractByte W).
+  Implicit Types bs : list (AbstractByte).
 
   (** *** Integers *)
   Fixpoint le_digits (n : nat) (u : Z) : list Z :=
@@ -346,10 +339,10 @@ Section repr.
   Fixpoint le_value (ds : list Z) : Z :=
     match ds with [] => 0 | d :: ds => d + 256 * le_value ds end.
 
-  Definition byte_of (b : AbstractByte W) : option Z :=
+  Definition byte_of (b : AbstractByte) : option Z :=
     match b with Init z => if bool_decide (0 ≤ z < 256) then Some z else None | _ => None end.
 
-  Definition encode_int (it : IntType) (z : Z) : list (AbstractByte W) :=
+  Definition encode_int (it : IntType) (z : Z) : list (AbstractByte) :=
     Init <$> le_digits (int_size it) (z `mod` int_modulus it).
 
   Definition decode_int (it : IntType) bs : option Z :=
@@ -362,7 +355,7 @@ Section repr.
     else None.
 
   (** *** Booleans *)
-  Definition encode_bool (b : bool) : list (AbstractByte W) := [Init (if b then 1 else 0)].
+  Definition encode_bool (b : bool) : list (AbstractByte) := [Init (if b then 1 else 0)].
   Definition decode_bool bs : option bool :=
     match bs with
     | [b] => z ← byte_of b;
@@ -372,7 +365,7 @@ Section repr.
     end.
 
   (** *** Pointers *)
-  Definition encode_ptr (l : loc) : list (AbstractByte W) := PtrFrag l <$> seq 0 PTR_SIZE.
+  Definition encode_ptr (l : loc) : list (AbstractByte) := PtrFrag l <$> seq 0 PTR_SIZE.
 
   Fixpoint ptr_frags_ok (l : loc) (i : nat) bs : bool :=
     match bs with
@@ -391,10 +384,10 @@ Section repr.
   (** *** Encoding and decoding *)
 
   (** Write the field encodings [ins] (offset, bytes) over [base]. *)
-  Definition fill_fields (ins : list (nat * list (AbstractByte W))) base :=
+  Definition fill_fields (ins : list (nat * list (AbstractByte))) base :=
     foldr (λ p acc, list_inserts p.1 p.2 acc) base ins.
 
-  Fixpoint encode_value (m : mty) (v : Value) : list (AbstractByte W) :=
+  Fixpoint encode_value (m : mty) (v : Value) : list (AbstractByte) :=
     match m, v with
     | MInt it, VInt z => encode_int it z
     | MBool, VBool b => encode_bool b
@@ -593,7 +586,7 @@ Section repr.
         apply (IH k); [done| |done|done]. intros k' ???. apply (Hdisj (S k')). congruence.
   Qed.
 
-  Lemma list_slice_eq (l e : list (AbstractByte W)) o :
+  Lemma list_slice_eq (l e : list (AbstractByte)) o :
     (o + length e ≤ length l)%nat →
     (∀ j, (o ≤ j < o + length e)%nat → l !! j = e !! (j - o)%nat) →
     list_slice o (length e) l = e.
@@ -615,14 +608,14 @@ Section repr.
     intros j Hj. eapply lookup_fill_fields_in; [done..|lia].
   Qed.
 
-  Lemma list_slice_inserts (l e : list (AbstractByte W)) o :
+  Lemma list_slice_inserts (l e : list (AbstractByte)) o :
     (o + length e ≤ length l)%nat → list_slice o (length e) (list_inserts o e l) = e.
   Proof.
     intros Hlen. apply list_slice_eq; [by rewrite length_inserts|].
     intros j Hj. apply list_lookup_inserts; lia.
   Qed.
 
-  Lemma list_slice_inserts_disjoint (l e : list (AbstractByte W)) o o' len :
+  Lemma list_slice_inserts_disjoint (l e : list (AbstractByte)) o o' len :
     (o' + length e ≤ o)%nat → list_slice o len (list_inserts o' e l) = list_slice o len l.
   Proof.
     intros Ho. apply list_eq. intros i. rewrite /list_slice.
@@ -631,7 +624,7 @@ Section repr.
     - rewrite !lookup_take_ge //; lia.
   Qed.
 
-  Lemma take_inserts_0 (l e : list (AbstractByte W)) :
+  Lemma take_inserts_0 (l e : list (AbstractByte)) :
     (length e ≤ length l)%nat → take (length e) (list_inserts 0 e l) = e.
   Proof. intros. have := list_slice_inserts l e 0. rewrite /list_slice drop_0. auto. Qed.
 

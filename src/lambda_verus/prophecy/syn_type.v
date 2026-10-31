@@ -909,8 +909,7 @@ Qed.
 
 (** ** Decoding tuples laid out by [seq_tuple] *)
 Section decode_seq.
-  Context {W : Type}.
-  Implicit Types bs : list (AbstractByte W).
+  Implicit Types bs : list (AbstractByte).
 
   Fixpoint decode_seq (ms : list mty) bs : option (list Value) :=
     match ms with
@@ -948,7 +947,7 @@ Lemma fmap_eq_iff {A B} (f : A → B) `{!Inj (=) (=) f} (o1 o2 : option A) :
 Proof. destruct o1, o2; simpl; split; intros; simplify_eq; done. Qed.
 
 (** The layout of [() * 𝔄], [𝔄 * ()] and [𝔄 * Π! 𝔅l] (for the isomorphisms below). *)
-Lemma decode_prod_unit_l {W} m (bs : list (AbstractByte W)) :
+Lemma decode_prod_unit_l m (bs : list (AbstractByte)) :
   decode_value (seq_tuple [zst_mty; m]) bs = (λ v, VTuple [VTuple []; v]) <$> decode_value m bs.
 Proof.
   rewrite decode_seq_tuple /seq_size /=. rewrite drop_0.
@@ -957,7 +956,7 @@ Proof.
   - rewrite decode_value_length_None //. lia.
 Qed.
 
-Lemma decode_prod_unit_r {W} m (bs : list (AbstractByte W)) :
+Lemma decode_prod_unit_r m (bs : list (AbstractByte)) :
   decode_value (seq_tuple [m; zst_mty]) bs = (λ v, VTuple [v; VTuple []]) <$> decode_value m bs.
 Proof.
   rewrite decode_seq_tuple /seq_size /=. case_decide.
@@ -965,7 +964,7 @@ Proof.
   - rewrite decode_value_length_None //. lia.
 Qed.
 
-Lemma decode_prod_cons {W} m ms (bs : list (AbstractByte W)) :
+Lemma decode_prod_cons m ms (bs : list (AbstractByte)) :
   decode_value (seq_tuple [m; seq_tuple ms]) bs =
   (λ v, match v with VTuple (v :: vs) => VTuple [v; VTuple vs] | _ => v end) <$>
     decode_value (seq_tuple (m :: ms)) bs.
@@ -998,7 +997,7 @@ Lemma bind3_None {A} (f g : A → A → A → A) o1 o2 o3 :
   None = bind3 f o1 o2 o3 ↔ None = bind3 g o1 o2 o3.
 Proof. rewrite /bind3. destruct o1, o2, o3; simpl; split; done. Qed.
 
-Lemma decode_assoc_l {W} a b c (bs : list (AbstractByte W)) :
+Lemma decode_assoc_l a b c (bs : list (AbstractByte)) :
   decode_value (seq_tuple [a; seq_tuple [b; c]]) bs =
   if decide (length bs = mty_size a + mty_size b + mty_size c)%nat then
     bind3 (λ x y z, VTuple [x; VTuple [y; z]])
@@ -1018,7 +1017,7 @@ Proof.
   by destruct (decode_value c _).
 Qed.
 
-Lemma decode_assoc_r {W} a b c (bs : list (AbstractByte W)) :
+Lemma decode_assoc_r a b c (bs : list (AbstractByte)) :
   decode_value (seq_tuple [seq_tuple [a; b]; c]) bs =
   if decide (length bs = mty_size a + mty_size b + mty_size c)%nat then
     bind3 (λ x y z, VTuple [VTuple [x; y]; z])
@@ -1065,17 +1064,17 @@ Proof.
        Some (VTuple [v₀; v₁])) =
     bind3 (λ x y z, VTuple [VTuple [x; y]; z]) (syn_val x) (syn_val y) (syn_val z)); last first.
   { rewrite /bind3. destruct (syn_val x), (syn_val y), (syn_val z); done. }
-  rewrite (decode_assoc_l (W:=val)) (decode_assoc_r (W:=val)). case_decide.
+  rewrite (decode_assoc_l ) (decode_assoc_r ). case_decide.
   - apply bind3_iff; intros; by simplify_eq.
   - apply bind3_None.
 Qed.
 
 (** [n + m] bytes of padding are a pair of [n] and [m] bytes of padding. *)
-Lemma decode_pad {W} n (bs : list (AbstractByte W)) :
+Lemma decode_pad n (bs : list (AbstractByte)) :
   decode_value (MTuple [] n) bs = if decide (length bs = n) then Some (VTuple []) else None.
 Proof. rewrite decode_value_tuple. by case_decide. Qed.
 
-Lemma decode_pad_pair {W} n m (bs : list (AbstractByte W)) :
+Lemma decode_pad_pair n m (bs : list (AbstractByte)) :
   decode_value (seq_tuple [MTuple [] n; MTuple [] m]) bs =
   if decide (length bs = n + m)%nat then Some (VTuple [VTuple []; VTuple []]) else None.
 Proof.
@@ -1444,7 +1443,7 @@ Proof.
         (v₀ ← syn_val a; v₁ ← VTuple <$> M; Some (VTuple [v₀; v₁])) ↔
       decode_value (seq_tuple (syn_mty 𝔄 :: (syn_mty <$> 𝔅l))) bs =
         VTuple <$> (v ← syn_val a; vs ← M; Some (v :: vs))).
-    rewrite (decode_prod_cons (W:=val)) -/(cons_to_pair).
+    rewrite (decode_prod_cons ) -/(cons_to_pair).
     rewrite (_: (v₀ ← syn_val a; v₁ ← VTuple <$> M; Some (VTuple [v₀; v₁])) =
       cons_to_pair <$> (VTuple <$> (v ← syn_val a; vs ← M; Some (v :: vs)))).
     + apply fmap_eq_iff, _.
@@ -1466,7 +1465,7 @@ Proof.
     change (decode_value (seq_tuple [zst_mty; syn_mty 𝔄]) bs =
         (v₀ ← Some (VTuple []); v₁ ← syn_val a; Some (VTuple [v₀; v₁])) ↔
       decode_value (syn_mty 𝔄) bs = syn_val a).
-    rewrite (decode_prod_unit_l (W:=val)).
+    rewrite (decode_prod_unit_l ).
     rewrite (_: (v₀ ← Some (VTuple []); v₁ ← syn_val a; Some (VTuple [v₀; v₁])) =
       (λ v, VTuple [VTuple []; v]) <$> syn_val a); [|by destruct (syn_val a)].
     apply fmap_eq_iff. intros ???. by simplify_eq.
@@ -1481,7 +1480,7 @@ Proof.
     change (decode_value (seq_tuple [syn_mty 𝔄; zst_mty]) bs =
         (v₀ ← syn_val a; v₁ ← Some (VTuple []); Some (VTuple [v₀; v₁])) ↔
       decode_value (syn_mty 𝔄) bs = syn_val a).
-    rewrite (decode_prod_unit_r (W:=val)).
+    rewrite (decode_prod_unit_r ).
     rewrite (_: (v₀ ← syn_val a; v₁ ← Some (VTuple []); Some (VTuple [v₀; v₁])) =
       (λ v, VTuple [v; VTuple []]) <$> syn_val a); [|by destruct (syn_val a)].
     apply fmap_eq_iff. intros ???. by simplify_eq.

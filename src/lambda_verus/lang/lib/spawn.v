@@ -2,27 +2,29 @@ From iris.program_logic Require Import weakestpre.
 From iris.base_logic.lib Require Import invariants.
 From iris.proofmode Require Import proofmode.
 From iris.algebra Require Import excl.
-From lrust.lang Require Import proofmode notation.
+From lrust.lang Require Import proofmode notation heap lifting.
 From lrust.lang Require Export lang.
 Set Default Proof Using "Type".
 
-Definition spawn : val :=
+(** A thread whose result is a MiniRust value of type [m]. The shared block [c] holds a
+    flag (an [MBool], at [c]) and the result (at [c +ₗ 1]). *)
+Definition spawn (m : mty) : val :=
   λ: ["f"],
-    let: "c" := Alloc #2 in
-    "c" <- #0;; (* Initialize "sent" field to 0 (non-atomically). *)
+    let: "c" := Alloc #(Z.of_nat (1 + mty_size m)) in
+    Store Na1Ord MBool "c" (MLit (VBool false));; (* Initialize the flag (non-atomically). *)
     Fork ("f" ["c"]);;
     "c".
-Definition finish : val :=
+Definition finish (m : mty) : val :=
   λ: ["c"; "v"],
-    "c" +ₗ #1 <- "v";; (* Store data (non-atomically). *)
-    "c" <-ˢᶜ #1;; (* Signal that we finished (atomically!) *)
+    Store Na1Ord m ("c" +ₗ #1) "v";; (* Store the result (non-atomically). *)
+    Store ScOrd MBool "c" (MLit (VBool true));; (* Signal that we finished (atomically!) *)
     #☠.
-Definition join : val :=
+Definition join (m : mty) : val :=
   rec: "join" ["c"] :=
-    if: !ˢᶜ"c" then
-      (* The thread finished, we can non-atomically load the data. *)
-      let: "v" := !("c" +ₗ #1) in
-      Free #2 "c";;
+    if: ToLit (Load ScOrd MBool "c") then
+      (* The thread finished, we can non-atomically load the result. *)
+      let: "v" := Load Na1Ord m ("c" +ₗ #1) in
+      Free #(Z.of_nat (1 + mty_size m)) "c";;
       "v"
     else
       "join" ["c"].
@@ -36,18 +38,22 @@ Proof. solve_inG. Qed.
 
 (** Now we come to the Iris part of the proof. *)
 Section proof.
-Context `{!lrustGS Σ, !spawnG Σ} (N : namespace).
+Context `{!lrustGS Σ, !spawnG Σ} (N : namespace) (m : mty).
+
+Definition flag_bytes (b : bool) : list abyte := encode_value MBool (VBool b).
 
 Definition spawn_inv (γf γj : gname) (c : loc) (Ψ : val → iProp Σ) : iProp Σ :=
   (own γf (Excl ()) ∗ own γj (Excl ()) ∨
-   ∃ b, c ↦ #(lit_of_bool b) ∗
-        if b then ∃ v, (c +ₗ 1) ↦ v ∗ Ψ v ∗ own γf (Excl ()) else True)%I.
+   ∃ b, c ↦b flag_bytes b ∗
+        if b then ∃ v, ⌜val_wf m v⌝ ∗ (c +ₗ 1) ↦b encode_value m v ∗ Ψ (MLitV v) ∗
+          own γf (Excl ()) else True)%I.
 
 Definition finish_handle (c : loc) (Ψ : val → iProp Σ) : iProp Σ :=
-  (∃ γf γj v, own γf (Excl ()) ∗ (c +ₗ 1) ↦ v ∗ inv N (spawn_inv γf γj c Ψ))%I.
+  (∃ γf γj bs, own γf (Excl ()) ∗ (c +ₗ 1) ↦b bs ∗ ⌜length bs = mty_size m⌝ ∗
+    inv N (spawn_inv γf γj c Ψ))%I.
 
 Definition join_handle (c : loc) (Ψ : val → iProp Σ) : iProp Σ :=
-  (∃ γf γj Ψ', own γj (Excl ()) ∗ † c … 2 ∗ inv N (spawn_inv γf γj c Ψ') ∗
+  (∃ γf γj Ψ', own γj (Excl ()) ∗ † c … (1 + mty_size m) ∗ inv N (spawn_inv γf γj c Ψ') ∗
    □ (∀ v, Ψ' v -∗ Ψ v))%I.
 
 Global Instance spawn_inv_ne n γf γj c :
@@ -60,74 +66,87 @@ Global Instance join_handle_ne n c :
   Proper (pointwise_relation val (dist n) ==> dist n) (join_handle c).
 Proof. solve_proper. Qed.
 
+Lemma flag_bytes_length b : length (flag_bytes b) = 1%nat.
+Proof. by rewrite /flag_bytes length_encode_value. Qed.
+
+Lemma flag_bytes_decode b : decode_value MBool (flag_bytes b) = Some (VBool b).
+Proof. apply decode_encode_value; constructor. Qed.
+
 (** The main proofs. *)
 Lemma spawn_spec E (Ψ : val → iProp Σ) e (f : val) :
-  ↑non_atomic_cell_map.naN ⊆ E →
+  ↑naN ⊆ E →
   IntoVal e f →
   {{{ ∀ c, finish_handle c Ψ -∗ WP f [ #c] {{ _, True }} }}}
-    spawn [e] @ E {{{ c, RET #c; join_handle c Ψ }}}.
+    spawn m [e] @ E {{{ c, RET #c; join_handle c Ψ }}}.
 Proof.
   iIntros (? <- Φ) "Hf HΦ". rewrite /spawn /=.
-  wp_lam. wp_alloc l as "Hl" "H†". wp_let.
+  wp_lam. wp_bind (Alloc _). iApply wp_alloc_bytes; [lia|done|].
+  iIntros "!>" (l sz) "(%Hsz & H† & Hl)". wp_let.
   iMod (own_alloc (Excl ())) as (γf) "Hγf"; first done.
   iMod (own_alloc (Excl ())) as (γj) "Hγj"; first done.
-  rewrite heap_mapsto_vec_cons heap_mapsto_vec_singleton.
-  iDestruct "Hl" as "[Hc Hd]". 
-  wp_bind (_ <- _)%E.
-  iApply (wp_write_na with "Hc")=> //.
+  have -> : sz = (1 + mty_size m)%nat by lia.
+  rewrite replicate_add heap_mapsto_bytes_app.
+  iDestruct "Hl" as "[Hc Hd]".
+  wp_bind (Store _ _ _ _).
+  iApply (wp_store_na with "Hc"); [done|constructor|done|].
   iNext. iIntros "Hc". wp_seq.
   iMod (inv_alloc N _ (spawn_inv γf γj l Ψ) with "[Hc]") as "#?".
   { iNext. iRight. iExists false. auto. }
   wp_apply (wp_fork with "[Hγf Hf Hd]").
-  - iApply "Hf". iExists _, _, _. iFrame. auto.
-  - iIntros "_". wp_seq. iApply "HΦ". iExists _, _.
+  - iApply "Hf". iExists _, _, _. iFrame. rewrite length_replicate. auto.
+  - iIntros "_". wp_seq. iApply "HΦ". iExists _, _, _.
     iFrame. auto.
 Qed.
-Hypothesis HN : @subseteq coPset set_subseteq_instance ( ↑non_atomic_cell_map.naN ) (⊤ ∖ ↑N).
+Hypothesis HN : @subseteq coPset set_subseteq_instance ( ↑naN ) (⊤ ∖ ↑N).
 
 Lemma finish_spec E (Ψ : val → iProp Σ) c v :
-  ↑non_atomic_cell_map.naN ∪ ↑N ⊆ E →
-  {{{ finish_handle c Ψ ∗ Ψ v ∗ £1 }}} finish [ #c; v] @ E {{{ RET #☠; True }}}.
+  ↑naN ∪ ↑N ⊆ E → val_wf m v →
+  {{{ finish_handle c Ψ ∗ Ψ (MLitV v) ∗ £1 }}} finish m [ #c; MLitV v] @ E {{{ RET #☠; True }}}.
 Proof using HN.
-  iIntros (? Φ) "[Hfin [HΨ £]] HΦ". iDestruct "Hfin" as (γf γj v0) "(Hf & Hd & #?)".
-  wp_lam. wp_op. 
-  wp_bind (_ <- _)%E.
-  iApply (wp_write_na with "Hd")=> //.
-  { set_solver. }
+  iIntros (? Hwf Φ) "[Hfin [HΨ £]] HΦ". iDestruct "Hfin" as (γf γj bs) "(Hf & Hd & %Hbs & #?)".
+  wp_lam. wp_op.
+  wp_bind (Store _ _ _ _).
+  iApply (wp_store_na with "Hd"); [set_solver|done|done|].
   iNext. iIntros "Hd". wp_seq.
-  wp_bind (_ <-ˢᶜ _)%E. iInv N as "[[>Hf' _]|Hinv]" "Hclose".
+  wp_bind (Store _ _ _ _). iInv N as "[[>Hf' _]|Hinv]" "Hclose".
   { iExFalso. iCombine "Hf" "Hf'" as "Hf". iDestruct (own_valid with "Hf") as "%".
     auto. }
-  iDestruct "Hinv" as (b) "[>Hc _]". 
-
-  iApply (wp_write_sc with "[Hc $£]")=> //.
-  { set_solver. }
+  iDestruct "Hinv" as (b) "[>Hc _]".
+  iApply (wp_store_sc with "Hc"); [set_solver|constructor|by rewrite flag_bytes_length|].
   iNext. iIntros "Hc".
   iMod ("Hclose" with "[-HΦ]").
-  - iNext. iRight. iExists true. iFrame.
+  - iNext. iRight. iExists true. by iFrame.
   - iModIntro. wp_seq. by iApply "HΦ".
 Qed.
 
 Lemma join_spec (Ψ : val → iProp Σ) c :
-  {{{ join_handle c Ψ }}} join [ #c] {{{ v, RET v; Ψ v }}}.
+  mty_wf m →
+  {{{ join_handle c Ψ }}} join m [ #c] {{{ v, RET v; Ψ v }}}.
 Proof using HN.
-  iIntros (Φ) "H HΦ". iDestruct "H" as (γf γj Ψ') "(Hj & H† & #? & #HΨ')".
+  iIntros (Hm Φ) "H HΦ". iDestruct "H" as (γf γj Ψ') "(Hj & H† & #? & #HΨ')".
   iLöb as "IH". wp_rec.
-  wp_bind (!ˢᶜ _)%E. iInv N as "[[_ >Hj']|Hinv]" "Hclose".
+  wp_bind (Load _ _ _). iInv N as "[[_ >Hj']|Hinv]" "Hclose".
   { iExFalso. iCombine "Hj" "Hj'" as "Hj". iDestruct (own_valid with "Hj") as "%".
     auto. }
   iDestruct "Hinv" as (b) "[>Hc Ho]".
-  wp_read. destruct b; last first.
+  iApply (wp_load_sc with "Hc"); [apply flag_bytes_decode|]. iIntros "!> Hc".
+  destruct b; last first.
   { iMod ("Hclose" with "[Hc]").
     - iNext. iRight. iExists _. iFrame.
-    - iModIntro. wp_if. iApply ("IH" with "Hj H†"). auto. }
-  iDestruct "Ho" as (v) "(Hd & HΨ & Hf)".
+    - iModIntro. wp_pure _. wp_if. iApply ("IH" with "Hj H†"). auto. }
+  iDestruct "Ho" as (v) "(%Hwf & Hd & HΨ & Hf)".
   iMod ("Hclose" with "[Hj Hf]") as "_".
   { iNext. iLeft. iFrame. }
-  iModIntro. wp_if. wp_op. wp_read. wp_let.
-  iAssert (c ↦∗ [ #true; v])%I with "[Hc Hd]" as "Hc".
-  { rewrite heap_mapsto_vec_cons heap_mapsto_vec_singleton. iFrame. }
-  wp_free; try done.
+  iModIntro. wp_pure _. wp_if. wp_op.
+  wp_bind (Load _ _ _).
+  iApply (wp_load_na with "Hd"); [by apply decode_encode_value|]. iIntros "!> Hd". wp_let.
+  iAssert (c ↦b (flag_bytes true ++ encode_value m v))%I with "[Hc Hd]" as "Hc".
+  { rewrite heap_mapsto_bytes_app flag_bytes_length. iFrame. }
+  wp_bind (Free _ _).
+  iApply (wp_free_bytes with "[$Hc H†]"); [done|..].
+  { by rewrite /= length_encode_value. }
+  { rewrite /= length_encode_value. by iFrame. }
+  iIntros "!> _". wp_seq.
   iApply "HΦ". iApply "HΨ'". done.
 Qed.
 

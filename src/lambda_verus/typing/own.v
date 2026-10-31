@@ -1,6 +1,5 @@
 From lrust.typing Require Export type.
 From lrust.typing Require Import freeable_util bytes_layout.
-From lrust.util Require Export non_atomic_cell_map.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
@@ -197,8 +196,8 @@ Section own_bytes.
       [pcellₛ m] (with a well-formed content type [m]) is a cell group, and its fancy
       bytes at [l] are exactly the location side of the group ([loc_side]): the edges of
       the locations [l], [l +ₗ 1], ... to the byte-cells of [g]. *)
-  Lemma frepr_cell_inv {W} (R: gmap positive (mty * list positive)) m
-      (fbs: list (positive + AbstractByte W)) g :
+  Lemma frepr_cell_inv (R: gmap positive (mty * list positive)) m
+      (fbs: list (positive + AbstractByte)) g :
     frepr R m fbs (FVCell g) → ∃ cs, R !! g = Some (m, cs) ∧ fbs = inl <$> cs.
   Proof. inversion 1 as [? ? cs| ? ? v ? Hv| |]; [by eauto|]. by destruct v. Qed.
 
@@ -227,8 +226,8 @@ Section own_bytes.
     intros Hz [v Hv]. iApply (bytes_own_of_bytes _ _ _ []).
     - exists v. split; [done|].
       have Hwf := ty_val_wf _ _ _ Hv.
-      have Hdec := decode_encode_value (W:=val) _ _ (ty_mty_wf ty) Hwf.
-      have Hlen := length_encode_value (W:=val) (ty.(ty_mty)) v.
+      have Hdec := decode_encode_value _ _ (ty_mty_wf ty) Hwf.
+      have Hlen := length_encode_value (ty.(ty_mty)) v.
       rewrite /ty_bsize in Hz. rewrite Hz in Hlen.
       apply nil_length_inv in Hlen. by rewrite Hlen in Hdec.
     - by rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec.
