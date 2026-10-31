@@ -1,8 +1,8 @@
 From iris.proofmode Require Import proofmode.
 From lrust.prophecy Require Import syn_type.
 From lrust.lang Require Import spawn.
-From lrust.typing Require Export type function product.
-From lrust.typing Require Import uninit type_context programs freeable_util own.
+From lrust.typing Require Export type function_bytes product.
+From lrust.typing Require Import type_context programs value_ctx.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -14,13 +14,14 @@ Definition spawnN := lrustN .@ "spawn".
 Section spawn.
   Context `{!typeG Σ, !spawnG Σ}.
 
+  (** The result of the thread: a MiniRust value of [ty] ([syn_val] is [ty_val],
+      [ty_val_eq]), whose ownership can be moved to any thread. *)
   Definition join_future {𝔄} (ty: type 𝔄) (Φ: pred' (~~𝔄)) v : iProp Σ :=
-  (*   ∀tid, ∃ (x : ~~𝔄) mask d g, ⟨π, Φ x mask π⟩  ∗ ⧖d ∗ ty.(ty_gho_own) x d g tid. *)
-    ∀tid, |={ ⊤ }=> ∃l x x' mask d g,
-     ⌜ (box ty).(ty_phys) (l, x') tid = [FVal v] ⌝
+    ∀tid, |={ ⊤ }=> ∃ x x' mask d g,
+     ⌜∃ w, v = MLitV w ∧ syn_val x' = Some w⌝
     ∗ ⌜syn_abstract x = syn_abstract x'⌝
     ∗ ⟨π, Φ x mask π⟩
-    ∗ ⧖d ∗ |={ ⊤ }=> (box ty).(ty_gho_own) (l, x') d g tid.
+    ∗ ⧖d ∗ |={ ⊤ }=> ty.(ty_gho_own) x' d g tid.
 
   (* Rust's thread::JoinHandle<T> *)
   Program Definition join_handle {𝔄 ℭ} (spec: (~~ℭ) → pred' (~~𝔄)) (ty: type 𝔄) : type (at_locₛ (join_handleₛ ℭ))%ST := 
@@ -105,30 +106,29 @@ Section spawn.
   (*   eqtype E L (join_handle ty) (join_handle ty') (forward_pred f) (forward_pred g). *)
   (* Proof. move=> [??]. split; by apply join_handle_subtype. Qed. *)
 
-  (* Rust's thread::spawn *)
+  (* Rust's thread::spawn. The join handle is returned as a MiniRust pointer value. *)
   Definition spawn (call_once: val) : val :=
     fn: ["f"] :=
       let: "call_once" := call_once in
-      let: "j" := spawn
-        [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish ["c"; "r"]] in
-      letalloc: "r" <- "j" in
-      return: ["r"].
+      let: "j" := OfLit (spawn
+        [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish ["c"; "r"]]) in
+      return: ["j"].
       
   Arguments ty_gho_own {_ _ _} _ _ _ _ : simpl never.
   
   Lemma spawn_type {𝔄 𝔅 ℭ} (c: ~~ℭ) (Φ: (~~ℭ) → pred' (~~𝔅)) call_once_val call_once_tr (fty: type 𝔄) (retty: type 𝔅)
       call_once `{!Send fty, !Send retty} :
-    typed_val call_once ((fn<()>(∅; fty) → retty) call_once_tr) (call_once_val, c) →
+    typed_val call_once ((bfn<()>(∅; fty) → retty) call_once_tr) (call_once_val, c) →
     let E ϝ := ty_outlives_E fty static ++ ty_outlives_E retty static in
-    typed_val (spawn call_once) ((fn(E; fty) → join_handle Φ retty)
-      (λ c, (λ post '-[(l, a)], λ Mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ '(_, b) Mask π, Φ c b Mask π) -[(l, a')] ⊤ π ∧ ∀ lo li, post (lo, (li, c)) Mask π)))
+    typed_val (spawn call_once) ((bfn(E; fty) → join_handle Φ retty)
+      (λ c, (λ post '-[a], λ Mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ b Mask π, Φ c b Mask π) -[a'] ⊤ π ∧ ∀ li, post (li, c) Mask π)))
       (spawn call_once, c).
   Proof.
     fold indep_interp_of_syn_type.
     move=> Tcall_once E.
     unfold spawn.
     unlock.
-    opose proof (@type_fn _ _ _ [𝔄] (at_locₛ (join_handleₛ ℭ)) ℭ c (λ y: (), FP E +[fty] (join_handle Φ retty) AtomicClosed) (λ c, (λ post '-[(l,a)], λ Mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ '(_, b) mask' π', Φ c b mask' π') -[(l, a')] ⊤ π ∧ ∀ lo li : loc, post (lo, (li, c)) Mask π)) (let: "call_once" := call_once in let: "j" := lib.spawn.spawn [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish ["c"; "r"]] in let: "r" := new (#(LitInt 1) :: []) in "r" <- "j" ;; return: ["r"])%E [BNamed "f"] _ _ _ ).
+    opose proof (@type_bfn _ _ _ [𝔄] (at_locₛ (join_handleₛ ℭ)) ℭ c (λ y: (), FP E +[fty] (join_handle Φ retty) AtomicClosed) (λ c, (λ post '-[a], λ Mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ b mask' π', Φ c b mask' π') -[a'] ⊤ π ∧ ∀ li : loc, post (li, c) Mask π)) (let: "call_once" := call_once in let: "j" := OfLit (lib.spawn.spawn [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish ["c"; "r"]]) in return: ["j"])%E [BNamed "f"] _ _ _ ).
     unlock in H.
     apply H.
     move => _.
@@ -137,51 +137,50 @@ Section spawn.
     simpl_subst.
     unfold fp_E. simpl.
     unfold E.
-    destruct wl as [x []].
+    destruct wl as [vx []].
     simpl_subst.
 
-    iApply (@type_let _ _ [] [exec_funₛ ℭ] [at_locₛ 𝔄] [at_locₛ 𝔄] (at_locₛ (at_locₛ (join_handleₛ ℭ))) _ _ _ (λ post '((call_once_val, c) -:: -[(l,x)] ) mask π, ∀ x', syn_abstract x = syn_abstract x' → call_once_tr c (λ '(_, b) mask' π', Φ c b mask' π') -[(l,x')] ⊤ π ∧ ∀ lo li : loc, post (lo, (li, c)) mask π)).
+    iApply (@type_let _ _ [] [exec_funₛ ℭ] [𝔄] [𝔄] (at_locₛ (join_handleₛ ℭ)) _ _ _ (λ post '((call_once_val, c) -:: -[x] ) mask π, ∀ x', syn_abstract x = syn_abstract x' → call_once_tr c (λ b mask' π', Φ c b mask' π') -[x'] ⊤ π ∧ ∀ li : loc, post (li, c) mask π)).
     1: apply Tcall_once.
     1: apply tctx_extract_ctx_nil.
     1: done.
     intro_subst_as (call_once').
     fold indep_interp_of_syn_type in *.
 
-    iApply (@type_let _ _ [(exec_funₛ ℭ) ; at_locₛ 𝔄] [at_locₛ (join_handleₛ ℭ)] [(exec_funₛ ℭ) ; at_locₛ 𝔄] [] (at_locₛ (at_locₛ (join_handleₛ ℭ))) _ (λ c, +[c ◁ join_handle Φ retty]) (λ post '((_, c) -:: -[(l,a)]) mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ '(_, b) mask' π', Φ c b mask' π') -[(l,a')] ⊤ π ∧ ∀ li, post -[(li, c)] mask π) (λ post '((li, predb) -:: _) mask π, ∀ lo, post (lo, (li, predb)) mask π) ).
+    iApply (@type_let _ _ [(exec_funₛ ℭ) ; 𝔄] [at_locₛ (join_handleₛ ℭ)] [(exec_funₛ ℭ) ; 𝔄] [] (at_locₛ (join_handleₛ ℭ)) _ (λ c, +[c ◁ᵥ join_handle Φ retty]) (λ post '((_, c) -:: -[a]) mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ b mask' π', Φ c b mask' π') -[a'] ⊤ π ∧ ∀ li, post -[(li, c)] mask π) (λ post '(lc -:: _) mask π, post lc mask π) ).
     2: {
       eapply tctx_extract_ctx_elt.
       2: eapply tctx_extract_ctx_elt.
       3: apply tctx_extract_ctx_nil.
-      1,2: apply tctx_extract_elt_here_exact. 
+      1,2: apply tctx_extract_elt_here_exact.
     }
     - iIntros (tid post mask iκs xl) "#LFT #TIME #PROPH #UNIQ #E L I T #Obs".
       clear Tcall_once call_once call_once_val.
-      destruct xl as [[call_once_val c'] [[la a] []]].
+      destruct xl as [[call_once_val c'] [a []]].
       iDestruct "T" as "(T1 & T2 & _)".
       iSimpl in "T1".
       rewrite !tctx_hasty_val /ty_own.
       iDestruct "T1" as "(%d1 & #Hd1 & Hgho1 & %Hphys1)".
-      iDestruct "T2" as "(%d2 & #Hd2 & Hgho2 & %Hphys2)".
+      iDestruct "T2" as (vp Hp wx d2 [-> Hval2]) "[#Hd2 Hgho2]".
+      rewrite eval_path_of_val in Hp. simplify_eq.
       iCombine "Hd1 Hd2" as "Hd".
-      
+
       iMod (invctx_alloc ⊤) as (tid') "I'".
-      
-      rewrite (proj1 (proj2 (@sync_change_tid _ _ _ _ (fn_sync _ _) tid tid' _ _ _ ))). 
-      
+
+      rewrite (proj1 (proj2 (@sync_change_tid _ _ _ _ (bfn_sync _ _) tid tid' _ _ _ ))).
+
       iApply fupd_wp.
       iMod (fupd_mask_subseteq (↑Nllft)) as "Hclose"; first solve_ndisj.
-      
+
       iApply (wp_persistent_time_receipt with "TIME Hd"); [trivial|].
       iMod "Hclose". iClear "Hclose".
       iModIntro. iIntros "£ #Hsd".
       rewrite /advance_credits.
-      iDestruct (lc_weaken (d1 `max` S d2 + d2) with "£") as "[£1 £2]"; first nia.
-      
-      (* send the arguments over *)
-      pose proof (own_send fty.(ty_size) fty Send0) as Send3.
-      destruct Send3 as [SendArgsPhys SendArgsGho].
+      iDestruct (lc_weaken (d1 `max` d2 + d2) with "£") as "[£1 £2]"; first nia.
+
+      (* send the argument over *)
       iDestruct "I" as (at_mask na_mask) "[I1 [[cna_lifetimes #fnincl] I2]]".
-      iDestruct (SendArgsGho tid tid' (la, a) d2 d2 _ _ _ (S d2) with
+      iDestruct (send_change_tid tid tid' a d2 d2 _ _ _ (S d2) with
           "LFT UNIQ TIME [] cna_lifetimes [] L Hgho2 []") as "X"; first lia.
         { iApply guards_refl. }
         { iIntros (κ) "%Hin". rewrite gmultiset_elem_of_disj_union in Hin.
@@ -196,7 +195,7 @@ Section spawn.
           unfold "⊓", lifetime_full.llft_intersect, static, llft_empty in Ha.
           rewrite left_id in Ha. subst ϝ. iFrame.
           iIntros "A". iExists κ0. iFrame. iSplit; last by done.
-          iPureIntro. simpl. 
+          iPureIntro. simpl.
           unfold "⊓", lifetime_full.llft_intersect, static, llft_empty.
           rewrite left_id. trivial.
         }
@@ -206,28 +205,28 @@ Section spawn.
       iMod (fupd_mask_mono with "X") as "X". { apply union_least; solve_ndisj. }
       iMod (fupd_mask_mono with "X") as "X". { apply union_least; solve_ndisj. }
       iDestruct "X" as (x' off) "[Hgho2 [#⧖off [%Habs [L cna_lifetimes]]]]".
-      
-      iApply (spawn_spec _ _ (join_future retty (Φ c')) with "[- L I1 I2 cna_lifetimes]"); [solve_ndisj|..]; last first.
-      { iModIntro.
-        iIntros "!> %c0 join". iExists -[(c0, c')]. iFrame "L I1 I2 cna_lifetimes fnincl".
+      have Hval' : fty.(ty_val) x' = fty.(ty_val) a.
+      { rewrite -!ty_val_eq. by apply syn_abstract_val_eq. }
+
+      iModIntro. wp_bind (lib.spawn.spawn _).
+      iApply (spawn_spec spawnN _ (join_future retty (Φ c')) with "[- L I1 I2 cna_lifetimes]"); [solve_ndisj|..]; last first.
+      { iIntros "!> %c0 join". wp_pure _. iExists -[(c0, c')]. iFrame "L I1 I2 cna_lifetimes fnincl".
         iSplit; last first.
-        { iApply (proph_obs_impl with "Obs"). move => π Hpost. 
+        { iApply (proph_obs_impl with "Obs"). move => π Hpost.
           assert (syn_abstract a = syn_abstract a) as Heq by trivial.
           have H := Hpost a Heq. destruct H as [H1 H2]. apply H2.
         }
-        simpl.
         iSplit => //.
-        iExists _, _.
-        iSplit => //.
-        iFrame "Hsd" => /=.
+        rewrite tctx_val_val. iExists _.
+        iFrame "Hsd". iSplit; [done|].
         rewrite /ty_own.
         unfold ty_gho_own => /=.
-        repeat iSplit => //. }
+        iFrame "join". }
 
       iIntros (?) "fin".
       do 2 wp_let.
 
-      iApply (type_call_iris (𝔄l:=[_]) () -[_] [] _ _ (λ '(), FP ∅ +[fty] retty AtomicClosed)  with "LFT TIME PROPH UNIQ E [] [] I' [Hgho1] [Hgho2]").
+      iApply (type_bcall_iris (𝔄l:=[_]) () -[x'] [] _ _ (λ '(), FP ∅ +[fty] retty AtomicClosed)  with "LFT TIME PROPH UNIQ E [] [] I' [Hgho1] [Hgho2]").
       3: by iApply guards_refl.
       1: apply _.
       + move => ϝ'.
@@ -245,40 +244,35 @@ Section spawn.
           iApply lft_incl_static.
       + simpl. by iApply static_alive_true.
       + rewrite/= !tctx_hasty_val.
-        iExists _. iFrame "Hd". 
+        iExists _. iFrame "Hd".
         iSplitL.
         * iDestruct (ty_gho_own_depth_mono with "Hgho1") as "[H _]"; last iFrame.
           all:lia.
         * iPureIntro. done.
-      + rewrite/= !tctx_hasty_val. iSplit => //.
-        iExists _. iFrame "⧖off". iSplitL.
-        * iDestruct (ty_gho_own_depth_mono with "Hgho2") as "[H _]"; last iFrame.
-          all:lia.
-        * iPureIntro. rewrite (send_change_tid_phys tid' tid x' (la, a)); trivial.
-      + iApply (proph_obs_impl with "Obs"). intros π Hpost. 
-        destruct x' as [l' x'].
-        unfold syn_abstract in Habs. simpl in Habs. inversion Habs. subst l'.
+      + rewrite/=. iSplit => //. rewrite tctx_val_val.
+        iExists _. iFrame "⧖off". iSplit; [by rewrite Hval'|].
+        iDestruct (ty_gho_own_depth_mono with "Hgho2") as "[H _]"; last iFrame.
+        all:lia.
+      + iApply (proph_obs_impl with "Obs"). intros π Hpost.
         destruct (Hpost x') as [Hpost1 Hpost2].
          * done.
          * apply Hpost1.
-      + iClear "Obs Hd Hsd". iIntros (???) "_ I ret #Obs". wp_rec.
-        rewrite tctx_hasty_val. iDestruct "ret" as (d) "[#Hd ret]".
+      + iClear "Obs Hd Hsd". iIntros (ret ? w) "_ I ret #Obs". wp_rec.
+        iDestruct "ret" as (vr Hvr w' d [-> Hw']) "[#Hd ret]".
+        rewrite eval_path_of_val in Hvr. simplify_eq.
         iApply (wp_persistent_time_receipt with "TIME Hd"); [trivial|].
         iIntros "£ #Hsd".
-        
+
         iApply (finish_spec with "[$fin ret Obs £ I]"); [solve_ndisj..| | ].
         { iDestruct "£" as "[£ [£1 £']]".
           iFrame. unfold join_future.
-          iIntros (tid''). 
-          
+          iIntros (tid'').
+
           (* send ret back to tid *)
-          iDestruct "ret" as "[Hgho %Hphys]".
-          pose proof (own_send retty.(ty_size) retty Send1) as Send4.
-          destruct Send4 as [SendRetPhys SendRetGho].
           clear at_mask. clear na_mask. iClear "fnincl".
           iDestruct "I" as (at_mask na_mask) "[I1 [[cna_lifetimes #fnincl] I2]]".
-          iDestruct (SendRetGho tid' tid'' w d d True%I _ _ (S d) with
-            "LFT UNIQ TIME [] cna_lifetimes [] [] Hgho Hsd") as "X"; first lia.
+          iDestruct (send_change_tid tid' tid'' w d d True%I _ _ (S d) with
+            "LFT UNIQ TIME [] cna_lifetimes [] [] ret Hsd") as "X"; first lia.
           { iApply guards_refl. }
           { iIntros (κ) "%Hin". rewrite gmultiset_elem_of_disj_union in Hin.
             destruct Hin as [Hin|Hin]; set_solver.
@@ -289,46 +283,38 @@ Section spawn.
           iMod (fupd_mask_mono with "X") as "X". { apply union_least; solve_ndisj. }
           iMod (fupd_mask_mono with "X") as "X". { apply union_least; solve_ndisj. }
           iDestruct "X" as (x2 off2) "[ret [#⧖off2 [%Habs2 [_ cna_lifetimes]]]]".
-          
-          iModIntro. iFrame. iExists (w.2), mask'.
+
+          iModIntro. iFrame. iExists w, mask'.
           iSplit.
-           - destruct x2. iPureIntro. rewrite (send_change_tid_phys tid'' tid' _ w); trivial.
+           - iPureIntro. exists w'. split; [done|]. rewrite -Hw' -ty_val_eq.
+             by apply syn_abstract_val_eq.
            - iDestruct (persistent_time_receipt_mono with "⧖off2") as "$"; first lia.
-             iSplit. { iPureIntro. destruct w, x2. unfold syn_abstract in Habs2.
-              inversion Habs2. done. }
+             iSplit. { iPureIntro. done. }
              iSplit; last by done.
-             iApply (proph_obs_impl with "Obs"). intros π Ha. destruct x2. destruct w.
-             apply Ha.
+             iApply (proph_obs_impl with "Obs"). intros π Ha. apply Ha.
         }
         done.
     - rewrite /compose /id /trans_tail /trans_upper /=.
-      move => ? [[? ?] [[? ?] []]] ? ? //.
-      naive_solver.
+      move => ? [[? ?] [? []]] ? ? //.
     - iIntros (v).
       Disable Notation "k ◁cont{ L , I , T } tr" .
       simpl_subst.
-      iApply (@type_letalloc_1 _ _ (at_locₛ (join_handleₛ ℭ)) [at_locₛ (join_handleₛ ℭ)] [] (at_locₛ (at_locₛ (join_handleₛ ℭ))) (join_handle Φ retty) "r" _ _ _ +[] (λ post '(lpredb -:: _) mask π, post lpredb mask π) id with "[]").
-      + apply tctx_incl_refl.
-      + by move => ? [[? ?] _] ? ? //.
-      + done.
-      + iIntros (r).
-        simpl_subst.
-        iApply (@cont.type_jump _ _ [at_locₛ (at_locₛ (join_handleₛ ℭ))] [at_locₛ (at_locₛ (join_handleₛ ℭ))] [] (at_locₛ (at_locₛ (join_handleₛ ℭ))) _ _ _ _ _ _ (λ post '(l -:: _) mask π, post -[l] mask π) _ _ _ _ _ +[]).
-        * by apply elem_of_list_singleton. 
-        * eapply tctx_extract_ctx_eq.
-          { eapply tctx_extract_ctx_elt.
-            1: apply tctx_extract_elt_here_exact.
-            apply tctx_extract_ctx_nil. }
-          rewrite /id /trans_tail /compose /=.
-          fun_ext.
-          move => ?.
-          fun_ext.
-          move => [[? ?] []] //.
-        * instantiate (1 := λ _ _ x, x).
-          apply resolve_tctx_nil.
-        * rewrite /compose /=.
-          simpl.
-          done.
+      iApply (@cont.type_jump _ _ [at_locₛ (join_handleₛ ℭ)] [at_locₛ (join_handleₛ ℭ)] [] (at_locₛ (join_handleₛ ℭ)) _ _ _ _ _ _ (λ post '(l -:: _) mask π, post -[l] mask π) _ _ _ _ _ +[]).
+      * by apply elem_of_list_singleton.
+      * eapply tctx_extract_ctx_eq.
+        { eapply tctx_extract_ctx_elt.
+          1: apply tctx_extract_elt_here_exact.
+          apply tctx_extract_ctx_nil. }
+        rewrite /id /trans_tail /compose /=.
+        fun_ext.
+        move => ?.
+        fun_ext.
+        move => [[? ?] []] //.
+      * instantiate (1 := λ _ _ x, x).
+        apply resolve_tctx_nil.
+      * rewrite /compose /=.
+        simpl.
+        done.
   Qed.
 
 

@@ -6,7 +6,7 @@ From lrust.lang Require Import races adequacy proofmode notation.
 From lrust.lifetime Require Import lifetime_full.
 From guarding.lib Require Import fractional cancellable.
 From guarding Require Import guard.
-From lrust.typing Require Import type function product programs.
+From lrust.typing Require Import type product programs value_ctx function_bytes.
 Set Default Proof Using "Type".
 
 Class typePreG Σ := PreTypeG {
@@ -27,15 +27,19 @@ Definition typeΣ : gFunctors :=
 Global Instance subG_typePreG {Σ} : subG typeΣ Σ → typePreG Σ.
 Proof. solve_inG. Qed.
 
+(** * Type soundness
+
+A [main] function typed with the function type [bfn] ([typing/function_bytes.v]), whose
+result is a MiniRust value of the unit type, runs without data races and does not get
+stuck. *)
+
 Section type_soundness.
   Definition exit_cont : val := λ: [<>], #☠.
 
   (* function type with trivial precondition and postcondition *)
   Definition main_type `{!typeG Σ} :=
-      (fn(∅) → unit_ty)%T (λ (_: ~~()), (λ post '-[], λ mask π, ∀ l, post (l, ()) mask π)).
+    (bfn(∅) → unit_ty)%T (λ (_: ~~()), (λ post '-[], λ mask π, ∀ x, post x mask π)).
 
-  (* Intuitively, it says that execution of a closed, semantically well-typed
-    program, without any special precondition, does not get stuck *)
   Theorem type_soundness `{!typePreG Σ} (main : val) σ t c :
     (∀ `{!typeG Σ}, typed_val main main_type c) →
     rtc erased_step ([main [exit_cont]%E], (∅, false)) (t, σ) →
@@ -51,7 +55,6 @@ Section type_soundness.
     iMod proph_init as (?) "#PROPH"; first done.
     iMod uniq_init as (?) "#UNIQ"; first done. set (Htype := TypeG Σ _ _ _ _ _ _ _ _).
     iMod (invctx_alloc ⊤) as (tid) "Hinvctx".
-    Set Printing Implicit.
     wp_bind (of_val main). iApply (wp_wand with "[Hinvctx]").
     iApply (Hmain Htype [] [] (InvCtx [] static AtomicClosed)
         tid (λ xl mask π, True) ⊤ [] -[]
@@ -67,30 +70,24 @@ Section type_soundness.
     inversion phys. subst fxval.
     iDestruct "Hmain" as (f k j e ?) "(EQ & Hmain)". iDestruct "EQ" as %[= ->].
     wp_rec.
-    
     iMod (llftl_begin' with "LFT") as (ϝ) "Hϝ"; first done.
-    iDestruct (function.invctx_interp_call [] static AtomicClosed tid ⊤ ϝ [] with "[] [] [Invctx]")
+    iDestruct (function_bytes.invctx_interp_call [] static AtomicClosed tid ⊤ ϝ [] with "[] [] [Invctx]")
         as (iκs') "[Invctx InvctxBack]".
       { iApply lft_incl_static. }
       { simpl. iApply lft_incl_static. }
       { iFrame "Invctx". }
-    
     iDestruct ("Hmain" $! () ϝ exit_cont -[] tid -[] ⊤ (λ _ _ _, True) iκs') as "X".
-    
     iDestruct("X" with "LFT TIME PROPH UNIQ [] [Hϝ] [Invctx] [] [] []") as "X".
     { by rewrite /elctx_interp /=. }
     { rewrite /llctx_interp /=. iSplit; last done. iExists ϝ. iFrame. by rewrite /= left_id. }
     { iApply "Invctx". }
     { rewrite cctx_interp_singleton. simpl. iIntros (args [? []] mask) "_ _".
-    inv_vec args. iIntros (x) "_ /= ?". by wp_lam. }
+      inv_vec args. iIntros (x) "_ /= ?". by wp_lam. }
     { simpl. done. }
     { iApply (proph_obs_impl with "Obs"). done. }
-    
     iApply "X".
   Qed.
 End type_soundness.
-
-(* Soundness theorem when no other CMRA is needed. *)
 
 Theorem type_soundness_closed (main : val) σ t c :
   (∀ `{!typeG typeΣ}, typed_val main main_type c) →
@@ -100,3 +97,4 @@ Theorem type_soundness_closed (main : val) σ t c :
 Proof.
   intros. eapply @type_soundness; try done. apply _.
 Qed.
+

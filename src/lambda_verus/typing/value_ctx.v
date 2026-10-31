@@ -1,5 +1,5 @@
 From lrust.typing Require Export type type_context bytes_layout.
-From lrust.typing Require Import programs int own_bytes product sum.
+From lrust.typing Require Import programs bool int own_bytes product sum.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -162,6 +162,26 @@ Section value_rules.
     wp_seq.
     iExists -[]. iCombine "Obs Obs'" as "?".
     rewrite left_id. iFrame "L I". iApply proph_obs_impl; [|done]=>/= ?[Imp ?]. by apply Imp.
+  Qed.
+
+  (** Branching on a boolean value. [ToLit] turns the MiniRust boolean into the literal
+      that [if:] cases on. *)
+  Lemma type_if_val {𝔄l 𝔅l ℭ} p (T: tctx 𝔄l) (T': tctx 𝔅l) e1 e2 tr1 tr2 trx E L I
+      (C: cctx ℭ) :
+    tctx_extract_ctx E L +[p ◁ᵥ bool_ty] T T' trx →
+    typed_body E L I C T' e1 tr1 -∗ typed_body E L I C T' e2 tr2 -∗
+    typed_body E L I C T (if: ToLit p then e1 else e2)
+      (trx ∘ (λ post '(b -:: vl), if b then tr1 post vl else tr2 post vl)).
+  Proof.
+    iIntros (?) "e1 e2". iApply typed_body_tctx_incl; [done|]=>/=.
+    iIntros (?[b ?]???) "/= #LFT #TIME #PROPH #UNIQ #E L I C [p T] Obs".
+    wp_bind p. iApply (wp_val with "p"). iIntros (w d _ Hw) "_ _".
+    simpl in Hw. simplify_eq. wp_pure _.
+    destruct b; wp_case.
+    - iApply ("e1" with "LFT TIME PROPH UNIQ E L I C T").
+      iApply (proph_obs_impl with "Obs"). intros π. done.
+    - iApply ("e2" with "LFT TIME PROPH UNIQ E L I C T").
+      iApply (proph_obs_impl with "Obs"). intros π. done.
   Qed.
 
   Lemma resolve_tctx_cons_val {𝔄 𝔅l} E L p (ty: type 𝔄) Φ (T: tctx 𝔅l) Ψ :
