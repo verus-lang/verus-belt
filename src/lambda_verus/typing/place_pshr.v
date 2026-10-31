@@ -1151,7 +1151,7 @@ Section memcpy.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
     iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
-    iApply (wp_bytes_own_forget with "Bs"); [done|solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
+    iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
     iCombine "⧖ ⧖w" as "⧖m".
     set M := D `max` (S dw).
@@ -1250,7 +1250,7 @@ Section memcpy.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
     iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
-    iApply (wp_bytes_own_forget with "Bs"); [done|solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
+    iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     iDestruct (Alv with "L E") as "#Alv".
     iCombine "⧖ ⧖w" as "⧖m".
     set M := D `max` (S dw).

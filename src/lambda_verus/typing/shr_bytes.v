@@ -7,7 +7,9 @@ Set Default Proof Using "Type".
 (** * Shared references to bytes (stage 4 of the MiniRust memory model)
 
 [&shrb{κ} ty] is the byte form of [&shr{κ} ty]: its ownership is a guard, by [@[κ]], of
-bytes at the referent that represent its value ([bytes_own ty l x]), together with the
+bytes at the referent that represent its value ([bytes_own ty l x]: fancy bytes, so the
+referent may embed cells; for a type without cells they are plain, [shr_bytes_own_nocell]),
+together with the
 sharing predicate of [ty] at [κ] and its persistent predicate. A reader loads the bytes
 with the guarded byte load [wp_load_na_guarded_gen] ([wp_shr_bytes_load]): the bytes
 are only known inside the guard, but all of them decode to the value of [x].
@@ -29,6 +31,11 @@ Section shr_bytes.
   Lemma shr_bytes_own_same {𝔄} κ n (ty ty': type 𝔄) l x :
     shr_bytes_own κ n ty l x ⊣⊢ shr_bytes_own κ n ty' l x.
   Proof. by rewrite /shr_bytes_own (bytes_own_same ty ty'). Qed.
+
+  (** The reduction lemma: for a type without cells, the referent is plain bytes. *)
+  Lemma shr_bytes_own_nocell {𝔄} `{!NoCell 𝔄} κ n (ty: type 𝔄) l x :
+    shr_bytes_own κ n ty l x ⊣⊢ (@[κ] &&{↑NllftG; n}&&> ∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝).
+  Proof. by rewrite /shr_bytes_own bytes_own_nocell. Qed.
 
   Lemma shr_bytes_own_mono {𝔄} κ n n' (ty: type 𝔄) l x :
     n ≤ n' → shr_bytes_own κ n ty l x -∗ shr_bytes_own κ n' ty l x.

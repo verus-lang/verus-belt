@@ -63,18 +63,23 @@ Section own_bytes.
       + by iApply (big_sepM_lookup with "H2").
   Qed.
 
-  (** The fancy bytes at [l] represent [x]. *)
-  Definition bytes_own {𝔄} (ty: type 𝔄) (l: loc) (x: ~~𝔄) : iProp Σ :=
+  (** The fancy bytes at [l] represent [x]. It is sealed: unifying it with other
+      predicates would unfold the fancy points-to and the representation. *)
+  Definition bytes_own_def {𝔄} (ty: type 𝔄) (l: loc) (x: ~~𝔄) : iProp Σ :=
     ∃ R fbs, heap_mapsto_fbytes l fbs ∗ ⌜ty_fbytes R ty x fbs⌝ ∗ greg_map R.
+  Local Definition bytes_own_aux : seal (@bytes_own_def). Proof. by eexists. Qed.
+  Definition bytes_own := bytes_own_aux.(unseal).
+  Definition bytes_own_unseal : @bytes_own = @bytes_own_def := bytes_own_aux.(seal_eq).
+  Global Arguments bytes_own {_} _ _ _.
 
   Global Instance bytes_own_timeless {𝔄} (ty: type 𝔄) l x : Timeless (bytes_own ty l x).
-  Proof. apply _. Qed.
+  Proof. rewrite bytes_own_unseal. apply _. Qed.
 
   (** Types with the same fancy bytes have the same byte ownership. *)
   Lemma bytes_own_iff {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) l x x' :
     (∀ R fbs, ty_fbytes R ty x fbs ↔ ty_fbytes R ty' x' fbs) →
     bytes_own ty l x ⊣⊢ bytes_own ty' l x'.
-  Proof. intros Hb. rewrite /bytes_own. by setoid_rewrite Hb. Qed.
+  Proof. intros Hb. rewrite bytes_own_unseal /bytes_own_def. by setoid_rewrite Hb. Qed.
 
   Lemma bytes_own_same {𝔄} (ty ty': type 𝔄) l x : bytes_own ty l x ⊣⊢ bytes_own ty' l x.
   Proof. apply bytes_own_iff=> ??. apply ty_fbytes_same. Qed.
@@ -84,7 +89,7 @@ Section own_bytes.
     bytes_own ty l x ⊣⊢ ∃ fbs fv, heap_mapsto_fbytes l fbs ∗
       ⌜length fbs = ty_bsize ty ∧ ty.(ty_fval) x = Some fv⌝ ∗ brepr ty.(ty_mty) fbs fv.
   Proof.
-    rewrite /bytes_own /brepr /greg_map. iSplit.
+    rewrite bytes_own_unseal /bytes_own_def /brepr /greg_map. iSplit.
     - iIntros "(%R & %fbs & Hfbs & (%Hlen & %fv & %Hfv & %Hrep) & HR)".
       iExists fbs, fv. iFrame. by iPureIntro.
     - iIntros "(%fbs & %fv & Hfbs & [%Hlen %Hfv] & %R & %Hrep & HR)".
@@ -95,6 +100,7 @@ Section own_bytes.
   Lemma bytes_own_of_bytes {𝔄} (ty: type 𝔄) l x bs :
     ty_bytes ty x bs → l ↦b bs -∗ bytes_own ty l x.
   Proof.
+    rewrite bytes_own_unseal /bytes_own_def.
     iIntros (Hbs) "Hbs". iExists ∅, (inr <$> bs). rewrite -heap_mapsto_fbytes_bytes.
     iFrame "Hbs". iSplit; [|by rewrite /greg_map big_sepM_empty]. iPureIntro.
     apply ty_fbytes_syn, syn_fbytes_bytes. by apply (ty_bytes_syn ty).
@@ -105,6 +111,7 @@ Section own_bytes.
   Lemma bytes_own_to_bytes {𝔄} (ty: type 𝔄) l x v :
     ty.(ty_val) x = Some v → bytes_own ty l x -∗ ∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝.
   Proof.
+    rewrite bytes_own_unseal /bytes_own_def.
     iIntros (Hv) "(%R & %fbs & Hfbs & %Hfb & _)". rewrite ty_fbytes_syn in Hfb.
     rewrite -ty_val_eq in Hv. apply (syn_fbytes_val _ _ _ _ Hv) in Hfb as (bs & -> & Hbs).
     iExists bs. rewrite heap_mapsto_fbytes_bytes. iFrame. iPureIntro. by apply (ty_bytes_syn ty).
@@ -114,7 +121,7 @@ Section own_bytes.
     bytes_own ty l x ⊣⊢ ∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝.
   Proof.
     iSplit.
-    - iIntros "(%R & %fbs & Hfbs & %Hfb & _)". rewrite ty_fbytes_syn in Hfb.
+    - rewrite bytes_own_unseal /bytes_own_def. iIntros "(%R & %fbs & Hfbs & %Hfb & _)". rewrite ty_fbytes_syn in Hfb.
       apply syn_fbytes_nocell in Hfb as (bs & -> & Hbs); [|done].
       iExists bs. rewrite heap_mapsto_fbytes_bytes. iFrame. iPureIntro. by apply (ty_bytes_syn ty).
     - iIntros "(%bs & Hbs & %Hbs)". by iApply bytes_own_of_bytes.
@@ -133,7 +140,7 @@ Section own_bytes.
 
   Lemma bytes_own_nocell_bytes {𝔄} `{!NoCell 𝔄} (ty: type 𝔄) l x :
     bytes_own ty l x -∗ ∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝.
-  Proof. by rewrite bytes_own_nocell. Qed.
+  Proof. rewrite bytes_own_nocell. iIntros "$". Qed.
 
   Lemma bytes_own_view_nocell {𝔄} `{!NoCell 𝔄} (ty: type 𝔄) l x :
     ⊢ □ (bytes_own ty l x -∗ ∃ bs, ⌜ty_bytes ty x bs⌝ ∗ l ↦b bs ∗ (l ↦b bs -∗ bytes_own ty l x)).
@@ -153,6 +160,7 @@ Section own_bytes.
     bytes_own ty l x -∗ ∃ fbs, heap_mapsto_fbytes l fbs ∗ ⌜length fbs = ty_bsize ty⌝ ∗
       (heap_mapsto_fbytes l fbs -∗ bytes_own ty l x).
   Proof.
+    rewrite bytes_own_unseal /bytes_own_def.
     iIntros "(%R & %fbs & Hfbs & %Hfb & #HR)". iExists fbs. iFrame "Hfbs".
     iSplit; [by destruct Hfb|]. iIntros "Hfbs". iExists R, fbs. by iFrame "Hfbs HR".
   Qed.
@@ -163,6 +171,7 @@ Section own_bytes.
     bytes_own ty l x -∗
     (∀ bs, l ↦b bs -∗ ⌜length bs = ty_bsize ty⌝ -∗ WP e @ E {{ Φ }}) -∗ WP e @ E {{ Φ }}.
   Proof.
+    rewrite bytes_own_unseal /bytes_own_def.
     iIntros (??) "(%R & %fbs & Hfbs & [%Hlen _] & _) Hwp".
     iApply (wp_fbytes_forget with "Hfbs"); [done..|]. iIntros (bs) "Hbs %Hlen'".
     iApply ("Hwp" with "Hbs"). by rewrite Hlen' Hlen.
@@ -172,7 +181,7 @@ Section own_bytes.
   Lemma bytes_own_pair {𝔄 𝔅} (ty: type (𝔄 * 𝔅)) (ty1: type 𝔄) (ty2: type 𝔅) l x1 x2 :
     bytes_own ty l (x1, x2) ⊣⊢ bytes_own ty1 l x1 ∗ bytes_own ty2 (l +ₗ ty_bsize ty1) x2.
   Proof.
-    rewrite /bytes_own. setoid_rewrite ty_fbytes_syn. iSplit.
+    rewrite bytes_own_unseal /bytes_own_def. setoid_rewrite ty_fbytes_syn. iSplit.
     - iIntros "(%R & %fbs & Hfbs & %Hfb & #HR)".
       apply syn_fbytes_pair in Hfb as (f1 & f2 & -> & H1 & H2).
       rewrite heap_mapsto_fbytes_app (syn_fbytes_length _ _ _ H1) -(ty_bsize_eq ty1).
@@ -199,7 +208,7 @@ Section own_bytes.
     mty_wf m →
     bytes_own ty l g ⊣⊢ ∃ cs, loc_side l g m cs ∗ ⌜length cs = mty_size m⌝.
   Proof.
-    intros Hwf. rewrite /bytes_own /ty_fbytes /ty_bsize -ty_mty_eq -ty_fval_eq /= decide_True //.
+    intros Hwf. rewrite bytes_own_unseal /bytes_own_def /ty_fbytes /ty_bsize -ty_mty_eq -ty_fval_eq /= decide_True //.
     iSplit.
     - iIntros "(%R & %fbs & Hfbs & (%Hlen & %fv & %Hfv & %Hrep) & #HR)".
       injection Hfv as <-.

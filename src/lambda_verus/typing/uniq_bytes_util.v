@@ -29,6 +29,11 @@ Section uniq_bytes_util.
   Lemma cbytes_same {𝔄} (ty ty': type 𝔄) x l : cbytes ty x l ⊣⊢ cbytes ty' x l.
   Proof. apply bytes_own_same. Qed.
 
+  (** The reduction lemma: for a type without cells, the bytes of a leaf are plain. *)
+  Lemma cbytes_nocell {𝔄} `{!NoCell 𝔄} (ty: type 𝔄) x l :
+    cbytes ty x l ⊣⊢ ∃ bs, l.1 ↦b bs ∗ ⌜ty_bytes ty x bs⌝.
+  Proof. apply bytes_own_nocell. Qed.
+
   (** The bytes of a pair: those of its components, one after the other. *)
   Lemma cbytes_pair {𝔄 𝔅} (ty: type (𝔄 * 𝔅)) (ty1: type 𝔄) (ty2: type 𝔅) x1 x2 l :
     cbytes ty (x1, x2) l ⊣⊢

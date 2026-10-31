@@ -122,7 +122,7 @@ Section value_rules.
     wp_bind q. iApply (wp_val with "q"). iIntros (v d' Hq Hv) "#⧖' Gho'".
     destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & _)".
     iApply (wp_persistent_time_receipt with "TIME ⧖'"); [done|]. iIntros "_ #⧖S".
-    iApply wp_fupd. iApply (wp_bytes_own_forget with "Bytes"); [done|solve_ndisj|].
+    iApply wp_fupd. iApply (wp_bytes_own_forget with "Bytes"); [solve_ndisj|].
     iIntros (bs) "Hbs %Hlen".
     iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf|by rewrite Hlen|].
     iIntros "!> Hbs !>". iExists -[(l, y)]. iFrame "Obs".

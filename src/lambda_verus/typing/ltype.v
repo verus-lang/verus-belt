@@ -1270,7 +1270,7 @@ Section unfold.
       pad_cell (cloc_skip (cloc_skip l (tag_size 𝔄l)) (syn_bsize (𝔄l !!ₗ i)))
         (sum_max 𝔄l - syn_bsize (𝔄l !!ₗ i)).
   Proof.
-    rewrite /cbytes /bytes_own /tag_cell /pad_cell /=. setoid_rewrite ty_fbytes_syn. iSplit.
+    rewrite /cbytes bytes_own_unseal /tag_cell /pad_cell /=. setoid_rewrite ty_fbytes_syn. iSplit.
     - iIntros "(%R & %fbs & Hfbs & %Hfb & #HR)". apply syn_fbytes_sum in Hfb.
       destruct Hfb as (bt & fp & bq & -> & Ht & Hp & Hq).
       have Hlt : length bt = tag_size 𝔄l := decode_value_length (MInt (sum_tag 𝔄l)) bt _ Ht.

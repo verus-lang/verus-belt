@@ -549,7 +549,7 @@ Section typing.
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     (* Write. *)
-    iApply (wp_bytes_own_forget with "Pt1"); [done|solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
+    iApply (wp_bytes_own_forget with "Pt1"); [solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
     iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf|by rewrite Hlen -Hsz|].
     iIntros "!> Hbs".
     (* Close the place at the new value. *)

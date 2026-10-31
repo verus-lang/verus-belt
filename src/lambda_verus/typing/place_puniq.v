@@ -989,7 +989,7 @@ Section puniq.
       iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
       iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
       (* Write. *)
-      iApply (wp_bytes_own_forget with "Pt1"); [done|solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
+      iApply (wp_bytes_own_forget with "Pt1"); [solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
       iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf|done|].
       iNext. iIntros "Hbs".
       iMod (cumulative_persistent_time_receipt with "TIME ⧗u ⧖b") as "#⧖b1"; [solve_ndisj|].
@@ -1033,7 +1033,7 @@ Section puniq.
       iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
       iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
       (* Write. *)
-      iApply (wp_bytes_own_forget with "Pt1"); [done|solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
+      iApply (wp_bytes_own_forget with "Pt1"); [solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
       iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf|done|].
       iNext. iIntros "Hbs".
       set Dn := D `max` (S (pctx_dlev K) + db).
@@ -1855,7 +1855,7 @@ Section oplace_rslv.
     iIntros "_ (%bs & Pt & %Hl)". wp_seq.
     wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". wp_pure _.
     iEval (rewrite freeable_sz_full) in "Fr".
-    iApply (wp_delete_bytes bs with "[Pt Fr]"); [solve_ndisj|by rewrite Hl|..].
+    iApply (wp_delete_fbytes bs with "[Pt Fr]"); [solve_ndisj|by rewrite Hl|..].
     { iFrame "Pt". rewrite Hl. iDestruct "Fr" as "[$|%]"; by iRight. }
     iIntros "!> _". iExists -[]. iFrame "L I". iSplit; [done|].
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?]. by apply Imp.

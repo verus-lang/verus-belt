@@ -279,7 +279,7 @@ Section memcpy_deep.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)". have Hdl := pctx_vroot_dlev K.
     iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
-    iApply (wp_bytes_own_forget with "Bs"); [done|solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
+    iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     have ?: Closed [] (pctx_vexpr K p).
     { apply pctx_vexpr_closed. by eapply eval_path_closed. }
     have ?: Closed [] pw by eapply eval_path_closed.

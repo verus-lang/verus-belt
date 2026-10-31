@@ -55,7 +55,7 @@ Section memcpy_res.
     { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
     iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Frw & Gw0)".
-    iApply (wp_bytes_own_forget with "Bs"); [done|solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
+    iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     iDestruct (Alv with "L E") as "#Alv".
     iCombine "⧖ ⧖w" as "⧖m".
     set M := D `max` (S dw).
