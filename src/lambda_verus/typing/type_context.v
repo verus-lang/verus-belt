@@ -12,8 +12,7 @@ Bind Scope expr_scope with path.
 (** Type context elements. An element [TCtx_sem p Φ] gives an interpretation [Φ] to the
     value of the path [p]: a MiniRust value of a type ([p ◁ᵥ ty], [typing/value_ctx.v]), a
     function value ([p ◁ᶠ ty], below), or a place ([typing/vplace.v]). (The legacy
-    elements [p ◁ ty] of a one-word value with [ty_phys] and [p ◁{κ} ty] of a blocked
-    value were deleted in stage 6.) *)
+    word element [p ◁ ty] and the blocked element [p ◁{κ} ty] were deleted in stage 6.) *)
 Inductive tctx_elt `{!typeG Σ} 𝔄 : Type :=
 | TCtx_sem (p: path) (Φ: ~~𝔄 → thread_id → val → iProp Σ).
 

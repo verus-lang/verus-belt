@@ -8,7 +8,7 @@ Section int_ty.
 
   (** The integers of an [IntType] [it]. Its MiniRust type is [MInt it] (of [int_size it]
       bytes), and [ty_val] is [Some (VInt z)] iff [z] is in the range of [it] (see
-      [syn_val]). In the legacy word layer it is still one word [#z], of any [z]. *)
+      [syn_val]). *)
   Program Definition int_ty (it: IntType) : type (intₛ it) :=
     {| pt_gho (z: ~~(intₛ it)) _ := True%I;
     |}.
@@ -28,8 +28,7 @@ Section int_ty.
   Qed.
 End int_ty.
 
-(** The legacy integer type, [isize]; the arithmetic rules below are for it (with
-    unbounded results, as before). *)
+(** The integer type [isize]. *)
 Notation int := (int_ty isize).
 
 Section int.

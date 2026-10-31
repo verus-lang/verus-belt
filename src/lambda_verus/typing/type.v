@@ -2052,32 +2052,11 @@ Section type_util.
     (∀d', Persistent (Φ d')) → Persistent (by_succ d Φ).
   Proof. case d; apply _. Qed.
 
-  Definition by_just_loc (vl: list val) (Φ: loc → iProp Σ) : iProp Σ :=
-    match vl with [ #(LitLoc l)] => Φ l | _ => False end.
-  Lemma by_just_loc_ex vl Φ : by_just_loc vl Φ ⊣⊢ ∃l: loc, ⌜vl = [ #l]⌝ ∗ Φ l.
-  Proof.
-    iSplit; [|by iIntros "[%[->$]]"]. iIntros. case vl=> [|[[|l|?]|?|?][|??]]//.
-    iExists l. by iFrame.
-  Qed.
-  Global Instance by_just_loc_proper :
-    Proper ((=) ==> pointwise_relation _ (⊣⊢) ==> (⊣⊢)) by_just_loc.
-  Proof. move=> ??->?? Eq. rewrite !by_just_loc_ex. by setoid_rewrite Eq. Qed.
-  Global Instance by_just_loc_ne n :
-    Proper ((=) ==> pointwise_relation _ (dist n) ==> dist n) by_just_loc.
-  Proof. move=> ??->?? Eq. rewrite !by_just_loc_ex. by setoid_rewrite Eq. Qed.
-  Global Instance by_just_loc_mono :
-    Proper ((=) ==> pointwise_relation _ (⊢) ==> (⊢)) by_just_loc.
-  Proof. move=> ??->?? In. rewrite !by_just_loc_ex. by setoid_rewrite In. Qed.
-  Global Instance by_just_loc_persistent vl Φ :
-    (∀l, Persistent (Φ l)) → Persistent (by_just_loc vl Φ).
-  Proof. rewrite by_just_loc_ex. apply _. Qed.
 End type_util.
 
 Notation "[S( d' ) := d ] P" := (by_succ d (λ d', P)) (at level 200,
   right associativity, format "[S( d' )  :=  d ]  P") : bi_scope.
 
-Notation "[loc[ l ] := vl ] P" := (by_just_loc vl (λ l, P)) (at level 200,
-  right associativity, format "[loc[ l ]  :=  vl ]  P") : bi_scope.
 
 Global Hint Resolve ty_outlives_E_elctx_sat tyl_outlives_E_elctx_sat : lrust_typing.
 Global Hint Resolve resolve'_post | 5 : lrust_typing.

@@ -93,15 +93,6 @@ Section typing.
   Lemma uninit_unit_2 E L : subtype E L () (↯ 0) (unit_to_uninit0ₛ).
   Proof. eapply proj2, uninit_unit. Qed.
 
-  Lemma uninit_plus_prod_helper1 m n (vl : list val) :
-    length vl = m + n →
-    length (take m vl) = m.
-  Proof. rewrite length_take; lia. Qed.
-  Lemma uninit_plus_prod_helper2 m n (vl : list val) :
-    length vl = m + n →
-    length (drop m vl) = n.
-  Proof. rewrite length_drop; lia. Qed.
-
   Program Definition uninit_joinₛ {n m} : (uninitₛ n * uninitₛ m) →ₛ (uninitₛ (n + m)) := {|
     syn_type_morphism_fn := uncurry vapp ;
     syn_type_morphism_proph_fn := const () ;
