@@ -1,7 +1,8 @@
 Require Import guarding.internal.na_invariants_fork.
 From lrust.util Require Import non_atomic_cell_map atomic_lock_counter update.
 From lrust.util Require Export cellmap.
-From guarding Require Import guard.
+From guarding Require Import guard factoring_props.
+From iris.algebra Require Import functions.
 From Coq.Arith Require Import PeanoNat.
 From stdpp Require Import coPset.
 From iris.algebra Require Import big_op gmap frac agree numbers.
@@ -2600,3 +2601,84 @@ Section cells.
     by iApply (bytes_ctx_pcell_retether_eq with "Hctx Hu Hl").
   Qed.
 End cells.
+
+(** ** Combining guards of the location side and of the permission of a group
+
+A shared reference to a [PCell] guards its location side, and a shared reference to its
+permission guards [gdyn]; a guarded access through the cell needs a guard of both. Two
+guards by the same token give a guard of the conjunction ([guards_and_point]); the
+location side (edges of the byte region) and [gdyn] are in different ghost cells
+([heap_bytes_gdyn_ne]), so their conjunction is their separating conjunction. *)
+Section own_and_ne.
+  Context {Σ : gFunctors}.
+
+  Lemma own_and_ne {A B : cmra} `{i1 : !inG Σ A} `{i2 : !inG Σ B} γ1 γ2 (a : A) (b : B) :
+    γ1 ≠ γ2 → own γ1 a ∧ own γ2 b ⊢ own γ1 a ∗ own γ2 b.
+  Proof.
+    intros Hne. rewrite own.own_eq /own.own_def -uPred.ownM_op.
+    set x := own.iRes_singleton γ1 a. set y := own.iRes_singleton γ2 b.
+    have Hx : ∀ i γ, (i, γ) ≠ (inG_id i1, γ1) → x i !! γ = None.
+    { intros i γ Hiγ. rewrite /x /own.iRes_singleton.
+      destruct (decide (i = inG_id i1)) as [->|Hi].
+      - rewrite discrete_fun_lookup_singleton lookup_singleton_ne //. congruence.
+      - by rewrite discrete_fun_lookup_singleton_ne. }
+    have Hy : ∀ i γ, (i, γ) ≠ (inG_id i2, γ2) → y i !! γ = None.
+    { intros i γ Hiγ. rewrite /y /own.iRes_singleton.
+      destruct (decide (i = inG_id i2)) as [->|Hi].
+      - rewrite discrete_fun_lookup_singleton lookup_singleton_ne //. congruence.
+      - by rewrite discrete_fun_lookup_singleton_ne. }
+    clearbody x y.
+    uPred.unseal. split. intros n w Hw [[c1 Hc1] [c2 Hc2]].
+    exists (discrete_fun_insert (inG_id i2)
+      (partial_alter (λ _, c2 (inG_id i2) !! γ2) γ2 (c1 (inG_id i2))) c1).
+    intros i γ. rewrite !discrete_fun_lookup_op !lookup_op.
+    destruct (decide ((i, γ) = (inG_id i2, γ2))) as [Heq|Hiγ].
+    - injection Heq as -> ->.
+      rewrite discrete_fun_lookup_insert lookup_partial_alter.
+      rewrite (Hx (inG_id i2) γ2); [|congruence]. rewrite left_id.
+      specialize (Hc2 (inG_id i2) γ2). by rewrite discrete_fun_lookup_op lookup_op in Hc2.
+    - rewrite (Hy i γ Hiγ) right_id.
+      have -> : discrete_fun_insert (inG_id i2)
+          (partial_alter (λ _, c2 (inG_id i2) !! γ2) γ2 (c1 (inG_id i2))) c1 i !! γ = c1 i !! γ.
+      { destruct (decide (i = inG_id i2)) as [->|Hi].
+        - rewrite discrete_fun_lookup_insert lookup_partial_alter_ne //. intros ->. by apply Hiγ.
+        - by rewrite discrete_fun_lookup_insert_ne. }
+      specialize (Hc1 i γ). by rewrite discrete_fun_lookup_op lookup_op in Hc1.
+  Qed.
+
+  Lemma point_prop_big_sepL {X} (l : list X) (Φ : nat → X → iProp Σ) :
+    (∀ k x, point_prop (Φ k x)) → point_prop ([∗ list] k ↦ x ∈ l, Φ k x).
+  Proof.
+    intros HΦ. revert Φ HΦ. induction l as [|x l IH]; intros Φ HΦ; simpl.
+    - apply point_prop_True.
+    - apply point_prop_sep; [apply HΦ|]. apply IH. intros. apply HΦ.
+  Qed.
+End own_and_ne.
+
+Section loc_side_and_gdyn.
+  Context `{!heapGS Σ}.
+  Context `{!invGS Σ}.
+
+  Lemma point_prop_loc_side l g m cs : point_prop (loc_side l g m cs).
+  Proof.
+    apply point_prop_sep; [apply point_prop_of_pers; apply _|].
+    apply point_prop_big_sepL=> ??. apply point_prop_own.
+  Qed.
+
+  Lemma point_prop_gdyn g fv : point_prop (gdyn g fv).
+  Proof. rewrite /gdyn ghost_map.ghost_map_elem_unseal. apply point_prop_own. Qed.
+
+  Lemma loc_side_and_gdyn l0 g0 m0 cs0 g fv :
+    loc_side l0 g0 m0 cs0 ∧ gdyn g fv ⊢ loc_side l0 g0 m0 cs0 ∗ gdyn g fv.
+  Proof.
+    iIntros "H". iAssert (greg g0 m0 cs0) as "#Hg"; [by iDestruct "H" as "[[$ _] _]"|].
+    iAssert (([∗ list] i ↦ c ∈ cs0, bpt (inl (l0 +ₗ i)) (inl c)) ∧ gdyn g fv)%I
+      with "[H]" as "H".
+    { iSplit; [by iDestruct "H" as "[[_ $] _]"|by iDestruct "H" as "[_ $]"]. }
+    rewrite /loc_side. iFrame "Hg".
+    destruct cs0 as [|c cs0]; [iSplit; [done|by iDestruct "H" as "[_ $]"]|].
+    rewrite /bpt /fpt -big_opL_own //.
+    rewrite /gdyn ghost_map.ghost_map_elem_unseal.
+    iApply (own_and_ne with "H"). apply heap_bytes_gdyn_ne.
+  Qed.
+End loc_side_and_gdyn.

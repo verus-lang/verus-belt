@@ -68,7 +68,11 @@ Class heapGS Σ := HeapGS {
   heap_cw_name : gname;
   heap_freeable_name : gname;
   atomic_threadpool: gname;
-  atomic_lock_ctr_name: gname
+  atomic_lock_ctr_name: gname;
+  (* The edges of the byte region and the dynamic registry of cell groups are different
+     ghost cells, so that guards of the location side of a group and of its permission can
+     be combined ([loc_side_and_gdyn] in [lang/heap_cells.v]). *)
+  heap_bytes_gdyn_ne : heap_bytes_name ≠ heap_gdyn_name
 }.
 
 Definition heap_freeable_rel (σ : state) (hF : heap_freeableUR) : Prop :=

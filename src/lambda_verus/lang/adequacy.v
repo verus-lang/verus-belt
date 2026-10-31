@@ -58,7 +58,11 @@ Proof.
     (laterO (iPropO Σ)))) (DfracOwn 1) ∅)) as (kγ) "Hkγ";
     first by apply gmap_view_auth_valid.
   iMod (ghost_map_alloc_empty (K:=positive) (V:=mty * list positive)) as (rγ) "Hrγ".
-  iMod (ghost_map_alloc_empty (K:=positive) (V:=FValue)) as (dγ) "Hdγ".
+  iMod (ghost_map_alloc_strong_empty (K:=positive) (V:=FValue) (λ γ, γ ∉ ({[bγ]} : gset gname)))
+    as (dγ) "[%Hdγ Hdγ]".
+  { apply (pred_infinite_set (C:=gset gname)). intros X. exists (fresh ({[bγ]} ∪ X)).
+    apply not_elem_of_union, is_fresh. }
+  have Hne : bγ ≠ dγ by set_solver.
   iMod (ghost_map_alloc_empty (K:=positive) (V:=())) as (nγ) "Hnγ".
   iMod (ghost_map_alloc_empty (K:=positive * positive * nat) (V:=())) as (sγ) "Hsγ".
   iMod (own_alloc (gmap_view_auth (V:=agreeR (prodO (leibnizO (loc * nat * nat * FValue))
@@ -68,7 +72,7 @@ Proof.
   iMod (time_init with "H£1") as (Htime) "[TIME Htime]"; [done|].
   iMod (na_alloc) as (atomic_poolname) "pool".
   iMod (atomic_lock_ctr_alloc) as (atomic_lock_ctr_name) "ctr".
-  set (Hheap := HeapGS _ _ _ _ _ _ _ _ _ _ vγ bγ kγ rγ dγ nγ sγ wγ fγ atomic_poolname atomic_lock_ctr_name).
+  set (Hheap := HeapGS _ _ _ _ _ _ _ _ _ _ vγ bγ kγ rγ dγ nγ sγ wγ fγ atomic_poolname atomic_lock_ctr_name Hne).
   iModIntro. iExists _, [_], _, _. simpl.
   iDestruct (Hwp (LRustGS _ _ _ _ Hheap Htime) with "H£2 TIME") as "$".
   iSplitL. { iDestruct (@bytes_ctx_empty _ Hheap _ with "Hbγ [Hkγ] Hrγ Hdγ Hnγ Hsγ [Hwγ]") as "HB".
