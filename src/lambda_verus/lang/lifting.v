@@ -1534,6 +1534,19 @@ Proof.
   rewrite -heap_mapsto_fbytes_bytes. by iApply ("Hwp" with "Hl").
 Qed.
 
+(** Forgetting the cells of fancy bytes, e.g. to overwrite or deallocate a value that embeds
+    cells (dropping a [PCell] is a no-op): the location edges to byte-cells are untethered,
+    and the bytes become plain. *)
+Lemma wp_fbytes_forget E e l fbs Φ :
+  TCEq (to_val e) None → ↑naN ⊆ E →
+  heap_mapsto_fbytes l fbs -∗
+  (∀ bs, l ↦b bs -∗ ⌜length bs = length fbs⌝ -∗ WP e @ E {{ Φ }}) -∗ WP e @ E {{ Φ }}.
+Proof.
+  iIntros (Hv ?) "Hl Hwp". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+  iMod (bytes_ctx_fbytes_forget with "HB Hl") as (bs) "(HB & Hl & %Hlen)"; [done|].
+  iModIntro. iFrame "HB". by iApply ("Hwp" with "Hl").
+Qed.
+
 (** Reads and writes through a cell whose location side is owned: the group is untethered
     for the duration of the access, so the location holds plain bytes. *)
 Lemma wp_pcell_load_na E l g m cs fv :

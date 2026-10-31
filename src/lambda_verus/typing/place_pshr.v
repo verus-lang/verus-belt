@@ -128,7 +128,7 @@ Section shr_view.
   Qed.
 
   (** The value of a [Copy] type from its sharing predicate, guarded by [G]. *)
-  Lemma shr_view_copy {𝔄} κ (ty: type 𝔄) `{!Copy ty} y d g tid l (G: iProp Σ) E :
+  Lemma shr_view_copy {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) `{!Copy ty} y d g tid l (G: iProp Σ) E :
     ↑NllftG ⊆ E → Timeless G →
     (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £((g + 1) + (g + 1)) -∗
     shr_view κ ty y d g tid l ={E}=∗
@@ -143,9 +143,9 @@ Section shr_view.
       iMod ("Hclose" with "Gho1") as "$". by iModIntro. }
     iDestruct (guards_transitive_right with "Gκ Pt") as "#GP".
     iMod (guards_open_later with "GP G") as "Open"; [solve_ndisj|].
-    iMod (lc_fupd_elim_laterN with "£v Open") as ">[(%bs & Pt1 & %Hbs) Back]".
-    iMod ("Back" with "[Pt1]") as "G"; [iExists bs; by iFrame|].
-    destruct (ty_bytes_val _ _ _ Hbs) as [w Hw].
+    iMod (lc_fupd_elim_laterN with "£v Open") as ">[Pt1 Back]".
+    iDestruct (bytes_own_val with "Pt1") as %[w Hw].
+    iMod ("Back" with "Pt1") as "G".
     iModIntro. iExists w. by iFrame "Gho G".
   Qed.
 End shr_view.
@@ -712,7 +712,7 @@ Section typing.
   (** ** (b) Reading a leaf below a shared reference *)
 
   (** The guarded typed load of a [Copy] value from its shared view. *)
-  Lemma wp_load_shr_view {𝔄} E κ (ty: type 𝔄) `{!Copy ty} z dh D tid (l: cloc) (G: iProp Σ)
+  Lemma wp_load_shr_view {𝔄} `{!NoCell 𝔄} E κ (ty: type 𝔄) `{!Copy ty} z dh D tid (l: cloc) (G: iProp Σ)
       (Φ: val → iProp Σ) :
     ↑NllftG ⊆ E → Timeless G →
     (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £(4 * (D + 1)) -∗ shr_view κ ty z dh D tid l -∗
@@ -725,15 +725,13 @@ Section typing.
     iDestruct "V" as "(Pt & _ & _)".
     iApply (wp_load_na_guarded_gen _ _ _ w G (cbytes ty z l) (ty_bytes ty z) (D + 1)
       with "[$G $£l]"); [done|intros; by eapply ty_bytes_decode| |].
-    { iSplit; [iApply (guards_transitive_right with "Gκ Pt")|].
-      iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
-      iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
+    { iSplit; [iApply (guards_transitive_right with "Gκ Pt")|]. by iApply bytes_own_view. }
     iIntros "!> G". by iApply ("HΦ" with "[//] Gho G").
   Qed.
 
   (** Copying a value out of the hole of [K2], below the shared reference at the root
       (a guarded typed load). The place is unchanged. *)
-  Lemma type_read_vplace_pshr_root_instr {ℭ 𝔅} E L I p κ (K2: pctx ℭ 𝔅) (lt: lty ℭ) :
+  Lemma type_read_vplace_pshr_root_instr {ℭ 𝔅} E L I p κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ) :
     Copy (lty_fold lt) → lctx_lft_alive E L (pctx_salv K2 κ) →
     typed_instr E L I +[p ◁ₗ ShrLty (pctx_plug K2 lt) κ]
       (Load Na1Ord (lty_fold lt).(ty_mty) (pctx_expr K2 (ToLit p)))
@@ -774,7 +772,7 @@ Section typing.
       [K] (both at any path: below owned pointers, unique borrows, and further shared
       references), as [read_shr]. The place is unchanged. *)
   Lemma type_read_vplace_pshr_instr {ℭ 𝔅 𝔄} E L I p (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
-      `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) (lt: lty ℭ) :
+      `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ) :
     Copy (lty_fold lt) →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
     lctx_lft_alive E L (pctx_salv K2 κ) →
@@ -819,7 +817,7 @@ Section typing.
   Qed.
 
   Lemma type_read_oplace_pshr_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
-      κ (K2: pctx ℭ 𝔅) (lt: lty ℭ) :
+      κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ) :
     Copy (lty_fold lt) →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
     lctx_lft_alive E L (pctx_salv K2 κ) →
@@ -1135,7 +1133,7 @@ Section memcpy.
       not change. The first step (the address of the box) gives the credits for the
       address of the source, the copy itself those for the box. *)
   Lemma type_memcpy_copy_from_vplace_pshr_instr {ℭ 𝔅 𝔄 𝔅'} E L I pw p n
-      (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) (lt: lty ℭ)
+      (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ)
       (tyw: type 𝔅') Φ (sz: nat) :
     Copy (lty_fold lt) → resolve E L tyw Φ → sz = ty_bsize (lty_fold lt) → ty_bsize tyw = sz →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
@@ -1153,7 +1151,7 @@ Section memcpy.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
     iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
-    iDestruct "Bs" as (bsw) "[Hbsw %Hbsw]".
+    iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
     iCombine "⧖ ⧖w" as "⧖m".
     set M := D `max` (S dw).
@@ -1201,10 +1199,8 @@ Section memcpy.
     iDestruct "V" as "(Pt & _ & _)".
     iApply (wp_memcopy_guarded_gen _ lw lK.1 bsw (ty_bsize (lty_fold lt)) (fractional.half γh)
       (cbytes (lty_fold lt) zz lK) (ty_bytes (lty_fold lt) zz) (M + 1) with "[$Hbsw $H1 $£m]");
-      [solve_ndisj|by rewrite (ty_bytes_length _ _ _ Hbsw) Hszw|intros ?; apply ty_bytes_length|..].
-    { iSplit; [iApply (guards_transitive_right with "Hsl Pt")|].
-      iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
-      iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
+      [solve_ndisj|by rewrite Hlenw Hszw|intros ?; apply ty_bytes_length|..].
+    { iSplit; [iApply (guards_transitive_right with "Hsl Pt")|]. iApply bytes_own_view_nocell. }
     iIntros "!>" (bs2) "(%Hbs2 & Hbsw & H1)".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro. iExists -[(lw, zz); (x₀, ζm)]. iFrame "L I".
@@ -1212,7 +1208,7 @@ Section memcpy.
     { iSplitL "Hbsw Fr"; [|iSplitL; [|done]].
       - iExists _. iSplit; [done|]. iExists (VPtr lw), (S (S M)). iSplit; [done|].
         iSplit; [done|].
-        iSplitL "Hbsw"; [iExists bs2; by iFrame|]. iSplitL "Fr".
+        iSplitL "Hbsw"; [by iApply bytes_own_of_bytes|]. iSplitL "Fr".
         + by rewrite -Hszw.
         + iNext. iDestruct (ty_gho_own_depth_mono _ dh M (S M) (S (S M)) with "Gho") as "[$ _]";
             lia.
@@ -1222,7 +1218,7 @@ Section memcpy.
   Qed.
 
   Lemma type_memcpy_copy_from_oplace_pshr_instr {ℭ 𝔅 𝔄 𝔅'} E L I pw p n n'
-      (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K} κ (K2: pctx ℭ 𝔅) (lt: lty ℭ)
+      (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K} κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ)
       (tyw: type 𝔅') Φ (sz: nat) :
     Copy (lty_fold lt) → resolve E L tyw Φ → sz = ty_bsize (lty_fold lt) → ty_bsize tyw = sz →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
@@ -1239,7 +1235,7 @@ Section memcpy.
 
   (** The same, below the shared reference at the root. *)
   Lemma type_memcpy_copy_from_vplace_pshr_root_instr {ℭ 𝔅 𝔅'} E L I pw p n κ
-      (K2: pctx ℭ 𝔅) (lt: lty ℭ) (tyw: type 𝔅') Φ (sz: nat) :
+      (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ) (tyw: type 𝔅') Φ (sz: nat) :
     Copy (lty_fold lt) → resolve E L tyw Φ → sz = ty_bsize (lty_fold lt) → ty_bsize tyw = sz →
     lctx_lft_alive E L (pctx_salv K2 κ) →
     typed_instr E L I +[pw ◁ᵥ own_bytes n tyw; p ◁ₗ ShrLty (pctx_plug K2 lt) κ]
@@ -1254,7 +1250,7 @@ Section memcpy.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
     iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
-    iDestruct "Bs" as (bsw) "[Hbsw %Hbsw]".
+    iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     iDestruct (Alv with "L E") as "#Alv".
     iCombine "⧖ ⧖w" as "⧖m".
     set M := D `max` (S dw).
@@ -1295,10 +1291,8 @@ Section memcpy.
     iDestruct "V" as "(Pt & _ & _)".
     iApply (wp_memcopy_guarded_gen _ lw lK.1 bsw (ty_bsize (lty_fold lt)) (fractional.half γh)
       (cbytes (lty_fold lt) zz lK) (ty_bytes (lty_fold lt) zz) (M + 1) with "[$Hbsw $H1 $£m]");
-      [solve_ndisj|by rewrite (ty_bytes_length _ _ _ Hbsw) Hszw|intros ?; apply ty_bytes_length|..].
-    { iSplit; [iApply (guards_transitive_right with "Hsl Pt")|].
-      iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
-      iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
+      [solve_ndisj|by rewrite Hlenw Hszw|intros ?; apply ty_bytes_length|..].
+    { iSplit; [iApply (guards_transitive_right with "Hsl Pt")|]. iApply bytes_own_view_nocell. }
     iIntros "!>" (bs2) "(%Hbs2 & Hbsw & H1)".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro. iExists -[(lw, zz); (x, ζm)]. iFrame "L I".
@@ -1306,7 +1300,7 @@ Section memcpy.
     { iSplitL "Hbsw Fr"; [|iSplitL; [|done]].
       - iExists _. iSplit; [done|]. iExists (VPtr lw), (S (S M)). iSplit; [done|].
         iSplit; [done|].
-        iSplitL "Hbsw"; [iExists bs2; by iFrame|]. iSplitL "Fr".
+        iSplitL "Hbsw"; [by iApply bytes_own_of_bytes|]. iSplitL "Fr".
         + by rewrite -Hszw.
         + iNext. iDestruct (ty_gho_own_depth_mono _ dh M (S M) (S (S M)) with "Gho") as "[$ _]";
             lia.

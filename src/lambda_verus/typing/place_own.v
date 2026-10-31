@@ -360,7 +360,8 @@ Section typing.
   (** * Reading, moving out of and writing a leaf *)
 
   (** Copying the value out of the leaf at the hole of [K]: a typed [Load]. *)
-  Lemma type_read_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
+  Lemma type_read_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} `{!NoCell 𝔅}
+      (ty: type 𝔅) :
     Copy ty →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)]
       (Load Na1Ord ty.(ty_mty) (pctx_expr K (ToLit p)))
@@ -397,7 +398,8 @@ Section typing.
     iDestruct (lc_weaken (pctx_mode K 1) with "£") as "£";
       [rewrite /advance_credits pctx_mode_add; nia|].
     iMod (lc_fupd_elim_laterN with "£ Gho1") as "#Gho1'".
-    iDestruct "Pt1" as (bs) "[Hbs %Hbs]". destruct (ty_bytes_val _ _ _ Hbs) as [vw Hvw].
+    iDestruct (bytes_own_nocell_bytes with "Pt1") as (bs) "[Hbs %Hbs]".
+    destruct (ty_bytes_val _ _ _ Hbs) as [vw Hvw].
     iApply (wp_load_na with "Hbs"); [by eapply ty_bytes_decode|].
     iIntros "!> Hbs". iModIntro.
     iExists -[y; ((l, x₀), ζm)]. iFrame "L I Obs".
@@ -407,13 +409,14 @@ Section typing.
     iSplit; [|done]. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
     iFrame "⧖ ⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug. iFrame "Rest".
-    iExists y. iSplit; [done|]. rewrite /bofty_owned. iFrame "Gho1". iExists bs. by iFrame.
+    iExists y. iSplit; [done|]. rewrite /bofty_owned. iFrame "Gho1". by iApply bytes_own_of_bytes.
   Qed.
 
   (** Moving the value out of the leaf at the hole of [K]: a typed [Load]; the leaf becomes
       uninitialized (its type is [↯ (ty_bsize ty)]: its bytes are kept, and represent any
       value of [↯]). *)
-  Lemma type_move_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
+  Lemma type_move_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} `{!NoCell 𝔅}
+      (ty: type 𝔅) :
     pctx_nosum K →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)]
       (Load Na1Ord ty.(ty_mty) (pctx_expr K (ToLit p)))
@@ -452,7 +455,8 @@ Section typing.
     iDestruct (lc_weaken (pctx_mode K 1) with "£") as "£";
       [rewrite /advance_credits pctx_mode_add; nia|].
     iMod (lc_fupd_elim_laterN with "£ Gho1") as "Gho1".
-    iDestruct "Pt1" as (bs) "[Hbs %Hbs]". destruct (ty_bytes_val _ _ _ Hbs) as [vw Hvw].
+    iDestruct (bytes_own_nocell_bytes with "Pt1") as (bs) "[Hbs %Hbs]".
+    destruct (ty_bytes_val _ _ _ Hbs) as [vw Hvw].
     have Hlen := ty_bytes_length _ _ _ Hbs.
     iApply (wp_load_na with "Hbs"); [by eapply ty_bytes_decode|].
     iIntros "!> Hbs". iModIntro.
@@ -474,7 +478,7 @@ Section typing.
       pctx_loc_reset // pctx_mode_retype pctx_depth_retype /=.
     rewrite Hsz. iFrame "Rest".
     iExists junk. iSplit; [done|]. rewrite /bofty_owned /=. iSplitL; [|done].
-    iExists bs. iFrame "Hbs". iPureIntro. exists (VTuple []). split; [done|].
+    iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].
     rewrite decode_value_tuple decide_True //.
   Qed.
 
@@ -545,7 +549,7 @@ Section typing.
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     (* Write. *)
-    iDestruct "Pt1" as (bs) "[Hbs %Hbs]". have Hlen := ty_bytes_length _ _ _ Hbs.
+    iApply (wp_bytes_own_forget with "Pt1"); [solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
     iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf|by rewrite Hlen -Hsz|].
     iIntros "!> Hbs".
     (* Close the place at the new value. *)
@@ -567,7 +571,7 @@ Section typing.
       rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //
         pctx_loc_reset // pctx_mode_retype pctx_depth_retype /=. rewrite Hsz'. iFrame "Rest".
       iExists b. iSplit; [done|]. rewrite /bofty_owned. iFrame "Gb".
-      iExists _. iFrame "Hbs". iPureIntro. by apply ty_bytes_encode. }
+      iApply (bytes_own_of_bytes with "Hbs"). by apply ty_bytes_encode. }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
     by apply Hπ.
   Qed.

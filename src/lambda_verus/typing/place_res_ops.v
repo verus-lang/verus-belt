@@ -171,7 +171,7 @@ Section read.
       shared-blocked ([view_rleaf]), it is shared at [pctx_slft K2 κ ⊓ κs] (which must be
       alive); the place does not change. The first step gives the credits. *)
   Lemma type_read_oplace_res_leaf_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄)
-      `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2} (lt0: lty ℭ) (ty: type ℭ) κs :
+      `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2} (lt0: lty ℭ) `{!NoCell ℭ} (ty: type ℭ) κs :
     view_rleaf lt0 ty κs → Copy ty → lctx_lft_alive E L (pctx_salv K2 κ ⊓ κs) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 lt0) κ)]
       (Load Na1Ord ty.(ty_mty)
@@ -267,7 +267,7 @@ Section read.
   Qed.
 
   Lemma type_read_oplace_res_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄)
-      `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2} (ty: type ℭ) :
+      `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2} `{!NoCell ℭ} (ty: type ℭ) :
     Copy ty → lctx_lft_alive E L (pctx_salv K2 κ) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (OfTy ty)) κ)]
       (Load Na1Ord ty.(ty_mty)
@@ -282,7 +282,7 @@ Section read.
 
   (** Reading a shared-blocked leaf (at [β]) of a view, while [β] is alive. *)
   Lemma type_read_oplace_res_shrblk_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (uniq_borₛ 𝔅) 𝔄)
-      `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2} (ty: type ℭ) β :
+      `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2} `{!NoCell ℭ} (ty: type ℭ) β :
     Copy ty → lctx_lft_alive E L (pctx_salv K2 κ ⊓ β) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (ShrBlocked ty β)) κ)]
       (Load Na1Ord ty.(ty_mty)

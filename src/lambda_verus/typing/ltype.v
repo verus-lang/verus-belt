@@ -783,7 +783,7 @@ Section ltype_lemmas.
   Proof.
     destruct r as [lr|]; [|by iIntros "[_ []]"].
     iIntros "[(%bs & Pt & %Hd) (%x & Rel & %Hv & Gho)]". iExists x. iFrame "Rel Gho".
-    destruct Hv as (w' & [= <-] & Hw). iExists bs. iFrame. iPureIntro. by exists w.
+    destruct Hv as (w' & [= <-] & Hw). iApply (bytes_own_of_bytes with "Pt"). by exists w.
   Qed.
 
   Lemma uniq_nval_mono {𝔅} m κ' (ty: type 𝔅)
@@ -1270,21 +1270,22 @@ Section unfold.
       pad_cell (cloc_skip (cloc_skip l (tag_size 𝔄l)) (syn_bsize (𝔄l !!ₗ i)))
         (sum_max 𝔄l - syn_bsize (𝔄l !!ₗ i)).
   Proof.
-    rewrite /cbytes /bytes_own /tag_cell /pad_cell /=. iSplit.
-    - iIntros "(%bs & Hbs & %Hbs)". rewrite ty_bytes_syn syn_bytes_sum in Hbs.
-      destruct Hbs as (bt & bp & bq & -> & Ht & Hp & Hq).
+    rewrite /cbytes bytes_own_unseal /bytes_own_def /tag_cell /pad_cell /=. setoid_rewrite ty_fbytes_syn. iSplit.
+    - iIntros "(%R & %fbs & Hfbs & %Hfb & #HR)". apply syn_fbytes_sum in Hfb.
+      destruct Hfb as (bt & fp & bq & -> & Ht & Hp & Hq).
       have Hlt : length bt = tag_size 𝔄l := decode_value_length (MInt (sum_tag 𝔄l)) bt _ Ht.
-      have Hlp := syn_bytes_length _ _ Hp.
-      rewrite !heap_mapsto_bytes_app. iDestruct "Hbs" as "(Bt & Bp & Bq)".
+      have Hlp := syn_fbytes_length _ _ _ Hp.
+      rewrite !heap_mapsto_fbytes_app -!heap_mapsto_fbytes_bytes !length_fmap.
+      iDestruct "Hfbs" as "(Bt & Bp & Bq)".
       rewrite Hlt Hlp. iSplitL "Bt"; [iExists bt; by iFrame|].
-      iSplitL "Bp"; [iExists bp; iFrame; iPureIntro; by rewrite (ty_bytes_syn tyi)|].
+      iSplitL "Bp"; [iExists R, fp; iFrame "Bp HR"; by iPureIntro|].
       iExists bq. by iFrame.
-    - iIntros "((%bt & Bt & %Ht) & (%bp & Bp & %Hp) & (%bq & Bq & %Hq))".
+    - iIntros "((%bt & Bt & %Ht) & (%R & %fp & Bp & %Hp & #HR) & (%bq & Bq & %Hq))".
       have Hlt : length bt = tag_size 𝔄l := decode_value_length (MInt (sum_tag 𝔄l)) bt _ Ht.
-      have Hlp := ty_bytes_length _ _ _ Hp. rewrite ty_bsize_eq in Hlp.
-      iExists (bt ++ bp ++ bq). rewrite !heap_mapsto_bytes_app Hlt Hlp. iFrame.
-      iPureIntro. rewrite ty_bytes_syn syn_bytes_sum. exists bt, bp, bq.
-      split; [done|]. split; [done|]. split; [by rewrite -(ty_bytes_syn tyi)|done].
+      have Hlp := syn_fbytes_length _ _ _ Hp.
+      iExists R, ((inr <$> bt) ++ fp ++ (inr <$> bq)).
+      rewrite !heap_mapsto_fbytes_app -!heap_mapsto_fbytes_bytes !length_fmap Hlt Hlp.
+      iFrame "Bt Bp Bq HR". iPureIntro. apply syn_fbytes_sum. by exists bt, fp, bq.
   Qed.
 
   Lemma ofty_owned_xsum m {𝔄l} (tyl: typel 𝔄l) i x pad d g tid l :

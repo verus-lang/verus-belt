@@ -15,10 +15,10 @@ Set Default Proof Using "Type".
     [typing/value_ctx.v], or the place rules).
   - Subtyping: [btype_incl ty ty' f] is [type_incl ty ty' f] (which relates the ownership,
     sharing and legacy words) together with the equality of the byte sizes and the
-    equivalence of the byte representations ([ty_bytes]): the parents own bytes, so a
-    box, a unique borrow or a shared reference can be retyped only if the bytes of its
+    equivalence of the (fancy) byte representations ([ty_fbytes]): the parents own bytes,
+    so a box, a unique borrow or a shared reference can be retyped only if the bytes of its
     referent represent the value at the new type too. For [f = idₛ] this is always the
-    case ([ty_bytes_same]), so every subtyping of the same syntactic type is a byte
+    case ([ty_fbytes_same]), so every subtyping of the same syntactic type is a byte
     subtyping ([subtype_bsubtype_id]). Rules: [own_bytes_bsubtype],
     [shr_bytes_bsubtype], [uniq_bytes_bsubtype], and [tctx_bsubtype_val] for MiniRust
     values (which needs the MiniRust values to agree, as for pointers). *)
@@ -54,7 +54,7 @@ Section bnew.
     iExists -[(l, junk)]. iSplitR "Obs".
     - iSplit; [|done]. rewrite tctx_val_val. iExists 1%nat. iSplit; [done|]. iFrame "⧖1".
       rewrite /= /by_succ. iSplitL "Hbs".
-      + iExists _. iFrame "Hbs". iPureIntro. apply uninit_bytes. by rewrite length_replicate.
+      + iApply (bytes_own_of_bytes with "Hbs"). apply uninit_bytes. by rewrite length_replicate.
       + iSplitL "Fr"; [|done].
         rewrite freeable_sz_full. by iLeft.
     - iApply (proph_obs_impl with "Obs")=> π Hπ. apply Hπ.
@@ -81,7 +81,7 @@ Section bsubtype.
 
   Definition btype_incl {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) : iProp Σ :=
     type_incl ty ty' f ∗ ⌜ty_bsize ty = ty_bsize ty'⌝ ∗
-    ⌜∀ x bs, ty_bytes ty x bs ↔ ty_bytes ty' (f ~~$ₛ x) bs⌝.
+    ⌜∀ x R fbs, ty_fbytes R ty x fbs ↔ ty_fbytes R ty' (f ~~$ₛ x) fbs⌝.
 
   Global Instance btype_incl_persistent {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) f :
     Persistent (btype_incl ty ty' f) := _.
@@ -95,13 +95,13 @@ Section bsubtype.
   Proof.
     intros Sub. iIntros "L". iDestruct (Sub with "L") as "#Sub". iIntros "!> #E".
     iSplit; [by iApply "Sub"|]. iPureIntro. split; [by rewrite !ty_bsize_eq|].
-    intros x bs. apply ty_bytes_same.
+    intros x R fbs. apply ty_fbytes_same.
   Qed.
 
   Lemma bytes_own_btype_incl {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) l x :
-    (∀ x bs, ty_bytes ty x bs ↔ ty_bytes ty' (f ~~$ₛ x) bs) →
+    (∀ x R fbs, ty_fbytes R ty x fbs ↔ ty_fbytes R ty' (f ~~$ₛ x) fbs) →
     bytes_own ty l x ⊣⊢ bytes_own ty' l (f ~~$ₛ x).
-  Proof. intros Hb. rewrite /bytes_own. by setoid_rewrite Hb. Qed.
+  Proof. intros Hb. by apply bytes_own_iff. Qed.
 
   (** ** Boxes of bytes *)
 
@@ -110,8 +110,8 @@ Section bsubtype.
   Proof.
     iIntros "((%Eq & #Incl & #InOwn & #InOwnPers & %Phys & #InShr) & %Hsz & %Hb)".
     iSplit; last first.
-    { iPureIntro. split; [by rewrite !ty_bsize_eq|]. intros [l x] bs.
-      rewrite !ty_bytes_syn !syn_bytes_at_loc. done. }
+    { iPureIntro. split; [by rewrite !ty_bsize_eq|]. intros [l x] R fbs.
+      rewrite !ty_fbytes_syn !syn_fbytes_nocell; [|exact I..]. by setoid_rewrite syn_bytes_at_loc. }
     iSplit; [done|]. iSplit; [done|].
     iSplit.
     { iIntros "!>" ([l x0] [|d] g tid) "Hown //=".
@@ -142,8 +142,8 @@ Section bsubtype.
   Proof.
     iIntros "#Incl ((_ & #Incl2 & #Sub & #SubPers & %Phys & #SubShr) & %Hsz & %Hb)".
     iSplit; last first.
-    { iPureIntro. split; [by rewrite !ty_bsize_eq|]. intros [l x] bs.
-      rewrite !ty_bytes_syn !syn_bytes_at_cloc. done. }
+    { iPureIntro. split; [by rewrite !ty_bsize_eq|]. intros [l x] R fbs.
+      rewrite !ty_fbytes_syn !syn_fbytes_nocell; [|exact I..]. by setoid_rewrite syn_bytes_at_cloc. }
     iApply (@type_incl_simple_type Σ _ (at_clocₛ 𝔄) (at_clocₛ 𝔅) _ _).
     - done.
     - unfold ty_lfts, ty_of_st, st_lfts. by iApply lft_intersect_mono.

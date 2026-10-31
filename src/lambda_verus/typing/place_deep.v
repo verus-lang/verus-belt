@@ -156,7 +156,7 @@ Section memcpy_deep.
       assignment through [&mut]): a byte-level [MemCopy] (no decode/encode). The old value
       of the leaf is resolved; the box becomes uninitialized ([↯]: its bytes are kept). *)
   Lemma type_memcpy_vplace_deep_instr {𝔅 𝔄} E L I p pr n (K: pctx 𝔅 𝔄) `{!PctxNoShr K}
-      `{!PctxVRoot K} (ty: type 𝔅) Φ (sz: nat) :
+      `{!PctxVRoot K} `{!NoCell 𝔅} (ty: type 𝔅) Φ (sz: nat) :
     resolve E L ty Φ → sz = ty_bsize ty →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
     typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty); pr ◁ᵥ own_bytes n ty]
@@ -173,7 +173,7 @@ Section memcpy_deep.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)". have Hdl := pctx_vroot_dlev K.
     iDestruct "Tr" as (vr Hpr wr dr [-> Hwr]) "(#⧖r & Tr)". simpl in Hwr. simplify_eq.
     destruct dr as [|dr]; [done|]. iDestruct "Tr" as "(Bs & Fr & Gb)".
-    iDestruct "Bs" as (bs) "[Hbs %Hbs]".
+    iDestruct (bytes_own_nocell_bytes with "Bs") as (bs) "[Hbs %Hbs]".
     have ?: Closed [] (pctx_vexpr K p).
     { apply pctx_vexpr_closed. by eapply eval_path_closed. }
     have ?: Closed [] pr by eapply eval_path_closed.
@@ -217,7 +217,7 @@ Section memcpy_deep.
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
     iMod (lc_fupd_elim_later with "£b Gb") as "Gb".
     (* Copy the bytes. *)
-    iDestruct "Pt1" as (bs1) "[Hbs1 %Hbs1]".
+    iDestruct (bytes_own_nocell_bytes with "Pt1") as (bs1) "[Hbs1 %Hbs1]".
     iApply (wp_memcopy with "[$Hbs1 $Hbs]");
       [solve_ndisj|by rewrite (ty_bytes_length _ _ _ Hbs1)|by rewrite (ty_bytes_length _ _ _ Hbs)|].
     iIntros "!> [Hbs1 Hbs]".
@@ -229,7 +229,7 @@ Section memcpy_deep.
     iMod ("Cl" $! y dr (S dr) Dn with "[%] [] G' P [Hbs1] Gb") as "[Own H1]".
     { rewrite /Dn. lia. }
     { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
-    { iExists bs. by iFrame. }
+    { by iApply bytes_own_of_bytes. }
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     set junk := vreplicate (ty_bsize ty) (LitV LitPoison).
     iModIntro. iExists -[(pctx_set K x₀ y, ζm); (lb, junk)]. iFrame "L I".
@@ -241,7 +241,7 @@ Section memcpy_deep.
         by rewrite pctx_get_set pctx_vrfn_set.
       - iExists _. iSplit; [done|]. iExists (VPtr lb), (S dr). iSplit; [done|]. iFrame "⧖r".
         iSplitL "Hbs".
-        + iExists bs. iFrame. iPureIntro. exists (VTuple []). split; [done|].
+        + iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].
           rewrite -(ty_mty_eq (↯ _)) /= decide_True //. by rewrite (ty_bytes_length _ _ _ Hbs).
         + by iFrame "Fr". }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
@@ -249,7 +249,7 @@ Section memcpy_deep.
   Qed.
 
   Lemma type_memcpy_oplace_deep_instr {𝔅 𝔄} E L I p pr n' n (K: pctx 𝔅 𝔄) `{!PctxNoShr K}
-      (ty: type 𝔅) Φ (sz: nat) :
+      `{!NoCell 𝔅} (ty: type 𝔅) Φ (sz: nat) :
     resolve E L ty Φ → sz = ty_bsize ty →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
     typed_instr E L I +[p ◁ₗown{n'} pctx_plug K (OfTy ty); pr ◁ᵥ own_bytes n ty]
@@ -263,7 +263,7 @@ Section memcpy_deep.
       number of unique borrows, in both modes of the hole) into a box: a byte-level
       [MemCopy]. The old contents of the box are resolved; the place does not change. *)
   Lemma type_memcpy_copy_from_vplace_deep_instr {𝔅 𝔄 𝔅'} E L I pw p n (K: pctx 𝔅 𝔄)
-      `{!PctxNoShr K} `{!PctxVRoot K} (ty: type 𝔅) (tyw: type 𝔅') Φ (sz: nat) :
+      `{!PctxNoShr K} `{!PctxVRoot K} `{!NoCell 𝔅} (ty: type 𝔅) (tyw: type 𝔅') Φ (sz: nat) :
     Copy ty → resolve E L tyw Φ → sz = ty_bsize ty → ty_bsize tyw = sz →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
     typed_instr E L I +[pw ◁ᵥ own_bytes n tyw; p ◁ₗ pctx_plug K (OfTy ty)]
@@ -279,7 +279,7 @@ Section memcpy_deep.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)". have Hdl := pctx_vroot_dlev K.
     iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
-    iDestruct "Bs" as (bsw) "[Hbsw %Hbsw]".
+    iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     have ?: Closed [] (pctx_vexpr K p).
     { apply pctx_vexpr_closed. by eapply eval_path_closed. }
     have ?: Closed [] pw by eapply eval_path_closed.
@@ -322,20 +322,20 @@ Section memcpy_deep.
     iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
     (* Copy the bytes. *)
-    iDestruct "Pt1" as (bs1) "[Hbs1 %Hbs1]".
+    iDestruct (bytes_own_nocell_bytes with "Pt1") as (bs1) "[Hbs1 %Hbs1]".
     iApply (wp_memcopy with "[$Hbsw $Hbs1]");
-      [solve_ndisj|by rewrite (ty_bytes_length _ _ _ Hbsw) Hszw|by rewrite (ty_bytes_length _ _ _ Hbs1)|].
+      [solve_ndisj|by rewrite Hlenw Hszw|by rewrite (ty_bytes_length _ _ _ Hbs1)|].
     iIntros "!> [Hbsw Hbs1]".
     (* Close the place, unchanged. *)
     iMod ("Cl" $! (pctx_get K x₀) dh gh D with "[%] ⧖ G' P [Hbs1] Gho1") as "[Own H1]"; [lia| |].
-    { iExists bs1. by iFrame. }
+    { by iApply bytes_own_of_bytes. }
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro. iExists -[(lw, pctx_get K x₀); (x₀, ζm)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitL "Hbsw Fr"; [|iSplitL; [|done]].
       - iExists _. iSplit; [done|]. iExists (VPtr lw), (S M). iSplit; [done|].
         iSplit; [iApply (persistent_time_receipt_mono with "⧖S"); lia|].
-        iSplitL "Hbsw"; [iExists bs1; by iFrame|]. iSplitL "Fr".
+        iSplitL "Hbsw"; [by iApply bytes_own_of_bytes|]. iSplitL "Fr".
         + by rewrite -Hszw.
         + iNext. iDestruct (ty_gho_own_depth_mono _ dh gh M (S M) with "Gho1") as "[$ _]"; lia.
       - iExists _. iSplit; [done|].

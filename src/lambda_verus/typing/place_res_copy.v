@@ -35,7 +35,7 @@ Section memcpy_res.
 
   Lemma type_memcpy_copy_from_oplace_res_instr {ℭ 𝔅 𝔄 𝔅'} E L I pw p n n'
       (K: pctx (uniq_borₛ 𝔅) 𝔄) `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2}
-      (lt0: lty ℭ) (ty: type ℭ) κs (tyw: type 𝔅') Φ (sz: nat) :
+      (lt0: lty ℭ) `{!NoCell ℭ} (ty: type ℭ) κs (tyw: type 𝔅') Φ (sz: nat) :
     view_rleaf lt0 ty κs → Copy ty → resolve E L tyw Φ → sz = ty_bsize ty →
     ty_bsize tyw = sz → lctx_lft_alive E L (pctx_salv K2 κ ⊓ κs) →
     typed_instr E L I
@@ -55,7 +55,7 @@ Section memcpy_res.
     { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
     iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Frw & Gw0)".
-    iDestruct "Bs" as (bsw) "[Hbsw %Hbsw]".
+    iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     iDestruct (Alv with "L E") as "#Alv".
     iCombine "⧖ ⧖w" as "⧖m".
     set M := D `max` (S dw).
@@ -140,10 +140,9 @@ Section memcpy_res.
     iDestruct "Vs" as "(Gpt & _ & _)".
     iApply (wp_memcopy_guarded_gen _ lw lh.1 bsw (ty_bsize ty) (fractional.half γh)
       (cbytes ty zh lh) (ty_bytes ty zh) (gh + 1) with "[$Hbsw $H1 $£l]");
-      [solve_ndisj|by rewrite (ty_bytes_length _ _ _ Hbsw) Hszw|intros ?; apply ty_bytes_length|..].
+      [solve_ndisj|by rewrite Hlenw Hszw|intros ?; apply ty_bytes_length|..].
     { iSplit; [iApply (guards_transitive_right with "Hsl Gpt")|].
-      iIntros "!> (%bs' & Hbs' & %Hbs')". iExists bs'. iFrame "Hbs'".
-      iSplit; [done|]. iIntros "Hbs'". iExists bs'. by iFrame. }
+      iApply bytes_own_view_nocell. }
     iIntros "!>" (bs2) "(%Hbs2 & Hbsw & H1)".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro. iExists -[(lw, zh); ((l, x₀), ζm)]. iFrame "L I".
@@ -151,7 +150,7 @@ Section memcpy_res.
     { iSplitL "Hbsw Frw"; [|iSplitL; [|done]].
       - iExists _. iSplit; [done|]. iExists (VPtr lw), (S (S M)). iSplit; [done|].
         iSplit; [done|].
-        iSplitL "Hbsw"; [iExists bs2; by iFrame|]. iSplitL "Frw".
+        iSplitL "Hbsw"; [by iApply bytes_own_of_bytes|]. iSplitL "Frw".
         + by rewrite -Hszw.
         + iNext. iDestruct (ty_gho_own_depth_mono _ dh gh (S M) (S (S M)) with "Gho") as "[$ _]";
             lia.
