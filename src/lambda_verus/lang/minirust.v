@@ -240,6 +240,68 @@ Inductive mty_wf : mty → Prop :=
     (int_size tag ≤ sz)%nat →
     mty_wf (MEnum vars tag sz).
 
+Lemma fields_disjoint_cons f fs :
+  fields_disjoint (f :: fs) ↔
+    Forall (λ f', f.1 + mty_size f.2 ≤ f'.1 ∨ f'.1 + mty_size f'.2 ≤ f.1)%nat fs ∧
+    fields_disjoint fs.
+Proof.
+  destruct f as [o m]. split.
+  - intros H. split.
+    + apply Forall_lookup=> k [o' m'] Hk. by apply (H 0%nat (S k) o m o' m').
+    + intros i j ???? Hij Hi Hj. by apply (H (S i) (S j)); [lia| |].
+  - intros [Hf Hfs] [|i] [|j] o1 m1 o2 m2 Hij Hi Hj; simplify_eq/=.
+    + by apply (Forall_lookup_1 _ _ _ _ Hf Hj).
+    + apply (Forall_lookup_1 _ _ _ _ Hf) in Hi. simpl in Hi. lia.
+    + by apply (Hfs i j); [lia| |].
+Qed.
+
+Global Instance fields_disjoint_dec fs : Decision (fields_disjoint fs).
+Proof.
+  induction fs as [|f fs IH].
+  - left. intros i ?????? Hi. by rewrite lookup_nil in Hi.
+  - refine (cast_if (decide (Forall (λ f', f.1 + mty_size f.2 ≤ f'.1 ∨
+      f'.1 + mty_size f'.2 ≤ f.1)%nat fs ∧ fields_disjoint fs)));
+      by rewrite fields_disjoint_cons.
+Defined.
+
+(** Well-formedness of MiniRust types is decidable ([mty_wfb_correct]). *)
+Fixpoint mty_wfb (m : mty) : bool :=
+  match m with
+  | MInt _ | MBool | MPtr => true
+  | MTuple fs sz =>
+      bool_decide (fields_disjoint fs) &&
+      bool_decide (Forall (λ f, f.1 + mty_size f.2 ≤ sz)%nat fs) &&
+      (fix go fs := match fs with [] => true | (_, f) :: fs => mty_wfb f && go fs end) fs
+  | MEnum vars tag sz =>
+      bool_decide (int_size tag ≤ sz)%nat &&
+      (fix go vars := match vars with [] => true | vm :: vars =>
+        bool_decide (int_size tag + mty_size vm ≤ sz)%nat && mty_wfb vm && go vars end) vars
+  end.
+
+Lemma mty_wfb_correct m : mty_wfb m ↔ mty_wf m.
+Proof.
+  induction m as [| | |fs sz IH|vars tag sz IH] using mty_ind'; simpl.
+  - split; [constructor|done].
+  - split; [constructor|done].
+  - split; [constructor|done].
+  - rewrite !andb_True !bool_decide_spec.
+    cut ((fix go (fs : list (nat * mty)) := match fs with [] => true
+      | (_, f) :: fs => mty_wfb f && go fs end) fs ↔ Forall (λ f, mty_wf f.2) fs).
+    { intros ->. split; [intros [[??]?]; by constructor|by inversion 1]. }
+    induction IH as [|[o f] fs Hf _ IH']; simpl; [split; [constructor|done]|].
+    rewrite andb_True Hf IH' Forall_cons. done.
+  - rewrite !andb_True !bool_decide_spec.
+    cut ((fix go (vars : list mty) := match vars with [] => true | vm :: vars =>
+        bool_decide (int_size tag + mty_size vm ≤ sz)%nat && mty_wfb vm && go vars end) vars ↔
+      Forall (λ vm, int_size tag + mty_size vm ≤ sz ∧ mty_wf vm)%nat vars).
+    { intros ->. split; [intros [??]; by constructor|by inversion 1]. }
+    induction IH as [|vm vars Hv _ IH']; simpl; [split; [constructor|done]|].
+    rewrite !andb_True bool_decide_spec Hv IH' Forall_cons. naive_solver.
+Qed.
+
+Global Instance mty_wf_dec m : Decision (mty_wf m).
+Proof. refine (cast_if (decide (mty_wfb m))); by rewrite -mty_wfb_correct. Defined.
+
 (** Well-formed values of a MiniRust type (MiniRust's [check_wf]). *)
 Inductive val_wf : mty → Value → Prop :=
 | VInt_wf it z : int_in_range it z → val_wf (MInt it) (VInt z)

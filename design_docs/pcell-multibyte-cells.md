@@ -1,7 +1,7 @@
 # PCell on the byte memory model: multi-byte cells
 
 Status: steps 1–3 implemented (2026-10-30), branch `memory-model`; see §9 Outcome. §10 step 1
-done (2026-10-31); see §11.
+done (2026-10-31); see §11. §10 step 2 done; see §12.
 Context: `design_docs/minirust-memory-model.md` (stages 1–5). `pcell` is the last user of the
 legacy word layer.
 
@@ -527,3 +527,54 @@ The earlier tests are ported. New tests:
   cell through its root.
 - **The generalised `wp_pcell_move` lives in `pcell_tests.v`** (it uses `wp_bind`), as
   before.
+
+## 12. Outcome: §10 step 2 (2026-10-31)
+
+The syntactic type of byte-level cells is added next to the legacy `pcellₛ n`. No `Admitted`;
+no new axioms.
+
+### Definitions (`prophecy/syn_type.v`)
+
+- **The constructor is `pcellbₛ (m: mty)`** (`b` for the byte layer, like `bown` and `&shrb`).
+  The legacy `pcellₛ n` stays until stage 5.
+- `~~(pcellbₛ m) = positive`, the group id (groups are `positive`s in `lang/fvalue.v` and
+  `lang/heap_cells.v`). The prophetic and abstracted interpretations are also `positive`;
+  `vπ x π = x` and `ξl x = []`, as for the legacy cell ids.
+- `syn_mty (pcellbₛ m) = if decide (mty_wf m) then m else zst_mty`; `syn_val = None`.
+- The legacy layout is empty: `size_of (pcellbₛ m) = 0` and `syn_phys x = []`. The new cell
+  never lives in the word layer.
+- **`syn_fval : ~~𝔄 → option FValue`**, the fancy value:
+  - `syn_fval (x: ~~(pcellbₛ m)) = Some (FVCell x)`;
+  - structural on `prodₛ`, `xprodₛ` and `xsumₛ`, mirroring `syn_val`
+    (`FVTuple [fv₀; fv₁]`, `FVTuple <$> mapM …`, `FVVariant i <$> …`);
+  - `fv_lift <$> syn_val x` on every other type.
+
+  It has the shape of `syn_val` (an `option`), so that values without a MiniRust
+  representation (out-of-range integers, closures) stay `None`.
+- **`syn_nocell : syn_type → bool`**: `false` on `pcellbₛ`, `&&`/`forallb` on products and
+  sums, and `true` elsewhere. Cells under other constructors (e.g. `ghostₛ (pcellbₛ m)`) are
+  zero-sized and not part of the MiniRust value, so they don't count.
+
+### Lemmas
+
+    Lemma syn_fval_nocell 𝔄 (x: ~~𝔄) : syn_nocell 𝔄 → syn_fval x = fv_lift <$> syn_val x.
+    Lemma syn_abstract_fval_eq 𝔄 x x' :
+      @syn_abstract 𝔄 x = @syn_abstract 𝔄 x' → @syn_fval 𝔄 x = @syn_fval 𝔄 x'.
+
+(the second is the analogue of `syn_abstract_val_eq`, for the `Send` arguments), plus
+`mapM_fmap_fv_lift`. The equality decider, the inhabitedness proofs, `syn_mty_wf`,
+`syn_val_wf` and `syn_abstract_val_eq` cover the new constructor.
+
+`lang/minirust.v` gains decidability of `mty_wf`: `fields_disjoint_cons`,
+`fields_disjoint_dec`, the checker `mty_wfb` with `mty_wfb_correct`, and the instance
+`mty_wf_dec` (all transparent, so `syn_mty (pcellbₛ m)` computes for a concrete `m`).
+
+### Deviation
+
+- **`syn_mty (pcellbₛ m)` is `m` only when `m` is well formed.** `syn_mty_wf` (every
+  syntactic type has a well-formed mty, on which `ty_mty_wf` and the encode/decode round trip
+  depend) would fail for an ill-formed `m`. The constructor can't carry a proof of
+  `mty_wf m` without losing decidable equality, or proof irrelevance (an axiom). So
+  ill-formed contents fall back to `zst_mty`. The pcell rules of step 5 will take
+  `mty_wf m` as a side condition (decidable, so `by compute`/`done` for concrete `m`), and
+  rewrite with `decide_True`.
