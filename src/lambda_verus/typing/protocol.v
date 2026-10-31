@@ -100,7 +100,7 @@ Section StorageProtocol.
     intros Hsend. intros Hsync. split; trivial.
     iIntros (tid tid' x d g G H' κs d1 Hineq TG TH) "LFT UNIQ TIME Hg H Gg G gho ⧖".
     have H1 := storage_ty_sync Hsend Hsync.
-    destruct (H1 tid tid' x d g) as [H2 [H3 [H4 _]]]. rewrite H3. iIntros.
+    destruct (H1 tid tid' x d g) as [H3 [H4 _]]. rewrite H3. iIntros.
     iIntros. iApply step_fupdN_intro; first done. iNext. iModIntro.
     iExists x, 0. iFrame. replace (d1 + 0) with d1 by lia. iFrame.
     done.
