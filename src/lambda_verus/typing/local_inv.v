@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import type_context programs programs_util_own own ghost tracked shr_bor product.
+From lrust.typing Require Import type_context programs ghost tracked value_ctx shr_bytes product.
 From guarding Require Import guard tactics.
 From guarding.lib Require Import cancellable.
 From lrust.lifetime Require Import lifetime_full.
@@ -224,52 +224,51 @@ Section local_invariants.
     ResOwn (local_closer_ty (ℭ:=ℭ) κ ty pred).
   Proof. done. Qed.
   
+  (** The operations take and return ghost values as MiniRust values ([◁ᵥ]): the value
+      [()] of a ghost operation ([GhostOp]). [open] returns two ghost values, the contents
+      and the closer, both at its value [()]. *)
   Lemma typed_local_inv_alloc {𝔄 ℭ} (p1 p2 : path) (ty : type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop) (tyCN : type (ℭ * namespaceₛ)) E L I :
     typed_inv_instr E L I
-      +[p1 ◁ own_ptr 0 (ghost_ty tyCN);
-        p2 ◁ own_ptr 0 ty
-       ]
-      (Seq Skip Skip) I
-      (const +[p2 ◁ own_ptr 0 (local_inv_ty ty pred)])
-      (λ post '-[(_, (c, N)); (_, v)], λ mask π, pred (syn_abstract v) c ∧ ∀ l γ, post -[(l, (N, γ, c))] mask π).
+      +[p1 ◁ᵥ ghost_ty tyCN; p2 ◁ᵥ tracked_ty ty]
+      GhostOp I
+      (λ v, +[v ◁ᵥ local_inv_ty ty pred])
+      (λ post '-[(c, N); v], λ mask π, pred (syn_abstract v) c ∧ ∀ γ, post -[(N, γ, c)] mask π).
   Proof.
-    apply typed_instr_of_skip_own2_own. { trivial. } { trivial. }
-    intros l1 l2 x1 x2 d tid post mask iκs.
-    iIntros "#LFT #TIME #PROPH #UNIQ #E L I1 Gho Tra #Obs #⧖ £".
+    apply typed_inv_instr_ghost_op.
+    iIntros (tid post mask iκs [[c ns] [x []]]) "#LFT #TIME #PROPH #UNIQ #E L I (_ & p2 & _) #Obs ⧗ _".
+    iDestruct "p2" as (vp Hp w d [-> Hw]) "[#⧖ Tra]".
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[#⧖S _]";
+      [solve_ndisj|].
     iMod (proph_obs_sat with "PROPH Obs") as "%Sat". { set_solver. }
-    destruct x1 as [c ns].
     iMod (dg_tok_alloc d) as (γt) "[tok1 tok2]".
     iMod (cumulative_time_receipt_0) as "⧗0".
     iMod (lc_zero) as "£0".
     iMod (cna_alloc tid ns with "[Tra tok1 ⧗0 £0]") as (γ) "[inv active]"; last first.
-     - iModIntro. iExists (ns, (γ, γt, d), c). iFrame. iSplit; first by (iPureIntro; lia).
-       iApply (proph_obs_impl with "Obs"). intuition.
-     - iNext. iExists x2, d, (S d). iFrame.
-       iSplit. { iApply (persistent_time_receipt_mono with "⧖"). lia. }
+     - iModIntro. iExists -[(ns, (γ, γt, d), c)], mask. iFrame "L I".
+       iSplitL; [iSplit; [|done]; rewrite tctx_val_val; iExists (S d)|].
+       { replace (S d) with (d + 1) by lia. iFrame "⧖S active tok2 inv".
+         iPureIntro. split; [done|lia]. }
+       iApply (proph_obs_impl with "Obs"). intros π [_ Hpost]. apply Hpost.
+     - iNext. iExists x, d, d. iFrame.
+       iSplit. { iApply (persistent_time_receipt_mono with "⧖S"). lia. }
        replace (d - d) with 0 by lia. iFrame.
        iPureIntro. destruct Sat as [π1 [H1 H2]]. trivial.
   Qed.
-  
+
   Lemma typed_local_inv_destroy {𝔄 ℭ} (p : path) (ty : type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop) E L I :
     lctx_ictx_alive E L I →
     typed_instr E L I
-      +[p ◁ own_ptr 0 (local_inv_ty ty pred)]
-      (Seq Skip Skip)
-      (const +[p ◁ own_ptr 0 (tracked_ty ty)])
-      (λ post '-[(_, (N, γ, c))], λ mask π, ∀ l v, pred (syn_abstract v) c → post -[(l, v)] mask π).
+      +[p ◁ᵥ local_inv_ty ty pred]
+      GhostOp
+      (λ v, +[v ◁ᵥ tracked_ty ty])
+      (λ post '-[(N, γ, c)], λ mask π, ∀ v, pred (syn_abstract v) c → post -[v] mask π).
   Proof.
-    intros Halive. apply typed_instr_of_skip_own_own_t. { trivial. } { trivial. }
-    intros l [[ns [[γ γt] d0]] c] d tid iκs post mask.
-    iIntros "#LFT #TIME #PROPH #UNIQ #E L I (active & [%Hineq tok] & #inv) #Obs #⧖ ⧗".
+    intros Halive. apply typed_instr_ghost_op.
+    iIntros (tid post mask iκs [[[ns [[γ γt] d0]] c] []]) "#LFT #TIME #PROPH #UNIQ #E L I [p _] #Obs ⧗ ⧗1".
+    iDestruct "p" as (vp Hp w d [-> Hw]) "[_ (active & [%Hineq tok] & #inv)]".
     destruct I as [Il ϝ'].
-    (*iAssert (∀ κ : lft, ⌜κ ∈ invctx_to_multiset Il⌝ -∗ llctx_interp L &&{ ↑NllftG }&&> @[κ])%I as "#Alive". {
-      iIntros (κ) "%Hin". destruct Halive as [Halive1 Halive2].
-      rewrite /invctx_to_multiset elem_of_list_to_set_disj in Hin.
-      iDestruct (Halive2 _ Hin with "L E") as "X". iFrame.
-    }*)
-    
     iDestruct "I" as (na_mask at_mask) "[%Hm [[cna_lft #ϝincl] Irest]]".
-    
+
     iAssert (∀ κ : lft, ⌜κ ∈ invctx_to_multiset Il ⊎ list_to_set_disj iκs⌝ -∗ llctx_interp L &&{ ↑NllftG }&&> @[κ])%I as "#Alive". {
       iIntros (κ) "%Hin". destruct Halive as [Halive1 Halive2].
       rewrite gmultiset_elem_of_disj_union in Hin.
@@ -282,18 +281,23 @@ Section local_invariants.
           iApply (guards_transitive with "Incl2 []").
           iApply (lft_intersect_list_elem_of_incl _ _ Hin).
     }
-        
+
     iMod (cna_destroy with "inv cna_lft active Alive L") as "[I [L P]]". { set_solver. }
-    iMod (bi.later_exist_except_0 with "P") as (x'' d' g' d00) "[>tok2 [>⧖' [>⧗' [>£ [gho >%Hpred]]]]]".
-    iMod (cumulative_persistent_time_receipt with "TIME ⧗ ⧖'") as "#⧖'". { set_solver. }
-    iModIntro. iExists (S d' `max` g'), x''. 
-    iFrame. iFrame "#".
-    iDestruct (ty_gho_own_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
-    iSplit. { done. }
+    iMod (bi.later_exist_except_0 with "P") as (x'' d' g' d00) "[>tok2 [>#⧖' [>⧗' [>£ [gho >%Hpred]]]]]".
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗1 ⧖'") as "[_ £1]". { set_solver. }
+    iMod (lc_fupd_elim_later with "[£1] gho") as "gho".
+    { iApply (lc_weaken with "£1"). unfold advance_credits. lia. }
+    iMod (cumulative_persistent_time_receipt with "TIME ⧗ ⧖'") as "#⧖''". { set_solver. }
+    iModIntro. iExists -[x'']. iFrame "L".
+    iSplitL "I Irest". { iExists na_mask, at_mask. iFrame "#∗". by iPureIntro. }
+    iSplitL "gho".
+    { iSplit; [|done]. rewrite tctx_val_val. iExists (S d' `max` g'). iSplit; [done|].
+      iSplit; [iApply (persistent_time_receipt_mono with "⧖''"); lia|].
+      iDestruct (ty_gho_own_depth_mono with "gho") as "[$ _]"; lia. }
     iApply (proph_obs_impl with "Obs").
     intros π Ha. apply Ha. trivial.
   Qed.
-  
+
   Local Lemma mask_lemma (na_mask at_mask X : coPset) :
       na_mask ∪ at_mask = ⊤ →
       X ⊆ na_mask ∩ at_mask →
@@ -310,84 +314,100 @@ Section local_invariants.
     lctx_ictx_alive E L (InvCtx Il ϝ 𝛼) →
     typed_inv_instr E L
       (InvCtx Il ϝ 𝛼)
-      +[p ◁ own_ptr 0 (tracked_ty (&shr{κ} (local_inv_ty ty pred)))]
-      (Seq Skip Skip)
+      +[p ◁ᵥ &shrb{κ} (local_inv_ty ty pred)]
+      GhostOp
       (InvCtx (InvCtx_open κ :: Il) ϝ 𝛼)
-      (const +[p ◁ own_ptr 0 (tracked_ty ty * local_closer_ty κ ty pred)])
-      (λ post '-[(_, (_, (N, γ, c)))], λ mask π, (↑N ⊆ mask) ∧ ∀ l v γ', pred (syn_abstract v) c → post -[(l, (v, (N, γ', c)))] (mask ∖ ↑N) π).
+      (λ v, +[v ◁ᵥ tracked_ty ty; v ◁ᵥ local_closer_ty κ ty pred])
+      (λ post '-[(_, (N, γ, c))], λ mask π, (↑N ⊆ mask) ∧ ∀ v γ', pred (syn_abstract v) c → post -[v; (N, γ', c)] (mask ∖ ↑N) π).
   Proof.
-    intros Halive HaliveI. apply typed_inv_instr_of_skip_own_own_t. { trivial. } { trivial. }
-    intros l [l1 [[ns [[γ γt] d0]] c]] d tid iκs post mask.
-    iIntros "#LFT #TIME #PROPH #UNIQ #E L I shrgho #Obs #⧖ ⧗ £".
+    intros Halive HaliveI. apply typed_inv_instr_ghost_op.
+    iIntros (tid post mask iκs [[l1 [[ns [[γ γt] d0]] c]] []]) "#LFT #TIME #PROPH #UNIQ #E L I [p _] #Obs ⧗ ⧗'".
+    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ shrgho]".
+    destruct d as [|d]; first by done.
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[_ £]";
+      [solve_ndisj|].
     iDestruct (lc_weaken (_ + _)%nat with "£") as "[£1 £2]"; first last.
     {
-    destruct d as [|d]; first by done.
     iDestruct "shrgho" as "[_ [#KShr _]]".
     iDestruct (ty_shr_default_to_guard (local_inv_ty ty pred) with "KShr") as "#KguardsGho"; [done|].
     iDestruct (Halive with "L E") as "#LguardsK".
     iDestruct (guards_transitive_right with "LguardsK KguardsGho") as "LguardsGho".
-    
+
     leaf_open_laters "LguardsGho" with "L" as "Open". { set_solver. }
     iMod (lc_fupd_elim_laterN with "£1 Open") as "Open".
     iMod "Open" as "[[a [tok #inv]] back]".
     iMod ("back" with "[a tok]") as "L". { iFrame. iFrame "#". }
-    
+
     leaf_hyp "KguardsGho" rhs to (cna_active γ) as "KguardsActive".
       { leaf_by_sep. iIntros "(? & ?)". iFrame. iIntros. done. }
-    
+
     iMod (proph_obs_sat with "PROPH Obs") as "%Sat". { set_solver. }
     destruct Sat as [π [a b]].
-    
+
     iDestruct "I" as (na_mask at_mask) "[%Hm [[Ilifetimes ϝIncl] [Iown Iat]]]".
     iMod (cna_inv_acc_with_lifetime_guard with "inv Iown Ilifetimes LguardsK £2 KguardsActive L") as "[Iown [Ilifetimes [L [P Closer]]]]". { set_solver. } { set_solver. }
-    
-    iMod (bi.later_exist_except_0 with "P") as (x'' d' g' d1) "[>tok2 [>⧖' [>⧗' [>£ [gho >%Hpred]]]]]".
-    iMod (cumulative_persistent_time_receipt with "TIME ⧗ ⧖'") as "#⧖'". { set_solver. }
-    iModIntro. iExists (S d' `max` g'), (x'', (ns, (γ, γt, d1), c)). iExists (mask ∖ ↑ns).
-    iFrame.
-    iSplit. { iApply (persistent_time_receipt_mono with "⧖'"). lia. }
-    iDestruct (ty_gho_own_depth_mono with "gho") as "[$ _]". { lia. } { lia. }
-    iSplit. { iSplit.
-      { iPureIntro. split; last by set_solver. apply mask_lemma; set_solver. }
-      unfold invctx_to_multiset. simpl. rewrite gmultiset_disj_union_assoc. iFrame.
-    }
+
+    iMod (bi.later_exist_except_0 with "P") as (x'' d' g' d1) "[>tok2 [>⧖' [>⧗'' [>£ [gho >%Hpred]]]]]".
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗' ⧖'") as "[#⧖'' £3]". { set_solver. }
+    iMod (lc_fupd_elim_later with "[£3] gho") as "gho".
+    { iApply (lc_weaken with "£3"). unfold advance_credits. lia. }
+    iMod persistent_time_receipt_0 as "⧖0".
+    iModIntro. iExists -[x''; (ns, (γ, γt, d1), c)], (mask ∖ ↑ns). iFrame "L".
+    iSplitL "Iown Ilifetimes ϝIncl Iat".
+    { iExists (na_mask ∖ ↑ns), at_mask. iFrame "Iown Iat ϝIncl".
+      iSplit. { iPureIntro. split; last by set_solver. apply mask_lemma; set_solver. }
+      unfold invctx_to_multiset. simpl. rewrite gmultiset_disj_union_assoc. iFrame. }
+    iSplitL "gho tok2 ⧗'' £ Closer ⧖0".
+    { iSplitL "gho"; [|iSplitL; [|done]].
+      - rewrite tctx_val_val. iExists (S d' `max` g'). iSplit; [done|].
+        iSplit; [iApply (persistent_time_receipt_mono with "⧖''"); lia|].
+        iDestruct (ty_gho_own_depth_mono with "gho") as "[$ _]"; lia.
+      - rewrite tctx_val_val. iExists 0%nat. iFrame "⧖0". iSplit; [done|].
+        iFrame "Closer tok2". }
     iApply (proph_obs_impl with "Obs").
     intros π0 Ha. apply Ha. trivial.
     }
-    lia.
+    unfold advance_credits. lia.
   Qed.
- 
+
   Lemma typed_local_inv_close {𝔄 ℭ} (p1 p2 : path) (ty : type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop) E L Il ϝ 𝛼 κ :
     typed_inv_instr E L
       (InvCtx (InvCtx_open κ :: Il) ϝ 𝛼)
-      +[p1 ◁ own_ptr 0 (tracked_ty (ty));
-        p2 ◁ own_ptr 0 (tracked_ty (local_closer_ty κ ty pred))
-      ]
-      (Seq Skip Skip)
+      +[p1 ◁ᵥ tracked_ty ty; p2 ◁ᵥ local_closer_ty κ ty pred]
+      GhostOp
       (InvCtx Il ϝ 𝛼)
-      (const +[])
-      (λ post '-[(_, v); (_, (N, γ, c))], λ mask π,
+      (λ _, +[])
+      (λ post '-[v; (N, γ, c)], λ mask π,
         pred (syn_abstract v) c ∧ post -[] (mask ∪ ↑N) π
       ).
   Proof.
-    apply typed_inv_instr_of_skip_own2_emp.
-    intros l1 l2 v [[ns [[γ γt] d0]] c] d tid iκs post mask.
-    iIntros "#LFT #TIME #PROPH #UNIQ E L I gho1 [tok closer] #Obs #⧖ ⧗big £d".
+    iIntros (tid post mask iκs [v [[[ns [[γ γt] d0]] c] []]]) "#LFT #TIME #PROPH #UNIQ E L I (p1 & p2 & _) #Obs".
+    iDestruct "p1" as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ gho1]".
+    iDestruct "p2" as (vp2 Hp2 w2 d2 [-> Hw2]) "[_ [tok closer]]".
+    iApply wp_fupd. rewrite /GhostOp.
+    iApply (wp_cumulative_time_receipt_linear with "TIME ⧖"); [solve_ndisj|]. iIntros "⧗big".
+    wp_seq. wp_seq.
+    eapply (tac_wp_pure []); [apply (pure_mk_tuple [])|done|tc_solve|simpl; iApply wp_value].
+    rewrite (_ : S (S d) = S d + 1); [|lia].
+    iDestruct (cumulative_time_receipt_sep with "⧗big") as "[⧗big ⧗]".
+    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[#⧖S £d]";
+      [solve_ndisj|].
     iMod (proph_obs_sat with "PROPH Obs") as "%Sat". { set_solver. }
     iDestruct "I" as (na_mask at_mask) "[%Hm [[Ilifetimes ϝIncl] [Iown Iat]]]".
     iMod (cna_close with "closer [gho1 ⧗big £d tok] Iown Ilifetimes") as (κs') "[[%LtsEq %Hdisj] [Iown Ilifetimes]]".
      { solve_ndisj. }
-     { iNext. iExists v, d, (S d). iFrame. 
-        iDestruct (persistent_time_receipt_mono with "⧖") as "$"; first lia.
+     { iNext. iExists v, d, d. iFrame.
+        iDestruct (persistent_time_receipt_mono with "⧖S") as "$"; first lia.
         iDestruct (cumulative_time_receipt_mono with "⧗big") as "$"; first lia.
-        iDestruct (lc_weaken with "£d") as "$"; first lia.
+        iDestruct (lc_weaken with "£d") as "$"; first (unfold advance_credits; lia).
         destruct Sat as [π [a b]]. done.
      }
-    unfold invctx_to_multiset in LtsEq. simpl in LtsEq. 
+    unfold invctx_to_multiset in LtsEq. simpl in LtsEq.
     assert (invctx_to_multiset Il ⊎ list_to_set_disj iκs = κs') as LtsEq2 by multiset_solver.
     rewrite <- LtsEq2.
-    iModIntro. iExists (mask ∪ ↑ns). iFrame.
+    iModIntro. iExists -[], (mask ∪ ↑ns). iFrame.
     iSplit. { iPureIntro. split; set_solver. }
+    iSplit; [done|].
     iApply (proph_obs_impl with "Obs"). intros π Ha. apply Ha.
   Qed.
 End local_invariants.

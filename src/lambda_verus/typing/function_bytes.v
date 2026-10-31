@@ -1,15 +1,14 @@
 Import EqNotations.
 From lrust.typing Require Export type.
-From lrust.typing Require Import own programs cont function value_ctx.
+From lrust.typing Require Import programs cont value_ctx.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
 
 (** * Function types on MiniRust values (stage 4f of the MiniRust memory model)
 
-[bfn fp spec] is the byte version of [fn fp spec] ([typing/function.v]): the arguments
-and the result of a function are MiniRust values ([w ◁ᵥ ty], [typing/value_ctx.v]) of the
-types of [fp] (instead of boxes [box ty] owning legacy words). A box of bytes is passed
+[bfn fp spec] is the function type: the arguments and the result of a function are
+MiniRust values ([w ◁ᵥ ty], [typing/value_ctx.v]) of the types of [fp]. A box of bytes is passed
 as a value of type [own_bytes n ty]; a shared reference as a value of type [&shrb{κ} ty]
 (the root of a shared place, [typing/place_pshr.v]); a unique borrow as a value of type
 [&uniqb{κ} ty]. The function value itself is still a closure ([RecV]) typed by the
@@ -17,10 +16,71 @@ legacy element [f ◁ bfn fp spec]: closures have no MiniRust value (decision 3 
 plan). The specification is a predicate transformer on the values of the arguments and
 the result ([bfn_spec]), not on boxes of them.
 
-Rules: [type_bcall] ([call: p ql → k]), [type_bletcall], [type_bfnrec], [type_bfn]. The
-legacy [fn] and its rules stay while [pcell] is on the legacy layer. *)
+Rules: [type_bcall] ([call: p ql → k]), [type_bletcall], [type_bfnrec], [type_bfn]. *)
 
 Implicit Type (𝔄 𝔅: syn_type) (𝔄l 𝔅l: syn_typel).
+
+Fixpoint subst_plv {𝔄l} (bl: plistc binder 𝔄l) (vl: plistc val 𝔄l) (e: expr) : expr :=
+  match 𝔄l, bl, vl with
+  | [], _, _ => e
+  | _::_, b -:: bl', v -:: vl' => subst' b v (subst_plv bl' vl' e)
+  end.
+
+Global Instance do_subst_plv {𝔄l} (bl vl: plistc _ 𝔄l) e :
+  DoSubstL bl (map of_val vl) e (subst_plv bl vl e).
+Proof.
+  rewrite /DoSubstL. induction 𝔄l, bl, vl; [done|]=>/=. by rewrite IH𝔄l.
+Qed.
+
+Lemma subst_plv_renew {𝔄l 𝔅l} (bl: plistc binder 𝔄l) (vl': plistc val 𝔅l) eq eq' e :
+  subst_plv (plistc_renew eq bl) vl' e =
+    subst_plv bl (plistc_renew eq' vl') e.
+Proof.
+  move: 𝔄l 𝔅l bl vl' eq eq'. fix FIX 1.
+  case=> [|??]; case=>//= ??[??][??]??. f_equal. apply FIX.
+Qed.
+
+Section fn_params.
+  Context `{!typeG Σ} {𝔄l: syn_typel} {𝔅: syn_type}.
+
+  Record fn_params :=
+    FP {
+      fp_E_ex: lft → elctx;
+      fp_ityl: typel 𝔄l;
+      fp_oty: type 𝔅;
+      fp_atomic_state: invctx_atomic_state
+    }.
+
+  Definition fn_params_dist n fp fp' : Prop :=
+    (∀ϝ, fp.(fp_E_ex) ϝ = fp'.(fp_E_ex) ϝ) ∧
+    fp.(fp_ityl) ≡{n}≡ fp'.(fp_ityl) ∧ fp.(fp_oty) ≡{n}≡ fp'.(fp_oty).
+
+  Definition fp_E (fp: fn_params) ϝ : elctx :=
+    fp.(fp_E_ex) ϝ ++ tyl_E fp.(fp_ityl) ++ tyl_outlives_E fp.(fp_ityl) ϝ ++
+    fp.(fp_oty).(ty_E) ++ ty_outlives_E fp.(fp_oty) ϝ.
+
+  Global Instance fp_E_ne n : Proper (fn_params_dist n ==> (=) ==> (=)) fp_E.
+  Proof.
+    rewrite /fp_E. move=> ?? Eq ??->. move: Eq=> [->[Eqi Eqo]].
+    f_equiv. do 2 (f_equiv; [by rewrite Eqi|]). by rewrite Eqo.
+  Qed.
+
+  Lemma elctx_sat_fp_E (fp: fn_params) ϝ ϝ' L :
+    fp_E_ex fp = const [] →
+    elctx_sat (ϝ' ⊑ₑ ϝ :: fp_E fp ϝ) L (fp_E fp ϝ').
+  Proof.
+    move=> Eq. rewrite /fp_E Eq /=. apply elctx_sat_app; [solve_typing|].
+    apply elctx_sat_app. { apply (tyl_outlives_E_elctx_sat_mono ϝ'); solve_typing. }
+    apply elctx_sat_app; [solve_typing|].
+    apply (ty_outlives_E_elctx_sat_mono ϝ'); solve_typing.
+  Qed.
+
+  Definition tr_ret {𝔄} : predl_trans' [𝔄] (𝔄) := λ post '-[a], λ mask π, post a mask π.
+End fn_params.
+
+Arguments fn_params {_ _} _ _.
+
+Global Instance elctx_empty : Empty (lft → elctx) := λ _, [].
 
 Notation bfn_spec 𝔄l 𝔅 ℭ := ((~~ℭ) → predl_trans' 𝔄l 𝔅).
 
@@ -68,6 +128,21 @@ Notation "bfn( E ) → oty" := (bfn (λ _: (), FP E%EL +[] oty%T AtomicClosed))
 
 Section typing.
   Context `{!typeG Σ}.
+
+  Global Instance bfn_send {A 𝔄l 𝔅 ℭ} (fp: A → fn_params 𝔄l 𝔅) (spec: bfn_spec 𝔄l 𝔅 ℭ) :
+    Send (bfn fp spec).
+  Proof.
+    intros. split; trivial.
+     - intros. unfold syn_abstract in H. inversion H.
+       unfold ty_phys, bfn, ty_of_st. simpl. rewrite H1. trivial.
+     - iIntros. iApply step_fupdN_intro; first done. iNext.
+       iExists x, 0%nat. iModIntro. iFrame. simpl.
+       replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
+  Qed.
+
+  Global Instance bfn_sync {A 𝔄l 𝔅 ℭ} (fp: A → fn_params 𝔄l 𝔅) (spec: bfn_spec 𝔄l 𝔅 ℭ) :
+    Sync (bfn fp spec).
+  Proof. apply sync_default; [done|]. split; trivial. split; iSplit; iIntros "?"; done. Qed.
 
   Lemma bfn_resolve {A 𝔄l 𝔅 ℭ} (fp: A → fn_params 𝔄l 𝔅) (spec: bfn_spec 𝔄l 𝔅 ℭ) E L :
     resolve E L (bfn fp spec) (const (const True)).
@@ -180,6 +255,35 @@ Section typing.
     wp_seq. iMod ("ToG" with "†ϝ") as "> G".
     iDestruct ("iiback" with "Invctx") as "Invctx".
     iApply ("k" with "G Invctx oty Obs").
+  Qed.
+
+  (** A call from a thread with an empty lifetime context and no open invariants (as in a
+      new thread, see [typing/spawn.v]). *)
+  Lemma type_bcall_iris {A 𝔄l 𝔅 ℭ} x xl κl post (mask: Mask) (fp: A → fn_params 𝔄l 𝔅)
+      (spec: bfn_spec 𝔄l 𝔅 ℭ) p ql ql' (k: expr) E efun tid G :
+    AsVal k → IntoPlistc ql ql' → Timeless G →
+    (∀ϝ, elctx_sat (map (λ κ, ϝ ⊑ₑ κ) κl ++ E) [] (fp_E (fp x) ϝ)) →
+    llft_ctx -∗ time_ctx -∗ proph_ctx -∗ uniq_ctx -∗ elctx_interp E -∗
+    (G &&{↑NllftG}&&> @[lft_intersect_list κl]) -∗ G -∗
+    invctx_interp tid mask [] (InvCtx [] static (fp_atomic_state (fp x))) -∗
+    tctx_elt_interp tid (p ◁ bfn fp spec) efun -∗
+    tctx_interp tid (hzip_with (λ _ ty q, q ◁ᵥ ty) (fp x).(fp_ityl) ql') xl -∗
+    ⟨π, (spec efun.2) post xl mask π⟩ -∗
+    (∀(ret: val) (mask': Mask) w, G -∗
+      invctx_interp tid mask' [] (InvCtx [] static (fp_atomic_state (fp x))) -∗
+      tctx_elt_interp tid (ret ◁ᵥ (fp x).(fp_oty)) w -∗ ⟨π, post w mask' π⟩ -∗
+      WP k [of_val ret] {{ _, cont_postcondition }}) -∗
+    WP (call: p ql → k) {{ _, cont_postcondition }}.
+  Proof.
+    iIntros (????) "LFT TIME PROPH UNIQ E #Guardsκl G Invctx p ql Obs k".
+    iApply (type_bcall_iris' [] with "LFT TIME PROPH UNIQ E [] Guardsκl G Invctx p ql Obs").
+      - split.
+        + unfold lctx_lft_alive. iIntros "_ _". setoid_rewrite static_alive_true.
+          iApply guards_true.
+        + intros κ Hnotin. simpl in Hnotin. rewrite elem_of_nil in Hnotin. contradiction.
+      - done.
+      - iApply guards_true.
+      - iIntros (???) "G I ret Obs". iApply ("k" with "G I ret Obs").
   Qed.
 
   Lemma type_bcall {A 𝔄l 𝔅 ℭl 𝔇l 𝔈l 𝔉 ℭ} x (fp: A → fn_params 𝔄l 𝔅) (spec: bfn_spec 𝔄l 𝔅 ℭ)

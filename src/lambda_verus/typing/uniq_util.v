@@ -1454,3 +1454,17 @@ Section uniq_util.
   Qed.
 End uniq_util.
 Global Typeclasses Opaque uniq_pat_lft.
+
+(** The components of the value of a unique borrow. *)
+Section uniq_bor_val_parts.
+  Definition uniq_bor_loc {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : cloc :=
+      match m with (l, x0, ξi, d', g', idx) => l end.
+  
+  Definition uniq_bor_current {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : ~~ 𝔄 :=
+      match m with (l, x0, ξi, d', g', idx) => x0 end.
+      
+  Definition uniq_bor_future {𝔄} (m: ~~ (uniq_borₛ 𝔄)) (π : proph_asn) : 𝔄 := (vπ m π).2.
+      
+  Definition uniq_bor_ξi {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : positive :=
+      match m with (l, x0, ξi, d', g', idx) => ξi end.
+End uniq_bor_val_parts.

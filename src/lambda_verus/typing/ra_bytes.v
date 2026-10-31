@@ -19,33 +19,14 @@ references are [&shrb]. The resource algebra and its ghost type ([ra_ty], [ra_in
 the lemmas [ra_alloc], [ra_validate], [ra_update] etc.) are those of [typing/ra.v]. A
 ghost operation is a no-op that returns the empty tuple ([GhostOp]). *)
 
-Definition GhostOp : expr := (Skip ;; MkTuple [])%E.
-
 Notation "RAb_Alloc: p" := GhostOp (at level 102, p at level 150): expr_scope.
 Notation "RAb_Join: p1 p2" := GhostOp (at level 102, p1, p2 at level 1): expr_scope.
 Notation "RAb_Split: p p1 p2" := GhostOp (at level 102, p, p1, p2 at level 1): expr_scope.
 Notation "RAb_Unit:" := GhostOp : expr_scope.
 Notation "RAb_Update: self p" := GhostOp (at level 102, self, p at level 1): expr_scope.
 Notation "RAb_Validate: self" := GhostOp (at level 102, self at level 1): expr_scope.
-(** A ghost operation that returns (the location of) a shared reference. *)
-Definition GhostRet : val := (λ: ["p"], "p")%V.
 Notation "RAb_UpdateWithShr: self other new_value" := GhostOp
   (at level 102, self, other, new_value at level 1): expr_scope.
-
-Section ghost_vals.
-  Context `{!typeG Σ}.
-
-  (** A ghost operation takes two steps. *)
-  Lemma wp_ghost_op E Φ :
-    ▷ ▷ Φ (MLitV (VTuple [])) -∗ WP GhostOp @ E {{ Φ }}.
-  Proof.
-    iIntros "HΦ". rewrite /GhostOp. wp_seq. wp_seq.
-    eapply (tac_wp_pure []); [apply (pure_mk_tuple [])|done|tc_solve|simpl; iApply wp_value].
-    done.
-  Qed.
-
-End ghost_vals.
-
 
 Section RA_bytes.
   Context `{!typeG Σ}.

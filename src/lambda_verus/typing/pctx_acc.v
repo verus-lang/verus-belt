@@ -31,7 +31,8 @@ From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath.
-From lrust.typing Require Import uniq_util uniq_bor uniq_bytes_util uniq_bytes own_bytes shr_bytes bytes_layout value_ctx freeable_util shr_bor.
+From lrust.typing Require Import uniq_util uniq_bytes_util uniq_bytes own_bytes shr_bytes
+  bytes_layout value_ctx freeable_util.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
