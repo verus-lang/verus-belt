@@ -101,7 +101,7 @@ Section res_leaf.
     (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗ ⧖D -∗ £(advance_credits D) -∗
     ltype_own (Owned m) (OfRes (&uniq{κ} ty)) (inl (PlaceIn y)) d g tid l ={⊤}=∗
     G ∗ ltype_own (Owned m) (ShrLty (OfTy ty) κ)
-      (inl (PlaceIn (𝔄:=at_clocₛ 𝔄) (uniq_bor_loc y, uniq_bor_current y))) d g tid l.
+      (inl (PlaceIn (𝔄:=at_locₛ 𝔄) (uniq_bor_loc y, uniq_bor_current y))) d g tid l.
   Proof.
     iIntros (? Alv Hm Hd Hg) "#LFT #PROPH #UNIQ #TIME #E #GL G #⧖ £".
     rewrite /ltype_own /= /res_leaf /leaf_owned_s /leaf_owned /ofty_owned /=.
@@ -119,7 +119,7 @@ Section res_leaf.
         [done|solve_ndisj|]. done. }
     iModIntro. iFrame "G".
     iSplit; [|done]. iExists (l0, x0). iSplit; [done|].
-    rewrite !cbytes_uniq_bor cbytes_at_cloc /=. iFrame "Pt".
+    rewrite !cbytes_uniq_bor cbytes_at_loc /=. iFrame "Pt".
     iApply bi.laterN_intro. destruct d as [|d]; [lia|]. simpl. iSplit.
     - iApply (lguards_weaken_later with "Gp"). lia.
     - iSplit; [iApply (ty_shr_depth_mono with "Shr"); lia|].
@@ -166,7 +166,7 @@ Section res_conv.
   Qed.
 
   (** A resolved shared reference is a shared reference ([ResOwn]); unfolded. *)
-  Lemma tctx_unfold_oplace_res_shr {𝔅 𝔄} E L p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoUniq K}
+  Lemma tctx_unfold_oplace_res_shr {𝔅 𝔄} E L p n (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoUniq K}
       κ (ty: type 𝔅) :
     tctx_incl E L +[p ◁ₗown{n} pctx_plug K (OfRes (&shr{κ} ty))]
       +[p ◁ₗown{n} pctx_plug K (ShrLty (OfTy ty) κ)] (λ post '-[x], post -[x]).
@@ -189,10 +189,10 @@ Section res_conv_uniq.
       `{!PctxNoUniq K} κ (ty: type 𝔅) :
     pctx_nosum K → lctx_lft_alive E L κ →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfRes (&uniq{κ} ty))] (place_resolve.skipn 1)
-      (const +[p ◁ₗown{n} pctx_plug (pctx_retype K (at_clocₛ 𝔅)) (ShrLty (OfTy ty) κ)])
+      (const +[p ◁ₗown{n} pctx_plug (pctx_retype K (at_locₛ 𝔅)) (ShrLty (OfTy ty) κ)])
       (λ post '-[x], post -[((x.1.1, pctx_reset K x.1.2
         ((uniq_bor_loc (pctx_get K x.1.2), uniq_bor_current (pctx_get K x.1.2))
-          : ~~ (at_clocₛ 𝔅))), x.2)]).
+          : ~~ (at_locₛ 𝔅))), x.2)]).
   Proof.
     iIntros (Hns Alv tid post mask iκs [x []])
       "#LFT #TIME #PROPH #UNIQ #E L I [(%v & %Hp & Own) _] Obs".
@@ -206,7 +206,7 @@ Section res_conv_uniq.
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]";
       [solve_ndisj|].
     set y := pctx_get K x₀.
-    set y' := ((uniq_bor_loc y, uniq_bor_current y) : ~~ (at_clocₛ 𝔅)).
+    set y' := ((uniq_bor_loc y, uniq_bor_current y) : ~~ (at_locₛ 𝔅)).
     iApply (wp_skipn_ctask 1 (advance_credits D) D with "TIME ⧖ [H H1 H2]"); [done| |].
     { iIntros "!> £".
       iMod (res_leaf_uniq_to_shr with "LFT PROPH UNIQ TIME E Ghalf H1 ⧖ £ H") as "[H1 H]";
@@ -305,7 +305,7 @@ Section res_sum.
     destruct (to_xsum s) as [j a] eqn:Hj.
     have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
     subst s.
-    set lr := (l, repeat [] (lty_size (pctx_plug K (OfRes (Σ! tyl))))).
+    set lr := l.
     set lK := pctx_loc K (lty_size (OfRes (Σ! tyl))) x₀ lr.
     (* The address of the hole. *)
     wp_bind (pctx_expr K (ToLit p)).

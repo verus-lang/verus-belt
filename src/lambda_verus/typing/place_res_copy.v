@@ -81,7 +81,7 @@ Section memcpy_res.
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set y := pctx_get K x₀.
     set q0 := pctx_path K [].
-    set lr := (l, repeat [] (lty_size (pctx_plug K lt1))).
+    set lr := l.
     set lK := pctx_loc K (lty_size lt1) x₀ lr.
     destruct y as [[[[[ly z] ξi] d0] g0] idx0] eqn:Hy.
     rewrite /= /res_node /=. iDestruct "H" as "[Pt N]".
@@ -133,7 +133,7 @@ Section memcpy_res.
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
     (* Copy the bytes. *)
     iDestruct "Vs" as "(Gpt & _ & _)".
-    iApply (wp_memcopy_guarded_gen _ lw lh.1 bsw (ty_bsize ty) (fractional.half γh)
+    iApply (wp_memcopy_guarded_gen _ lw lh bsw (ty_bsize ty) (fractional.half γh)
       (cbytes ty zh lh) (ty_bytes ty zh) (gh + 1) with "[$Hbsw $H1 $£l]");
       [solve_ndisj|by rewrite Hlenw Hszw|intros ?; apply ty_bytes_length|..].
     { iSplit; [iApply (guards_transitive_right with "Hsl Gpt")|].

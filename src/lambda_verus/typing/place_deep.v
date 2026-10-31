@@ -65,7 +65,7 @@ Section leaf_acc.
     £((D + 1) * (D + 2) + 1) -∗
     vroot_own (pctx_plug K (OfTy ty)) (pctx_vrfn K x₀ ζm (inl (PlaceIn (pctx_get K x₀)))) D tid v
       ={E}=∗
-    ∃ (G': iProp Σ) dh gh, ⌜Timeless G'⌝ ∗ G' ∗ ⌜v = MLitV (VPtr (pctx_vrloc K (lty_size (OfTy ty)) x₀).1)⌝ ∗
+    ∃ (G': iProp Σ) dh gh, ⌜Timeless G'⌝ ∗ G' ∗ ⌜v = MLitV (VPtr (pctx_vrloc K (lty_size (OfTy ty)) x₀))⌝ ∗
       ⌜dh + pctx_dlev K ≤ D ∧ gh ≤ D ∧ pctx_in K x₀⌝ ∗
       (G' &&{↑NllftG}&&> @[pctx_ulft K (OfTy ty)]) ∗
       cbytes ty (pctx_get K x₀) (pctx_vloc K (lty_size (OfTy ty)) x₀) ∗

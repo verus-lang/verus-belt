@@ -13,7 +13,6 @@ Inductive syn_type := intₛ (_: IntType) | boolₛ | unitₛ | Propₛ | positi
 | prodₛ (_ _: syn_type) | sumₛ (_ _: syn_type)
 | xprodₛ (_: list syn_type) | xsumₛ (_: list syn_type)
 | at_locₛ (_: syn_type)
-| at_clocₛ (_: syn_type)
 | uniq_borₛ (_: syn_type)
 | blockedₛ (_: syn_type)
 | ghostₛ (_: syn_type)
@@ -63,8 +62,7 @@ Fixpoint indep_interp_of_syn_type (𝔄: syn_type) : Type :=
   | xprodₛ 𝔄l => plist indep_interp_of_syn_type 𝔄l
   | xsumₛ 𝔄l => psum indep_interp_of_syn_type 𝔄l * list val
   | at_locₛ 𝔄₀  => loc * indep_interp_of_syn_type 𝔄₀ 
-  | at_clocₛ 𝔄₀  => cloc * indep_interp_of_syn_type 𝔄₀ 
-  | uniq_borₛ 𝔄₀  => cloc * indep_interp_of_syn_type 𝔄₀ * positive * nat * nat * Idx
+  | uniq_borₛ 𝔄₀  => loc * indep_interp_of_syn_type 𝔄₀ * positive * nat * nat * Idx
   | blockedₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀ * positive * positive  (* first elem is only to show inhabitness *)
   | ghostₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
   | trackedₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
@@ -94,7 +92,6 @@ Fixpoint proph_interp_of_syn_type (𝔄: syn_type) : Type :=
   | xprodₛ 𝔄l => plist proph_interp_of_syn_type 𝔄l
   | xsumₛ 𝔄l => psum proph_interp_of_syn_type 𝔄l * list val
   | at_locₛ 𝔄 => loc * proph_interp_of_syn_type 𝔄
-  | at_clocₛ 𝔄 => cloc * proph_interp_of_syn_type 𝔄
   | uniq_borₛ 𝔄 => proph_interp_of_syn_type 𝔄 * proph_interp_of_syn_type 𝔄
   | blockedₛ 𝔄₀  => ()
   | ghostₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
@@ -124,8 +121,7 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
   | xprodₛ 𝔄l => plist abstracted_syn_type 𝔄l
   | xsumₛ 𝔄l => psum abstracted_syn_type 𝔄l * list val
   | at_locₛ 𝔄₀  => loc * abstracted_syn_type 𝔄₀ 
-  | at_clocₛ 𝔄₀  => cloc * abstracted_syn_type 𝔄₀ 
-  | uniq_borₛ 𝔄₀  => cloc * abstracted_syn_type 𝔄₀ * positive
+  | uniq_borₛ 𝔄₀  => loc * abstracted_syn_type 𝔄₀ * positive
   | blockedₛ 𝔄₀ => ()
   | ghostₛ 𝔄₀ => abstracted_syn_type 𝔄₀
   | trackedₛ 𝔄₀ => abstracted_syn_type 𝔄₀
@@ -154,7 +150,7 @@ Fixpoint syn_type_beq 𝔄 𝔅 : bool :=
   | uninitₛ n, uninitₛ m => bool_decide (n = m)
   | pcellₛ m, pcellₛ m' => bool_decide (m = m')
   | optionₛ 𝔄₀, optionₛ 𝔅₀ | listₛ 𝔄₀, listₛ 𝔅₀ | at_locₛ 𝔄₀, at_locₛ 𝔅₀
-  | at_clocₛ 𝔄₀, at_clocₛ 𝔅₀ | uniq_borₛ 𝔄₀, uniq_borₛ 𝔅₀
+  | uniq_borₛ 𝔄₀, uniq_borₛ 𝔅₀
   | blockedₛ 𝔄₀, blockedₛ 𝔅₀ | ghostₛ 𝔄₀, ghostₛ 𝔅₀ | invₛ 𝔄₀, invₛ 𝔅₀
   | local_invₛ 𝔄₀, local_invₛ 𝔅₀ | trackedₛ 𝔄₀, trackedₛ 𝔅₀
   | exec_funₛ 𝔄₀, exec_funₛ 𝔅₀ | join_handleₛ 𝔄₀, join_handleₛ 𝔅₀
@@ -194,7 +190,7 @@ Fixpoint inh_syn_type' 𝔄 : bool :=
   | funₛ 𝔄₀ 𝔄₁ => negb (inh_syn_type' 𝔄₀) || inh_syn_type' 𝔄₁
   | xprodₛ 𝔄l => forallb inh_syn_type' 𝔄l
   | xsumₛ 𝔄l => existsb inh_syn_type' 𝔄l
-  | at_locₛ 𝔄₀ | at_clocₛ 𝔄₀ | uniq_borₛ 𝔄₀ | blockedₛ 𝔄₀ | exec_funₛ 𝔄₀ | ghostₛ 𝔄₀ | trackedₛ 𝔄₀
+  | at_locₛ 𝔄₀ | uniq_borₛ 𝔄₀ | blockedₛ 𝔄₀ | exec_funₛ 𝔄₀ | ghostₛ 𝔄₀ | trackedₛ 𝔄₀
   | invₛ 𝔄₀ | local_invₛ 𝔄₀ | join_handleₛ 𝔄₀ | storableₛ 𝔄₀
     => inh_syn_type' 𝔄₀
   | _ => true
@@ -208,7 +204,7 @@ Fixpoint inh_syn_type 𝔄 : bool :=
   | funₛ 𝔄₀ 𝔄₁ => negb (inh_syn_type' 𝔄₀) || inh_syn_type' 𝔄₁
   | xprodₛ 𝔄l => forallb inh_syn_type 𝔄l
   | xsumₛ 𝔄l => existsb inh_syn_type 𝔄l
-  | at_locₛ 𝔄₀ | at_clocₛ 𝔄₀ | uniq_borₛ 𝔄₀ | trackedₛ 𝔄₀ => inh_syn_type 𝔄₀
+  | at_locₛ 𝔄₀ | uniq_borₛ 𝔄₀ | trackedₛ 𝔄₀ => inh_syn_type 𝔄₀
   | exec_funₛ 𝔄₀ | ghostₛ 𝔄₀ | storableₛ 𝔄₀ | invₛ 𝔄₀ | local_invₛ 𝔄₀ | join_handleₛ 𝔄₀ => inh_syn_type' 𝔄₀
   | _ => true
   end.
@@ -232,7 +228,6 @@ Proof.
     + elim; [done|]=>/= 𝔄 ? IH. case Eq: (inh_syn_type' 𝔄)=>/= H.
       * split; last by exact []. left. apply FIX. by rewrite Eq.
       * split; last by exact []. right. by apply IH.
-    + move=> 𝔄 x. exact (inhabitant, fst (FIX 𝔄) x).
     + move=> 𝔄 x. exact (inhabitant, fst (FIX 𝔄) x).
     + move=> 𝔄 x. exact (inhabitant, fst (FIX 𝔄) x, inhabitant, 0, 0, inhabitant).
     + move=> 𝔄 x. exact (fst (FIX 𝔄) x, inhabitant, inhabitant).
@@ -258,7 +253,6 @@ Proof.
     + move=> l n [ps _]. move: l n ps.
       elim; [move=> ?; by apply absurd|]=> ?? IH.
       rewrite negb_orb=> /andb_True[??] [?|?]; by [eapply FIX|apply IH].
-    + move=> 𝔄 Hneg [_ x]. exact (snd (FIX 𝔄) Hneg x).
     + move=> 𝔄 Hneg [_ x]. exact (snd (FIX 𝔄) Hneg x).
     + move=> 𝔄 Hneg [x _]. exact (snd (FIX 𝔄) Hneg (snd (fst (fst (fst x))))).
     + move=> 𝔄 Hneg [x _]. exact (snd (FIX 𝔄) Hneg (fst x)).
@@ -291,7 +285,6 @@ Proof.
       * split; last by exact []. left. apply FIX. by rewrite Eq.
       * split; last by exact []. right. by apply IH.
     + move=> 𝔄 x. exact (inhabitant, fst (FIX 𝔄) x).
-    + move=> 𝔄 x. exact (inhabitant, fst (FIX 𝔄) x).
     + move=> 𝔄 x. exact (fst (FIX 𝔄) x, fst (FIX 𝔄) x).
     + move=> 𝔄 x. exact (fst (@of_just_and_neg_inh_syn_type' 𝔄) x).
     + move=> 𝔄 x. exact (fst (FIX 𝔄) x).
@@ -315,7 +308,6 @@ Proof.
     + move=> l n [x _]. move: l n x.
       elim; [move=> ?; by apply absurd|]=> ?? IH.
       rewrite negb_orb=> /andb_True[??] [?|?]; by [eapply FIX|apply IH].
-    + move=> 𝔄 Hneg [_ x]. exact (snd (FIX 𝔄) Hneg x).
     + move=> 𝔄 Hneg [_ x]. exact (snd (FIX 𝔄) Hneg x).
     + move=> 𝔄 Hneg [x _]. exact (snd (FIX 𝔄) Hneg x).
     + move=> 𝔄 Hneg x. exact (snd (@of_just_and_neg_inh_syn_type' 𝔄) Hneg x).
@@ -384,7 +376,6 @@ Fixpoint vπ {𝔄} : ~~𝔄 → proph_asn → 𝔄 :=
   | xprodₛ 𝔄l => λ x π , pmap (λ _ x0 , vπ x0 π) x
   | xsumₛ 𝔄l => λ x π , (psum_map1 (λ _ x0, vπ x0 π) x.1, x.2)
   | at_locₛ 𝔄₀  => λ x π , (fst x, @vπ 𝔄₀ (snd x) π)
-  | at_clocₛ 𝔄₀  => λ x π , (fst x, @vπ 𝔄₀ (snd x) π)
   | invₛ 𝔄₀  => λ x π , (fst (fst x), snd (fst x), snd x)
   | local_invₛ 𝔄₀  => λ x π , (fst (fst x), snd (fst x), snd x)
   | uniq_borₛ 𝔄₀  => λ x π ,
@@ -431,7 +422,6 @@ Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
           xinj _ l => l
       end
   | at_locₛ 𝔄₀  => λ x , (@ξl 𝔄₀ (snd x))
-  | at_clocₛ 𝔄₀  => λ x , (@ξl 𝔄₀ (snd x))
   | invₛ 𝔄₀  => λ x , []
   | local_invₛ 𝔄₀  => λ x , []
   | uniq_borₛ 𝔄₀  => λ x ,
@@ -473,7 +463,6 @@ Fixpoint size_of 𝔄 : nat :=
   | xprodₛ 𝔄l => list_sum (fmap size_of 𝔄l)
   | xsumₛ 𝔄l => S (list_max (fmap size_of 𝔄l))
   | at_locₛ 𝔄₀  => 1
-  | at_clocₛ 𝔄₀  => 1
   | invₛ 𝔄₀  => 0
   | local_invₛ 𝔄₀  => 0
   | uniq_borₛ 𝔄₀  => 1
@@ -516,12 +505,11 @@ Fixpoint syn_phys {𝔄} : (~~𝔄) → list fancy_val :=
           xinj i l => pad (FVal (LitV (LitInt i)) :: l ++ (fmap FVal padding)) (size_of 𝔄)
       end
   | at_locₛ 𝔄₀  => λ x, [FVal (LitV (LitLoc (x.1)))]
-  | at_clocₛ 𝔄₀  => λ x, [FVal (LitV (LitLoc (x.1.1)))]
   | invₛ 𝔄₀  => λ x, []
   | local_invₛ 𝔄₀  => λ x, []
   | uniq_borₛ 𝔄₀  =>  λ x,
       (match x with
-        (l, x₀, ξi, d', g', idx) => [FVal (LitV (LitLoc l.1))]
+        (l, x₀, ξi, d', g', idx) => [FVal (LitV (LitLoc l))]
       end)
   | blockedₛ 𝔄₀ => λ x, []
   | ghostₛ 𝔄₀ => λ x, []
@@ -616,7 +604,6 @@ Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   | xprodₛ 𝔄l => λ x , pmap (λ _ x0 , syn_abstract x0) x
   | xsumₛ 𝔄l => λ '(x, padding) , (psum_map1 (λ _ x0, syn_abstract x0) x, padding)
   | at_locₛ 𝔄₀  => λ x , (fst x, @syn_abstract 𝔄₀ (snd x))
-  | at_clocₛ 𝔄₀  => λ x , (fst x, @syn_abstract 𝔄₀ (snd x))
   | invₛ 𝔄₀  => λ x , (fst (fst x), snd (fst x), @syn_abstract 𝔄₀ (snd x))
   | local_invₛ 𝔄₀  => λ x , (fst (fst x), @syn_abstract 𝔄₀ (snd x))
   | uniq_borₛ 𝔄₀  => λ x ,
@@ -670,7 +657,6 @@ Proof.
     simpl. do 2 (rewrite psum_map1_pinj). do 2 (rewrite to_xsum_pinj).
     rewrite He. trivial.
   - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
-  - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
   - destruct x as [[[[[[? ?] ?] ?] ?] ?] ?].
     destruct x' as [[[[[[? ?] ?] ?] ?] ?] ?].
     inversion Hab as [[Ha Hb]]. clear FIX. trivial.
@@ -687,7 +673,7 @@ shallow: a pointer is [MPtr] whatever its pointee.
 
 Layouts (sizes are abstract and there is no alignment yet):
 - [intₛ it] is [MInt it], [boolₛ] is [MBool], and the pointer-like types ([locₛ],
-  [at_locₛ], [at_clocₛ], [uniq_borₛ], [exec_funₛ]) are [MPtr];
+  [at_locₛ], [uniq_borₛ], [exec_funₛ]) are [MPtr];
 - a product is a tuple whose fields are laid out one after the other ([seq_tuple]);
 - [Σ! 𝔄l] is an enum with a tag of type [enum_tag (length 𝔄l)] at offset 0 and the
   data of each variant right after the tag ([seq_enum]); the legacy padding component
@@ -720,7 +706,7 @@ Fixpoint syn_mty (𝔄: syn_type) : mty :=
   match 𝔄 with
   | intₛ it => MInt it
   | boolₛ => MBool
-  | locₛ | at_locₛ _ | at_clocₛ _ | uniq_borₛ _ | exec_funₛ _ => MPtr
+  | locₛ | at_locₛ _ | uniq_borₛ _ | exec_funₛ _ => MPtr
   | prodₛ 𝔄₀ 𝔄₁ => seq_tuple [syn_mty 𝔄₀; syn_mty 𝔄₁]
   | xprodₛ 𝔄l => seq_tuple (syn_mty <$> 𝔄l)
   | xsumₛ 𝔄l => seq_enum (syn_mty <$> 𝔄l)
@@ -735,8 +721,7 @@ Fixpoint syn_val {𝔄} : ~~𝔄 → option Value :=
   | boolₛ => λ b, Some (VBool b)
   | locₛ => λ l, Some (VPtr l)
   | at_locₛ _ => λ x, Some (VPtr x.1)
-  | at_clocₛ _ => λ x, Some (VPtr x.1.1)
-  | uniq_borₛ _ => λ x, match x with (l, _, _, _, _, _) => Some (VPtr l.1) end
+  | uniq_borₛ _ => λ x, match x with (l, _, _, _, _, _) => Some (VPtr l) end
   | exec_funₛ _ => λ _, None
   | pcellₛ _ => λ _, None
   | prodₛ 𝔄₀ 𝔄₁ => λ '(x₀, x₁),
@@ -1138,7 +1123,6 @@ Proof.
     simpl. do 2 (rewrite psum_map1_pinj). do 2 (rewrite to_xsum_pinj).
     rewrite He. trivial.
   - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
-  - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
   - destruct x as [[[[[[? ?] ?] ?] ?] ?] ?].
     destruct x' as [[[[[[? ?] ?] ?] ?] ?] ?].
     inversion Hab as [[Ha Hb]]. clear FIX. simpl. by subst.
@@ -1238,18 +1222,6 @@ Qed.
 Program Definition at_loc_mapₛ {𝔄 𝔄'} (f : 𝔄 →ₛ 𝔄') : ((at_locₛ 𝔄) →ₛ (at_locₛ 𝔄')) := {|
   syn_type_morphism_fn :=       λ (x : ~~ (at_locₛ 𝔄)), match x with (l, v) => (l, (~~!ₛ f) v) : (~~ (at_locₛ 𝔄')) end ;
   syn_type_morphism_proph_fn := λ (x : (at_locₛ 𝔄)), match x with (l, v) => (l, (!ₛ f) v) : ((at_locₛ 𝔄')) end ;
-|}.
-Next Obligation.
-  intros 𝔄 𝔄' f x π. simpl.
-  rewrite syn_type_morphism_commutes. destruct x. done.
-Qed.
-Next Obligation.
-  intros. simpl. rewrite (syn_type_morphism_ξl _ _ f). destruct x; trivial.
-Qed.
-
-Program Definition at_cloc_mapₛ {𝔄 𝔄'} (f : 𝔄 →ₛ 𝔄') : ((at_clocₛ 𝔄) →ₛ (at_clocₛ 𝔄')) := {|
-  syn_type_morphism_fn :=       λ (x : ~~ (at_clocₛ 𝔄)), match x with (l, v) => (l, (~~!ₛ f) v) : (~~ (at_clocₛ 𝔄')) end ;
-  syn_type_morphism_proph_fn := λ (x : (at_clocₛ 𝔄)), match x with (l, v) => (l, (!ₛ f) v) : ((at_clocₛ 𝔄')) end ;
 |}.
 Next Obligation.
   intros 𝔄 𝔄' f x π. simpl.

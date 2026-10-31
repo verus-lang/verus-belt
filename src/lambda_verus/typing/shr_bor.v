@@ -57,17 +57,17 @@ Section shr_bytes.
     iIntros "#Incl #G". iApply (guards_transitive_additive with "Incl G").
   Qed.
 
-  Program Definition shr_bytes {𝔄} (κ: lft) (ty: type 𝔄) : type (at_clocₛ 𝔄) :=
-    @ty_of_st _ _ ((at_clocₛ 𝔄)) ({|
+  Program Definition shr_bytes {𝔄} (κ: lft) (ty: type 𝔄) : type (at_locₛ 𝔄) :=
+    @ty_of_st _ _ ((at_locₛ 𝔄)) ({|
     st_size := 1;
     st_lfts := κ :: ty.(ty_lfts);
     st_E := ty.(ty_E) ++ ty_outlives_E ty κ;
     st_gho x d g tid := [S(d') := d]
-      shr_bytes_own κ (g+1) ty x.1.1 x.2 ∗
+      shr_bytes_own κ (g+1) ty x.1 x.2 ∗
       ty.(ty_shr) κ (snd x) d' g tid ∗
       ▷^(g+1) (ty.(ty_gho_pers) (snd x) d' g tid);
-    st_phys x tid := [FVal (LitV (x.1).1)];
-  |}%I : simple_type (at_clocₛ 𝔄)).
+    st_phys x tid := [FVal (LitV x.1)];
+  |}%I : simple_type (at_locₛ 𝔄)).
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
@@ -129,12 +129,12 @@ Section shr_bytes_rules.
     ↑naN ⊆ E → ty.(ty_val) x = Some v →
     {{{ (&shr{κ} ty).(ty_gho_own) (l, x) (S d) g tid ∗ (G &&{↑NllftG}&&> @[κ]) ∗ G ∗
         £(2*(g+1)) }}}
-      Load Na1Ord ty.(ty_mty) #l.1 @ E
+      Load Na1Ord ty.(ty_mty) #l @ E
     {{{ RET MLitV v; G }}}.
   Proof.
     iIntros (? Hv Φ) "(Own & #Gκ & G & £) HΦ". rewrite /= /by_succ.
     iDestruct "Own" as "(#Pt & _)".
-    iApply (wp_load_na_guarded_gen _ _ _ v G (bytes_own ty l.1 x) (ty_bytes ty x) (g+1)
+    iApply (wp_load_na_guarded_gen _ _ _ v G (bytes_own ty l x) (ty_bytes ty x) (g+1)
       with "[$G $£]"); [done|intros; by eapply ty_bytes_decode| |done].
     iSplit; [iApply (guards_transitive_additive with "Gκ Pt")|]. by iApply bytes_own_view.
   Qed.
@@ -181,7 +181,7 @@ Section shr_bytes_rules.
     iModIntro. iExists -[(l, x); x]. iFrame "Obs".
     iDestruct (ty_gho_own_depth_mono _ d (S d) (S d) (S d) with "Gho") as "[#Gho' _]"; [lia..|].
     iSplitR; [|iSplit; [|done]].
-    - iExists _. iSplit; [done|]. iExists (VPtr l.1), (S d). iSplit; [done|]. iFrame "⧖".
+    - iExists _. iSplit; [done|]. iExists (VPtr l), (S d). iSplit; [done|]. iFrame "⧖".
       rewrite /= /by_succ. iFrame "Pt Shr Pers".
     - iExists _. iSplit; [done|]. iExists v, (S d). by iFrame "⧖ Gho'".
   Qed.

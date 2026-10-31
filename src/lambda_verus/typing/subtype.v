@@ -137,13 +137,13 @@ Section bsubtype.
   (** ** Shared references to bytes *)
 
   Lemma shr_bytes_btype_incl {𝔄 𝔅} κ κ' (f: 𝔄 →ₛ 𝔅) ty ty' :
-    κ' ⊑ κ -∗ btype_incl ty ty' f -∗ btype_incl (&shr{κ} ty) (&shr{κ'} ty') (at_cloc_mapₛ f).
+    κ' ⊑ κ -∗ btype_incl ty ty' f -∗ btype_incl (&shr{κ} ty) (&shr{κ'} ty') (at_loc_mapₛ f).
   Proof.
     iIntros "#Incl ((_ & #Incl2 & #Sub & #SubPers & %Phys & #SubShr) & %Hsz & %Hb)".
     iSplit; last first.
     { iPureIntro. split; [by rewrite !ty_bsize_eq|]. intros [l x] R fbs.
-      rewrite !ty_fbytes_syn !syn_fbytes_nocell; [|exact I..]. by setoid_rewrite syn_bytes_at_cloc. }
-    iApply (@type_incl_simple_type Σ _ (at_clocₛ 𝔄) (at_clocₛ 𝔅) _ _).
+      rewrite !ty_fbytes_syn !syn_fbytes_nocell; [|exact I..]. by setoid_rewrite syn_bytes_at_loc. }
+    iApply (@type_incl_simple_type Σ _ (at_locₛ 𝔄) (at_locₛ 𝔅) _ _).
     - done.
     - unfold ty_lfts, ty_of_st, st_lfts. by iApply lft_intersect_mono.
     - iModIntro. iIntros (x d g tid) "A". destruct x as [l x].
@@ -160,7 +160,7 @@ Section bsubtype.
 
   Lemma shr_bytes_bsubtype {𝔄 𝔅} E L κ κ' (f: 𝔄 →ₛ 𝔅) ty ty' :
     lctx_lft_incl E L κ' κ → bsubtype E L ty ty' f →
-    bsubtype E L (&shr{κ} ty) (&shr{κ'} ty') (at_cloc_mapₛ f).
+    bsubtype E L (&shr{κ} ty) (&shr{κ'} ty') (at_loc_mapₛ f).
   Proof.
     move=> In Sub. iIntros "L". iDestruct (In with "L") as "#In".
     iDestruct (Sub with "L") as "#Sub". iIntros "!> #E".
@@ -257,7 +257,7 @@ Section bsubtype.
       (T: tctx 𝔄l) p E L :
     lctx_lft_incl E L κ' κ → bsubtype E L ty ty' f →
     tctx_incl E L (p ◁ᵥ &shr{κ} ty +:: T) (p ◁ᵥ &shr{κ'} ty' +:: T)
-      (λ post '(a -:: al), post (at_cloc_mapₛ f ~~$ₛ a -:: al)).
+      (λ post '(a -:: al), post (at_loc_mapₛ f ~~$ₛ a -:: al)).
   Proof.
     intros. apply tctx_bsubtype_val; [by apply shr_bytes_bsubtype|]. by intros [??].
   Qed.

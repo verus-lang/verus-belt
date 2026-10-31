@@ -48,7 +48,7 @@ Section vplace.
     match x with ((l, x₀), ζm) =>
       ∃ D d g, ⧖D ∗ ⧗(lty_nrc lt 0 0) ∗ ⌜v = MLitV (VPtr l)⌝ ∗ ⌜S d ≤ D ∧ g ≤ D⌝ ∗
         freeable_sz n (lty_size lt) l ∗
-        ltype_own (Owned 1) lt (lty_rfn lt x₀ ζm []) d g tid (l, repeat [] (lty_size lt))
+        ltype_own (Owned 1) lt (lty_rfn lt x₀ ζm []) d g tid l
     end%I.
 
   Definition vplace_own {𝔄} (lt: lty 𝔄) : ~~ (vplaceₛ 𝔄) → thread_id → val → iProp Σ :=

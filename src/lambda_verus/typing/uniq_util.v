@@ -187,15 +187,15 @@ Section uniq_util.
   Qed.
 
   Definition cpd_body {𝔄} (κ α: lft)
-      (node: lpat → prfn 𝔄 → nat → nat → thread_id → cloc → iProp Σ)
-      (tid: thread_id) (l: cloc)
+      (node: lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ)
+      (tid: thread_id) (l: loc)
       (c: ~~ (uniq_cellₛ 𝔄)) (wπ: proph (uniq_cellₛ 𝔄)) : iProp Σ :=
     ∃ (p: lpat) (r: prfn 𝔄), pat_ok κ p ∗ ⌜∀ π, (wπ π).1 = prfn_den r π⌝ ∗
       ghost_var (cell_γ c) (1/2) (lstate p r) ∗
       guarded_upd lazyE @[α] (⧖(S (cell_d c) `max` cell_g c) ∗
         node p r (cell_d c) (cell_g c) tid l).
 
-  Lemma cpd_body_cell {𝔄} κ α (node: lpat → prfn 𝔄 → nat → nat → thread_id → cloc → iProp Σ)
+  Lemma cpd_body_cell {𝔄} κ α (node: lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ)
       tid l (x: ~~𝔄) d g γ wπ :
     cpd_body κ α node tid l (uniq_cell x d g γ) wπ ⊣⊢
     ∃ p r, pat_ok κ p ∗ ⌜∀ π, (wπ π).1 = prfn_den r π⌝ ∗
@@ -240,7 +240,7 @@ Global Typeclasses Opaque uniq_pat_lft.
 
 (** The components of the value of a unique borrow. *)
 Section uniq_bor_val_parts.
-  Definition uniq_bor_loc {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : cloc :=
+  Definition uniq_bor_loc {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : loc :=
       match m with (l, x0, ξi, d', g', idx) => l end.
   
   Definition uniq_bor_current {𝔄} (m: ~~ (uniq_borₛ 𝔄)) : ~~ 𝔄 :=
@@ -255,17 +255,16 @@ End uniq_bor_val_parts.
 (** * Unique borrows of bytes (stage 4 of the MiniRust memory model)
 
 The leaves own bytes: the points-to of a leaf [OfTy ty] at [l] with value [x] is
-[cbytes ty x l] (bytes at [l.1] that represent [x], [bytes_own]: fancy bytes, which may
+[cbytes ty x l] (bytes at [l] that represent [x], [bytes_own]: fancy bytes, which may
 contain cells). The generic parts above (the encoding of depths, [uniq_cell], [lazyE],
 [place_rfn_rel], [pat_ok], [cpd_body], [uniq_tokγ], [uniq_pat_lft], [basically_dead]) are
-shared with the legacy word-level version (deleted in stage 5). The locations are still
-[cloc]s; their cells are always empty for bytes. *)
+shared with the legacy word-level version (deleted in stage 5). *)
 
 Section uniq_util_bytes.
   Context `{!typeG Σ}.
 
   (** The bytes at the location [l] represent [x]. *)
-  Definition cbytes {𝔄} (ty: type 𝔄) (x: ~~𝔄) (l: cloc) : iProp Σ := bytes_own ty l.1 x.
+  Definition cbytes {𝔄} (ty: type 𝔄) (x: ~~𝔄) (l: loc) : iProp Σ := bytes_own ty l x.
 
   Global Instance cbytes_timeless {𝔄} (ty: type 𝔄) x l : Timeless (cbytes ty x l).
   Proof. apply _. Qed.
@@ -275,17 +274,17 @@ Section uniq_util_bytes.
 
   (** The reduction lemma: for a type without cells, the bytes of a leaf are plain. *)
   Lemma cbytes_nocell {𝔄} `{!NoCell 𝔄} (ty: type 𝔄) x l :
-    cbytes ty x l ⊣⊢ ∃ bs, l.1 ↦b bs ∗ ⌜ty_bytes ty x bs⌝.
+    cbytes ty x l ⊣⊢ ∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝.
   Proof. apply bytes_own_nocell. Qed.
 
   (** The bytes of a pair: those of its components, one after the other. *)
   Lemma cbytes_pair {𝔄 𝔅} (ty: type (𝔄 * 𝔅)) (ty1: type 𝔄) (ty2: type 𝔅) x1 x2 l :
     cbytes ty (x1, x2) l ⊣⊢
-    cbytes ty1 x1 (cloc_take l (ty_bsize ty1)) ∗ cbytes ty2 x2 (cloc_skip l (ty_bsize ty1)).
+    cbytes ty1 x1 l ∗ cbytes ty2 x2 (l +ₗ ty_bsize ty1).
   Proof. rewrite /cbytes /=. apply bytes_own_pair. Qed.
 
   (** The bytes of a pointer. *)
-  Definition ptr_cell (l: cloc) (l': loc) : iProp Σ := ∃ bs, l.1 ↦b bs ∗ ⌜ptr_bytes l' bs⌝.
+  Definition ptr_cell (l: loc) (l': loc) : iProp Σ := ∃ bs, l ↦b bs ∗ ⌜ptr_bytes l' bs⌝.
 
   Global Instance ptr_cell_timeless l l' : Timeless (ptr_cell l l').
   Proof. apply _. Qed.
@@ -296,14 +295,8 @@ Section uniq_util_bytes.
       setoid_rewrite syn_bytes_at_loc.
   Qed.
 
-  Lemma cbytes_at_cloc {𝔄} (ty: type (at_clocₛ 𝔄)) x l : cbytes ty x l ⊣⊢ ptr_cell l x.1.1.
-  Proof.
-    rewrite /cbytes bytes_own_nocell /ptr_cell. by setoid_rewrite ty_bytes_syn;
-      setoid_rewrite syn_bytes_at_cloc.
-  Qed.
-
   Lemma cbytes_uniq_bor {𝔄} (ty: type (uniq_borₛ 𝔄)) l' x ξi d g idx l :
-    cbytes ty (l', x, ξi, d, g, idx) l ⊣⊢ ptr_cell l l'.1.
+    cbytes ty (l', x, ξi, d, g, idx) l ⊣⊢ ptr_cell l l'.
   Proof.
     rewrite /cbytes bytes_own_nocell /ptr_cell. by setoid_rewrite ty_bytes_syn;
       setoid_rewrite syn_bytes_uniq_bor.
@@ -323,17 +316,17 @@ Section uniq_util_bytes.
     [ltype_owned_unblock_fold] in [typing/ltype.v]). For [m = 0], this is the usual
     receipt [⧖(S d' `max` g')]. *)
   Definition ofty_owned {𝔄} (m: nat) (ty: type 𝔄) (x: ~~𝔄) (d g: nat)
-      (tid: thread_id) (l: cloc) : iProp Σ :=
+      (tid: thread_id) (l: loc) : iProp Σ :=
     cbytes ty x l ∗ ▷^m ty.(ty_gho_own) x d g tid.
 
   Definition blocked_owned {𝔄} (m: nat) (ty: type 𝔄) (α: lft) (lr: place_rfn 𝔄)
-      (tid: thread_id) (l: cloc) : iProp Σ :=
+      (tid: thread_id) (l: loc) : iProp Σ :=
     [†α] ={lazyE}=∗ guarded_upd lazyE @[ty_lft ty]
       (∃ x d' g', place_rfn_rel lr x ∗ ⧖((m + S d') `max` g') ∗ ofty_owned m ty x d' g' tid l).
 
   (** [c] selects the core interpretation, in which blocked leaves are unblocked. *)
   Definition leaf_owned {𝔄} (c: bool) (m: nat) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
-      (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
+      (d g: nat) (tid: thread_id) (l: loc) : iProp Σ :=
     match r with
     | inr _ => False
     | inl lr =>
@@ -372,7 +365,7 @@ Section uniq_util_bytes.
       leaf at a state with a structured refinement (written by an unfolded compound
       place, see [typing/ltype.v]) is blocked at [κp]. *)
   Definition leaf_node {𝔄} (κp: lft) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
-      (d g: nat) (tid: thread_id) (l: cloc) : iProp Σ :=
+      (d g: nat) (tid: thread_id) (l: loc) : iProp Σ :=
     leaf_owned false 0 ty (norm_pat κp p r) (inl (prfn_place r)) d g tid l.
 
   Lemma leaf_node_inl {𝔄} κp (ty: type 𝔄) p lr d g tid l :
@@ -397,7 +390,7 @@ Section uniq_util_bytes.
 
   (** ** The payload *)
 
-  Definition uniq_payload {𝔄} (ty: type 𝔄) (tid: thread_id) (l: cloc)
+  Definition uniq_payload {𝔄} (ty: type 𝔄) (tid: thread_id) (l: loc)
       (x: ~~𝔄) (d g: nat) : iProp Σ :=
     guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗
       ty.(ty_gho_own) x d g tid ∗ cbytes ty x l).
@@ -463,25 +456,25 @@ Section uniq_util_bytes.
   (** ** Bodies of unique borrows *)
 
   (** The body: the pinned body with the leaf [OfTy ty] as core. *)
-  Definition uniq_gbody {𝔄} (κp: lft) (ty: type 𝔄) (tid: thread_id) (l: cloc)
+  Definition uniq_gbody {𝔄} (κp: lft) (ty: type 𝔄) (tid: thread_id) (l: loc)
       (c: ~~ (uniq_cellₛ 𝔄)) (wπ: proph (uniq_cellₛ 𝔄)) : iProp Σ :=
     cpd_body κp (ty_lft ty) (leaf_node κp ty) tid l c wπ.
 
   (** The persistent part of a unique borrow. *)
   Definition uniq_persγ {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (idx: Idx)
-      (κ κp: lft) (tid: thread_id) (l: cloc) : iProp Σ :=
+      (κ κp: lft) (tid: thread_id) (l: loc) : iProp Σ :=
     proph_idx_bor_gen κ (uniq_prvar x ξi) idx (uniq_gbody κp ty tid l).
 
   Definition uniq_bodyγ {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d g: nat) (idx: Idx)
-      (κ κp: lft) (γ: gname) (tid: thread_id) (l: cloc) : iProp Σ :=
+      (κ κp: lft) (γ: gname) (tid: thread_id) (l: loc) : iProp Σ :=
     uniq_tokγ x ξi d g idx γ ∗ ⧗1 ∗ uniq_persγ ty x ξi idx κ κp tid l.
 
   Definition uniq_body {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx)
-      (κ: lft) (tid: thread_id) (l: cloc) : iProp Σ :=
+      (κ: lft) (tid: thread_id) (l: loc) : iProp Σ :=
     ∃ κp γ, uniq_pat_lft κ κp ∗ uniq_bodyγ ty x ξi d g idx κ κp γ tid l.
 
   Definition uniq_body_pers_component {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx)
-      (κ: lft) (tid: thread_id) (l: cloc) : iProp Σ :=
+      (κ: lft) (tid: thread_id) (l: loc) : iProp Σ :=
     ∃ κp, uniq_pat_lft κ κp ∗ uniq_persγ ty x ξi idx κ κp tid l.
 
   Global Instance uniq_persγ_persistent {𝔄} (ty: type 𝔄) x ξi idx κ κp tid l :
@@ -505,7 +498,7 @@ Section uniq_util_bytes.
     uniq_body ty x ξi d g idx κ tid l.
   Proof. iIntros "? ? ? ?". iExists κp, γ. iFrame. Qed.
 
-  Lemma uniq_body_pers_component_impl {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx) (κ: lft) (tid: thread_id) (l: cloc)
+  Lemma uniq_body_pers_component_impl {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d: nat) (g: nat) (idx: Idx) (κ: lft) (tid: thread_id) (l: loc)
     : uniq_body ty x ξi d g idx κ tid l -∗ uniq_body_pers_component ty x ξi d g idx κ tid l.
   Proof. iIntros "(%κp & %γ & ? & _ & _ & ?)". iExists κp. iFrame. Qed.
 
@@ -870,7 +863,7 @@ Section uniq_util_bytes.
     iModIntro. iExists κp, γ. iFrame "∗#".
   Qed.
 
-  Lemma uniq_body_mono_upd {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d g d' g': nat) (idx: Idx) (κ: lft) (tid: thread_id) (l: cloc) E G :
+  Lemma uniq_body_mono_upd {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (d g d' g': nat) (idx: Idx) (κ: lft) (tid: thread_id) (l: loc) E G :
     Timeless G →
     ↑Nllft ∪ ↑uniqN ⊆ E →
     d ≤ d' →
@@ -941,7 +934,7 @@ Section uniq_util_bytes.
   (** What the lender of a unique borrow gets back: the controller and the body, at
       some state. *)
   Definition uniq_lender {𝔄} (κp: lft) (ty: type 𝔄) (x₀: ~~𝔄) (ξi: positive)
-      (tid: thread_id) (l: cloc) : iProp Σ :=
+      (tid: thread_id) (l: loc) : iProp Σ :=
     ∃ c wπ, .PC[uniq_prvar x₀ ξi] c wπ ∗ uniq_gbody κp ty tid l c wπ.
 
   (** Once [κp] has ended, the lender can settle what it got back, with a guard for
@@ -968,7 +961,7 @@ Section uniq_util_bytes.
 
   Lemma alloc_uniq_body
       {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (d: nat) (g: nat)
-      (κ: lft) (tid: thread_id) (l: cloc) E
+      (κ: lft) (tid: thread_id) (l: loc) E
    :
     (↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E) →
     ⊢ llft_ctx -∗
@@ -980,9 +973,9 @@ Section uniq_util_bytes.
       ={E}=∗
       ∃ ξi ζi idx,
         let ξ := uniq_prvar x ξi in
-        let ζ := PrVar (at_locₛ 𝔄 ↾ prval_to_inh (@vπ (at_locₛ 𝔄) (l.1, x))) ζi in
+        let ζ := PrVar (at_locₛ 𝔄 ↾ prval_to_inh (@vπ (at_locₛ 𝔄) (l, x))) ζi in
         uniq_body ty x ξi d g idx κ tid l ∗
-        ⟨π, π ζ = (l.1, (π ξ).1)⟩ ∗
+        ⟨π, π ζ = (l, (π ξ).1)⟩ ∗
         ([†κ] ={↑Nllft}=∗ ▷ uniq_lender κ ty x ξi tid l).
   Proof.
     intros Hmask. iIntros "#LFT #PROPH #UNIQ #⧖ gho pt ⧗".
@@ -990,14 +983,14 @@ Section uniq_util_bytes.
     iMod (proph_loan_intro (uniq_cell_tyi x) E (uniq_cell x d g γ) with "PROPH UNIQ")
       as (ξi) "Loan"; [set_solver|].
     set ξ := uniq_prvar x ξi.
-    set ζ𝔄i := (at_locₛ 𝔄 ↾ prval_to_inh (@vπ (at_locₛ 𝔄) (l.1, x))).
+    set ζ𝔄i := (at_locₛ 𝔄 ↾ prval_to_inh (@vπ (at_locₛ 𝔄) (l, x))).
     iMod (proph_intro ζ𝔄i ∅ with "PROPH") as (ζi) "[_ ζtok]"; [set_solver|].
     set ζ := PrVar ζ𝔄i ζi.
     iDestruct (proph_loan_tok with "Loan") as "[ξtok ToLoan]".
-    iMod (proph_resolve_toks _ ζ (λ π, (l.1, (π ξ).1)) [ξ] with "PROPH ζtok [ξtok]")
+    iMod (proph_resolve_toks _ ζ (λ π, (l, (π ξ).1)) [ξ] with "PROPH ζtok [ξtok]")
       as "[ζObs ξtok]".
     { set_solver. }
-    { apply (proph_dep_constr (λ a, (l.1, a.1)) (λ π, π ξ)). apply proph_dep_one. }
+    { apply (proph_dep_constr (λ a, (l, a.1)) (λ π, π ξ)). apply proph_dep_one. }
     { rewrite big_sepL_singleton. iFrame "ξtok". }
     rewrite big_sepL_singleton.
     iDestruct ("ToLoan" with "ξtok") as "Loan".
@@ -1407,7 +1400,7 @@ Section uniq_util_bytes.
       with the outer half of the ghost variable (at that state) and the reborrow's
       controller. It is settled with [uniq_restored_settle]. *)
   Definition uniq_restored {𝔄} (ty: type 𝔄) (x₀: ~~𝔄) (ξi ζi: positive) (κ κ': lft)
-      (tid: thread_id) (l: cloc) : iProp Σ :=
+      (tid: thread_id) (l: loc) : iProp Σ :=
     ∃ κp γ γk c wπ idx p (lr: place_rfn 𝔄), κ ⊑ κp ∗
       proph_bor_tok (uniq_prvar x₀ ξi) (uniq_cell c.1 (cell_d c) (cell_g c) γ) idx ∗ ⧗1 ∗
       uniq_persγ ty x₀ ξi idx κ κp tid l ∗

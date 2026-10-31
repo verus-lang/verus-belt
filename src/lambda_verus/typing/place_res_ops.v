@@ -203,7 +203,7 @@ Section read.
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set y := pctx_get K x₀.
     set q0 := pctx_path K [].
-    set lr := (l, repeat [] (lty_size (pctx_plug K lt1))).
+    set lr := l.
     set lK := pctx_loc K (lty_size lt1) x₀ lr.
     destruct y as [[[[[ly z] ξi] d0] g0] idx0] eqn:Hy.
     rewrite /= /res_node /=. iDestruct "H" as "[Pt N]".
@@ -371,7 +371,7 @@ Section unblock.
     iDestruct (pctx_own_in with "Rest") as %HinK.
     set y := pctx_get K x₀.
     set q0 := pctx_path K [].
-    set lr := (l, repeat [] (lty_size (pctx_plug K lt1))).
+    set lr := l.
     destruct y as [[[[[ly z] ξi] d0] g0] idx0] eqn:Hy.
     rewrite /= /res_node /=. iDestruct "H" as "[Pt N]".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗a ⧖0") as "[_ £]";
@@ -632,7 +632,7 @@ Section share_fold.
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set y := pctx_get K x₀.
     set q0 := pctx_path K [].
-    set lr := (l, repeat [] (lty_size (pctx_plug K lt1))).
+    set lr := l.
     set lK := pctx_loc K (lty_size lt1) x₀ lr.
     destruct y as [[[[[ly z] ξi] d0] g0] idx0] eqn:Hy.
     rewrite /= /res_node /=. iDestruct "H" as "[Pt N]".
@@ -695,10 +695,10 @@ Section share_fold.
       `{!PctxNoUniq K} κ (ty: type 𝔅) :
     pctx_nosum K →
     tctx_incl E L +[p ◁ₗown{n} pctx_plug K (ResUniqLty (OfTy ty) κ)]
-      +[p ◁ₗown{n} pctx_plug (pctx_retype K (at_clocₛ 𝔅)) (ShrLty (OfTy ty) κ)]
+      +[p ◁ₗown{n} pctx_plug (pctx_retype K (at_locₛ 𝔅)) (ShrLty (OfTy ty) κ)]
       (λ post '-[x], post -[((x.1.1, pctx_reset K x.1.2
         ((uniq_bor_loc (pctx_get K x.1.2), uniq_bor_current (pctx_get K x.1.2))
-          : ~~ (at_clocₛ 𝔅))), x.2)]).
+          : ~~ (at_locₛ 𝔅))), x.2)]).
   Proof.
     intros Hns. split; [by intros ??? [? []]|].
     iIntros (G tid [[[l x₀] ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
@@ -706,7 +706,7 @@ Section share_fold.
     rewrite /ltype_own !lty_pat_plug !lty_rfn_plug !ltype_own_plug.
     iDestruct "Own" as "[H Rest]".
     set y := pctx_get K x₀.
-    set y' := ((uniq_bor_loc y, uniq_bor_current y) : ~~ (at_clocₛ 𝔅)).
+    set y' := ((uniq_bor_loc y, uniq_bor_current y) : ~~ (at_locₛ 𝔅)).
     iModIntro. iExists -[((l, pctx_reset K x₀ y'), ζm)]. iFrame "Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
     rewrite (lty_nrc_plug_retype K (ResUniqLty (OfTy ty) κ) (ShrLty (OfTy ty) κ)) //.
@@ -718,7 +718,7 @@ Section share_fold.
     destruct y as [[[[[l' x0] ξi] d0] g0] idx0] eqn:Hy.
     rewrite /= /res_node /leaf_owned_s /leaf_owned /ofty_owned /=.
     iDestruct "H" as "[Pt H]". iSplit; [|done]. iExists (l', x0). iSplit; [done|].
-    rewrite cbytes_at_cloc. iFrame "Pt". iNext.
+    rewrite cbytes_at_loc. iFrame "Pt". iNext.
     iDestruct "H" as "(_ & %d' & %g' & %Hle' & %x' & -> & #Gpt & #Shr & #Pers)".
     destruct (pctx_depth K d) as [|dK] eqn:HdK; [lia|]. simpl. iSplit.
     - iApply (lguards_weaken_later with "Gpt"). lia.

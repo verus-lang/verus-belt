@@ -26,7 +26,7 @@ Section bfn_examples.
       return: ["v"].
 
   Definition get_snd_f_spec :
-      fn_spec [at_clocₛ (at_clocₛ (intₛ i32 * intₛ i32))] (intₛ i32) () :=
+      fn_spec [at_locₛ (at_locₛ (intₛ i32 * intₛ i32))] (intₛ i32) () :=
     λ _ post '-[(_, (_, (_, z2)))], λ mask π, post z2 mask π.
 
   Lemma get_snd_f_type :
@@ -35,7 +35,7 @@ Section bfn_examples.
       (get_snd_f, ()).
   Proof.
     unfold get_snd_f. unlock.
-    opose proof (@type_fn _ _ _ [at_clocₛ (at_clocₛ (intₛ i32 * intₛ i32))] (intₛ i32) () ()
+    opose proof (@type_fn _ _ _ [at_locₛ (at_locₛ (intₛ i32 * intₛ i32))] (intₛ i32) () ()
       (λ '(α, β), FP ∅ +[&shr{α} (&shr{β} (i32t * i32t))]%T i32t%T AtomicClosed)
       get_snd_f_spec _ [BNamed "x"] _ _ _) as H.
     unlock in H. apply H. clear H.
@@ -79,11 +79,11 @@ Section bfn_examples.
       return: ["r"].
 
   Definition first_ref_f_spec :
-      fn_spec [uniq_borₛ (at_clocₛ (intₛ i32 * intₛ i32))] (at_clocₛ (intₛ i32)) () :=
-    λ _ post '-[m], λ mask π, ∀ r: ~~ (at_clocₛ (intₛ i32)),
-      r.2 = (uniq_bor_current (𝔄:=at_clocₛ (intₛ i32 * intₛ i32)) m).2.1 →
-      uniq_bor_future (𝔄:=at_clocₛ (intₛ i32 * intₛ i32)) m π =
-        vπ (uniq_bor_current (𝔄:=at_clocₛ (intₛ i32 * intₛ i32)) m) π →
+      fn_spec [uniq_borₛ (at_locₛ (intₛ i32 * intₛ i32))] (at_locₛ (intₛ i32)) () :=
+    λ _ post '-[m], λ mask π, ∀ r: ~~ (at_locₛ (intₛ i32)),
+      r.2 = (uniq_bor_current (𝔄:=at_locₛ (intₛ i32 * intₛ i32)) m).2.1 →
+      uniq_bor_future (𝔄:=at_locₛ (intₛ i32 * intₛ i32)) m π =
+        vπ (uniq_bor_current (𝔄:=at_locₛ (intₛ i32 * intₛ i32)) m) π →
       post r mask π.
 
   Lemma first_ref_f_type :
@@ -92,8 +92,8 @@ Section bfn_examples.
       (first_ref_f, ()).
   Proof.
     unfold first_ref_f. unlock.
-    opose proof (@type_fn _ _ _ [uniq_borₛ (at_clocₛ (intₛ i32 * intₛ i32))]
-      (at_clocₛ (intₛ i32)) () ()
+    opose proof (@type_fn _ _ _ [uniq_borₛ (at_locₛ (intₛ i32 * intₛ i32))]
+      (at_locₛ (intₛ i32)) () ()
       (λ '(α, β), FP ∅ +[&uniq{α} (&shr{β} (i32t * i32t))]%T (&shr{β} i32t)%T AtomicClosed)
       first_ref_f_spec _ [BNamed "x"] _ _ _) as H.
     unlock in H. apply H. clear H.

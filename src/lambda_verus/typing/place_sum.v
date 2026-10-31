@@ -100,7 +100,7 @@ Section typing.
     destruct (to_xsum s) as [j a] eqn:Hj.
     have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
     subst s.
-    set lr := (l, repeat [] (lty_size (pctx_plug K (OfTy (Σ! tyl))))).
+    set lr := l.
     set lK := pctx_loc K (lty_size (OfTy (Σ! tyl))) x₀ lr.
     (* The address of the hole. *)
     wp_bind (pctx_expr K (ToLit p)).

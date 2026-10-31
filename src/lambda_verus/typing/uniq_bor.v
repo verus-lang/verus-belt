@@ -62,7 +62,7 @@ Section uniq_bytes.
     ty_phys (x : ~~ (uniq_borₛ 𝔄)) tid :=
       match x with
         (l, x0, ξi, d', g', idx) =>
-            [FVal (LitV l.1)]
+            [FVal (LitV l)]
       end;
     
     (* The sharing predicate is structural: sharing [&uniq{κ} ty] at κ0 gives shared
@@ -308,7 +308,7 @@ Section typing.
   Proof. 
     iIntros (x d g tid) "A".
     destruct x as [[[[[l x0] ξi] d'] g'] idx].
-    iExists (l.1). done.
+    iExists (l). done.
   Qed.
 
   Lemma uniq_resolve {𝔄} E L κ (ty: type 𝔄) :

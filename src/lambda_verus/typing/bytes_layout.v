@@ -55,12 +55,8 @@ Lemma syn_bytes_at_loc {𝔄} (x: ~~ (at_locₛ 𝔄)) bs :
   syn_bytes x bs ↔ decode_value MPtr bs = Some (VPtr x.1).
 Proof. rewrite /syn_bytes /=. split; [by intros (v & [= <-] & ?)|]. eauto. Qed.
 
-Lemma syn_bytes_at_cloc {𝔄} (x: ~~ (at_clocₛ 𝔄)) bs :
-  syn_bytes x bs ↔ decode_value MPtr bs = Some (VPtr x.1.1).
-Proof. rewrite /syn_bytes /=. split; [by intros (v & [= <-] & ?)|]. eauto. Qed.
-
-Lemma syn_bytes_uniq_bor {𝔄} (l: cloc) x ξi d g idx bs :
-  syn_bytes (𝔄:=uniq_borₛ 𝔄) (l, x, ξi, d, g, idx) bs ↔ decode_value MPtr bs = Some (VPtr l.1).
+Lemma syn_bytes_uniq_bor {𝔄} (l: loc) x ξi d g idx bs :
+  syn_bytes (𝔄:=uniq_borₛ 𝔄) (l, x, ξi, d, g, idx) bs ↔ decode_value MPtr bs = Some (VPtr l).
 Proof. rewrite /syn_bytes /=. split; [by intros (v & [= <-] & ?)|]. eauto. Qed.
 
 (** ** Integers *)

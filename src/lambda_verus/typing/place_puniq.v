@@ -1553,7 +1553,7 @@ Section puniq.
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Share;; OfLit (pctx_expr K (ToLit p)))
       (λ w, +[w ◁ᵥ &shr{pctx_blft K α} ty; p ◁ₗown{n} pctx_plug K (ShrBlocked ty (pctx_blft K α))])
       (λ post '-[x], post -[(pctx_loc K (lty_size (OfTy ty)) x.1.2
-          (x.1.1, repeat [] (lty_size (pctx_plug K (OfTy ty)))), pctx_get K x.1.2); x]).
+          x.1.1, pctx_get K x.1.2); x]).
   Proof.
     intros. eapply typed_instr_tr_impl; [|by apply (type_share_vplace_deep_instr _ _ _ _ _ (POwn n K))].
     intros post [x []] mask π. by rewrite /pctx_vloc /= lty_size_plug.

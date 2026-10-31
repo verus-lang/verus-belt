@@ -186,12 +186,6 @@ Section typing.
 
   (** * Mutable borrow of a leaf *)
 
-  (** Some facts about the location of the hole of an owned place. *)
-  Lemma oplace_loc_empty {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (lt: lty 𝔅) x (l: loc) :
-    ∃ l', pctx_loc K (lty_size lt) x (l, repeat [] (lty_size (pctx_plug K lt))) =
-      (l', repeat [] (lty_size lt)).
-  Proof. rewrite lty_size_plug. apply (pctx_loc_empty K). Qed.
-
   (** A mutable borrow of the leaf at the hole of [K], at a lifetime [α] that the type of
       the leaf outlives. The program computes the address of the leaf ([pctx_expr], a load
       per owned pointer above it). The leaf is blocked until [α] ends, refined by the
@@ -227,7 +221,7 @@ Section typing.
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set k0 := pctx_mode K 0.
     set y := pctx_get K x₀.
-    set lr := (l, repeat [] (lty_size (pctx_plug K (OfTy ty)))).
+    set lr := l.
     set lK := pctx_loc K (lty_size (OfTy ty)) x₀ lr.
     set dh := pctx_depth K d.
     have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
@@ -253,7 +247,7 @@ Section typing.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
     iSplitL "Body".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists (VPtr lK.1), D.
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists (VPtr lK), D.
       iSplit; [done|]. iFrame "⧖". iFrame "Incl Body".
       iPureIntro; lia. }
     iSplit; [|done]. rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|].
@@ -368,7 +362,7 @@ Section typing.
     iDestruct "L1" as (? ->) "[Pt1 #Gho1]".
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set y := pctx_get K x₀.
-    set lr := (l, repeat [] (lty_size (pctx_plug K (OfTy ty)))).
+    set lr := l.
     set lK := pctx_loc K (lty_size (OfTy ty)) x₀ lr.
     set dh := pctx_depth K d.
     have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
@@ -423,7 +417,7 @@ Section typing.
     iDestruct "L1" as (? ->) "[Pt1 Gho1]".
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set y := pctx_get K x₀.
-    set lr := (l, repeat [] (lty_size (pctx_plug K (OfTy ty)))).
+    set lr := l.
     set lK := pctx_loc K (lty_size (OfTy ty)) x₀ lr.
     set dh := pctx_depth K d.
     have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
@@ -494,7 +488,7 @@ Section typing.
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set k0 := pctx_mode K 0.
     set y := pctx_get K x₀.
-    set lr := (l, repeat [] (lty_size (pctx_plug K (OfTy ty)))).
+    set lr := l.
     set lK := pctx_loc K (lty_size (OfTy ty)) x₀ lr.
     set dh := pctx_depth K d.
     have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }

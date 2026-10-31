@@ -85,7 +85,7 @@ Section xprod.
 
   Lemma cbytes_xprod_cons {𝔄 𝔅l} (ty: type 𝔄) (tyl: typel 𝔅l) (y: ~~𝔄) (ys: ~~ (Π! 𝔅l)) l :
     cbytes (Π! (ty +:: tyl)) (y -:: ys) l ⊣⊢
-      cbytes ty y (cloc_take l (ty_bsize ty)) ∗ cbytes (Π! tyl) ys (cloc_skip l (ty_bsize ty)).
+      cbytes ty y l ∗ cbytes (Π! tyl) ys (l +ₗ ty_bsize ty).
   Proof.
     rewrite -(cbytes_pair (ty * Π! tyl) ty (Π! tyl)).
     rewrite /cbytes. apply bytes_own_iff=> R fbs. rewrite !ty_fbytes_syn.

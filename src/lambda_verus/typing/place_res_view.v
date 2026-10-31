@@ -285,7 +285,7 @@ Section share_view.
   Qed.
 
   (** The view of a pointer cell, from a borrow of its bytes. *)
-  Lemma ptr_cell_view E κ (l: cloc) (l': loc) k :
+  Lemma ptr_cell_view E κ (l: loc) (l': loc) k :
     ↑Nllft ⊆ E →
     llft_ctx -∗ &{κ} (ptr_cell l l') ={E}=∗
       @[κ] &&{↑NllftG; k+1}&&> ptr_cell l l'.
@@ -365,7 +365,7 @@ Section unnest.
   (** The body of a compound place in [Uniq] mode, pinned by the ghost variable of the
       state and the token of the owner of the compound place. *)
   Lemma cpd_gbody_pin {𝔄} κp γ γf (ty: type 𝔄)
-      (node: lpat → prfn 𝔄 → nat → nat → thread_id → cloc → iProp Σ) p r x₀ d g tid l :
+      (node: lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ) p r x₀ d g tid l :
     ⊢ □ (∀ wπ, ((ghost_var γ (1/2) (lstate p r) ∗ cpd_tok γf) ∗
         cpd_gbody κp γf ty node tid l (uniq_cell x₀ d g γ) wπ) ↔
       ((⌜∀ π, (wπ π).1 = prfn_den r π⌝ ∗ ghost_var γ (1/2) (lstate p r) ∗ cpd_tok γf) ∗
@@ -495,7 +495,7 @@ Section lty_share_view2.
     iMod (llftl_sep_split with "LFT Bor") as "[Bd Bor]"; [done|].
     iMod (llftl_bor_guarded_pers with "LFT Gκ G Bd") as "[G >%Hd]"; [done|].
     iMod (llftl_sep_split with "LFT Bor") as "[_ Bor]"; [done|].
-    iMod (IH κ (m + 1) x ζm (false :: q) (pred d) g g' tid (l', repeat [] (lty_size lt)) G E
+    iMod (IH κ (m + 1) x ζm (false :: q) (pred d) g g' tid l' G E
       with "LFT PROPH UNIQ Gκ Incl G Bor") as "Upd"; [done..|].
     iModIntro. iApply (step_fupdN_nmono ((m + 1) + 2 * pred d + 3)); [lia|].
     iApply (step_fupdN_wand with "Upd"). iIntros ">[$ V] !>". iFrame "Gp V". by iPureIntro.
@@ -537,7 +537,7 @@ Section lty_share_view2.
     iAssert (κ ⊑ ty_lft (lty_fold lt))%I as "#Incl'".
     { iApply (llftl_incl_trans with "Incl"). iApply lty_lft_sum. }
     iMod (IH κ m y ζm (false :: q) d g g' tid
-      (cloc_take (cloc_skip l (tag_size 𝔄l)) (lty_size lt)) G E
+      (l +ₗ tag_size 𝔄l) G E
       with "LFT PROPH UNIQ Gκ Incl' G Bor") as "Upd"; [done..|].
     iModIntro. iApply (step_fupdN_wand with "Upd"). iIntros ">[$ V] !>".
     rewrite /view_sum /prfn_sum psum_proj_pinj. iFrame "V". iSplit.

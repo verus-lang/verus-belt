@@ -332,7 +332,7 @@ Section RA_bytes.
 
   Local Lemma ra_shr_own tid κ l γ x d :
     ⧖(S d) -∗ (@[κ] &&{↑NllftG; S d + 1}&&> own γ (◯ VraCar VRA x) ∗ ra_inv VRA γ) -∗
-    tctx_elt_interp tid (MLitV (VPtr l.1) ◁ᵥ &shr{κ} raty) (l, (γ, x)).
+    tctx_elt_interp tid (MLitV (VPtr l) ◁ᵥ &shr{κ} raty) (l, (γ, x)).
   Proof.
     iIntros "⧖ #G". rewrite tctx_val_val. iExists (S d). iFrame "⧖". iSplit; [done|].
     rewrite /= /by_succ. iSplit; [iApply shr_bytes_own_zst; [by rewrite /ty_bsize -ty_mty_eq|done]|].

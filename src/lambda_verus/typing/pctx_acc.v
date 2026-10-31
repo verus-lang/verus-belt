@@ -146,18 +146,18 @@ Section pctx_fun.
     end.
 
   (** The pointer cells on the path. *)
-  Fixpoint pctx_ptrs {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) : ~~𝔄 → cloc → iProp Σ :=
-    match K in pctx 𝔅 𝔄 return ~~𝔄 → cloc → iProp Σ with
+  Fixpoint pctx_ptrs {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) : ~~𝔄 → loc → iProp Σ :=
+    match K in pctx 𝔅 𝔄 return ~~𝔄 → loc → iProp Σ with
     | PHole => λ _ _, True
-    | PFst K _ => λ x l, pctx_ptrs K n x.1 (cloc_take l (pctx_size K n))
-    | PSnd lt1 K => λ x l, pctx_ptrs K n x.2 (cloc_skip l (lty_size lt1))
+    | PFst K _ => λ x l, pctx_ptrs K n x.1 l
+    | PSnd lt1 K => λ x l, pctx_ptrs K n x.2 (l +ₗ lty_size lt1)
     | POwn _ K => λ x l, ptr_cell l x.1 ∗
-        pctx_ptrs K n x.2 (x.1, repeat [] (pctx_size K n))
+        pctx_ptrs K n x.2 x.1
     | @PSum _ _ _ 𝔄l _ i w K => λ x l,
-        pctx_ptrs K n (psum_proj_or i x.1 w) (cloc_take (cloc_skip l (tag_size 𝔄l)) (pctx_size K n))
-    | PUniq _ K => λ x l, ptr_cell l (uniq_bor_loc x).1 ∗
+        pctx_ptrs K n (psum_proj_or i x.1 w) (l +ₗ tag_size 𝔄l)
+    | PUniq _ K => λ x l, ptr_cell l (uniq_bor_loc x) ∗
         pctx_ptrs K n (uniq_bor_current x) (uniq_bor_loc x)
-    | PShr _ K => λ x l, ptr_cell l x.1.1 ∗ pctx_ptrs K n x.2 x.1
+    | PShr _ K => λ x l, ptr_cell l x.1 ∗ pctx_ptrs K n x.2 x.1
     end%I.
 
   (** ** Laws *)
@@ -327,20 +327,20 @@ End pctx_fun.
 Section wp_pctx.
   Context `{!typeG Σ}.
 
-  Lemma wp_pctx_ptrs {𝔅 𝔄} E (K: pctx 𝔅 𝔄) n (G: iProp Σ) x (l: cloc) (e: expr) (R: iProp Σ) :
-    WP e @ E {{ v, ⌜v = #(l.1)⌝ ∗ R ∗ G }} -∗ pctx_ptrs K n x l -∗
-    WP pctx_expr K e @ E {{ v, ⌜v = #(pctx_loc K n x l).1⌝ ∗ R ∗ G ∗ pctx_ptrs K n x l }}.
+  Lemma wp_pctx_ptrs {𝔅 𝔄} E (K: pctx 𝔅 𝔄) n (G: iProp Σ) x (l: loc) (e: expr) (R: iProp Σ) :
+    WP e @ E {{ v, ⌜v = #(l)⌝ ∗ R ∗ G }} -∗ pctx_ptrs K n x l -∗
+    WP pctx_expr K e @ E {{ v, ⌜v = #(pctx_loc K n x l)⌝ ∗ R ∗ G ∗ pctx_ptrs K n x l }}.
   Proof.
     induction K in x, l, e, R |- *; simpl.
     - iIntros "WP $". iApply (wp_wand with "WP"). iIntros (v) "($ & $ & $)".
-    - iIntros "WP Ptrs". iApply (IHK x.1 (cloc_take l (pctx_size K n)) with "WP Ptrs").
+    - iIntros "WP Ptrs". iApply (IHK x.1 l with "WP Ptrs").
     - iIntros "WP Ptrs".
-      iApply (IHK x.2 (cloc_skip l (lty_size lt1)) _ R with "[WP] Ptrs").
+      iApply (IHK x.2 (l +ₗ lty_size lt1) _ R with "[WP] Ptrs").
       wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
       iFrame. done.
     - iIntros "WP (Pt & Ptrs)".
       iApply (wp_wand with "[- ]").
-      { iApply (IHK x.2 (x.1, repeat [] (pctx_size K n)) _
+      { iApply (IHK x.2 x.1 _
           (R ∗ ptr_cell l x.1)%I with "[WP Pt] Ptrs").
         wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
         iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
@@ -348,14 +348,14 @@ Section wp_pctx.
         iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
       iIntros (v) "($ & [$ $] & $ & $)".
     - iIntros "WP Ptrs".
-      iApply (IHK (psum_proj_or i x.1 w) (cloc_take (cloc_skip l (tag_size 𝔄l)) (pctx_size K n)) _ R
+      iApply (IHK (psum_proj_or i x.1 w) (l +ₗ tag_size 𝔄l) _ R
         with "[WP] Ptrs").
       wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
       iFrame. done.
     - iIntros "WP (Pt & Ptrs)".
       iApply (wp_wand with "[- ]").
       { iApply (IHK (uniq_bor_current x) (uniq_bor_loc x) _
-          (R ∗ ptr_cell l (uniq_bor_loc x).1)%I with "[WP Pt] Ptrs").
+          (R ∗ ptr_cell l (uniq_bor_loc x))%I with "[WP Pt] Ptrs").
         wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
         iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
         iApply (wp_load_na with "Hbs"); [exact Hbs|].
@@ -363,7 +363,7 @@ Section wp_pctx.
       iIntros (v) "($ & [$ $] & $ & $)".
     - iIntros "WP (Pt & Ptrs)".
       iApply (wp_wand with "[- ]").
-      { iApply (IHK x.2 x.1 _ (R ∗ ptr_cell l x.1.1)%I with "[WP Pt] Ptrs").
+      { iApply (IHK x.2 x.1 _ (R ∗ ptr_cell l x.1)%I with "[WP Pt] Ptrs").
         wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
         iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
         iApply (wp_load_na with "Hbs"); [exact Hbs|].
@@ -379,14 +379,14 @@ Section cpd_gen.
 
   (** As [cpd_rebody_ext], with the new node chosen by the closer. *)
   Lemma cpd_rebody_gen {𝔄} κ ξi (ty: type 𝔄) p
-      (node: lpat → prfn 𝔄 → nat → nat → thread_id → cloc → iProp Σ)
+      (node: lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ)
       (r: prfn 𝔄) d g tid l E G :
     Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
     cpd_own κ ξi ty p node r d g tid l ={E}=∗ ∃ κp,
       uniq_pat_lft κ κp ∗ ▷ pat_ok κp p ∗
       ▷ guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗ node p r d g tid l) ∗
-      (∀ (node': lpat → prfn 𝔄 → nat → nat → thread_id → cloc → iProp Σ)
+      (∀ (node': lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ)
          p' (r': prfn 𝔄) d' g' ζl' q (R: iProp Σ),
          ⌜∀ ζl, prfn_rsv r ζl → prfn_rsv r' (ζl ++ ζl')⌝ -∗
          □ (∀ p2 r2 d2 g2, pat_ok κp p2 -∗ ⧖(S d2 `max` g2) -∗ node' p2 r2 d2 g2 tid l -∗
@@ -431,7 +431,7 @@ Section pctx_acc.
 
   (** The closer of an access to the hole of [K] (see the head of the file). *)
   Definition pctx_closer {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (m: nat) (r: prfn 𝔅) (x: ~~𝔄)
-      (ζm: blk_map) (q: lpath) (d g: nat) (tid: thread_id) (l: cloc) (E: coPset)
+      (ζm: blk_map) (q: lpath) (d g: nat) (tid: thread_id) (l: loc) (E: coPset)
       (G G': iProp Σ) : iProp Σ :=
     ∀ (lt': lty 𝔅) p' r' dh' gh' dn gn ζl' (qq: Qp) (R: iProp Σ),
       ⌜lty_simple lt'⌝ -∗ ⌜lty_fold lt' = lty_fold lt⌝ -∗ ⌜lty_size lt' = lty_size lt⌝ -∗
@@ -446,7 +446,7 @@ Section pctx_acc.
 
   (** The result of an access. *)
   Definition pctx_acc_res {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (m: nat) (p: lpat) (r: prfn 𝔅)
-      (x: ~~𝔄) (ζm: blk_map) (q: lpath) (d g: nat) (tid: thread_id) (l: cloc) (E: coPset)
+      (x: ~~𝔄) (ζm: blk_map) (q: lpath) (d g: nat) (tid: thread_id) (l: loc) (E: coPset)
       (G: iProp Σ) : iProp Σ :=
     ∃ (G': iProp Σ) dh gh, ⌜Timeless G'⌝ ∗ G' ∗ (G' &&{↑NllftG}&&> G) ∗
       ⌜dh + pctx_dlev K ≤ d ∧ gh ≤ g ∧ pctx_in K x⌝ ∗
@@ -638,7 +638,7 @@ Section vroot.
     match lt in lty 𝔄 return prfn 𝔄 → nat → thread_id → val → iProp Σ with
     | OwnPtrLty n lt' => λ r D tid v, match r with
         | inr (l, r') => ∃ d g, ⌜v = MLitV (VPtr l)⌝ ∗ ⌜S d ≤ D ∧ g ≤ D⌝ ∗ freeable_sz n (lty_size lt') l ∗
-            ltype_own (Owned 1) lt' r' d g tid (l, repeat [] (lty_size lt'))
+            ltype_own (Owned 1) lt' r' d g tid l
         | inl _ => False
         end
     | lt' => λ r D tid v, ∃ d g, ⌜d ≤ D ∧ g ≤ D⌝ ∗ lty_vown lt' r d g tid v
@@ -656,7 +656,7 @@ Section vroot.
   (** The pointer cells on the path below the root pointer (as [pctx_ptrs]). *)
   Definition pctx_vptrs {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) : ~~𝔄 → iProp Σ :=
     match K in pctx 𝔅 𝔄 return ~~𝔄 → iProp Σ with
-    | POwn _ K' => λ x, pctx_ptrs K' n x.2 (x.1, repeat [] (pctx_size K' n))
+    | POwn _ K' => λ x, pctx_ptrs K' n x.2 x.1
     | PUniq _ K' => λ x, pctx_ptrs K' n (uniq_bor_current x) (uniq_bor_loc x)
     | PShr _ K' => λ x, pctx_ptrs K' n x.2 x.1
     | _ => λ _, True
@@ -672,17 +672,17 @@ Section vroot.
   (** The address of the hole, from the value of the root pointer. *)
   Lemma wp_pctx_vptrs {𝔅 𝔄} E (K: pctx 𝔅 𝔄) `{!PctxVRoot K} n (G: iProp Σ) x (e: expr)
       (R: iProp Σ) :
-    WP e @ E {{ v, ⌜v = MLitV (VPtr (pctx_vrloc K n x).1)⌝ ∗ R ∗ G }} -∗ pctx_vptrs K n x -∗
-    WP pctx_vexpr K e @ E {{ v, ⌜v = #(pctx_vloc K n x).1⌝ ∗ R ∗ G ∗ pctx_vptrs K n x }}.
+    WP e @ E {{ v, ⌜v = MLitV (VPtr (pctx_vrloc K n x))⌝ ∗ R ∗ G }} -∗ pctx_vptrs K n x -∗
+    WP pctx_vexpr K e @ E {{ v, ⌜v = #(pctx_vloc K n x)⌝ ∗ R ∗ G ∗ pctx_vptrs K n x }}.
   Proof.
     rename select (PctxVRoot K) into HR.
     iIntros "WP P".
-    iAssert (WP ToLit e @ E {{ v, ⌜v = #(pctx_vrloc K n x).1⌝ ∗ R ∗ G }})%I with "[WP]" as "WP".
+    iAssert (WP ToLit e @ E {{ v, ⌜v = #(pctx_vrloc K n x)⌝ ∗ R ∗ G }})%I with "[WP]" as "WP".
     { wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_pure _. by iFrame. }
     iRevert "WP P".
     destruct K as [| | |𝔅 𝔄' n' K| |𝔅 𝔄' κ K|]; try done; simpl.
     - iIntros "WP P".
-      iApply (wp_pctx_ptrs E K n G x.2 (x.1, repeat [] (pctx_size K n)) _ R with "WP P").
+      iApply (wp_pctx_ptrs E K n G x.2 x.1 _ R with "WP P").
     - iIntros "WP P".
       iApply (wp_pctx_ptrs E K n G (uniq_bor_current x) (uniq_bor_loc x) _ R with "WP P").
   Qed.
@@ -718,7 +718,7 @@ Section vroot.
   Definition pctx_vacc_res {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (r: prfn 𝔅) (x: ~~𝔄)
       (ζm: blk_map) (D: nat) (tid: thread_id) (v: val) (E: coPset) (G: iProp Σ) : iProp Σ :=
     ∃ (G': iProp Σ) dh gh, ⌜Timeless G'⌝ ∗ G' ∗ (G' &&{↑NllftG}&&> G) ∗
-      ⌜v = MLitV (VPtr (pctx_vrloc K (lty_size lt) x).1)⌝ ∗
+      ⌜v = MLitV (VPtr (pctx_vrloc K (lty_size lt) x))⌝ ∗
       ⌜dh + pctx_dlev K ≤ D ∧ gh ≤ D ∧ pctx_in K x⌝ ∗
       ltype_own (pctx_kind K (Owned 0) x) lt r dh gh tid (pctx_vloc K (lty_size lt) x) ∗
       pctx_vptrs K (lty_size lt) x ∗
@@ -732,7 +732,7 @@ Section vroot.
     pctx_vacc_res (POwn n K) lt r x ζm D tid v E G.
   Proof.
     iIntros (??) "#LFT #PROPH #UNIQ #Gk G £ /=". iDestruct 1 as (d g -> Hle) "[Fr Own]".
-    rewrite /ltype_own lty_pat_plug. iEval (rewrite lty_size_plug) in "Own".
+    rewrite /ltype_own lty_pat_plug.
     iDestruct (lc_weaken (pctx_acc_cred K 1 d) with "£") as "£";
       [rewrite /pctx_acc_cred /pctx_vacc_cred /=; destruct (pctx_ulfts K); nia|].
     iMod (pctx_acc K lt 1 with "LFT PROPH UNIQ Gk G £ Own")

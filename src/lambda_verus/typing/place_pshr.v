@@ -72,7 +72,7 @@ Section shr_view.
   (** The shared view of the value [y] of type [ty] at [l], at the lifetime [κ]: the
       ownership predicate of [&shr{κ} ty] without its laters. *)
   Definition shr_view {𝔄} (κ: lft) (ty: type 𝔄) (y: ~~𝔄) (d g: nat) (tid: thread_id)
-      (l: cloc) : iProp Σ :=
+      (l: loc) : iProp Σ :=
     (@[κ] &&{↑NllftG; g+1}&&> cbytes ty y l) ∗
     ty.(ty_shr) κ y d g tid ∗ ty.(ty_gho_pers) y d g tid.
 
@@ -89,7 +89,7 @@ Section shr_view.
 
   (** The ownership predicate of a shared reference gives the shared view of its
       referent, after [g+1] laters. *)
-  Lemma shr_bor_gho_view {𝔄} κ (ty: type 𝔄) (l: cloc) y d g tid :
+  Lemma shr_bor_gho_view {𝔄} κ (ty: type 𝔄) (l: loc) y d g tid :
     (&shr{κ} ty).(ty_gho_own) (l, y) d g tid -∗
       ⌜d ≠ 0%nat⌝ ∗ ▷^(g+1) shr_view κ ty y (pred d) g tid l.
   Proof.
@@ -98,7 +98,7 @@ Section shr_view.
   Qed.
 
   (** And back. *)
-  Lemma shr_bor_gho_of_view {𝔄} κ (ty: type 𝔄) (l: cloc) y d g tid :
+  Lemma shr_bor_gho_of_view {𝔄} κ (ty: type 𝔄) (l: loc) y d g tid :
     shr_view κ ty y d g tid l -∗ (&shr{κ} ty).(ty_gho_own) (l, y) (S d) g tid.
   Proof. iIntros "#(Pt & Shr & Pers)". iFrame "Pt Shr". by iNext. Qed.
 
@@ -111,10 +111,10 @@ Section shr_view.
   Proof. rewrite [ty_gho_pers (Σ! tyl)]/ty_gho_pers /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
 
   (** A guarded typed load of a pointer from the guard of its bytes. *)
-  Lemma wp_load_ptr_guarded E (l: cloc) (l': loc) (G: iProp Σ) k :
+  Lemma wp_load_ptr_guarded E (l: loc) (l': loc) (G: iProp Σ) k :
     ↑NllftG ⊆ E →
     {{{ (G &&{↑NllftG; k}&&> ptr_cell l l') ∗ G ∗ £(2 * k) }}}
-      Load Na1Ord MPtr #(l.1) @ E
+      Load Na1Ord MPtr #(l) @ E
     {{{ RET MLitV (VPtr l'); G }}}.
   Proof.
     iIntros (? Φ) "(#Gp & G & £) HΦ".
@@ -197,17 +197,17 @@ Section pctx_shr.
   Qed.
 
   (** The guards (by [G], with [k] laters) of the bytes of the pointers on the path. *)
-  Fixpoint pctx_sguards {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n k: nat) (G: iProp Σ) : ~~𝔄 → cloc → iProp Σ :=
-    match K in pctx 𝔅 𝔄 return ~~𝔄 → cloc → iProp Σ with
+  Fixpoint pctx_sguards {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n k: nat) (G: iProp Σ) : ~~𝔄 → loc → iProp Σ :=
+    match K in pctx 𝔅 𝔄 return ~~𝔄 → loc → iProp Σ with
     | PHole => λ _ _, True
-    | PFst K _ => λ y l, pctx_sguards K n k G y.1 (cloc_take l (pctx_size K n))
-    | PSnd lt1 K => λ y l, pctx_sguards K n k G y.2 (cloc_skip l (lty_size lt1))
+    | PFst K _ => λ y l, pctx_sguards K n k G y.1 l
+    | PSnd lt1 K => λ y l, pctx_sguards K n k G y.2 (l +ₗ lty_size lt1)
     | POwn _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l y.1) ∗
-        pctx_sguards K n k G y.2 (y.1, repeat [] (pctx_size K n))
+        pctx_sguards K n k G y.2 y.1
     | @PSum _ _ _ 𝔄l _ i w K => λ y l,
         pctx_sguards K n k G (psum_proj_or i y.1 w)
-          (cloc_take (cloc_skip l (tag_size 𝔄l)) (pctx_size K n))
-    | PUniq _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l (uniq_bor_loc y).1) ∗
+          (l +ₗ tag_size 𝔄l)
+    | PUniq _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l (uniq_bor_loc y)) ∗
         pctx_sguards K n k G (uniq_bor_current y) (uniq_bor_loc y)
     | PShr _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l y.1.1) ∗
         pctx_sguards K n k G y.2 y.1
@@ -219,21 +219,21 @@ Section pctx_shr.
 
   (** The address of the hole, computed by loading the pointers on the path with the
       guards of the shared views. *)
-  Lemma wp_pctx_sexpr {𝔅 𝔄} E (K: pctx 𝔅 𝔄) n k (G: iProp Σ) y (l: cloc) (e: expr)
+  Lemma wp_pctx_sexpr {𝔅 𝔄} E (K: pctx 𝔅 𝔄) n k (G: iProp Σ) y (l: loc) (e: expr)
       (Φ: val → iProp Σ) :
     ↑NllftG ⊆ E →
-    WP e @ E {{ v, ⌜v = #(l.1)⌝ ∗ pctx_sguards K n k G y l ∗ £(2 * k * pctx_dlev K) ∗ G ∗
-      (G -∗ Φ #(pctx_loc K n y l).1) }} -∗
+    WP e @ E {{ v, ⌜v = #(l)⌝ ∗ pctx_sguards K n k G y l ∗ £(2 * k * pctx_dlev K) ∗ G ∗
+      (G -∗ Φ #(pctx_loc K n y l)) }} -∗
     WP pctx_expr K e @ E {{ Φ }}.
   Proof.
     intros HE. induction K in y, l, e, Φ |- *; simpl.
     - iIntros "WP". iApply (wp_wand with "WP"). iIntros (v) "(-> & _ & _ & G & HΦ)".
       by iApply "HΦ".
-    - iIntros "WP". iApply (IHK y.1 (cloc_take l (pctx_size K n))). iApply (wp_wand with "WP").
+    - iIntros "WP". iApply (IHK y.1 l). iApply (wp_wand with "WP").
       iIntros (v) "($ & $ & $ & $ & $)".
-    - iIntros "WP". iApply (IHK y.2 (cloc_skip l (lty_size lt1))). wp_bind e. iApply (wp_wand with "WP").
+    - iIntros "WP". iApply (IHK y.2 (l +ₗ lty_size lt1)). wp_bind e. iApply (wp_wand with "WP").
       iIntros (v) "(-> & Gs & £ & G & HΦ)". wp_op. by iFrame.
-    - iIntros "WP". iApply (IHK y.2 (y.1, repeat [] (pctx_size K n))).
+    - iIntros "WP". iApply (IHK y.2 y.1).
       wp_bind e. iApply (wp_wand with "WP").
       iIntros (v) "(-> & [#Gp Gs] & £ & G & HΦ)".
       iDestruct (lc_weaken (2 * k + 2 * k * pctx_dlev K) with "£") as "[£1 £]"; [lia|].
@@ -241,7 +241,7 @@ Section pctx_shr.
       iApply (wp_load_ptr_guarded _ l y.1 G k with "[$Gp $G $£1]"); [done|].
       iIntros "!> G". wp_pure _. by iFrame.
     - iIntros "WP". iApply (IHK (psum_proj_or i y.1 w)
-        (cloc_take (cloc_skip l (tag_size 𝔄l)) (pctx_size K n))).
+        (l +ₗ tag_size 𝔄l)).
       wp_bind e. iApply (wp_wand with "WP").
       iIntros (v) "(-> & Gs & £ & G & HΦ)". wp_op. by iFrame.
     - iIntros "WP". iApply (IHK (uniq_bor_current y) (uniq_bor_loc y)).
@@ -249,7 +249,7 @@ Section pctx_shr.
       iIntros (v) "(-> & [#Gp Gs] & £ & G & HΦ)".
       iDestruct (lc_weaken (2 * k + 2 * k * pctx_dlev K) with "£") as "[£1 £]"; [lia|].
       wp_bind (Load _ _ _).
-      iApply (wp_load_ptr_guarded _ l (uniq_bor_loc y).1 G k with "[$Gp $G $£1]"); [done|].
+      iApply (wp_load_ptr_guarded _ l (uniq_bor_loc y) G k with "[$Gp $G $£1]"); [done|].
       iIntros "!> G". wp_pure _. by iFrame.
     - iIntros "WP". iApply (IHK y.2 y.1). wp_bind e. iApply (wp_wand with "WP").
       iIntros (v) "(-> & [#Gp Gs] & £ & G & HΦ)".
@@ -261,7 +261,7 @@ Section pctx_shr.
 
   (** The shared view of a place gives the shared view of the hole of [K] (and the guards
       of the pointers on the path), with one batch of later credits per pointer. *)
-  Lemma shr_pctx_view {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ (lt: lty 𝔅) y d g tid (l: cloc) (G: iProp Σ) E :
+  Lemma shr_pctx_view {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ (lt: lty 𝔅) y d g tid (l: loc) (G: iProp Σ) E :
     pctx_in K y →
     (G &&{↑NllftG}&&> @[pctx_salv K κ]) -∗ £(d * (g + 3)) -∗
     shr_view κ (lty_fold (pctx_plug K lt)) y d g tid l ={E}=∗
@@ -289,7 +289,7 @@ Section pctx_shr.
       iMod (lc_fupd_elim_later with "£a Shr") as "#Shr'".
       iDestruct "Shr'" as "[Pt' Shr']".
       iMod (lc_fupd_elim_later with "£b Pers") as "#Pers'".
-      iMod (IH κ lt z d' (l', repeat [] (pctx_size K (lty_size lt))) with "Gs £ [$Shr' $Pers']")
+      iMod (IH κ lt z d' l' with "Gs £ [$Shr' $Pers']")
         as "[$ (%dh & %Hdh & V)]"; [done|done|].
       iModIntro. iSplit.
       + rewrite cbytes_at_loc /=.
@@ -330,7 +330,7 @@ Section pctx_shr.
       { iApply (guards_transitive with "Gs"). iApply llftl_intersect_incl_r. }
       iMod (IH κ' lt z (pred d) l' with "Gs' £ V") as "[$ (%dh & %Hdh & V')]"; [done|].
       iModIntro. iSplit.
-      + rewrite cbytes_at_cloc.
+      + rewrite cbytes_at_loc.
         iApply (guards_transitive_right with "[] Pt").
         iApply (guards_transitive with "Gs"). iApply llftl_intersect_incl_l.
       + iExists dh. iFrame "V'". iPureIntro. lia.
@@ -386,7 +386,7 @@ Section pshr_addr.
   (** Phase 2: the address of the hole of [K2] below a shared reference whose referent is
       at [y.1] (the value of [e]), from the shared view of the referent (given once [e] has
       been evaluated): the guarded loads of the pointers on the path. *)
-  Lemma wp_pshr_hole {𝔅 𝔄'} E κ (K2: pctx 𝔅 𝔄') (lt: lty 𝔅) (y: ~~ (at_clocₛ 𝔄')) D tid
+  Lemma wp_pshr_hole {𝔅 𝔄'} E κ (K2: pctx 𝔅 𝔄') (lt: lty 𝔅) (y: ~~ (at_locₛ 𝔄')) D tid
       (e: expr) (G: iProp Σ) (Φ: val → iProp Σ) :
     ↑NllftG ⊆ E →
     (G &&{↑NllftG}&&> @[pctx_salv K2 κ]) -∗
@@ -396,7 +396,7 @@ Section pshr_addr.
       (∀ dh', ⌜dh' + pctx_dlev K2 ≤ dh⌝ -∗ G -∗
         shr_view (pctx_slft K2 κ) (lty_fold lt) (pctx_get K2 y.2) dh' D tid
           (pctx_loc K2 (lty_size lt) y.2 y.1) -∗
-        Φ #(pctx_loc K2 (lty_size lt) y.2 y.1).1) }} -∗
+        Φ #(pctx_loc K2 (lty_size lt) y.2 y.1)) }} -∗
     WP pctx_expr K2 e @ E {{ Φ }}.
   Proof.
     iIntros (?) "#Gs WP".
@@ -415,7 +415,7 @@ Section pshr_addr.
       view of the referent may be changed to [lt''], of the same folded type, if the
       referent is of its variants (e.g. after reading the tag of a sum). *)
   Lemma wp_pshr_open_root {𝔅 𝔄'} E κ (K2: pctx 𝔅 𝔄') (lt: lty 𝔅) (lt'': lty 𝔄')
-      (x: ~~ (at_clocₛ 𝔄')) D tid
+      (x: ~~ (at_locₛ 𝔄')) D tid
       (v: val) (e: expr) (G: iProp Σ) (Φ: val → iProp Σ) :
     ↑NllftG ⊆ E → lty_fold lt'' = lty_fold (pctx_plug K2 lt) →
     (lty_vin (pctx_plug K2 lt) x.2 → lty_vin lt'' x.2) →
@@ -426,7 +426,7 @@ Section pshr_addr.
       vroot_own (ShrLty lt'' κ) (inl (PlaceIn x)) D tid v -∗
       shr_view (pctx_slft K2 κ) (lty_fold lt) (pctx_get K2 x.2) dh D tid
         (pctx_loc K2 (lty_size lt) x.2 x.1) -∗
-      Φ #(pctx_loc K2 (lty_size lt) x.2 x.1).1) -∗
+      Φ #(pctx_loc K2 (lty_size lt) x.2 x.1)) -∗
     WP pctx_expr K2 (ToLit e) @ E {{ Φ }}.
   Proof.
     iIntros (? Hfold Hv) "#Gs G £ WPe Own HΦ".
@@ -453,7 +453,7 @@ Section pshr_addr.
       pointer): the access to the leaf, the typed load of the pointer from the bytes of the
       leaf (in [Owned] or [Uniq] mode), and a copy of its persistent ownership predicate;
       the access is closed again, with the view [lt''] of the referent. *)
-  Lemma wp_pshr_open {𝔅 𝔄 𝔄'} E (K1: pctx (at_clocₛ 𝔄') 𝔄) `{!PctxNoShr K1} `{!PctxVRoot K1} κ
+  Lemma wp_pshr_open {𝔅 𝔄 𝔄'} E (K1: pctx (at_locₛ 𝔄') 𝔄) `{!PctxNoShr K1} `{!PctxVRoot K1} κ
       (K2: pctx 𝔅 𝔄') (lt: lty 𝔅) (lt'': lty 𝔄') x₀ ζm D tid (v: val) (e: expr)
       (G: iProp Σ) (Φ: val → iProp Σ) :
     Timeless G → lazyE ⊆ E → lty_fold lt'' = lty_fold (pctx_plug K2 lt) →
@@ -470,7 +470,7 @@ Section pshr_addr.
       vroot_own (pctx_plug K1 lt1') (pctx_vrfn K1 x₀ ζm (inl (PlaceIn y))) D tid v -∗
       shr_view (pctx_slft K2 κ) (lty_fold lt) (pctx_get K2 y.2) dh D tid
         (pctx_loc K2 (lty_size lt) y.2 y.1) -∗
-      Φ #(pctx_loc K2 (lty_size lt) y.2 y.1).1) -∗
+      Φ #(pctx_loc K2 (lty_size lt) y.2 y.1)) -∗
     WP pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K1 e))) @ E {{ Φ }}.
   Proof.
     iIntros (? HE Hfold lt1 lt1' y Hv) "#LFT #PROPH #UNIQ #Gu #Gs G £ #⧖ WPe Own HΦ".
@@ -500,9 +500,9 @@ Section pshr_addr.
     iIntros (w) "(-> & _ & G' & P)".
     (* The pointer, and the (persistent) ownership of the shared reference; the closed
        access. *)
-    iAssert (WP Load Na1Ord MPtr #lK.1 @ E {{ v, ⌜v = MLitV (VPtr y.1.1)⌝ ∗ G ∗
+    iAssert (WP Load Na1Ord MPtr #lK @ E {{ v, ⌜v = MLitV (VPtr y.1.1)⌝ ∗ G ∗
       vroot_own (pctx_plug K1 lt1') (pctx_vrfn K1 x₀ ζm (inl (PlaceIn y))) D tid
-        (MLitV (VPtr (pctx_vrloc K1 (lty_size lt1) x₀).1)) ∗
+        (MLitV (VPtr (pctx_vrloc K1 (lty_size lt1) x₀))) ∗
       ⌜lty_vin (pctx_plug K2 lt) y.2⌝ ∗ (shr_bytes κ T).(ty_gho_own) y dh1 gh1 tid }})%I
       with "[H Cl P G' £m]" as "WPr".
     { iApply wp_fupd. destruct (pctx_uend K1) as [κ1|] eqn:Hu.
@@ -521,10 +521,10 @@ Section pshr_addr.
         iDestruct (lc_weaken 1 with "£m") as "£1"; [lia|].
         iMod (lc_fupd_elim_later with "£1 Pl") as "Pl".
         iMod (uniq_payload_run with "Aty B Pl") as "(B & #⧖' & #Gho1 & Pt1)"; [done|].
-        iEval (rewrite cbytes_at_cloc) in "Pt1". iDestruct "Pt1" as (bs) "[Hbs %Hbs]".
+        iEval (rewrite cbytes_at_loc) in "Pt1". iDestruct "Pt1" as (bs) "[Hbs %Hbs]".
         iApply (wp_load_na with "Hbs"); [exact Hbs|]. iIntros "!> Hbs".
         iSpecialize ("CloseB" $! y dh1 gh1 with "[Hbs] ⧗1").
-        { iNext. iFrame "⧖' Gho1". rewrite cbytes_at_cloc. iExists bs. by iFrame. }
+        { iNext. iFrame "⧖' Gho1". rewrite cbytes_at_loc. iExists bs. by iFrame. }
         iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [done|].
         iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [done|].
         iMod ("Cl" $! lt1' (inl (PlaceIn y)) dh1 gh1 D [] 1%Qp True%I
@@ -543,7 +543,7 @@ Section pshr_addr.
         iDestruct "H" as "[H %Hvin]". iDestruct "H" as (? ->) "[Pt1 #Gho1]".
         iDestruct (lc_weaken mh with "£m") as "£m"; [lia|].
         iMod (lc_fupd_elim_laterN with "£m Gho1") as "#Gho1'".
-        iEval (rewrite cbytes_at_cloc) in "Pt1". iDestruct "Pt1" as (bs) "[Hbs %Hbs]".
+        iEval (rewrite cbytes_at_loc) in "Pt1". iDestruct "Pt1" as (bs) "[Hbs %Hbs]".
         iApply (wp_load_na with "Hbs"); [exact Hbs|]. iIntros "!> Hbs".
         iMod ("Cl" $! lt1' (inl (PlaceIn y)) dh1 gh1 D [] 1%Qp True%I
           with "[//] [%] [//] [%] [%] [] ⧖ G' P [] [Hbs]") as "(Own & G & _)".
@@ -554,7 +554,7 @@ Section pshr_addr.
         { done. }
         { iIntros "_ !>". iSplit; [|done]. iSplit; [|iPureIntro; by apply Hv].
           rewrite /= Hfold. iExists y. iSplit; [done|].
-          rewrite /ofty_owned cbytes_at_cloc. iFrame "Gho1". iExists bs. by iFrame. }
+          rewrite /ofty_owned cbytes_at_loc. iFrame "Gho1". iExists bs. by iFrame. }
         iModIntro. iSplit; [done|]. by iFrame "G Own Gho1'". }
     wp_bind (Load _ _ _). iApply (wp_wand with "WPr"). iIntros (v) "(-> & G & Own & %Hvin & #Gho)".
     apply lty_vin_plug in Hvin as [Hvin2 Hvin].
@@ -597,7 +597,7 @@ Section typing.
   Qed.
 
   (** Below a root pointer, at the hole of [K]: an instance of [type_change_vplace_instr]. *)
-  Lemma vplace_conv_shr {ℭ 𝔄} (K: pctx (at_clocₛ ℭ) 𝔄) κ (lt lt': lty ℭ) :
+  Lemma vplace_conv_shr {ℭ 𝔄} (K: pctx (at_locₛ ℭ) 𝔄) κ (lt lt': lty ℭ) :
     lty_fold lt' = lty_fold lt → (∀ y, lty_vin lt y → lty_vin lt' y) →
     vplace_conv K (ShrLty lt κ) (ShrLty lt' κ) (=).
   Proof.
@@ -608,7 +608,7 @@ Section typing.
     iFrame "G". rewrite /= Hf. iFrame "H". iPureIntro. by apply Hv.
   Qed.
 
-  Lemma vplace_conv_shr_unfold {𝔅 𝔄} (K: pctx (at_clocₛ 𝔅) 𝔄) κ (ty: type 𝔅) :
+  Lemma vplace_conv_shr_unfold {𝔅 𝔄} (K: pctx (at_locₛ 𝔅) 𝔄) κ (ty: type 𝔅) :
     vplace_conv K (OfTy (&shr{κ} ty)%T) (ShrLty (OfTy ty) κ) (=).
   Proof.
     iIntros (x ζm dh gh D tid lh G E ? HE HdK ?) "_ _ _ _ _ G _ _ _ H".
@@ -617,7 +617,7 @@ Section typing.
     by iFrame "G H".
   Qed.
 
-  Lemma vplace_conv_shr_fold {𝔅 𝔄} (K: pctx (at_clocₛ 𝔅) 𝔄) κ (ty: type 𝔅) :
+  Lemma vplace_conv_shr_fold {𝔅 𝔄} (K: pctx (at_locₛ 𝔅) 𝔄) κ (ty: type 𝔅) :
     vplace_conv K (ShrLty (OfTy ty) κ) (OfTy (&shr{κ} ty)%T) (=).
   Proof.
     iIntros (x ζm dh gh D tid lh G E ? HE HdK ?) "_ _ _ _ _ G _ _ _ H".
@@ -627,7 +627,7 @@ Section typing.
     by iFrame "G H".
   Qed.
 
-  Lemma type_unfold_vplace_shr_instr {𝔅 𝔄} E L I p (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
+  Lemma type_unfold_vplace_shr_instr {𝔅 𝔄} E L I p (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K}
       `{!PctxVRoot K} κ (ty: type 𝔅) :
     lctx_lft_alive E L (pctx_ulft K (OfTy (&shr{κ} ty)%T) ⊓ ty_lft (&shr{κ} ty)%T) →
     typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy (&shr{κ} ty)%T)] (Seq Skip Skip)
@@ -640,7 +640,7 @@ Section typing.
     simpl in *. subst. by rewrite pctx_set_get.
   Qed.
 
-  Lemma type_unfold_oplace_shr_instr {𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
+  Lemma type_unfold_oplace_shr_instr {𝔅 𝔄} E L I p n (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K}
       κ (ty: type 𝔅) :
     lctx_lft_alive E L (pctx_ulft K (OfTy (&shr{κ} ty)%T) ⊓ ty_lft (&shr{κ} ty)%T) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (&shr{κ} ty)%T)] (Seq Skip Skip)
@@ -648,7 +648,7 @@ Section typing.
       (λ post '-[x], post -[x]).
   Proof. intros. by apply (type_unfold_vplace_shr_instr _ _ _ _ (POwn n K)). Qed.
 
-  Lemma type_fold_vplace_shr_instr {𝔅 𝔄} E L I p (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
+  Lemma type_fold_vplace_shr_instr {𝔅 𝔄} E L I p (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K}
       `{!PctxVRoot K} κ (ty: type 𝔅) :
     lctx_lft_alive E L (pctx_ulft K (ShrLty (OfTy ty) κ) ⊓ ty_lft (&shr{κ} ty)%T) →
     typed_instr E L I +[p ◁ₗ pctx_plug K (ShrLty (OfTy ty) κ)] (Seq Skip Skip)
@@ -661,7 +661,7 @@ Section typing.
     simpl in *. subst. by rewrite pctx_set_get.
   Qed.
 
-  Lemma type_fold_oplace_shr_instr {𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
+  Lemma type_fold_oplace_shr_instr {𝔅 𝔄} E L I p n (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K}
       κ (ty: type 𝔅) :
     lctx_lft_alive E L (pctx_ulft K (ShrLty (OfTy ty) κ) ⊓ ty_lft (&shr{κ} ty)%T) →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrLty (OfTy ty) κ)] (Seq Skip Skip)
@@ -672,7 +672,7 @@ Section typing.
   (** Changing the view of the hole of [K2] below the shared reference at the hole of [K]:
       e.g. unfolding a pair, an owned pointer, a unique borrow or a shared reference
       ([ShrLty] again) below [PShr]. *)
-  Lemma type_change_vplace_shr_instr {ℭ 𝔅 𝔄} E L I p (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
+  Lemma type_change_vplace_shr_instr {ℭ 𝔅 𝔄} E L I p (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K}
       `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) (lt lt': lty ℭ) :
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ) ⊓
       ty_lft (&shr{κ} (lty_fold (pctx_plug K2 lt)))%T) →
@@ -694,7 +694,7 @@ Section typing.
     - intros y. rewrite !lty_vin_plug. intros [? ?]. split; [done|]. by apply Hv.
   Qed.
 
-  Lemma type_change_oplace_shr_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
+  Lemma type_change_oplace_shr_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K}
       κ (K2: pctx ℭ 𝔅) (lt lt': lty ℭ) :
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ) ⊓
       ty_lft (&shr{κ} (lty_fold (pctx_plug K2 lt)))%T) →
@@ -708,12 +708,12 @@ Section typing.
   (** ** (b) Reading a leaf below a shared reference *)
 
   (** The guarded typed load of a [Copy] value from its shared view. *)
-  Lemma wp_load_shr_view {𝔄} `{!NoCell 𝔄} E κ (ty: type 𝔄) `{!Copy ty} z dh D tid (l: cloc) (G: iProp Σ)
+  Lemma wp_load_shr_view {𝔄} `{!NoCell 𝔄} E κ (ty: type 𝔄) `{!Copy ty} z dh D tid (l: loc) (G: iProp Σ)
       (Φ: val → iProp Σ) :
     ↑NllftG ⊆ E → Timeless G →
     (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £(4 * (D + 1)) -∗ shr_view κ ty z dh D tid l -∗
     (∀ w, ⌜ty.(ty_val) z = Some w⌝ -∗ ty.(ty_gho_own) z dh D tid -∗ G -∗ Φ (MLitV w)) -∗
-    WP Load Na1Ord ty.(ty_mty) #(l.1) @ E {{ Φ }}.
+    WP Load Na1Ord ty.(ty_mty) #(l) @ E {{ Φ }}.
   Proof.
     iIntros (??) "#Gκ G £ #V HΦ".
     iDestruct (lc_weaken (((D + 1) + (D + 1)) + 2 * (D + 1)) with "£") as "[£c £l]"; [lia|].
@@ -767,7 +767,7 @@ Section typing.
   (** Copying a value out of the hole of [K2], below the shared reference at the hole of
       [K] (both at any path: below owned pointers, unique borrows, and further shared
       references), as [read_shr]. The place is unchanged. *)
-  Lemma type_read_vplace_pshr_instr {ℭ 𝔅 𝔄} E L I p (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
+  Lemma type_read_vplace_pshr_instr {ℭ 𝔅 𝔄} E L I p (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K}
       `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ) :
     Copy (lty_fold lt) →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
@@ -812,7 +812,7 @@ Section typing.
     iSplit; [|done]. iExists _. iSplit; [done|]. by iApply (vplace_own_close with "⧖ ⧗p").
   Qed.
 
-  Lemma type_read_oplace_pshr_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K}
+  Lemma type_read_oplace_pshr_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K}
       κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ) :
     Copy (lty_fold lt) →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
@@ -866,7 +866,7 @@ Section typing.
       the view of the hole ([pctx_slft K2 κ]: the innermost shared reference, intersected
       with the unique borrows below it). The place is unchanged; [K]'s borrows need only
       be alive during the instruction. *)
-  Lemma type_share_vplace_pshr_instr {ℭ 𝔅 𝔄} E L I p (K: pctx (at_clocₛ 𝔅) 𝔄)
+  Lemma type_share_vplace_pshr_instr {ℭ 𝔅 𝔄} E L I p (K: pctx (at_locₛ 𝔅) 𝔄)
       `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) (lt: lty ℭ) :
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
     lctx_lft_alive E L (pctx_salv K2 κ) →
@@ -909,7 +909,7 @@ Section typing.
     iSplit; [|done]. iExists _. iSplit; [done|]. by iApply (vplace_own_close with "⧖ ⧗p").
   Qed.
 
-  Lemma type_share_oplace_pshr_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (at_clocₛ 𝔅) 𝔄)
+  Lemma type_share_oplace_pshr_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (at_locₛ 𝔅) 𝔄)
       `{!PctxNoShr K} κ (K2: pctx ℭ 𝔅) (lt: lty ℭ) :
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
     lctx_lft_alive E L (pctx_salv K2 κ) →
@@ -928,19 +928,19 @@ Section case.
   Context `{!typeG Σ}.
 
   (** The guarded typed load of the tag of a sum from its shared view. *)
-  Lemma wp_load_tag_shr_view {𝔄l} E κ (tyl: typel 𝔄l) j a pad dh D tid (l: cloc)
+  Lemma wp_load_tag_shr_view {𝔄l} E κ (tyl: typel 𝔄l) j a pad dh D tid (l: loc)
       (G: iProp Σ) (Φ: val → iProp Σ) :
     ↑NllftG ⊆ E →
     (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £(2 * (D + 1)) -∗
     shr_view κ (Σ! tyl)%T (pinj j a, pad) dh D tid l -∗
     (G -∗ Φ (MLitV (VInt (Z.of_nat (fin_to_nat j))))) -∗
-    WP Load Na1Ord (MInt (sum_tag 𝔄l)) #(l.1) @ E {{ Φ }}.
+    WP Load Na1Ord (MInt (sum_tag 𝔄l)) #(l) @ E {{ Φ }}.
   Proof.
     iIntros (?) "#Gκ G £ #(Pt & _ & _) HΦ".
     iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt".
     iDestruct (guards_weaken_rhs_sep_l with "Pt") as "Pt'".
     iApply (wp_load_na_guarded_gen _ _ _ (VInt (Z.of_nat j)) G
-      (tag_cell 𝔄l (cloc_take l (tag_size 𝔄l)) j)
+      (tag_cell 𝔄l l j)
       (λ bs, decode_value (MInt (sum_tag 𝔄l)) bs = Some (VInt (Z.of_nat j))) (D + 1)
       with "[$G $£]"); [done|done| |].
     { iSplit; [iApply (guards_transitive_right with "Gκ Pt'")|].
@@ -1012,7 +1012,7 @@ Section case.
       variant [i] gets the place with the view [SumLty tyl i (OfTy (tyl +!! i))] at the
       hole (the referent does not change, so the variant is recorded in the place type,
       [lty_vin]). *)
-  Lemma type_case_vplace_pshr {𝔄l 𝔅 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p (K: pctx (at_clocₛ 𝔅) 𝔄)
+  Lemma type_case_vplace_pshr {𝔄l 𝔅 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p (K: pctx (at_locₛ 𝔅) 𝔄)
       `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx (Σ! 𝔄l) 𝔅) (tyl: typel 𝔄l) (T: tctx 𝔅l)
       el el' trl :
     IntoPlistc el el' →
@@ -1076,7 +1076,7 @@ Section case.
     by rewrite /= /lt'' (lty_nrc_plug_eq K2 (SumLty tyl j (OfTy (tyl +!! j))) (OfTy (Σ! tyl))).
   Qed.
 
-  Lemma type_case_oplace_pshr {𝔄l 𝔅 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (at_clocₛ 𝔅) 𝔄)
+  Lemma type_case_oplace_pshr {𝔄l 𝔅 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (at_locₛ 𝔅) 𝔄)
       `{!PctxNoShr K} κ (K2: pctx (Σ! 𝔄l) 𝔅) (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
     IntoPlistc el el' →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)) →
@@ -1129,7 +1129,7 @@ Section memcpy.
       not change. The first step (the address of the box) gives the credits for the
       address of the source, the copy itself those for the box. *)
   Lemma type_memcpy_copy_from_vplace_pshr_instr {ℭ 𝔅 𝔄 𝔅'} E L I pw p n
-      (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ)
+      (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ)
       (tyw: type 𝔅') Φ (sz: nat) :
     Copy (lty_fold lt) → resolve E L tyw Φ → sz = ty_bsize (lty_fold lt) → ty_bsize tyw = sz →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
@@ -1193,7 +1193,7 @@ Section memcpy.
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
     (* Copy the bytes. *)
     iDestruct "V" as "(Pt & _ & _)".
-    iApply (wp_memcopy_guarded_gen _ lw lK.1 bsw (ty_bsize (lty_fold lt)) (fractional.half γh)
+    iApply (wp_memcopy_guarded_gen _ lw lK bsw (ty_bsize (lty_fold lt)) (fractional.half γh)
       (cbytes (lty_fold lt) zz lK) (ty_bytes (lty_fold lt) zz) (M + 1) with "[$Hbsw $H1 $£m]");
       [solve_ndisj|by rewrite Hlenw Hszw|intros ?; apply ty_bytes_length|..].
     { iSplit; [iApply (guards_transitive_right with "Hsl Pt")|]. iApply bytes_own_view_nocell. }
@@ -1214,7 +1214,7 @@ Section memcpy.
   Qed.
 
   Lemma type_memcpy_copy_from_oplace_pshr_instr {ℭ 𝔅 𝔄 𝔅'} E L I pw p n n'
-      (K: pctx (at_clocₛ 𝔅) 𝔄) `{!PctxNoShr K} κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ)
+      (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K} κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ)
       (tyw: type 𝔅') Φ (sz: nat) :
     Copy (lty_fold lt) → resolve E L tyw Φ → sz = ty_bsize (lty_fold lt) → ty_bsize tyw = sz →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
@@ -1285,7 +1285,7 @@ Section memcpy.
     iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
     iDestruct "V" as "(Pt & _ & _)".
-    iApply (wp_memcopy_guarded_gen _ lw lK.1 bsw (ty_bsize (lty_fold lt)) (fractional.half γh)
+    iApply (wp_memcopy_guarded_gen _ lw lK bsw (ty_bsize (lty_fold lt)) (fractional.half γh)
       (cbytes (lty_fold lt) zz lK) (ty_bytes (lty_fold lt) zz) (M + 1) with "[$Hbsw $H1 $£m]");
       [solve_ndisj|by rewrite Hlenw Hszw|intros ?; apply ty_bytes_length|..].
     { iSplit; [iApply (guards_transitive_right with "Hsl Pt")|]. iApply bytes_own_view_nocell. }
