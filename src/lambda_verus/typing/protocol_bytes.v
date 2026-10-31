@@ -547,4 +547,144 @@ Section StorageProtocol_bytes.
       by rewrite (bi.sep_comm (sp_own _ _)).
     - iApply (proph_obs_impl with "Obs"). by intros π' [_ ?].
   Qed.
+
+  Local Lemma ghost_pair_val_intro {𝔅 𝔇} tid (tyA: type 𝔅) (tyB: type 𝔇) a b d :
+    ⧖d -∗ tctx_elt_interp tid (MLitV (VTuple [VTuple []; VTuple []]) ◁ᵥ (ghost_ty tyA * ghost_ty tyB)%T) (a, b).
+  Proof. iIntros "⧖". rewrite tctx_val_val. iExists d. by iFrame. Qed.
+
+  Notation "SPb_Validate: p1" := GhostOp2 (at level 102, p1 at level 1): expr_scope.
+
+  (** Validating: the result is a pair of ghost values, a frame [q] and a stored value. *)
+  Lemma typed_spb_validate `{!Inhabited (~~ℭ)} κ (p1 : path) (tyA : type 𝔄) E L I :
+    lctx_lft_alive E L κ →
+    typed_instr E L I +[p1 ◁ᵥ &shrb{κ} srty] (SPb_Validate: p1)
+      (λ v, +[v ◁ᵥ (ghost_ty tyA * ghost_ty tyC)%T])
+      (λ post '-[(_, (γ, p))], λ mask π, ∀ q t, vsp_rel (vsp_op p q) t π →
+        (∀ k s, t !! k = Some s → post -[(q, s)] mask π) ∧
+        (t = ∅ → post -[(q, inhabitant)] mask π)).
+  Proof.
+    iIntros (Alv tid post mask iκs [[l [γ p]] []]) "_ #TIME #PROPH _ #E L $ (p1 & _) #Obs".
+    iDestruct "p1" as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ #Own]".
+    destruct d as [|d]; [done|].
+    iDestruct (sr_shr_elim with "Own") as "#Shr".
+    iDestruct (Alv with "L E") as "#Alv".
+    iApply wp_fupd.
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [done|]. iIntros "£ _".
+    iDestruct (lc_weaken ((S d + 1) + (S d + 1)) with "£") as "[£1 £2]";
+      [rewrite /advance_credits; nia|].
+    iApply wp_ghost_op2. iIntros "!> !>".
+    iMod (sr_shr_sto with "L Alv Shr £1") as "(L & %Hγ & #Hsto)"; [solve_ndisj|].
+    iPoseProof (guards_weaken_rhs_sep_r with "Shr") as "#Shr3".
+    iDestruct (guards_transitive_right with "Alv Shr3") as "Shr4".
+    iDestruct (sp_own_unit with "Hsto") as "#Hunit".
+    iMod (sp_validate_with_extra_guard_with_later vsp_unit p γ _ _ ⊤ (↑NllftG) _
+      ltac:(set_solver) ltac:(solve_ndisj) ltac:(solve_ndisj)
+      with "PROPH Hsto Shr4 L Hunit") as "J".
+    iMod (lc_fupd_elim_laterN with "£2 J") as ">(%q & %t & #Hobs & $ & _)".
+    iModIntro. iCombine "Obs Hobs" as "Obs'".
+    destruct (decide (t = ∅)) as [Hempty|Hnempty].
+    - iExists -[(q, inhabitant)]. iSplitL; [iSplit; [by iApply ghost_pair_val_intro|done]|].
+      iApply (proph_obs_impl with "Obs'"). intros π [Hpost Hrel]. rewrite vsp_unit_op in Hrel.
+      by apply (Hpost _ _ Hrel).
+    - apply map_choose in Hnempty as (k & s & Hlookup).
+      iExists -[(q, s)]. iSplitL; [iSplit; [by iApply ghost_pair_val_intro|done]|].
+      iApply (proph_obs_impl with "Obs'"). intros π [Hpost Hrel]. rewrite vsp_unit_op in Hrel.
+      by eapply (Hpost _ _ Hrel).
+  Qed.
+
+  Notation "SPb_ExchangeWithShr: p1 p2 p3 p4 p5" := GhostOp
+    (at level 102, p1,p2,p3,p4,p5 at level 1): expr_scope.
+
+  Lemma typed_spb_exchange_with_shr (k : K) κ (p1 p2 p3 p4 p5 : path) (tyA : type 𝔄) E L I :
+    lctx_lft_alive E L κ →
+    typed_instr E L I
+      +[p1 ◁ᵥ srty; p2 ◁ᵥ &shrb{κ} srty; p3 ◁ᵥ tracked_ty tyC; p4 ◁ᵥ ghost_ty tyA;
+        p5 ◁ᵥ ghost_ty tyC]
+      (SPb_ExchangeWithShr: p1 p2 p3 p4 p5) (λ v, +[p1 ◁ᵥ srty; v ◁ᵥ tracked_ty tyC])
+      (λ post '-[(γ, p); (_, (γ', p')); s; new_p; new_s], λ mask π, γ = γ' ∧
+        vsp_exchanges (vsp_op p p') {[ k := s ]} (vsp_op new_p p') {[ k := new_s ]} π ∧
+        post -[(γ, new_p); new_s] mask π).
+  Proof.
+    iIntros (Alv tid post mask iκs [[γ p] [[l' [γ' p']] [s [new_p [new_s []]]]]])
+      "_ #TIME #PROPH _ #E L $ (Hp & Hp' & Hs & _ & _ & _) #Obs".
+    iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & _)"; [done|].
+    iDestruct "Hp" as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
+    iDestruct "Hp'" as (vp' Hp' w' d' [-> Hw']) "[#⧖' #Own']".
+    iDestruct "Hs" as (vs Hs w'' d'' [-> Hw'']) "[_ HghoC]".
+    destruct d' as [|d']; [done|].
+    iDestruct (sr_shr_elim with "Own'") as "#Shr".
+    iDestruct (Alv with "L E") as "#Alv".
+    iApply wp_fupd.
+    iApply (wp_persistent_time_receipt with "TIME ⧖'"); [done|]. iIntros "£ _".
+    iDestruct (lc_weaken ((S d' + 1) + 1) with "£") as "[£1 £2]";
+      [rewrite /advance_credits; nia|].
+    iApply wp_ghost_op. iIntros "!> !>".
+    iDestruct (guards_transitive_right with "Alv Shr") as "Shr1".
+    iPoseProof (guards_weaken_rhs_sep_r with "Shr1") as "#Shr2".
+    iMod (sp_exchange_with_extra_guard_with_later p new_p p' {[ k := s ]} {[ k := new_s ]} γ _ _
+      ⊤ (↑NllftG) _ ltac:(set_solver) ltac:(solve_ndisj) ltac:(solve_ndisj)
+      with "PROPH Hsto Shr2 [] L Hown [HghoC]") as "J".
+    { iApply (proph_obs_impl with "Obs"). by intros π' (_ & ? & _). }
+    { iNext. by rewrite big_sepM_singleton. }
+    iMod (lc_fupd_elim_laterN with "£1 J") as ">($ & Hown & HghoC)".
+    iMod (lc_fupd_elim_later with "£2 HghoC") as "HghoC". rewrite big_sepM_singleton.
+    iModIntro. iExists -[(γ, new_p); new_s].
+    iSplitL; [|iApply (proph_obs_impl with "Obs"); by intros π' (_ & _ & ?)].
+    iSplitL "Hown"; [|iSplit; [by iApply (tracked_val_intro with "⧖ HghoC")|done]].
+    iApply (val_path_intro _ _ srty with "⧖"); [done|done|]. by iFrame "Hsto Hown".
+  Qed.
+
+  Notation "SPb_ExchangeWithShrNonDet: p1 p2 p3 p4" := GhostOp
+    (at level 102, p1,p2,p3,p4 at level 1): expr_scope.
+
+  Lemma typed_spb_exchange_with_shr_nondeterministic (k : K) κ (p1 p2 p3 p4 : path) n
+      (ty : type (vecₛ (𝔄 * ℭ) n)) E L I :
+    lctx_lft_alive E L κ →
+    typed_instr E L I
+      +[p1 ◁ᵥ srty; p2 ◁ᵥ &shrb{κ} srty; p3 ◁ᵥ tracked_ty tyC; p4 ◁ᵥ ghost_ty ty]
+      (SPb_ExchangeWithShrNonDet: p1 p2 p3 p4) (λ v, +[p1 ◁ᵥ srty; v ◁ᵥ tracked_ty tyC])
+      (λ post '-[(γ, p); (_, (γ', p')); s; new_pss], λ mask π, γ = γ' ∧
+        vsp_exchanges_nondeterministic (vsp_op p p') {[ k := s ]}
+          (λ new_p_big new_b, ∃ new_p new_s, new_p_big = vsp_op new_p p' ∧ new_b = {[ k := new_s ]}
+            ∧ (new_p, new_s) ∈ vec_to_list new_pss) ∧
+        Forall (λ '(new_p, new_s), post -[(γ, new_p); new_s] mask π) (vec_to_list new_pss)).
+  Proof.
+    iIntros (Alv tid post mask iκs [[γ p] [[l' [γ' p']] [s [new_pss []]]]])
+      "_ #TIME #PROPH _ #E L $ (Hp & Hp' & Hs & _ & _) #Obs".
+    iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & %exchng & _)"; [done|].
+    iDestruct "Hp" as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
+    iDestruct "Hp'" as (vp' Hp' w' d' [-> Hw']) "[#⧖' #Own']".
+    iDestruct "Hs" as (vs Hs w'' d'' [-> Hw'']) "[_ HghoC]".
+    destruct d' as [|d']; [done|].
+    iDestruct (sr_shr_elim with "Own'") as "#Shr".
+    iDestruct (Alv with "L E") as "#Alv".
+    assert (vsp_exchanges_nondeterministic (vsp_op p p') {[ k := s ]}
+      (λ p2_q b2, ∃ p2, p2_q = vsp_op p2 p' ∧
+        (λ new_p new_b, ∃ new_s, new_b = {[ k := new_s ]} ∧ (new_p, new_s) ∈ vec_to_list new_pss)
+        p2 b2)) as exchng'.
+    { intros q t1 Hsat.
+      destruct (exchng q t1 Hsat) as (p2q & b2 & (new_p & new_s & -> & -> & Hin) & Himp).
+      exists (vsp_op new_p p'), {[ k := new_s ]}. split; last done.
+      exists new_p. split; first done. eauto. }
+    iApply wp_fupd.
+    iApply (wp_persistent_time_receipt with "TIME ⧖'"); [done|]. iIntros "£ _".
+    iDestruct (lc_weaken ((S d' + 1) + 1) with "£") as "[£1 £2]";
+      [rewrite /advance_credits; nia|].
+    iApply wp_ghost_op. iIntros "!> !>".
+    iDestruct (guards_transitive_right with "Alv Shr") as "Shr1".
+    iPoseProof (guards_weaken_rhs_sep_r with "Shr1") as "#Shr2".
+    iMod (sp_exchange_with_extra_guard_nondeterministic_with_later p p' {[ k := s ]} _
+      γ _ _ ⊤ (↑NllftG) _ exchng' ltac:(set_solver) ltac:(solve_ndisj) ltac:(solve_ndisj)
+      with "PROPH Hsto Shr2 L Hown [HghoC]") as "J".
+    { iNext. by rewrite big_sepM_singleton. }
+    iMod (lc_fupd_elim_laterN with "£1 J") as ">(%new_p & %b2 & %Hin & $ & Hown & HghoC)".
+    destruct Hin as (new_s & -> & Hin).
+    iMod (lc_fupd_elim_later with "£2 HghoC") as "HghoC". rewrite big_sepM_singleton.
+    iModIntro. iExists -[(γ, new_p); new_s].
+    iSplitL; last first.
+    { iApply (proph_obs_impl with "Obs"). intros π' (_ & _ & Hpost).
+      rewrite Forall_forall in Hpost. by apply (Hpost (new_p, new_s)). }
+    iSplitL "Hown"; [|iSplit; [by iApply (tracked_val_intro with "⧖ HghoC")|done]].
+    iApply (val_path_intro _ _ srty with "⧖"); [done|done|]. by iFrame "Hsto Hown".
+  Qed.
 End StorageProtocol_bytes.
