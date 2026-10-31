@@ -27,8 +27,8 @@ Notation "RAb_Split: p p1 p2" := GhostOp (at level 102, p, p1, p2 at level 1): e
 Notation "RAb_Unit:" := GhostOp : expr_scope.
 Notation "RAb_Update: self p" := GhostOp (at level 102, self, p at level 1): expr_scope.
 Notation "RAb_Validate: self" := GhostOp (at level 102, self at level 1): expr_scope.
-Notation "RAb_JoinSharedDet: p1 p2 p" := GhostOp (at level 102, p1, p2, p at level 1): expr_scope.
-Notation "RAb_Weaken: p1 p2" := GhostOp (at level 102, p1, p2 at level 1): expr_scope.
+(** A ghost operation that returns (the location of) a shared reference. *)
+Definition GhostRet : val := (λ: ["p"], "p")%V.
 Notation "RAb_UpdateWithShr: self other new_value" := GhostOp
   (at level 102, self, other, new_value at level 1): expr_scope.
 
@@ -46,8 +46,6 @@ Section ghost_vals.
 
 End ghost_vals.
 
-Notation "RAb_JoinSharedDet: p1 p2 p" := (Skip ;; p1)%E
-  (at level 102, p1, p2, p at level 1, only parsing): expr_scope.
 
 Section RA_bytes.
   Context `{!typeG Σ}.
@@ -93,7 +91,8 @@ Section RA_bytes.
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
     iDestruct "p1" as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 [Hx1 #Hinv]]".
     iDestruct "p2" as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 [Hx2 _]]".
-    iCombine "Hx1 Hx2" as "Hx". rewrite -auth_frag_op vra_car_op_eq.
+    iAssert (own γ1 (◯ VraCar VRA (vra_op VRA x1 x2))) with "[Hx1 Hx2]" as "Hx".
+    { rewrite -vra_car_op_eq auth_frag_op own_op. iFrame. }
     iApply wp_ghost_op. iIntros "!> !>". iExists -[(γ1, vra_op VRA x1 x2)].
     iSplitL; [iSplit; [by iApply (ra_val_own with "⧖1 Hx Hinv")|done]|].
     iApply (proph_obs_impl with "Obs"). by intros π [_ ?].
@@ -109,12 +108,12 @@ Section RA_bytes.
   Proof.
     iIntros (tid post mask iκs [[γ x] [x1 [x2 []]]]) "_ _ #PROPH _ _ $ $ (p & _ & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & -> & _)"; [done|].
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ [Hx #Hinv]]".
+    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ [Hx #Hinv]]". simpl in Hw. simplify_eq.
     rewrite -vra_car_op_eq auth_frag_op. iDestruct "Hx" as "[Hx1 Hx2]".
     iApply wp_ghost_op. iIntros "!> !>". iExists -[(γ, x1); (γ, x2)].
     iSplitL; [|iApply (proph_obs_impl with "Obs"); by intros π [_ ?]].
     iSplitL "Hx1"; [|iSplit; [by iApply (ra_val_own with "⧖ Hx2 Hinv")|done]].
-    iExists _. iSplit; [done|]. iExists (VTuple []), d. iSplit; [done|]. by iFrame.
+    iExists _. iSplit; [done|]. iExists (VTuple []), d. iSplit; [done|]. iFrame "⧖". simpl. by iFrame.
   Qed.
 
   Lemma typed_rab_unit E L I :
@@ -174,7 +173,7 @@ Section RA_bytes.
   Qed.
 
   (** Opening the guard of a shared reference, to get the invariant. *)
-  Local Lemma ra_shr_inv E L κ γ x n G :
+  Local Lemma ra_shr_inv L κ γ x n G :
     ↑NllftG ⊆ G →
     llctx_interp L -∗ (llctx_interp L &&{↑NllftG}&&> @[κ]) -∗
     (@[κ] &&{↑NllftG; n}&&> own γ (◯ VraCar VRA x) ∗ ra_inv VRA γ) -∗ £n ={G}=∗
@@ -200,10 +199,12 @@ Section RA_bytes.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [done|]. iIntros "£ _".
     iDestruct (lc_weaken (S d + 1) with "£") as "£"; [rewrite /advance_credits; lia|].
     iDestruct (guards_transitive_right with "Alv Shr") as "G1".
-    iMod (guards_open_later with "G1 L") as "Open"; [solve_ndisj|].
-    iMod (lc_fupd_elim_laterN with "£ Open") as ">[[Hx #Hinv] Close]".
-    iMod (ra_validate with "Hinv Hx") as "[Hx #Hvalid]"; [solve_ndisj|].
-    iMod ("Close" with "[$Hx $Hinv]") as "$".
+    iAssert (|={⊤ ∖ ↑advN}=> llctx_interp L ∗ ⟨π, vra_valid VRA x π⟩)%I
+      with "[L £]" as ">[$ #Hvalid]".
+    { iMod (guards_open_later with "G1 L") as "Open"; [solve_ndisj|].
+      iMod (lc_fupd_elim_laterN with "£ Open") as ">[[Hx #Hinv] Close]".
+      iMod (ra_validate with "Hinv Hx") as "[Hx #Hvalid]"; [solve_ndisj|].
+      iMod ("Close" with "[$Hx $Hinv]") as "$". by iModIntro. }
     wp_seq. wp_seq.
     eapply (tac_wp_pure []); [apply (pure_mk_tuple [])|done|tc_solve|simpl; iApply wp_value].
     iModIntro. iExists -[]. iSplit; [done|].
@@ -215,7 +216,7 @@ Section RA_bytes.
     lctx_lft_alive E L κ →
     typed_instr E L I
       +[p1 ◁ᵥ &shrb{κ} raty; p2 ◁ᵥ &shrb{κ} raty; p ◁ᵥ ghost_ty ty]
-      (Skip ;; p1) (λ v, +[v ◁ᵥ &shrb{κ} raty])
+      (GhostRet [p1]) (λ v, +[v ◁ᵥ &shrb{κ} raty])
       (λ post '-[(l1, (γ1, x1)); (_, (γ2, x2)); y], λ mask π,
         γ1 = γ2 ∧ vra_conjunct_shared VRA x1 x2 y ∧ post -[(l1, (γ1, y))] mask π).
   Proof.
@@ -247,8 +248,8 @@ Section RA_bytes.
     iPoseProof (@guards_and_own _ _ _ _ _ _ (authUR (vra_carUR VRA)) _ γ1 (◯ VraCar VRA y)
       with "Shr1' Shr2'") as "Shr3"; first apply Hand.
     iPoseProof (guards_include_pers (ra_inv VRA γ1) with "Hinv Shr3") as "Shr4".
-    iFrame "L". wp_seq. wp_seq. iApply (wp_wand with "[]"); [by iApply wp_eval_path|].
-    iIntros (? ->). iModIntro.
+    iFrame "L". wp_bind p1. iApply (wp_wand with "[]"); [by iApply wp_eval_path|].
+    iIntros (? ->). wp_rec. iModIntro.
     iExists -[(l1, (γ1, y))]. iSplitL.
     - iSplit; [|done]. iApply (ra_shr_own with "⧖D Shr4").
     - iApply (proph_obs_impl with "Obs"). by intros π (_ & _ & ?).
@@ -257,7 +258,7 @@ Section RA_bytes.
   Lemma typed_rab_weaken κ (p1 p2 : path) (ty : type 𝔄) E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I +[p1 ◁ᵥ &shrb{κ} raty; p2 ◁ᵥ ghost_ty ty]
-      (Skip ;; p1) (λ v, +[v ◁ᵥ &shrb{κ} raty])
+      (GhostRet [p1]) (λ v, +[v ◁ᵥ &shrb{κ} raty])
       (λ post '-[(l, (γ, x)); y], λ mask π, vra_incl VRA y x ∧ post -[(l, (γ, y))] mask π).
   Proof.
     iIntros (Alv tid post mask iκs [[l [γ x]] [y []]])
@@ -276,8 +277,8 @@ Section RA_bytes.
     { iIntros "[[H _] _]". iApply (own_mono with "H").
       by apply auth_frag_mono, vra_car_included. }
     iPoseProof (guards_include_pers (ra_inv VRA γ) with "Hinv Shr'") as "Shr''".
-    iFrame "L". wp_seq. wp_seq. iApply (wp_wand with "[]"); [by iApply wp_eval_path|].
-    iIntros (? ->). iModIntro.
+    iFrame "L". wp_bind p1. iApply (wp_wand with "[]"); [by iApply wp_eval_path|].
+    iIntros (? ->). wp_rec. iModIntro.
     iExists -[(l, (γ, y))]. iSplitL.
     - iSplit; [|done]. iApply (ra_shr_own with "⧖1 Shr''").
     - iApply (proph_obs_impl with "Obs"). by intros π [_ ?].
@@ -304,15 +305,17 @@ Section RA_bytes.
     iApply (wp_persistent_time_receipt with "TIME ⧖2"); [done|]. iIntros "£ _".
     iDestruct (lc_weaken (S d2 + 1) with "£") as "£"; [rewrite /advance_credits; lia|].
     iDestruct (guards_transitive_right with "Alv Shr") as "G1".
-    iMod (guards_open_later with "G1 L") as "Open"; [solve_ndisj|].
-    iMod (lc_fupd_elim_laterN with "£ Open") as ">[[Hy #Hinv] Close]".
-    iAssert (own γ1 (◯ VraCar VRA (vra_op VRA x y))) with "[Hx Hy]" as "Hxy".
-    { rewrite -vra_car_op_eq auth_frag_op own_op. iFrame. }
-    iMod (ra_update VRA _ γ1 (vra_op VRA x y) (vra_op VRA z y) with "Hinv Hxy [Obs]") as "Hxy";
-      first solve_ndisj.
-    { iApply (proph_obs_impl with "Obs"). by intros π [_ [? _]]. }
-    rewrite -vra_car_op_eq auth_frag_op own_op. iDestruct "Hxy" as "[Hz Hy]".
-    iMod ("Close" with "[$Hy $Hinv]") as "$".
+    iAssert (|={⊤ ∖ ↑advN}=> llctx_interp L ∗ own γ1 (◯ VraCar VRA z) ∗ ra_inv VRA γ1)%I
+      with "[L £ Hx]" as ">($ & Hz & #Hinv)".
+    { iMod (guards_open_later with "G1 L") as "Open"; [solve_ndisj|].
+      iMod (lc_fupd_elim_laterN with "£ Open") as ">[[Hy #Hinv] Close]".
+      iAssert (own γ1 (◯ VraCar VRA (vra_op VRA x y))) with "[Hx Hy]" as "Hxy".
+      { rewrite -vra_car_op_eq auth_frag_op own_op. iFrame. }
+      iMod (ra_update VRA _ γ1 (vra_op VRA x y) (vra_op VRA z y) with "Hinv Hxy [Obs]") as "Hxy";
+        first solve_ndisj.
+      { iApply (proph_obs_impl with "Obs"). by intros π [_ [? _]]. }
+      rewrite -vra_car_op_eq auth_frag_op own_op. iDestruct "Hxy" as "[Hz Hy]".
+      iMod ("Close" with "[$Hy $Hinv]") as "$". by iFrame "Hz Hinv". }
     wp_seq. wp_seq.
     eapply (tac_wp_pure []); [apply (pure_mk_tuple [])|done|tc_solve|simpl; iApply wp_value].
     iModIntro. iExists -[(γ1, z)]. iSplitL.
@@ -343,15 +346,18 @@ Section RA_bytes.
     iApply (wp_persistent_time_receipt with "TIME ⧖2"); [done|]. iIntros "£ _".
     iDestruct (lc_weaken (S d2 + 1) with "£") as "£"; [rewrite /advance_credits; lia|].
     iDestruct (guards_transitive_right with "Alv Shr") as "G1".
-    iMod (guards_open_later with "G1 L") as "Open"; [solve_ndisj|].
-    iMod (lc_fupd_elim_laterN with "£ Open") as ">[[Hy #Hinv] Close]".
-    iAssert (own γ1 (◯ VraCar VRA (vra_op VRA x y))) with "[Hx Hy]" as "Hxy".
-    { rewrite -vra_car_op_eq auth_frag_op own_op. iFrame. }
-    iMod (ra_update_nondeterministic VRA _ γ1 _ _ ltac:(solve_ndisj) Hupd with "Hinv Hxy")
-      as (w) "[%Hin Hxy]".
-    destruct Hin as (z & Hz & ->).
-    rewrite -vra_car_op_eq auth_frag_op own_op. iDestruct "Hxy" as "[Hz Hy]".
-    iMod ("Close" with "[$Hy $Hinv]") as "$".
+    iAssert (|={⊤ ∖ ↑advN}=> llctx_interp L ∗ ∃ z, ⌜z ∈ vec_to_list zs⌝ ∗
+        own γ1 (◯ VraCar VRA z) ∗ ra_inv VRA γ1)%I
+      with "[L £ Hx]" as ">($ & %z & %Hz & Hz & #Hinv)".
+    { iMod (guards_open_later with "G1 L") as "Open"; [solve_ndisj|].
+      iMod (lc_fupd_elim_laterN with "£ Open") as ">[[Hy #Hinv] Close]".
+      iAssert (own γ1 (◯ VraCar VRA (vra_op VRA x y))) with "[Hx Hy]" as "Hxy".
+      { rewrite -vra_car_op_eq auth_frag_op own_op. iFrame. }
+      iMod (ra_update_nondeterministic VRA (⊤ ∖ ↑advN ∖ ↑NllftG) γ1 _ _ ltac:(solve_ndisj) Hupd with "Hinv Hxy")
+        as (w) "[%Hin Hxy]".
+      destruct Hin as (z & Hz & ->).
+      rewrite -vra_car_op_eq auth_frag_op own_op. iDestruct "Hxy" as "[Hz Hy]".
+      iMod ("Close" with "[$Hy $Hinv]") as "$". iModIntro. iExists z. by iFrame "Hz Hinv". }
     wp_seq. wp_seq.
     eapply (tac_wp_pure []); [apply (pure_mk_tuple [])|done|tc_solve|simpl; iApply wp_value].
     iModIntro. iExists -[(γ1, z)]. iSplitL.
