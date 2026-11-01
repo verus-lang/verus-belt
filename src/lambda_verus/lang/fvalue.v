@@ -900,6 +900,12 @@ Section frepr_more.
     - apply lookup_ge_None_2. rewrite fb_mix_length //. by apply lookup_ge_None.
   Qed.
 
+  Lemma fb_mix_cells cs bs' : length bs' = length cs → fb_mix (inl <$> cs) bs' = inl <$> cs.
+  Proof.
+    revert bs'. induction cs as [|c cs IH]; intros [|b bs'] Hlen; simpl in *; try done; try lia.
+    f_equal. apply IH. lia.
+  Qed.
+
   (** The fancy bytes of a value, with the plain bytes of other bytes that decode to its
       erasure, represent it. *)
   Lemma frepr_mix R (ρ : gmap positive FValue) m fbs fv v bs' :
