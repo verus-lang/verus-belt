@@ -2,7 +2,8 @@
 
 Status: steps 1–3 implemented (2026-10-30), branch `memory-model`; see §9 Outcome. §10 step 1
 done (2026-10-31); see §11. §10 steps 2 and 3 done; see §12 and §13. §10 step 4 done; see §14.
-§10 step 5 done; see §15 and §16. Moves of values with cells: see §19.
+§10 step 5 done; see §15 and §16. Moves of values with cells: see §19. PCell borrows as
+`&shr`/`&uniq` with exact bytes: not implemented, see §20 (obstacles and two proposed routes).
 Context: `design_docs/minirust-memory-model.md` (stages 1–5). `pcell` is the last user of the
 legacy word layer.
 
@@ -1055,3 +1056,99 @@ returned. The specification is `post 17` (the group `g` of the permission is the
 - Moves out of places below unique borrows (there is no deep move rule) are not provided;
   memcpy into them is.
 
+## 20. Outcome: PCell borrows as `&shr`/`&uniq` (2026-11-01)
+
+**Not implemented.** The agreed design (an exact logical points-to `l ↦ˡ fbs` whose cell
+positions are fragments `gbytes◯ γ fbs` of the current tethering `γ`, claimable with the
+permission and a guard of the location side; `type_pcell_borrow_instr` /
+`type_pcell_borrow_mut_instr` returning `&shr{κ} ty` / `&uniq{κ} ty`; the unified place
+rules below them) does not go through as stated. Four obstacles came out of working out the
+proofs against the current heap (`lang/heap.v`, `lang/heap_cells.v`) and typing layer; the
+first three are soundness problems, not proof-engineering ones. `memory-model` is unchanged
+except for this section; `cell_shr_ty`/`cell_uniq_ty` and their rules stay.
+
+### O1. Field writes through split leaves cannot keep D3
+
+The place rules split the body of `&uniq{κ} ty` along the layout of `ty` (`cbytes_pair`,
+`cbytes_sum`, …) and write a single leaf. So a leaf of the contents must be able to write on
+its own, without the group's permission `gdyn g fv` (which is one resource and cannot be
+split between leaves). But a cell write must preserve D3 (the contents decode at `m_g`):
+typed moves of the enclosing value decode the contents (`bytes_ctx_unt_fbytes_decode`),
+and the owner of the location side may move it at any time after `κ`. Today this is
+guaranteed by `bytes_ctx_cell_write_end`, which checks `fv_sub m fv o' m' fvs` (an aligned
+sub-value) *against the whole fancy value in `gdyn`*. Per-byte fragments do not know the
+group's structure, and a byte points-to can be read at any mty:
+
+- the fragment of a `bool` byte (`Init 1`) also satisfies `frepr (MInt u8) [Init 1] _`; a
+  `Store` of `2 : u8` through it leaves contents that do not decode at `m_g`;
+- root data bytes satisfy the padding of any tuple mty laid over them; a `Store` at that
+  mty writes `Uninit` into them.
+
+A write lemma for `l ↦ˡ fbs` at an arbitrary mty `m'` is therefore unsound. Making it
+sound needs alignment information *per byte* (a role for each claimed byte: int / bool /
+pointer fragment / enum tag / padding / cell, with `bytes_own` requiring the roles to fit
+the layout of the type), or no heap-level D3 at all (see route V below).
+
+### O2. Freshness of a tethering cannot be derived at an access
+
+An access through a fragment of `γ` needs `γ` to be the current tethering (otherwise the
+bytes may have been re-encoded by a move: padding becomes `Uninit`, §19). The borrow only
+has `@[κ] &&> bytes_own (pcell_ty m) l g`, i.e. a guard of `∃ cs, loc_side l g m cs`
+(`bytes_own_pcell_ty`). If `loc_side` recorded `γ`, it would be existential in the guard's
+target, and a guard of an existential does not pin the witness across openings. A
+byte-context check "no retether since the claim" would need the byte context to own a token
+guarding `@[κ]` for the whole of `κ` (the bank of cell writes, `cwentry`, does this only for
+one instruction, with a half of the lifetime context). Moves during `κ` are impossible in
+practice (the untether lemmas need `↑naN = ↑NllftG`, which a guard opener does not have),
+but no lemma can derive it for the accessor. The way out is to make fragments *robust* to
+re-encoding instead of fresh: claim canonical bytes (data bytes exact, padding `Uninit`)
+as lower bounds (`byte_le claim actual`); a typed move only lowers padding, and `frepr` is
+upward closed (cf. `decode_value_mono`). This removes tethering ids altogether.
+
+### O3. Accesses need the location side, which lifetime-free leaves do not have
+
+A leaf of the contents at address `a` (byte `i` of `g`, nested in a root `g0` whose location
+side is at `l0`) may only be accessed while `a`'s row goes through the byte-cell of `g`,
+i.e. with a guard of `loc_side l0 g0 …` at a live lifetime. `bytes_own`/`cbytes` (the leaves
+of the place machinery and the bodies of `&shr`/`&uniq`) have no lifetime. Putting the guard
+into the leaves breaks reborrows: the final contents of a reborrow at `κ'` (with `κ'`-guards)
+go back into the body of the original borrow at `κ`. The pin has to be a *parameter of the
+body predicates*, fixed for a borrow and inherited by its reborrows and sub-places
+(`cbytes pin ty x l`, with `pin = None` for ordinary memory and `Some (λ, g0, l0, g, o, n)`
+for cell contents, `κ ⊑ λ` in the ownership of `&shr{κ}`/`&uniq{κ}` and a persistent time
+receipt for the guard's laters). This threads through `shr_bor.v`, `uniq_bor.v`,
+`uniq_util.v`, `ltype.v` and the `place_*.v` files (about 300 uses), and every leaf access of
+the place rules (`bytes_own_nocell_bytes` followed by `wp_load_na`/`_guarded_gen`/
+`wp_memcopy*`/`wp_store_*`) needs a cell-mode counterpart. (The legacy layer avoided this by
+putting the cell chain into the pointer value, `cloc`, with the guard of the location part
+in the reference's ownership; stage 6 removed `cloc` from the values.)
+
+### O4. The lender cannot turn fragments back into `gdyn` lazily
+
+The backward map of `uniq_body_transform*` is a `lazyE` update, which cannot reach the byte
+context (state interpretation, only at WP steps via `wp_bytes_ctx_pre`). If `borrow_mut`
+deposits `gdyn` in the byte context and hands out fragments, the lender gets fragments back,
+so `cell_own` needs a second (fragment) form that the permission rules normalise at their
+WP step, and the forward map needs a WP step inside the transform (a split of
+`proph_idx_bor_gen_map` into access and close). This one is moderate work, not a soundness
+problem.
+
+### Two routes
+
+- **Route V (recommended): verbatim cell moves first.** Give the contents of a cell a
+  byte-preserving MiniRust representation (the "bytes in values" step that the plan defers),
+  so that a typed move copies them verbatim. Then D3 is no longer needed by moves (O1
+  disappears: the type-level `frepr` of the permission/borrow is enough), fragments never
+  go stale (O2 disappears, no tethering ids), and the permission can *be* the per-byte
+  contents (the contents edges `bpt (inr c) fb`, as the legacy `c ^↦! fv`), so `borrow_mut`
+  is a pure ghost transform of the `&uniq` body (O4 disappears). Only O3 (the pin) remains.
+- **Route C: keep re-encoding moves.** Canonical lower-bound fragments (O2) with per-byte
+  roles (O1), the pin (O3), and the fragment form of the permission (O4). Equivalently, a
+  value-level variant: per-atom fragments of the group's fancy value (ints, bools, pointers,
+  tags, cells; padding untracked), which are alignment-safe and move-robust by construction;
+  it tracks the bytes exactly except padding. Both need new MiniRust meta-theory (roles or
+  atoms, and a substitution lemma for decoding) and a rework of D3 in `heap_cells.v`.
+
+Either way O3 is the bulk of the typing-layer work. Route V needs the language change and
+the threading of O3; route C needs, in addition, several thousand lines in `heap_cells.v`
+and the meta-theory.
