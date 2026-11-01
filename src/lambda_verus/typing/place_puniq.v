@@ -13,10 +13,10 @@
     ([vplace_conv]) at the mode of the hole. Instances: unfolding and folding a unique
     borrow ([OfTy (&uniq{κ'} ty)] ↔ [UniqLty (OfTy ty) κ']) and a pair (both modes), and an
     owned pointer ([Owned] mode).
-  - [type_borrow_oplace_deep_instr] ([Owned] mode), [type_borrow_oplace_uniq_instr]
-    ([Uniq] mode): mutable borrow of the hole at [pctx_blft K α], the intersection of all
-    enclosing borrow lifetimes and [α]; [unblock_tctx_oplace_deep],
-    [unblock_tctx_oplace_uniq]: unblocking.
+  - [type_borrow_place_instr] (the unified mutable borrow, instruction [&ᵘ e]; by the mode
+    of the hole, [type_borrow_vplace_owned] and [type_borrow_vplace_uniq]): mutable borrow of
+    the hole at [pctx_blft K α], the intersection of all enclosing borrow lifetimes and [α];
+    [unblock_tctx_oplace_deep], [unblock_tctx_oplace_uniq]: unblocking.
   - (Reads and writes are [type_read_place_instr] of [place_read.v] and
     [type_write_place_instr] of [place_write.v].)
   - [lty_rslv], [type_resolve_oplace_deep_instr], [type_drop_oplace_deep_instr]: resolving
@@ -600,15 +600,14 @@ Section puniq.
       pose proof (pctx_hmode_ne K 0 1 0). simpl in *. destruct (pctx_ulfts K); lia.
   Qed.
 
-  (** A mutable borrow of the leaf at the hole of [K] (in [Owned] mode, at any path, below
-      any number of unique borrows), at a lifetime [α] that the type of the leaf outlives.
-      The new borrow is at [pctx_blft K α], the intersection of the enclosing borrow
-      lifetimes and [α] ([α] if there is none, as [type_borrow_oplace_instr]); its fresh
-      prophecy variable extends the reservations of all enclosing borrows. *)
-  Lemma type_borrow_vplace_deep_instr {𝔅 𝔄} E L I p α (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} (ty: type 𝔅) :
+  (** A mutable borrow of the leaf at the hole of [K] in [Owned] mode (at any path, below
+      any number of unique borrows): the new borrow is at [pctx_blft K α], the intersection
+      of the enclosing borrow lifetimes and [α] ([α] if there is none); its fresh prophecy
+      variable extends the reservations of all enclosing borrows. *)
+  Lemma type_borrow_vplace_owned {𝔅 𝔄} E L I p α (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} (ty: type 𝔅) :
     pctx_uend K = None →
-    lctx_lft_alive E L (pctx_ulft K (OfTy ty)) → elctx_sat E L (ty_outlives_E ty α) →
-    typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (Seq (Seq Skip Skip) (OfLit (pctx_vexpr K p)))
+    lctx_lft_alive E L (pctx_ulft K (OfTy ty) ⊓ α) → elctx_sat E L (ty_outlives_E ty α) →
+    typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (&ᵘ (pctx_vexpr K p))
       (λ w, +[w ◁ᵥ &uniq{pctx_blft K α} ty; p ◁ₗ pctx_plug K (Blocked ty (pctx_blft K α))])
       (λ post '-[x], λ mask π, ∀ m1: ~~ (uniq_borₛ 𝔅),
         uniq_bor_current m1 = pctx_get K x.1 →
@@ -617,7 +616,7 @@ Section puniq.
     intros Hu Alv Out tid post mask iκs [x []].
     iIntros "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
     destruct x as [x₀ ζm].
-    rewrite /tctx_elt_interp.
+    rewrite /tctx_elt_interp /borrow_uniq.
     iDestruct "T" as (v Hp) "T". iEval (rewrite vplace_own_open) in "T".
     iDestruct "T" as (D) "(#⧖ & ⧗p & Own)". have Hdl: 1 ≤ pctx_dlev K by apply pctx_vroot_dlev.
     have ?: Closed [] (pctx_vexpr K p).
@@ -635,7 +634,8 @@ Section puniq.
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
       [solve_ndisj|].
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (OfTy ty)])%I as "#Hu".
-    { iApply (guards_transitive with "Ghalf Alv"). }
+    { iApply (guards_transitive with "Ghalf"). iApply (guards_transitive with "Alv").
+      iApply llftl_intersect_incl_l. }
     set y := pctx_get K x₀.
     iDestruct (lc_weaken (pctx_vacc_cred K D + (D + (3 * (D + 1) * D + 1))) with "£")
       as "[£a [£k [£w £c]]]"; [have := pctx_vacc_cred_le K D; rewrite /advance_credits; nia|].
@@ -712,15 +712,7 @@ Section puniq.
     by rewrite pctx_vrfn_blk_cons /= decide_True.
   Qed.
 
-  Lemma type_borrow_oplace_deep_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (ty: type 𝔅) :
-    pctx_uend K = None →
-    lctx_lft_alive E L (pctx_ulft K (OfTy ty)) → elctx_sat E L (ty_outlives_E ty α) →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Seq (Seq Skip Skip) (OfLit (pctx_expr K (ToLit p))))
-      (λ w, +[w ◁ᵥ &uniq{pctx_blft K α} ty; p ◁ₗown{n} pctx_plug K (Blocked ty (pctx_blft K α))])
-      (λ post '-[x], λ mask π, ∀ m1: ~~ (uniq_borₛ 𝔅),
-        uniq_bor_current m1 = pctx_get K x.1.2 →
-        post -[m1; (x.1, (pctx_path K [], uniq_bor_ξi m1) :: x.2)] mask π).
-  Proof. intros. by apply (type_borrow_vplace_deep_instr _ _ _ _ _ (POwn n K)). Qed.
+
   (** * Unblocking a leaf below unique borrows *)
 
   Lemma pctx_ne_ge {𝔅 𝔄} (K: pctx 𝔅 𝔄) e mm : e ≤ pctx_ne K e mm.
@@ -942,10 +934,10 @@ Section puniq.
     iApply (proph_eqz_eq with "Eqz"); [|done]. fun_ext=> π /=. by rewrite Hw.
   Qed.
   (** The reborrow of the whole referent of the innermost borrow (in [Uniq κ] mode). *)
-  Lemma type_borrow_vplace_uniq_instr {𝔅 𝔄} E L I p α κ (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} (ty: type 𝔅) :
+  Lemma type_borrow_vplace_uniq {𝔅 𝔄} E L I p α κ (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} (ty: type 𝔅) :
     pctx_uend K = Some κ →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty) ⊓ α) → elctx_sat E L (ty_outlives_E ty α) →
-    typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (Seq (Seq Skip Skip) (OfLit (pctx_vexpr K p)))
+    typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (&ᵘ (pctx_vexpr K p))
       (λ w, +[w ◁ᵥ &uniq{pctx_blft K α} ty; p ◁ₗ pctx_plug K (Blocked ty (pctx_blft K α))])
       (λ post '-[x], λ mask π, ∀ m1: ~~ (uniq_borₛ 𝔅),
         uniq_bor_current m1 = pctx_get K x.1 →
@@ -954,7 +946,7 @@ Section puniq.
     intros Hu Alv Out tid post mask iκs [x []].
     iIntros "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
     destruct x as [x₀ ζm].
-    rewrite /tctx_elt_interp.
+    rewrite /tctx_elt_interp /borrow_uniq.
     iDestruct "T" as (v Hp) "T". iEval (rewrite vplace_own_open) in "T".
     iDestruct "T" as (D) "(#⧖ & ⧗p & Own)". have Hdl: 1 ≤ pctx_dlev K by apply pctx_vroot_dlev.
     have ?: Closed [] (pctx_vexpr K p).
@@ -1039,15 +1031,31 @@ Section puniq.
     by rewrite pctx_vrfn_blk_cons /= decide_True.
   Qed.
 
-  Lemma type_borrow_oplace_uniq_instr {𝔅 𝔄} E L I p n α κ (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (ty: type 𝔅) :
-    pctx_uend K = Some κ →
-    lctx_lft_alive E L (pctx_ulft K (OfTy ty) ⊓ α) → elctx_sat E L (ty_outlives_E ty α) →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Seq (Seq Skip Skip) (OfLit (pctx_expr K (ToLit p))))
-      (λ w, +[w ◁ᵥ &uniq{pctx_blft K α} ty; p ◁ₗown{n} pctx_plug K (Blocked ty (pctx_blft K α))])
+  (** * The unified mutable borrow
+
+      A mutable borrow of the leaf [OfTy ty] at the hole of [K], on any path of fields, sums,
+      owned pointers and unique borrows ([PctxNoShr]: no shared reference and no resolved
+      unique borrow on the path; the siblings below a unique borrow are simple), rooted at
+      an owned pointer ([p ◁ₗown{n} …]) or a unique borrow value ([PctxVRoot]). The new
+      borrow [&uniq{pctx_blft K α} ty] is at the intersection of the enclosing borrow
+      lifetimes and [α]; the leaf becomes [Blocked ty (pctx_blft K α)] until [α] ends, and the
+      blocking map records the prophecy variable of the new borrow at the path of the hole.
+      If the hole is the whole referent of the innermost unique borrow ([pctx_uend K = Some κ],
+      e.g. [&mut **x]), that borrow is reborrowed ([type_borrow_vplace_uniq]); otherwise the
+      leaf is borrowed in [Owned] mode ([type_borrow_vplace_owned]). *)
+  Lemma type_borrow_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K}
+      α (ty: type 𝔅) :
+    elctx_sat E L (ty_outlives_E ty α) → lctx_lft_alive E L (pctx_ulft K (OfTy ty) ⊓ α) →
+    typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (&ᵘ (pctx_vexpr K p))
+      (λ w, +[w ◁ᵥ &uniq{pctx_blft K α} ty; p ◁ₗ pctx_plug K (Blocked ty (pctx_blft K α))])
       (λ post '-[x], λ mask π, ∀ m1: ~~ (uniq_borₛ 𝔅),
-        uniq_bor_current m1 = pctx_get K x.1.2 →
-        post -[m1; (x.1, (pctx_path K [], uniq_bor_ξi m1) :: x.2)] mask π).
-  Proof. intros. by apply (type_borrow_vplace_uniq_instr _ _ _ _ α κ (POwn n K)). Qed.
+        uniq_bor_current m1 = pctx_get K x.1 →
+        post -[m1; (x.1, (pctx_vpath K, uniq_bor_ξi m1) :: x.2)] mask π).
+  Proof.
+    intros Out Alv. destruct (pctx_uend K) as [κ|] eqn:Hu.
+    - by apply (type_borrow_vplace_uniq _ _ _ _ α κ K).
+    - by apply (type_borrow_vplace_owned _ _ _ _ α K).
+  Qed.
 
   (** Unblocking the whole referent of the innermost borrow, once [α] has ended: the
       enclosing borrows are opened, the restored borrow is settled

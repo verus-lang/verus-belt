@@ -147,7 +147,7 @@ Section place_res.
   with the specification `ensures result == (3, ( **old(x)).1),
   fin(x) == ((3, ( **old(x)).1), fin( *old(x)))`. The argument is a box of bytes, an owned
   place; `*x`, `**x` (and `**x` as a pair) are unfolded; `( **x).0` is reborrowed
-  ([type_borrow_oplace_deep_instr]); `x` is resolved ([type_resolve_oplace_res_instr],
+  ([type_borrow_place_instr]); `x` is resolved ([type_resolve_oplace_res_instr],
   [lty_res_uniq_cpd]); `( **x).1` is read in the view ([type_read_place_instr], a
   guarded typed load); `*r = 3` is a typed [Store] through the reborrow; when the local
   lifetime ends, `( **x).0` is unblocked in the view ([unblock_tctx_oplace_res]) and read;
@@ -156,8 +156,8 @@ Section place_res.
   Definition res_nested : expr := (
     ReBor;; ReBor;; ReBor;;                                      (* unfold *x, **x, **x as a pair *)
     Newlft;;
-    let: "r" := ReBor;;
-      OfLit (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x"))))) in  (* &mut ( **x).0 *)
+    let: "r" :=
+      &ᵘ (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x"))))) in      (* &mut ( **x).0 *)
     (Skip;; #☠);;                                                (* resolve x *)
     let: "b" := !ᶜ{MInt i32}
       (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x")))) +ₗ #4) in  (* ( **x).1 *)
@@ -208,8 +208,8 @@ Section place_res.
       iApply (type_newlft []). iIntros (γ).
       (* r = &mut ( **x).0, at α ⊓ (β ⊓ γ) *)
       iApply (type_let with "[]").
-      { apply (type_borrow_oplace_deep_instr _ _ _ vx PTR_SIZE γ
-          (PUniq α (PUniq β (PFst PHole (OfTy i32t)))) i32t); [done|solve_typing|solve_typing]. }
+      { apply (type_borrow_place_instr _ _ _ vx (POwn PTR_SIZE (PUniq α (PUniq β (PFst PHole (OfTy i32t)))))
+          γ i32t); solve_typing. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       (* resolve x *)

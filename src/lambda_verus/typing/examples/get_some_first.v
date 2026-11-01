@@ -36,8 +36,8 @@ Section get_some_first.
       let: "r" := MkVariant 0 "u" in
       jump: "return" ["r"];
       ReBor;;                                       (* Some(p): unfold p *)
-      let: "r0" := ReBor;; OfLit (ToLit "b" +ₗ #1) in          (* &mut p.0 *)
-      let: "r1" := ReBor;; OfLit (ToLit "b" +ₗ #1 +ₗ #4) in    (* &mut p.1, to drop b *)
+      let: "r0" := &ᵘ (ToLit "b" +ₗ #1) in                    (* &mut p.0 *)
+      let: "r1" := &ᵘ (ToLit "b" +ₗ #1 +ₗ #4) in              (* &mut p.1, to drop b *)
       Skip;;                                        (* resolve r1 *)
       let: "r" := MkVariant 1 "r0" in
       jump: "return" ["r"]])%E.
@@ -102,16 +102,16 @@ Section get_some_first.
         { solve_typing. } { simpl. reflexivity. }
         (* &mut p.0, at α ⊓ α *)
         iApply (type_let with "[]").
-        { apply (type_borrow_vplace_deep_instr _ _ _ vb α
-            (PUniq α (PSum +[(); i32t * i32t]%T 1%fin (0, 0)%Z (PFst PHole (OfTy i32t)))) i32t);
-            [done|simpl; solve_typing|solve_typing]. }
+        { apply (type_borrow_place_instr _ _ _ vb
+            (PUniq α (PSum +[(); i32t * i32t]%T 1%fin (0, 0)%Z (PFst PHole (OfTy i32t)))) α i32t);
+            [solve_typing|simpl; solve_typing]. }
         { solve_typing. } { reflexivity. }
         iIntros (vr0). simpl_subst.
         (* &mut p.1, at α ⊓ α *)
         iApply (type_let with "[]").
-        { apply (type_borrow_vplace_deep_instr _ _ _ vb α
+        { apply (type_borrow_place_instr _ _ _ vb
             (PUniq α (PSum +[(); i32t * i32t]%T 1%fin (0, 0)%Z (PSnd (Blocked i32t (α ⊓ α)) PHole)))
-            i32t); [done|simpl; solve_typing|solve_typing]. }
+            α i32t); [solve_typing|simpl; solve_typing]. }
         { solve_typing. } { reflexivity. }
         iIntros (vr1). simpl_subst.
         (* resolve the borrow of p.1 *)

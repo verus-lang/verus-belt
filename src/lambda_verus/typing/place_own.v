@@ -10,7 +10,7 @@
   the refinement of the place is [lty_rfn lt x₀ ζm []].
 
   There is no outer borrow: blocking a leaf (a mutable borrow of a subplace at some
-  lifetime [α], [type_borrow_oplace_instr]) leaves in the place the inheritance of the
+  lifetime [α], [type_borrow_place_instr] of [place_puniq.v]) leaves in the place the inheritance of the
   new borrow (pending ownership, [blocked_owned]), which is fired when [α] has ended
   ([unblock_tctx_oplace]). A leaf can be read (copied, [type_read_place_instr] of
   [place_read.v]), moved
@@ -182,92 +182,6 @@ Section typing.
     iSplitL "Fr'"; [by iApply bi.laterN_intro|].
     iExists y. iSplit; [done|]. rewrite /ofty_owned.
     iFrame "Pt'". rewrite Nat.add_1_r /=. iNext. by iApply bi.laterN_intro.
-  Qed.
-
-  (** * Mutable borrow of a leaf *)
-
-  (** A mutable borrow of the leaf at the hole of [K], at a lifetime [α] that the type of
-      the leaf outlives. The program computes the address of the leaf ([pctx_expr], a load
-      per owned pointer above it). The leaf is blocked until [α] ends, refined by the
-      final value of the new borrow (the blocking map gets an entry for the path of the
-      hole). *)
-  Lemma type_borrow_oplace_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
-    elctx_sat E L (ty_outlives_E ty α) →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)]
-      (Seq (Seq Skip Skip) (OfLit (pctx_expr K (ToLit p))))
-      (λ w, +[w ◁ᵥ &uniq{α} ty; p ◁ₗown{n} pctx_plug K (Blocked ty α)])
-      (λ post '-[x], λ mask π, ∀ m1: ~~ (uniq_borₛ 𝔅),
-        uniq_bor_current m1 = pctx_get K x.1.2 →
-        post -[m1; (x.1, (pctx_path K [], uniq_bor_ξi m1) :: x.2)] mask π).
-  Proof.
-    intros Out tid post mask iκs [x []].
-    iIntros "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
-    destruct x as [[l x₀] ζm].
-    rewrite /tctx_elt_interp.
-    iDestruct "T" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
-    have ?: Closed [] (pctx_expr K (ToLit p)).
-    { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
-    iDestruct (Out with "L E") as "#Out".
-    iDestruct (elctx_interp_ty_outlives_E with "Out") as "#Incl".
-    (* Two steps, for credits and cumulative time receipts. *)
-    wp_bind (Seq Skip Skip). wp_bind Skip. iApply wp_fupd.
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [set_solver|].
-    iIntros "£ #⧖S". wp_let. iModIntro. wp_let. iApply wp_fupd.
-    iApply (wp_cumulative_time_receipt_linear with "TIME ⧖S"); [set_solver|].
-    iIntros "⧗". wp_let. iModIntro. wp_let.
-    rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
-    iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
-    iDestruct "L1" as (? ->) "[Pt1 Gho1]".
-    iDestruct (pctx_own_mode_le with "Rest") as %Hk.
-    set k0 := pctx_mode K 0.
-    set y := pctx_get K x₀.
-    set lr := l.
-    set lK := pctx_loc K (lty_size (OfTy ty)) x₀ lr.
-    set dh := pctx_depth K d.
-    have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
-    iDestruct (lc_weaken (k0 + 1) with "£") as "[£k £']"; [rewrite /advance_credits; nia|].
-    iDestruct (cumulative_time_receipt_mono (1 + (1 + S k0)) with "⧗") as "⧗"; [lia|].
-    iDestruct (cumulative_time_receipt_sep with "⧗") as "[⧗a ⧗]".
-    iDestruct (cumulative_time_receipt_sep with "⧗") as "[⧗b ⧗k]".
-    (* The address of the hole. *)
-    iApply wp_fupd. wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
-        with "[] Rest").
-      - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-        by wp_pure _. }
-    iIntros (w) "(-> & _ & _ & Rest)". wp_pure _.
-    (* The new borrow. *)
-    iEval (rewrite pctx_mode_add bi.laterN_later) in "Gho1".
-    iMod (lc_fupd_elim_laterN with "£k Gho1") as "Gho1".
-    iMod (alloc_uniq_body ty y dh g α tid lK ⊤ with "LFT PROPH UNIQ [] Gho1 Pt1 ⧗a")
-      as (ξi ζi idx) "(Body & _ & Back)"; [solve_ndisj| |].
-    { iApply (persistent_time_receipt_mono with "⧖"). lia. }
-    iModIntro. iExists -[(lK, y, ξi, dh, g, idx); ((l, x₀), (pctx_path K [], ξi) :: ζm)].
-    iFrame "L I". iSplit; last first.
-    { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
-    iSplitL "Body".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr lK) D); [|done|done]. iFrame "⧖". iFrame "Incl Body".
-      iPureIntro; lia. }
-    iSplit; [|done]. rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|].
-    iExists D, d, g. iFrame "⧖".
-    rewrite (lty_size_plug_eq K (Blocked ty α) (OfTy ty)) //. iFrame "Fr".
-    iSplitL "⧗p ⧗b".
-    { iApply (cumulative_time_receipt_mono _ (lty_nrc (pctx_plug K (OfTy ty)) 0 0 + 1)
-        with "[⧗p ⧗b]"); [rewrite lty_nrc_plug_blocked; lia|].
-      rewrite cumulative_time_receipt_sep. iFrame. }
-    iSplit; [done|]. iSplit; [done|].
-    rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug pctx_own_blk_cons. iFrame "Rest".
-    rewrite /= decide_True // /blocked_owned. iIntros "#†α".
-    iMod (fupd_mask_mono with "(Back †α)") as "Lender"; [rewrite /lazyE; solve_ndisj|].
-    iMod (lc_fupd_elim_later with "£' Lender") as "Lender". iModIntro.
-    iApply (guarded_upd_mono with "[⧗k] [Lender]");
-      [|iApply (uniq_lender_settle with "LFT PROPH †α Lender")].
-    iIntros "(%x & %d1 & %g1 & Eqz & #⧖1 & Gho & Pt)".
-    iMod (cumulative_persistent_time_receipt with "TIME ⧗k ⧖1") as "#⧖1'";
-      [rewrite /lazyE; solve_ndisj|].
-    iModIntro. iExists x, d1, g1. rewrite /ofty_owned /=. iFrame "Eqz Pt Gho".
-    iApply (persistent_time_receipt_mono with "⧖1'"). rewrite pctx_mode_add. lia.
   Qed.
 
   (** * Unblocking a leaf *)

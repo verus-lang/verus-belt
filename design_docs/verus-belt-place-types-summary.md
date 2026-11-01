@@ -935,3 +935,46 @@ Lemma type_share_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoo
   covered (copy the existing shared reference instead); the outlives condition is part of
   `pctx_sleaf` (it is only needed for an owned leaf); `α` is a dummy below a shared reference
   or a resolved unique borrow.
+
+## Unified place borrow (branch `proto/uniq-unify`, 2026-11-01)
+
+One rule borrows mutably the leaf at the hole of any place on an owned/unique path:
+`type_borrow_place_instr` (`typing/place_puniq.v`).
+
+```coq
+Lemma type_borrow_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K}
+    α (ty: type 𝔅) :
+  elctx_sat E L (ty_outlives_E ty α) → lctx_lft_alive E L (pctx_ulft K (OfTy ty) ⊓ α) →
+  typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (&ᵘ (pctx_vexpr K p))
+    (λ w, +[w ◁ᵥ &uniq{pctx_blft K α} ty; p ◁ₗ pctx_plug K (Blocked ty (pctx_blft K α))])
+    (λ post '-[x], λ mask π, ∀ m1: ~~ (uniq_borₛ 𝔅),
+      uniq_bor_current m1 = pctx_get K x.1 →
+      post -[m1; (x.1, (pctx_vpath K, uniq_bor_ξi m1) :: x.2)] mask π).
+```
+
+- **Instruction.** `borrow_uniq e := Seq (Seq Skip Skip) (OfLit e)` (`lang/lang.v`), notation
+  `&ᵘ e` (`lang/notation.v`, level 9); `W.of_expr` unfolds it. The two `Skip`s stay (the old
+  `ReBor;; OfLit …`): the first gives the credits (`wp_persistent_time_receipt`), the second
+  the cumulative time receipts at depth `S D` (`wp_cumulative_time_receipt_linear`) for the new
+  borrow, the blocked leaf's inheritance (`pctx_hmode K 0` levels) and its receipts
+  (`S (pctx_vne K)`). One step at depth `D` gives `⧗(S (S D))`, one short when the leaf has
+  depth 0 and `pctx_dlev K = D` (so a single-step `OfLit e` does not suffice).
+- **Contexts.** `PctxNoShr K` (no `PShr`, no `PResUniq`: Rust does not borrow mutably below a
+  shared reference, and a resolved place is read-only) and `PctxVRoot K` (root `POwn n`, i.e.
+  `p ◁ₗown{n} …`, or `PUniq κ`). Sums allowed.
+- **Uniform statement.** By the mode of the hole: `pctx_uend K = None` (Owned mode, the old
+  deep borrow, now `type_borrow_vplace_owned`) or `Some κ` (the whole referent of the innermost
+  unique borrow, a reborrow, now `type_borrow_vplace_uniq`); both had the same conclusion. One
+  lifetime condition `pctx_ulft K (OfTy ty) ⊓ α` (the Owned-mode borrow did not need `α` alive,
+  the uniq-mode one did; `α` is a fresh local lifetime in practice), and the outlives condition.
+- **Deleted:** `type_borrow_oplace_instr` (`place_own.v`: the instance `K = POwn n K'` with
+  `PctxNoUniq K'`, `pctx_blft K α = α`; its separate proof via `alloc_uniq_body` is gone),
+  `type_borrow_vplace_deep_instr`, `type_borrow_oplace_deep_instr`,
+  `type_borrow_vplace_uniq_instr`, `type_borrow_oplace_uniq_instr` (`place_puniq.v`; the two
+  vplace ones are the per-mode lemmas). Examples ported: `place_own` (`&ᵘ (ToLit "x" +ₗ #4)`,
+  `K = POwn _ (PSnd (OfTy i32t) PHole)`), `get_first`, `get_some_first`, `place_res` (programs
+  `&ᵘ …` instead of `ReBor;; OfLit …`; proofs `apply (type_borrow_place_instr _ _ _ vb K α i32t);
+  [solve_typing|simpl; solve_typing]`).
+- **Deviations.** Two `Skip`s inside the instruction (above); the leaf is `OfTy ty` only (Rust
+  forbids borrowing a borrowed or moved-out place; a shared-blocked leaf is not mutably
+  borrowable).
