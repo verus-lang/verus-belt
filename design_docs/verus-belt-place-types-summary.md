@@ -883,3 +883,55 @@ Lemma type_memcpy_move_place_instr {𝔅d 𝔄d 𝔅 𝔄 𝔄d'} E L I pd ps (K
   ported: `place_deep` (`swap_snd`) and `new` (`swap_snd_n`): programs
   `ToLit "c" <-ᵇ{8} (… +ₗ #4)` and `(… +ₗ #4) <-ᵇ{8} ToLit "y"`; the boxes `c` and `y` are
   viewed as owned places (`tctx_own_to_oplace`) for the copies.
+
+## Unified place share (branch `proto/share-unify`, 2026-11-01)
+
+One rule borrows shared the leaf at the hole of any readable place: `type_share_place_instr`
+(new file `typing/place_share.v`).
+
+```coq
+Lemma type_share_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot K} `{!PctxRead K}
+    α (lt: lty 𝔅) (ty: type 𝔅) (lt': lty 𝔅) :
+  pctx_sleaf E L K (pctx_shlft K α) lt ty lt' → lctx_lft_alive E L (pctx_ralv K lt ⊓ α) →
+  typed_instr E L I +[p ◁ₗ pctx_plug K lt] (&ˢ (pctx_vexpr K p))
+    (λ v, +[v ◁ᵥ &shr{pctx_shlft K α} ty; p ◁ₗ pctx_plug K lt'])
+    (λ post '-[x], post -[(pctx_vloc K (lty_size lt) x.1, pctx_get K x.1); x]).
+```
+
+- **Instruction.** `share e := OfLit e` (`lang/lang.v`), notation `&ˢ e` (`lang/notation.v`,
+  level 9); `W.of_expr` reifies it as an `OfLit`. No `Skip` (the old rules had `Share;;` =
+  `Seq Skip Skip` for the owned/unique cases): the first step of the instruction
+  (`wp_cumulative_time_receipt_linear` below no shared reference, `wp_persistent_time_receipt`
+  otherwise) gives the credits and, for a shared-blocked leaf below a unique borrow, its
+  receipt.
+- **Contexts.** Those of the read rule: `PctxVRoot K` (root `POwn`, `PUniq`, `PShr` or
+  `PResUniq`) and `PctxRead K` (simple siblings below a unique borrow, down to the first shared
+  reference).
+- **Computed result.** `pctx_shlft K α`: `pctx_blft K α` below no shared reference and no
+  resolved unique borrow (`pctx_vlft K = None`), else `pctx_slft K2 κ`, the lifetime of the view
+  at the first `PShr κ K2`/`PResUniq κ K2`. `pctx_sleaf E L K β lt ty lt'` (a `Fixpoint`, solved
+  by `simpl; split_and!` or `by split`): below no shared reference, `lt = OfTy ty`,
+  `lt' = ShrBlocked ty β` and `elctx_sat E L (ty_outlives_E ty β)`, and the hole is not the whole
+  referent of a unique borrow (`PUniq κ PHole` gives `False`: in `Uniq` mode a shared-blocked leaf
+  has no interpretation of its own); below a shared reference, any `lt`, `ty = lty_fold lt`,
+  `lt' = lt`; below a resolved unique borrow, `pctx_vsleaf K2 lt ty` (an unblocked leaf of the
+  view, or any leaf below a shared reference in the view) and `lt' = lt`.
+- **Lifetimes.** One condition, `pctx_ralv K lt ⊓ α` (the read rule's lifetimes, and `α`; below
+  a shared reference or resolved unique borrow `α` is not used, take `static`).
+- **Proof.** Split of `K` as in the read access (`pctx_read_split`): `type_share_vplace_noshr`
+  (the old deep share: `vroot_acc` and `ofty_owned_share`, now mask-generic),
+  `type_share_vplace_pshr(_root)` (`wp_pshr_open(_root)`), `type_share_vplace_res(_root)`
+  through the new view access `wp_view_sacc` (as `wp_view_racc`, returning the shared view of
+  the hole; shared references inside the view are now supported, the old rule needed
+  `PctxNoShr K2`, and a resolved unique borrow at the root is new).
+- **Deleted:** `type_share_oplace_instr` (`place_shr.v`), `type_share_vplace_deep_instr`,
+  `type_share_oplace_deep_instr` (`place_puniq.v`), `type_share_vplace_pshr_root_instr`,
+  `type_share_vplace_pshr_instr`, `type_share_oplace_pshr_instr` (`place_pshr.v`),
+  `type_share_oplace_res_instr` (`place_res_ops.v`). Examples ported: `pcell_example`
+  (`&ˢ (ToLit "pair")`, `K = POwn 4 PHole`), `place_pshr` and `function` (`first_ref`:
+  `&ˢ (ToLit (Load Na1Ord MPtr (ToLit "x")))`, `K = PUniq α (PShr β (PFst PHole (OfTy i32t)))`,
+  `α := static`).
+- **Deviations.** Re-sharing a shared-blocked leaf and shared-blocked leaves in views are not
+  covered (copy the existing shared reference instead); the outlives condition is part of
+  `pctx_sleaf` (it is only needed for an owned leaf); `α` is a dummy below a shared reference
+  or a resolved unique borrow.
