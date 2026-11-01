@@ -368,7 +368,7 @@ Section read.
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro. iExists -[y; (x₀, ζm)]. iFrame "L I Obs".
     iSplitR "Own ⧗p".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists wv, D. iSplit; [done|].
+    { rewrite -(tctx_val_intro_sep _ _ _ _ wv D); [|by rewrite eval_path_of_val|done].
       iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ dh' gh' D D with "Gho") as "[$ _]"; lia. }
     iSplit; [|done]. iExists _. iSplit; [done|].
     by iApply (vplace_own_close with "⧖ ⧗p").
@@ -421,7 +421,7 @@ Section read.
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro. iExists -[pctx_get (pctx_app K1 (PShr κ K2)) x₀; (x₀, ζm)]. iFrame "L I Obs".
     iSplitR "Own ⧗p".
-    { rewrite pctx_get_app. iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists w, D. iSplit; [done|].
+    { rewrite pctx_get_app. rewrite -(tctx_val_intro_sep _ _ _ _ w D); [|by rewrite eval_path_of_val|done].
       iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ dh D D D with "Gho") as "[$ _]"; lia. }
     iSplit; [|done]. iExists _. iSplit; [done|]. by iApply (vplace_own_close with "⧖ ⧗p").
   Qed.
@@ -462,7 +462,7 @@ Section read.
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro. iExists -[pctx_get K2 x.2; (x, ζm)]. iFrame "L I Obs".
     iSplitR "Own ⧗p".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists w, D. iSplit; [done|].
+    { rewrite -(tctx_val_intro_sep _ _ _ _ w D); [|by rewrite eval_path_of_val|done].
       iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ dh D D D with "Gho") as "[$ _]"; lia. }
     iSplit; [|done]. iExists _. iSplit; [done|]. rewrite vplace_own_eq. iExists D. by iFrame.
   Qed.
@@ -511,7 +511,7 @@ Section read.
     iIntros "!> Hbs". iModIntro.
     iExists -[y; ((l, x₀), ζm)]. iFrame "L I Obs".
     iSplitR "Hbs Rest ⧗p Fr".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists vw, D. iSplit; [done|].
+    { rewrite -(tctx_val_intro_sep _ _ _ _ vw D); [|by rewrite eval_path_of_val|done].
       iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ d' g' D D with "Gho") as "[$ _]"; lia. }
     iSplit; [|done]. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
     iFrame "⧖ ⧗p Fr". iSplit; [done|]. iSplit; [done|].
@@ -687,7 +687,7 @@ Section read.
     iModIntro. iExists -[pctx_get (pctx_app K1 (PResUniq κ K2)) x₀; ((l, x₀), ζm)].
     iFrame "L I Obs".
     iSplitR "Pt Rest V ⧗p Fr".
-    { rewrite pctx_get_app -/y Hy. iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists w, D. iSplit; [done|].
+    { rewrite pctx_get_app -/y Hy. rewrite -(tctx_val_intro_sep _ _ _ _ w D); [|by rewrite eval_path_of_val|done].
       iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ dh gh D D with "Gho") as "[$ _]"; lia. }
     iSplit; [|done]. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
     iFrame "⧖ ⧗p Fr". iSplit; [done|]. iSplit; [done|].
@@ -731,7 +731,7 @@ Section read.
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro. iExists -[pctx_get K2 z; ((lx, z, ξi, d0, g0, idx0), ζm)]. iFrame "L I Obs".
     iSplitR "V ⧗p".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists w, D. iSplit; [done|].
+    { rewrite -(tctx_val_intro_sep _ _ _ _ w D); [|by rewrite eval_path_of_val|done].
       iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ dh gh D D with "Gho") as "[$ _]"; lia. }
     iSplit; [|done]. iExists _. iSplit; [done|]. rewrite vplace_own_eq. iExists D.
     iFrame "⧖ ⧗p". iExists d, g. iSplit; [done|]. iSplit; [done|]. iFrame "Incl".

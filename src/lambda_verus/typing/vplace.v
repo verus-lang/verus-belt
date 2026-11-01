@@ -113,7 +113,7 @@ Section conv.
 
   (** * Leaves *)
 
-  Lemma tctx_ty_to_vplace {𝔄} E L p (ty: type 𝔄) :
+  Lemma tctx_ty_to_vplace {𝔄} `{!NoCell 𝔄} E L p (ty: type 𝔄) :
     tctx_incl E L +[p ◁ᵥ ty] +[p ◁ₗ OfTy ty] (λ post '-[a], post -[(a, [])]).
   Proof.
     split; [by intros ??? [? []]|].

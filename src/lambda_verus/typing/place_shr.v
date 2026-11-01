@@ -157,8 +157,7 @@ Section typing.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. exact Hπ. }
     iSplitR.
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists (VPtr lK), D.
-      iSplit; [done|]. iFrame "⧖". destruct D as [|D']; [lia|].
+    { rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr lK) D); [|by rewrite eval_path_of_val|done]. iFrame "⧖". destruct D as [|D']; [lia|].
       iApply (shr_bor_own_intro with "[] Shr Pers"); [lia|lia|].
       iApply (lguards_weaken_later with "GPt"). lia. }
     iSplit; [|done]. rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|].

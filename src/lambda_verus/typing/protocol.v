@@ -151,7 +151,7 @@ Section ghost_vals.
   Lemma ghost_val_intro {𝔄} tid (ty: type 𝔄) x d :
     ty.(ty_val) x = Some (VTuple []) →
     ⧖d -∗ ty.(ty_gho_own) x d d tid -∗ tctx_elt_interp tid (MLitV (VTuple []) ◁ᵥ ty) x.
-  Proof. iIntros (?) "⧖ Gho". rewrite tctx_val_val. iExists d. by iFrame. Qed.
+  Proof. iIntros (?) "⧖ Gho". iApply (tctx_val_intro with "⧖ Gho"); [apply eval_path_of_val|done]. Qed.
 
   (** A shared reference to a zero-sized value of a type with the default sharing
       predicate and a trivial persistent predicate, at any location. *)

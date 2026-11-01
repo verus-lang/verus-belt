@@ -701,7 +701,7 @@ Section puniq.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
     iSplitL "Tok1 Ghζ ⧗u".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists _, D. iSplit; [done|].
+    { rewrite -(tctx_val_intro_sep _ _ _ _ _ D); [|by rewrite eval_path_of_val|done].
       iFrame "⧖".
       iSplit. { iApply llftl_incl_trans; [iApply pctx_blft_incl_r|]. iApply "Incl". }
       iSplit; [iPureIntro; lia|]. iExists β, γζ. iFrame "∗#". iApply guards_refl. }
@@ -1191,7 +1191,7 @@ Section puniq.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
     iSplitL "Tok' Gh' ⧗'".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists _, D. iSplit; [done|].
+    { rewrite -(tctx_val_intro_sep _ _ _ _ _ D); [|by rewrite eval_path_of_val|done].
       iFrame "⧖".
       iSplit. { iApply llftl_incl_trans; [iApply pctx_blft_incl_r|]. iApply "Incl". }
       iSplit; [iPureIntro; lia|]. iExists κp', γ'. iFrame "∗#". }
@@ -1419,7 +1419,7 @@ Section puniq.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. exact Hπ. }
     iSplitR.
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists _, D. iSplit; [done|].
+    { rewrite -(tctx_val_intro_sep _ _ _ _ _ D); [|by rewrite eval_path_of_val|done].
       iFrame "⧖".
       destruct D as [|D']; [lia|].
       iApply (shr_bor_own_intro with "[] Shr Pers"); [lia|lia|].

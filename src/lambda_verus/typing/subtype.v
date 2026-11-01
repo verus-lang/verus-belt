@@ -193,19 +193,20 @@ Section subtype.
 
   (** A value of [ty] is a value of [ty'], if the MiniRust values agree (e.g. pointers:
       boxes, references). *)
-  Lemma tctx_subtype_val {𝔄 𝔅 𝔄l} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) (T: tctx 𝔄l) p E L :
+  Lemma tctx_subtype_val {𝔄 𝔅 𝔄l} `{!NoCell 𝔄} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) (T: tctx 𝔄l) p E L :
     subtype E L ty ty' f → (∀ x, ty'.(ty_val) (f ~~$ₛ x) = ty.(ty_val) x) →
     tctx_incl E L (p ◁ᵥ ty +:: T) (p ◁ᵥ ty' +:: T)
       (λ post '(a -:: al), post (f ~~$ₛ a -:: al)).
   Proof.
     intros Sub Hval. split; [by intros ??? [??]|].
-    iIntros (??[x wπl]???) "#LFT _ _ E #L G /=[(%v & %Hp & %w & %d & [-> %Hw] & ⧖ & Gho) T] Obs".
+    iIntros (??[x wπl]???) "#LFT _ _ E #L G /=[Tp T] Obs".
+    iDestruct (tctx_val_elim with "Tp") as "(%v & %Hp & %w & %d & [-> %Hw] & ⧖ & Gho)".
     leaf_open "L" with "G" as "[L1 back]". { set_solver. }
     iDestruct (Sub with "L1 E") as "#(_ & _ & #InOwn & _)".
     iMod ("back" with "L1") as "G".
     iModIntro. iExists (f ~~$ₛ x -:: wπl). iFrame "G T".
     iSplitR "Obs".
-    - iExists _. iSplit; [done|]. iExists w, d. iSplit; [by rewrite Hval|]. iFrame "⧖".
+    - rewrite -(tctx_val_intro_sep _ _ _ _ w d); [|done|by rewrite Hval]. iFrame "⧖".
       iDestruct ("InOwn" with "Gho") as "[$ _]".
     - iApply (proph_obs_impl with "Obs"). intros. done.
   Qed.

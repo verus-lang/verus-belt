@@ -62,8 +62,7 @@ Section typing.
     iDestruct "T" as (v Hp D d g) "(⧖ & _ & -> & %Hle & Fr & Own)".
     rewrite /ltype_own /= /ofty_owned. iDestruct "Own" as (? ->) "[Pt Gho]".
     iModIntro. iExists -[(l, x)]. iFrame "Obs". iSplit; [|done].
-    rewrite /tctx_elt_interp. iExists _. iSplit; [done|]. iExists (VPtr l), D.
-    iSplit; [done|]. iFrame "⧖".
+    rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr l) D); [|done|done]. iFrame "⧖".
     destruct D as [|D]; [lia|]. simpl. rewrite /lty_size -(ty_bsize_eq ty). iFrame "Fr".
     iFrame "Pt". iNext.
     iDestruct (ty_gho_own_depth_mono _ d g D (S D) with "Gho") as "[$ _]"; lia.
@@ -248,8 +247,7 @@ Section typing.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
     iSplitL "Body".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists (VPtr lK), D.
-      iSplit; [done|]. iFrame "⧖". iFrame "Incl Body".
+    { rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr lK) D); [|by rewrite eval_path_of_val|done]. iFrame "⧖". iFrame "Incl Body".
       iPureIntro; lia. }
     iSplit; [|done]. rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|].
     iExists D, d, g. iFrame "⧖".
