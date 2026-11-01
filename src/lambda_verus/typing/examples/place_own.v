@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product uninit value_ctx own uniq_util uniq_bor place_own place_puniq place_resolve place_read.
+From lrust.typing Require Export type programs cont int product uninit value_ctx own uniq_util uniq_bor place_own place_puniq place_resolve place_read place_write.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -8,7 +8,7 @@ Set Default Proof Using "Type".
 The body of [set_snd] of the deleted legacy example [place_own.v], on bytes: the argument is a box of
 bytes ([own_bytes]); the leaves are read and written with typed [Load] and [Store]; the
 borrow [&mut x.1] is a MiniRust pointer value ([&uniqb]); it is written as a place rooted
-at its value ([type_uniq_to_vplace_instr], [type_write_vplace_deep_instr]). The body is
+at its value ([type_uniq_to_vplace_instr], [type_write_place_instr]). The body is
 stated as a function body ([typed_body], with the return continuation [k]), without the
 function type. *)
 
@@ -31,11 +31,11 @@ Section place_own.
     let: "r" := ReBor;; OfLit (ToLit "x" +ₗ #4) in        (* &mut x.1 *)
     let: "five" := MLit (VInt 5) in
     Skip;;                                                (* r as a place *)
-    (ReBor;; Store Na1Ord (MInt i32) (ToLit "r") "five");;  (* *r = 5 *)
+    ToLit "r" <-{MInt i32} "five";;                        (* *r = 5 *)
     Skip;;                                                (* resolve r *)
     Endlft;;                                              (* unblock x.1 *)
     let: "three" := MLit (VInt 3) in
-    Store Na1Ord (MInt i32) (ToLit "x") "three";;         (* x.0 = 3 *)
+    ToLit "x" <-{MInt i32} "three";;                      (* x.0 = 3 *)
     let: "v" := !ᶜ{MInt i32} (ToLit "x" +ₗ #4) in          (* x.1 *)
     ((#☠;; #☠);; delete [ #8; ToLit "x"]);;               (* drop x *)
     jump: "return" ["v"])%E.
@@ -70,8 +70,8 @@ Section place_own.
       iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vr β i32t). }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { apply (type_write_vplace_deep_instr _ _ _ vr v5 (PUniq β PHole) i32t (const (const True)));
-          [apply resolve_just|simpl; solve_typing]. }
+      { eapply (type_write_place_instr _ _ _ vr v5 (PUniq β PHole) i32t i32t);
+          [apply pctx_wty_same|apply resolve_just|simpl; solve_typing]. }
       { solve_typing. } { simpl. reflexivity. }
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
@@ -88,8 +88,8 @@ Section place_own.
       { solve_typing. } { reflexivity. }
       iIntros (v3). simpl_subst.
       iApply type_seq.
-      { apply (type_write_oplace_instr _ _ _ vx v3 8 (PFst PHole (OfTy i32t)) i32t i32t
-          (const (const True))); [done|apply resolve_just|done]. }
+      { eapply (type_write_place_instr _ _ _ vx v3 (POwn 8 (PFst PHole (OfTy i32t))) i32t i32t);
+          [apply pctx_wty_same|apply resolve_just|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* x.1 *)
       iApply (type_let with "[]").
@@ -136,11 +136,11 @@ Section place_own.
     let: "r" := ReBor;; OfLit (ToLit (Load Na1Ord MPtr (ToLit "b"))) in  (* &mut *( *b).0 *)
     let: "seven" := MLit (VInt 7) in
     Skip;;                                                (* r as a place *)
-    (ReBor;; Store Na1Ord (MInt i32) (ToLit "r") "seven");;  (* *r = 7 *)
+    ToLit "r" <-{MInt i32} "seven";;                       (* *r = 7 *)
     Skip;;                                                (* resolve r *)
     Endlft;;                                              (* unblock *( *b).0 *)
     let: "c" := !ᵐ{MPtr} (ToLit "b") in                   (* move ( *b).0 out *)
-    Store Na1Ord MPtr (ToLit "b") "c";;                   (* re-assign ( *b).0 *)
+    ToLit "b" <-{MPtr} "c";;                              (* re-assign ( *b).0 *)
     jump: "return" ["b"])%E.
 
   Notation box_pairₛ := (at_locₛ (at_locₛ (intₛ i32) * intₛ i32))%ST.
@@ -178,8 +178,8 @@ Section place_own.
       iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vr β i32t). }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { apply (type_write_vplace_deep_instr _ _ _ vr v7 (PUniq β PHole) i32t (const (const True)));
-          [apply resolve_just|simpl; solve_typing]. }
+      { eapply (type_write_place_instr _ _ _ vr v7 (PUniq β PHole) i32t i32t);
+          [apply pctx_wty_same|apply resolve_just|simpl; solve_typing]. }
       { solve_typing. } { simpl. reflexivity. }
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
@@ -200,8 +200,9 @@ Section place_own.
       iIntros (vc). simpl_subst.
       (* re-assign ( *b).0 *)
       iApply type_seq.
-      { apply (type_write_oplace_instr _ _ _ vb vc (PTR_SIZE + 4) (PFst PHole (OfTy i32t)) (↯ (ty_bsize (own_bytes 4 i32t))) (own_bytes 4 i32t)
-          (const (const True))); [done|apply uninit_resolve|done]. }
+      { eapply (type_write_place_instr _ _ _ vb vc (POwn (PTR_SIZE + 4) (PFst PHole (OfTy i32t)))
+          (↯ (ty_bsize (own_bytes 4 i32t))) (own_bytes 4 i32t));
+          [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* fold back, return b *)
       iApply typed_body_tctx_incl.

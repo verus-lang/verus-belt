@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_res place_res_rslv place_res_ops place_read.
+From lrust.typing Require Export type programs cont int product value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_res place_res_rslv place_res_ops place_read place_write.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -163,7 +163,7 @@ Section place_res.
       (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x")))) +ₗ #4) in  (* ( **x).1 *)
     let: "three" := MLit (VInt 3) in
     Skip;;                                                       (* r as a place *)
-    (ReBor;; Store Na1Ord (MInt i32) (ToLit "r") "three");;      (* *r = 3 *)
+    ToLit "r" <-{MInt i32} "three";;                             (* *r = 3 *)
     Skip;;                                                       (* resolve r *)
     Endlft;;                                                     (* unblock ( **x).0 *)
     let: "a" := !ᶜ{MInt i32}
@@ -243,8 +243,8 @@ Section place_res.
       iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vr (α ⊓ (β ⊓ γ)) i32t). }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { apply (type_write_vplace_deep_instr _ _ _ vr v3 (PUniq (α ⊓ (β ⊓ γ)) PHole) i32t
-          (const (const True))); [apply resolve_just|simpl; solve_typing]. }
+      { eapply (type_write_place_instr _ _ _ vr v3 (PUniq (α ⊓ (β ⊓ γ)) PHole) i32t i32t);
+          [apply pctx_wty_same|apply resolve_just|simpl; solve_typing]. }
       { solve_typing. } { simpl. reflexivity. }
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }

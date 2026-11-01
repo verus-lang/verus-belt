@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product uninit value_ctx own uniq_util place_own place_resolve subtype pcell.
+From lrust.typing Require Export type programs cont int product uninit value_ctx own uniq_util place_own place_resolve place_write subtype pcell.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -37,21 +37,21 @@ Section pcell_move.
   Definition pcell_move : expr := (
     let: "c" := OfLit (Alloc #4) in
     let: "seventeen" := MLit (VInt 17) in
-    Store Na1Ord (MInt i32) (ToLit "c") "seventeen";;
+    ToLit "c" <-{MInt i32} "seventeen";;
     let: "perm" := PCellNew ["c"] in                            (* c: a cell *)
     let: "q" := OfLit (Alloc #8) in
     let: "five" := MLit (VInt 5) in
-    Store Na1Ord (MInt i32) (ToLit "q") "five";;                (* q.0 = 5 *)
+    ToLit "q" <-{MInt i32} "five";;                             (* q.0 = 5 *)
     let: "v" := !ᵐ{MInt i32} (ToLit "c") in                     (* move *c out *)
-    Store Na1Ord (MInt i32) (ToLit "q" +ₗ #4) "v";;             (* q.1 = v *)
+    ToLit "q" +ₗ #4 <-{MInt i32} "v";;                          (* q.1 = v *)
     (#☠;; delete [ #4; ToLit "c"]);;                            (* drop c (moved out) *)
     let: "r" := OfLit (Alloc #8) in
     let: "pair" := !ᵐ{syn_mty pairₛ} (ToLit "q") in             (* move *q out *)
-    Store Na1Ord (syn_mty pairₛ) (ToLit "r") "pair";;           (* *r = pair *)
+    ToLit "r" <-{syn_mty pairₛ} "pair";;                        (* *r = pair *)
     (#☠;; delete [ #8; ToLit "q"]);;                            (* drop q (moved out) *)
     let: "s" := OfLit (Alloc #4) in
     let: "w" := !ᵐ{MInt i32} (ToLit "r" +ₗ #4) in               (* move r.1 out *)
-    Store Na1Ord (MInt i32) (ToLit "s") "w";;                   (* *s = w *)
+    ToLit "s" <-{MInt i32} "w";;                                (* *s = w *)
     ((#☠;; #☠);; delete [ #8; ToLit "r"]);;                      (* drop r *)
     let: "b" := PCellIntoInner ["s"; "perm"] in                 (* s.into_inner(perm) *)
     let: "x" := Load Na1Ord (MInt i32) (ToLit "b") in           (* *b *)
@@ -77,8 +77,8 @@ Section pcell_move.
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_incl_swap|]. eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_own_to_oplace. }
       iApply type_seq.
-      { apply (type_write_oplace_instr _ _ _ vc v17 4 PHole (↯ 4) i32t (const (const True)));
-          [done|apply uninit_resolve|done]. }
+      { eapply (type_write_place_instr _ _ _ vc v17 (POwn 4 PHole) (↯ 4) i32t);
+          [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iApply typed_body_tctx_incl. { apply tctx_oplace_to_own. }
       (* PCell::new *)
@@ -101,8 +101,8 @@ Section pcell_move.
       { solve_typing. } { reflexivity. }
       iIntros (v5). simpl_subst.
       iApply type_seq.
-      { apply (type_write_oplace_instr _ _ _ vq v5 8 (PFst PHole (OfTy (↯ 4))) (↯ 4) i32t
-          (const (const True))); [done|apply uninit_resolve|done]. }
+      { eapply (type_write_place_instr _ _ _ vq v5 (POwn 8 (PFst PHole (OfTy (↯ 4)))) (↯ 4) i32t);
+          [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* move *c out: the cell is in transit *)
       iApply typed_body_tctx_incl.
@@ -114,8 +114,8 @@ Section pcell_move.
       iIntros (vv). simpl_subst.
       (* q.1 = v *)
       iApply type_seq.
-      { apply (type_write_oplace_instr _ _ _ vq vv 8 (PSnd (OfTy i32t) PHole) (↯ 4) cellt
-          (const (const True))); [done|apply uninit_resolve|done]. }
+      { eapply (type_write_place_instr _ _ _ vq vv (POwn 8 (PSnd (OfTy i32t) PHole)) (↯ 4) cellt);
+          [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* drop c *)
       iApply type_seq.
@@ -136,8 +136,8 @@ Section pcell_move.
       { eapply (tctx_incl_frame_l _ _ +[_; _]). eapply (tctx_incl_frame_r +[_] +[_]).
         apply tctx_own_to_oplace. }
       iApply type_seq.
-      { apply (type_write_oplace_instr _ _ _ vr vpair 8 PHole (↯ 8) (i32t * cellt)
-          (const (const True))); [done|apply uninit_resolve|done]. }
+      { eapply (type_write_place_instr _ _ _ vr vpair (POwn 8 PHole) (↯ 8) (i32t * cellt));
+          [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* drop q *)
       iApply type_seq.
@@ -158,8 +158,8 @@ Section pcell_move.
       { eapply (tctx_incl_frame_l _ _ +[_; _]). eapply (tctx_incl_frame_r +[_] +[_]).
         apply tctx_own_to_oplace. }
       iApply type_seq.
-      { apply (type_write_oplace_instr _ _ _ vs vw 4 PHole (↯ 4) cellt
-          (const (const True))); [done|apply uninit_resolve|done]. }
+      { eapply (type_write_place_instr _ _ _ vs vw (POwn 4 PHole) (↯ 4) cellt);
+          [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* drop r *)
       iApply type_seq.
