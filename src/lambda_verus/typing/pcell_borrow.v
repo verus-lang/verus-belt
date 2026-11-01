@@ -360,7 +360,7 @@ Section cell_uniq_rules.
     iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
     iModIntro. iExists -[(l, (g, y), ξi, S D, D, ξidx)]. iSplitR "Obs"; last first.
     { iApply (proph_obs_impl with "Obs"). intros π Hpost. apply Hpost. }
-    iSplit; [|done]. rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr l) (D + 1 + 1)); [|done|done].
+    iSplit; [|done]. iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l) (D + 1 + 1)); [|done|done].
     iFrame "⧖D2". iSplitL.
     - iFrame "Incl UB". iPureIntro; lia.
     - iExists cs. iFrame "Hg". iApply (lguards_weaken_later with "GL"). lia.

@@ -321,7 +321,7 @@ Section StorageProtocol_bytes.
     eval_path p = Some (MLitV v) → ty.(ty_val) x = Some v →
     ⧖d -∗ ty.(ty_gho_own) x d d tid -∗ tctx_elt_interp tid (p ◁ᵥ ty) x.
   Proof.
-    iIntros (Hp Hv) "⧖ Gho". rewrite -(tctx_val_intro_sep _ _ _ _ v d); [|done|done]. by iFrame.
+    iIntros (Hp Hv) "⧖ Gho". iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ v d); [|done|done]. by iFrame.
   Qed.
 
   Notation "SP_Alloc: p s" := GhostOp (at level 102, p,s at level 1): expr_scope.

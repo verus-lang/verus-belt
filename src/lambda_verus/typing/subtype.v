@@ -206,7 +206,7 @@ Section subtype.
     iMod ("back" with "L1") as "G".
     iModIntro. iExists (f ~~$ₛ x -:: wπl). iFrame "G T".
     iSplitR "Obs".
-    - rewrite -(tctx_val_intro_sep _ _ _ _ w d); [|done|by rewrite Hval]. iFrame "⧖".
+    - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ w d); [|done|by rewrite Hval]. iFrame "⧖".
       iDestruct ("InOwn" with "Gho") as "[$ _]".
     - iApply (proph_obs_impl with "Obs"). intros. done.
   Qed.

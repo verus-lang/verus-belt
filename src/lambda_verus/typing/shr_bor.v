@@ -174,8 +174,8 @@ Section shr_bytes_rules.
     iModIntro. iExists -[(l, x); x]. iFrame "Obs".
     iDestruct (ty_gho_own_depth_mono _ d (S d) (S d) (S d) with "Gho") as "[#Gho' _]"; [lia..|].
     iSplitR; [|iSplit; [|done]].
-    - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr l) (S d)); [|done|done]. iFrame "⧖".
+    - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l) (S d)); [|done|done]. iFrame "⧖".
       rewrite /= /by_succ. iFrame "Pt Shr Pers".
-    - rewrite -(tctx_val_intro_sep _ _ _ _ v (S d)); [|done|done]. by iFrame "⧖ Gho'".
+    - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ v (S d)); [|done|done]. by iFrame "⧖ Gho'".
   Qed.
 End shr_bytes_rules.

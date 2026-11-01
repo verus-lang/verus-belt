@@ -111,7 +111,7 @@ Section typing.
     iDestruct (tctx_val_elim with "Hp") as (vp Hp w d [-> Hw]) "[#Hd Hown]". simpl in Hw. simplify_eq.
     iApply wp_ghost_op. iIntros "!> !>". iExists -[l; (l, x)]. iSplitL.
     - iSplitR; [|iSplitL; [|done]].
-      + rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr l) d); [|done|done].
+      + iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l) d); [|done|done].
         by iFrame "Hd".
       + rewrite tctx_val_val. iExists d. by iFrame "Hd Hown".
     - iApply (proph_obs_impl with "Obs"). intros π' Hpost. apply Hpost.

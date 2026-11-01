@@ -551,7 +551,7 @@ Section share_fold.
     iSplitL "Hbs Rest Cl ⧗p Fr"; last first.
     { iExact "Obs". }
     iSplitR "Hbs Rest Cl ⧗p Fr".
-    { rewrite -(tctx_val_intro_sep _ _ _ _ _ D); [|by rewrite eval_path_of_val|done].
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. rewrite -(val_own_intro_sep _ _ _ _ _ D); [|done|done].
       iFrame "⧖". destruct D as [|D']; [lia|]. simpl. iSplit.
       - iApply (lguards_weaken_later with "Gpt"). lia.
       - iSplit; [iApply (ty_shr_depth_mono with "Shr"); lia|].

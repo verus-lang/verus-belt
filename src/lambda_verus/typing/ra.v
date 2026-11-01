@@ -381,7 +381,7 @@ Section RA_bytes.
     iApply wp_ghost_op. iIntros "!> !>". iExists -[(γ, x1); (γ, x2)].
     iSplitL; [|iApply (proph_obs_impl with "Obs"); by intros π [_ ?]].
     iSplitL "Hx1"; [|iSplit; [by iApply (ra_val_own with "⧖ Hx2 Hinv")|done]].
-    rewrite -(tctx_val_intro_sep _ _ _ _ (VTuple []) d); [|done|done]. iFrame "⧖". simpl. by iFrame.
+    iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VTuple []) d); [|done|done]. iFrame "⧖". simpl. by iFrame.
   Qed.
 
   Lemma typed_ra_unit E L I :

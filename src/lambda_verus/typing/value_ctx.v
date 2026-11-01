@@ -116,11 +116,6 @@ Section value_plain.
     iIntros (Hp Hw) "⧖ Gho". iExists _. iSplit; [done|]. rewrite val_own_val //.
     iExists d. by iFrame.
   Qed.
-  Lemma tctx_val_intro_sep {𝔄} tid p (ty: type 𝔄) x w d :
-    eval_path p = Some (MLitV w) → ty.(ty_val) x = Some w →
-    ⧖d ∗ ty.(ty_gho_own) x d d tid ⊢ tctx_elt_interp tid (p ◁ᵥ ty) x.
-  Proof. iIntros (Hp Hw) "[⧖ Gho]". by iApply (tctx_val_intro with "⧖ Gho"). Qed.
-
   (** Introducing a value with a MiniRust value (in the form of the plain [val_own]). *)
   Lemma val_own_intro_sep {𝔄} (ty: type 𝔄) x tid v w d :
     v = MLitV w → ty.(ty_val) x = Some w →
@@ -261,9 +256,9 @@ Section value_rules.
     iIntros "!> Hbs !>". iExists -[(l, x); x]. iFrame "Obs". simpl.
     iDestruct (ty_gho_own_depth_mono _ d (S d) (S d) (S d) with "Gho") as "[#Gho' _]"; [lia..|].
     iSplitL "Hbs Free".
-    - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr l) (S d)); [|done|done]. iFrame "⧖ Free".
+    - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l) (S d)); [|done|done]. iFrame "⧖ Free".
       iSplitL "Hbs"; [by iApply bytes_own_of_bytes|]. done.
-    - iSplit; [|done]. rewrite -(tctx_val_intro_sep _ _ _ _ v (S d)); [|done|done].
+    - iSplit; [|done]. iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ v (S d)); [|done|done].
       iFrame "⧖ Gho'".
   Qed.
 
@@ -283,7 +278,7 @@ Section value_rules.
     iApply (wp_val_cells_store with "[$Hbs $Hc]"); [solve_ndisj|done|done|].
     iIntros "!> Bytes". iModIntro.
     iExists -[(l, y)]. iFrame "Obs".
-    iSplit; [|done]. rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr l) (S (d `max` d'))); [|done|done].
+    iSplit; [|done]. iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l) (S (d `max` d'))); [|done|done].
     iSplitR.
     { rewrite Nat.succ_max_distr persistent_time_receipt_sep. by iFrame "⧖ ⧖S". }
     iFrame "Free".
