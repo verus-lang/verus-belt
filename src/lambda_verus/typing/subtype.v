@@ -10,8 +10,8 @@ Set Default Proof Using "Type".
 
   - [type_new_bytes_instr], [type_new_bytes]: [OfLit (Alloc #n)] gives a box of bytes of
     [n] uninitialized bytes, [v ◁ᵥ own_bytes n (↯ n)] (a pointer value); it is then
-    initialized with a typed [Store] ([type_store_own_bytes_instr] of
-    [typing/value_ctx.v], or the place rules).
+    initialized with a typed [Store] (a strong update of the leaf [↯ n],
+    [type_write_place_instr] of [typing/place_write.v]).
   - Subtyping: [type_incl ty ty' f] ([typing/type.v]) relates the ownership and sharing
     and requires [f] to preserve the (fancy) byte representations ([syn_bincl]): the
     parents own bytes, so a box, a unique borrow or a shared reference can be retyped only

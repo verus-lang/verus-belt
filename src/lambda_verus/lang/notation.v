@@ -46,6 +46,8 @@ Notation "!ᶜ{ m } e" := (read_copy m e%E)
   (at level 9, m at level 200, e at level 9, format "!ᶜ{ m }  e") : expr_scope.
 Notation "!ᵐ{ m } e" := (read_move m e%E)
   (at level 9, m at level 200, e at level 9, format "!ᵐ{ m }  e") : expr_scope.
+Notation "e1 <-{ m } e2" := (write m e1%E e2%E)
+  (at level 80, m at level 200, format "e1  <-{ m }  e2") : expr_scope.
 Notation "e1 +ₗ e2" := (BinOp OffsetOp e1%E e2%E)
   (at level 50, left associativity) : expr_scope.
 

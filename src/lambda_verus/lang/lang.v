@@ -77,6 +77,11 @@ Definition read_copy (m : mty) (e : expr) : expr := Load Na1Ord m e.
     [!ᵐ{m} e]. *)
 Definition read_move (m : mty) (e : expr) : expr := Load Na1Ord m e.
 
+(** A write of a value [e2] of the MiniRust type [m] to the place at the address [e1]: a
+    non-atomic typed [Store]. It is the instruction of the unified place write
+    ([type_write_place_instr] of [typing/place_write.v]); notation [e1 <-{m} e2]. *)
+Definition write (m : mty) (e1 e2 : expr) : expr := Store Na1Ord m e1 e2.
+
 Fixpoint is_closed (X : list string) (e : expr) : bool :=
   match e with
   | Var x => bool_decide (x ∈ X)

@@ -15,10 +15,9 @@
   ([unblock_tctx_oplace]). A leaf can be read (copied, [type_read_place_instr] of
   [place_read.v]), moved
   out (leaving it uninitialized, [type_move_place_instr], the unified place move: any
-  owned path of fields and owned pointers) and written
-  ([type_write_oplace_instr], which also re-initializes an uninitialized leaf). Moving
-  out and writing change the type of the leaf, so the place context is retyped
-  ([pctx_retype]). Folding back gives an owned pointer whose type may have
+  owned path of fields and owned pointers) and written ([type_write_place_instr] of
+  [place_write.v], which also re-initializes an uninitialized leaf). Moving out and
+  writing change the type of the leaf, so the place context is retyped ([pctx_retype]). Folding back gives an owned pointer whose type may have
   uninitialized components. An owned pointer below other owned pointers (two or more
   laters deep) is unfolded by an instruction ([type_unfold_oplace_own_instr]). All leaf
   operations are of values of size 1, at any path
@@ -415,98 +414,5 @@ Section typing.
     iExists junk. iSplit; [done|]. rewrite /ofty_owned /=. iSplitL; [|done].
     iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].
     rewrite decode_value_tuple decide_True //.
-  Qed.
-
-  (** * Writing a leaf *)
-
-  (** Writing a value into the leaf at the hole of [K] (initialized, or uninitialized
-      after a move): a typed [Store] of the MiniRust type of the new value, which has the
-      byte size of the leaf. The old value is resolved, and the type of the leaf becomes
-      the type of the new value. *)
-  Lemma type_write_oplace_instr {𝔅 𝔅' 𝔄} E L I p pb n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅)
-      (ty': type 𝔅') Φ :
-    ty_bsize ty' = ty_bsize ty → resolve E L ty Φ → pctx_nosum K →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty); pb ◁ᵥ ty']
-      (Store Na1Ord ty'.(ty_mty) (pctx_expr K (ToLit p)) pb)
-      (λ _, +[p ◁ₗown{n} pctx_plug (pctx_retype K 𝔅') (OfTy ty')])
-      (λ post '-[x; b], λ mask π, Φ (pctx_get K x.1.2) π →
-        post -[((x.1.1, pctx_reset K x.1.2 b), x.2)] mask π).
-  Proof.
-    iIntros (Hsz Rslv Hns tid post mask iκs [x [b []]])
-      "#LFT #TIME #PROPH #UNIQ #E L I (Tp & Tb & _) Obs".
-    destruct x as [[l x₀] ζm].
-    rewrite /tctx_elt_interp.
-    iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
-    iDestruct "Tb" as (vb Hpb wb db fvb [-> Hfvb]) "(Hcb & #⧖b & Gb)".
-    have ?: Closed [] (pctx_expr K (ToLit p)).
-    { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
-    rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
-    iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
-    iDestruct "L1" as (? ->) "[Pt1 Gho1]".
-    iDestruct (pctx_own_mode_le with "Rest") as %Hk.
-    set k0 := pctx_mode K 0.
-    set y := pctx_get K x₀.
-    set lr := l.
-    set lK := pctx_loc K (lty_size (OfTy ty)) x₀ lr.
-    set dh := pctx_depth K d.
-    have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
-    (* The address of the hole, and the value. *)
-    wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
-        with "[] Rest").
-      - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-        by wp_pure _. }
-    iIntros (w) "(-> & _ & _ & Rest)".
-    wp_bind pb. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-    (* The write step gives cumulative time receipts: for credits, and to raise the
-       depth of the place to the depth of the new value below [k0] owned pointers. *)
-    iCombine "⧖ ⧖b" as "⧖m".
-    iApply (wp_cumulative_time_receipt_linear with "TIME ⧖m"); [solve_ndisj|].
-    iIntros "⧗". iApply wp_fupd.
-    iDestruct (cumulative_time_receipt_mono (1 + S k0) with "⧗") as "⧗"; [lia|].
-    iDestruct (cumulative_time_receipt_sep with "⧗") as "[⧗c ⧗k]".
-    iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗c ⧖m") as "[_ £]";
-      [solve_ndisj|].
-    iMod (cumulative_persistent_time_receipt with "TIME ⧗k ⧖b") as "#⧖k"; [solve_ndisj|].
-    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
-      [solve_ndisj|].
-    iDestruct (lc_weaken (pctx_mode K 1 + (1 + (1 + dh*(g+1))))%nat with "£")
-      as "[£k [£r £s]]"; [rewrite /advance_credits pctx_mode_add; nia|].
-    iMod (lc_fupd_elim_laterN with "£k Gho1") as "Gho1".
-    (* Resolve the old value. *)
-    iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN))
-      with "LFT PROPH UNIQ TIME E Ghalf H2 Gho1") as "ToObs"; [set_solver|].
-    iMod (lc_fupd_elim_later with "£r ToObs") as "ToObs".
-    iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
-    iDestruct (lc_step_fupdN_elim_later with "£s ToObs") as "ToObs".
-    iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
-    iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
-    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    (* Write. *)
-    iApply (wp_bytes_own_forget with "Pt1"); [solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
-    iApply (wp_val_cells_store with "[$Hbs $Hcb]"); [solve_ndisj|done|by rewrite Hlen -Hsz|].
-    iIntros "!> Hbs".
-    (* Close the place at the new value. *)
-    set d'' := (db + k0) `max` d. set g'' := db `max` g.
-    have Hdh'': db ≤ pctx_depth K d''. { rewrite pctx_depth_sub. lia. }
-    iDestruct (ty_gho_own_depth_mono _ db db (pctx_depth K d'') g'' with "Gb") as "[Gb _]";
-      [lia..|].
-    iDestruct (pctx_own_depth_mono _ _ _ _ _ _ _ _ d'' g'' with "Rest") as "Rest"; [lia..|].
-    iCombine "⧖ ⧖k" as "⧖D".
-    have Hsz' : lty_size (OfTy ty') = lty_size (OfTy ty).
-    { by rewrite /lty_size -(ty_bsize_eq ty) -(ty_bsize_eq ty'). }
-    iModIntro. iExists -[((l, pctx_reset K x₀ b), ζm)]. iFrame "L I".
-    iSplitR "Obs Obs'".
-    { iSplit; [|done]. rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|].
-      iExists (D `max` (S k0 + db)), d'', g''. iFrame "⧖D".
-      rewrite (lty_nrc_plug_retype K (OfTy ty) (OfTy ty')) //.
-      rewrite (lty_size_plug_retype K (OfTy ty) (OfTy ty')); [|done|done].
-      iFrame "⧗p Fr". iSplit; [done|]. iSplit; [iPureIntro; lia|].
-      rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //
-        pctx_loc_reset // pctx_mode_retype pctx_depth_retype /=. rewrite Hsz'. iFrame "Rest".
-      iExists b. iSplit; [done|]. rewrite /ofty_owned. by iFrame "Gb Hbs". }
-    iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
-    by apply Hπ.
   Qed.
 End typing.

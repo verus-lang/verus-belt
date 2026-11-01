@@ -313,6 +313,7 @@ src/lambda_verus/typing/place_resolve.v
 src/lambda_verus/typing/place_puniq.v
 src/lambda_verus/typing/place_sum.v
 src/lambda_verus/typing/place_deep.v
+src/lambda_verus/typing/place_write.v
 src/lambda_verus/typing/place_pshr.v
 src/lambda_verus/typing/place_res.v
 src/lambda_verus/typing/place_res_view.v
