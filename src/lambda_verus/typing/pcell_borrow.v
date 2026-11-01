@@ -161,8 +161,8 @@ Section cell_shr_rules.
   Proof.
     iIntros (tid post mask iκs [[l g] [[l' [g' x]] []]]) "_ #TIME #PROPH _ _ $ $ (p & q & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
-    iDestruct "p" as (vp Hp wp dp [-> Hwp]) "[#⧖p #Own]". simpl in Hwp. simplify_eq.
-    iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q #Own']".
+    iDestruct (tctx_val_elim with "p") as (vp Hp wp dp [-> Hwp]) "[#⧖p #Own]". simpl in Hwp. simplify_eq.
+    iDestruct (tctx_val_elim with "q") as (vq Hq wq dq [-> Hwq]) "[#⧖q #Own']".
     rewrite /PCellBorrow.
     wp_bind p. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     wp_bind q. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
@@ -267,8 +267,8 @@ Section cell_uniq_rules.
     iIntros (Alv tid post mask iκs [[l g] [[[[[[l' [g' x]] ξi] di] gi] ξidx] []]])
       "#LFT #TIME #PROPH _ #E L $ (p & q & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
-    iDestruct "p" as (vp Hp wp dp [-> Hwp]) "[#⧖p #Own]". simpl in Hwp. simplify_eq.
-    iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp wp dp [-> Hwp]) "[#⧖p #Own]". simpl in Hwp. simplify_eq.
+    iDestruct (tctx_val_elim with "q") as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
     iDestruct "Uniq" as "(#Incl & [%Hle1 %Hle2] & Body)".
     rewrite /PCellBorrowMut.
     wp_bind p. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
@@ -360,8 +360,8 @@ Section cell_uniq_rules.
     iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
     iModIntro. iExists -[(l, (g, y), ξi, S D, D, ξidx)]. iSplitR "Obs"; last first.
     { iApply (proph_obs_impl with "Obs"). intros π Hpost. apply Hpost. }
-    iSplit; [|done]. iExists _. iSplit; [done|]. iExists (VPtr l), (D + 1 + 1).
-    iSplit; [done|]. iFrame "⧖D2". iSplitL.
+    iSplit; [|done]. iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l) (D + 1 + 1)); [|done|done].
+    iFrame "⧖D2". iSplitL.
     - iFrame "Incl UB". iPureIntro; lia.
     - iExists cs. iFrame "Hg". iApply (lguards_weaken_later with "GL"). lia.
   Qed.

@@ -51,7 +51,7 @@ Section memcpy_res.
     iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
     have ?: Closed [] (pctx_expr K (ToLit p)).
     { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
-    iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
+    iDestruct (tctx_val_elim with "Tw") as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Frw & Gw0)".
     iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     iDestruct (Alv with "L E") as "#Alv".
@@ -144,7 +144,7 @@ Section memcpy_res.
     iModIntro. iExists -[(lw, zh); ((l, x₀), ζm)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitL "Hbsw Frw"; [|iSplitL; [|done]].
-      - iExists _. iSplit; [done|]. iExists (VPtr lw), (S (S M)). iSplit; [done|].
+      - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr lw) (S (S M))); [|done|done].
         iSplit; [done|].
         iSplitL "Hbsw"; [by iApply bytes_own_of_bytes|]. iSplitL "Frw".
         + by rewrite -Hszw.

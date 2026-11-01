@@ -701,7 +701,7 @@ Section puniq.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
     iSplitL "Tok1 Ghζ ⧗u".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists _, D. iSplit; [done|].
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. rewrite -(val_own_intro_sep _ _ _ _ _ D); [|done|done].
       iFrame "⧖".
       iSplit. { iApply llftl_incl_trans; [iApply pctx_blft_incl_r|]. iApply "Incl". }
       iSplit; [iPureIntro; lia|]. iExists β, γζ. iFrame "∗#". iApply guards_refl. }
@@ -890,7 +890,7 @@ Section puniq.
     rewrite /tctx_elt_interp.
     iDestruct "Tp" as (v Hp) "Tp". iEval (rewrite vplace_own_open) in "Tp".
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)". have Hdl: 1 ≤ pctx_dlev K by apply pctx_vroot_dlev.
-    iDestruct "Tb" as (vb Hpb wb db [-> Hwb]) "(#⧖b & Gb)".
+    iDestruct "Tb" as (vb Hpb wb db fvb [-> Hfvb]) "(Hcb & #⧖b & Gb)".
     have ?: Closed [] (pctx_vexpr K p).
     { apply pctx_vexpr_closed. by eapply eval_path_closed. }
     have ?: Closed [] pb by eapply eval_path_closed.
@@ -955,12 +955,12 @@ Section puniq.
       iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
       (* Write. *)
       iApply (wp_bytes_own_forget with "Pt1"); [solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
-      iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf|done|].
+      iApply (wp_val_cells_store with "[$Hbs $Hcb]"); [solve_ndisj|done|done|].
       iNext. iIntros "Hbs".
       iMod (cumulative_persistent_time_receipt with "TIME ⧗u ⧖b") as "#⧖b1"; [solve_ndisj|].
       iSpecialize ("CloseB" $! b db db with "[Hbs Gb] ⧗1").
       { iNext. iSplitR. { iApply (persistent_time_receipt_mono with "⧖b1"). lia. }
-        iFrame "Gb". iApply (bytes_own_of_bytes with "Hbs"). by apply ty_bytes_encode. }
+        by iFrame "Gb Hbs". }
       iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [solve_ndisj|].
       iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [solve_ndisj|].
       set Dn := D `max` (S (pctx_dlev K) + db).
@@ -999,7 +999,7 @@ Section puniq.
       iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
       (* Write. *)
       iApply (wp_bytes_own_forget with "Pt1"); [solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
-      iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf|done|].
+      iApply (wp_val_cells_store with "[$Hbs $Hcb]"); [solve_ndisj|done|done|].
       iNext. iIntros "Hbs".
       set Dn := D `max` (S (pctx_dlev K) + db).
       iCombine "⧖ ⧖k" as "⧖D".
@@ -1011,7 +1011,7 @@ Section puniq.
       { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iExists b. iSplit; [done|]. rewrite /ofty_owned.
-        iSplitL "Hbs". { iApply (bytes_own_of_bytes with "Hbs"). by apply ty_bytes_encode. }
+        iFrame "Hbs".
         by iApply bi.laterN_intro. }
       iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
       iModIntro. iExists -[(pctx_set K x₀ b, ζm)]. iFrame "L I".
@@ -1191,7 +1191,7 @@ Section puniq.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
     iSplitL "Tok' Gh' ⧗'".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists _, D. iSplit; [done|].
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. rewrite -(val_own_intro_sep _ _ _ _ _ D); [|done|done].
       iFrame "⧖".
       iSplit. { iApply llftl_incl_trans; [iApply pctx_blft_incl_r|]. iApply "Incl". }
       iSplit; [iPureIntro; lia|]. iExists κp', γ'. iFrame "∗#". }
@@ -1419,7 +1419,7 @@ Section puniq.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. exact Hπ. }
     iSplitR.
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists _, D. iSplit; [done|].
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. rewrite -(val_own_intro_sep _ _ _ _ _ D); [|done|done].
       iFrame "⧖".
       destruct D as [|D']; [lia|].
       iApply (shr_bor_own_intro with "[] Shr Pers"); [lia|lia|].

@@ -1075,7 +1075,7 @@ Section memcpy.
     destruct x as [x₀ ζm].
     iDestruct "Tp" as (v Hp) "Tp". iEval (rewrite vplace_own_open) in "Tp".
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
-    iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
+    iDestruct (tctx_val_elim with "Tw") as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
     iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
@@ -1132,7 +1132,7 @@ Section memcpy.
     iModIntro. iExists -[(lw, zz); (x₀, ζm)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitL "Hbsw Fr"; [|iSplitL; [|done]].
-      - iExists _. iSplit; [done|]. iExists (VPtr lw), (S (S M)). iSplit; [done|].
+      - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr lw) (S (S M))); [|done|done].
         iSplit; [done|].
         iSplitL "Hbsw"; [by iApply bytes_own_of_bytes|]. iSplitL "Fr".
         + by rewrite -Hszw.
@@ -1175,7 +1175,7 @@ Section memcpy.
     destruct x as [x ζm].
     iDestruct "Tp" as (v Hp) "Tp". rewrite vplace_own_eq.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
-    iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
+    iDestruct (tctx_val_elim with "Tw") as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
     iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     iDestruct (Alv with "L E") as "#Alv".
@@ -1225,7 +1225,7 @@ Section memcpy.
     iModIntro. iExists -[(lw, zz); (x, ζm)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitL "Hbsw Fr"; [|iSplitL; [|done]].
-      - iExists _. iSplit; [done|]. iExists (VPtr lw), (S (S M)). iSplit; [done|].
+      - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr lw) (S (S M))); [|done|done].
         iSplit; [done|].
         iSplitL "Hbsw"; [by iApply bytes_own_of_bytes|]. iSplitL "Fr".
         + by rewrite -Hszw.

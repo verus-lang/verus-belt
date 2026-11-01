@@ -44,7 +44,7 @@ Section typing.
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[l x] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
-    iDestruct "T" as (v Hp w D [-> Hw]) "(⧖ & Own)". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "T") as (v Hp w D [-> Hw]) "(⧖ & Own)". simpl in Hw. simplify_eq.
     destruct D as [|d]; [done|]. iDestruct "Own" as "(Pt & Fr & Gho)".
     iMod cumulative_time_receipt_0 as "⧗".
     iModIntro. iExists -[((l, x), [])]. iFrame "Obs". iSplit; [|done].
@@ -62,8 +62,7 @@ Section typing.
     iDestruct "T" as (v Hp D d g) "(⧖ & _ & -> & %Hle & Fr & Own)".
     rewrite /ltype_own /= /ofty_owned. iDestruct "Own" as (? ->) "[Pt Gho]".
     iModIntro. iExists -[(l, x)]. iFrame "Obs". iSplit; [|done].
-    rewrite /tctx_elt_interp. iExists _. iSplit; [done|]. iExists (VPtr l), D.
-    iSplit; [done|]. iFrame "⧖".
+    iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l) D); [|done|done]. iFrame "⧖".
     destruct D as [|D]; [lia|]. simpl. rewrite /lty_size -(ty_bsize_eq ty). iFrame "Fr".
     iFrame "Pt". iNext.
     iDestruct (ty_gho_own_depth_mono _ d g D (S D) with "Gho") as "[$ _]"; lia.
@@ -248,8 +247,7 @@ Section typing.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
     iSplitL "Body".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists (VPtr lK), D.
-      iSplit; [done|]. iFrame "⧖". iFrame "Incl Body".
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr lK) D); [|done|done]. iFrame "⧖". iFrame "Incl Body".
       iPureIntro; lia. }
     iSplit; [|done]. rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|].
     iExists D, d, g. iFrame "⧖".
@@ -346,7 +344,7 @@ Section typing.
   (** Moving the value out of the leaf at the hole of [K]: a typed [Load]; the leaf becomes
       uninitialized (its type is [↯ (ty_bsize ty)]: its bytes are kept, and represent any
       value of [↯]). *)
-  Lemma type_move_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} `{!NoCell 𝔅}
+  Lemma type_move_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K}
       (ty: type 𝔅) :
     pctx_nosum K →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)]
@@ -384,17 +382,15 @@ Section typing.
     iDestruct (lc_weaken (pctx_mode K 1) with "£") as "£";
       [rewrite /advance_credits pctx_mode_add; nia|].
     iMod (lc_fupd_elim_laterN with "£ Gho1") as "Gho1".
-    iDestruct (bytes_own_nocell_bytes with "Pt1") as (bs) "[Hbs %Hbs]".
-    destruct (ty_bytes_val _ _ _ Hbs) as [vw Hvw].
-    have Hlen := ty_bytes_length _ _ _ Hbs.
-    iApply (wp_load_na with "Hbs"); [by eapply ty_bytes_decode|].
-    iIntros "!> Hbs". iModIntro.
+    iApply (wp_bytes_own_move with "Pt1"); [solve_ndisj|].
+    iIntros "!>" (vw fv bs) "(%Hfv & Hc & Hbs & %Hlen)". iModIntro.
     set junk := (() : ~~ (uninitₛ (ty_bsize ty))).
     iExists -[y; ((l, pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) K x₀ junk), ζm)]. iFrame "L I".
     iSplitR "Obs"; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
     iSplitR "Hbs Rest ⧗p Fr".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists vw, D. iSplit; [done|].
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists vw, D, fv. iSplit; [done|].
+      iFrame "Hc".
       iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ dh g D D with "Gho1") as "[$ _]"; lia. }
     have Hsz : lty_size (OfTy (↯ (ty_bsize ty))) = lty_size (OfTy ty).
     { rewrite /lty_size. change (syn_bsize (uninitₛ (ty_bsize ty))) with (ty_bsize ty).
@@ -429,7 +425,7 @@ Section typing.
     destruct x as [[l x₀] ζm].
     rewrite /tctx_elt_interp.
     iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
-    iDestruct "Tb" as (vb Hpb wb db [-> Hwb]) "(#⧖b & Gb)".
+    iDestruct "Tb" as (vb Hpb wb db fvb [-> Hfvb]) "(Hcb & #⧖b & Gb)".
     have ?: Closed [] (pctx_expr K (ToLit p)).
     { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
@@ -477,7 +473,7 @@ Section typing.
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     (* Write. *)
     iApply (wp_bytes_own_forget with "Pt1"); [solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
-    iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf|by rewrite Hlen -Hsz|].
+    iApply (wp_val_cells_store with "[$Hbs $Hcb]"); [solve_ndisj|done|by rewrite Hlen -Hsz|].
     iIntros "!> Hbs".
     (* Close the place at the new value. *)
     set d'' := (db + k0) `max` d. set g'' := db `max` g.
@@ -497,8 +493,7 @@ Section typing.
       iFrame "⧗p Fr". iSplit; [done|]. iSplit; [iPureIntro; lia|].
       rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //
         pctx_loc_reset // pctx_mode_retype pctx_depth_retype /=. rewrite Hsz'. iFrame "Rest".
-      iExists b. iSplit; [done|]. rewrite /ofty_owned. iFrame "Gb".
-      iApply (bytes_own_of_bytes with "Hbs"). by apply ty_bytes_encode. }
+      iExists b. iSplit; [done|]. rewrite /ofty_owned. by iFrame "Gb Hbs". }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
     by apply Hπ.
   Qed.

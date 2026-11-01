@@ -841,4 +841,79 @@ Section frepr_more.
         * rewrite -(list_slice_slice_n _ _ _ (mty_size vm)) //.
           rewrite (decode_value_length _ _ _ Hd'). by erewrite HR.
   Qed.
+  (** ** Fancy bytes with new plain bytes
+
+  [fb_mix fbs bs'] keeps the byte-cells of [fbs] and takes its plain bytes from [bs'] (the
+  bytes of a value with cells after a typed move: the cells are retethered at their
+  positions, and the other bytes are those that the [Store] wrote). *)
+  Definition fb_mix (fbs : list (positive + AbstractByte)) (bs' : list AbstractByte) :=
+    zip_with (λ fb b, match fb with inl c => inl c | inr _ => inr b end) fbs bs'.
+
+  Lemma fb_mix_length fbs bs' : length bs' = length fbs → length (fb_mix fbs bs') = length fbs.
+  Proof. intros. rewrite /fb_mix length_zip_with. lia. Qed.
+
+  Lemma fb_mix_lookup fbs bs' i fb b :
+    fbs !! i = Some fb → bs' !! i = Some b →
+    fb_mix fbs bs' !! i = Some (match fb with inl c => inl c | inr _ => inr b end).
+  Proof. intros Hfb Hb. by rewrite /fb_mix lookup_zip_with Hfb Hb. Qed.
+
+  Lemma fb_mix_shape fbs bs' :
+    length bs' = length fbs → Forall2 fb_same_shape fbs (fb_mix fbs bs').
+  Proof.
+    intros Hlen. apply Forall2_lookup. intros i. destruct (fbs !! i) as [fb|] eqn:Hfb.
+    - destruct (lookup_lt_is_Some_2 bs' i) as [b Hb]; [rewrite Hlen; by eapply lookup_lt_Some|].
+      rewrite (fb_mix_lookup _ _ _ _ _ Hfb Hb). constructor. by destruct fb.
+    - rewrite (lookup_ge_None_2 (fb_mix _ _)); [constructor|].
+      rewrite fb_mix_length //. by apply lookup_ge_None.
+  Qed.
+
+  Lemma fb_mix_inr fbs bs' i b : fb_mix fbs bs' !! i = Some (inr b) → bs' !! i = Some b.
+  Proof.
+    rewrite /fb_mix lookup_zip_with. destruct (fbs !! i) as [[]|], (bs' !! i); simpl;
+      intros; simplify_eq; done.
+  Qed.
+
+  Lemma fb_mix_inl fbs bs' i c :
+    length bs' = length fbs → fb_mix fbs bs' !! i = Some (inl c) ↔ fbs !! i = Some (inl c).
+  Proof.
+    intros Hlen. rewrite /fb_mix lookup_zip_with. split.
+    - destruct (fbs !! i) as [[]|], (bs' !! i); simpl; intros; simplify_eq; done.
+    - intros Hi. rewrite Hi /=. destruct (lookup_lt_is_Some_2 bs' i) as [b ->]; [|done].
+      rewrite Hlen. by eapply lookup_lt_Some.
+  Qed.
+
+  Lemma fb_mix_mix fbs bs1 bs2 :
+    length bs1 = length fbs → fb_mix (fb_mix fbs bs1) bs2 = fb_mix fbs bs2.
+  Proof.
+    revert bs1 bs2. induction fbs as [|fb fbs IH]; intros [|b1 bs1] [|b2 bs2] Hlen;
+      simpl in *; try done; try lia. f_equal; [by destruct fb|]. apply IH. lia.
+  Qed.
+
+  Lemma fb_mix_id fbs bs :
+    length bs = length fbs → (∀ i b, fbs !! i = Some (inr b) → bs !! i = Some b) →
+    fb_mix fbs bs = fbs.
+  Proof.
+    intros Hlen Hpl. apply list_eq. intros i. destruct (fbs !! i) as [fb|] eqn:Hfb.
+    - destruct (lookup_lt_is_Some_2 bs i) as [b Hb]; [rewrite Hlen; by eapply lookup_lt_Some|].
+      rewrite (fb_mix_lookup _ _ _ _ _ Hfb Hb). destruct fb as [|b']; [done|].
+      rewrite (Hpl i b' Hfb) in Hb. by injection Hb as ->.
+    - apply lookup_ge_None_2. rewrite fb_mix_length //. by apply lookup_ge_None.
+  Qed.
+
+  Lemma fb_mix_cells cs bs' : length bs' = length cs → fb_mix (inl <$> cs) bs' = inl <$> cs.
+  Proof.
+    revert bs'. induction cs as [|c cs IH]; intros [|b bs'] Hlen; simpl in *; try done; try lia.
+    f_equal. apply IH. lia.
+  Qed.
+
+  (** The fancy bytes of a value, with the plain bytes of other bytes that decode to its
+      erasure, represent it. *)
+  Lemma frepr_mix R (ρ : gmap positive FValue) m fbs fv v bs' :
+    reg_wf R → frepr R m fbs fv → fval_erase ρ fv v → decode_value m bs' = Some v →
+    length bs' = length fbs → frepr R m (fb_mix fbs bs') fv.
+  Proof.
+    intros HR Hrep Her Hd Hlen.
+    apply (proj1 (frepr_rebytes R ρ m fbs fv v (fb_mix fbs bs') bs' HR Hrep Her Hd
+      (fb_mix_shape _ _ Hlen) (fb_mix_inr _ _))).
+  Qed.
 End frepr_more.

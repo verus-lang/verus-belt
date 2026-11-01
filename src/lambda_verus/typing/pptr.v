@@ -86,8 +86,8 @@ Section typing.
       (λ post '-[l; (l', x)], λ mask π, l = l' ∧ post -[(l, x)] mask π).
   Proof.
     iIntros (tid postπ mask iκs [l [[l' x] []]]) "#LFT #TIME #PROPH UNIQ E $ $ (Hptr & Hperm & _) #Obs".
-    iDestruct "Hptr" as (vp Hp w d [-> Hw]) "[_ _]". simpl in Hw. simplify_eq.
-    iDestruct "Hperm" as (vq Hq w' d' [-> _]) "[#Hd' Hown]".
+    iDestruct (tctx_val_elim with "Hptr") as (vp Hp w d [-> Hw]) "[_ _]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "Hperm") as (vq Hq w' d' [-> _]) "[#Hd' Hown]".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
     rewrite /PPtr2Own.
     wp_bind ptr. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).
@@ -108,10 +108,10 @@ Section typing.
       (λ post '-[(l, x)], λ mask π, post -[l; (l, x)] mask π).
   Proof.
     iIntros (tid postπ mask iκs [[l x] []]) "#LFT #TIME #PROPH UNIQ E $ $ [Hp _] #Obs".
-    iDestruct "Hp" as (vp Hp w d [-> Hw]) "[#Hd Hown]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "Hp") as (vp Hp w d [-> Hw]) "[#Hd Hown]". simpl in Hw. simplify_eq.
     iApply wp_ghost_op. iIntros "!> !>". iExists -[l; (l, x)]. iSplitL.
     - iSplitR; [|iSplitL; [|done]].
-      + iExists _. iSplit; [done|]. iExists (VPtr l), d. iSplit; [done|].
+      + iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l) d); [|done|done].
         by iFrame "Hd".
       + rewrite tctx_val_val. iExists d. by iFrame "Hd Hown".
     - iApply (proph_obs_impl with "Obs"). intros π' Hpost. apply Hpost.
@@ -125,8 +125,8 @@ Section typing.
       (λ post '-[l; (cl, (l', x))], λ mask π, l = l' ∧ post -[(l, x)] mask π).
   Proof.
     iIntros (tid postπ mask iκs [l [[c [l' x]] []]]) "#LFT #TIME #PROPH #UNIQ #E $ $ (Hptr & Hperm & _) #Obs".
-    iDestruct "Hptr" as (vp Hp w d [-> Hw]) "[_ _]". simpl in Hw. simplify_eq.
-    iDestruct "Hperm" as (vq Hq w' d' [-> _]) "[#Hd' Hshr]".
+    iDestruct (tctx_val_elim with "Hptr") as (vp Hp w d [-> Hw]) "[_ _]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "Hperm") as (vq Hq w' d' [-> _]) "[#Hd' Hshr]".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
     rewrite /PPtrBorrow.
     wp_bind ptr. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).
@@ -169,8 +169,8 @@ Section typing.
     iIntros (Alv tid postπ mask iκs [l [u []]]) "#LFT #TIME #PROPH #UNIQ #E L $ (Hptr & Hperm & _) #Obs".
     iDestruct (Alv with "L E") as "#Alv".
     destruct u as [[[[[c [l' x]] ξi] d] g] ξidx].
-    iDestruct "Hptr" as (vp Hp w d0 [-> Hw]) "[_ _]". simpl in Hw. simplify_eq.
-    iDestruct "Hperm" as (vq Hq w' d'' [-> _]) "[#Hd' Huniq]".
+    iDestruct (tctx_val_elim with "Hptr") as (vp Hp w d0 [-> Hw]) "[_ _]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "Hperm") as (vq Hq w' d'' [-> _]) "[#Hd' Huniq]".
     iDestruct "Huniq" as "[#Incl [%Hineq UniqBody]]".
     rewrite /PPtrMutBorrow.
     wp_bind ptr. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (? ->).

@@ -113,12 +113,14 @@ Section conv.
 
   (** * Leaves *)
 
-  Lemma tctx_ty_to_vplace {𝔄} E L p (ty: type 𝔄) :
+  (** The leaf of a place rooted at a value holds a MiniRust value, so the value has no
+      cells. *)
+  Lemma tctx_ty_to_vplace {𝔄} `{!NoCell 𝔄} E L p (ty: type 𝔄) :
     tctx_incl E L +[p ◁ᵥ ty] +[p ◁ₗ OfTy ty] (λ post '-[a], post -[(a, [])]).
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [x []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
-    iDestruct "T" as (v Hp w d [-> Hw]) "(⧖ & Gho)".
+    iDestruct (tctx_val_elim with "T") as (v Hp w d [-> Hw]) "(⧖ & Gho)".
     iMod cumulative_time_receipt_0 as "⧗".
     iModIntro. iExists -[(x, [])]. iFrame "Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists _. iSplit; [done|].
@@ -134,7 +136,7 @@ Section conv.
     iDestruct "T" as (v Hp D) "(⧖ & _ & %d & %g & %Hle & %y & -> & %Phys & Gho)".
     destruct Phys as (w & -> & Hw).
     iModIntro. iExists -[x]. iFrame "Obs". iSplit; [|done].
-    iExists _. iSplit; [done|]. iExists w, D. iSplit; [done|]. iFrame "⧖".
+    iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ w D); [|done|done]. iFrame "⧖".
     iDestruct (ty_gho_own_depth_mono _ d g D D with "Gho") as "[$ _]"; lia.
   Qed.
 
@@ -240,7 +242,7 @@ Section conv.
       (λ _, +[p ◁ₗ UniqLty (OfTy ty) κ]) (λ post '-[m], post -[(m, [])]).
   Proof.
     iIntros (tid post mask iκs [m []]) "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
-    iDestruct "T" as (v Hp w D [-> Hw]) "(#⧖ & Gho)".
+    iDestruct (tctx_val_elim with "T") as (v Hp w D [-> Hw]) "(#⧖ & Gho)".
     destruct m as [[[[[l' x] ξi] d'] g'] idx].
     iMod cumulative_time_receipt_0 as "⧗0".
     iApply (wp_cumulative_time_receipt_linear with "TIME ⧖"); [solve_ndisj|].

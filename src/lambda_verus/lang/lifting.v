@@ -1105,6 +1105,58 @@ Proof.
   iModIntro. iFrame "HB". by iApply ("Hwp" with "Hl").
 Qed.
 
+(** ** Typed moves of fancy bytes (values with cells)
+
+A typed [Load] of fancy bytes untethers all their cells: the loaded value [w] is the
+decoding of the bytes [bs] at the location, whose cells are in transit ([unt_fbytes]). A
+typed [Store] of [w] (of bytes that decode to [w]) retethers them at the new location; the
+plain bytes are those of the [Store] ([fb_mix]). A [MemCopy] moves them verbatim. *)
+Lemma wp_fbytes_load E l m fbs fv :
+  ↑naN ⊆ E →
+  {{{ heap_mapsto_fbytes l fbs ∗ brepr m fbs fv }}} Load Na1Ord m (Lit $ LitLoc l) @ E
+  {{{ w bs, RET MLitV w; l ↦b bs ∗ ⌜decode_value m bs = Some w⌝ ∗ unt_fbytes fbs bs }}}.
+Proof.
+  iIntros (? Φ) "[Hl #Hrep] HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+  iMod (bytes_ctx_fbytes_untether with "HB Hl") as (bs) "(HB & Hl & Hus)"; [done|].
+  iDestruct (bytes_ctx_unt_fbytes_decode with "HB Hrep Hus") as %[w Hd].
+  iModIntro. iFrame "HB". iApply (wp_load_na with "Hl"); [done|]. iIntros "!> Hl".
+  iApply "HΦ". by iFrame.
+Qed.
+
+Lemma wp_fbytes_store E l m fbs fv bs bs0 e w :
+  ↑naN ⊆ E → IntoVal e (MLitV w) → mty_wf m → decode_value m bs = Some w →
+  length bs0 = mty_size m →
+  {{{ ▷ l ↦b bs0 ∗ unt_fbytes fbs bs ∗ brepr m fbs fv }}} Store Na1Ord m (Lit $ LitLoc l) e @ E
+  {{{ fbs', RET LitV LitPoison;
+      heap_mapsto_fbytes l fbs' ∗ brepr m fbs' fv ∗ ⌜length fbs' = length fbs⌝ }}}.
+Proof.
+  iIntros (? He Hm Hd Hlen Φ) "(Hl & Hus & #Hrep) HΦ".
+  have Hwf := decode_value_wf _ _ _ Hm Hd.
+  iApply (wp_store_na_post with "Hl"); [done|exact Hwf|done|].
+  iIntros "!> Hl" (σB) "HB".
+  iDestruct (big_sepL2_length with "Hus") as %Hlenu.
+  iMod (bytes_ctx_fbytes_retether_gen with "HB Hrep Hus Hl") as "(HB & Hl & Hrep')"; [done| |].
+  { rewrite decode_encode_value // Hd //. }
+  iModIntro. iFrame "HB". iApply "HΦ". iFrame. iPureIntro. apply fb_mix_length.
+  rewrite length_encode_value Hlenu. symmetry. by eapply decode_value_length.
+Qed.
+
+Lemma wp_fbytes_memcopy E l1 l2 bs1 fbs (n : nat) :
+  ↑naN ⊆ E → length bs1 = n → length fbs = n →
+  {{{ ▷ l1 ↦b bs1 ∗ heap_mapsto_fbytes l2 fbs }}}
+    MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2) @ E
+  {{{ bs, RET LitV LitPoison; heap_mapsto_fbytes l1 fbs ∗ l2 ↦b bs ∗ ⌜length bs = n⌝ }}}.
+Proof.
+  iIntros (? Hlen1 Hlen2 Φ) "[Hl1 Hl2] HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
+  iMod (bytes_ctx_fbytes_untether with "HB Hl2") as (bs) "(HB & Hl2 & Hus)"; [done|].
+  iDestruct (big_sepL2_length with "Hus") as %Hlenu.
+  iModIntro. iFrame "HB".
+  iApply (wp_memcopy_post with "Hl1 Hl2"); [done|done|lia|].
+  iIntros "!> Hl1 Hl2" (σB') "HB".
+  iMod (bytes_ctx_fbytes_retether with "HB Hus Hl1") as "[HB Hl1]"; [done|].
+  iModIntro. iFrame "HB". iApply "HΦ". iFrame. iPureIntro. lia.
+Qed.
+
 (** Reads and writes through a cell whose location side is owned: the group is untethered
     for the duration of the access, so the location holds plain bytes. *)
 Lemma wp_pcell_load_na E l g m cs fv :

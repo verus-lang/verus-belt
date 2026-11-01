@@ -150,7 +150,7 @@ Section memcpy_deep.
       assignment through [&mut]): a byte-level [MemCopy] (no decode/encode). The old value
       of the leaf is resolved; the box becomes uninitialized ([↯]: its bytes are kept). *)
   Lemma type_memcpy_vplace_deep_instr {𝔅 𝔄} E L I p pr n (K: pctx 𝔅 𝔄) `{!PctxNoShr K}
-      `{!PctxVRoot K} `{!NoCell 𝔅} (ty: type 𝔅) Φ (sz: nat) :
+      `{!PctxVRoot K} (ty: type 𝔅) Φ (sz: nat) :
     resolve E L ty Φ → sz = ty_bsize ty →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
     typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty); pr ◁ᵥ own_bytes n ty]
@@ -165,9 +165,9 @@ Section memcpy_deep.
     rewrite /tctx_elt_interp.
     iDestruct "Tp" as (v Hp) "Tp". iEval (rewrite vplace_own_open) in "Tp".
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)". have Hdl := pctx_vroot_dlev K.
-    iDestruct "Tr" as (vr Hpr wr dr [-> Hwr]) "(#⧖r & Tr)". simpl in Hwr. simplify_eq.
+    iDestruct (tctx_val_elim with "Tr") as (vr Hpr wr dr [-> Hwr]) "(#⧖r & Tr)". simpl in Hwr. simplify_eq.
     destruct dr as [|dr]; [done|]. iDestruct "Tr" as "(Bs & Fr & Gb)".
-    iDestruct (bytes_own_nocell_bytes with "Bs") as (bs) "[Hbs %Hbs]".
+    rewrite bytes_own_brepr. iDestruct "Bs" as (fbs fv) "(Hfbs & [%Hlenf %Hfv] & #Hrep)".
     have ?: Closed [] (pctx_vexpr K p).
     { apply pctx_vexpr_closed. by eapply eval_path_closed. }
     have ?: Closed [] pr by eapply eval_path_closed.
@@ -209,10 +209,9 @@ Section memcpy_deep.
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
     iMod (lc_fupd_elim_later with "£b Gb") as "Gb".
     (* Copy the bytes. *)
-    iDestruct (bytes_own_nocell_bytes with "Pt1") as (bs1) "[Hbs1 %Hbs1]".
-    iApply (wp_memcopy with "[$Hbs1 $Hbs]");
-      [solve_ndisj|by rewrite (ty_bytes_length _ _ _ Hbs1)|by rewrite (ty_bytes_length _ _ _ Hbs)|].
-    iIntros "!> [Hbs1 Hbs]".
+    iApply (wp_bytes_own_forget with "Pt1"); [solve_ndisj|]. iIntros (bs1) "Hbs1 %Hlen1".
+    iApply (wp_fbytes_memcopy with "[$Hbs1 $Hfbs]"); [solve_ndisj|done|done|].
+    iIntros "!>" (bs) "(Hbs1 & Hbs & %Hlen)".
     (* Close the place at the new value. *)
     iDestruct (cumulative_time_receipt_mono (pctx_dlev K) with "⧗k") as "⧗k"; [lia|].
     iMod (cumulative_persistent_time_receipt with "TIME ⧗k ⧖r") as "#⧖k"; [solve_ndisj|].
@@ -221,7 +220,7 @@ Section memcpy_deep.
     iMod ("Cl" $! y dr (S dr) Dn with "[%] [] G' P [Hbs1] Gb") as "[Own H1]".
     { rewrite /Dn. lia. }
     { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
-    { by iApply bytes_own_of_bytes. }
+    { rewrite /cbytes bytes_own_brepr. iExists fbs, fv. by iFrame "Hbs1 Hrep". }
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     set junk := (() : ~~ (uninitₛ (ty_bsize ty))).
     iModIntro. iExists -[(pctx_set K x₀ y, ζm); (lb, junk)]. iFrame "L I".
@@ -231,17 +230,17 @@ Section memcpy_deep.
         iApply (vplace_own_close K _ _ _ Dn with "[] ⧗p");
           [iApply (persistent_time_receipt_mono with "⧖D"); rewrite /Dn; lia|].
         by rewrite pctx_get_set pctx_vrfn_set.
-      - iExists _. iSplit; [done|]. iExists (VPtr lb), (S dr). iSplit; [done|]. iFrame "⧖r".
+      - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr lb) (S dr)); [|done|done]. iFrame "⧖r".
         iSplitL "Hbs".
         + iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].
-          rewrite -(ty_mty_eq (↯ _)) /= decide_True //. by rewrite (ty_bytes_length _ _ _ Hbs).
+          rewrite -(ty_mty_eq (↯ _)) /= decide_True //.
         + by iFrame "Fr". }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
     by apply Hπ.
   Qed.
 
   Lemma type_memcpy_oplace_deep_instr {𝔅 𝔄} E L I p pr n' n (K: pctx 𝔅 𝔄) `{!PctxNoShr K}
-      `{!NoCell 𝔅} (ty: type 𝔅) Φ (sz: nat) :
+      (ty: type 𝔅) Φ (sz: nat) :
     resolve E L ty Φ → sz = ty_bsize ty →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
     typed_instr E L I +[p ◁ₗown{n'} pctx_plug K (OfTy ty); pr ◁ᵥ own_bytes n ty]
@@ -270,7 +269,7 @@ Section memcpy_deep.
     rewrite /tctx_elt_interp.
     iDestruct "Tp" as (v Hp) "Tp". iEval (rewrite vplace_own_open) in "Tp".
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)". have Hdl := pctx_vroot_dlev K.
-    iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
+    iDestruct (tctx_val_elim with "Tw") as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
     iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     have ?: Closed [] (pctx_vexpr K p).
@@ -324,7 +323,7 @@ Section memcpy_deep.
     iModIntro. iExists -[(lw, pctx_get K x₀); (x₀, ζm)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitL "Hbsw Fr"; [|iSplitL; [|done]].
-      - iExists _. iSplit; [done|]. iExists (VPtr lw), (S M). iSplit; [done|].
+      - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr lw) (S M)); [|done|done].
         iSplit; [iApply (persistent_time_receipt_mono with "⧖S"); lia|].
         iSplitL "Hbsw"; [by iApply bytes_own_of_bytes|]. iSplitL "Fr".
         + by rewrite -Hszw.
