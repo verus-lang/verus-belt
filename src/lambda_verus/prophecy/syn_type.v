@@ -24,7 +24,6 @@ Inductive syn_type := intₛ (_: IntType) | boolₛ | unitₛ | Propₛ | positi
 | namespaceₛ
 | uninitₛ (_: nat)
 | locₛ
-| paddingₛ
 | funₛ (_: syn_type) (_: syn_type)
 | exec_funₛ (_: syn_type)
 | join_handleₛ (_: syn_type)
@@ -73,7 +72,6 @@ Fixpoint indep_interp_of_syn_type (𝔄: syn_type) : Type :=
   | uninitₛ n => vec val n
   | pcellₛ _ => positive
   | locₛ => loc
-  | paddingₛ => list val
   | funₛ 𝔄₀ 𝔄₁ => (indep_interp_of_syn_type 𝔄₀ → indep_interp_of_syn_type 𝔄₁)
   | exec_funₛ 𝔄₀ => val * indep_interp_of_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
@@ -100,7 +98,6 @@ Fixpoint proph_interp_of_syn_type (𝔄: syn_type) : Type :=
   | uninitₛ n => ()
   | pcellₛ _ => positive
   | locₛ => loc
-  | paddingₛ => list val
   | invₛ 𝔄₀ => namespace * gname * indep_interp_of_syn_type 𝔄₀
   | local_invₛ 𝔄₀ => namespace * (gname * gname * nat) * indep_interp_of_syn_type 𝔄₀
   | namespaceₛ => namespace
@@ -132,7 +129,6 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
   | uninitₛ n => vec val n
   | pcellₛ _ => positive
   | locₛ => loc
-  | paddingₛ => list val
   | funₛ 𝔄₀ 𝔄₁ => (indep_interp_of_syn_type 𝔄₀ → indep_interp_of_syn_type 𝔄₁)
   | exec_funₛ 𝔄₀ => val * abstracted_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => abstracted_syn_type 𝔄₀
@@ -144,7 +140,7 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
 Fixpoint syn_type_beq 𝔄 𝔅 : bool :=
   match 𝔄, 𝔅 with
   | boolₛ, boolₛ | (), () | Propₛ, Propₛ | positiveₛ, positiveₛ
-  | locₛ, locₛ | paddingₛ, paddingₛ | namespaceₛ, namespaceₛ | maskₛ, maskₛ
+  | locₛ, locₛ | namespaceₛ, namespaceₛ | maskₛ, maskₛ
     => true
   | intₛ it, intₛ it' => bool_decide (it = it')
   | uninitₛ n, uninitₛ m => bool_decide (n = m)
@@ -392,7 +388,6 @@ Fixpoint vπ {𝔄} : ~~𝔄 → proph_asn → 𝔄 :=
   | storableₛ 𝔄₀ => λ x π, x
   | uninitₛ n => λ x π, ()
   | pcellₛ _ => λ x π, x
-  | paddingₛ => λ x π, x
   | funₛ 𝔄₀ 𝔄₁ => λ x π, x
   | join_handleₛ 𝔄₀  => λ x π , x
   | exec_funₛ 𝔄₀  => λ x π , x
@@ -438,7 +433,6 @@ Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   | storableₛ 𝔄₀ => λ x , []
   | uninitₛ n => λ x , []
   | pcellₛ _ => λ x , []
-  | paddingₛ => λ x , []
   | funₛ 𝔄₀ 𝔄₁ => λ x , []
   | join_handleₛ 𝔄₀  => λ x , []
   | exec_funₛ 𝔄₀  => λ x , []
@@ -515,7 +509,6 @@ Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   | storableₛ 𝔄₀ => λ x , (@syn_abstract 𝔄₀ x.1.1, x.1.2, x.2)
   | uninitₛ n => λ x , x
   | pcellₛ _ => λ x , x
-  | paddingₛ => λ x , x
   | funₛ 𝔄₀ 𝔄₁ => λ x , x
   | join_handleₛ 𝔄₀  => λ x , @syn_abstract 𝔄₀ x
   | exec_funₛ 𝔄₀  => λ x  , (fst x, @syn_abstract 𝔄₀ (snd x))

@@ -614,7 +614,7 @@ Section pctx.
     induction K in x |- *; simpl;
       [by intros|intros; by rewrite IHK // -surjective_pairing..| | |
        intros; by rewrite IHK // -surjective_pairing].
-    - rewrite /psum_proj_or. destruct x as [s pad]. simpl.
+    - rewrite /psum_proj_or. simpl.
       case_match eqn:Hs; [|intros []]. intros Hin.
       rewrite IHK //. by rewrite -(psum_proj_Some _ _ _ Hs).
     - intros. by rewrite IHK // uniq_bor_set_current_id.
