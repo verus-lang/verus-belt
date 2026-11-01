@@ -236,14 +236,14 @@ Section res_sum.
   Proof. done. Qed.
 
   Lemma xsum_gho_res_pinj {𝔄l} i (tyl: typel 𝔄l) x0 pad d g tid :
-    ty_gho_res (Σ! tyl) (pinj i x0, pad) d g tid ⊣⊢ ty_gho_res (tyl +!! i) x0 d g tid.
+    ty_gho_res (Σ! tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_res (tyl +!! i) x0 d g tid.
   Proof. rewrite [ty_gho_res (Σ! tyl)]/ty_gho_res /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
 
   (** A resolved sum at a known variant [i] is a sum place whose payload is the resolved
       leaf of the variant, and back. *)
   Lemma sum_res_unfold_own m {𝔄l} (tyl: typel 𝔄l) i (y: ~~ (𝔄l !!ₗ i)) pad d g tid l :
-    ltype_own (Owned m) (OfRes (xsum_ty tyl)) (inl (PlaceIn (𝔄:=Σ! 𝔄l) (pinj i y, pad))) d g tid l ⊣⊢
-    ltype_own (Owned m) (SumLty tyl i (OfRes (tyl +!! i))) (prfn_sum i (inl (PlaceIn y)) pad)
+    ltype_own (Owned m) (OfRes (xsum_ty tyl)) (inl (PlaceIn (𝔄:=Σ! 𝔄l) (pinj i y))) d g tid l ⊣⊢
+    ltype_own (Owned m) (SumLty tyl i (OfRes (tyl +!! i))) (prfn_sum i (inl (PlaceIn y)))
       d g tid l.
   Proof.
     rewrite /ltype_own /= psum_proj_pinj /= /res_leaf.
@@ -332,7 +332,7 @@ Section res_sum.
     rewrite /ltype_own lty_pat_plug lty_rfn_plug -Hy lty_rfn_sum_in ltype_own_plug.
     iFrame "Rest".
     iApply sum_res_unfold_own. rewrite /ltype_own /= /res_leaf.
-    iExists (pinj j a, pad). iSplit; [done|]. rewrite (cbytes_sum _ j (tyl +!! j)).
+    iExists (pinj j a). iSplit; [done|]. rewrite (cbytes_sum _ j (tyl +!! j)).
     iFrame "Gho1". iFrame "Pay Pad". iExists bt. by iFrame.
   Qed.
 End res_sum.

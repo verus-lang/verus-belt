@@ -31,7 +31,7 @@ Section place_sum.
   Proof. by destruct K. Qed.
 
   Lemma lty_rfn_sum_in {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) a pad ζm q :
-    lty_rfn (SumLty tyl i lt) (pinj i a, pad) ζm q = prfn_sum i (lty_rfn lt a ζm (false :: q)) pad.
+    lty_rfn (SumLty tyl i lt) (pinj i a) ζm q = prfn_sum i (lty_rfn lt a ζm (false :: q)).
   Proof. by rewrite lty_rfn_sum /= psum_proj_pinj. Qed.
 
   (** The interpretation of a sum place whose payload is a leaf, at the refinement of a
@@ -126,7 +126,7 @@ Section typing.
     iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug -Hy lty_rfn_sum_in ltype_own_plug.
     iFrame "Rest".
-    iApply sum_ofty_unfold_own. iExists (pinj j a, pad). iSplit; [done|].
+    iApply sum_ofty_unfold_own. iExists (pinj j a). iSplit; [done|].
     rewrite /ofty_owned (cbytes_sum _ j (tyl +!! j)). by iFrame.
   Qed.
 

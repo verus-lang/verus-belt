@@ -377,7 +377,7 @@ Section sum_deep.
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (OfTy (Σ! tyl))])%I as "#Hu".
     { iApply (guards_transitive with "Ghalf Alv"). }
     set lt' := SumLty tyl j (OfTy (tyl +!! j)).
-    set r' := (prfn_sum j (inl (PlaceIn a)) pad : prfn (xsumₛ 𝔄l)).
+    set r' := (prfn_sum j (inl (PlaceIn a)) : prfn (xsumₛ 𝔄l)).
     iDestruct (lc_weaken (pctx_vacc_cred K D + (3 * (D + 1) * D + (1 + 3 * (D + 1))))
       with "£") as "[£a [£w [£1 £r]]]";
       [have := pctx_vacc_cred_le K D; rewrite /advance_credits; nia|].
@@ -419,11 +419,11 @@ Section sum_deep.
       iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Tag & Pay & Pad)".
       iDestruct "Tag" as (bt) "[Bt %Hbt]".
       iApply (wp_load_na with "Bt"); [exact Hbt|]. iIntros "!> Bt".
-      iSpecialize ("CloseB" $! (pinj j a, pad) dh gh with "[Bt Pay Pad Gho1] ⧗1").
+      iSpecialize ("CloseB" $! (pinj j a) dh gh with "[Bt Pay Pad Gho1] ⧗1").
       { iNext. iFrame "⧖' Gho1". rewrite (cbytes_sum _ j (tyl +!! j)). by iFrame. }
       iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [solve_ndisj|].
       iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [solve_ndisj|].
-      iMod (cpd_unfold_uniq lt' κ (pctx_hξi K x₀) (pinj j a, pad) r' dh gh tid lK
+      iMod (cpd_unfold_uniq lt' κ (pctx_hξi K x₀) (pinj j a) r' dh gh tid lK
         with "LFT PROPH UNIQ G'κ G' [Body]") as "[Own G']"; [done|done|done| | | |solve_ndisj| |].
       { rewrite /r' prfn_rsv_sum. apply prfn_rsv_in. }
       { intros π. rewrite /r' prfn_den_sum /= prfn_den_in. by rewrite psum_map1_pinj. }
@@ -463,7 +463,7 @@ Section sum_deep.
       { by iApply big_sepL_pat_ok_nil. }
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iApply sum_ofty_unfold_own.
-        iExists (pinj j a, pad). iSplit; [done|].
+        iExists (pinj j a). iSplit; [done|].
         rewrite /ofty_owned (cbytes_sum _ j (tyl +!! j)). by iFrame. }
       iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|]. iModIntro.
       wp_pure _. wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }

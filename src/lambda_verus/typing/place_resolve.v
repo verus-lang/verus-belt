@@ -331,15 +331,15 @@ Section rslv.
       iExists x. iFrame "GPt Shr Pers Inh".
       iNext. by iApply proph_eqz_obs.
     - (* A sum. *)
-      rewrite lty_rfn_sum. destruct (psum_proj i x.1) as [y|] eqn:Hy; last first.
+      rewrite lty_rfn_sum. destruct (psum_proj i x) as [y|] eqn:Hy; last first.
       { iModIntro. iExists (prfn_dummy x), []. iSplit.
         { iPureIntro. intros ζl _. apply prfn_dummy_dep. }
         iSplit; [done|]. iIntros (G m d g tid l ?) "_ _ _ _ _ _ Own".
         by rewrite /ltype_own /= /prfn_dummy /sum_node /=. }
       iMod (IH y (false :: q) with "PROPH") as (r' ηl Hdep) "[ηl Cont]"; [done|].
-      iModIntro. iExists (prfn_sum i r' x.2), ηl. iFrame "ηl". iSplit.
+      iModIntro. iExists (prfn_sum i r'), ηl. iFrame "ηl". iSplit.
       { iPureIntro. intros ζl. rewrite prfn_rsv_sum prfn_den_sum. intros Hrsv.
-        apply (proph_dep_constr (λ a, (pinj i a, x.2))). by apply Hdep. }
+        apply (proph_dep_constr (λ a, (pinj i a))). by apply Hdep. }
       iIntros (G m d g tid l ?) "#LFT _ #Gty #Gα G ηl Own".
       iEval (rewrite /ltype_own ltype_own_cp_sum_owned sum_node_sum) in "Own".
       iDestruct "Own" as "(Tag & Own & Pad)".
@@ -729,10 +729,10 @@ Section lty_resolve.
 
   Lemma lty_resolve_sum {𝔄l} E L (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) Φ :
     lty_resolve E L lt Φ →
-    lty_resolve E L (SumLty tyl i lt) (λ x π, ∀ y, psum_proj i x.1 = Some y → Φ y π).
+    lty_resolve E L (SumLty tyl i lt) (λ x π, ∀ y, psum_proj i x = Some y → Φ y π).
   Proof.
     iIntros (Rslv G F m x ζm q d g tid l ??) "LFT PROPH UNIQ TIME E L G Own".
-    rewrite lty_rfn_sum. destruct (psum_proj i x.1) as [y|] eqn:Hy; last first.
+    rewrite lty_rfn_sum. destruct (psum_proj i x) as [y|] eqn:Hy; last first.
     { by rewrite /ltype_own /= /prfn_dummy /sum_node /=. }
     rewrite /ltype_own ltype_own_cp_sum_owned sum_node_sum.
     iDestruct "Own" as "(Tag & Own & Pad)".

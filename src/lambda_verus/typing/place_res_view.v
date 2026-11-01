@@ -63,7 +63,7 @@ Section view_laws.
       iSplit; [iPureIntro; lia|]. iApply (IH with "C"); lia.
     - destruct r as [?|[r1 r2]]; [done|]. rewrite /prod_node.
       iIntros "[A B]". iSplitL "A"; [iApply (IH1 with "A")|iApply (IH2 with "B")]; done.
-    - destruct r as [?|[s pad]]; [done|]. rewrite /view_sum.
+    - destruct r as [?|s]; [done|]. rewrite /view_sum.
       case_match; [|done]. iIntros "(#G1 & C & #G2)".
       iSplitR; [iApply (lguards_weaken_later with "G1"); lia|].
       iSplitL; [iApply (IH with "C"); lia|]. iApply (lguards_weaken_later with "G2"); lia.
@@ -222,7 +222,7 @@ Section view_laws.
     - iDestruct (view_leaf_shrblk_tguards κ m ty α x d g tid l with "LFT Incl V") as "[V #T]".
       iFrame "V". iExists (ξl x). iFrame "T". iPureIntro. intros ζl _.
       rewrite prfn_den_in. eapply proph_dep_weaken; [|apply syn_indep]. set_solver.
-    - destruct (psum_proj i x.1) as [y|] eqn:Hy; last first.
+    - destruct (psum_proj i x) as [y|] eqn:Hy; last first.
       { by rewrite /prfn_dummy /view_sum /=. }
       iEval (rewrite /view_sum /prfn_sum psum_proj_pinj) in "V".
       iDestruct "V" as "(#G1 & V & #G2)".
@@ -231,10 +231,10 @@ Section view_laws.
       iDestruct (IH with "LFT Incl' V") as "[V (%ηl & %Hdep & #T)]".
       iSplitL "V". { rewrite /view_sum /prfn_sum psum_proj_pinj. by iFrame "G1 V G2". }
       iExists ηl. iFrame "T". iPureIntro.
-      intros ζl. change (prfn_rsv (prfn_sum i (lty_rfn lt y ζm (false :: q)) x.2) ζl →
-        prfn_den (prfn_sum i (lty_rfn lt y ζm (false :: q)) x.2) ./ ζl ++ ηl).
+      intros ζl. change (prfn_rsv (prfn_sum i (lty_rfn lt y ζm (false :: q))) ζl →
+        prfn_den (prfn_sum i (lty_rfn lt y ζm (false :: q))) ./ ζl ++ ηl).
       rewrite prfn_rsv_sum prfn_den_sum. intros Hr.
-      apply (proph_dep_constr (λ a, (pinj i a, x.2))). by apply Hdep.
+      apply (proph_dep_constr (λ a, (pinj i a))). by apply Hdep.
     - iDestruct "V" as "[#V %Hv]".
       iDestruct (view_leaf_unblocked_tguards κ m (shr_bytes κ' (lty_fold lt)) x d g tid l
         with "LFT Incl V") as "#T".
@@ -526,7 +526,7 @@ Section lty_share_view2.
   Proof.
     iIntros (IH κ m x ζm q d g g' tid l G E ???) "#LFT #PROPH #UNIQ #Gκ #Incl G Bor".
     have ?: ↑Nllft ⊆ E by (trans lazyE; [rewrite /lazyE; solve_ndisj|done]).
-    rewrite /ltype_own lty_rfn_sum. destruct (psum_proj i x.1) as [y|] eqn:Hy; last first.
+    rewrite /ltype_own lty_rfn_sum. destruct (psum_proj i x) as [y|] eqn:Hy; last first.
     { rewrite /= /prfn_dummy /sum_node /=.
       iMod (llftl_bor_acc_guarded with "LFT Bor Gκ G") as "[>[] _]"; done. }
     rewrite ltype_own_cp_sum_owned sum_node_sum /=.

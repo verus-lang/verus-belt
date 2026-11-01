@@ -103,11 +103,11 @@ Section shr_view.
   Proof. iIntros "#(Pt & Shr & Pers)". iFrame "Pt Shr". by iNext. Qed.
 
   Lemma xsum_shr_pinj {𝔄l} (tyl: typel 𝔄l) i κ x0 pad d g tid :
-    ty_shr (Σ! tyl) κ (pinj i x0, pad) d g tid ⊣⊢ ty_shr (tyl +!! i) κ x0 d g tid.
+    ty_shr (Σ! tyl) κ (pinj i x0) d g tid ⊣⊢ ty_shr (tyl +!! i) κ x0 d g tid.
   Proof. rewrite [ty_shr (Σ! tyl)]/ty_shr /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
 
   Lemma xsum_pers_pinj {𝔄l} (tyl: typel 𝔄l) i x0 pad d g tid :
-    ty_gho_pers (Σ! tyl) (pinj i x0, pad) d g tid ⊣⊢ ty_gho_pers (tyl +!! i) x0 d g tid.
+    ty_gho_pers (Σ! tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_pers (tyl +!! i) x0 d g tid.
   Proof. rewrite [ty_gho_pers (Σ! tyl)]/ty_gho_pers /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
 
   (** A guarded typed load of a pointer from the guard of its bytes. *)
@@ -192,7 +192,7 @@ Section pctx_shr.
   Lemma pctx_in_sum_inv {𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) y :
     pctx_in (PSum tyl i w K) y → ∃ z, y.1 = pinj i z ∧ pctx_in K z.
   Proof.
-    simpl. destruct (psum_proj i y.1) as [z|] eqn:Hs; [|done]. intros ?.
+    simpl. destruct (psum_proj i y) as [z|] eqn:Hs; [|done]. intros ?.
     exists z. split; [by apply psum_proj_Some|done].
   Qed.
 
@@ -205,7 +205,7 @@ Section pctx_shr.
     | POwn _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l y.1) ∗
         pctx_sguards K n k G y.2 y.1
     | @PSum _ _ _ 𝔄l _ i w K => λ y l,
-        pctx_sguards K n k G (psum_proj_or i y.1 w)
+        pctx_sguards K n k G (psum_proj_or i y w)
           (l +ₗ tag_size 𝔄l)
     | PUniq _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l (uniq_bor_loc y)) ∗
         pctx_sguards K n k G (uniq_bor_current y) (uniq_bor_loc y)
@@ -240,7 +240,7 @@ Section pctx_shr.
       wp_bind (Load _ _ _).
       iApply (wp_load_ptr_guarded _ l y.1 G k with "[$Gp $G $£1]"); [done|].
       iIntros "!> G". wp_pure _. by iFrame.
-    - iIntros "WP". iApply (IHK (psum_proj_or i y.1 w)
+    - iIntros "WP". iApply (IHK (psum_proj_or i y w)
         (l +ₗ tag_size 𝔄l)).
       wp_bind e. iApply (wp_wand with "WP").
       iIntros (v) "(-> & Gs & £ & G & HΦ)". wp_op. by iFrame.
@@ -349,7 +349,7 @@ Section pctx_vin.
     | PFst K lt2 => λ y, pctx_vin K y.1 ∧ lty_vin lt2 y.2
     | PSnd lt1 K => λ y, lty_vin lt1 y.1 ∧ pctx_vin K y.2
     | POwn _ K | PShr _ K => λ y, pctx_vin K y.2
-    | PSum _ i _ K => λ y, match psum_proj i y.1 with Some z => pctx_vin K z | None => False end
+    | PSum _ i _ K => λ y, match psum_proj i y with Some z => pctx_vin K z | None => False end
     | PUniq _ K => λ y, pctx_vin K (uniq_bor_current y)
     end.
 
@@ -358,13 +358,13 @@ Section pctx_vin.
   Proof.
     induction K in y, lt |- *; simpl; [naive_solver|rewrite IHK; naive_solver|
       rewrite IHK; naive_solver|by rewrite IHK| |by rewrite IHK|by rewrite IHK].
-    rewrite /psum_proj_or. destruct (psum_proj i y.1); [by rewrite IHK|naive_solver].
+    rewrite /psum_proj_or. destruct (psum_proj i y); [by rewrite IHK|naive_solver].
   Qed.
 
   Lemma pctx_vin_in {𝔅 𝔄} (K: pctx 𝔅 𝔄) y : pctx_vin K y → pctx_in K y.
   Proof.
     induction K in y |- *; simpl; [done|naive_solver|naive_solver|auto| |auto|auto].
-    destruct (psum_proj i y.1); [auto|done].
+    destruct (psum_proj i y); [auto|done].
   Qed.
 End pctx_vin.
 
@@ -931,7 +931,7 @@ Section case.
       (G: iProp Σ) (Φ: val → iProp Σ) :
     ↑NllftG ⊆ E →
     (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £(2 * (D + 1)) -∗
-    shr_view κ (Σ! tyl)%T (pinj j a, pad) dh D tid l -∗
+    shr_view κ (Σ! tyl)%T (pinj j a) dh D tid l -∗
     (G -∗ Φ (MLitV (VInt (Z.of_nat (fin_to_nat j))))) -∗
     WP Load Na1Ord (MInt (sum_tag 𝔄l)) #(l) @ E {{ Φ }}.
   Proof.
