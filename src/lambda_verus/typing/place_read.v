@@ -225,15 +225,21 @@ Section pctx_read.
     induction K1 in K2, κ |- *; simpl; [done|auto|auto|auto|auto| |done|done].
     intros [_ HK]. auto.
   Qed.
-  (** The refinement below a root pointer is the refinement of a shared reference at the
-      hole of [K1]. *)
+  (** The refinement below a root pointer of a context whose hole is a leaf of the
+      refinement (e.g. a shared reference). *)
+  Lemma pctx_vrfn_app_leaf {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) `{!PctxVRoot K1} (K2: pctx ℭ 𝔅) x ζm r :
+    (∀ y q, pctx_rfn K2 y ζm q r = inl (PlaceIn y)) →
+    pctx_vrfn (pctx_app K1 K2) x ζm r = pctx_vrfn K1 x ζm (inl (PlaceIn (pctx_get K1 x))).
+  Proof.
+    rename select (PctxVRoot K1) into HR. intros H.
+    destruct K1; try done; simpl; by rewrite ?pctx_rfn_app ?H.
+  Qed.
+
   Lemma pctx_vrfn_app_shr {ℭ 𝔅 𝔄} (K1: pctx (at_locₛ 𝔅) 𝔄) `{!PctxVRoot K1} κ (K2: pctx ℭ 𝔅)
       x ζm r :
     pctx_vrfn (pctx_app K1 (PShr κ K2)) x ζm r =
       pctx_vrfn K1 x ζm (inl (PlaceIn (pctx_get K1 x))).
-  Proof.
-    rename select (PctxVRoot K1) into HR. destruct K1; try done; simpl; by rewrite pctx_rfn_app.
-  Qed.
+  Proof. by apply pctx_vrfn_app_leaf. Qed.
 End pctx_read.
 
 Notation pctx_rleaf K := (pctx_rleafb K true).
@@ -280,6 +286,7 @@ Section read_acc.
     iIntros (Hl ? HE Hp) "#LFT #PROPH #UNIQ #Alv G £ #⧖ ⧗p Own HΦ". rewrite /vplace_rcont.
     have Hdl: 1 ≤ pctx_dlev K by apply pctx_vroot_dlev.
     have ?: ↑NllftG ⊆ E. { trans lazyE; [apply lazyE_NllftG|done]. }
+    have ?: ↑Nllft ⊆ E. { trans lazyE; [rewrite /lazyE; solve_ndisj|done]. }
     iAssert (G &&{↑NllftG}&&> @[pctx_ulft K lt])%I as "#Hu".
     { iApply (guards_transitive with "Alv").
       iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|]. by iApply pctx_ralv_noshr. }
@@ -567,7 +574,6 @@ Section read_acc.
     destruct x as [l x₀].
     rewrite /K /vplace_rcont /= pctx_plug_app pctx_expr_app pctx_rfn_app pctx_get_app
       pctx_path_app_ctx /=.
-    iEval (rewrite pctx_plug_app) in "⧗p".
     iDestruct "Own" as (d g -> Hle) "[Fr Own]".
     iAssert (G &&{↑NllftG}&&> @[pctx_salv K2 κ ⊓ κs])%I as "#Hs".
     { iApply (guards_transitive with "Alv").
@@ -587,11 +593,11 @@ Section read_acc.
     iDestruct (lc_weaken (pctx_mode K1 1 + view_cred D) with "£") as "[£m £]";
       [rewrite /advance_credits /view_cred pctx_mode_add; nia|].
     iMod (lc_fupd_elim_laterN with "£m N") as "(#Incl & %d' & %g' & %Hle' & V)".
-    rewrite lty_pat_plug lty_rfn_plug.
+    rewrite lty_pat_plug.
     have ?: pctx_depth K1 d ≤ d by (rewrite pctx_depth_sub; lia).
     iApply (wp_view_racc _ K2 κ lt ty κs false 0 z ζm (false :: q0) d' g' tid ly D G
       (ptr_cell lK ly ∗ pctx_own K1 (lty_size lt1) 1 x₀ ζm [] d g tid l)%I
-      with "Hs G £ V [Pt Rest]"); [done|done|done|lia|lia|..].
+      with "Hs G £ V [Pt Rest]"); [done|done|lia|lia|..].
     { wp_bind (pctx_expr K1 (ToLit p)).
       iApply (wp_wand with "[Rest]").
       { iApply (wp_pctx_expr_mask _ K1 (lty_size lt1) 1 x₀ ζm [] d g tid l (ToLit p) True True
@@ -610,7 +616,7 @@ Section read_acc.
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug -/y Hy. iFrame "Rest".
     rewrite /= /res_node /=. iFrame "Pt".
     iApply bi.laterN_intro. iFrame "Incl".
-    iExists d', g'. iSplit; [done|]. by rewrite lty_pat_plug lty_rfn_plug.
+    iExists d', g'. iSplit; [done|]. by rewrite lty_pat_plug.
   Qed.
 
   (** Below the resolved unique borrow at the root ([p ◁ₗ ResUniqLty (K2[lt]) κ]). *)
@@ -628,18 +634,18 @@ Section read_acc.
     iIntros (Hl ? HE Hp) "#Alv G £ #⧖ ⧗p Own HΦ". rewrite /vplace_rcont /=.
     destruct x as [[[[[lx z] ξi] d0] g0] idx0].
     iDestruct "Own" as (d g [Hd Hg]) "[-> (#Incl & %d' & %g' & %Hle' & V)]".
-    rewrite lty_pat_plug lty_rfn_plug.
+    rewrite lty_pat_plug.
     iDestruct (lc_weaken (view_cred D) with "£") as "£";
       [rewrite /advance_credits /view_cred; nia|].
     iApply (wp_view_racc _ K2 κ lt ty κs false 0 z ζm [] d' g' tid lx D G
-      True%I with "Alv G £ V [] [-]"); [done|done|done|lia|lia|..].
+      True%I with "Alv G £ V [] [-]"); [done|done|lia|lia|..].
     { wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by wp_pure _. }
     iIntros (l' dd dh gh (Hw & ? & ?)) "#Guard £dd #Gho _ G V".
     iApply ("HΦ" $! l' G dd dh gh with "[%] Guard G £dd Gho"); [done|].
     iIntros "G !>". iFrame "G".
     iApply (vplace_own_close (PResUniq κ K2) _ _ _ D with "⧖ ⧗p"). rewrite /=.
     iExists d, g. iSplit; [done|]. iSplit; [done|]. iFrame "Incl".
-    iExists d', g'. iSplit; [done|]. by rewrite lty_pat_plug lty_rfn_plug.
+    iExists d', g'. iSplit; [done|]. by rewrite lty_pat_plug.
   Qed.
 
   (** The read access to the shared reference at the root ([p ◁ₗ ShrLty (K2[lt]) κ]). *)

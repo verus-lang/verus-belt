@@ -211,7 +211,8 @@ Section memcpy.
     iIntros "£s _".
     iDestruct (lc_weaken ((Ds + 1) * (Ds + 2) + 1) with "£s") as "£s";
       [rewrite /advance_credits; nia|].
-    iApply (wp_vplace_wacc _ Ks ty (↯ (ty_bsize ty)) with "LFT PROPH UNIQ GBs B £s ⧖s ⧗s Owns");
+    iApply (wp_vplace_wacc _ Ks ty (↯ (ty_bsize ty)) (pctx_retype Ks (uninitₛ (ty_bsize ty)))
+      (pctx_reset Ks) with "LFT PROPH UNIQ GBs B £s ⧖s ⧗s Owns");
       [done|solve_ndisj|done|].
     iIntros (ls dhs ghs [Hdhs Hghs]) "Pts Ghos Cls".
     (* Move the bytes. *)
