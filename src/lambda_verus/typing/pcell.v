@@ -235,7 +235,7 @@ End pcell_wp.
 (** * Creating and destroying a [PCell]
 
 A [PCell] (or any value that contains cells) is moved by the generic move rules: a typed
-[Load] out of a place ([type_move_oplace_instr]) untethers its cells, and a typed [Store]
+[Load] out of a place ([type_move_place_instr]) untethers its cells, and a typed [Store]
 of the loaded value ([type_write_oplace_instr], [type_store_own_bytes_instr]) retethers
 them (see [val_cells] in [typing/value_ctx.v]); a [MemCopy] into a place
 ([type_memcpy_oplace_deep_instr]) moves them verbatim. *)

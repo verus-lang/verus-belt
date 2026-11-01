@@ -129,7 +129,7 @@ Section place_own.
   [&mut b.0] and a double dereference), on bytes: the inner box is unfolded in place
   ([tctx_unfold_oplace_own]) and its pointee borrowed through it (the path
   [PFst (POwn 4 PHole) _] loads the address of the inner box); the move out of [b.0] is
-  a typed [Load] of [MPtr], which leaves [↯ PTR_SIZE]; the re-assignment a typed
+  a typed [Load] of [MPtr] ([!ᵐ{MPtr}], [type_move_place_instr]), which leaves [↯ PTR_SIZE]; the re-assignment a typed
   [Store]. *)
   Definition box_pair : expr := (
     Newlft;;
@@ -139,7 +139,7 @@ Section place_own.
     (ReBor;; Store Na1Ord (MInt i32) (ToLit "r") "seven");;  (* *r = 7 *)
     Skip;;                                                (* resolve r *)
     Endlft;;                                              (* unblock *( *b).0 *)
-    let: "c" := Load Na1Ord MPtr (ToLit "b") in           (* move ( *b).0 out *)
+    let: "c" := !ᵐ{MPtr} (ToLit "b") in                   (* move ( *b).0 out *)
     Store Na1Ord MPtr (ToLit "b") "c";;                   (* re-assign ( *b).0 *)
     jump: "return" ["b"])%E.
 
@@ -194,7 +194,8 @@ Section place_own.
       iApply typed_body_tctx_incl.
       { apply (tctx_fold_oplace_own _ _ _ _ (PFst PHole (OfTy i32t)) 4 i32t). }
       iApply (type_let with "[]").
-      { apply (type_move_oplace_instr _ _ _ vb (PTR_SIZE + 4) (PFst PHole (OfTy i32t)) (own_bytes 4 i32t)). done. }
+      { apply (type_move_place_instr _ _ _ vb (POwn (PTR_SIZE + 4) (PFst PHole (OfTy i32t)))
+          (own_bytes 4 i32t)). done. }
       { solve_typing. } { reflexivity. }
       iIntros (vc). simpl_subst.
       (* re-assign ( *b).0 *)

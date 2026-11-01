@@ -14,7 +14,8 @@
   new borrow (pending ownership, [blocked_owned]), which is fired when [α] has ended
   ([unblock_tctx_oplace]). A leaf can be read (copied, [type_read_place_instr] of
   [place_read.v]), moved
-  out (leaving it uninitialized, [type_move_oplace_instr]) and written
+  out (leaving it uninitialized, [type_move_place_instr], the unified place move: any
+  owned path of fields and owned pointers) and written
   ([type_write_oplace_instr], which also re-initializes an uninitialized leaf). Moving
   out and writing change the type of the leaf, so the place context is retyped
   ([pctx_retype]). Folding back gives an owned pointer whose type may have
@@ -339,23 +340,32 @@ Section typing.
     rewrite /oplace_blk_fin /= pctx_get_set. symmetry. exact Heq.
   Qed.
 
-  (** * Reading, moving out of and writing a leaf *)
+  (** * The unified place move
 
-  (** Moving the value out of the leaf at the hole of [K]: a typed [Load]; the leaf becomes
-      uninitialized (its type is [↯ (ty_bsize ty)]: its bytes are kept, and represent any
-      value of [↯]). *)
-  Lemma type_move_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K}
+      Moving the value out of the leaf [OfTy ty] at the hole of [K], in a place rooted at a
+      value whose path from the root is owned: [K] is below no unique borrow, shared
+      reference or resolved unique borrow ([PctxNoUniq]), so its root step ([PctxVRoot]) is
+      an owned pointer ([p ◁ₗ pctx_plug (POwn n K') (OfTy ty)] is
+      [p ◁ₗown{n} pctx_plug K' (OfTy ty)]), and the path is made of fields and owned
+      pointers ([pctx_nosum]: the payload of a sum place has the type of its variant). The
+      instruction is a typed [Load] ([!ᵐ{ty_mty ty}], [read_move]) at the address of the
+      hole; the value may contain cells, which are moved with it ([val_cells]). The leaf
+      becomes uninitialized: its type is [↯ (ty_bsize ty)] (its bytes are kept, and
+      represent any value of [↯]), the context is retyped ([pctx_retype]). *)
+  Lemma type_move_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot K} `{!PctxNoUniq K}
       (ty: type 𝔅) :
     pctx_nosum K →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)]
-      (Load Na1Ord ty.(ty_mty) (pctx_expr K (ToLit p)))
+    typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (!ᵐ{ty.(ty_mty)} (pctx_vexpr K p))
       (λ v, +[v ◁ᵥ ty;
-        p ◁ₗown{n} pctx_plug (pctx_retype K (uninitₛ (ty_bsize ty))) (OfTy (↯ (ty_bsize ty)))])
+        p ◁ₗ pctx_plug (pctx_retype K (uninitₛ (ty_bsize ty))) (OfTy (↯ (ty_bsize ty)))])
       (λ post '-[x], λ mask π, ∀ junk: ~~ (uninitₛ (ty_bsize ty)),
-        post -[pctx_get K x.1.2; ((x.1.1, pctx_reset K x.1.2 junk), x.2)] mask π).
+        post -[pctx_get K x.1; (pctx_reset K x.1 junk, x.2)] mask π).
   Proof.
+    rename select (PctxVRoot K) into HR. rename select (PctxNoUniq K) into HK.
+    destruct K as [| | |? 𝔄' n K| | | |]; try done; rewrite /PctxNoUniq /= in HK.
+    have ?: PctxNoUniq K by done.
     iIntros (Hns tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
-    destruct x as [[l x₀] ζm].
+    destruct x as [[l x₀] ζm]. rewrite /read_move /=.
     rewrite /tctx_elt_interp.
     iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
     have ?: Closed [] (pctx_expr K (ToLit p)).
@@ -406,6 +416,8 @@ Section typing.
     iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].
     rewrite decode_value_tuple decide_True //.
   Qed.
+
+  (** * Writing a leaf *)
 
   (** Writing a value into the leaf at the hole of [K] (initialized, or uninitialized
       after a move): a typed [Store] of the MiniRust type of the new value, which has the
