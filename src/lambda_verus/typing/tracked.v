@@ -40,7 +40,7 @@ Section tracked.
   
   Global Instance tracked_copy {𝔄} (ty : type 𝔄) : Copy ty → Copy (tracked_ty ty).
   Proof.
-    intros Hcopy. destruct Hcopy. split; trivial.
+    intros Hcopy. destruct Hcopy. split; [apply _|trivial..].
   Qed.
 
   Lemma tracked_resolve {𝔄} (ty: type 𝔄) E L f : resolve E L ty f → resolve E L (tracked_ty ty) f.

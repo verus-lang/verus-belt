@@ -9,10 +9,10 @@
   shared ([ty_share], whose steps are paid with later credits of the instruction). The
   leaf becomes _shared-blocked_, [ShrBlocked ty α] ([shr_blocked_owned] in [ltype.v]):
   its value does not change, it keeps the (persistent) sharing information, so that it
-  can still be read ([type_read_oplace_shr_instr]), and the inheritance of the borrow,
+  can still be read ([type_read_place_instr] of [place_read.v]), and the inheritance of the borrow,
   which gives back the points-to and the ownership predicate once [α] has ended
   ([unblock_tctx_oplace_shr]). For places rooted at a value, below any number of unique
-  borrows, see [type_share_vplace_deep_instr], [type_read_vplace_shr_deep_instr] and
+  borrows, see [type_share_vplace_deep_instr], [type_read_place_instr] and
   [unblock_tctx_vplace_shr_deep] ([place_puniq.v], [place_pshr.v]).
 
   ** Places below shared references
@@ -23,8 +23,8 @@
   shared reference is given by a place context [K] (whose siblings are only used for
   their folded types); [tctx_shr_place] gives a shared reference to the subplace at the
   hole of [K] (fields of nested products), from the structural sharing predicate of
-  products; reads below a shared reference are reads through such a shared reference
-  ([read_shr]). Owned pointers and unique borrows below a shared reference are
+  products; reads below a shared reference are [type_read_place_instr] ([place_read.v]).
+  Owned pointers and unique borrows below a shared reference are
   traversed by the existing rules [type_deref_shr_own_instr] and
   [type_deref_shr_uniq_instr] (from their structural sharing predicates). *)
 
@@ -167,78 +167,6 @@ Section typing.
       (lty_nrc_plug_shr_nouniq K ty α).
     iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug /=. iFrame "Rest Leaf".
-  Qed.
-
-  (** * Reading a shared-blocked leaf of a place rooted at an owned location *)
-
-  Lemma type_read_oplace_shr_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} `{!NoCell 𝔅}
-      (ty: type 𝔅) :
-    lctx_lft_alive E L α → Copy ty →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrBlocked ty α)]
-      (Load Na1Ord ty.(ty_mty) (pctx_expr K (ToLit p)))
-      (λ v, +[v ◁ᵥ ty; p ◁ₗown{n} pctx_plug K (ShrBlocked ty α)])
-      (λ post '-[x], post -[pctx_get K x.1.2; x]).
-  Proof.
-    iIntros (Alv Hcopy tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
-    destruct x as [[l x₀] ζm].
-    rewrite /tctx_elt_interp.
-    iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
-    have ?: Closed [] (pctx_expr K (ToLit p)).
-    { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
-    rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
-    iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
-    iDestruct "L1" as (? ->) "(#GPt & #Shr & #PersL & Inh)".
-    iDestruct (pctx_own_mode_le with "Rest") as %Hk.
-    set y := pctx_get K x₀.
-    set lr := l.
-    set lK := pctx_loc K (lty_size (OfTy ty)) x₀ lr.
-    set dh := pctx_depth K d.
-    have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
-    (* The address of the hole. *)
-    wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
-        with "[] Rest").
-      - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-        by wp_pure _. }
-    iIntros (w) "(-> & _ & _ & Rest)".
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
-    iIntros "£ #⧖S". iApply wp_fupd.
-    iDestruct (Alv with "L E") as "#Alv".
-    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
-      [solve_ndisj|].
-    iDestruct (guards_transitive with "Ghalf Alv") as "#Hα".
-    iDestruct (lc_weaken ((g + 1) + ((g + 1) + 2 * (g + 1)))%nat with "£") as "[£g [£v £r]]";
-      [rewrite /advance_credits; nia|].
-    (* The (persistent) ownership predicate of the value, from the sharing predicate. *)
-    iDestruct (copy_shr with "Shr") as "#GGho".
-    iDestruct (guards_transitive_right with "Hα GGho") as "#GGho'".
-    iAssert (|={⊤ ∖ ↑advN}=> ty.(ty_gho_own) y dh g tid ∗ fractional.half γh)%I
-      with "[H1 £g]" as ">[#Gho1 H1]".
-    { leaf_open_laters "GGho'" with "H1" as "Gho1"; [solve_ndisj|].
-      iMod (lc_fupd_add_laterN with "£g Gho1") as "[#Gho1 Hclose]".
-      iMod ("Hclose" with "Gho1") as "$". by iModIntro. }
-    iDestruct (guards_transitive_right with "Hα GPt") as "#GP".
-    iAssert (|={⊤ ∖ ↑advN}=> ⌜is_Some (ty.(ty_val) y)⌝ ∗ fractional.half γh)%I
-      with "[H1 £v]" as ">[%Hv H1]".
-    { iMod (guards_open_later with "GP H1") as "Open"; [solve_ndisj|].
-      iMod (lc_fupd_elim_laterN with "£v Open") as ">[Pt Back]".
-      iDestruct (bytes_own_val with "Pt") as %Hv.
-      iMod ("Back" with "Pt") as "$". by iModIntro. }
-    destruct Hv as [w Hw].
-    iApply (wp_load_na_guarded_gen _ _ _ w (fractional.half γh) (cbytes ty y lK) (ty_bytes ty y)
-      (g + 1) with "[$H1 $£r]"); [solve_ndisj|intros; by eapply ty_bytes_decode| |].
-    { iSplit; [done|]. by iApply bytes_own_view. }
-    iIntros "!> H1".
-    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    iModIntro. iExists -[y; ((l, x₀), ζm)]. iFrame "L I Obs".
-    iSplitR "Inh Rest ⧗p Fr".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists w, D. iSplit; [done|].
-      iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ dh g D D with "Gho1") as "[$ _]"; lia. }
-    iSplit; [|done]. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g. iFrame "⧖ ⧗p Fr".
-    iSplit; [done|]. iSplit; [done|].
-    rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug. iFrame "Rest".
-    iExists y. by iFrame "GPt Shr PersL Inh".
   Qed.
 
   (** * Unblocking a shared-blocked leaf of a place rooted at an owned location *)

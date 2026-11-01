@@ -643,3 +643,59 @@ Agents follow `~/verus-belt-tools/AGENT-WORKFLOW.md` (`coq-goals`, the LSP tool,
     `functional_extensionality_dep`). Clean build 20:56.
   - Not generalized: `PctxNoUniq` (own-rooted) rules and `place_res*`; a root `&shr` value
     for the pshr rules.
+
+## Unified place read (branch `proto/read-unify`, 2026-11-01)
+
+One rule reads from any non-blocked place, whatever mix of owned pointers, unique borrows
+and shared references is above the leaf: `type_read_place_instr` (`typing/place_read.v`).
+
+```coq
+Lemma type_read_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot K} `{!PctxRead K}
+    (lt: lty 𝔅) (ty: type 𝔅) κs :
+  pctx_rleaf K lt ty κs → Copy ty → lctx_lft_alive E L (pctx_ralv K lt ⊓ κs) →
+  typed_instr E L I +[p ◁ₗ pctx_plug K lt] (!ᶜ{ty.(ty_mty)} (pctx_vexpr K p))
+    (λ v, +[v ◁ᵥ ty; p ◁ₗ pctx_plug K lt])
+    (λ post '-[x], post -[pctx_get K x.1; x]).
+```
+
+- **Instruction.** `read_copy m e := Load Na1Ord m e` (`lang/lang.v`), notation `!ᶜ{m} e`
+  (`lang/notation.v`, `expr_scope`, level 9). `W.of_expr` (`lang/tactics.v`) reifies it as a
+  `Load`, so `simpl_subst` turns it into `Load Na1Ord m e`. No `Skip`: as in the old
+  `PctxNoUniq` and `PShr` reads, `wp_persistent_time_receipt` gives the credits of the first
+  program step before the access (the whole instruction is at `⊤ ∖ ↑advN`).
+- **Contexts.** Any `K` with a root step `POwn`, `PUniq` or `PShr` (`PctxVRoot`, extended to
+  `PShr`, so the root may be a shared reference value `p ◁ₗ ShrLty …`). Owned places are the
+  root `POwn n`: `p ◁ₗown{n} K[lt]` is `p ◁ₗ (POwn n K)[lt]`. `PctxRead K` (a type class,
+  solved by the structure of `K`): the siblings below a unique borrow are simple, down to the
+  first shared reference (needed by the access `vroot_acc` above it).
+- **Readable leaves** `pctx_rleaf K lt ty κs`: above the first shared reference,
+  `lty_rleaf lt ty κs` (`OfTy ty` with `κs = static`, `ShrBlocked ty β` with `κs = β`);
+  below a shared reference, any `lt` with `ty = lty_fold lt` and `κs = static`. `Blocked` is
+  not readable.
+- **Lifetimes** `pctx_ralv K lt`: `ty_lft (lty_fold (UniqLty K'[lt] κ)) ⊓ …` at each `PUniq κ K'`
+  above the first shared reference (the old `pctx_ulft` condition), and `pctx_salv K2 κ` at the
+  first `PShr κ K2` (the old shared condition).
+- **Proof.** `pctx_read_split` splits `K` at its first shared reference with the new context
+  composition `pctx_app` (`lpath.v`). Above it, `type_read_vplace_noshr` (the old deep read,
+  generalised to shared-blocked leaves, in both modes); below it, `type_read_vplace_pshr` and
+  `type_read_vplace_pshr_root` (the old `place_pshr` reads, through `wp_pshr_open(_root)`).
+- **`Copy` implies `NoCell`.** `Copy` has a new first field `copy_nocell : NoCell 𝔄`
+  (`typing/type.v`, with `Hint Extern`s that find `NoCell`/`NoCellL` from `Copy`/`ListCopy`
+  hypotheses). No rule that takes `Copy` takes `NoCell` any more (the read rule,
+  `type_load_own_bytes_copy_instr`, `type_load_shr_bytes_copy_instr`,
+  `type_cell_shr_load_instr`, `type_pcell_load_sc_instr`, `shr_view_copy`, `wp_load_shr_view`,
+  the memcpy-copy rules). `simple_type_copy`, `base_copy`, `mod_ty_copy` and `fix_copy` now
+  take a `NoCell` hypothesis (solved by computation at concrete syntactic types).
+- **Deleted:** `type_read_oplace_instr` (`place_own.v`), `type_read_oplace_shr_instr`
+  (`place_shr.v`), `type_read_vplace_deep_instr`, `type_read_oplace_deep_instr`
+  (`place_puniq.v`), `type_read_vplace_pshr_root_instr`, `type_read_vplace_pshr_instr`,
+  `type_read_oplace_pshr_instr` (`place_pshr.v`). Examples ported: `place_own`, `place_struct`,
+  `place_pshr`, `function`, `place_res` (reads in the owned part and below `PShr`); their programs
+  read with `!ᶜ{MInt i32} …`.
+- **Other changes.** `pctx_simple (PShr _ _) = True` (a shared reference is simple whatever its
+  referent); the closers of `pctx_acc`/`vroot_acc` accept the old pattern of the hole instead of
+  the inclusion of its blocked lifetimes in the enclosing borrow lifetimes
+  (`⌜p' = p⌝ ∨ [∗ list] κ ∈ pctx_ulfts K, pat_ok κ p'`), so that a shared-blocked leaf below a
+  unique borrow can be closed again unchanged; `pctx_vroot_nonempty` (unused) deleted.
+- **Deviations from the requested statement.** The extra class `PctxRead K` (above); the
+  expression has no `Skip`.

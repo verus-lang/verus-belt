@@ -32,7 +32,7 @@ Section memcpy_res.
 
   Lemma type_memcpy_copy_from_oplace_res_instr {ℭ 𝔅 𝔄 𝔅'} E L I pw p n n'
       (K: pctx (uniq_borₛ 𝔅) 𝔄) `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2}
-      (lt0: lty ℭ) `{!NoCell ℭ} (ty: type ℭ) κs (tyw: type 𝔅') Φ (sz: nat) :
+      (lt0: lty ℭ) (ty: type ℭ) κs (tyw: type 𝔅') Φ (sz: nat) :
     view_rleaf lt0 ty κs → Copy ty → resolve E L tyw Φ → sz = ty_bsize ty →
     ty_bsize tyw = sz → lctx_lft_alive E L (pctx_salv K2 κ ⊓ κs) →
     typed_instr E L I
@@ -43,6 +43,7 @@ Section memcpy_res.
       (λ post '-[b; x], λ mask π, Φ b.2 π →
         post -[(b.1, pctx_get K2 (uniq_bor_current (pctx_get K x.1.2))); x] mask π).
   Proof.
+    intros Hl0 Hcopy0. assert (NoCell ℭ) by exact (copy_nocell ty). revert Hl0 Hcopy0.
     iIntros (Hl Hcopy Rslv -> Hszw Alv tid post mask iκs [[lw zw0] [x []]])
       "#LFT #TIME #PROPH #UNIQ #E L I (Tw & Tp & _) Obs".
     destruct x as [[l x₀] ζm].

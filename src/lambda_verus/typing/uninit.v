@@ -31,7 +31,7 @@ Section typing.
 
   Global Instance uninit_copy n : Copy (↯ n).
   Proof.
-    split; [apply _|intros; by apply copy_shr_default].
+    split; [apply _|apply _|intros; by apply copy_shr_default].
   Qed.
 
   Global Instance uninit_send n : Send (↯ n).

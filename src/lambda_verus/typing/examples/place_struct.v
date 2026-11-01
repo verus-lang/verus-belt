@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own place_own place_resolve place_xprod.
+From lrust.typing Require Export type programs cont int product value_ctx own place_own place_resolve place_xprod place_read.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -26,7 +26,7 @@ Section place_struct.
   Definition set_mid : expr := (
     let: "seven" := MLit (VInt 7) in
     Store Na1Ord (MInt i32) (ToLit "x" +ₗ #4) "seven";;          (* x.b = 7 *)
-    let: "v" := Load Na1Ord (MInt i32) (ToLit "x" +ₗ #4 +ₗ #4) in (* x.c *)
+    let: "v" := !ᶜ{MInt i32} (ToLit "x" +ₗ #4 +ₗ #4) in         (* x.c *)
     ((#☠;; (#☠;; (#☠;; #☠)));; delete [ #12; ToLit "x"]);;         (* drop x *)
     jump: "return" ["v"])%E.
 
@@ -65,8 +65,9 @@ Section place_struct.
       simpl.
       (* x.c *)
       iApply (type_let with "[]").
-      { apply (type_read_oplace_instr _ _ _ vx 12
-          (PSnd (OfTy i32t) (PSnd (OfTy i32t) (PFst PHole (OfTy (Π! +[]))))) i32t). apply _. }
+      { apply (type_read_place_instr _ _ _ vx
+          (POwn 12 (PSnd (OfTy i32t) (PSnd (OfTy i32t) (PFst PHole (OfTy (Π! +[]))))))
+          (OfTy i32t) i32t static); [by constructor|apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       (* drop x *)

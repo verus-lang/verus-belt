@@ -15,7 +15,7 @@ Section bool.
   
   Global Instance bool_copy: Copy bool_ty.
   Proof.
-    split. - typeclasses eauto.
+    split. - apply _. - typeclasses eauto.
     - intros. by apply copy_shr_default.
   Qed.
 

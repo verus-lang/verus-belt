@@ -1445,6 +1445,9 @@ Fixpoint shr_locsE (l: loc) (n: nat) : coPset :=
   match n with O => ∅ | S n => ↑shrN.@l ∪ shr_locsE (l +ₗ 1) n end.
 
 Class Copy `{!typeG Σ} {𝔄} (ty: type 𝔄) := {
+  (* A value of a [Copy] type has no cells ([NoCell]): its bytes are plain, so it can be
+     read and copied by a typed [Load] or a [MemCopy]. *)
+  copy_nocell : NoCell 𝔄;
   copy_persistent x d g tid : Persistent (ty.(ty_gho_own) x d g tid);
   (* Copying out of a shared reference: the sharing predicate gives (persistent)
      access to the ownership predicate while κ is alive. *)
@@ -1452,9 +1455,21 @@ Class Copy `{!typeG Σ} {𝔄} (ty: type 𝔄) := {
     ty.(ty_shr) κ x d g tid ⊢ (@[κ] &&{↑NllftG; g+1}&&> ty.(ty_gho_own) x d g tid);
 }.
 Global Existing Instance copy_persistent.
+Global Arguments copy_nocell {_ _ _} _ {_}.
 Global Instance: Params (@Copy) 3 := {}.
 
 Notation ListCopy := (TCHForall (λ 𝔄, @Copy _ _ 𝔄)).
+
+Lemma list_copy_nocell `{!typeG Σ} {𝔄l} (tyl: typel 𝔄l) : ListCopy tyl → NoCellL 𝔄l.
+Proof. induction 1; [done|]. apply cons_nocell; [exact (copy_nocell _)|done]. Qed.
+
+(** [NoCell] (and [NoCellL]) from a [Copy] (or [ListCopy]) hypothesis. *)
+Global Hint Extern 10 (NoCell ?A) =>
+  match goal with H : @Copy _ _ A ?ty |- _ => exact (@copy_nocell _ _ A ty H) end
+  : typeclass_instances.
+Global Hint Extern 10 (NoCellL ?Al) =>
+  match goal with H : @TCHForall _ _ _ Al ?tyl |- _ => exact (list_copy_nocell tyl H) end
+  : typeclass_instances.
 
 Class Send `{!typeG Σ} {𝔄} (ty: type 𝔄) := {
   send_change_tid tid tid' x d g G H κs d0 :
@@ -1491,6 +1506,7 @@ Section traits.
   Global Instance copy_equiv {𝔄} : Proper ((≡) ==> impl) (Copy (𝔄:=𝔄)).
   Proof.
     move=> ty ty' [? ? EqOwn EqPers EqShr] Hcopy. split=> >.
+    - exact (copy_nocell ty).
     - rewrite -EqOwn. apply _.
     - rewrite -EqShr. setoid_rewrite <-EqOwn. apply copy_shr.
   Qed.
@@ -1500,7 +1516,7 @@ Section traits.
     ty.(ty_shr) κ x d g tid ⊢ (@[κ] &&{↑NllftG; g+1}&&> ty.(ty_gho_own) x d g tid).
   Proof. move=> ?. by iApply ty_shr_default_to_guard. Qed.
 
-  Global Program Instance simple_type_copy {𝔄} (st: simple_type 𝔄) : Copy st.
+  Global Program Instance simple_type_copy {𝔄} `{!NoCell 𝔄} (st: simple_type 𝔄) : Copy st.
   Next Obligation. intros. by apply copy_shr_default. Qed.
 
   (** Lemmas on Send and Sync *)

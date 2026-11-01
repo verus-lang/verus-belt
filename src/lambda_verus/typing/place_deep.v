@@ -114,7 +114,7 @@ Section leaf_acc.
         with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Body]") as "(Own & G & _)".
       { intros ??. apply prfn_rsv_in. }
       { lia. }
-      { iApply pat_ok_ulfts_leaf. }
+      { iRight. iApply pat_ok_ulfts_leaf. }
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iExists y', idx. by iFrame. }
       by iFrame "G Own".
@@ -132,7 +132,7 @@ Section leaf_acc.
         with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Pt Gho]") as "(Own & G & _)".
       { intros ??. apply prfn_rsv_in. }
       { lia. }
-      { iApply pat_ok_ulfts_leaf. }
+      { iRight. iApply pat_ok_ulfts_leaf. }
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iExists y'. iSplit; [done|]. rewrite /ofty_owned.
         iFrame "Pt". by iApply bi.laterN_intro. }
@@ -255,7 +255,7 @@ Section memcpy_deep.
       number of unique borrows, in both modes of the hole) into a box: a byte-level
       [MemCopy]. The old contents of the box are resolved; the place does not change. *)
   Lemma type_memcpy_copy_from_vplace_deep_instr {𝔅 𝔄 𝔅'} E L I pw p n (K: pctx 𝔅 𝔄)
-      `{!PctxNoShr K} `{!PctxVRoot K} `{!NoCell 𝔅} (ty: type 𝔅) (tyw: type 𝔅') Φ (sz: nat) :
+      `{!PctxNoShr K} `{!PctxVRoot K} (ty: type 𝔅) (tyw: type 𝔅') Φ (sz: nat) :
     Copy ty → resolve E L tyw Φ → sz = ty_bsize ty → ty_bsize tyw = sz →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
     typed_instr E L I +[pw ◁ᵥ own_bytes n tyw; p ◁ₗ pctx_plug K (OfTy ty)]
@@ -263,6 +263,7 @@ Section memcpy_deep.
       (λ _, +[pw ◁ᵥ own_bytes n ty; p ◁ₗ pctx_plug K (OfTy ty)])
       (λ post '-[b; x], λ mask π, Φ b.2 π → post -[(b.1, pctx_get K x.1); x] mask π).
   Proof.
+    intros Hcopy0. assert (NoCell 𝔅) by exact (copy_nocell ty). revert Hcopy0.
     iIntros (Hcopy Rslv -> Hszw Alv tid post mask iκs [[lw z] [x []]])
       "#LFT #TIME #PROPH #UNIQ #E L I (Tw & Tp & _) Obs".
     destruct x as [x₀ ζm].
@@ -435,7 +436,7 @@ Section sum_deep.
         with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Own]") as "(Own & H1 & _)".
       { exact Hr'. }
       { lia. }
-      { by iApply big_sepL_pat_ok_nil. }
+      { iRight. by iApply big_sepL_pat_ok_nil. }
       { done. }
       { iIntros "_ !>". by iFrame "Own". }
       iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|]. iModIntro.
@@ -460,7 +461,7 @@ Section sum_deep.
         with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Bt Pay Pad Gho1]") as "(Own & H1 & _)".
       { exact Hr'. }
       { lia. }
-      { by iApply big_sepL_pat_ok_nil. }
+      { iRight. by iApply big_sepL_pat_ok_nil. }
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iApply sum_ofty_unfold_own.
         iExists (pinj j a). iSplit; [done|].

@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr function.
+From lrust.typing Require Export type programs cont int product value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_read function.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -22,7 +22,7 @@ Section bfn_examples.
   *)
   Definition get_snd_f : val :=
     fn: ["x"] :=
-      let: "v" := Load Na1Ord (MInt i32) (ToLit (Load Na1Ord MPtr (ToLit "x")) +ₗ #4) in
+      let: "v" := !ᶜ{MInt i32} (ToLit (Load Na1Ord MPtr (ToLit "x")) +ₗ #4) in
       return: ["v"].
 
   Definition get_snd_f_spec :
@@ -48,8 +48,8 @@ Section bfn_examples.
           (ShrLty (ProdLty (OfTy i32t) (OfTy i32t)) β)); [done|done|by intros]. }
       (* ( **x).1 *)
       iApply (type_let with "[]").
-      { apply (type_read_vplace_pshr_root_instr _ _ _ vx α (PShr β (PSnd (OfTy i32t) PHole))
-          (OfTy i32t)); [apply _|solve_typing]. }
+      { apply (type_read_place_instr _ _ _ vx (PShr α (PShr β (PSnd (OfTy i32t) PHole)))
+          (OfTy i32t) i32t static); [by split|apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       iApply typed_body_tctx_incl. { eapply tctx_incl_tail. apply tctx_drop_vplace_shr. }

@@ -318,11 +318,12 @@ End fix_ty.
 Section fix_ty.
   Context `{!typeG Σ} {𝔄} (T: type 𝔄 → type 𝔄) {HT: TypeContractive T}.
 
-  Global Instance fix_copy :
+  Global Instance fix_copy `{!NoCell 𝔄} :
     (∀`(!Copy ty), Copy (T ty)) → Copy (fix_ty T).
   Proof.
     move=> ?. have ?: ∀n, Copy (Tn T n) by elim; apply _.
     split; rewrite /fix_ty /=.
+    - exact (copy_nocell (Tn T 0)).
     - move=> >. eapply @limit_preserving; [|apply _].
       apply limit_preserving_Persistent=> ??? Eq. apply Eq.
     - move=> >. eapply @limit_preserving; [|intros; apply copy_shr].

@@ -507,19 +507,20 @@ End cell_guards.
 
 As the deleted legacy [typed_pcell_atomic_load], [typed_pcell_atomic_store] and
 [typed_pcell_atomic_CAS]: at the MiniRust type of the contents (no mixed-size accesses), for
-contents without cells ([NoCell]). A load needs shared references to the cell and to its
+contents without cells ([NoCell]; for a load it follows from [Copy]). A load needs shared references to the cell and to its
 permission; a store and a compare-and-exchange need a unique borrow of the permission, which
 they resolve. *)
 Section pcell_atomics.
   Context `{!typeG Σ}.
 
-  Lemma type_pcell_load_sc_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p q E L I :
+  Lemma type_pcell_load_sc_instr {𝔄} κ (ty: type 𝔄) p q E L I :
     Copy ty → lctx_lft_alive E L κ →
     typed_instr E L I
       +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &shr{κ} (cell_points_to_ty ty)]
       (Load ScOrd ty.(ty_mty) (ToLit p))
       (λ v, +[v ◁ᵥ ty]) (λ post '-[(_, g); (_, (g', x))], λ mask π, g = g' ∧ post -[x] mask π).
   Proof.
+    intros Hcopy0. assert (NoCell 𝔄) by exact (copy_nocell ty). revert Hcopy0.
     iIntros (? Alv tid post mask iκs [[l g] [[l' [g' x]] []]])
       "#LFT #TIME #PROPH _ #E L $ (p & q & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].

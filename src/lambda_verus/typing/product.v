@@ -36,7 +36,7 @@ Section product.
 
   Global Instance unit0_copy : Copy unit0.
   Proof.
-    split. - by apply _. - intros. iIntros. iApply guards_true.
+    split. - apply _. - by apply _. - intros. iIntros. iApply guards_true.
   Qed.
 
   Global Instance unit0_send : Send unit0.
@@ -205,6 +205,7 @@ Section typing.
     Copy ty → Copy ty' → Copy (ty * ty').
   Proof.
     move=> C1 C2. split.
+    - apply _.
     - intros. unfold ty_gho_own, prod_ty. typeclasses eauto.
     - intros. iIntros "[S1 S2]".
       iDestruct (copy_shr with "S1") as "#G1". iDestruct (copy_shr with "S2") as "#G2".

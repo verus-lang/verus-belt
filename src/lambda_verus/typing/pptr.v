@@ -29,7 +29,7 @@ Section ptr.
 
   Global Instance ptr_copy: Copy ptr_ty.
   Proof.
-    split. - typeclasses eauto.
+    split. - apply _. - typeclasses eauto.
     - intros. by apply copy_shr_default.
   Qed.
 

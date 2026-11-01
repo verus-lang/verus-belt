@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product sum value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr.
+From lrust.typing Require Export type programs cont int product sum value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_read.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -30,7 +30,7 @@ Section place_pshr.
   reference, a field offset, and a guarded typed load of [i32].
   *)
   Definition get_snd_pb : expr := (
-    let: "v" := Load Na1Ord (MInt i32) (ToLit (Load Na1Ord MPtr (ToLit "x")) +ₗ #4) in
+    let: "v" := !ᶜ{MInt i32} (ToLit (Load Na1Ord MPtr (ToLit "x")) +ₗ #4) in
     jump: "return" ["v"])%E.
 
   Lemma get_snd_pb_type ϝ α β (k vx: val) :
@@ -49,8 +49,8 @@ Section place_pshr.
           (ShrLty (ProdLty (OfTy i32t) (OfTy i32t)) β)); [done|done|by intros]. }
       (* ( **x).1 *)
       iApply (type_let with "[]").
-      { apply (type_read_vplace_pshr_root_instr _ _ _ vx α (PShr β (PSnd (OfTy i32t) PHole))
-          (OfTy i32t)); [apply _|solve_typing]. }
+      { apply (type_read_place_instr _ _ _ vx (PShr α (PShr β (PSnd (OfTy i32t) PHole)))
+          (OfTy i32t) i32t static); [by split|apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       (* drop x *)
@@ -78,7 +78,7 @@ Section place_pshr.
   Definition get_boxed_pb : expr := (
     ReBor;;                                                    (* unfold *b *)
     ReBor;;                                                    (* view **b as a pair *)
-    let: "v" := Load Na1Ord (MInt i32)
+    let: "v" := !ᶜ{MInt i32}
       (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "b")) +ₗ #4))) in  (* *( **b).1 *)
     (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "b"]);;         (* drop b *)
     jump: "return" ["v"])%E.
@@ -106,8 +106,9 @@ Section place_pshr.
       { solve_typing. } { reflexivity. }
       (* *( **b).1 *)
       iApply (type_let with "[]").
-      { apply (type_read_oplace_pshr_instr _ _ _ vb PTR_SIZE PHole α
-          (PSnd (OfTy i32t) (POwn 4 PHole)) (OfTy i32t)); [apply _|solve_typing|solve_typing]. }
+      { apply (type_read_place_instr _ _ _ vb
+          (POwn PTR_SIZE (PShr α (PSnd (OfTy i32t) (POwn 4 PHole)))) (OfTy i32t) i32t static);
+          [by split|apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       (* drop b *)
@@ -146,7 +147,7 @@ Section place_pshr.
     [ (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "b"]);;       (* None: drop b *)
       let: "z" := MLit (VInt 0) in
       jump: "return" ["z"];
-      let: "v" := Load Na1Ord (MInt i32) (ToLit (Load Na1Ord MPtr (ToLit "b")) +ₗ #1) in
+      let: "v" := !ᶜ{MInt i32} (ToLit (Load Na1Ord MPtr (ToLit "b")) +ₗ #1) in
       (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "b"]);;       (* Some(v): drop b *)
       jump: "return" ["v"]])%E.
 
@@ -188,8 +189,9 @@ Section place_pshr.
         { reflexivity. }
       - (* Some(v): read v *)
         iApply (type_let with "[]").
-        { apply (type_read_oplace_pshr_instr _ _ _ vb PTR_SIZE PHole α
-            (PSum +[(); i32t]%T 1%fin 0%Z PHole) (OfTy i32t)); [apply _|solve_typing|solve_typing]. }
+        { apply (type_read_place_instr _ _ _ vb
+            (POwn PTR_SIZE (PShr α (PSum +[(); i32t]%T 1%fin 0%Z PHole))) (OfTy i32t) i32t static);
+            [by split|apply _|solve_typing]. }
         { solve_typing. } { simpl. reflexivity. }
         iIntros (vv). simpl_subst.
         iApply type_seq.

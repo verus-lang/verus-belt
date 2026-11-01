@@ -43,9 +43,11 @@ Section typing.
     split=>/= *; by [apply type_lft_morphism_id_like|do 3 f_equiv|do 3 f_equiv|eauto].
   Qed.
 
-  Global Instance mod_ty_copy {𝔄 𝔅} `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty : Copy ty → Copy (<{f;fⁱ}> ty).
+  Global Instance mod_ty_copy {𝔄 𝔅} `{!@Isoₛ 𝔄 𝔅 f fⁱ} `{!NoCell 𝔅} ty :
+    Copy ty → Copy (<{f;fⁱ}> ty).
   Proof.
     intros Hcopy. inversion Hcopy. split.
+      - done.
       - intros. apply copy_persistent.
       - intros. apply copy_shr.
   Qed.

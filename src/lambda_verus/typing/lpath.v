@@ -373,13 +373,14 @@ Section pctx.
     | PUniq _ _ | PShr _ _ => False
     end.
 
-  (** The siblings on the path are simple ([lty_simple]). *)
+  (** The siblings on the path are simple ([lty_simple]), down to the first shared
+      reference (a shared reference is simple, whatever its referent). *)
   Fixpoint pctx_simple {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
     match K with
-    | PHole => True
+    | PHole | PShr _ _ => True
     | PFst K lt2 => pctx_simple K ∧ lty_simple lt2
     | PSnd lt1 K => lty_simple lt1 ∧ pctx_simple K
-    | POwn _ K | PSum _ _ _ K | PUniq _ K | PShr _ K => pctx_simple K
+    | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_simple K
     end.
 
   (** The hole is below no shared reference (it is owned; see [PctxNoShr]), and the
@@ -584,8 +585,7 @@ Section pctx.
   Global Instance pctx_simple_uniq {𝔅 𝔄'} κ (K: pctx 𝔅 𝔄') :
     PctxSimple K → PctxSimple (PUniq κ K).
   Proof. done. Qed.
-  Global Instance pctx_simple_pshr {𝔅 𝔄'} κ (K: pctx 𝔅 𝔄') :
-    PctxSimple K → PctxSimple (PShr κ K).
+  Global Instance pctx_simple_pshr {𝔅 𝔄'} κ (K: pctx 𝔅 𝔄') : PctxSimple (PShr κ K).
   Proof. done. Qed.
 
   Lemma lty_simple_core {𝔄} (lt: lty 𝔄) : lty_simple (lty_core lt) ↔ lty_simple lt.
@@ -1251,16 +1251,18 @@ Section pctx.
       rooted at the owned location [p] ([typing/place_own.v]), and a place
       [p ◁ₗ UniqLty lt' κ] the one of the place rooted at the unique borrow [p].
 
-      For a context [K] whose first step is the root pointer ([POwn] or [PUniq],
+      For a context [K] whose first step is the root pointer ([POwn], [PUniq] or [PShr],
       [PctxVRoot]), the address of the hole is computed from the value itself, without a
       load ([pctx_vexpr]); the path, the refinement, the receipts and the location of the
       hole are [pctx_vpath], [pctx_vrfn], [pctx_vnrc]/[pctx_vne]/[pctx_vnmm] and
       [pctx_vloc]. *)
   Class PctxVRoot {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
-    pctx_vroot : match K with POwn _ _ | PUniq _ _ => True | _ => False end.
+    pctx_vroot : match K with POwn _ _ | PUniq _ _ | PShr _ _ => True | _ => False end.
   Global Instance pctx_vroot_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') : PctxVRoot (POwn n K).
   Proof. done. Qed.
   Global Instance pctx_vroot_uniq {𝔅 𝔄'} κ (K: pctx 𝔅 𝔄') : PctxVRoot (PUniq κ K).
+  Proof. done. Qed.
+  Global Instance pctx_vroot_shr {𝔅 𝔄'} κ (K: pctx 𝔅 𝔄') : PctxVRoot (PShr κ K).
   Proof. done. Qed.
 
   Definition lty_vrfn {𝔄} (lt: lty 𝔄) : ~~𝔄 → blk_map → prfn 𝔄 :=
@@ -1382,6 +1384,43 @@ Section pctx.
   Lemma pctx_vloc_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x y :
     pctx_in K x → pctx_vloc K n (pctx_set K x y) = pctx_vloc K n x.
   Proof. apply pctx_loc_set. Qed.
+
+  (** ** Composition of contexts
+
+      [pctx_app K1 K2] is the context [K1] whose hole is filled by the context [K2] (used to
+      split a context at its first shared reference, [typing/place_read.v]). *)
+  Fixpoint pctx_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) {struct K1} : pctx ℭ 𝔄 :=
+    match K1 in pctx 𝔅 𝔄 return pctx ℭ 𝔅 → pctx ℭ 𝔄 with
+    | PHole => λ K2, K2
+    | PFst K lt2 => λ K2, PFst (pctx_app K K2) lt2
+    | PSnd lt1 K => λ K2, PSnd lt1 (pctx_app K K2)
+    | POwn n K => λ K2, POwn n (pctx_app K K2)
+    | PSum tyl i w K => λ K2, PSum tyl i w (pctx_app K K2)
+    | PUniq κ K => λ K2, PUniq κ (pctx_app K K2)
+    | PShr κ K => λ K2, PShr κ (pctx_app K K2)
+    end K2.
+
+  Lemma pctx_plug_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) lt :
+    pctx_plug (pctx_app K1 K2) lt = pctx_plug K1 (pctx_plug K2 lt).
+  Proof. induction K1 in K2 |- *; simpl; by rewrite ?IHK1. Qed.
+
+  Lemma pctx_get_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) x :
+    pctx_get (pctx_app K1 K2) x = pctx_get K2 (pctx_get K1 x).
+  Proof. induction K1 in K2, x |- *; simpl; by rewrite ?IHK1. Qed.
+
+  Lemma pctx_expr_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) e :
+    pctx_expr (pctx_app K1 K2) e = pctx_expr K2 (pctx_expr K1 e).
+  Proof. induction K1 in K2, e |- *; simpl; by rewrite ?IHK1. Qed.
+
+  Lemma pctx_vexpr_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) `{!PctxVRoot K1} (K2: pctx ℭ 𝔅) e :
+    pctx_vexpr (pctx_app K1 K2) e = pctx_expr K2 (pctx_vexpr K1 e).
+  Proof.
+    rename select (PctxVRoot K1) into HR. destruct K1; try done; simpl; by rewrite pctx_expr_app.
+  Qed.
+
+  Lemma pctx_simple_app_l {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) :
+    pctx_simple (pctx_app K1 K2) → pctx_simple K1.
+  Proof. induction K1 in K2 |- *; simpl; naive_solver. Qed.
 End pctx.
 
 (** A context with a [PUniq] step is not [PctxNoUniq]. *)

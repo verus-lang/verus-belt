@@ -91,6 +91,7 @@ Ltac of_expr e :=
   | lang.GlobalUnlock => constr:(GlobalUnlock)
   | lang.MLit ?v => constr:(MLit v)
   | lang.Load ?o ?m ?e => let e := of_expr e in constr:(Load o m e)
+  | lang.read_copy ?m ?e => let e := of_expr e in constr:(Load Na1Ord m e)
   | lang.Store ?o ?m ?e1 ?e2 =>
     let e1 := of_expr e1 in let e2 := of_expr e2 in constr:(Store o m e1 e2)
   | lang.MemCopy ?o ?n ?e1 ?e2 =>

@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_res place_res_rslv place_res_ops.
+From lrust.typing Require Export type programs cont int product value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_res place_res_rslv place_res_ops place_read.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -36,18 +36,18 @@ Section place_res.
   [ProdLty (OfRes (own_bytes 4 i32)) (OfRes (&uniq{'a} (i32 * i32)))], which stays
   readable:
     * [OfRes (own_bytes 4 i32)] is converted back to [OfTy (own_bytes 4 i32)]
-      ([tctx_oplace_res_to_ofty]), unfolded and read ([type_read_oplace_instr]);
+      ([tctx_oplace_res_to_ofty]), unfolded and read ([type_read_place_instr]);
     * [OfRes (&uniq{'a} (i32 * i32))] is re-read as a shared reference to its referent
       at ['a] ([type_oplace_res_uniq_to_shr_instr], one step), viewed as a pair and read
-      below it ([type_read_oplace_pshr_instr], a guarded typed load);
+      below it ([type_read_place_instr], a guarded typed load);
     * the slot is dropped ([type_drop_oplace_res_instr]), freeing the inner box.
   *)
   Definition res_pair : expr := (
     (Skip;; Skip;; #☠);;                                         (* resolve x *)
-    let: "a" := Load Na1Ord (MInt i32) (ToLit (Load Na1Ord MPtr (ToLit "x"))) in  (* *x.0 *)
+    let: "a" := !ᶜ{MInt i32} (ToLit (Load Na1Ord MPtr (ToLit "x"))) in  (* *x.0 *)
     (Skip;; #☠);;                                                (* *x.1 as a shared reference *)
     ReBor;;                                                      (* view *x.1 as a pair *)
-    let: "b" := Load Na1Ord (MInt i32)
+    let: "b" := !ᶜ{MInt i32}
       (ToLit (Load Na1Ord MPtr (ToLit "x" +ₗ #PTR_SIZE))) in      (* ( *x.1).0 *)
     (((#☠;; delete [ #4; ToLit (Load Na1Ord MPtr (ToLit "x"))]);; #☠);;
       delete [ #(Z.of_nat (PTR_SIZE + PTR_SIZE)); ToLit "x"]);;   (* drop x *)
@@ -90,8 +90,9 @@ Section place_res.
         by apply (tctx_unfold_oplace_own _ _ _ _ (PFst PHole (OfRes (&uniq{α} (i32t * i32t))))
           4 i32t). }
       iApply (type_let with "[]").
-      { apply (type_read_oplace_instr _ _ _ vx (PTR_SIZE + PTR_SIZE)
-          (PFst (POwn 4 PHole) (OfRes (&uniq{α} (i32t * i32t)))) i32t). apply _. }
+      { apply (type_read_place_instr _ _ _ vx
+          (POwn (PTR_SIZE + PTR_SIZE) (PFst (POwn 4 PHole) (OfRes (&uniq{α} (i32t * i32t)))))
+          (OfTy i32t) i32t static); [by constructor|apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (va). simpl_subst.
       (* ( *x.1).0: the resolved unique borrow is a shared reference to its referent *)
@@ -105,9 +106,9 @@ Section place_res.
           (ProdLty (OfTy i32t) (OfTy i32t))); [solve_typing|done|done|by intros]. }
       { solve_typing. } { reflexivity. }
       iApply (type_let with "[]").
-      { apply (type_read_oplace_pshr_instr _ _ _ vx (PTR_SIZE + PTR_SIZE)
-          (PSnd (OwnPtrLty 4 (OfTy i32t)) PHole) α (PFst PHole (OfTy i32t)) (OfTy i32t));
-          [apply _|solve_typing|solve_typing]. }
+      { apply (type_read_place_instr _ _ _ vx
+          (POwn (PTR_SIZE + PTR_SIZE) (PSnd (OwnPtrLty 4 (OfTy i32t)) (PShr α (PFst PHole (OfTy i32t)))))
+          (OfTy i32t) i32t static); [by split|apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vb). simpl_subst.
       (* drop x, freeing the inner box *)

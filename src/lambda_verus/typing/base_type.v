@@ -28,7 +28,7 @@ Section base.
   Next Obligation. iIntros "* _ _ _ []". Qed.
   Next Obligation. by iIntros. Qed.
   
-  Global Instance base_copy {𝔄} : Copy (@base 𝔄).
+  Global Instance base_copy {𝔄} `{!NoCell 𝔄} : Copy (@base 𝔄).
   Proof. split=>//.
      - typeclasses eauto.
      - intros. by apply copy_shr_default.

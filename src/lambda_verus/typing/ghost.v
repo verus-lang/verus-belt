@@ -86,7 +86,7 @@ Section ghost.
   
   Global Instance ghost_copy {𝔄} (ty : type 𝔄) : Copy (ghost_ty ty).
   Proof.
-    split; [typeclasses eauto|]. intros. by apply copy_shr_default.
+    split; [apply _|typeclasses eauto|]. intros. by apply copy_shr_default.
   Qed.
 
   Lemma ghost_resolve {𝔄} (ty: type 𝔄) E L : resolve E L (ghost_ty ty) (const (const True)).
