@@ -204,18 +204,18 @@ Section place_res.
       { apply (type_unfold_oplace_prod_instr _ _ _ vx PTR_SIZE (PUniq α (PUniq β PHole)) i32t i32t).
         solve_typing. }
       { solve_typing. } { reflexivity. }
-      iApply (type_newlft []). iIntros (γ).
-      (* r = &mut ( **x).0, at α ⊓ (β ⊓ γ) *)
+      iApply (type_newlft [α; β]). iIntros (γ).
+      (* r = &mut ( **x).0, at γ (γ ⊑ α, β) *)
       iApply (type_let with "[]").
       { apply (type_borrow_place_instr _ _ _ vx (POwn PTR_SIZE (PUniq α (PUniq β (PFst PHole (OfTy i32t)))))
-          γ i32t); solve_typing. }
+          γ i32t); simpl; solve_typing. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       (* resolve x *)
       iApply type_seq.
       { (* (the observation, stated without the local lifetime) *)
         eapply (type_resolve_place_instr _ _ _ vx (POwn PTR_SIZE PHole)
-          (UniqLty (UniqLty (ProdLty (Blocked i32t (α ⊓ (β ⊓ γ))) (OfTy i32t)) β) α) _ _
+          (UniqLty (UniqLty (ProdLty (Blocked i32t γ) (OfTy i32t)) β) α) _ _
           (λ x ζm q π, (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
             prfn_den (lty_rfn (UniqLty (ProdLty (Blocked i32t static) (OfTy i32t)) β)
               (uniq_bor_current x) ζm (false :: q)) π));
@@ -225,7 +225,7 @@ Section place_res.
       (* ( **x).1 *)
       iApply (type_let with "[]").
       { eapply typed_instr_tr_impl; [|apply (type_read_place_instr _ _ _ vx
-          (POwn PTR_SIZE (PResUniq α (PUniq β (PSnd (Blocked i32t (α ⊓ (β ⊓ γ))) PHole))))
+          (POwn PTR_SIZE (PResUniq α (PUniq β (PSnd (Blocked i32t γ) PHole))))
           (OfTy i32t) i32t static); [by constructor|apply _|solve_typing]].
         (* (the transformer, stated without the local lifetime) *)
         instantiate (1 := λ post '-[x], post -[(uniq_bor_current (𝔄:=pairₛ)
@@ -238,16 +238,16 @@ Section place_res.
       { apply (type_val_int_instr i32). apply (bool_decide_unpack _); by vm_compute. }
       { solve_typing. } { reflexivity. }
       iIntros (v3). simpl_subst.
-      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vr (α ⊓ (β ⊓ γ)) i32t). }
+      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vr γ i32t). }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vr v3 (PUniq (α ⊓ (β ⊓ γ)) PHole) i32t i32t);
+      { eapply (type_write_place_instr _ _ _ vr v3 (PUniq γ PHole) i32t i32t);
           [apply pctx_wty_same|apply resolve_just|simpl; solve_typing]. }
       { solve_typing. } { simpl. reflexivity. }
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
       iApply type_seq.
-      { apply (type_resolve_val_instr vr (&uniq{α ⊓ (β ⊓ γ)} i32t)).
+      { apply (type_resolve_val_instr vr (&uniq{γ} i32t)).
         apply uniq_bor.uniq_resolve. solve_typing. }
       { solve_typing. } { reflexivity. }
       (* end γ: unblock ( **x).0 in the view *)

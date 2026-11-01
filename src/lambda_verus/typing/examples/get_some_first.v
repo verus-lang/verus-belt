@@ -60,7 +60,7 @@ Section get_some_first.
   Lemma get_some_first_type ϝ α (k vb: val) :
     ⊢ typed_body [ϝ ⊑ₑ α] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
-          λ v: vec val 1, +[vhd v ◁ᵥ opt_ref (α ⊓ α)] } ret_opt]
+          λ v: vec val 1, +[vhd v ◁ᵥ opt_ref α] } ret_opt]
         +[vb ◁ᵥ &uniq{α} opt_pair]
         (subst "return" k (subst "b" vb get_some_first)) get_some_first_spec.
   Proof.
@@ -87,7 +87,7 @@ Section get_some_first.
         { solve_typing. } { reflexivity. }
         iIntros (vu). simpl_subst.
         iApply (type_let with "[]").
-        { apply (type_mk_variant_val_instr +[(); &uniq{α ⊓ α} i32t]%T 0%fin). done. }
+        { apply (type_mk_variant_val_instr +[(); &uniq{α} i32t]%T 0%fin). done. }
         { solve_typing. } { reflexivity. }
         iIntros (vr). simpl_subst.
         iApply type_jump.
@@ -100,23 +100,23 @@ Section get_some_first.
         { apply (type_unfold_vplace_prod_instr _ _ _ vb
             (PUniq α (PSum +[(); i32t * i32t]%T 1%fin (0, 0)%Z PHole)) i32t i32t). simpl. solve_typing. }
         { solve_typing. } { simpl. reflexivity. }
-        (* &mut p.0, at α ⊓ α *)
+        (* &mut p.0, at α *)
         iApply (type_let with "[]").
         { apply (type_borrow_place_instr _ _ _ vb
             (PUniq α (PSum +[(); i32t * i32t]%T 1%fin (0, 0)%Z (PFst PHole (OfTy i32t)))) α i32t);
-            [solve_typing|simpl; solve_typing]. }
+            [solve_typing|simpl; solve_typing..]. }
         { solve_typing. } { reflexivity. }
         iIntros (vr0). simpl_subst.
-        (* &mut p.1, at α ⊓ α *)
+        (* &mut p.1, at α *)
         iApply (type_let with "[]").
         { apply (type_borrow_place_instr _ _ _ vb
-            (PUniq α (PSum +[(); i32t * i32t]%T 1%fin (0, 0)%Z (PSnd (Blocked i32t (α ⊓ α)) PHole)))
-            α i32t); [solve_typing|simpl; solve_typing]. }
+            (PUniq α (PSum +[(); i32t * i32t]%T 1%fin (0, 0)%Z (PSnd (Blocked i32t α) PHole)))
+            α i32t); [solve_typing|simpl; solve_typing..]. }
         { solve_typing. } { reflexivity. }
         iIntros (vr1). simpl_subst.
         (* resolve the borrow of p.1 *)
         iApply type_seq.
-        { apply (type_resolve_val_instr vr1 (&uniq{α ⊓ α} i32t)). apply uniq_bor.uniq_resolve.
+        { apply (type_resolve_val_instr vr1 (&uniq{α} i32t)). apply uniq_bor.uniq_resolve.
           solve_typing. }
         { solve_typing. } { reflexivity. }
         (* drop b while both leaves of the payload are blocked *)
@@ -124,7 +124,7 @@ Section get_some_first.
         { apply (tctx_incl_frame_r +[_] +[] +[_]). apply tctx_drop_vplace_uniq; [solve_typing|done|done]. }
         (* the result: Some(&mut p.0) *)
         iApply (type_let with "[]").
-        { apply (type_mk_variant_val_instr +[(); &uniq{α ⊓ α} i32t]%T 1%fin). done. }
+        { apply (type_mk_variant_val_instr +[(); &uniq{α} i32t]%T 1%fin). done. }
         { solve_typing. } { reflexivity. }
         iIntros (vr). simpl_subst.
         iApply type_jump.

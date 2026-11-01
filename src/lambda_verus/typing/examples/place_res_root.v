@@ -58,8 +58,8 @@ Section place_res_root.
       { solve_typing. } { reflexivity. }
       (* &*x, below the resolved borrow *)
       iApply (type_let with "[]").
-      { eapply (type_share_place_instr _ _ _ vx (PResUniq α PHole) static
-          (OfTy (i32t * i32t)) (i32t * i32t)); [by split|solve_typing]. }
+      { eapply (type_share_place_instr _ _ _ vx (PResUniq α PHole) α
+          (OfTy (i32t * i32t)) (i32t * i32t)); [split; [constructor|done]|simpl; solve_typing..]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       (* forget the resolved place *)

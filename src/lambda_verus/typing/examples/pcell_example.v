@@ -79,7 +79,7 @@ Section pcell_example.
       iApply typed_body_tctx_incl. { apply tctx_own_to_oplace. }
       iApply (type_let with "[]").
       { eapply (type_share_place_instr _ _ _ vpair (POwn 4 PHole) κ (OfTy pairt) pairt);
-          [simpl; split_and!; [done|done|solve_typing]|solve_typing]. }
+          [apply lty_sleaf_ofty; solve_typing|simpl; solve_typing..]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       iApply typed_body_tctx_incl.
