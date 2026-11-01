@@ -230,44 +230,15 @@ Section pcell_wp.
       eapply frepr_length; [apply Hcwf|done]. }
     iModIntro. iFrame "HB". by iApply "Hwp".
   Qed.
-
-  (** [wp_pcell_memcopy], with the size of the bytes left behind. *)
-  Lemma wp_pcell_memcopy_len E l l' g m cs bs0 :
-    ↑naN ⊆ E → length bs0 = mty_size m →
-    {{{ loc_side l g m cs ∗ ▷ l' ↦b bs0 }}}
-      MemCopy Na1Ord (mty_size m) (Lit $ LitLoc l') (Lit $ LitLoc l) @ E
-    {{{ bs, RET LitV LitPoison; l ↦b bs ∗ ⌜length bs = mty_size m⌝ ∗ loc_side l' g m cs }}}.
-  Proof.
-    iIntros (? Hlen Φ) "[Hls Hl'] HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
-    iMod (bytes_ctx_pcell_untether with "HB Hls") as (bs v) "(HB & Hl & %Hd & Hu)"; [done|].
-    iModIntro. iFrame "HB".
-    iApply (wp_memcopy_post with "Hl' Hl"); [done|done|by eapply decode_value_length|].
-    iIntros "!> Hl' Hl" (σB') "HB".
-    iMod (bytes_ctx_pcell_retether_eq with "HB Hu Hl'") as "[HB Hls]"; [done|].
-    iModIntro. iFrame "HB". iApply "HΦ". iFrame. iPureIntro. by eapply decode_value_length.
-  Qed.
-
-  (** Moving a [PCell] by a typed copy, [Store m (Load m)] (as [wp_pcell_move] of
-      [lang/pcell_tests.v]), with the size of the bytes left behind. *)
-  Lemma wp_pcell_move_len E l l' g m cs bs0 :
-    ↑naN ⊆ E → mty_wf m → length bs0 = mty_size m →
-    {{{ loc_side l g m cs ∗ ▷ l' ↦b bs0 }}}
-      Store Na1Ord m (Lit $ LitLoc l') (Load Na1Ord m (Lit $ LitLoc l)) @ E
-    {{{ bs, RET LitV LitPoison; l ↦b bs ∗ ⌜length bs = mty_size m⌝ ∗ loc_side l' g m cs }}}.
-  Proof.
-    iIntros (? Hm Hlen Φ) "(Hls & Hl') HΦ". iApply wp_bytes_ctx_pre. iIntros (σB) "HB".
-    iMod (bytes_ctx_pcell_untether with "HB Hls") as (bs v) "(HB & Hl & %Hd & Hu)"; [done|].
-    iModIntro. iFrame "HB".
-    wp_bind (Load _ _ _). iApply (wp_load_na with "Hl"); [done|]. iIntros "!> Hl".
-    iApply (wp_store_na_post with "Hl'"); [done|by eapply decode_value_wf|done|].
-    iIntros "!> Hl'" (σB') "HB".
-    iMod (bytes_ctx_pcell_retether_gen with "HB Hu Hl'") as "[HB Hls]"; [done| |].
-    { rewrite decode_encode_value; [by rewrite Hd|done|by eapply decode_value_wf]. }
-    iModIntro. iFrame "HB". iApply "HΦ". iFrame. iPureIntro. by eapply decode_value_length.
-  Qed.
 End pcell_wp.
 
-(** * Creating, destroying and moving a [PCell] *)
+(** * Creating and destroying a [PCell]
+
+A [PCell] (or any value that contains cells) is moved by the generic move rules: a typed
+[Load] out of a place ([type_move_oplace_instr]) untethers its cells, and a typed [Store]
+of the loaded value ([type_write_oplace_instr], [type_store_own_bytes_instr]) retethers
+them (see [val_cells] in [typing/value_ctx.v]); a [MemCopy] into a place
+([type_memcpy_oplace_deep_instr]) moves them verbatim. *)
 Section pcell_rules.
   Context `{!typeG Σ}.
 
@@ -377,81 +348,6 @@ Section pcell_rules.
     - rewrite pcell_ty_mty; [|apply ty_mty_wf]. done.
   Qed.
 
-  Lemma uninit_bytes_own k l u bs : length bs = k → l ↦b bs -∗ bytes_own (↯ k) l u.
-  Proof.
-    iIntros (Hlen) "Hbs". iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []).
-    split; [done|]. rewrite -ty_mty_eq /= decide_True //.
-  Qed.
-
-  Lemma bytes_own_uninit k l u :
-    bytes_own (↯ k) l u -∗ ∃ bs, l ↦b bs ∗ ⌜length bs = k⌝.
-  Proof.
-    iIntros "Own". iDestruct (bytes_own_nocell_bytes with "Own") as (bs) "[Hbs %Hbs]".
-    iExists bs. iFrame. iPureIntro. apply ty_bytes_length in Hbs. by rewrite Hbs.
-  Qed.
-
-  (** Moving a [PCell] from a box into a box of uninitialized bytes, by a verbatim copy
-      ([MemCopy]). *)
-  Lemma type_pcell_memcpy_instr n n' m p q E L I :
-    mty_wf m →
-    typed_instr E L I +[p ◁ᵥ own_bytes n (↯ (mty_size m)); q ◁ᵥ own_bytes n' (pcell_ty m)]
-      (MemCopy Na1Ord (mty_size m) (ToLit p) (ToLit q))
-      (λ _, +[p ◁ᵥ own_bytes n (pcell_ty m); q ◁ᵥ own_bytes n' (↯ (mty_size m))])
-      (λ post '-[(l, u); (l', g)], post -[(l, g); (l', u)]).
-  Proof.
-    iIntros (Hm tid post mask iκs [[l u] [[l' g] []]]) "_ _ _ _ _ $ $ (p & q & _) Obs".
-    wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ Own".
-    simpl in Hw. simplify_eq. wp_pure _.
-    wp_bind q. iApply (wp_val with "q"). iIntros (w' d' Hq Hw') "#⧖' Own'".
-    simpl in Hw'. simplify_eq. wp_pure _.
-    destruct d as [|d]; [done|]. destruct d' as [|d']; [done|].
-    iDestruct "Own" as "(Bytes & Free & _)". iDestruct "Own'" as "(Bytes' & Free' & _)".
-    iDestruct (bytes_own_uninit with "Bytes") as (bs0) "[Hbs0 %Hlen0]".
-    rewrite bytes_own_pcell_ty //. iDestruct "Bytes'" as (cs) "[Hls %Hcs]".
-    iApply (wp_pcell_memcopy_len with "[$Hls $Hbs0]"); [done|done|].
-    iIntros "!>" (bs) "(Hbs & %Hlen & Hls)". iExists -[(l, g); (l', u)]. iFrame "Obs".
-    iSplitL "Hls Free"; [|iSplitL; [|done]].
-    - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l) (S d)); [|done|done]. iFrame "⧖".
-      iSplitL "Hls"; [|iSplitL; [|done]].
-      + rewrite bytes_own_pcell_ty //. iExists cs. by iFrame.
-      + rewrite /ty_bsize pcell_ty_mty //.
-    - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l') (S d')); [|done|done]. iFrame "⧖'".
-      iSplitL "Hbs"; [|iSplitL; [|done]].
-      + by iApply (uninit_bytes_own with "Hbs").
-      + iEval (rewrite /ty_bsize pcell_ty_mty //) in "Free'". done.
-  Qed.
-
-  (** Moving a [PCell] from a box into a box of uninitialized bytes, by a typed copy
-      ([Store m (Load m)]): the bytes at the new location are the encoding of the decoded
-      contents (padding becomes uninitialized; the contents may embed cells). *)
-  Lemma type_pcell_move_instr n n' m p q E L I :
-    mty_wf m →
-    typed_instr E L I +[p ◁ᵥ own_bytes n (↯ (mty_size m)); q ◁ᵥ own_bytes n' (pcell_ty m)]
-      (Store Na1Ord m (ToLit p) (Load Na1Ord m (ToLit q)))
-      (λ _, +[p ◁ᵥ own_bytes n (pcell_ty m); q ◁ᵥ own_bytes n' (↯ (mty_size m))])
-      (λ post '-[(l, u); (l', g)], post -[(l, g); (l', u)]).
-  Proof.
-    iIntros (Hm tid post mask iκs [[l u] [[l' g] []]]) "_ _ _ _ _ $ $ (p & q & _) Obs".
-    wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ Own".
-    simpl in Hw. simplify_eq. wp_pure _.
-    wp_bind q. iApply (wp_val with "q"). iIntros (w' d' Hq Hw') "#⧖' Own'".
-    simpl in Hw'. simplify_eq. wp_pure _.
-    destruct d as [|d]; [done|]. destruct d' as [|d']; [done|].
-    iDestruct "Own" as "(Bytes & Free & _)". iDestruct "Own'" as "(Bytes' & Free' & _)".
-    iDestruct (bytes_own_uninit with "Bytes") as (bs0) "[Hbs0 %Hlen0]".
-    rewrite bytes_own_pcell_ty //. iDestruct "Bytes'" as (cs) "[Hls %Hcs]".
-    iApply (wp_pcell_move_len with "[$Hls $Hbs0]"); [done|done|done|].
-    iIntros "!>" (bs) "(Hbs & %Hlen & Hls)". iExists -[(l, g); (l', u)]. iFrame "Obs".
-    iSplitL "Hls Free"; [|iSplitL; [|done]].
-    - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l) (S d)); [|done|done]. iFrame "⧖".
-      iSplitL "Hls"; [|iSplitL; [|done]].
-      + rewrite bytes_own_pcell_ty //. iExists cs. by iFrame.
-      + rewrite /ty_bsize pcell_ty_mty //.
-    - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l') (S d')); [|done|done]. iFrame "⧖'".
-      iSplitL "Hbs"; [|iSplitL; [|done]].
-      + by iApply (uninit_bytes_own with "Hbs").
-      + iEval (rewrite /ty_bsize pcell_ty_mty //) in "Free'". done.
-  Qed.
 End pcell_rules.
 
 (** * Guards of a cell and its permission
