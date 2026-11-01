@@ -190,7 +190,7 @@ Section pctx_shr.
   Qed.
 
   Lemma pctx_in_sum_inv {𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) y :
-    pctx_in (PSum tyl i w K) y → ∃ z, y.1 = pinj i z ∧ pctx_in K z.
+    pctx_in (PSum tyl i w K) y → ∃ z, y = pinj i z ∧ pctx_in K z.
   Proof.
     simpl. destruct (psum_proj i y) as [z|] eqn:Hs; [|done]. intros ?.
     exists z. split; [by apply psum_proj_Some|done].
@@ -1001,7 +1001,7 @@ Section case.
     iDestruct (big_sepN_lookup _ _ j with "el") as "el".
     iApply ("el" $! _ ((x, ζm) -:: xl)
       with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
-    { iApply proph_obs_impl; [|done]=>/= ?. by rewrite to_xsum_pinj. }
+    { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?to_xsum_pinj. }
     iFrame "T". iExists _. iSplit; [done|]. rewrite vplace_own_eq. iExists D. iFrame "⧖ Own".
     rewrite /lty_vnrc /= /lt'' !lty_nrc_plug /=. iFrame "⧗p".
   Qed.
@@ -1068,7 +1068,7 @@ Section case.
     iDestruct (big_sepN_lookup _ _ j with "el") as "el".
     iApply ("el" $! _ ((x₀, ζm) -:: xl)
       with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
-    { iApply proph_obs_impl; [|done]=>/= ?. by rewrite to_xsum_pinj. }
+    { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?to_xsum_pinj. }
     iFrame "T". iExists _. iSplit; [done|].
     iApply (vplace_own_close with "⧖ [⧗p]"); [|done].
     rewrite (lty_vnrc_plug_eq K (ShrLty lt'' κ) (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)) //.
