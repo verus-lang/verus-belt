@@ -2,18 +2,17 @@
 
   ** Shared borrows of a place
 
-  A leaf [OfTy ty] of a place rooted at an owned location ([p ◁ₗown{n} lt]) can be
-  borrowed shared at a lifetime [α] (as RefinedRust's
-  [type_borrow_shr]): its points-to and its ownership predicate are borrowed at [α], the
-  borrow of the points-to becomes a guard and the borrow of the ownership predicate is
-  shared ([ty_share], whose steps are paid with later credits of the instruction). The
-  leaf becomes _shared-blocked_, [ShrBlocked ty α] ([shr_blocked_owned] in [ltype.v]):
-  its value does not change, it keeps the (persistent) sharing information, so that it
-  can still be read ([type_read_place_instr] of [place_read.v]), and the inheritance of the borrow,
-  which gives back the points-to and the ownership predicate once [α] has ended
-  ([unblock_tctx_oplace_shr]). For places rooted at a value, below any number of unique
-  borrows, see [type_share_vplace_deep_instr], [type_read_place_instr] and
-  [unblock_tctx_vplace_shr_deep] ([place_puniq.v], [place_pshr.v]).
+  A leaf [OfTy ty] of a place can be borrowed shared at a lifetime [α] (as RefinedRust's
+  [type_borrow_shr]; the rule is [type_share_place_instr] of [place_share.v], for any place):
+  its points-to and its ownership predicate are borrowed at [α], the borrow of the
+  points-to becomes a guard and the borrow of the ownership predicate is shared
+  ([ofty_owned_share]: [ty_share], whose steps are paid with later credits of the
+  instruction). The leaf becomes _shared-blocked_, [ShrBlocked ty α] ([shr_blocked_owned]
+  in [ltype.v]): its value does not change, it keeps the (persistent) sharing information,
+  so that it can still be read ([type_read_place_instr] of [place_read.v]), and the
+  inheritance of the borrow, which gives back the points-to and the ownership predicate
+  once [α] has ended ([unblock_tctx_oplace_shr]; below unique borrows,
+  [unblock_tctx_vplace_shr_deep] of [place_puniq.v]).
 
   ** Places below shared references
 
@@ -47,19 +46,20 @@ Section place_shr.
   (** The contents of a leaf (its points-to and its ownership predicate) are borrowed
       at [α] and shared; the leaf becomes shared-blocked. [ty_share] takes [d] steps,
       paid with later credits. *)
-  Lemma ofty_owned_share {𝔄} m (ty: type 𝔄) α x d g tid (l: loc) G :
-    Timeless G →
+  Lemma ofty_owned_share {𝔄} E m (ty: type 𝔄) α x d g tid (l: loc) G :
+    Timeless G → lazyE ⊆ E →
     llft_ctx -∗ α ⊑ ty_lft ty -∗ (G &&{↑NllftG}&&> @[α]) -∗ G -∗ £(d + 1) -∗
-    cbytes ty x l -∗ ty.(ty_gho_own) x d g tid ={⊤}=∗
+    cbytes ty x l -∗ ty.(ty_gho_own) x d g tid ={E}=∗
       G ∗ ty.(ty_gho_pers) x d g tid ∗
       leaf_owned_s false m ty (PatShrBlocked α) (inl (PlaceIn x)) d g tid l.
   Proof.
-    iIntros (?) "#LFT #Incl #Gα G [£d £1] Pt Gho".
+    iIntros (? HE) "#LFT #Incl #Gα G [£d £1] Pt Gho".
+    have ?: ↑Nllft ⊆ E. { trans lazyE; [rewrite /lazyE; solve_ndisj|done]. }
     iDestruct (ty_gho_pers_impl with "Gho") as "#Pers".
     iMod (llftl_borrow _ α (cbytes ty x l ∗ ty.(ty_gho_own) x d g tid)
-      with "LFT [Pt Gho]") as "[Bor Inh]"; [solve_ndisj|by iFrame|].
-    iMod (llftl_sep_split with "LFT Bor") as "[BorPt BorGho]"; [solve_ndisj|].
-    iMod (llftl_bor_guard with "LFT BorPt") as "#GPt"; [solve_ndisj|].
+      with "LFT [Pt Gho]") as "[Bor Inh]"; [done|by iFrame|].
+    iMod (llftl_sep_split with "LFT Bor") as "[BorPt BorGho]"; [done|].
+    iMod (llftl_bor_guard with "LFT BorPt") as "#GPt"; [done|].
     iMod (ty_share with "LFT Incl Pers Gα G BorGho") as "Upd"; [done..|].
     iMod (lc_step_fupdN_elim_later with "£d Upd") as ">[$ #Shr]".
     iModIntro. iSplitR; [done|]. rewrite /= /shr_blocked_owned. iExists x.
@@ -89,84 +89,6 @@ End place_shr.
 
 Section typing.
   Context `{!typeG Σ}.
-
-  (** * Shared borrow of a leaf of a place rooted at a unique borrow *)
-
-  (** * Reading a shared-blocked leaf of a place rooted at a unique borrow *)
-
-  (** * Unblocking a shared-blocked leaf of a place rooted at a unique borrow *)
-
-  (** * Shared borrow of a leaf of a place rooted at an owned location *)
-
-  (** A shared borrow of the leaf at the hole of [K], at a lifetime [α] that the type of
-      the leaf outlives. The leaf is shared-blocked until [α] ends; the value of the
-      place does not change. *)
-  Lemma type_share_oplace_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅) :
-    elctx_sat E L (ty_outlives_E ty α) → lctx_lft_alive E L α →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Share;; OfLit (pctx_expr K (ToLit p)))
-      (λ w, +[w ◁ᵥ &shr{α} ty; p ◁ₗown{n} pctx_plug K (ShrBlocked ty α)])
-      (λ post '-[x], post -[(pctx_loc K (lty_size (OfTy ty)) x.1.2
-          x.1.1, pctx_get K x.1.2); x]).
-  Proof.
-    intros Out Alv tid post mask iκs [x []].
-    iIntros "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
-    destruct x as [[l x₀] ζm].
-    rewrite /tctx_elt_interp.
-    iDestruct "T" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
-    have ?: Closed [] (pctx_expr K (ToLit p)).
-    { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
-    iDestruct (Out with "L E") as "#Out".
-    iDestruct (elctx_interp_ty_outlives_E with "Out") as "#Incl".
-    iDestruct (Alv with "L E") as "#Alv".
-    (* A step, for credits. *)
-    wp_bind (Seq Skip Skip). wp_bind Skip. iApply wp_fupd.
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [set_solver|].
-    iIntros "£ #⧖S". wp_let. iModIntro. wp_let. wp_let. wp_let.
-    rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
-    iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
-    iDestruct "L1" as (? ->) "[Pt1 Gho1]".
-    iDestruct (pctx_own_mode_le with "Rest") as %Hk.
-    set k0 := pctx_mode K 0.
-    set y := pctx_get K x₀.
-    set lr := l.
-    set lK := pctx_loc K (lty_size (OfTy ty)) x₀ lr.
-    set dh := pctx_depth K d.
-    have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
-    iDestruct (lc_weaken (pctx_mode K 1 + (dh + 1)) with "£") as "[£k £s]";
-      [rewrite /advance_credits pctx_mode_add; nia|].
-    (* The address of the hole. *)
-    iApply wp_fupd. wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
-        with "[] Rest").
-      - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-        by wp_pure _. }
-    iIntros (w) "(-> & _ & _ & Rest)". wp_pure _.
-    iMod (lc_fupd_elim_laterN with "£k Gho1") as "Gho1".
-    (* Share the contents of the leaf. *)
-    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
-      [solve_ndisj|].
-    iDestruct (guards_transitive with "Ghalf Alv") as "#Hα".
-    iMod (ofty_owned_share (pctx_mode K 1) with "LFT Incl Hα H1 £s Pt1 Gho1")
-      as "(H1 & #Pers & Leaf)".
-    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    iAssert ((@[α] &&{↑NllftG; g+1}&&> cbytes ty y lK) ∗
-      ty.(ty_shr) α y dh g tid)%I as "#[GPt Shr]".
-    { by iDestruct "Leaf" as (? ->) "(#$ & #$ & _)". }
-    iModIntro. iExists -[(lK, y); ((l, x₀), ζm)].
-    iFrame "L I". iSplit; last first.
-    { iApply (proph_obs_impl with "Obs")=> π Hπ. exact Hπ. }
-    iSplitR.
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr lK) D); [|done|done]. iFrame "⧖". destruct D as [|D']; [lia|].
-      iApply (shr_bor_own_intro with "[] Shr Pers"); [lia|lia|].
-      iApply (lguards_weaken_later with "GPt"). lia. }
-    iSplit; [|done]. rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|].
-    iExists D, d, g. iFrame "⧖".
-    rewrite (lty_size_plug_eq K (ShrBlocked ty α) (OfTy ty)) //
-      (lty_nrc_plug_shr_nouniq K ty α).
-    iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
-    rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug /=. iFrame "Rest Leaf".
-  Qed.
 
   (** * Unblocking a shared-blocked leaf of a place rooted at an owned location *)
 
@@ -200,8 +122,8 @@ End typing.
 
 (* [shr_pctx_split] and [tctx_shr_place] of the deleted legacy [place_shr.v] (subplaces of
    a folded shared place) are not ported as separate rules: they are subsumed by
-   [type_share_vplace_pshr_root_instr] of [typing/place_pshr.v] and by the field
-   projections below. *)
+   [type_share_place_instr] of [typing/place_share.v] and by the field projections
+   below. *)
 
 (** * Fields of shared references to bytes
 

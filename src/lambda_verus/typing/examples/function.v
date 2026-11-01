@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_read function.
+From lrust.typing Require Export type programs cont int product value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_read place_share function.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -73,7 +73,7 @@ Section bfn_examples.
       Skip;;                                                     (* x as a place *)
       ReBor;;                                                    (* unfold **x *)
       ReBor;;                                                    (* view ***x as a pair *)
-      let: "r" := OfLit (ToLit (Load Na1Ord MPtr (ToLit "x"))) in (* &( **x).0 *)
+      let: "r" := &ˢ (ToLit (Load Na1Ord MPtr (ToLit "x"))) in (* &( **x).0 *)
       ReBor;; ReBor;;                                            (* fold back *)
       Skip;;                                                     (* resolve x *)
       return: ["r"].
@@ -110,8 +110,8 @@ Section bfn_examples.
           (OfTy (i32t * i32t)) (ProdLty (OfTy i32t) (OfTy i32t))); [solve_typing|done|done|by intros]. }
       { solve_typing. } { reflexivity. }
       iApply (type_let with "[]").
-      { apply (type_share_vplace_pshr_instr _ _ _ vx (PUniq α PHole) β
-          (PFst PHole (OfTy i32t)) (OfTy i32t)); solve_typing. }
+      { eapply (type_share_place_instr _ _ _ vx (PUniq α (PShr β (PFst PHole (OfTy i32t))))
+          static (OfTy i32t) i32t); [by split|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       iApply type_seq.

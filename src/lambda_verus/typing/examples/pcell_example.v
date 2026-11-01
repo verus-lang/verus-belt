@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product uninit value_ctx own shr_bor uniq_util uniq_bor place_own place_shr place_resolve place_write subtype pcell pcell_borrow.
+From lrust.typing Require Export type programs cont int product uninit value_ctx own shr_bor uniq_util uniq_bor place_own place_shr place_share place_resolve place_write subtype pcell pcell_borrow.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -35,7 +35,7 @@ Section pcell_example.
     ToLit "p" <-{MInt i32} "seventeen";;                    (* *p = 17 *)
     let: "pair" := PCellFromOwn ["p"] in                    (* (PCell, PointsTo) *)
     Newlft;;
-    let: "r" := Share;; OfLit (ToLit "pair") in              (* &pair *)
+    let: "r" := &ˢ (ToLit "pair") in                         (* &pair *)
     let: "pcell_ref" := OfLit (ToLit "r") in                 (* &pair.0 *)
     let: "perm_ref" := OfLit (ToLit "r" +ₗ #4) in            (* &pair.1 *)
     let: "intref" := PCellBorrow ["pcell_ref"; "perm_ref"] in
@@ -78,7 +78,8 @@ Section pcell_example.
       (* &pair, and its fields *)
       iApply typed_body_tctx_incl. { apply tctx_own_to_oplace. }
       iApply (type_let with "[]").
-      { apply (type_share_oplace_instr _ _ _ vpair 4 κ PHole pairt); solve_typing. }
+      { eapply (type_share_place_instr _ _ _ vpair (POwn 4 PHole) κ (OfTy pairt) pairt);
+          [simpl; split_and!; [done|done|solve_typing]|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       iApply typed_body_tctx_incl.
