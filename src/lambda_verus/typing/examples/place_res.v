@@ -75,12 +75,11 @@ Section place_res.
         apply (tctx_unfold_oplace_prod _ _ _ _ PHole (own_bytes 4 i32t) (&uniq{α} (i32t * i32t))). }
       (* resolve x *)
       iApply type_seq.
-      { apply (type_resolve_place_instr _ _ _ vx (POwn (PTR_SIZE + PTR_SIZE) PHole)
-          (ProdLty (OfTy (own_bytes 4 i32t)) (OfTy (&uniq{α} (i32t * i32t))))
-          (ProdLty (OfRes (own_bytes 4 i32t)) (OfRes (&uniq{α} (i32t * i32t)))) (1 + 1)).
-        cbn [pctx_res]. apply lty_res_prod; apply lty_res_ofty.
-        - apply resolve_keep_just.
-        - apply uniq_resolve_keep. solve_typing. }
+      { eapply (type_resolve_place_instr _ _ _ vx (POwn (PTR_SIZE + PTR_SIZE) PHole)
+          (ProdLty (OfTy (own_bytes 4 i32t)) (OfTy (&uniq{α} (i32t * i32t)))));
+          [apply pctx_res_own; apply lty_res_prod;
+            [apply lty_res_ofty; apply resolve_keep_just|
+             apply lty_res_ofty; apply uniq_resolve_keep; solve_typing]|done]. }
       { solve_typing. } { reflexivity. }
       (* *x.0: the box is unresolved again, unfolded and read *)
       iApply typed_body_tctx_incl.
@@ -215,14 +214,13 @@ Section place_res.
       (* resolve x *)
       iApply type_seq.
       { (* (the observation, stated without the local lifetime) *)
-        apply (type_resolve_place_instr _ _ _ vx (POwn PTR_SIZE PHole)
-          (UniqLty (UniqLty (ProdLty (Blocked i32t (α ⊓ (β ⊓ γ))) (OfTy i32t)) β) α)
-          (ResUniqLty (UniqLty (ProdLty (Blocked i32t (α ⊓ (β ⊓ γ))) (OfTy i32t)) β) α) 1
+        eapply (type_resolve_place_instr _ _ _ vx (POwn PTR_SIZE PHole)
+          (UniqLty (UniqLty (ProdLty (Blocked i32t (α ⊓ (β ⊓ γ))) (OfTy i32t)) β) α) _ _
           (λ x ζm q π, (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
             prfn_den (lty_rfn (UniqLty (ProdLty (Blocked i32t static) (OfTy i32t)) β)
-              (uniq_bor_current x) ζm (false :: q)) π)).
-        cbn [pctx_res]. eapply lty_res_impl; [apply lty_res_uniq_cpd; [solve_typing|solve_typing|done|done]|].
-        intros ????. done. }
+              (uniq_bor_current x) ζm (false :: q)) π));
+          [apply pctx_res_own; eapply lty_res_impl;
+            [apply lty_res_uniq_cpd; [solve_typing|solve_typing|done|done]|done]|done]. }
       { solve_typing. } { reflexivity. }
       (* ( **x).1 *)
       iApply (type_let with "[]").

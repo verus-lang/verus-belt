@@ -53,11 +53,8 @@ Section place_res_root.
       { solve_typing. } { reflexivity. }
       (* resolve x at its root *)
       iApply type_seq.
-      { apply (type_resolve_place_instr _ _ _ vx PHole
-          (UniqLty (OfTy (i32t * i32t)) α) (ResUniqLty (OfTy (i32t * i32t)) α) 1
-          (λ x _ _ π, (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
-            vπ (uniq_bor_current x) π)).
-        cbn [pctx_res]. apply (vroot_res_uniq_leaf _ _ α (i32t * i32t)). solve_typing. }
+      { eapply (type_resolve_place_instr _ _ _ vx PHole (UniqLty (OfTy (i32t * i32t)) α));
+          [apply pctx_res_root; apply vroot_res_uniq_leaf; solve_typing|done]. }
       { solve_typing. } { reflexivity. }
       (* &*x, below the resolved borrow *)
       iApply (type_let with "[]").
