@@ -197,6 +197,7 @@ Section cell_shr_rules.
     typed_instr E L I +[p ◁ᵥ cell_shr_ty κ ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
       (λ v, +[v ◁ᵥ ty]) (λ post '-[(_, (_, x))], λ mask π, post -[x] mask π).
   Proof.
+    intros Hcopy0. assert (NoCell 𝔄) by exact (copy_nocell ty). revert Hcopy0.
     iIntros (? Alv tid post mask iκs [[l [g x]] []]) "#LFT #TIME #PROPH _ #E L $ (p & _) #Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
     simpl in Hw. simplify_eq. wp_pure _.

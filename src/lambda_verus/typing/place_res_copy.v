@@ -43,6 +43,7 @@ Section memcpy_res.
       (λ post '-[b; x], λ mask π, Φ b.2 π →
         post -[(b.1, pctx_get K2 (uniq_bor_current (pctx_get K x.1.2))); x] mask π).
   Proof.
+    intros Hl0 Hcopy0. assert (NoCell ℭ) by exact (copy_nocell ty). revert Hl0 Hcopy0.
     iIntros (Hl Hcopy Rslv -> Hszw Alv tid post mask iκs [[lw zw0] [x []]])
       "#LFT #TIME #PROPH #UNIQ #E L I (Tw & Tp & _) Obs".
     destruct x as [[l x₀] ζm].

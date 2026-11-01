@@ -141,7 +141,7 @@ Section puniq.
     iMod ("Cl" $! lt' (lty_rfn lt' y' ζm (pctx_vpath K)) dh gh D ζl' q
       (fractional.half γh) with "[//] [//] [//] [//] [%] [] ⧖ G' P toks VS") as "(Own & H1 & H2)".
     { lia. }
-    { by iApply big_sepL_pat_ok_nil. }
+    { iRight. by iApply big_sepL_pat_ok_nil. }
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro. iExists -[(pctx_set K x₀ y', ζm)]. iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. apply Hπ; [done..|]. by eexists. }
@@ -580,17 +580,21 @@ Section puniq.
   Lemma pctx_vhmode_ne_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} :
     pctx_hmode K 0 + pctx_vne K ≤ pctx_dlev K.
   Proof.
-    rename select (PctxVRoot K) into HR. destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|]; try done.
+    rename select (PctxVRoot K) into HR. destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K];
+      try done.
     - have := pctx_hmode_ne K 1 0 0. simpl. destruct (pctx_ulfts K); lia.
     - have := pctx_hmode_ne K 0 1 0. simpl. destruct (pctx_ulfts K); lia.
+    - have := pctx_hmode_ne K 1 0 1. simpl. destruct (pctx_ulfts K); lia.
   Qed.
 
   Lemma pctx_vhmode_ne_ge {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} :
     pctx_dlev K ≤ pctx_hmode K 0 + pctx_vne K + 1.
   Proof.
-    rename select (PctxVRoot K) into HR. destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|]; try done.
+    rename select (PctxVRoot K) into HR. destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K];
+      try done.
     - have := pctx_hmode_ne K 1 0 0. simpl. destruct (pctx_ulfts K); lia.
     - have := pctx_hmode_ne K 0 1 0. simpl. destruct (pctx_ulfts K); lia.
+    - have := pctx_hmode_ne K 1 0 1. simpl. destruct (pctx_ulfts K); lia.
   Qed.
 
   (** A mutable borrow of the leaf at the hole of [K] (in [Owned] mode, at any path, below
@@ -666,7 +670,7 @@ Section puniq.
       as "(Own & H1 & Bor1)".
     { intros ζl _. rewrite prfn_rsv_inl. apply place_ghost_rsv_elem. set_solver. }
     { lia. }
-    { iApply pat_ok_blft. }
+    { iRight. iApply pat_ok_blft. }
     { by rewrite big_sepL_singleton. }
     { iIntros "ζtok". rewrite big_sepL_singleton.
       iDestruct ("ToζPc" with "ζtok") as "ζPc".
@@ -730,9 +734,11 @@ Section puniq.
 
   Lemma pctx_vne_ulfts {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} : pctx_vne K = 0 → pctx_ulfts K = [].
   Proof.
-    rename select (PctxVRoot K) into HR. destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|]; try done.
+    rename select (PctxVRoot K) into HR. destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K];
+      try done.
     - simpl. apply pctx_ne_ulfts.
     - simpl. have := pctx_ne_ge K 1 0. lia.
+    - simpl. apply pctx_ne_ulfts.
   Qed.
 
   (** Once [α] has ended, the leaf at the hole of [K] is unblocked (as [unblock_tctx_oplace]):
@@ -813,7 +819,7 @@ Section puniq.
       with "[//] [//] [//] [%] [%] [] [] G' P [] [Pt1 Gho1]") as "(Own & H1 & _)".
     { intros ??. apply prfn_rsv_in. }
     { rewrite /Dn. lia. }
-    { iApply pat_ok_ulfts_leaf. }
+    { iRight. iApply pat_ok_ulfts_leaf. }
     { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
     { done. }
     { iIntros "_ !>". iSplit; [|done]. rewrite (pctx_kind_owned K) //. iExists y1.
@@ -959,7 +965,7 @@ Section puniq.
         with "[//] [//] [//] [%] [%] [] [] G' P [] [Body]") as "(Own & H1 & _)".
       { intros ??. apply prfn_rsv_in. }
       { rewrite /Dn. lia. }
-      { iApply pat_ok_ulfts_leaf. }
+      { iRight. iApply pat_ok_ulfts_leaf. }
       { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iExists b, idx. by iFrame. }
@@ -997,7 +1003,7 @@ Section puniq.
         with "[//] [//] [//] [%] [%] [] [] G' P [] [Hbs Gb]") as "(Own & H1 & _)".
       { intros ??. apply prfn_rsv_in. }
       { rewrite /Dn. lia. }
-      { iApply pat_ok_ulfts_leaf. }
+      { iRight. iApply pat_ok_ulfts_leaf. }
       { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iExists b. iSplit; [done|]. rewrite /ofty_owned.
@@ -1093,7 +1099,7 @@ Section puniq.
         with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Body]") as "(Own & H1 & _)".
       { intros ??. apply prfn_rsv_in. }
       { lia. }
-      { iApply pat_ok_ulfts_leaf. }
+      { iRight. iApply pat_ok_ulfts_leaf. }
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iExists y, idx. by iFrame. }
       iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
@@ -1117,7 +1123,7 @@ Section puniq.
         with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Hbs]") as "(Own & H1 & _)".
       { intros ??. apply prfn_rsv_in. }
       { lia. }
-      { iApply pat_ok_ulfts_leaf. }
+      { iRight. iApply pat_ok_ulfts_leaf. }
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iExists y. iSplit; [done|].
         rewrite /ofty_owned. iFrame "Gho1". by iApply bytes_own_of_bytes. }
@@ -1280,7 +1286,7 @@ Section puniq.
       as "(Own & H1 & Tok' & H2)".
     { intros ζl _. rewrite prfn_rsv_inl. apply place_ghost_rsv_elem. set_solver. }
     { lia. }
-    { iApply pat_ok_blft. }
+    { iRight. iApply pat_ok_blft. }
     { by rewrite big_sepL_singleton. }
     { iIntros "ζtok". rewrite big_sepL_singleton.
       iMod ("ζback" with "ζtok") as "[$ $]".
@@ -1407,7 +1413,7 @@ Section puniq.
       with "[//] [//] [//] [%] [%] [] [] G' P [] [Body]") as "(Own & H1 & _)".
     { intros ??. apply prfn_rsv_in. }
     { rewrite /Dn. lia. }
-    { iApply pat_ok_ulfts_leaf. }
+    { iRight. iApply pat_ok_ulfts_leaf. }
     { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
     { done. }
     { iIntros "_ !>". iSplit; [|done]. iExists y1, idx1. by iFrame. }
@@ -1516,7 +1522,7 @@ Section puniq.
       with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Leaf]") as "(Own & H1 & _)".
     { intros ??. apply prfn_rsv_in. }
     { lia. }
-    { iApply big_sepL_intro. iIntros "!>" (i κ Hi). rewrite /pat_ok /=. iSplit; [|done].
+    { iRight. iApply big_sepL_intro. iIntros "!>" (i κ Hi). rewrite /pat_ok /=. iSplit; [|done].
       iApply pctx_blft_incl. by eapply elem_of_list_lookup_2. }
     { done. }
     { iIntros "_ !>". by iFrame "Leaf". }
@@ -1596,7 +1602,7 @@ Section puniq.
       with "[//] [//] [//] [%] [%] [] ⧖0 G' P [] [Hb]") as "(Own & GP & _)".
     { intros ??. apply prfn_rsv_in. }
     { lia. }
-    { iApply pat_ok_ulfts_leaf. }
+    { iRight. iApply pat_ok_ulfts_leaf. }
     { done. }
     { iIntros "_ !>". iSplit; [|done]. iExact "Hb". }
     iModIntro. iExists dT, ((x₀, ζm) -:: xl'). iSplitR; [done|].

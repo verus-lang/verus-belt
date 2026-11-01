@@ -520,6 +520,7 @@ Section pcell_atomics.
       (Load ScOrd ty.(ty_mty) (ToLit p))
       (λ v, +[v ◁ᵥ ty]) (λ post '-[(_, g); (_, (g', x))], λ mask π, g = g' ∧ post -[x] mask π).
   Proof.
+    intros Hcopy0. assert (NoCell 𝔄) by exact (copy_nocell ty). revert Hcopy0.
     iIntros (? Alv tid post mask iκs [[l g] [[l' [g' x]] []]])
       "#LFT #TIME #PROPH _ #E L $ (p & q & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].

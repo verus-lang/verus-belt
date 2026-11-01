@@ -132,6 +132,7 @@ Section shr_view.
     shr_view κ ty y d g tid l ={E}=∗
       ∃ w, ⌜ty.(ty_val) y = Some w⌝ ∗ ty.(ty_gho_own) y d g tid ∗ G.
   Proof.
+    assert (NoCell 𝔄) by exact (copy_nocell ty).
     iIntros (??) "#Gκ G [£g £v] #(Pt & Shr & _)".
     iDestruct (copy_shr with "Shr") as "#GGho".
     iDestruct (guards_transitive_right with "Gκ GGho") as "#GGho'".
@@ -531,7 +532,7 @@ Section pshr_addr.
         { by rewrite /= Hfold. }
         { intros ??. apply prfn_rsv_in. }
         { lia. }
-        { iApply pat_ok_ulfts_leaf. }
+        { iRight. iApply pat_ok_ulfts_leaf. }
         { done. }
         { iIntros "_ !>". iSplit; [|done]. iSplit; [|iPureIntro; by apply Hv].
           rewrite /= Hfold. iExists y, idx. by iFrame. }
@@ -549,7 +550,7 @@ Section pshr_addr.
         { by rewrite /= Hfold. }
         { intros ??. apply prfn_rsv_in. }
         { lia. }
-        { iApply pat_ok_ulfts_leaf. }
+        { iRight. iApply pat_ok_ulfts_leaf. }
         { done. }
         { iIntros "_ !>". iSplit; [|done]. iSplit; [|iPureIntro; by apply Hv].
           rewrite /= Hfold. iExists y. iSplit; [done|].
@@ -714,6 +715,7 @@ Section typing.
     (∀ w, ⌜ty.(ty_val) z = Some w⌝ -∗ ty.(ty_gho_own) z dh D tid -∗ G -∗ Φ (MLitV w)) -∗
     WP Load Na1Ord ty.(ty_mty) #(l) @ E {{ Φ }}.
   Proof.
+    assert (NoCell 𝔄) by exact (copy_nocell ty).
     iIntros (??) "#Gκ G £ #V HΦ".
     iDestruct (lc_weaken (((D + 1) + (D + 1)) + 2 * (D + 1)) with "£") as "[£c £l]"; [lia|].
     iMod (shr_view_copy with "Gκ G £c V") as (w Hw) "[#Gho G]"; [done..|].
@@ -1139,6 +1141,7 @@ Section memcpy.
       (λ post '-[b; x], λ mask π, Φ b.2 π →
         post -[(b.1, pctx_get K2 (pctx_get K x.1).2); x] mask π).
   Proof.
+    intros Hcopy0. assert (NoCell ℭ) by exact (copy_nocell (lty_fold lt)). revert Hcopy0.
     iIntros (Hcopy Rslv -> Hszw Alv1 Alv2 tid post mask iκs [[lw z] [x []]])
       "#LFT #TIME #PROPH #UNIQ #E L I (Tw & Tp & _) Obs".
     destruct x as [x₀ ζm].
@@ -1238,6 +1241,7 @@ Section memcpy.
       (λ _, +[pw ◁ᵥ own_bytes n (lty_fold lt); p ◁ₗ ShrLty (pctx_plug K2 lt) κ])
       (λ post '-[b; x], λ mask π, Φ b.2 π → post -[(b.1, pctx_get K2 x.1.2); x] mask π).
   Proof.
+    intros Hcopy0. assert (NoCell ℭ) by exact (copy_nocell (lty_fold lt)). revert Hcopy0.
     iIntros (Hcopy Rslv -> Hszw Alv tid post mask iκs [[lw z] [x []]])
       "#LFT #TIME #PROPH #UNIQ #E L I (Tw & Tp & _) Obs".
     destruct x as [x ζm].

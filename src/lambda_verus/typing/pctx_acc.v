@@ -23,6 +23,8 @@
     depend on new prophecy variables [ζl']: their tokens are passed through the closers of
     all enclosing borrows (each extends its reservation), from the outermost to the
     innermost, to a view shift that produces the new hole. The root may get larger depths.
+    The blocked lifetimes of the new hole need not be included in the enclosing borrow
+    lifetimes if its pattern is the one of the old hole (e.g. when the hole is only read).
 
   See [design_docs/verus-belt-phase3-design.md], section "PUniq". *)
 
@@ -407,14 +409,14 @@ Section pctx_acc.
   Context `{!typeG Σ}.
 
   (** The closer of an access to the hole of [K] (see the head of the file). *)
-  Definition pctx_closer {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (m: nat) (r: prfn 𝔅) (x: ~~𝔄)
-      (ζm: blk_map) (q: lpath) (d g: nat) (tid: thread_id) (l: loc) (E: coPset)
+  Definition pctx_closer {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) (m: nat) (p: lpat) (r: prfn 𝔅)
+      (x: ~~𝔄) (ζm: blk_map) (q: lpath) (d g: nat) (tid: thread_id) (l: loc) (E: coPset)
       (G G': iProp Σ) : iProp Σ :=
     ∀ (lt': lty 𝔅) p' r' dh' gh' dn gn ζl' (qq: Qp) (R: iProp Σ),
       ⌜lty_simple lt'⌝ -∗ ⌜lty_fold lt' = lty_fold lt⌝ -∗ ⌜lty_size lt' = lty_size lt⌝ -∗
       ⌜∀ ζl, prfn_rsv r ζl → prfn_rsv r' (ζl ++ ζl')⌝ -∗
       ⌜d ≤ dn ∧ g ≤ gn ∧ dh' + pctx_dlev K ≤ dn ∧ gh' ≤ gn⌝ -∗
-      ([∗ list] κ ∈ pctx_ulfts K, pat_ok κ p') -∗
+      (⌜p' = p⌝ ∨ [∗ list] κ ∈ pctx_ulfts K, pat_ok κ p') -∗
       ⧖(S dn `max` gn) -∗ G' -∗ pctx_ptrs K (lty_size lt) x l -∗ qq:+[ζl'] -∗
       (qq:+[ζl'] ={E}=∗ ltype_own_cp false lt' (pctx_kind K (Owned m) x) p' r' dh' gh' tid
           (pctx_loc K (lty_size lt) x l) ∗ R) ={E}=∗
@@ -429,7 +431,7 @@ Section pctx_acc.
       ⌜dh + pctx_dlev K ≤ d ∧ gh ≤ g ∧ pctx_in K x⌝ ∗
       ltype_own_cp false lt (pctx_kind K (Owned m) x) p r dh gh tid (pctx_loc K (lty_size lt) x l) ∗
       pctx_ptrs K (lty_size lt) x l ∗
-      pctx_closer K lt m r x ζm q d g tid l E G G'.
+      pctx_closer K lt m p r x ζm q d g tid l E G G'.
 
   Definition pctx_acc_stmt {𝔅 𝔄} (K: pctx 𝔅 𝔄) (lt: lty 𝔅) : Prop :=
     ∀ m p r x ζm q d g tid l E G, lazyE ⊆ E → Timeless G →
@@ -563,7 +565,12 @@ Section pctx_acc.
     iModIntro. iExists G', dh, gh. iSplitR; [done|]. iSplitL "G'"; [done|].
     iSplitR; [iApply (guards_transitive with "G'G Gh")|]. iSplitR; [iPureIntro; simpl in *; destruct_and!; split_and!; try lia; done|].
     rewrite /pctx_closer /= pctx_kind_nonempty //. iSplitL "H"; [done|]. iSplitL "Pt P"; [iFrame|].
-    iIntros (lt' p' r' dh' gh' dn gn ζl' qq R Hs Hf Hsz Hr (? & ? & ? & ?)) "[#Okκ Oks] #⧖ G' [Pt P] toks VS".
+    iIntros (lt' p' r' dh' gh' dn gn ζl' qq R Hs Hf Hsz Hr (? & ? & ? & ?)) "Oks #⧖ G' [Pt P] toks VS".
+    iAssert (▷ pat_ok κp (pctx_pat K p'))%I as "#Ok'".
+    { iDestruct "Oks" as "[->|[Okκ _]]"; [done|].
+      iNext. iApply (pat_ok_plug with "Ok"). iApply (pat_ok_mono with "Inclp Okκ"). }
+    iAssert (⌜p' = p⌝ ∨ [∗ list] κ ∈ pctx_ulfts K, pat_ok κ p')%I with "[Oks]" as "Oks".
+    { iDestruct "Oks" as "[$|[_ $]]". }
     have Hf': lty_fold (pctx_plug K lt') = lty_fold (pctx_plug K lt) by apply lty_fold_plug_eq'.
     iMod ("Close" $! (ltype_own_cp false (pctx_plug K lt') (Owned 0)) (pctx_pat K p')
       (pctx_rfn K (uniq_bor_current x) ζm (false :: q) r') (pred dn) gn ζl' qq
@@ -576,10 +583,9 @@ Section pctx_acc.
       iMod ("Cl" $! lt' p' r' dh' gh' (pred dn) gn ζl' qq R with "[//] [//] [//] [//] [%] Oks [] G' P toks VS")
         as "(N' & $ & $)"; [simpl in *; lia|..].
       { iApply (persistent_time_receipt_mono with "⧖"). lia. }
-      iModIntro. iSplitR.
-      - iNext. iApply (pat_ok_plug with "Ok"). iApply (pat_ok_mono with "Inclp Okκ").
-      - iNext. iApply guarded_upd_intro. iModIntro. iFrame "N'".
-        iApply (persistent_time_receipt_mono with "⧖"). lia. }
+      iModIntro. iSplitR; [done|].
+      iNext. iApply guarded_upd_intro. iModIntro. iFrame "N'".
+      iApply (persistent_time_receipt_mono with "⧖"). lia. }
     iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [done|].
     iModIntro. rewrite /= /uniq_node Hf'. iFrame "Pt ⧗ TIME". iApply bi.laterN_intro.
     iFrame "Incl". iExists (pred dn), gn. iSplit; [iPureIntro; lia|].
@@ -662,13 +668,13 @@ Section vroot.
       iApply (wp_pctx_ptrs E K n G x.2 x.1 _ R with "WP P").
     - iIntros "WP P".
       iApply (wp_pctx_ptrs E K n G (uniq_bor_current x) (uniq_bor_loc x) _ R with "WP P").
+    - iIntros "WP P".
+      iApply (wp_pctx_ptrs E K n G x.2 x.1 _ R with "WP P").
   Qed.
 
   Lemma pctx_vroot_dlev {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} : 1 ≤ pctx_dlev K.
   Proof. rename select (PctxVRoot K) into HR. destruct K; try done; simpl; lia. Qed.
 
-  Lemma pctx_vroot_nonempty {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} : pctx_nonempty K.
-  Proof. rename select (PctxVRoot K) into HR. by destruct K. Qed.
 
   (** The later credits for an access to the hole below a root pointer, at a depth [D]. *)
   Definition pctx_vacc_cred {𝔅 𝔄} (K: pctx 𝔅 𝔄) (D: nat) : nat :=
@@ -685,7 +691,7 @@ Section vroot.
       ⌜lty_simple lt'⌝ -∗ ⌜lty_fold lt' = lty_fold lt⌝ -∗ ⌜lty_size lt' = lty_size lt⌝ -∗
       ⌜∀ ζl, prfn_rsv r ζl → prfn_rsv r' (ζl ++ ζl')⌝ -∗
       ⌜D ≤ D' ∧ dh' + pctx_dlev K ≤ D' ∧ gh' ≤ D'⌝ -∗
-      ([∗ list] κ ∈ pctx_ulfts K, pat_ok κ (lty_pat lt')) -∗
+      (⌜lty_pat lt' = lty_pat lt⌝ ∨ [∗ list] κ ∈ pctx_ulfts K, pat_ok κ (lty_pat lt')) -∗
       ⧖D' -∗ G' -∗ pctx_vptrs K (lty_size lt) x -∗ qq:+[ζl'] -∗
       (qq:+[ζl'] ={E}=∗ ltype_own (pctx_kind K (Owned 0) x) lt' r' dh' gh' tid
           (pctx_vloc K (lty_size lt) x) ∗ R) ={E}=∗
@@ -785,7 +791,13 @@ Section vroot.
     iSplitR; [iPureIntro; simpl in *; split_and!; [lia|lia|done]|].
     rewrite /pctx_vcloser /pctx_vloc /= pctx_kind_nonempty //.
     iSplitL "H"; [done|]. iSplitL "P"; [done|].
-    iIntros (lt' r' dh' gh' D' ζl' qq R Hs Hf Hsz Hr (? & ? & ?)) "[#Okκ Oks] #⧖ G' P toks VS".
+    iIntros (lt' r' dh' gh' D' ζl' qq R Hs Hf Hsz Hr (? & ? & ?)) "Oks #⧖ G' P toks VS".
+    iAssert (▷ pat_ok κp (pctx_pat K (lty_pat lt')))%I as "#Ok'".
+    { iDestruct "Oks" as "[->|[Okκ _]]"; [done|].
+      iNext. iApply (pat_ok_plug with "Ok"). iApply (pat_ok_mono with "Inclp Okκ"). }
+    iAssert (⌜lty_pat lt' = lty_pat lt⌝ ∨ [∗ list] κ ∈ pctx_ulfts K, pat_ok κ (lty_pat lt'))%I
+      with "[Oks]" as "Oks".
+    { iDestruct "Oks" as "[$|[_ $]]". }
     have Hf': lty_fold (pctx_plug K lt') = lty_fold (pctx_plug K lt) by apply lty_fold_plug_eq'.
     iMod ("Close" $! (ltype_own_cp false (pctx_plug K lt') (Owned 0)) (pctx_pat K (lty_pat lt'))
       (pctx_rfn K (uniq_bor_current x) ζm [] r') (pred D') D' ζl' qq
@@ -799,10 +811,9 @@ Section vroot.
         with "[//] [//] [//] [//] [%] Oks [] G' P toks VS") as "(N' & $ & $)";
         [simpl in *; lia|..].
       { iApply (persistent_time_receipt_mono with "⧖"). simpl in *. lia. }
-      iModIntro. iSplitR.
-      - iNext. iApply (pat_ok_plug with "Ok"). iApply (pat_ok_mono with "Inclp Okκ").
-      - iNext. iApply guarded_upd_intro. iModIntro. iFrame "N'".
-        iApply (persistent_time_receipt_mono with "⧖"). simpl in *. lia. }
+      iModIntro. iSplitR; [done|].
+      iNext. iApply guarded_upd_intro. iModIntro. iFrame "N'".
+      iApply (persistent_time_receipt_mono with "⧖"). simpl in *. lia. }
     iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [done|].
     iModIntro. iExists D', D'. iSplit; [iPureIntro; simpl in *; lia|]. rewrite /= Hf'.
     iSplit; [done|]. iFrame "⧗ TIME Incl".
