@@ -756,3 +756,59 @@ Lemma type_move_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot
 - **Deleted:** `type_move_oplace_instr` (`place_own.v`). Examples ported: `place_own`
   (`box_pair`: `!ᵐ{MPtr} (ToLit "b")`, context `POwn (PTR_SIZE + 4) (PFst PHole _)`),
   `pcell_move` (three moves).
+
+## Unified place write (branch `proto/write-unify`, 2026-11-01)
+
+One rule writes a value into a leaf of any writable place: `type_write_place_instr`
+(`typing/place_write.v`).
+
+```coq
+Inductive pctx_wty {𝔅 𝔄} (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
+    ∀ {𝔅' 𝔄'}, type 𝔅' → pctx 𝔅' 𝔄' → (~~𝔄 → ~~𝔅' → ~~𝔄') → Prop :=
+| pctx_wty_same : pctx_wty K ty ty K (pctx_set K)
+| pctx_wty_strong {𝔅'} (ty': type 𝔅') :
+    pctx_nouniq K → pctx_nosum K → ty_bsize ty' = ty_bsize ty →
+    pctx_wty K ty ty' (pctx_retype K 𝔅') (pctx_reset K).
+
+Lemma type_write_place_instr {𝔅 𝔄 𝔅' 𝔄'} E L I p pb (K: pctx 𝔅 𝔄) `{!PctxNoShr K}
+    `{!PctxVRoot K} (ty: type 𝔅) (ty': type 𝔅') (K': pctx 𝔅' 𝔄') f Φ :
+  pctx_wty K ty ty' K' f → resolve E L ty Φ → lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
+  typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty); pb ◁ᵥ ty']
+    (pctx_vexpr K p <-{ty'.(ty_mty)} pb)
+    (λ _, +[p ◁ₗ pctx_plug K' (OfTy ty')])
+    (λ post '-[x; b], λ mask π, Φ (pctx_get K x.1) π → post -[(f x.1 b, x.2)] mask π).
+```
+
+- **Instruction.** `write m e1 e2 := Store Na1Ord m e1 e2` (`lang/lang.v`), notation
+  `e1 <-{m} e2` (`lang/notation.v`, level 80); `W.of_expr` reifies it as a `Store`. No
+  `Skip` (the old deep writes had `Seq (Seq Skip Skip)`, `ReBor;;` in the programs): the
+  first step (`wp_cumulative_time_receipt_linear` on the whole instruction) gives the
+  credits (to open the enclosing borrows and to resolve the old value) and the cumulative
+  time receipts (to raise the depth of the place to `pctx_dlev K` plus the depth of the new
+  value).
+- **Contexts.** Any `K` with `PctxNoShr` (no `PShr`, no `PResUniq` on the path; the siblings
+  below a `PUniq` are simple, as for the deep writes) and `PctxVRoot` (root `POwn` or `PUniq`;
+  `p ◁ₗown{n} K'[lt]` is `p ◁ₗ (POwn n K')[lt]`). Sums are allowed (same type).
+- **Leaves.** Only `OfTy ty` (in particular `OfTy (↯ n)`, an uninitialized leaf). Blocked and
+  shared-blocked leaves are not writable (Rust forbids writing a borrowed place), resolved
+  leaves are not needed. No other blocked-free condition: the siblings are untouched.
+- **Strong vs. weak update: `pctx_wty K ty ty' K' f`**, an inductive side condition (like
+  `lty_rleaf`), solved by `apply pctx_wty_same` or `by apply pctx_wty_strong`. It is
+  relational, not a function of `K` (deviation): the result of the same-type write keeps the
+  sum layers of `K`, which `pctx_retype` drops (a sum payload has the type of its variant),
+  so no single retyping function covers both. `pctx_wty_strong` needs an owned path
+  (`pctx_nouniq`, so the root is `POwn`) without sums; `pctx_wty_bsize` gives the size.
+- **Lifetime.** One condition, `pctx_ulft K (OfTy ty)` (the folded type at the outermost
+  unique borrow, `static` without one: `solve_typing`).
+- **Access.** `wp_vplace_wacc` (CPS around the address `pctx_vexpr K p`): the bytes and the
+  ownership of the old value (without laters), and a closer `vplace_wcloser` for a new value
+  of type `ty'` at new depths, giving `p ◁ₗ pctx_plug K' (OfTy ty')` at `f x b`. Same type:
+  `vplace_leaf_acc` (`place_deep.v`); strong: `ltype_own_plug` and `pctx_retype`.
+- **Deleted:** `type_write_oplace_instr` (`place_own.v`), `type_write_vplace_deep_instr`,
+  `type_write_oplace_deep_instr` (`place_puniq.v`), and `type_store_own_bytes_instr`
+  (`value_ctx.v`): it is the strong instance for `K = POwn n PHole` after
+  `tctx_own_to_oplace` (with `resolve_just`, then `tctx_oplace_to_own`); it was unused.
+  Examples ported: `place_own`, `place_struct`, `pcell_example`, `pcell_move`, `place_res`
+  (programs `ToLit "r" <-{MInt i32} "five"` without `ReBor;;`; proofs
+  `eapply (type_write_place_instr _ _ _ vr v5 (PUniq β PHole) i32t i32t);
+  [apply pctx_wty_same|apply resolve_just|solve_typing]`).

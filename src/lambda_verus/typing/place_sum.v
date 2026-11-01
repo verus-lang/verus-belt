@@ -133,5 +133,5 @@ Section typing.
   (* Assigning a variant ([type_sum_assign_oplace_instr], [type_sum_unit_oplace_instr] of
      the deleted legacy [place_sum.v]) is not ported: on bytes, a variant is a MiniRust value
      ([type_mk_variant_val_instr]) that is written to the leaf with a typed [Store]
-     ([type_write_oplace_instr]). *)
+     ([type_write_place_instr]). *)
 End typing.

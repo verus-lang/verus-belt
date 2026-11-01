@@ -266,30 +266,6 @@ Section value_rules.
       iFrame "⧖ Gho'".
   Qed.
 
-  (** Writing the pointee of a box: a typed [Store]. The old pointee is dropped. *)
-  Lemma type_store_own_bytes_instr {𝔄} n (ty: type 𝔄) p q E L I :
-    typed_instr E L I +[p ◁ᵥ own_bytes n ty; q ◁ᵥ ty] (Store Na1Ord ty.(ty_mty) (ToLit p) q)
-      (λ _, +[p ◁ᵥ own_bytes n ty]) (λ post '-[a; b], post -[(a.1, b)]).
-  Proof.
-    iIntros (tid post mask iκs [[l x] [y []]]) "_ #TIME _ _ _ $ $ (p & q & _) Obs".
-    wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ Own".
-    simpl in Hw. simplify_eq. wp_pure _.
-    wp_bind q. iApply (wp_val_cells with "q"). iIntros (v d' fv Hq Hfv) "Hc #⧖' Gho'".
-    destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & _)".
-    iApply (wp_persistent_time_receipt with "TIME ⧖'"); [done|]. iIntros "_ #⧖S".
-    iApply wp_fupd. iApply (wp_bytes_own_forget with "Bytes"); [solve_ndisj|].
-    iIntros (bs) "Hbs %Hlen".
-    iApply (wp_val_cells_store with "[$Hbs $Hc]"); [solve_ndisj|done|done|].
-    iIntros "!> Bytes". iModIntro.
-    iExists -[(l, y)]. iFrame "Obs".
-    iSplit; [|done]. iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l) (S (d `max` d'))); [|done|done].
-    iSplitR.
-    { rewrite Nat.succ_max_distr persistent_time_receipt_sep. by iFrame "⧖ ⧖S". }
-    iFrame "Free".
-    iFrame "Bytes".
-    iNext. iDestruct (ty_gho_own_depth_mono _ d' d' (d `max` d') (S (d `max` d')) with "Gho'")
-      as "[$ _]"; lia.
-  Qed.
   (** Resolving a value. *)
   Lemma type_resolve_val_instr {𝔄} p (ty: type 𝔄) Φ E L I :
     resolve E L ty Φ →

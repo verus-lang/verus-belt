@@ -22,7 +22,7 @@
     folds it back.
 
   Not ported: assigning a variant below unique borrows (on bytes it is a typed [Store] of
-  a variant value, [type_mk_variant_val_instr], [type_write_vplace_deep_instr]), and the
+  a variant value, [type_mk_variant_val_instr], [type_write_place_instr]), and the
   copies below shared references ([type_memcpy_copy_from_oplace_pshr_instr]: the shared
   places of [place_pshr.v] are not ported). *)
 

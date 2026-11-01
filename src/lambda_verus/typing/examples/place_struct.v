@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own place_own place_resolve place_xprod place_read.
+From lrust.typing Require Export type programs cont int product value_ctx own place_own place_resolve place_xprod place_read place_write.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -25,7 +25,7 @@ Section place_struct.
   *)
   Definition set_mid : expr := (
     let: "seven" := MLit (VInt 7) in
-    Store Na1Ord (MInt i32) (ToLit "x" +ₗ #4) "seven";;          (* x.b = 7 *)
+    ToLit "x" +ₗ #4 <-{MInt i32} "seven";;                       (* x.b = 7 *)
     let: "v" := !ᶜ{MInt i32} (ToLit "x" +ₗ #4 +ₗ #4) in         (* x.c *)
     ((#☠;; (#☠;; (#☠;; #☠)));; delete [ #12; ToLit "x"]);;         (* drop x *)
     jump: "return" ["v"])%E.
@@ -58,9 +58,9 @@ Section place_struct.
       { solve_typing. } { reflexivity. }
       iIntros (v7). simpl_subst.
       iApply type_seq.
-      { apply (type_write_oplace_instr _ _ _ vx v7 12
-          (PSnd (OfTy i32t) (PFst PHole (ProdLty (OfTy i32t) (OfTy (Π! +[]))))) i32t i32t
-          (const (const True))); [done|apply resolve_just|done]. }
+      { eapply (type_write_place_instr _ _ _ vx v7
+          (POwn 12 (PSnd (OfTy i32t) (PFst PHole (ProdLty (OfTy i32t) (OfTy (Π! +[]))))))
+          i32t i32t); [apply pctx_wty_same|apply resolve_just|solve_typing]. }
       { solve_typing. } { reflexivity. }
       simpl.
       (* x.c *)

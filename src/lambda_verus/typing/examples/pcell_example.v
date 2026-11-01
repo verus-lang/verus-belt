@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product uninit value_ctx own shr_bor uniq_util uniq_bor place_own place_shr place_resolve subtype pcell pcell_borrow.
+From lrust.typing Require Export type programs cont int product uninit value_ctx own shr_bor uniq_util uniq_bor place_own place_shr place_resolve place_write subtype pcell pcell_borrow.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -32,7 +32,7 @@ Section pcell_example.
   Definition pcell_example_b : expr := (
     let: "p" := OfLit (Alloc #4) in                         (* a box of 4 bytes *)
     let: "seventeen" := MLit (VInt 17) in
-    Store Na1Ord (MInt i32) (ToLit "p") "seventeen";;       (* *p = 17 *)
+    ToLit "p" <-{MInt i32} "seventeen";;                    (* *p = 17 *)
     let: "pair" := PCellFromOwn ["p"] in                    (* (PCell, PointsTo) *)
     Newlft;;
     let: "r" := Share;; OfLit (ToLit "pair") in              (* &pair *)
@@ -65,8 +65,8 @@ Section pcell_example.
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_incl_swap|]. eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_own_to_oplace. }
       iApply type_seq.
-      { apply (type_write_oplace_instr _ _ _ vp v17 4 PHole (↯ 4) i32t (const (const True)));
-          [done|apply uninit_resolve|done]. }
+      { eapply (type_write_place_instr _ _ _ vp v17 (POwn 4 PHole) (↯ 4) i32t);
+          [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iApply typed_body_tctx_incl. { apply tctx_oplace_to_own. }
       (* PCell::new *)
