@@ -31,7 +31,7 @@ Section place_res.
 
   with the specification `ensures result == ( *x.0, ( *x.1).0)` and the observation
   `fin(x.1) == cur(x.1)`, learnt when [x] is resolved. The argument is a box of bytes, an
-  owned place, unfolded as a pair; it is resolved ([type_resolve_oplace_res_instr],
+  owned place, unfolded as a pair; it is resolved ([type_resolve_place_instr],
   [lty_res_prod] of two [lty_res_ofty], two program steps) to
   [ProdLty (OfRes (own_bytes 4 i32)) (OfRes (&uniq{'a} (i32 * i32)))], which stays
   readable:
@@ -75,10 +75,10 @@ Section place_res.
         apply (tctx_unfold_oplace_prod _ _ _ _ PHole (own_bytes 4 i32t) (&uniq{α} (i32t * i32t))). }
       (* resolve x *)
       iApply type_seq.
-      { apply (type_resolve_oplace_res_instr _ _ _ vx (PTR_SIZE + PTR_SIZE)
+      { apply (type_resolve_place_instr _ _ _ vx (POwn (PTR_SIZE + PTR_SIZE) PHole)
           (ProdLty (OfTy (own_bytes 4 i32t)) (OfTy (&uniq{α} (i32t * i32t))))
           (ProdLty (OfRes (own_bytes 4 i32t)) (OfRes (&uniq{α} (i32t * i32t)))) (1 + 1)).
-        apply lty_res_prod; apply lty_res_ofty.
+        cbn [pctx_res]. apply lty_res_prod; apply lty_res_ofty.
         - apply resolve_keep_just.
         - apply uniq_resolve_keep. solve_typing. }
       { solve_typing. } { reflexivity. }
@@ -147,7 +147,7 @@ Section place_res.
   with the specification `ensures result == (3, ( **old(x)).1),
   fin(x) == ((3, ( **old(x)).1), fin( *old(x)))`. The argument is a box of bytes, an owned
   place; `*x`, `**x` (and `**x` as a pair) are unfolded; `( **x).0` is reborrowed
-  ([type_borrow_place_instr]); `x` is resolved ([type_resolve_oplace_res_instr],
+  ([type_borrow_place_instr]); `x` is resolved ([type_resolve_place_instr],
   [lty_res_uniq_cpd]); `( **x).1` is read in the view ([type_read_place_instr], a
   guarded typed load); `*r = 3` is a typed [Store] through the reborrow; when the local
   lifetime ends, `( **x).0` is unblocked in the view ([unblock_tctx_oplace_res]) and read;
@@ -215,13 +215,13 @@ Section place_res.
       (* resolve x *)
       iApply type_seq.
       { (* (the observation, stated without the local lifetime) *)
-        apply (type_resolve_oplace_res_instr _ _ _ vx PTR_SIZE
+        apply (type_resolve_place_instr _ _ _ vx (POwn PTR_SIZE PHole)
           (UniqLty (UniqLty (ProdLty (Blocked i32t (α ⊓ (β ⊓ γ))) (OfTy i32t)) β) α)
           (ResUniqLty (UniqLty (ProdLty (Blocked i32t (α ⊓ (β ⊓ γ))) (OfTy i32t)) β) α) 1
           (λ x ζm q π, (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
             prfn_den (lty_rfn (UniqLty (ProdLty (Blocked i32t static) (OfTy i32t)) β)
               (uniq_bor_current x) ζm (false :: q)) π)).
-        eapply lty_res_impl; [apply lty_res_uniq_cpd; [solve_typing|solve_typing|done|done]|].
+        cbn [pctx_res]. eapply lty_res_impl; [apply lty_res_uniq_cpd; [solve_typing|solve_typing|done|done]|].
         intros ????. done. }
       { solve_typing. } { reflexivity. }
       (* ( **x).1 *)
