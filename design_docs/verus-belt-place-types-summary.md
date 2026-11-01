@@ -654,7 +654,7 @@ context step `PResUniq` for resolved unique borrows, and resolved leaves).
 ```coq
 Lemma type_read_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot K} `{!PctxRead K}
     (lt: lty 𝔅) (ty: type 𝔅) κs :
-  pctx_rleaf K lt ty κs → Copy ty → lctx_lft_alive E L (pctx_ralv K lt ⊓ κs) →
+  pctx_rleaf K lt ty κs → Copy ty → lctx_lft_alive E L (pctx_alv K lt ⊓ κs) →
   typed_instr E L I +[p ◁ₗ pctx_plug K lt] (!ᶜ{ty.(ty_mty)} (pctx_vexpr K p))
     (λ v, +[v ◁ᵥ ty; p ◁ₗ pctx_plug K lt])
     (λ post '-[x], post -[pctx_get K x.1; x]).
@@ -686,7 +686,8 @@ Lemma type_read_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot
   `κs = static`, `ShrBlocked ty β` with `κs = β`, and, if `b` (no `PUniq`/`PResUniq` above),
   `OfRes ty` for `ResOwn ty` with `κs = static`; below a shared reference, any `lt` with
   `ty = lty_fold lt` and `κs = static`. `Blocked` is not readable.
-- **Lifetimes** `pctx_ralv K lt`: `ty_lft (lty_fold (UniqLty K'[lt] κ)) ⊓ …` at each
+- **Lifetimes** `pctx_alv K lt` (was `pctx_ralv`; since `proto/place-polish` the one notion
+  of all place rules, in `pctx_acc.v`): `ty_lft (lty_fold (UniqLty K'[lt] κ)) ⊓ …` at each
   `PUniq κ K'` above the first shared reference or resolved borrow (the old `pctx_ulft`
   condition), and `pctx_salv K2 κ` at the first `PShr κ K2` or `PResUniq κ K2` (the old
   shared/view condition).
@@ -737,8 +738,8 @@ Lemma type_move_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot
   typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (!ᵐ{ty.(ty_mty)} (pctx_vexpr K p))
     (λ v, +[v ◁ᵥ ty;
       p ◁ₗ pctx_plug (pctx_retype K (uninitₛ (ty_bsize ty))) (OfTy (↯ (ty_bsize ty)))])
-    (λ post '-[x], λ mask π, ∀ junk: ~~ (uninitₛ (ty_bsize ty)),
-      post -[pctx_get K x.1; (pctx_reset K x.1 junk, x.2)] mask π).
+    (λ post '-[x], post -[pctx_get K x.1;
+      (pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) K x.1 (), x.2)]).
 ```
 
 - **Instruction.** `read_move m e := Load Na1Ord m e` (`lang/lang.v`), notation `!ᵐ{m} e`
@@ -772,7 +773,7 @@ Inductive pctx_wty {𝔅 𝔄} (K: pctx 𝔅 𝔄) (ty: type 𝔅) :
 
 Lemma type_write_place_instr {𝔅 𝔄 𝔅' 𝔄'} E L I p pb (K: pctx 𝔅 𝔄) `{!PctxNoShr K}
     `{!PctxVRoot K} (ty: type 𝔅) (ty': type 𝔅') (K': pctx 𝔅' 𝔄') f Φ :
-  pctx_wty K ty ty' K' f → resolve E L ty Φ → lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
+  pctx_wty K ty ty' K' f → resolve E L ty Φ → lctx_lft_alive E L (pctx_alv K (OfTy ty)) →
   typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty); pb ◁ᵥ ty']
     (pctx_vexpr K p <-{ty'.(ty_mty)} pb)
     (λ _, +[p ◁ₗ pctx_plug K' (OfTy ty')])
@@ -798,8 +799,8 @@ Lemma type_write_place_instr {𝔅 𝔄 𝔅' 𝔄'} E L I p pb (K: pctx 𝔅 �
   sum layers of `K`, which `pctx_retype` drops (a sum payload has the type of its variant),
   so no single retyping function covers both. `pctx_wty_strong` needs an owned path
   (`pctx_nouniq`, so the root is `POwn`) without sums; `pctx_wty_bsize` gives the size.
-- **Lifetime.** One condition, `pctx_ulft K (OfTy ty)` (the folded type at the outermost
-  unique borrow, `static` without one: `solve_typing`).
+- **Lifetime.** One condition, `pctx_alv K (OfTy ty)` (was `pctx_ulft K (OfTy ty)`, the
+  folded type at the outermost unique borrow; `static` without one: `solve_typing`).
 - **Access.** `wp_vplace_wacc` (CPS around the address `pctx_vexpr K p`): the bytes and the
   ownership of the old value (without laters), and a closer `vplace_wcloser` for a new value
   of type `ty'` at new depths, giving `p ◁ₗ pctx_plug K' (OfTy ty')` at `f x b`. Same type:
@@ -825,8 +826,8 @@ Lemma type_memcpy_copy_place_instr {𝔅d 𝔄d 𝔅 𝔄 𝔄d'} E L I pd ps (K
     `{!PctxNoShr Kd} `{!PctxVRoot Kd} (tyd: type 𝔅d) (Kd': pctx 𝔅 𝔄d') fd Φ
     (Ks: pctx 𝔅 𝔄) `{!PctxVRoot Ks} `{!PctxRead Ks} (lt: lty 𝔅) (ty: type 𝔅) κs :
   pctx_wty Kd tyd ty Kd' fd → resolve E L tyd Φ →
-  lctx_lft_alive E L (pctx_ulft Kd (OfTy tyd)) →
-  pctx_rleaf Ks lt ty κs → Copy ty → lctx_lft_alive E L (pctx_ralv Ks lt ⊓ κs) →
+  lctx_lft_alive E L (pctx_alv Kd (OfTy tyd)) →
+  pctx_rleaf Ks lt ty κs → Copy ty → lctx_lft_alive E L (pctx_alv Ks lt ⊓ κs) →
   typed_instr E L I +[pd ◁ₗ pctx_plug Kd (OfTy tyd); ps ◁ₗ pctx_plug Ks lt]
     (pctx_vexpr Kd pd <-ᵇ{ty_bsize ty} pctx_vexpr Ks ps)
     (λ _, +[pd ◁ₗ pctx_plug Kd' (OfTy ty); ps ◁ₗ pctx_plug Ks lt])
@@ -837,14 +838,14 @@ Lemma type_memcpy_move_place_instr {𝔅d 𝔄d 𝔅 𝔄 𝔄d'} E L I pd ps (K
     `{!PctxNoShr Kd} `{!PctxVRoot Kd} (tyd: type 𝔅d) (Kd': pctx 𝔅 𝔄d') fd Φ
     (Ks: pctx 𝔅 𝔄) `{!PctxVRoot Ks} `{!PctxNoUniq Ks} (ty: type 𝔅) :
   pctx_wty Kd tyd ty Kd' fd → resolve E L tyd Φ →
-  lctx_lft_alive E L (pctx_ulft Kd (OfTy tyd)) → pctx_nosum Ks →
+  lctx_lft_alive E L (pctx_alv Kd (OfTy tyd)) → pctx_nosum Ks →
   typed_instr E L I +[pd ◁ₗ pctx_plug Kd (OfTy tyd); ps ◁ₗ pctx_plug Ks (OfTy ty)]
     (pctx_vexpr Kd pd <-ᵇ{ty_bsize ty} pctx_vexpr Ks ps)
     (λ _, +[pd ◁ₗ pctx_plug Kd' (OfTy ty);
       ps ◁ₗ pctx_plug (pctx_retype Ks (uninitₛ (ty_bsize ty))) (OfTy (↯ (ty_bsize ty)))])
     (λ post '-[xd; xs], λ mask π, Φ (pctx_get Kd xd.1) π →
-      ∀ junk: ~~ (uninitₛ (ty_bsize ty)),
-      post -[(fd xd.1 (pctx_get Ks xs.1), xd.2); (pctx_reset Ks xs.1 junk, xs.2)] mask π).
+      post -[(fd xd.1 (pctx_get Ks xs.1), xd.2);
+        (pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) Ks xs.1 (), xs.2)] mask π).
 ```
 
 - **Two rules (justified deviation from "one").** The source side differs in kind: a copy
@@ -892,9 +893,10 @@ One rule borrows shared the leaf at the hole of any readable place: `type_share_
 ```coq
 Lemma type_share_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot K} `{!PctxRead K}
     α (lt: lty 𝔅) (ty: type 𝔅) (lt': lty 𝔅) :
-  pctx_sleaf E L K (pctx_shlft K α) lt ty lt' → lctx_lft_alive E L (pctx_ralv K lt ⊓ α) →
+  pctx_sleaf E L K α lt ty lt' → lctx_lft_incl E L α (pctx_blft K) →
+  lctx_lft_alive E L (pctx_alv K lt) →
   typed_instr E L I +[p ◁ₗ pctx_plug K lt] (&ˢ (pctx_vexpr K p))
-    (λ v, +[v ◁ᵥ &shr{pctx_shlft K α} ty; p ◁ₗ pctx_plug K lt'])
+    (λ v, +[v ◁ᵥ &shr{α} ty; p ◁ₗ pctx_plug K lt'])
     (λ post '-[x], post -[(pctx_vloc K (lty_size lt) x.1, pctx_get K x.1); x]).
 ```
 
@@ -907,7 +909,8 @@ Lemma type_share_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoo
 - **Contexts.** Those of the read rule: `PctxVRoot K` (root `POwn`, `PUniq`, `PShr` or
   `PResUniq`) and `PctxRead K` (simple siblings below a unique borrow, down to the first shared
   reference).
-- **Computed result.** `pctx_shlft K α`: `pctx_blft K α` below no shared reference and no
+- **(Superseded by `proto/place-polish`, below: `α` is the lifetime of the result.)**
+  **Computed result.** `pctx_shlft K α`: `pctx_blft K α` below no shared reference and no
   resolved unique borrow (`pctx_vlft K = None`), else `pctx_slft K2 κ`, the lifetime of the view
   at the first `PShr κ K2`/`PResUniq κ K2`. `pctx_sleaf E L K β lt ty lt'` (a `Fixpoint`, solved
   by `simpl; split_and!` or `by split`): below no shared reference, `lt = OfTy ty`,
@@ -944,9 +947,10 @@ One rule borrows mutably the leaf at the hole of any place on an owned/unique pa
 ```coq
 Lemma type_borrow_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K}
     α (ty: type 𝔅) :
-  elctx_sat E L (ty_outlives_E ty α) → lctx_lft_alive E L (pctx_ulft K (OfTy ty) ⊓ α) →
+  elctx_sat E L (ty_outlives_E ty α) → lctx_lft_incl E L α (pctx_blft K) →
+  lctx_lft_alive E L (pctx_alv K (OfTy ty) ⊓ pctx_balv K α) →
   typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (&ᵘ (pctx_vexpr K p))
-    (λ w, +[w ◁ᵥ &uniq{pctx_blft K α} ty; p ◁ₗ pctx_plug K (Blocked ty (pctx_blft K α))])
+    (λ w, +[w ◁ᵥ &uniq{α} ty; p ◁ₗ pctx_plug K (Blocked ty α)])
     (λ post '-[x], λ mask π, ∀ m1: ~~ (uniq_borₛ 𝔅),
       uniq_bor_current m1 = pctx_get K x.1 →
       post -[m1; (x.1, (pctx_vpath K, uniq_bor_ξi m1) :: x.2)] mask π).
@@ -964,9 +968,9 @@ Lemma type_borrow_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxNoS
   `p ◁ₗown{n} …`, or `PUniq κ`). Sums allowed.
 - **Uniform statement.** By the mode of the hole: `pctx_uend K = None` (Owned mode, the old
   deep borrow, now `type_borrow_vplace_owned`) or `Some κ` (the whole referent of the innermost
-  unique borrow, a reborrow, now `type_borrow_vplace_uniq`); both had the same conclusion. One
-  lifetime condition `pctx_ulft K (OfTy ty) ⊓ α` (the Owned-mode borrow did not need `α` alive,
-  the uniq-mode one did; `α` is a fresh local lifetime in practice), and the outlives condition.
+  unique borrow, a reborrow, now `type_borrow_vplace_uniq`); both had the same conclusion.
+  (Since `proto/place-polish`: `α` is the lifetime of the new borrow, `α ⊑ pctx_blft K`, and `α`
+  must be alive only for a reborrow, `pctx_balv K α`; see below.)
 - **Deleted:** `type_borrow_oplace_instr` (`place_own.v`: the instance `K = POwn n K'` with
   `PctxNoUniq K'`, `pctx_blft K α = α`; its separate proof via `alloc_uniq_body` is gone),
   `type_borrow_vplace_deep_instr`, `type_borrow_oplace_deep_instr`,
@@ -986,18 +990,18 @@ owned, the root unique borrow included: `type_resolve_place_instr`
 (`typing/place_res_rslv.v`).
 
 ```coq
-Definition pctx_res {𝔅 𝔄} (E: elctx) (L: llctx) (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅)
-    (k: nat) (Φ: ~~𝔅 → blk_map → lpath → proph_asn → Prop) : Prop :=
-  match K with
-  | PHole => vroot_res E L lt lt' k (λ x ζm, Φ x ζm [])
-  | POwn _ _ => lty_res E L lt lt' k Φ
-  | _ => False
-  end.
+Inductive pctx_res (E: elctx) (L: llctx) :
+    ∀ {𝔅 𝔄}, pctx 𝔅 𝔄 → lty 𝔅 → lty 𝔅 → nat →
+      (~~𝔅 → blk_map → lpath → proph_asn → Prop) → Prop :=
+| pctx_res_root {𝔅} (lt lt': lty 𝔅) k Φ :
+    vroot_res E L lt lt' k Φ → pctx_res E L PHole lt lt' k (λ x ζm _, Φ x ζm)
+| pctx_res_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') (lt lt': lty 𝔅) k Φ :
+    lty_res E L lt lt' k Φ → pctx_res E L (POwn n K) lt lt' k Φ.
 
 Lemma type_resolve_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxNoUniq K}
-    (lt lt': lty 𝔅) k Φ :
-  pctx_res E L K lt lt' k Φ →
-  typed_instr E L I +[p ◁ₗ pctx_plug K lt] (place_resolve.skipn k)
+    (lt lt': lty 𝔅) k Φ e :
+  pctx_res E L K lt lt' k Φ → place_resolve.skipn k = e →
+  typed_instr E L I +[p ◁ₗ pctx_plug K lt] e
     (const +[p ◁ₗ pctx_plug K lt'])
     (λ post '-[x], λ mask π, Φ (pctx_get K x.1) x.2 (pctx_vpath K) π → post -[x] mask π).
 ```
