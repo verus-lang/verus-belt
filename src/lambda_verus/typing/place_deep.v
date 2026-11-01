@@ -403,7 +403,7 @@ Section sum_deep.
          the body to the sum place. *)
       iEval (rewrite (pctx_kind_uniq K κ) //) in "H".
       iEval (rewrite /pctx_vcloser (pctx_kind_uniq K κ) //) in "Cl".
-      iDestruct "H" as (? idx ->) "Body". rewrite Hy.
+      iDestruct "H" as (? idx ->) "Body". rewrite ?Hy.
       iMod (fractional.frac_split_guard_in_half NllftG G' G' with "G' []")
         as (γ2) "[A [B [#Gh2 #Back2]]]"; [solve_ndisj|iApply guards_refl|].
       iAssert (G' &&{↑NllftG}&&> @[κ])%I as "#G'κ".
@@ -443,16 +443,16 @@ Section sum_deep.
       iDestruct (big_sepN_lookup _ _ j with "el") as "el".
       iApply ("el" $! _ ((x₀, ζm) -:: xl)
         with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
-      { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?Hy /= to_xsum_pinj. }
+      { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?Hy to_xsum_pinj. }
       iFrame "T". iExists _. iSplit; [done|].
       iApply (vplace_own_close with "⧖ [⧗p]");
         [by rewrite (lty_vnrc_plug_eq K lt' (OfTy (Σ! tyl)))|].
-      rewrite Hy lty_rfn_sum_in. iExact "Own".
+      rewrite ?Hy lty_rfn_sum_in. iExact "Own".
     - (* [Owned] mode. *)
       iEval (rewrite (pctx_kind_owned K) //) in "H".
       iEval (rewrite /pctx_vcloser (pctx_kind_owned K) //) in "Cl".
       set mh := pctx_hmode K 0.
-      iDestruct "H" as (? ->) "[Pt1 Gho1]". rewrite Hy.
+      iDestruct "H" as (? ->) "[Pt1 Gho1]". rewrite ?Hy.
       iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Tag & Pay & Pad)".
       iDestruct "Tag" as (bt) "[Bt %Hbt]".
       iApply (wp_load_na with "Bt"); [exact Hbt|]. iIntros "!> Bt".
@@ -470,11 +470,11 @@ Section sum_deep.
       iDestruct (big_sepN_lookup _ _ j with "el") as "el".
       iApply ("el" $! _ ((x₀, ζm) -:: xl)
         with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
-      { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?Hy /= to_xsum_pinj. }
+      { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?Hy to_xsum_pinj. }
       iFrame "T". iExists _. iSplit; [done|].
       iApply (vplace_own_close with "⧖ [⧗p]");
         [by rewrite (lty_vnrc_plug_eq K lt' (OfTy (Σ! tyl)))|].
-      rewrite Hy lty_rfn_sum_in. iExact "Own".
+      rewrite ?Hy lty_rfn_sum_in. iExact "Own".
   Qed.
 
   Lemma type_case_oplace_deep {𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (Σ! 𝔄l) 𝔄)
