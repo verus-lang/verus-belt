@@ -59,6 +59,8 @@ Section pctx_fun.
     | PUniq κ K => λ _ x, pctx_kind K (Uniq κ (uniq_bor_ξi x)) (uniq_bor_current x)
     (* Only meaningful below no shared reference ([PctxNoShr]); as [POwn]. *)
     | PShr _ K => λ k x, pctx_kind K (Owned (kind_laters k + 1)) x.2
+    (* Only meaningful below no resolved unique borrow ([PctxNoShr]); as [POwn]. *)
+    | PResUniq _ K => λ k x, pctx_kind K (Owned (kind_laters k + 1)) (uniq_bor_current x)
     end.
 
   (** The lifetime of the folded type at the outermost unique borrow on the path (which
@@ -67,7 +69,7 @@ Section pctx_fun.
   Fixpoint pctx_ulft {𝔅 𝔄} (K: pctx 𝔅 𝔄) : lty 𝔅 → lft :=
     match K in pctx 𝔅 𝔄 return lty 𝔅 → lft with
     | PHole => λ _, static
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K => pctx_ulft K
+    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K | PResUniq _ K => pctx_ulft K
     | PUniq κ K => λ lt, ty_lft (lty_fold (UniqLty (pctx_plug K lt) κ))
     end.
 
@@ -75,7 +77,7 @@ Section pctx_fun.
   Fixpoint pctx_ulfts {𝔅 𝔄} (K: pctx 𝔅 𝔄) : list lft :=
     match K with
     | PHole => []
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K => pctx_ulfts K
+    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K | PResUniq _ K => pctx_ulfts K
     | PUniq κ K => κ :: pctx_ulfts K
     end.
 
@@ -85,7 +87,7 @@ Section pctx_fun.
   Fixpoint pctx_blft {𝔅 𝔄} (K: pctx 𝔅 𝔄) (α: lft) : lft :=
     match K with
     | PHole => α
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K => pctx_blft K α
+    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K | PResUniq _ K => pctx_blft K α
     | PUniq κ K => κ ⊓ pctx_blft K α
     end.
 
@@ -95,7 +97,7 @@ Section pctx_fun.
     match K with
     | PHole => 0
     | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_dlev K
-    | POwn _ K | PUniq _ K | PShr _ K => S (pctx_dlev K)
+    | POwn _ K | PUniq _ K | PShr _ K | PResUniq _ K => S (pctx_dlev K)
     end.
 
   (** The later credits for an access ([pctx_acc]), at a depth [d] and with [m] laters:
@@ -111,7 +113,7 @@ Section pctx_fun.
   Fixpoint pctx_uend {𝔅 𝔄} (K: pctx 𝔅 𝔄) : option lft :=
     match K with
     | PHole => None
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K => pctx_uend K
+    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K | PResUniq _ K => pctx_uend K
     | PUniq κ K => match K with PHole => Some κ | _ => pctx_uend K end
     end.
 
@@ -120,7 +122,7 @@ Section pctx_fun.
     match K with
     | PHole => m
     | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_hmode K m
-    | POwn _ K | PShr _ K => pctx_hmode K (m + 1)
+    | POwn _ K | PShr _ K | PResUniq _ K => pctx_hmode K (m + 1)
     | PUniq _ K => pctx_hmode K 0
     end.
 
@@ -130,6 +132,7 @@ Section pctx_fun.
     | PHole => λ _, 1%positive
     | PFst K _ => λ x, pctx_hξi K x.1
     | PSnd _ K | POwn _ K | PShr _ K => λ x, pctx_hξi K x.2
+    | PResUniq _ K => λ x, pctx_hξi K (uniq_bor_current x)
     | PSum _ i w K => λ x, pctx_hξi K (psum_proj_or i x w)
     | PUniq _ K => λ x, match K with
         | PHole => uniq_bor_ξi x
@@ -150,6 +153,8 @@ Section pctx_fun.
     | PUniq _ K => λ x l, ptr_cell l (uniq_bor_loc x) ∗
         pctx_ptrs K n (uniq_bor_current x) (uniq_bor_loc x)
     | PShr _ K => λ x l, ptr_cell l x.1 ∗ pctx_ptrs K n x.2 x.1
+    | PResUniq _ K => λ x l, ptr_cell l (uniq_bor_loc x) ∗
+        pctx_ptrs K n (uniq_bor_current x) (uniq_bor_loc x)
     end%I.
 
   (** ** Laws *)
@@ -165,16 +170,17 @@ Section pctx_fun.
   Lemma pctx_kind_owned {𝔅 𝔄} (K: pctx 𝔅 𝔄) m x :
     pctx_uend K = None → pctx_kind K (Owned m) x = Owned (pctx_hmode K m).
   Proof.
-    induction K in m, x |- *; simpl; [done|auto|auto|auto|auto| |auto].
-    destruct K; [done| | | | | |intros H; exact (IHK 0 _ H)];
+    induction K in m, x |- *; simpl; [done|auto|auto|auto|auto| |auto|auto].
+    destruct K; [done| | | | | |intros H; exact (IHK 0 _ H)|intros H; exact (IHK 0 _ H)];
       intros; rewrite pctx_kind_nonempty //; by apply IHK.
   Qed.
 
   Lemma pctx_kind_uniq {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ m x :
     pctx_uend K = Some κ → pctx_kind K (Owned m) x = Uniq κ (pctx_hξi K x).
   Proof.
-    induction K in m, x |- *; simpl; [done|auto|auto|auto|auto| |auto].
-    destruct K; [by intros [= ->]| | | | | |intros H; exact (IHK 0 _ H)];
+    induction K in m, x |- *; simpl; [done|auto|auto|auto|auto| |auto|auto].
+    destruct K; [by intros [= ->]| | | | | |intros H; exact (IHK 0 _ H)|
+      intros H; exact (IHK 0 _ H)];
       intros; rewrite pctx_kind_nonempty //; by apply IHK.
   Qed.
 
@@ -192,6 +198,7 @@ Section pctx_fun.
     - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x); [|done].
       intros. by rewrite IHK.
     - intros. by rewrite uniq_bor_current_set uniq_bor_ξi_set IHK.
+    - intros. by rewrite uniq_bor_current_set IHK.
   Qed.
 
   Lemma pctx_hξi_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) x y :
@@ -201,13 +208,14 @@ Section pctx_fun.
     - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x); [|done].
       intros. by rewrite IHK.
     - destruct K; intros; by rewrite ?uniq_bor_current_set ?uniq_bor_ξi_set ?IHK.
+    - intros. by rewrite uniq_bor_current_set IHK.
   Qed.
 
   Lemma pctx_ulft_incl {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
     ⊢ ty_lft (lty_fold (pctx_plug K lt)) ⊑ pctx_ulft K lt.
   Proof.
     induction K; simpl; [iApply lft_incl_static| | | | |iApply guards_refl|
-      iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply IHK]];
+      iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply IHK]..];
       (iApply llftl_incl_trans; [|iApply IHK]).
     - rewrite lft_intersect_list_app. iApply llftl_intersect_incl_l.
     - rewrite lft_intersect_list_app. iApply llftl_intersect_incl_r.
@@ -232,7 +240,7 @@ Section pctx_fun.
     κ ∈ pctx_ulfts K → ⊢ pctx_ulft K lt ⊑ κ.
   Proof.
     induction K in lt |- *; simpl; intros Hκ; [by apply not_elem_of_nil in Hκ|by auto|by auto|
-      by auto|by auto| |by auto].
+      by auto|by auto| |by auto|by auto].
     apply elem_of_cons in Hκ as [->|Hκ].
     - iApply llftl_intersect_incl_l.
     - iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|].
@@ -243,7 +251,7 @@ Section pctx_fun.
     κ ∈ pctx_ulfts K → ⊢ pctx_blft K α ⊑ κ.
   Proof.
     induction K; simpl; intros Hκ; [by apply not_elem_of_nil in Hκ|by auto|by auto|by auto|
-      by auto| |by auto].
+      by auto| |by auto|by auto].
     apply elem_of_cons in Hκ as [->|Hκ].
     - iApply llftl_intersect_incl_l.
     - iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. by iApply IHK.
@@ -275,7 +283,7 @@ Section pctx_fun.
   Lemma pctx_dlev_nouniq {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} : pctx_dlev K = pctx_mode K 0.
   Proof.
     rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
-    induction K in HK |- *; simpl; simpl in HK; auto; [|done|done].
+    induction K in HK |- *; simpl; simpl in HK; auto; [|done|done|done].
     rewrite IHK // (pctx_mode_add K (0 + 1)). lia.
   Qed.
 
@@ -285,6 +293,7 @@ Section pctx_fun.
     induction K in x, y, l |- *; simpl; try (intros; by rewrite ?IHK).
     - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x); [|done].
       intros. by rewrite IHK.
+    - intros. by rewrite uniq_bor_current_set uniq_bor_loc_set IHK.
     - intros. by rewrite uniq_bor_current_set uniq_bor_loc_set IHK.
   Qed.
 
@@ -343,6 +352,15 @@ Section wp_pctx.
     - iIntros "WP (Pt & Ptrs)".
       iApply (wp_wand with "[- ]").
       { iApply (IHK x.2 x.1 _ (R ∗ ptr_cell l x.1)%I with "[WP Pt] Ptrs").
+        wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
+        iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
+        iApply (wp_load_na with "Hbs"); [exact Hbs|].
+        iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
+      iIntros (v) "($ & [$ $] & $ & $)".
+    - iIntros "WP (Pt & Ptrs)".
+      iApply (wp_wand with "[- ]").
+      { iApply (IHK (uniq_bor_current x) (uniq_bor_loc x) _
+          (R ∗ ptr_cell l (uniq_bor_loc x))%I with "[WP Pt] Ptrs").
         wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
         iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
         iApply (wp_load_na with "Hbs"); [exact Hbs|].
@@ -598,9 +616,10 @@ Section pctx_acc.
     rename select (PctxNoShr K) into HK. rewrite /PctxNoShr in HK.
     induction K; simpl in HK; [apply pctx_acc_hole|apply pctx_acc_fst; by apply IHK|
       apply pctx_acc_snd; by apply IHK|apply pctx_acc_own; by apply IHK|
-      apply pctx_acc_sum; by apply IHK| |done].
+      apply pctx_acc_sum; by apply IHK| |done|done].
     destruct HK as [HKs HK].
-    destruct K; [apply pctx_acc_uniq_hole|apply pctx_acc_uniq_cpd; [done|done|by apply IHK]..|done].
+    destruct K; [apply pctx_acc_uniq_hole|apply pctx_acc_uniq_cpd; [done|done|by apply IHK]..|
+      done|done].
   Qed.
 End pctx_acc.
 
@@ -642,6 +661,7 @@ Section vroot.
     | POwn _ K' => λ x, pctx_ptrs K' n x.2 x.1
     | PUniq _ K' => λ x, pctx_ptrs K' n (uniq_bor_current x) (uniq_bor_loc x)
     | PShr _ K' => λ x, pctx_ptrs K' n x.2 x.1
+    | PResUniq _ K' => λ x, pctx_ptrs K' n (uniq_bor_current x) (uniq_bor_loc x)
     | _ => λ _, True
     end%I.
 
@@ -663,13 +683,15 @@ Section vroot.
     iAssert (WP ToLit e @ E {{ v, ⌜v = #(pctx_vrloc K n x)⌝ ∗ R ∗ G }})%I with "[WP]" as "WP".
     { wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_pure _. by iFrame. }
     iRevert "WP P".
-    destruct K as [| | |𝔅 𝔄' n' K| |𝔅 𝔄' κ K|]; try done; simpl.
+    destruct K as [| | |𝔅 𝔄' n' K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K|𝔅 𝔄' κ K]; try done; simpl.
     - iIntros "WP P".
       iApply (wp_pctx_ptrs E K n G x.2 x.1 _ R with "WP P").
     - iIntros "WP P".
       iApply (wp_pctx_ptrs E K n G (uniq_bor_current x) (uniq_bor_loc x) _ R with "WP P").
     - iIntros "WP P".
       iApply (wp_pctx_ptrs E K n G x.2 x.1 _ R with "WP P").
+    - iIntros "WP P".
+      iApply (wp_pctx_ptrs E K n G (uniq_bor_current x) (uniq_bor_loc x) _ R with "WP P").
   Qed.
 
   Lemma pctx_vroot_dlev {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} : 1 ≤ pctx_dlev K.
@@ -831,9 +853,9 @@ Section vroot.
     pctx_vacc_res K lt r x ζm D tid v E G.
   Proof.
     rename select (PctxVRoot K) into HR. rename select (PctxNoShr K) into HK.
-    destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|]; try done.
+    destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K| |]; try done.
     - apply vroot_acc_own. done.
     - destruct HK as [HKs HK]. destruct K; [apply vroot_acc_uniq_hole|
-        apply vroot_acc_uniq_cpd; done..|done].
+        apply vroot_acc_uniq_cpd; done..|done|done].
   Qed.
 End vroot.
