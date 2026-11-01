@@ -960,7 +960,7 @@ Section case.
       (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ +:: T)
       (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K2 (ToLit p))) of el)
-      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 x.1.2).1 in
+      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
     move=> -> Alv. iIntros "el".
@@ -969,10 +969,10 @@ Section case.
     iDestruct "Tp" as (v Hp) "Tp". rewrite vplace_own_eq.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
     iDestruct (Alv with "L E") as "#Alv".
-    remember (pctx_get K2 x.2) as s eqn:Hz.
-    destruct (to_xsum s) as [j a] eqn:Hj.
-    have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
-    subst s.
+    destruct (to_xsum (pctx_get K2 x.2)) as [j a] eqn:Hj.
+    have Hz: pinj j a = pctx_get K2 x.2.
+    { by rewrite -(semi_iso' to_xsum of_xsum (pctx_get K2 x.2)) Hj. }
+    try rewrite -Hz.
     wp_bind (Load Na1Ord (MInt (sum_tag 𝔄l)) _)%E.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
     iIntros "£ #⧖S". iApply wp_fupd.
@@ -1023,7 +1023,7 @@ Section case.
     typed_body E L I C (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
       (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l))
         (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K p))))) of el)
-      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1).2).1 in
+      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1).2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
     move=> -> Alv1 Alv2. iIntros "el".
@@ -1033,10 +1033,10 @@ Section case.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
     iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
     set y := pctx_get K x₀.
-    remember (pctx_get K2 y.2) as s eqn:Hz.
-    destruct (to_xsum s) as [j a] eqn:Hj.
-    have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
-    subst s.
+    destruct (to_xsum (pctx_get K2 y.2)) as [j a] eqn:Hj.
+    have Hz: pinj j a = pctx_get K2 y.2.
+    { by rewrite -(semi_iso' to_xsum of_xsum (pctx_get K2 y.2)) Hj. }
+    try rewrite -Hz.
     wp_bind (Load Na1Ord (MInt (sum_tag 𝔄l)) _)%E.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
     iIntros "£ #⧖S". iApply wp_fupd.
@@ -1086,7 +1086,7 @@ Section case.
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
       (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l))
         (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p)))))) of el)
-      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1.2).2).1 in
+      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1.2).2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
     iIntros (???) "el".

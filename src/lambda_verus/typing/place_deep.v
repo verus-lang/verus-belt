@@ -353,7 +353,7 @@ Section sum_deep.
       (p ◁ₗ pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ pctx_plug K (OfTy (Σ! tyl)) +:: T)
       (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_vexpr K p)) of el)
-      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1).1 in
+      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
     move=> -> Alv. iIntros "el".
@@ -364,10 +364,10 @@ Section sum_deep.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)". have Hdl := pctx_vroot_dlev K.
     have ?: Closed [] (pctx_vexpr K p).
     { apply pctx_vexpr_closed. by eapply eval_path_closed. }
-    remember (pctx_get K x₀) as s eqn:Hy. symmetry in Hy.
-    destruct (to_xsum s) as [j a] eqn:Hj.
-    have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
-    subst s.
+    destruct (to_xsum (pctx_get K x₀)) as [j a] eqn:Hj.
+    have Hy: pctx_get K x₀ = pinj j a.
+    { by rewrite -(semi_iso' to_xsum of_xsum (pctx_get K x₀)) Hj. }
+    try rewrite Hy.
     iDestruct (Alv with "L E") as "#Alv".
     wp_bind (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_vexpr K p))%E.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
@@ -484,7 +484,7 @@ Section sum_deep.
       (p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)) +:: T)
       (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K (ToLit p))) of el)
-      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2).1 in
+      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
     iIntros (??) "el".
