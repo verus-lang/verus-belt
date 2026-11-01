@@ -919,7 +919,7 @@ Lemma type_share_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoo
   has no interpretation of its own); below a shared reference, any `lt`, `ty = lty_fold lt`,
   `lt' = lt`; below a resolved unique borrow, `pctx_vsleaf K2 lt ty` (an unblocked leaf of the
   view, or any leaf below a shared reference in the view) and `lt' = lt`.
-- **Lifetimes.** One condition, `pctx_ralv K lt ⊓ α` (the read rule's lifetimes, and `α`; below
+- **Lifetimes.** (Superseded, see below.) One condition, `pctx_ralv K lt ⊓ α` (the read rule's lifetimes, and `α`; below
   a shared reference or resolved unique borrow `α` is not used, take `static`).
 - **Proof.** Split of `K` as in the read access (`pctx_read_split`): `type_share_vplace_noshr`
   (the old deep share: `vroot_acc` and `ofty_owned_share`, now mask-generic),
@@ -1046,3 +1046,63 @@ Lemma type_resolve_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxNo
 - **Deviations.** The judgement is per shape of `K` (`pctx_res`: `vroot_res` at the root,
   `lty_res` at a hole below an owned pointer), since `lty_res` is stated on memory nodes and a
   root has no pointer cell; the resolved place is kept (forget it to give it up).
+
+## Place rules polish (branch `proto/place-polish`, 2026-11-01)
+
+Follow-ups on the eight unified rules (statements above are updated).
+
+- **Move without `∀ junk`.** `~~(uninitₛ n) = ()`, so `type_move_place_instr` and
+  `type_memcpy_move_place_instr` give `pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) K x.1 ()`.
+- **One lifetime notion.** `pctx_alv K lt` (`pctx_acc.v`, the former `pctx_ralv`, with
+  `pctx_slft`/`pctx_salv` moved there from `place_pshr.v`): the lifetime of the folded type at
+  each unique borrow above the first shared reference or resolved unique borrow, and
+  `pctx_salv K' κ` there; `static` for owned paths. Read, write, memcpy (both sides), share and
+  borrow require `lctx_lft_alive E L (pctx_alv K lt)` (read and the copy source `⊓ κs`); for
+  `PctxNoShr K`, `pctx_alv_noshr` gives the old `pctx_ulft` guard. (The fold/unfold, sum and
+  unblock rules of `place_puniq.v`/`place_deep.v`/`place_pshr.v` still state `pctx_ulft`.)
+- **Borrow lifetime as input.** `pctx_blft K : lft` (no `α`): below the first shared
+  reference or resolved unique borrow, the lifetime of the view (`pctx_vlft`; the unique
+  borrows above do not matter: `&**x : &'b T` for `x: &'a mut &'b T`); otherwise the
+  intersection of the enclosing unique borrow lifetimes (`static` at the end).
+  - Borrow: `&uniq{α} ty`, leaf `Blocked ty α`; side conditions `ty_outlives_E ty α`,
+    `lctx_lft_incl E L α (pctx_blft K)`, and `lctx_lft_alive E L (pctx_alv K (OfTy ty) ⊓
+    pctx_balv K α)` where `pctx_balv K α` is `α` for a reborrow of the whole referent of the
+    innermost unique borrow (`pctx_uend K = Some _`: the token of the new prophecy variable
+    is taken under `α`) and `static` otherwise (an Owned-mode borrow does not need `α` alive,
+    as before consolidation).
+  - Share: `&shr{α} ty`; `pctx_sleaf E L K α lt ty lt'`, `lctx_lft_incl E L α (pctx_blft K)`,
+    `lctx_lft_alive E L (pctx_alv K lt)`. Leaf cases `lty_sleaf E L α b lt ty lt'`
+    (inductive): `lty_sleaf_ofty` (owned part: becomes `ShrBlocked ty α`, needs the outlives
+    condition and `α` alive), `lty_sleaf_view` (an unblocked leaf of a view, unchanged),
+    `lty_sleaf_shrblk` (a shared-blocked leaf at `β` with `lctx_lft_incl E L α β`, unchanged,
+    in the owned part or in a view). Below a shared reference: any leaf, at its folded type.
+  - The intersections are gone: the blocked lifetime is `α` itself, so the unblock rules
+    (`unblock_tctx_vplace_deep`, `_uniq`, `_shr_deep`, `unblock_tctx_oplace_res(_shr)` and
+    their `oplace` corollaries) take `Blocked ty α`/`ShrBlocked ty α` and get `[†α]`
+    directly. The inclusions in the enclosing borrow lifetimes needed by the closers
+    (`pat_ok`) and by `uniq_body_reborrow` are persistent consequences of
+    `lctx_lft_incl` (`pat_ok_blft`, `pctx_blft_incl`). Examples now return `&uniq{α}`
+    instead of `&uniq{α ⊓ α}` (`get_first`, `get_some_first`); `res_nested` borrows at a
+    local `γ ⊑ₗ [α; β]`.
+- **Sharing completeness.** Re-sharing a `ShrBlocked ty β` leaf at `α ⊑ β`
+  (`type_share_vplace_noshr_shrblk`, from its sharing, `shr_view_lft_mono`), and sharing
+  `ShrBlocked` leaves in views (`wp_view_sacc` returns the shared view at
+  `pctx_vslft K κ lt`, the view lifetime intersected with `β`; `pctx_vslft_incl`).
+- **Credits.** The word-layer budgets are gone: `pctx_acc_cred K m d = m + 2d + 2` (was
+  `(d+1)(m+d+2)`), `pctx_vacc_cred K D = 2D + 3` (was `(D+1)²`), `pshr_cred D = 3D² + 9D + 5`
+  (was `7D² + 12D + 3`), the write access takes `£(3D + 5)` (was `(D+1)(D+2)+1`), and the
+  unused `£w` credits for word loads of pointers (`3(D+1)` per pointer) were removed from the
+  borrow, sum and `wp_pshr_open` proofs.
+- **`pctx_res` usability.** The hang came from unification unfolding `lty_res` (a big
+  definition) when the step counts did not match syntactically (`?k1 + ?k2` vs `2` after
+  `apply lty_res_prod`), and from inferring `k` from the program (`skipn ?k` vs `Skip;; …`).
+  Now `lty_res` and `vroot_res` are records (`LtyRes`, `VrootRes`), `pctx_res` is an inductive
+  (`pctx_res_root`, `pctx_res_own`), and the rule takes any instruction `e` with the premise
+  `skipn k = e` (after the `pctx_res` premise, so `k` comes from the derivation; then `done`).
+  Examples: `eapply (type_resolve_place_instr _ _ _ vx K lt); [apply pctx_res_own; apply
+  lty_res_prod; …|done]`; no `cbn [pctx_res]`.
+- **Tests** (`examples/place_rules.v`, instruction-level, fast): reading an `OfRes` leaf,
+  reading through a shared reference in the view of a resolved borrow, sharing in a view below
+  an owned pointer, re-sharing a `ShrBlocked` leaf (owned, below a unique borrow, in a view),
+  resolving a compound root (`vroot_res_uniq_cpd`).
+

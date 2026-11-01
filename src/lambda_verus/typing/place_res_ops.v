@@ -182,8 +182,8 @@ Section unblock.
   Qed.
 
   (** Once [α] has ended, the blocked leaf at the hole of [K2] in the view of the resolved
-      unique borrow at the hole of [K] (it was reborrowed below the borrow, at
-      [pctx_blft (PUniq κ K2) α]) is unblocked: its inheritance is fired (inside its
+      unique borrow at the hole of [K] (it was reborrowed below the borrow, at [α]) is
+      unblocked: its inheritance is fired (inside its
       borrow at the lifetime of the view), and it is shared at that lifetime. The value of
       the leaf is the final value of its reborrow. *)
   Lemma unblock_tctx_oplace_res {ℭ 𝔅 𝔄 𝔄l 𝔄l'} p n α (K: pctx (uniq_borₛ 𝔅) 𝔄)
