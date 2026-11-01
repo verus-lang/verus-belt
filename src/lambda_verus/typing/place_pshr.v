@@ -162,7 +162,7 @@ Section pctx_shr.
     match K with
     | PHole => κ
     | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_slft K κ
-    | PUniq κ' K => pctx_slft K (κ ⊓ κ')
+    | PUniq κ' K | PResUniq κ' K => pctx_slft K (κ ⊓ κ')
     | PShr κ' K => pctx_slft K κ'
     end.
 
@@ -172,22 +172,23 @@ Section pctx_shr.
     match K with
     | PHole => κ
     | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_salv K κ
-    | PUniq κ' K => pctx_salv K (κ ⊓ κ')
+    | PUniq κ' K | PResUniq κ' K => pctx_salv K (κ ⊓ κ')
     | PShr κ' K => κ ⊓ pctx_salv K κ'
     end.
 
   Lemma pctx_salv_incl {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ : ⊢ pctx_salv K κ ⊑ κ.
   Proof.
     induction K in κ |- *; simpl; [iApply guards_refl|by iApply IHK|by iApply IHK|by iApply IHK|
-      by iApply IHK| |].
+      by iApply IHK| | |].
     - iApply llftl_incl_trans; [iApply IHK|]. iApply llftl_intersect_incl_l.
     - iApply llftl_intersect_incl_l.
+    - iApply llftl_incl_trans; [iApply IHK|]. iApply llftl_intersect_incl_l.
   Qed.
 
   Lemma pctx_salv_slft {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ : ⊢ pctx_salv K κ ⊑ pctx_slft K κ.
   Proof.
     induction K in κ |- *; simpl; [iApply guards_refl|by iApply IHK|by iApply IHK|by iApply IHK|
-      by iApply IHK|by iApply IHK|].
+      by iApply IHK|by iApply IHK| |by iApply IHK].
     iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply IHK.
   Qed.
 
@@ -213,6 +214,8 @@ Section pctx_shr.
         pctx_sguards K n k G (uniq_bor_current y) (uniq_bor_loc y)
     | PShr _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l y.1) ∗
         pctx_sguards K n k G y.2 y.1
+    | PResUniq _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l (uniq_bor_loc y)) ∗
+        pctx_sguards K n k G (uniq_bor_current y) (uniq_bor_loc y)
     end%I.
 
   Global Instance pctx_sguards_persistent {𝔅 𝔄} (K: pctx 𝔅 𝔄) n k G y l :
@@ -259,6 +262,13 @@ Section pctx_shr.
       wp_bind (Load _ _ _).
       iApply (wp_load_ptr_guarded _ l y.1 G k with "[$Gp $G $£1]"); [done|].
       iIntros "!> G". wp_pure _. by iFrame.
+    - iIntros "WP". iApply (IHK (uniq_bor_current y) (uniq_bor_loc y)).
+      wp_bind e. iApply (wp_wand with "WP").
+      iIntros (v) "(-> & [#Gp Gs] & £ & G & HΦ)".
+      iDestruct (lc_weaken (2 * k + 2 * k * pctx_dlev K) with "£") as "[£1 £]"; [lia|].
+      wp_bind (Load _ _ _).
+      iApply (wp_load_ptr_guarded _ l (uniq_bor_loc y) G k with "[$Gp $G $£1]"); [done|].
+      iIntros "!> G". wp_pure _. by iFrame.
   Qed.
 
   (** The shared view of a place gives the shared view of the hole of [K] (and the guards
@@ -273,7 +283,7 @@ Section pctx_shr.
           (pctx_loc K (lty_size lt) y l).
   Proof.
     induction K as [|𝔅 𝔄1 𝔄2 K IH lt2|𝔅 𝔄1 𝔄2 lt1 K IH|𝔅 𝔄' n' K IH|𝔅 𝔄l tyl i w K IH|
-      𝔅 𝔄' κ' K IH|𝔅 𝔄' κ' K IH] in κ, y, d, l, lt |- *; simpl; intros Hin.
+      𝔅 𝔄' κ' K IH|𝔅 𝔄' κ' K IH|𝔅 𝔄' κ' K IH] in κ, y, d, l, lt |- *; simpl; intros Hin.
     - iIntros "_ _ #V !>". iSplit; [done|]. iExists d. iFrame "V". iPureIntro. lia.
     - iIntros "#Gs £ #(Pt & [Shr _] & [Pers _])". destruct y as [y1 y2].
       iApply (IH with "Gs £"); [done|]. iFrame "Shr Pers".
@@ -335,6 +345,22 @@ Section pctx_shr.
         iApply (guards_transitive_right with "[] Pt").
         iApply (guards_transitive with "Gs"). iApply llftl_intersect_incl_l.
       + iExists dh. iFrame "V'". iPureIntro. lia.
+    - iIntros "#Gs £ #(Pt & Shr & Pers)". destruct y as [[[[[l' z] ξi] d'] g'] idx].
+      iDestruct "Shr" as "(%Hle & Pt' & _ & Shr0 & Pers0)".
+      iDestruct (lc_weaken (1 + (1 + (1 + d' * (g + 3)))) with "£") as "(£a & £b & £c & £)";
+        [nia|].
+      iMod (lc_fupd_elim_later with "£a Shr0") as "#Shr1".
+      iMod (lc_fupd_elim_later with "£b Pers0") as "#Pers1".
+      iMod (lc_fupd_elim_later with "£c Pers1") as "#Pers2".
+      iMod (IH (κ ⊓ κ') lt z d' l' with "Gs £ [$Pt' $Shr1]") as "[$ (%dh & %Hdh & V)]";
+        [done|..].
+      { iApply (ty_gho_pers_depth_mono with "Pers2"); lia. }
+      iModIntro. iSplit.
+      + rewrite cbytes_uniq_bor.
+        iApply (guards_transitive_right with "[] Pt").
+        iApply (guards_transitive with "Gs"). iApply llftl_incl_trans; [iApply pctx_salv_incl|].
+        iApply llftl_intersect_incl_l.
+      + iExists dh. iFrame "V". iPureIntro. lia.
   Qed.
 End pctx_shr.
 
@@ -352,20 +378,20 @@ Section pctx_vin.
     | PSnd lt1 K => λ y, lty_vin lt1 y.1 ∧ pctx_vin K y.2
     | POwn _ K | PShr _ K => λ y, pctx_vin K y.2
     | PSum _ i _ K => λ y, match psum_proj i y with Some z => pctx_vin K z | None => False end
-    | PUniq _ K => λ y, pctx_vin K (uniq_bor_current y)
+    | PUniq _ K | PResUniq _ K => λ y, pctx_vin K (uniq_bor_current y)
     end.
 
   Lemma lty_vin_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt y :
     lty_vin (pctx_plug K lt) y ↔ pctx_vin K y ∧ lty_vin lt (pctx_get K y).
   Proof.
     induction K in y, lt |- *; simpl; [naive_solver|rewrite IHK; naive_solver|
-      rewrite IHK; naive_solver|by rewrite IHK| |by rewrite IHK|by rewrite IHK].
+      rewrite IHK; naive_solver|by rewrite IHK| |by rewrite IHK|by rewrite IHK|by rewrite IHK].
     rewrite /psum_proj_or. destruct (psum_proj i y); [by rewrite IHK|naive_solver].
   Qed.
 
   Lemma pctx_vin_in {𝔅 𝔄} (K: pctx 𝔅 𝔄) y : pctx_vin K y → pctx_in K y.
   Proof.
-    induction K in y |- *; simpl; [done|naive_solver|naive_solver|auto| |auto|auto].
+    induction K in y |- *; simpl; [done|naive_solver|naive_solver|auto| |auto|auto|auto].
     destruct (psum_proj i y); [auto|done].
   Qed.
 End pctx_vin.

@@ -646,8 +646,10 @@ Agents follow `~/verus-belt-tools/AGENT-WORKFLOW.md` (`coq-goals`, the LSP tool,
 
 ## Unified place read (branch `proto/read-unify`, 2026-11-01)
 
-One rule reads from any non-blocked place, whatever mix of owned pointers, unique borrows
-and shared references is above the leaf: `type_read_place_instr` (`typing/place_read.v`).
+One rule reads from any non-blocked place, whatever mix of owned pointers, unique borrows,
+shared references and resolved unique borrows is above the leaf: `type_read_place_instr`
+(`typing/place_read.v`). Two merges: stage 1 (everything but resolved places), stage 2 (the
+context step `PResUniq` for resolved unique borrows, and resolved leaves).
 
 ```coq
 Lemma type_read_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot K} `{!PctxRead K}
@@ -663,22 +665,40 @@ Lemma type_read_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot
   `Load`, so `simpl_subst` turns it into `Load Na1Ord m e`. No `Skip`: as in the old
   `PctxNoUniq` and `PShr` reads, `wp_persistent_time_receipt` gives the credits of the first
   program step before the access (the whole instruction is at `⊤ ∖ ↑advN`).
-- **Contexts.** Any `K` with a root step `POwn`, `PUniq` or `PShr` (`PctxVRoot`, extended to
-  `PShr`, so the root may be a shared reference value `p ◁ₗ ShrLty …`). Owned places are the
-  root `POwn n`: `p ◁ₗown{n} K[lt]` is `p ◁ₗ (POwn n K)[lt]`. `PctxRead K` (a type class,
-  solved by the structure of `K`): the siblings below a unique borrow are simple, down to the
-  first shared reference (needed by the access `vroot_acc` above it).
-- **Readable leaves** `pctx_rleaf K lt ty κs`: above the first shared reference,
-  `lty_rleaf lt ty κs` (`OfTy ty` with `κs = static`, `ShrBlocked ty β` with `κs = β`);
-  below a shared reference, any `lt` with `ty = lty_fold lt` and `κs = static`. `Blocked` is
-  not readable.
-- **Lifetimes** `pctx_ralv K lt`: `ty_lft (lty_fold (UniqLty K'[lt] κ)) ⊓ …` at each `PUniq κ K'`
-  above the first shared reference (the old `pctx_ulft` condition), and `pctx_salv K2 κ` at the
-  first `PShr κ K2` (the old shared condition).
-- **Proof.** `pctx_read_split` splits `K` at its first shared reference with the new context
-  composition `pctx_app` (`lpath.v`). Above it, `type_read_vplace_noshr` (the old deep read,
-  generalised to shared-blocked leaves, in both modes); below it, `type_read_vplace_pshr` and
-  `type_read_vplace_pshr_root` (the old `place_pshr` reads, through `wp_pshr_open(_root)`).
+- **Contexts.** Any `K` whose root step is `POwn`, `PUniq`, `PShr` or `PResUniq`
+  (`PctxVRoot`, extended to `PShr` and `PResUniq`, so the root may also be a shared reference
+  value `p ◁ₗ ShrLty …` or a resolved unique borrow value `p ◁ₗ ResUniqLty …`). Owned places
+  are the root `POwn n`: `p ◁ₗown{n} K[lt]` is `p ◁ₗ (POwn n K)[lt]`. `PctxRead K` (a type
+  class, solved by the structure of `K`): the siblings below a unique borrow are simple, down
+  to the first shared reference (needed by the access `vroot_acc` above it); since
+  `pctx_simple (PResUniq _ _) = False`, a resolved unique borrow is below no unique borrow
+  (where `ResUniqLty` has no interpretation anyway).
+- **`PResUniq κ K`** (`lpath.v`): a new `pctx` constructor, the referent of a resolved unique
+  borrow (`pctx_plug` gives `ResUniqLty`). It behaves like `PUniq` in the functions on values,
+  paths, refinements and receipts, has `pctx_nonempty`, `pctx_simple`, `pctx_noshr`,
+  `pctx_nouniq` false (it is never accessed by `pctx_acc` and not split by `ltype_own_plug`),
+  and is like `PUniq` in the shared-view functions of `place_pshr.v` (`lty_fold (ResUniqLty lt
+  κ) = uniq_bytes κ (lty_fold lt)`). All functions and lemmas on `pctx` were extended
+  (mechanically, in `lpath.v`, `pctx_acc.v`, `place_puniq.v`, `place_pshr.v`,
+  `place_res_ops.v`); `pctx_hmode_ne` and `pctx_vhmode_ne_le/ge` now take `PctxNoShr`.
+- **Readable leaves** `pctx_rleaf K lt ty κs := pctx_rleafb K true lt ty κs`: at the hole,
+  `lty_rleaf b lt ty κs` (`place_res_ops.v`, replacing `view_rleaf`): `OfTy ty` with
+  `κs = static`, `ShrBlocked ty β` with `κs = β`, and, if `b` (no `PUniq`/`PResUniq` above),
+  `OfRes ty` for `ResOwn ty` with `κs = static`; below a shared reference, any `lt` with
+  `ty = lty_fold lt` and `κs = static`. `Blocked` is not readable.
+- **Lifetimes** `pctx_ralv K lt`: `ty_lft (lty_fold (UniqLty K'[lt] κ)) ⊓ …` at each
+  `PUniq κ K'` above the first shared reference or resolved borrow (the old `pctx_ulft`
+  condition), and `pctx_salv K2 κ` at the first `PShr κ K2` or `PResUniq κ K2` (the old
+  shared/view condition).
+- **Proof.** `pctx_read_split` splits `K` at its first `PShr` or `PResUniq` with the new
+  context composition `pctx_app` (`lpath.v`, with `pctx_plug/get/expr/vexpr/pat/path/loc/rfn_app`).
+  Above it, `type_read_vplace_noshr` (the old deep read, generalised to shared-blocked
+  leaves, in both modes) and `type_read_vplace_ores` (a resolved leaf, through
+  `ltype_own_plug`); below a `PShr`, `type_read_vplace_pshr(_root)` (the old `place_pshr`
+  reads); below a `PResUniq`, `type_read_vplace_res(_root)`, through `wp_view_read`, which
+  accesses the view (`view_pctx_acc`) down to the hole (shared at `pctx_slft K2 κ ⊓ κs`) or to
+  the next `PShr`, whose shared view is pushed through the rest (`shr_pctx_view`), so shared
+  references inside views are read too (the old rule needed `PctxNoShr K2`).
 - **`Copy` implies `NoCell`.** `Copy` has a new first field `copy_nocell : NoCell 𝔄`
   (`typing/type.v`, with `Hint Extern`s that find `NoCell`/`NoCellL` from `Copy`/`ListCopy`
   hypotheses). No rule that takes `Copy` takes `NoCell` any more (the read rule,
@@ -689,13 +709,18 @@ Lemma type_read_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot
 - **Deleted:** `type_read_oplace_instr` (`place_own.v`), `type_read_oplace_shr_instr`
   (`place_shr.v`), `type_read_vplace_deep_instr`, `type_read_oplace_deep_instr`
   (`place_puniq.v`), `type_read_vplace_pshr_root_instr`, `type_read_vplace_pshr_instr`,
-  `type_read_oplace_pshr_instr` (`place_pshr.v`). Examples ported: `place_own`, `place_struct`,
-  `place_pshr`, `function`, `place_res` (reads in the owned part and below `PShr`); their programs
-  read with `!ᶜ{MInt i32} …`.
+  `type_read_oplace_pshr_instr` (`place_pshr.v`), `type_read_oplace_res_leaf_instr`,
+  `type_read_oplace_res_instr`, `type_read_oplace_res_shrblk_instr` (`place_res_ops.v`), and
+  `view_rleaf` (now `lty_rleaf false`). Examples ported: `place_own`, `place_struct`,
+  `place_pshr`, `function`, `place_res`; their programs read with `!ᶜ{MInt i32} …` and the
+  proofs apply `type_read_place_instr` with the whole context (e.g.
+  `POwn PTR_SIZE (PResUniq α (PUniq β (PFst PHole (OfTy i32t))))`), side conditions
+  `[by constructor|apply _|solve_typing]` (`[by split|…]` below a shared reference).
 - **Other changes.** `pctx_simple (PShr _ _) = True` (a shared reference is simple whatever its
   referent); the closers of `pctx_acc`/`vroot_acc` accept the old pattern of the hole instead of
   the inclusion of its blocked lifetimes in the enclosing borrow lifetimes
   (`⌜p' = p⌝ ∨ [∗ list] κ ∈ pctx_ulfts K, pat_ok κ p'`), so that a shared-blocked leaf below a
   unique borrow can be closed again unchanged; `pctx_vroot_nonempty` (unused) deleted.
-- **Deviations from the requested statement.** The extra class `PctxRead K` (above); the
-  expression has no `Skip`.
+- **Deviations from the requested statement.** The extra class `PctxRead K` (above); no
+  `Skip`; `pctx_rleaf` is a notation for `pctx_rleafb K true` (the flag tracks whether
+  resolved leaves are readable).

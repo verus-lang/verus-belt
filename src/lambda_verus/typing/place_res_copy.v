@@ -1,7 +1,7 @@
 (** * Byte copies below resolved unique borrows
 
   The byte version of the deleted legacy [place_res_copy.v]. A [Copy] leaf (unblocked or
-  shared-blocked, [view_rleaf]) in the view of a resolved unique borrow ([ResUniqLty],
+  shared-blocked, [lty_rleaf]) in the view of a resolved unique borrow ([ResUniqLty],
   [typing/place_res_ops.v]) is copied into a box ([own_bytes]) with a byte-level
   [MemCopy] whose source is guarded ([wp_memcopy_guarded_gen]), as
   [type_memcpy_copy_from_vplace_pshr_instr] below a shared reference
@@ -33,7 +33,7 @@ Section memcpy_res.
   Lemma type_memcpy_copy_from_oplace_res_instr {ℭ 𝔅 𝔄 𝔅'} E L I pw p n n'
       (K: pctx (uniq_borₛ 𝔅) 𝔄) `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2}
       (lt0: lty ℭ) (ty: type ℭ) κs (tyw: type 𝔅') Φ (sz: nat) :
-    view_rleaf lt0 ty κs → Copy ty → resolve E L tyw Φ → sz = ty_bsize ty →
+    lty_rleaf false lt0 ty κs → Copy ty → resolve E L tyw Φ → sz = ty_bsize ty →
     ty_bsize tyw = sz → lctx_lft_alive E L (pctx_salv K2 κ ⊓ κs) →
     typed_instr E L I
       +[pw ◁ᵥ own_bytes n' tyw; p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 lt0) κ)]
@@ -90,11 +90,11 @@ Section memcpy_res.
     iDestruct (lc_weaken (pctx_mode K 1 + (advance_credits M - pctx_mode K 1)) with "£")
       as "[£m £]"; [rewrite /advance_credits; nia|].
     iMod (lc_fupd_elim_laterN with "£m N") as "(#Incl & %d' & %g' & %Hle' & V)".
-    rewrite lty_pat_plug lty_rfn_plug (view_rleaf_rfn _ _ _ _ _ _ Hl).
+    rewrite lty_pat_plug lty_rfn_plug (lty_rleaf_rfn _ _ _ _ _ _ _ Hl).
     iDestruct (view_pctx_acc K2 κ lt0 0 (lty_pat lt0)
       (inl (PlaceIn (pctx_get K2 z))) z ζm (false :: q0) d' g' tid ly (fractional.half γh)
       with "Hs V") as (dh gh) "([%Hdh [%Hgh %Hin]] & Vh & #Gs & Cl)".
-    iDestruct (view_rleaf_shared with "Vh") as "[Vh #Vs]"; [done|].
+    iDestruct (lty_rleaf_shared with "Vh") as "[Vh #Vs]"; [done|].
     set zh := pctx_get K2 z.
     set lh := pctx_loc K2 (lty_size lt0) z ly.
     have Hdl: pctx_dlev K2 ≤ D.
@@ -156,7 +156,7 @@ Section memcpy_res.
         rewrite /= /res_node /=. iSplitL "Hbs"; [iExists bs; by iFrame|].
         iApply bi.laterN_intro. iFrame "Incl".
         iExists d', g'. iSplit; [done|]. rewrite lty_pat_plug lty_rfn_plug.
-        rewrite (view_rleaf_rfn _ _ _ _ _ _ Hl).
+        rewrite (lty_rleaf_rfn _ _ _ _ _ _ _ Hl).
         iApply ("Cl" $! lt0 (lty_pat lt0) (inl (PlaceIn zh)) dh gh d' g'
           with "[//] [//] [//] [%] Vh"). lia. }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].

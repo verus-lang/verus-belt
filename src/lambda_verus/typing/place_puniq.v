@@ -51,8 +51,9 @@ Section puniq.
 
   Lemma pctx_hmode_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) m : pctx_hmode K m ≤ m + pctx_dlev K.
   Proof.
-    induction K in m |- *; simpl; [lia|apply IHK|apply IHK| |apply IHK| |];
-      [specialize (IHK (m + 1))|specialize (IHK 0)|specialize (IHK (m + 1))]; lia.
+    induction K in m |- *; simpl; [lia|apply IHK|apply IHK| |apply IHK| | |];
+      [specialize (IHK (m + 1))|specialize (IHK 0)|specialize (IHK (m + 1))|
+       specialize (IHK (m + 1))]; lia.
   Qed.
 
   Lemma typed_instr_tr_impl {𝔄l 𝔅l} E L I (T: tctx 𝔄l) e (T': val → tctx 𝔅l) tr tr' :
@@ -565,36 +566,38 @@ Section puniq.
   Proof. intros. by apply (type_fold_vplace_own_deep_instr _ _ _ _ (POwn n' K)). Qed.
   (** * Mutable borrow of a leaf below unique borrows *)
 
-  Lemma pctx_hmode_ne {𝔅 𝔄} (K: pctx 𝔅 𝔄) m e mm :
+  Lemma pctx_hmode_ne {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoShr K} m e mm :
     pctx_hmode K m + pctx_ne K e mm =
       pctx_dlev K + e + (match pctx_ulfts K with [] => m | _ => mm end).
   Proof.
-    induction K in m, e, mm |- *; simpl; [lia|auto|auto| |auto| |].
-    - rewrite IHK. destruct (pctx_ulfts K); lia.
-    - rewrite IHK. destruct (pctx_ulfts K); lia.
-    - rewrite IHK. destruct (pctx_ulfts K); lia.
+    rename select (PctxNoShr K) into HK. rewrite /PctxNoShr in HK.
+    induction K in HK, m, e, mm |- *; simpl; simpl in HK; [lia|auto|auto| |auto| |done|done].
+    - rewrite IHK //. destruct (pctx_ulfts K); lia.
+    - rewrite IHK; [|by destruct HK]. destruct (pctx_ulfts K); lia.
   Qed.
 
   (** The same for a context whose first step is the root pointer of a place rooted at a
       value. *)
-  Lemma pctx_vhmode_ne_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} :
+  Lemma pctx_vhmode_ne_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} :
     pctx_hmode K 0 + pctx_vne K ≤ pctx_dlev K.
   Proof.
-    rename select (PctxVRoot K) into HR. destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K];
-      try done.
-    - have := pctx_hmode_ne K 1 0 0. simpl. destruct (pctx_ulfts K); lia.
-    - have := pctx_hmode_ne K 0 1 0. simpl. destruct (pctx_ulfts K); lia.
-    - have := pctx_hmode_ne K 1 0 1. simpl. destruct (pctx_ulfts K); lia.
+    rename select (PctxVRoot K) into HR. rename select (PctxNoShr K) into HK.
+    destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K| |]; try done.
+    - have ?: PctxNoShr K by exact HK.
+      pose proof (pctx_hmode_ne K 1 0 0). simpl in *. destruct (pctx_ulfts K); lia.
+    - have ?: PctxNoShr K by exact (proj2 HK).
+      pose proof (pctx_hmode_ne K 0 1 0). simpl in *. destruct (pctx_ulfts K); lia.
   Qed.
 
-  Lemma pctx_vhmode_ne_ge {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} :
+  Lemma pctx_vhmode_ne_ge {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} :
     pctx_dlev K ≤ pctx_hmode K 0 + pctx_vne K + 1.
   Proof.
-    rename select (PctxVRoot K) into HR. destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K];
-      try done.
-    - have := pctx_hmode_ne K 1 0 0. simpl. destruct (pctx_ulfts K); lia.
-    - have := pctx_hmode_ne K 0 1 0. simpl. destruct (pctx_ulfts K); lia.
-    - have := pctx_hmode_ne K 1 0 1. simpl. destruct (pctx_ulfts K); lia.
+    rename select (PctxVRoot K) into HR. rename select (PctxNoShr K) into HK.
+    destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K| |]; try done.
+    - have ?: PctxNoShr K by exact HK.
+      pose proof (pctx_hmode_ne K 1 0 0). simpl in *. destruct (pctx_ulfts K); lia.
+    - have ?: PctxNoShr K by exact (proj2 HK).
+      pose proof (pctx_hmode_ne K 0 1 0). simpl in *. destruct (pctx_ulfts K); lia.
   Qed.
 
   (** A mutable borrow of the leaf at the hole of [K] (in [Owned] mode, at any path, below
@@ -722,23 +725,24 @@ Section puniq.
 
   Lemma pctx_ne_ge {𝔅 𝔄} (K: pctx 𝔅 𝔄) e mm : e ≤ pctx_ne K e mm.
   Proof.
-    induction K in e, mm |- *; simpl; [lia|auto|auto|auto|auto| |auto].
-    specialize (IHK (e + mm + 1) 0). lia.
+    induction K in e, mm |- *; simpl; [lia|auto|auto|auto|auto| |auto| ];
+      specialize (IHK (e + mm + 1) 0); lia.
   Qed.
 
   Lemma pctx_ne_ulfts {𝔅 𝔄} (K: pctx 𝔅 𝔄) e mm : pctx_ne K e mm = e → pctx_ulfts K = [].
   Proof.
-    induction K in e, mm |- *; simpl; [done|eauto|eauto|eauto|eauto| |eauto].
-    have := pctx_ne_ge K (e + mm + 1) 0. lia.
+    induction K in e, mm |- *; simpl; [done|eauto|eauto|eauto|eauto| |eauto| ];
+      have := pctx_ne_ge K (e + mm + 1) 0; lia.
   Qed.
 
   Lemma pctx_vne_ulfts {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} : pctx_vne K = 0 → pctx_ulfts K = [].
   Proof.
-    rename select (PctxVRoot K) into HR. destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K];
-      try done.
+    rename select (PctxVRoot K) into HR.
+    destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K|𝔅 𝔄' κ K]; try done.
     - simpl. apply pctx_ne_ulfts.
     - simpl. have := pctx_ne_ge K 1 0. lia.
     - simpl. apply pctx_ne_ulfts.
+    - simpl. have := pctx_ne_ge K 1 0. lia.
   Qed.
 
   (** Once [α] has ended, the leaf at the hole of [K] is unblocked (as [unblock_tctx_oplace]):
@@ -860,7 +864,7 @@ Section puniq.
   Lemma pctx_ulft_fold {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
     pctx_ulfts K ≠ [] → ⊢ pctx_ulft K lt ⊑ ty_lft (lty_fold lt).
   Proof.
-    induction K in lt |- *; simpl; try done; [auto|auto|auto|auto| |auto]. intros _.
+    induction K in lt |- *; simpl; try done; [auto|auto|auto|auto| |auto|auto]. intros _.
     iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply lty_lft_plug.
   Qed.
 
@@ -1040,7 +1044,7 @@ Section puniq.
   Lemma pctx_ulft_blft {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt α : ⊢ pctx_ulft K lt ⊓ α ⊑ pctx_blft K α.
   Proof.
     induction K in lt |- *; simpl; [iApply llftl_intersect_incl_r|iApply IHK|iApply IHK|
-      iApply IHK|iApply IHK| |iApply IHK].
+      iApply IHK|iApply IHK| |iApply IHK|iApply IHK].
     iApply llftl_incl_glb.
     - iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|]. iApply llftl_intersect_incl_l.
     - iApply llftl_incl_trans; [|iApply IHK]. iApply llftl_incl_glb.
@@ -1051,7 +1055,7 @@ Section puniq.
 
   Lemma pctx_hmode_uend {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ m : pctx_uend K = Some κ → pctx_hmode K m = 0%nat.
   Proof.
-    induction K in m |- *; simpl; [done|auto|auto|auto|auto| |auto].
+    induction K in m |- *; simpl; [done|auto|auto|auto|auto| |auto|auto].
     destruct K; [done|..]; intros; by apply IHK.
   Qed.
 
