@@ -82,6 +82,12 @@ Definition read_move (m : mty) (e : expr) : expr := Load Na1Ord m e.
     ([type_write_place_instr] of [typing/place_write.v]); notation [e1 <-{m} e2]. *)
 Definition write (m : mty) (e1 e2 : expr) : expr := Store Na1Ord m e1 e2.
 
+(** A byte copy of [n] bytes from the place at the address [e2] to the place at the address
+    [e1]: a non-atomic [MemCopy] (byte-preserving). It is the instruction of the unified
+    place copies ([type_memcpy_copy_place_instr], [type_memcpy_move_place_instr] of
+    [typing/place_memcpy.v]); notation [e1 <-ᵇ{n} e2]. *)
+Definition memcpy (n : nat) (e1 e2 : expr) : expr := MemCopy Na1Ord n e1 e2.
+
 Fixpoint is_closed (X : list string) (e : expr) : bool :=
   match e with
   | Var x => bool_decide (x ∈ X)

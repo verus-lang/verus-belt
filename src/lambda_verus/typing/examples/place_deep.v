@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product uninit value_ctx own uniq_util uniq_bor place_own place_puniq place_resolve place_deep.
+From lrust.typing Require Export type programs cont int product uninit value_ctx own uniq_util uniq_bor place_own place_puniq place_resolve place_deep place_write place_read place_memcpy.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -7,9 +7,11 @@ Set Default Proof Using "Type".
 
 The body of [swap_snd] of the deleted legacy example [place_deep.v], on bytes: the arguments are
 boxes of bytes ([own_bytes]); the pair [( **x).1] (8 bytes, below two unique borrows) is
-copied out and assigned with byte-level [MemCopy]s
-([type_memcpy_copy_from_oplace_deep_instr], [type_memcpy_oplace_deep_instr]). The box
-[c] for the result is passed in uninitialized (there is no byte [new] rule yet). *)
+copied out and assigned with byte copies ([<-ᵇ{8}], [MemCopy]): a copy from a readable place
+into the box [c] viewed as an owned place, whose type changes from [↯ 8] to the copied type
+([type_memcpy_copy_place_instr], a strong update), and a move from the box [y] into the place
+([type_memcpy_move_place_instr], [y] becomes [↯ 8]). The box [c] for the result is passed
+in uninitialized. *)
 
 Section place_deep.
   Context `{!typeG Σ}.
@@ -28,10 +30,10 @@ Section place_deep.
   *)
   Definition swap_snd : expr := (
     ReBor;; ReBor;; ReBor;;                         (* unfold *x, **x, **x as a pair *)
-    MemCopy Na1Ord 8 (ToLit "c")
+    ToLit "c" <-ᵇ{8}
       (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x")))) +ₗ #4);;  (* c = ( **x).1 *)
-    MemCopy Na1Ord 8 (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x")))) +ₗ #4)
-      (ToLit "y");;                                 (* ( **x).1 = y *)
+    (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x")))) +ₗ #4) <-ᵇ{8}
+      ToLit "y";;                                   (* ( **x).1 = y *)
     ReBor;; ReBor;; ReBor;;                         (* fold back *)
     (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "x"]);;  (* drop x, resolving it *)
     (#☠;; delete [ #8; ToLit "y"]);;                (* drop y (moved out) *)
@@ -76,17 +78,24 @@ Section place_deep.
         solve_typing. }
       { solve_typing. } { reflexivity. }
       (* c = ( **x).1 *)
+      iApply typed_body_tctx_incl.
+      { eapply (tctx_incl_frame_l _ _ +[_]). eapply (tctx_incl_frame_l _ _ +[_]).
+        apply tctx_own_to_oplace. }
       iApply type_seq.
-      { apply (type_memcpy_copy_from_vplace_deep_instr _ _ _ vc vx 8
-          (POwn PTR_SIZE (PUniq α (PUniq β (PSnd (OfTy i32t) PHole)))) (i32t * i32t) (↯ 8)
-          (const (const True)));
-          [apply _|apply resolve_just|done|done|solve_typing]. }
+      { eapply (type_memcpy_copy_place_instr _ _ _ vc vx (POwn 8 PHole) (↯ 8) _ _ _
+          (POwn PTR_SIZE (PUniq α (PUniq β (PSnd (OfTy i32t) PHole)))) (OfTy (i32t * i32t))
+          (i32t * i32t) static);
+          [by apply pctx_wty_strong|apply resolve_just|solve_typing|by constructor|apply _|
+           solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* ( **x).1 = y *)
+      iApply typed_body_tctx_incl.
+      { eapply (tctx_incl_frame_l _ _ +[_; _]). apply tctx_own_to_oplace. }
       iApply type_seq.
-      { apply (type_memcpy_oplace_deep_instr _ _ _ vx vy PTR_SIZE 8
-          (PUniq α (PUniq β (PSnd (OfTy i32t) PHole))) (i32t * i32t) (const (const True)));
-          [apply resolve_just|done|solve_typing]. }
+      { eapply (type_memcpy_move_place_instr _ _ _ vx vy
+          (POwn PTR_SIZE (PUniq α (PUniq β (PSnd (OfTy i32t) PHole)))) (i32t * i32t) _ _ _
+          (POwn 8 PHole) (i32t * i32t));
+          [apply pctx_wty_same|apply resolve_just|solve_typing|done]. }
       { solve_typing. } { reflexivity. }
       (* fold back *)
       iApply type_seq.
@@ -108,12 +117,12 @@ Section place_deep.
         apply lty_rslv_of, lty_resolve_ofty, uniq_bor.uniq_resolve. solve_typing. }
       { solve_typing. } { reflexivity. }
       (* drop y *)
-      iApply typed_body_tctx_incl.
-      { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_own_to_oplace. }
       iApply type_seq.
       { apply (type_drop_oplace_instr _ _ _ vy 8 8 (OfTy (↯ 8)) (const (const True)));
           [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
+      (* c as a box *)
+      iApply typed_body_tctx_incl. { apply tctx_oplace_to_own. }
       iApply type_jump.
       { rewrite elem_of_list_singleton. reflexivity. }
       { solve_typing. }
@@ -122,7 +131,7 @@ Section place_deep.
     }
     intros post [[lx m] [[ly [y1 y2]] [[lc junk] []]]] mask π. simpl.
     destruct m as [[[[[l [[[[[l' [x1 x2]] ξb] db] gb] idxb]] ξa] da] ga] idxa].
-    simpl. intros Hspec. rewrite /trans_upper /trans_tail /=.
+    simpl. intros Hspec. rewrite /trans_upper /trans_tail /trans_lower /=.
     intros _ _ _ _ _ _ _ _ _ Hres _. apply Hspec.
     rewrite !uniq_bor_future_eq /=.
     rewrite (uniq_util.uniq_prvar_app_irrel (𝔄:=uniq_borₛ tri) _
