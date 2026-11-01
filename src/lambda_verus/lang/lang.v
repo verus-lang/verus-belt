@@ -932,3 +932,9 @@ Notation Share := (Seq Skip Skip) (only parsing).
 Notation UniqBor := (Seq Skip Skip) (only parsing).
 Notation ReBor := (Seq Skip Skip) (only parsing).
 Notation SplitBor := (Seq Skip Skip) (only parsing).
+
+(** A mutable (unique) borrow of the place at the address [e]: two steps (for the credits
+    and the time receipts of the new borrow), then the pointer value of the address
+    ([OfLit]). It is the instruction of the unified mutable borrow ([type_borrow_place_instr]
+    of [typing/place_puniq.v]); notation [&ᵘ e]. *)
+Definition borrow_uniq (e : expr) : expr := Seq (Seq Skip Skip) (OfLit e).

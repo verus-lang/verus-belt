@@ -24,8 +24,8 @@ Section get_first.
   Definition get_first : expr := (
     Skip;;                                          (* b as a place *)
     ReBor;;                                         (* unfold *b *)
-    let: "r0" := ReBor;; OfLit (ToLit "b") in       (* &mut ( *b).0 *)
-    let: "r1" := ReBor;; OfLit (ToLit "b" +ₗ #4) in (* &mut ( *b).1, to drop b *)
+    let: "r0" := &ᵘ (ToLit "b") in                  (* &mut ( *b).0 *)
+    let: "r1" := &ᵘ (ToLit "b" +ₗ #4) in            (* &mut ( *b).1, to drop b *)
     Skip;;                                          (* resolve r1 *)
     jump: "return" ["r0"])%E.
 
@@ -57,14 +57,14 @@ Section get_first.
       { solve_typing. } { reflexivity. }
       (* &mut ( *b).0, at α ⊓ α *)
       iApply (type_let with "[]").
-      { apply (type_borrow_vplace_deep_instr _ _ _ vb α (PUniq α (PFst PHole (OfTy i32t))) i32t);
-          [done|simpl; solve_typing|solve_typing]. }
+      { apply (type_borrow_place_instr _ _ _ vb (PUniq α (PFst PHole (OfTy i32t))) α i32t);
+          [solve_typing|simpl; solve_typing]. }
       { solve_typing. } { simpl. reflexivity. }
       iIntros (vr0). simpl_subst.
       (* &mut ( *b).1, at α ⊓ α *)
       iApply (type_let with "[]").
-      { apply (type_borrow_vplace_deep_instr _ _ _ vb α
-          (PUniq α (PSnd (Blocked i32t (α ⊓ α)) PHole)) i32t); [done|simpl; solve_typing|solve_typing]. }
+      { apply (type_borrow_place_instr _ _ _ vb
+          (PUniq α (PSnd (Blocked i32t (α ⊓ α)) PHole)) α i32t); [solve_typing|simpl; solve_typing]. }
       { solve_typing. } { simpl. reflexivity. }
       iIntros (vr1). simpl_subst.
       (* resolve the borrow of field 1 *)

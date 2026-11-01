@@ -96,6 +96,8 @@ Ltac of_expr e :=
   | lang.write ?m ?e1 ?e2 =>
     let e1 := of_expr e1 in let e2 := of_expr e2 in constr:(Store Na1Ord m e1 e2)
   | lang.share ?e => let e := of_expr e in constr:(OfLit e)
+  | lang.borrow_uniq ?e =>
+    let e' := eval unfold lang.borrow_uniq in (lang.borrow_uniq e) in of_expr e'
   | lang.memcpy ?n ?e1 ?e2 =>
     let e1 := of_expr e1 in let e2 := of_expr e2 in constr:(MemCopy Na1Ord n e1 e2)
   | lang.Store ?o ?m ?e1 ?e2 =>

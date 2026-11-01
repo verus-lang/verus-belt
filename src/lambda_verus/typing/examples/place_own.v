@@ -28,7 +28,7 @@ Section place_own.
   *)
   Definition set_snd : expr := (
     Newlft;;
-    let: "r" := ReBor;; OfLit (ToLit "x" +ₗ #4) in        (* &mut x.1 *)
+    let: "r" := &ᵘ (ToLit "x" +ₗ #4) in                  (* &mut x.1 *)
     let: "five" := MLit (VInt 5) in
     Skip;;                                                (* r as a place *)
     ToLit "r" <-{MInt i32} "five";;                        (* *r = 5 *)
@@ -58,8 +58,8 @@ Section place_own.
       iApply (type_newlft []). iIntros (β).
       (* &mut x.1 *)
       iApply (type_let with "[]").
-      { eapply (type_borrow_oplace_instr _ _ _ vx _ β (PSnd (OfTy i32t) PHole) i32t).
-        solve_typing. }
+      { eapply (type_borrow_place_instr _ _ _ vx (POwn _ (PSnd (OfTy i32t) PHole)) β i32t);
+          solve_typing. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       (* write through the borrow, as a place; resolve it *)
@@ -133,7 +133,7 @@ Section place_own.
   [Store]. *)
   Definition box_pair : expr := (
     Newlft;;
-    let: "r" := ReBor;; OfLit (ToLit (Load Na1Ord MPtr (ToLit "b"))) in  (* &mut *( *b).0 *)
+    let: "r" := &ᵘ (ToLit (Load Na1Ord MPtr (ToLit "b"))) in            (* &mut *( *b).0 *)
     let: "seven" := MLit (VInt 7) in
     Skip;;                                                (* r as a place *)
     ToLit "r" <-{MInt i32} "seven";;                       (* *r = 7 *)
@@ -166,8 +166,8 @@ Section place_own.
       iApply (type_newlft []). iIntros (β).
       (* &mut *( *b).0 *)
       iApply (type_let with "[]").
-      { eapply (type_borrow_oplace_instr _ _ _ vb _ β (PFst (POwn 4 PHole) (OfTy i32t)) i32t).
-        solve_typing. }
+      { eapply (type_borrow_place_instr _ _ _ vb (POwn _ (PFst (POwn 4 PHole) (OfTy i32t))) β i32t);
+          solve_typing. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       (* write through the borrow, as a place; resolve it *)

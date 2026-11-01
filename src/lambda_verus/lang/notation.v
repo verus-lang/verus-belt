@@ -52,6 +52,8 @@ Notation "e1 <-ᵇ{ n } e2" := (memcpy n e1%E e2%E)
   (at level 80, n at level 200, format "e1  <-ᵇ{ n }  e2") : expr_scope.
 Notation "&ˢ e" := (share e%E)
   (at level 9, e at level 9, format "&ˢ  e") : expr_scope.
+Notation "&ᵘ e" := (borrow_uniq e%E)
+  (at level 9, e at level 9, format "&ᵘ  e") : expr_scope.
 Notation "e1 +ₗ e2" := (BinOp OffsetOp e1%E e2%E)
   (at level 50, left associativity) : expr_scope.
 
