@@ -1143,7 +1143,7 @@ problem.
   contents (the contents edges `bpt (inr c) fb`, as the legacy `c ^↦! fv`), so `borrow_mut`
   is a pure ghost transform of the `&uniq` body (O4 disappears). Only O3 (the pin) remains.
 - **Route C: keep re-encoding moves.** Canonical lower-bound fragments (O2) with per-byte
-  roles (O1), the pin (O3), and the fragment form of the permission (O4). Equivalently, a
+  roles (O1), the pin (O3), and the fragment form of the permission (O4). Alternatively, a
   value-level variant: per-atom fragments of the group's fancy value (ints, bools, pointers,
   tags, cells; padding untracked), which are alignment-safe and move-robust by construction;
   it tracks the bytes exactly except padding. Both need new MiniRust meta-theory (roles or
