@@ -3,52 +3,31 @@
   This file adds general rules for giving up a place element (see
   [design_docs/verus-belt-phase3-design.md], section "Resolve and drop").
 
+  The resolution of a place to a readable state (any context, the root unique borrow
+  included) is [type_resolve_place_instr] of [place_res_rslv.v]; giving up the resolved
+  place afterwards is forgetting it ([tctx_incl_resolve_head]). This file has the program
+  steps paid by later credits ([ctask], [skipn]) used by it, and:
+
   ** Places rooted at a unique borrow
 
-  [type_resolve_vplace_uniq_instr] gives up [p ◁ₗ{κ} lt] (a place rooted at the value of a
-  unique borrow, [vplace.v]) for any compound place type [lt]
-  whose leaves are unblocked ([OfTy], also below owned pointers and sums), blocked
-  ([Blocked]) or shared-blocked ([ShrBlocked], see below), and whose nested unique
-  borrows ([UniqLty]) have only blocked leaves
-  ([lty_uniq_rslv]). The prophecy variable of the outer borrow is pre-resolved to the
-  current value of the place: the final values of the reborrows at the blocked leaves,
-  the current values at the unblocked leaves. This generalizes [tctx_drop_vplace_uniq]
-  (all leaves blocked), without reborrowing the unblocked leaves first. No condition on
-  the types of the leaves is needed: their contents are not consumed (they go back to
-  the lender of the outer borrow, at the same values).
-
-  The proof does not need the prophecy tokens of the current values of the unblocked
-  leaves at the moment of the pre-resolution: each unblocked leaf gets a fresh prophecy
-  variable [η] ([ltype_owned_rslv]); the outer prophecy is pre-resolved (through its
-  reservation, [proph_idx_bor_gen_preresolve_rsv_acc]) to the denotation of the
-  refinement in which the unblocked leaves are refined by their [η]s (whose tokens are
-  fresh); then each [η] is resolved to the current value of its leaf, with tokens
-  obtained by sharing the contents of the leaf at a fresh lifetime
-  ([proph_eqz_obs_by_share]), and the body of the outer borrow is closed at the
-  refinement with the [η]s (whose leaves are related to their contents by the
-  observations). Sharing a leaf costs later credits depending on its depth, so the
-  instruction takes one program step per unblocked leaf ([skipn], [ctask]).
-
-  Shared-blocked leaves ([ShrBlocked]) are supported while their shared lifetimes are
-  alive ([lty_shr_lfts], e.g. a returned shared reference to a field): their values do
-  not change, and the tokens of the prophecies in them are obtained from their sharing
-  predicates ([ty_shr_guard_proph], with the persistent predicate kept by the leaf, see
-  [shr_blocked_owned]), guarded by the shared lifetime (from [L]); a fresh variable is
-  resolved to the current value as for an unblocked leaf.
+  [tctx_drop_vplace_uniq] gives up [p ◁ₗ{κ} lt] (a place rooted at the value of a unique
+  borrow, [vplace.v]) whose leaves are all blocked, without a program step: the prophecy
+  variable of the borrow is pre-resolved, through its reservation, to the current value
+  of the place.
 
   ** Places rooted at an owned location
 
-  [resolve_tctx_cons_oplace] and [type_resolve_oplace_instr] resolve (and leak)
-  [p ◁ₗown{n} lt] for any place type, with a resolution condition per unblocked leaf
-  ([lty_resolve], from [resolve] of the leaf's type; moved-out leaves [OfTy (↯ n)] need
-  nothing); blocked and shared-blocked leaves are forgotten (their lender keeps the
-  borrow, and gets the contents back at the end of the lifetime). [type_drop_oplace_instr]
-  in addition frees the memory of the place and, recursively, the pointees of its
-  unfolded owned pointers ([OwnPtrLty], [drop_boxes]), for places none of whose leaves
-  (outside the pointees) is blocked or shared ([lty_freeb]): the memory of such a leaf
-  is lent, so it must not be freed (a pointee with a blocked leaf is leaked instead,
-  [own_freeb]). Owned pointers in unblocked leaves ([OfTy (own_bytes …)]) are resolved
-  by their type and their pointees leaked, as by [type_delete_instr].
+  [resolve_tctx_cons_oplace] resolves (and leaks) [p ◁ₗown{n} lt] in a context (e.g. at a
+  jump), with a resolution condition per unblocked leaf ([lty_resolve], from [resolve] of
+  the leaf's type; moved-out leaves [OfTy (↯ n)] need nothing); blocked and shared-blocked
+  leaves are forgotten (their lender keeps the borrow, and gets the contents back at the
+  end of the lifetime). [type_drop_oplace_instr] frees the memory of the place and,
+  recursively, the pointees of its unfolded owned pointers ([OwnPtrLty], [drop_boxes]),
+  resolving the leaves as above, for places none of whose leaves (outside the pointees) is
+  blocked or shared ([lty_freeb]): the memory of such a leaf is lent, so it must not be
+  freed (a pointee with a blocked leaf is leaked instead, [own_freeb]). Owned pointers in
+  unblocked leaves ([OfTy (own_bytes …)]) are resolved by their type and their pointees
+  leaked, as by [type_delete_instr].
 
   ** Places below shared references
 
@@ -126,330 +105,6 @@ Section ctask.
   Qed.
 End ctask.
 
-(** * Resolving the unblocked leaves of a place in [Owned] mode *)
-
-Section rslv.
-  Context `{!typeG Σ}.
-
-  (** The place types that can be resolved below the root of a unique borrow: leaves
-      are unblocked, blocked or shared-blocked (while their shared lifetimes are alive,
-      [lty_shr_lfts]); nested unique borrows have only blocked leaves. *)
-  Fixpoint lty_uniq_rslv {𝔄} (lt: lty 𝔄) : Prop :=
-    match lt with
-    | OfTy _ | Blocked _ _ | ShrBlocked _ _ => True
-    | UniqLty lt _ => lty_blk_all lt
-    | OwnPtrLty _ lt | SumLty _ _ lt => lty_uniq_rslv lt
-    | ProdLty lt1 lt2 => lty_uniq_rslv lt1 ∧ lty_uniq_rslv lt2
-    (* Not supported (fold the shared reference back first). *)
-    | ShrLty _ _ => False
-    (* Resolved places are only in the owned part of a place. *)
-    | OfRes _ | ResUniqLty _ _ => False
-    end.
-
-  (** The lifetimes of the shared-blocked leaves. *)
-  Fixpoint lty_shr_lfts {𝔄} (lt: lty 𝔄) : list lft :=
-    match lt with
-    | ShrBlocked _ α => [α]
-    | OwnPtrLty _ lt | SumLty _ _ lt => lty_shr_lfts lt
-    | ProdLty lt1 lt2 => lty_shr_lfts lt1 ++ lty_shr_lfts lt2
-    | _ => []
-    end.
-
-  (** The number of unblocked and shared-blocked leaves (outside nested unique
-      borrows). *)
-  Fixpoint lty_nunblk {𝔄} (lt: lty 𝔄) : nat :=
-    match lt with
-    | OfTy _ | ShrBlocked _ _ => 1
-    | OwnPtrLty _ lt | SumLty _ _ lt => lty_nunblk lt
-    | ProdLty lt1 lt2 => lty_nunblk lt1 + lty_nunblk lt2
-    | _ => 0
-    end.
-
-  (** The later credits for resolving one unblocked leaf at depth [d] below [m] owned
-      pointers, with [m + d ≤ D] ([proph_eqz_obs_by_share], and [m] to strip the laters
-      of the ghost ownership). *)
-  Definition rslv_cost (D g: nat) : nat :=
-    D + (D + D*(g+2) + (0 + (D+1)*(g+1)) + 1 + 1).
-
-  Lemma rslv_cost_mono D g D' g' : D ≤ D' → g ≤ g' → rslv_cost D g ≤ rslv_cost D' g'.
-  Proof. rewrite /rslv_cost. nia. Qed.
-
-  (** Resolving the unblocked leaves of a place in [Owned m] mode, in two phases. First,
-      a fresh prophecy variable is allocated for each unblocked leaf; [r'] is the
-      refinement of the place in which these leaves are refined by their variables, so
-      that its denotation depends only on the variables of a reservation of the
-      original refinement and on the fresh ones ([ηl], whose tokens are given). Then,
-      given the tokens back (after the pre-resolution of an outer prophecy to the
-      denotation of [r']) and the ownership of the place, each fresh variable is
-      resolved to the current value of its leaf (sharing it at a fresh lifetime, one
-      batch of later credits per leaf), which shows that the denotations of [r'] and
-      of the original refinement agree, and the place is owned at [r']. *)
-  Lemma ltype_owned_rslv {𝔄} (lt: lty 𝔄) x ζm q :
-    lty_uniq_rslv lt →
-    proph_ctx ={⊤}=∗ ∃ (r': prfn 𝔄) (ηl: list proph_var),
-      ⌜∀ ζl, prfn_rsv (lty_rfn lt x ζm q) ζl → prfn_den r' ./ ζl ++ ηl⌝ ∗ 1:+[ηl] ∗
-      (∀ G m d g tid l, ⌜Timeless G⌝ -∗ llft_ctx -∗ proph_ctx -∗
-        (G &&{↑NllftG}&&> @[ty_lft (lty_fold lt)]) -∗
-        ([∗ list] α ∈ lty_shr_lfts lt, G &&{↑NllftG}&&> @[α]) -∗ G -∗ 1:+[ηl] -∗
-        ltype_own (Owned m) lt (lty_rfn lt x ζm q) d g tid l -∗
-        ctask (rslv_cost (m + d) g) (lty_nunblk lt)
-          (⟨π, prfn_den r' π = prfn_den (lty_rfn lt x ζm q) π⟩ ∗ G ∗
-           ltype_own (Owned m) lt r' d g tid l)).
-  Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'] in x, q |- *; intros Hr; iIntros "#PROPH";
-      simpl in Hr; try done.
-    - (* An unblocked leaf: a fresh variable. *)
-      iMod (proph_intro (uniq_cell_tyi x) ∅ with "PROPH") as (ηi) "[_ η]"; [solve_ndisj|].
-      set η := uniq_prvar x ηi.
-      iModIntro. iExists (inl (PlaceGhost x ηi)), [η].
-      iSplit.
-      { iPureIntro. intros ζl _. rewrite prfn_den_inl.
-        eapply proph_dep_weaken; [|apply place_ghost_dep]. set_solver. }
-      iSplitL "η"; [by iApply proph_tok_singleton|].
-      iIntros (G m d g tid l ?) "#LFT _ #Gty _ G η Own".
-      iDestruct (proph_tok_singleton with "η") as "η".
-      rewrite /ltype_own /= /leaf_owned_s /leaf_owned /=.
-      iDestruct "Own" as (x' Hx) "[Pt Gho]". simpl in Hx. subst x'.
-      iIntros "!> £".
-      iDestruct (lc_weaken (m + (d + d*(g+2) + (0 + (d+1)*(g+1)) + 1 + 1)) with "£")
-        as "[£m £]"; [rewrite /rslv_cost; nia|].
-      iMod (lc_fupd_elim_laterN with "£m Gho") as "Gho".
-      iDestruct (proph_eqz_token η
-        (λ π, (vπ x π, (1%positive, (1%positive, 1%positive))))
-        with "PROPH η") as "Eqz".
-      iDestruct (proph_eqz_fst_const with "Eqz") as "Eqz".
-      iMod (proph_eqz_obs_by_share ty with "LFT Gty G £ Eqz Gho") as "(#Obs & $ & Gho)".
-      iModIntro. iSplitR.
-      { iApply (proph_obs_impl with "Obs")=> π /= Heq. by rewrite prfn_den_inl prfn_den_in. }
-      iExists x. iFrame "Pt". iSplitR; [|by iNext].
-      iNext. by iApply proph_eqz_obs.
-    - (* A blocked leaf: nothing to do. *)
-      iModIntro. iExists (lty_rfn (Blocked ty α) x ζm q), []. iSplit.
-      { iPureIntro. intros ζl. cbn [lty_rfn]. rewrite prfn_rsv_inl prfn_den_inl app_nil_r.
-        done. }
-      iSplit; [done|]. iIntros (G m d g tid l ?) "_ _ _ _ $ _ $ /=".
-      iModIntro. by iApply proph_obs_true.
-    - (* A nested unique borrow whose leaves are all blocked: nothing to do. *)
-      iModIntro. iExists (lty_rfn (UniqLty lt κ') x ζm q), []. iSplit.
-      { iPureIntro. intros ζl Hrsv. rewrite app_nil_r.
-        by apply (lty_blk_all_dep (UniqLty lt κ')). }
-      iSplit; [done|]. iIntros (G m d g tid l ?) "_ _ _ _ $ _ $ /=".
-      iModIntro. by iApply proph_obs_true.
-    - (* An owned pointer. *)
-      iMod (IH x.2 (false :: q) with "PROPH") as (r' ηl Hdep) "[ηl Cont]"; [done|].
-      iModIntro. iExists (inr (x.1, r')), ηl. iFrame "ηl". iSplit.
-      { iPureIntro. intros ζl Hrsv. apply (proph_dep_constr (pair x.1)). by apply Hdep. }
-      iIntros (G m d g tid l ?) "#LFT _ #Gty #Gα G ηl Own".
-      rewrite /ltype_own /=. iDestruct "Own" as "(Pt & %Hd & Fr & Own)".
-      iDestruct ("Cont" $! G (m + 1) (pred d) g tid with "[//] LFT PROPH Gty Gα G ηl Own")
-        as "T".
-      iDestruct (ctask_weaken _ (rslv_cost (m + d) g) with "T") as "T";
-        [apply rslv_cost_mono; lia|].
-      iApply (ctask_mono with "[Pt Fr] T"). iIntros "(#Obs & $ & Own) !>".
-      iFrame "Pt Fr Own". iSplit; [|done].
-      iApply (proph_obs_impl with "Obs")=> π /= ->. done.
-    - (* A product. *)
-      destruct Hr as [Hr1 Hr2].
-      iMod (IH1 x.1 (false :: q) with "PROPH") as (r1 ηl1 Hdep1) "[ηl1 Cont1]"; [done|].
-      iMod (IH2 x.2 (true :: q) with "PROPH") as (r2 ηl2 Hdep2) "[ηl2 Cont2]"; [done|].
-      iModIntro. iExists (inr (r1, r2)), (ηl1 ++ ηl2). iSplit.
-      { iPureIntro. intros ζl [Hrsv1 Hrsv2].
-        apply (proph_dep_weaken _ ((ζl ++ ηl1) ++ (ζl ++ ηl2))); [set_solver|].
-        apply (proph_dep_constr2 pair); [by apply Hdep1|by apply Hdep2]. }
-      iSplitL "ηl1 ηl2"; [iApply big_sepL_app; iFrame|].
-      iIntros (G m d g tid l ?) "#LFT _ #Gty #Gα G ηl Own".
-      iDestruct (big_sepL_app with "ηl") as "[ηl1 ηl2]".
-      iDestruct (big_sepL_app with "Gα") as "[Gα1 Gα2]".
-      rewrite /ltype_own /=. iDestruct "Own" as "[Own1 Own2]".
-      iApply ctask_fupd.
-      iMod (fractional.frac_split_in_half with "G") as (γ) "[H1 [H2 [#Gh #Back]]]";
-        [solve_ndisj|].
-      iAssert (fractional.half γ &&{↑NllftG}&&> @[ty_lft (lty_fold lt1)])%I as "#Gty1".
-      { iApply (guards_transitive with "Gh"). iApply (guards_transitive with "Gty").
-        rewrite /= lft_intersect_list_app. iApply llftl_intersect_incl_l. }
-      iAssert (fractional.half γ &&{↑NllftG}&&> @[ty_lft (lty_fold lt2)])%I as "#Gty2".
-      { iApply (guards_transitive with "Gh"). iApply (guards_transitive with "Gty").
-        rewrite /= lft_intersect_list_app. iApply llftl_intersect_incl_r. }
-      iAssert ([∗ list] α ∈ lty_shr_lfts lt1, fractional.half γ &&{↑NllftG}&&> @[α])%I
-        as "#Gα1'".
-      { iApply (big_sepL_impl with "Gα1"). iIntros "!>" (k α _) "#Gk".
-        iApply (guards_transitive with "Gh Gk"). }
-      iAssert ([∗ list] α ∈ lty_shr_lfts lt2, fractional.half γ &&{↑NllftG}&&> @[α])%I
-        as "#Gα2'".
-      { iApply (big_sepL_impl with "Gα2"). iIntros "!>" (k α _) "#Gk".
-        iApply (guards_transitive with "Gh Gk"). }
-      iDestruct ("Cont1" $! _ m d g tid with "[%] LFT PROPH Gty1 Gα1' H1 ηl1 Own1") as "T1";
-        [apply _|].
-      iDestruct ("Cont2" $! _ m d g tid with "[%] LFT PROPH Gty2 Gα2' H2 ηl2 Own2") as "T2";
-        [apply _|].
-      iModIntro. iDestruct (ctask_sep with "T1 T2") as "T".
-      iApply (ctask_mono with "[] T").
-      iIntros "[(#Obs1 & H1 & Own1) (#Obs2 & H2 & Own2)]".
-      iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
-      iModIntro. iFrame "Own1 Own2".
-      iCombine "Obs1 Obs2" as "Obs". iApply (proph_obs_impl with "Obs")=> π /= [-> ->]. done.
-    - (* A shared-blocked leaf: a fresh variable, resolved to the (unchanged) value of the
-         leaf with the guards of its prophecy tokens given by the sharing predicate, while
-         the shared lifetime is alive. *)
-      iMod (proph_intro (uniq_cell_tyi x) ∅ with "PROPH") as (ηi) "[_ η]"; [solve_ndisj|].
-      set η := uniq_prvar x ηi.
-      iModIntro. iExists (inl (PlaceGhost x ηi)), [η].
-      iSplit.
-      { iPureIntro. intros ζl _. rewrite prfn_den_inl.
-        eapply proph_dep_weaken; [|apply place_ghost_dep]. set_solver. }
-      iSplitL "η"; [by iApply proph_tok_singleton|].
-      iIntros (G m d g tid l ?) "#LFT _ #Gty #Gα G η Own".
-      iDestruct (proph_tok_singleton with "η") as "η".
-      rewrite /ltype_own /= /shr_blocked_owned.
-      iDestruct "Gα" as "[Gα _]".
-      iDestruct "Own" as (x' Hx) "(#GPt & #Shr & #Pers & Inh)". simpl in Hx. subst x'.
-      iIntros "!> £".
-      iDestruct (lc_weaken (d*(g+2) + (0 + (d+1)*(g+1))) with "£") as "[£k £k']";
-        [rewrite /rslv_cost; nia|].
-      set κs := α ⊓ ty_lft ty.
-      iAssert (G &&{↑NllftG}&&> @[κs])%I as "#Gκs".
-      { by iApply guards_llft_glb. }
-      iAssert (κs ⊑ ty_lft ty)%I as "#Incl". { iApply llftl_intersect_incl_r. }
-      iDestruct (ty_shr_lft_mono0 _ α κs with "[] Shr") as "#Shr'".
-      { iApply llftl_intersect_incl_l. }
-      iAssert (▷^(d*(g+2)) (∀ ζ, ⌜ζ ∈ ξl x⌝ -∗
-        (G &&{↑NllftG; 0 + (d+1)*(g+1)}&&> 1:[ζ])))%I as "#Hallζlater".
-      { iIntros (ζ) "%Hin".
-        iDestruct (ty_shr_guard_proph ty κs x 0 d g tid ζ G Hin
-          with "LFT Incl Pers Shr'") as "A".
-        iNext. iApply "A". leaf_goal laters to 0; [lia|]. iFrame "Gκs". }
-      iMod (lc_fupd_elim_laterN with "£k Hallζlater") as "#Hallζ".
-      iDestruct (proph_eqz_token η
-        (λ π, (vπ x π, (1%positive, (1%positive, 1%positive))))
-        with "PROPH η") as "Eqz".
-      iDestruct (proph_eqz_fst_const with "Eqz") as "Eqz".
-      iMod (uniq_cmra.proph_eqz_to_obs_with_guard with "£k' Hallζ G Eqz")
-        as "[#Obs $]"; [set_solver|apply syn_indep|].
-      iModIntro. iSplitR.
-      { iApply (proph_obs_impl with "Obs")=> π /= Heq. by rewrite prfn_den_inl prfn_den_in. }
-      iExists x. iFrame "GPt Shr Pers Inh".
-      iNext. by iApply proph_eqz_obs.
-    - (* A sum. *)
-      rewrite lty_rfn_sum. destruct (psum_proj i x) as [y|] eqn:Hy; last first.
-      { iModIntro. iExists (prfn_dummy x), []. iSplit.
-        { iPureIntro. intros ζl _. apply prfn_dummy_dep. }
-        iSplit; [done|]. iIntros (G m d g tid l ?) "_ _ _ _ _ _ Own".
-        by rewrite /ltype_own /= /prfn_dummy /sum_node /=. }
-      iMod (IH y (false :: q) with "PROPH") as (r' ηl Hdep) "[ηl Cont]"; [done|].
-      iModIntro. iExists (prfn_sum i r'), ηl. iFrame "ηl". iSplit.
-      { iPureIntro. intros ζl. rewrite prfn_rsv_sum prfn_den_sum. intros Hrsv.
-        apply (proph_dep_constr (λ a, (pinj i a))). by apply Hdep. }
-      iIntros (G m d g tid l ?) "#LFT _ #Gty #Gα G ηl Own".
-      iEval (rewrite /ltype_own ltype_own_cp_sum_owned sum_node_sum) in "Own".
-      iDestruct "Own" as "(Tag & Own & Pad)".
-      iAssert (G &&{↑NllftG}&&> @[ty_lft (lty_fold lt)])%I as "#Gty'".
-      { iApply (guards_transitive with "Gty"). iApply lty_lft_sum. }
-      iDestruct ("Cont" $! G m d g tid with "[//] LFT PROPH Gty' Gα G ηl Own") as "T".
-      iApply (ctask_mono with "[Tag Pad] T"). iIntros "(#Obs & $ & Own) !>".
-      rewrite /ltype_own ltype_own_cp_sum_owned sum_node_sum. iFrame "Tag Own Pad".
-      iApply (proph_obs_impl with "Obs")=> π Heq. by rewrite !prfn_den_sum /= Heq.
-  Qed.
-End rslv.
-
-(** * Pre-resolving a reserved borrow while it is open *)
-
-Section preresolve.
-  Context `{!typeG Σ}.
-
-  (** Open a reserved generalized prophetic borrow (with a lifetime guard); then
-      pre-resolve its prophecy variable [ξ] to a prophecy [uπ] that depends on the
-      reserved [ζl] and on [ηl] (whose tokens are needed and given back), and close the
-      body at the controller [uπ]. The borrow is given up (the lender gets the body back
-      when [κ] ends). As [proph_idx_bor_gen_preresolve_rsv], but the body is available
-      before choosing [uπ], and it may be changed before closing. *)
-  Lemma proph_idx_bor_gen_preresolve_rsv_acc E κ ξ x idx ζl
-      (P: pv_val ξ → pv_proph ξ → iProp Σ) G :
-    Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
-    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
-    proph_bor_tok_rsv ξ x idx ζl -∗ proph_idx_bor_gen κ ξ idx P ={E}=∗ ∃ wπ,
-      ▷ P x wπ ∗
-      (∀ (uπ: pv_proph ξ) ηl q, ⌜uπ ./ ζl ++ ηl⌝ -∗ q:+[ηl] ={E}=∗
-         ⟨π, π ξ = uπ π⟩ ∗ q:+[ηl] ∗ (▷ P x uπ ={E}=∗ G)).
-  Proof.
-    iIntros (??) "#LFT #PROPH #UNIQ #Gk G Tok #Bor".
-    rewrite proph_bor_tok_rsv_unfold proph_idx_bor_gen_unfold.
-    iDestruct "Tok" as "[Vo Tok]".
-    iMod (llftl_bor_idx_acc_guarded with "LFT Bor Tok Gk G") as "[Body Back]"; [solve_ndisj|].
-    iMod (bi.later_exist_except_0 with "Body") as (x') "Body".
-    iMod (bi.later_exist_except_0 with "Body") as (wπ) "[Pc P]".
-    iMod (uniq_rsv_strip_later with "Vo Pc") as "(<- & Vo & Pc)".
-    iModIntro. iExists wπ. iFrame "P".
-    iIntros (uπ ηl q Hdep) "ηl".
-    iMod (uniq_preresolve_reserved ξ ζl ηl uπ q with "UNIQ PROPH Vo Pc ηl")
-      as "(#Obs & $ & ToPc)"; [solve_ndisj|done|].
-    iModIntro. iFrame "Obs". iIntros "P".
-    iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
-    iMod ("Back" with "[ToPc P]") as "[_ G]". { iNext. iExists x, uπ. iFrame. iApply "ToPc". }
-    iMod "Upd" as "_". by iFrame.
-  Qed.
-
-  (** The same for a compound place in [Uniq] mode: the contents are given at the
-      current state; the prophecy variable is pre-resolved to the denotation of a new
-      refinement [r'] (which may depend on the reservation and on [ηl]), and the body is
-      closed at the state with [r'], with new contents. *)
-  Lemma cpd_preresolve {𝔄} κ ξi (ty: type 𝔄) p
-      (node: lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ)
-      (r: prfn 𝔄) d g tid l E G :
-    Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
-    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
-    cpd_own κ ξi ty p node r d g tid l ={E}=∗ ∃ (x₀: ~~𝔄) ζl,
-      ⌜prfn_rsv r ζl⌝ ∗
-      ▷ guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗ node p r d g tid l) ∗
-      (∀ (r': prfn 𝔄) ηl q, ⌜prfn_den r' ./ ζl ++ ηl⌝ -∗ q:+[ηl] ={E}=∗
-         ⟨π, (π (uniq_prvar x₀ ξi)).1 = prfn_den r' π⟩ ∗ q:+[ηl] ∗
-         (▷ guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗ node p r' d g tid l)
-            ={E}=∗ G)).
-  Proof.
-    iIntros (??) "#LFT #PROPH #UNIQ #Gk G".
-    iIntros "(%x₀ & %κp & %γ & %γf & %idx & %ζl & #Incl & %Hr & Tok & Gh & Tf & ⧗ & #Bor)".
-    iMod (proph_idx_bor_gen_preresolve_rsv_acc with "LFT PROPH UNIQ Gk G Tok Bor")
-      as (wπ) "[Body Close]"; [done..|].
-    iDestruct (bi.later_or with "Body") as "[Body|[>Tf' _]]"; last first.
-    { iDestruct (cpd_tok_excl with "Tf Tf'") as "[]". }
-    rewrite cpd_body_cell.
-    iMod (bi.later_exist_except_0 with "Body") as (p1) "Body".
-    iMod (bi.later_exist_except_0 with "Body") as (r1) "(#Ok & _ & >Gh' & Upd)".
-    iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
-    iModIntro. iExists x₀, ζl. iFrame "Upd". iSplit; [done|].
-    iIntros (r' ηl q Hdep) "ηl".
-    iMod ("Close" $! (λ π, (prfn_den r' π, (uniq_cell x₀ d g γ).2)) ηl q with "[%] ηl")
-      as "(#Obs & $ & Close)".
-    { by apply (proph_dep_constr (λ a, (a, (uniq_cell x₀ d g γ).2))). }
-    iMod (ghost_var_update_halves (lstate p r') with "Gh Gh'") as "[Gh Gh']".
-    iModIntro. iSplitR. { iApply (proph_obs_impl with "Obs")=> π ->. done. }
-    iIntros "Upd'". iApply "Close". iNext. iLeft. rewrite cpd_body_cell.
-    iExists p, r'. iFrame "Ok Gh' Upd'". by iPureIntro.
-  Qed.
-End preresolve.
-
-(** * Resolving a place rooted at a unique borrow *)
-
-Section typing.
-  Context `{!typeG Σ}.
-
-  (** Give up the outer borrow of a place whose leaves are unblocked or blocked (also
-      below owned pointers and sums; nested unique borrows with blocked leaves only):
-      its prophecy variable is pre-resolved to the current value of the place, i.e. the
-      final values of the reborrows at the blocked leaves and the current values at the
-      unblocked ones. The lender gets the contents back when [κ] ends. One program step
-      per unblocked leaf (and one to open the borrow). *)
-  Lemma lctx_lft_alive_list E L (αl: list lft) :
-    (∀ α, α ∈ αl → lctx_lft_alive E L α) →
-    llctx_interp L ⊢ elctx_interp E -∗ [∗ list] α ∈ αl, llctx_interp L &&{↑NllftG}&&> @[α].
-  Proof.
-    induction αl as [|α αl IH]; intros Hl; [by iIntros "_ _"|]. iIntros "L #E".
-    iDestruct (Hl α with "L E") as "#Gα"; [set_solver|].
-    iDestruct (IH with "L E") as "#Gαl"; [set_solver|]. by iFrame "Gα Gαl".
-  Qed.
-
-End typing.
-
 (** * Resolving a place rooted at a unique borrow value
 
   A place [p ◁ₗ{κ} lt], i.e. [p ◁ₗ UniqLty lt κ] ([vplace.v]): the root is the node value
@@ -497,60 +152,6 @@ Section vplace_uniq.
     apply Hπ. rewrite uniq_bor_future_eq (uniq_prvar_app_irrel x₀ x₀') Heq. done.
   Qed.
 
-  (** Give up the root borrow of a place whose leaves are unblocked or blocked: its prophecy variable is pre-resolved to the current
-      value of the place. One program step per unblocked leaf (and one to open the
-      borrow). *)
-  Lemma type_resolve_vplace_uniq_instr {𝔄} E L I p κ (lt: lty 𝔄) :
-    lctx_lft_alive E L κ → lty_is_cpd lt → lty_uniq_rslv lt →
-    (∀ α, α ∈ lty_shr_lfts lt → lctx_lft_alive E L α) →
-    typed_instr E L I +[p ◁ₗ UniqLty lt κ] (skipn (S (lty_nunblk lt))) (const +[])
-      (λ post '-[x], λ mask π,
-        uniq_bor_future x.1 π = prfn_den (lty_rfn lt (uniq_bor_current x.1) x.2 []) π →
-        post -[] mask π).
-  Proof.
-    iIntros (Alv Hc Hrs Halv tid post mask iκs [x []])
-      "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
-    destruct x as [[[[[[l x₀] ξi] d'] g'] idx] ζm].
-    iDestruct "T" as (v ? D) "(#⧖0 & _ & %d & %g & %Hle & -> & _ & _ & #Incl & %d1 & %g1 & %Hle1 & Own)".
-    iDestruct (Alv with "L E") as "#Alv".
-    iDestruct (lctx_lft_alive_list _ _ _ Halv with "L E") as "#Alvl".
-    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
-      [solve_ndisj|].
-    iDestruct (guards_transitive with "Ghalf Alv") as "#Hκ".
-    iAssert ([∗ list] α ∈ lty_shr_lfts lt, fractional.half γh &&{↑NllftG}&&> @[α])%I
-      as "#Hαl".
-    { iApply (big_sepL_impl with "Alvl"). iIntros "!>" (k α _) "#Gk".
-      iApply (guards_transitive with "Ghalf Gk"). }
-    iAssert (fractional.half γh &&{↑NllftG}&&> @[ty_lft (lty_fold lt)])%I as "#Hty".
-    { iApply (guards_transitive with "Hκ Incl"). }
-    rewrite /ltype_own ltype_own_cp_uniq_cpd //.
-    iMod (ltype_owned_rslv lt x₀ ζm [] with "PROPH") as (r' ηl Hdep) "[ηl Cont]"; [done|].
-    iMod (cpd_preresolve with "LFT PROPH UNIQ Hκ H1 Own") as (x₀' ζl Hr) "[Upd Pre]";
-      [solve_ndisj|].
-    iMod ("Pre" $! r' ηl with "[%] ηl") as "(#Obs' & ηl & Close)"; [by apply Hdep|].
-    set c := 1 + rslv_cost D D.
-    iApply (wp_skipn_ctask _ c D
-      (llctx_interp L ∗ ⟨π, prfn_den r' π = prfn_den (lty_rfn lt x₀ ζm []) π⟩)
-      with "TIME ⧖0 [-Obs I]").
-    { rewrite /c /rslv_cost /advance_credits. nia. }
-    { iModIntro. iIntros "[£1 _]". iApply ctask_fupd.
-      iMod (lc_fupd_elim_later with "£1 Upd") as "Upd".
-      iMod (guarded_upd_run with "Hty H2 Upd") as "(H2 & #⧖' & N)";
-        [rewrite /lazyE; solve_ndisj|].
-      iDestruct ("Cont" $! _ 0 d1 g1 tid l with "[%] LFT PROPH Hty Hαl H2 ηl N") as "T";
-        [apply _|].
-      iDestruct (ctask_weaken _ c with "T") as "T".
-      { rewrite /c. have := rslv_cost_mono (0 + d1) g1 D D. lia. }
-      iApply (ctask_mono with "[Close] T").
-      iIntros "(#Obs & H2 & N)".
-      iMod ("Close" with "[N]") as "H1".
-      { iNext. iApply guarded_upd_intro. iModIntro. iFrame "⧖' N". }
-      iMod (fupd_mask_mono with "(Halfback H1 H2)") as "$"; [solve_ndisj|].
-      by iModIntro. }
-    iIntros "[$ #Obs2]". iExists -[]. iFrame "I". iSplit; [done|].
-    iCombine "Obs Obs' Obs2" as "Obs3". iApply (proph_obs_impl with "Obs3")=> π [Hπ [H1 H2]].
-    apply Hπ. rewrite uniq_bor_future_eq (uniq_prvar_app_irrel x₀ x₀') H1 H2. done.
-  Qed.
 End vplace_uniq.
 
 (** * Resolving places in [Owned] mode
@@ -925,27 +526,6 @@ Section oplace.
     iMod (fupd_mask_mono with "(back F1 F2)") as "$"; [solve_ndisj|].
     iCombine "Obs Obs'" as "Obs". iModIntro.
     iApply (proph_obs_impl with "Obs")=>/= ?[? Imp]? Imp'. by apply Imp, Imp'.
-  Qed.
-
-  (** Resolving (and forgetting) an owned place in the middle of a function. *)
-  Lemma type_resolve_oplace_instr {𝔄} E L I p n (lt: lty 𝔄) Φ :
-    lty_resolve E L lt Φ →
-    typed_instr E L I +[p ◁ₗown{n} lt] Skip (λ _, +[])
-      (λ post '-[x], λ mask π, Φ x.1.2 π → post -[] mask π).
-  Proof.
-    iIntros (Rslv tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I [(%v & _ & Own) _] Obs".
-    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]";
-      [solve_ndisj|].
-    iDestruct (oplace_resolve_steps with "Own") as (D) "[#⧖ Upd]"; [done|].
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|]. iIntros "£ _".
-    iMod ("Upd" $! _ (⊤∖↑advN) with "[%] [%] LFT PROPH UNIQ TIME E Ghalf H1") as "Upd";
-      [apply _|solve_ndisj|].
-    iMod (lc_step_fupdN_elim_later with "[£] Upd") as "Upd".
-    { iApply (lc_weaken with "£"). rewrite /advance_credits. nia. }
-    iMod "Upd" as "[Obs' H1]".
-    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    wp_seq. iExists -[]. iFrame "L I". iSplit; [done|].
-    iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?]. by apply Imp.
   Qed.
 
   (** Dropping an owned place: the unblocked leaves are resolved, the pointees of the

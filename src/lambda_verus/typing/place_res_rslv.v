@@ -16,7 +16,9 @@
     guarded by their sharing at [κ]), and the referent is shared at [κ] into its view
     ([lty_share_view]).
 
-  The rule [type_resolve_oplace_res_instr] takes [k] program steps ([skipn k]). See
+  The root of a place rooted at a value is resolved by [vroot_res] (a unique borrow value).
+  The rule [type_resolve_place_instr] resolves the sub-place at the hole of any context whose
+  path is owned ([pctx_res]), in [k] program steps ([skipn k]). See
   [design_docs/verus-belt-phase3-design.md], section "Resolve to a readable state". *)
 
 From iris.proofmode Require Import proofmode.
@@ -215,21 +217,28 @@ End lty_res.
 Section lty_res_uniq.
   Context `{!typeG Σ}.
 
-  (** An unfolded unique borrow whose referent is a leaf: resolved by
-      [resolve_uniq_body]; its referent is viewed at [κ]. *)
-  Lemma lty_res_uniq_leaf {𝔄} E L κ (ty: type 𝔄) :
-    lctx_lft_alive E L κ →
-    lty_res E L (UniqLty (OfTy ty) κ) (ResUniqLty (OfTy ty) κ) 1 (λ x _ _ π,
-      (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 = vπ (uniq_bor_current x) π).
+  (** The [nval] of an unfolded unique borrow whose referent is a leaf (with [m] laters; its
+      pointer cell, if any, is not needed): resolved by [resolve_uniq_body]; its referent is
+      viewed at [κ]. *)
+  Lemma uniq_nval_res_leaf {𝔄} E L κ (ty: type 𝔄) G m x d g D tid :
+    lctx_lft_alive E L κ → Timeless G → m + d ≤ D → g ≤ D →
+    ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
+      (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗ ⧖D -∗
+      uniq_nval m κ ty (λ ξi r' d' g' tid l', ltype_own (Uniq κ ξi) (OfTy ty) r' d' g' tid l')
+        (inr (uniq_bor_loc x, inl (PlaceIn (uniq_bor_current x)), uniq_bor_ξi x)) d g tid -∗
+      ctask (advance_credits D) 1
+        (⟨π, (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
+          vπ (uniq_bor_current x) π⟩ ∗ G ∗
+         res_nval m κ ty (lty_view (OfTy ty) κ 0 (lty_pat (OfTy ty)))
+           (inr (uniq_bor_loc x, inl (PlaceIn (uniq_bor_current x)), uniq_bor_ξi x)) d g tid).
   Proof.
-    intros Alv. split; [done|]. split; [done|].
-    iIntros (G m x ζm q d g D tid l ? Hd Hg) "#LFT #PROPH #UNIQ #TIME #E #GL G #⧖ Own".
+    iIntros (Alv ? Hd Hg) "#LFT #PROPH #UNIQ #TIME #E #GL G #⧖ N".
     destruct x as [[[[[l' x0] ξi] d0] g0] idx0].
-    rewrite /ltype_own /= /uniq_node /=. iDestruct "Own" as "(Pt & _ & _ & N)".
+    rewrite /uniq_nval /=. iDestruct "N" as "(_ & _ & N)".
     iModIntro. iIntros "£".
     iDestruct (lc_weaken m with "£") as "£"; [rewrite /advance_credits; nia|].
     iMod (lc_fupd_elim_laterN with "£ N") as "(#Incl & %d' & %g' & %Hle & C)".
-    rewrite /leaf_uniq /ofty_uniq. iDestruct "C" as (x idx ->) "Body".
+    rewrite /ltype_own /= /leaf_uniq /ofty_uniq. iDestruct "C" as (x idx ->) "Body".
     iAssert (⧖(S d' `max` g'))%I as "#⧖'".
     { iApply (persistent_time_receipt_mono with "⧖"). lia. }
     iMod (resolve_uniq_body ty x0 ξi d' g' idx κ tid l' E L G ⊤
@@ -237,7 +246,7 @@ Section lty_res_uniq.
       [done|solve_ndisj|].
     iModIntro. iFrame "G". iSplitR.
     { iApply (proph_obs_impl with "Obs")=> π /= ->. done. }
-    rewrite /res_node. iFrame "Pt". iApply bi.laterN_intro. iFrame "Incl".
+    rewrite /res_nval. iApply bi.laterN_intro. iFrame "Incl".
     iExists d', g. iSplit; [iPureIntro; lia|]. rewrite /= /view_leaf.
     iExists x0. iSplit; [done|]. iSplit.
     - iApply (lguards_weaken_later with "Pt'"). lia.
@@ -245,22 +254,29 @@ Section lty_res_uniq.
       iApply (ty_gho_pers_depth_mono with "Pers"); lia.
   Qed.
 
-  (** An unfolded unique borrow whose referent is compound: its prophecy variable is
-      resolved to the denotation of the referent (the blocked leaves through the
-      reservation, the unblocked leaves by their sharing at [κ]), and the referent is
-      shared into its view at [κ]. *)
-  Lemma lty_res_uniq_cpd {𝔄} E L κ (lt: lty 𝔄) :
+  (** The [nval] of an unfolded unique borrow whose referent [lt] is compound (refined at the
+      path [q]): its prophecy variable is resolved to the denotation of the referent (the
+      blocked leaves through the reservation, the unblocked leaves by their sharing at [κ]),
+      and the referent is shared into its view at [κ]. *)
+  Lemma uniq_nval_res_cpd {𝔄} E L κ (lt: lty 𝔄) G m x ζm q d g D tid :
     lctx_lft_alive E L κ → lctx_lft_alive E L (lty_sbl lt) → lty_is_cpd lt → lty_vok lt →
-    lty_res E L (UniqLty lt κ) (ResUniqLty lt κ) 1 (λ x ζm q π,
-      (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
-        prfn_den (lty_rfn lt (uniq_bor_current x) ζm (false :: q)) π).
+    Timeless G → m + d ≤ D → g ≤ D →
+    ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
+      (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗ ⧖D -∗
+      uniq_nval m κ (lty_fold lt)
+        (λ ξi r' d' g' tid l', ltype_own (Uniq κ ξi) lt r' d' g' tid l')
+        (inr (uniq_bor_loc x, lty_rfn lt (uniq_bor_current x) ζm q, uniq_bor_ξi x)) d g tid -∗
+      ctask (advance_credits D) 1
+        (⟨π, (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
+          prfn_den (lty_rfn lt (uniq_bor_current x) ζm q) π⟩ ∗ G ∗
+         res_nval m κ (lty_fold lt) (lty_view lt κ 0 (lty_pat lt))
+           (inr (uniq_bor_loc x, lty_rfn lt (uniq_bor_current x) ζm q, uniq_bor_ξi x)) d g tid).
   Proof.
-    intros Alv Alvs Hc Hv. split; [done|]. split; [done|].
-    iIntros (G m x ζm q d g D tid l ? Hd Hg) "#LFT #PROPH #UNIQ #TIME #E #GL G #⧖ Own".
+    iIntros (Alv Alvs Hc Hv ? Hd Hg) "#LFT #PROPH #UNIQ #TIME #E #GL G #⧖ N".
     destruct x as [[[[[l' x0] ξi] d0] g0] idx0].
-    rewrite /ltype_own /= /uniq_node /= ltype_own_cp_uniq_cpd //.
-    set r' := lty_rfn lt x0 ζm (false :: q).
-    iDestruct "Own" as "(Pt & _ & _ & N)".
+    rewrite /uniq_nval /= /ltype_own ltype_own_cp_uniq_cpd //.
+    set r' := lty_rfn lt x0 ζm q.
+    iDestruct "N" as "(_ & _ & N)".
     iModIntro. iIntros "£".
     iDestruct (lc_weaken (m + (advance_credits D - m)) with "£") as "[£m £]";
       [rewrite /advance_credits; nia|].
@@ -306,7 +322,7 @@ Section lty_res_uniq.
       iMod (llftl_bor_guarded_upd with "LFT Hκ Incl Hh £1 Bb") as "[Bb Hh]";
         [solve_ndisj|rewrite /lazyE; solve_ndisj|].
       iMod (llftl_sep_split with "LFT Bb") as "[_ Bb]"; [solve_ndisj|].
-      iMod (lty_share_view lt Hv κ 0 x0 ζm (false :: q) d' g' g tid l' Hh ⊤ HTh
+      iMod (lty_share_view lt Hv κ 0 x0 ζm q d' g' g tid l' Hh ⊤ HTh
         ltac:(solve_ndisj) ltac:(lia) with "LFT PROPH UNIQ Hκ Incl Hh [Bb]") as "Upd".
       { by rewrite /ltype_own. }
       iMod (lc_step_fupdN_elim_later with "£s Upd") as ">[Hh V]".
@@ -318,41 +334,174 @@ Section lty_res_uniq.
     iModIntro. iFrame "G". iSplitR.
     { iApply (proph_obs_impl with "Obs")=> π /= Heq.
       by rewrite (uniq_prvar_app_irrel x0 x₀) Heq. }
-    rewrite /res_node. iFrame "Pt". iApply bi.laterN_intro. iFrame "Incl".
+    rewrite /res_nval. iApply bi.laterN_intro. iFrame "Incl".
     iExists d', g. iSplit; [iPureIntro; lia|]. iExact "V".
+  Qed.
+
+  (** An unfolded unique borrow whose referent is a leaf: [uniq_nval_res_leaf]. *)
+  Lemma lty_res_uniq_leaf {𝔄} E L κ (ty: type 𝔄) :
+    lctx_lft_alive E L κ →
+    lty_res E L (UniqLty (OfTy ty) κ) (ResUniqLty (OfTy ty) κ) 1 (λ x _ _ π,
+      (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 = vπ (uniq_bor_current x) π).
+  Proof.
+    intros Alv. split; [done|]. split; [done|].
+    iIntros (G m x ζm q d g D tid l ? Hd Hg) "LFT PROPH UNIQ TIME E GL G ⧖ Own".
+    destruct x as [[[[[l' x0] ξi] d0] g0] idx0].
+    rewrite /ltype_own /=. iDestruct "Own" as "[Pt N]".
+    iDestruct (uniq_nval_res_leaf E L κ ty G m (l', x0, ξi, d0, g0, idx0) d g D tid
+      with "LFT PROPH UNIQ TIME E GL G ⧖ N") as "T"; [done..|].
+    iApply (ctask_mono with "[Pt] T"). iIntros "($ & $ & N) !>".
+    iFrame "Pt". iExact "N".
+  Qed.
+
+  (** An unfolded unique borrow whose referent is compound: [uniq_nval_res_cpd]. *)
+  Lemma lty_res_uniq_cpd {𝔄} E L κ (lt: lty 𝔄) :
+    lctx_lft_alive E L κ → lctx_lft_alive E L (lty_sbl lt) → lty_is_cpd lt → lty_vok lt →
+    lty_res E L (UniqLty lt κ) (ResUniqLty lt κ) 1 (λ x ζm q π,
+      (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
+        prfn_den (lty_rfn lt (uniq_bor_current x) ζm (false :: q)) π).
+  Proof.
+    intros Alv Alvs Hc Hv. split; [done|]. split; [done|].
+    iIntros (G m x ζm q d g D tid l ? Hd Hg) "LFT PROPH UNIQ TIME E GL G ⧖ Own".
+    destruct x as [[[[[l' x0] ξi] d0] g0] idx0].
+    rewrite /ltype_own /=. iDestruct "Own" as "[Pt N]".
+    iDestruct (uniq_nval_res_cpd E L κ lt G m (l', x0, ξi, d0, g0, idx0) ζm (false :: q)
+      d g D tid with "LFT PROPH UNIQ TIME E GL G ⧖ N") as "T"; [done..|].
+    iApply (ctask_mono with "[Pt] T"). iIntros "($ & $ & N) !>".
+    iFrame "Pt". iExact "N".
   Qed.
 End lty_res_uniq.
 
-(** * The rule *)
+(** * Resolving the root of a place rooted at a value
+
+  [vroot_res E L lt lt' k Φ]: as [lty_res], for the root of a place rooted at a value
+  ([vroot_own], [pctx_acc.v]): a unique borrow value [UniqLty lt κ] becomes a resolved one
+  [ResUniqLty lt κ] ([vroot_res_uniq_leaf], [vroot_res_uniq_cpd], from the [nval]s of
+  [uniq_nval_res_leaf], [uniq_nval_res_cpd]). (An owned pointer at the root is the hole of
+  [POwn n PHole], resolved by [lty_res].) *)
+Definition vroot_res `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (lt lt': lty 𝔄) (k: nat)
+    (Φ: ~~𝔄 → blk_map → proph_asn → Prop) : Prop :=
+  lty_vnrc lt' = lty_vnrc lt ∧
+  ∀ G x ζm D tid v, Timeless G →
+    ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
+      (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗ ⧖D -∗
+      vroot_own lt (lty_vrfn lt x ζm) D tid v -∗
+      ctask (advance_credits D) k
+        (⟨π, Φ x ζm π⟩ ∗ G ∗ vroot_own lt' (lty_vrfn lt' x ζm) D tid v).
+
+Section vroot_res.
+  Context `{!typeG Σ}.
+
+  Lemma vroot_res_uniq_leaf {𝔄} E L κ (ty: type 𝔄) :
+    lctx_lft_alive E L κ →
+    vroot_res E L (UniqLty (OfTy ty) κ) (ResUniqLty (OfTy ty) κ) 1 (λ x _ π,
+      (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 = vπ (uniq_bor_current x) π).
+  Proof.
+    intros Alv. split; [done|].
+    iIntros (G x ζm D tid v ?) "LFT PROPH UNIQ TIME E GL G ⧖ Own".
+    iDestruct "Own" as (d g [Hd Hg]) "[Hv N]".
+    iDestruct (uniq_nval_res_leaf E L κ ty G 0 x d g D tid
+      with "LFT PROPH UNIQ TIME E GL G ⧖ N") as "T"; [done|lia|lia|].
+    iApply (ctask_mono with "[Hv] T"). iIntros "($ & $ & N) !>".
+    iExists d, g. iSplit; [done|]. iFrame.
+  Qed.
+
+  Lemma vroot_res_uniq_cpd {𝔄} E L κ (lt: lty 𝔄) :
+    lctx_lft_alive E L κ → lctx_lft_alive E L (lty_sbl lt) → lty_is_cpd lt → lty_vok lt →
+    vroot_res E L (UniqLty lt κ) (ResUniqLty lt κ) 1 (λ x ζm π,
+      (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
+        prfn_den (lty_rfn lt (uniq_bor_current x) ζm []) π).
+  Proof.
+    intros Alv Alvs Hc Hv. split; [done|].
+    iIntros (G x ζm D tid v ?) "LFT PROPH UNIQ TIME E GL G ⧖ Own".
+    iDestruct "Own" as (d g [Hd Hg]) "[Hv N]".
+    iDestruct (uniq_nval_res_cpd E L κ lt G 0 x ζm [] d g D tid
+      with "LFT PROPH UNIQ TIME E GL G ⧖ N") as "T"; [done|done|done|done|lia|lia|].
+    iApply (ctask_mono with "[Hv] T"). iIntros "($ & $ & N) !>".
+    iExists d, g. iSplit; [done|]. iFrame.
+  Qed.
+End vroot_res.
+
+(** * The rule
+
+  The resolution judgement of a place [K[lt]] rooted at a value, at the hole of [K]: the root
+  itself ([K = PHole], [vroot_res]) or a sub-place of a place rooted at an owned location
+  ([K = POwn n K'], [lty_res] at the hole, at the path [pctx_vpath K]). Below a unique borrow,
+  a shared reference or a resolved unique borrow there is nothing to resolve (a resolved place
+  has no interpretation in [Uniq] mode). *)
+Definition pctx_res `{!typeG Σ} {𝔅 𝔄} (E: elctx) (L: llctx) (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅)
+    (k: nat) (Φ: ~~𝔅 → blk_map → lpath → proph_asn → Prop) : Prop :=
+  match K with
+  | PHole => vroot_res E L lt lt' k (λ x ζm, Φ x ζm [])
+  | POwn _ _ => lty_res E L lt lt' k Φ
+  | _ => False
+  end.
 
 Section typing.
   Context `{!typeG Σ}.
 
-  (** Resolving an owned place to a readable state, in [k] program steps (no new
-      lifetime, no new borrow; the place is kept, at the same value). *)
-  Lemma type_resolve_oplace_res_instr {𝔄} E L I p n (lt lt': lty 𝔄) k Φ :
-    lty_res E L lt lt' k Φ →
-    typed_instr E L I +[p ◁ₗown{n} lt] (place_resolve.skipn k) (const +[p ◁ₗown{n} lt'])
-      (λ post '-[x], λ mask π, Φ x.1.2 x.2 [] π → post -[x] mask π).
+  (** Resolving the sub-place at the hole of [K] to a readable state ([pctx_res]), in [k]
+      program steps ([skipn k]; no memory access, no new lifetime, no new borrow): the place
+      is kept, at the same value, with [lt'] (resolved leaves [OfRes], resolved unique borrows
+      [ResUniqLty], …) at the hole, and [Φ] is learnt. Forgetting the place afterwards
+      ([tctx_incl_resolve_head]) gives up it, e.g. a unique borrow at the end of its use. *)
+  Lemma type_resolve_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxNoUniq K}
+      (lt lt': lty 𝔅) k Φ :
+    pctx_res E L K lt lt' k Φ →
+    typed_instr E L I +[p ◁ₗ pctx_plug K lt] (place_resolve.skipn k)
+      (const +[p ◁ₗ pctx_plug K lt'])
+      (λ post '-[x], λ mask π, Φ (pctx_get K x.1) x.2 (pctx_vpath K) π → post -[x] mask π).
   Proof.
-    iIntros ((Hs & Hn & Rslv) tid post mask iκs [x []])
-      "#LFT #TIME #PROPH #UNIQ #E L I [(%v & %Hp & Own) _] Obs".
-    destruct x as [[l x₀] ζm].
-    iDestruct "Own" as (D d g) "(#⧖ & ⧗r & -> & %Hle & Fr & Own)".
-    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]";
-      [solve_ndisj|].
-    iDestruct (Rslv _ 1 x₀ ζm [] d g D tid _ with "LFT PROPH UNIQ TIME E Ghalf H1 ⧖ Own")
-      as "T"; [lia|lia|].
-    iDestruct (ctask_mono with "[H2] T") as "T".
-    { iIntros "(#Obs' & H1 & Own)".
-      iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-      iModIntro. iCombine "Obs' L Own" as "R". iExact "R". }
-    iApply (wp_skipn_ctask _ (advance_credits D) D with "TIME ⧖ T"); [done|].
-    iIntros "(#Obs' & L & Own)".
-    iExists -[((l, x₀), ζm)]. iFrame "L I". iSplitL "⧗r Fr Own".
-    - iSplit; [|done]. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
-      rewrite Hn. by iFrame "⧖ ⧗r Fr Own".
-    - iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?].
-      by apply Imp.
+    rename select (PctxNoUniq K) into HK.
+    destruct K as [| | |𝔅 𝔄' n K| | | |]; try done; intros HR.
+    - (* The root. *)
+      destruct HR as [Hn Rslv].
+      iIntros (tid post mask iκs [x []])
+        "#LFT #TIME #PROPH #UNIQ #E L I [(%v & %Hp & Own) _] Obs".
+      destruct x as [x₀ ζm]. rewrite vplace_own_eq.
+      iDestruct "Own" as (D) "(#⧖ & ⧗r & Own)".
+      iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]";
+        [solve_ndisj|].
+      iDestruct (Rslv _ x₀ ζm D tid v with "LFT PROPH UNIQ TIME E Ghalf H1 ⧖ Own")
+        as "T".
+      iDestruct (ctask_mono with "[H2] T") as "T".
+      { iIntros "(#Obs' & H1 & Own)".
+        iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+        iModIntro. iCombine "Obs' L Own" as "R". iExact "R". }
+      iApply (wp_skipn_ctask _ (advance_credits D) D with "TIME ⧖ T"); [done|].
+      iIntros "(#Obs' & L & Own)".
+      iExists -[(x₀, ζm)]. iFrame "L I". iSplitL "⧗r Own".
+      + iSplit; [|done]. iExists v. iSplit; [done|]. rewrite vplace_own_eq.
+        iExists D. rewrite Hn. by iFrame "⧖ ⧗r Own".
+      + iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?].
+        by apply Imp.
+    - (* The hole of a place rooted at an owned location. *)
+      have ?: PctxNoUniq K by done.
+      destruct HR as (Hs & Hn & Rslv).
+      iIntros (tid post mask iκs [x []])
+        "#LFT #TIME #PROPH #UNIQ #E L I [(%v & %Hp & Own) _] Obs".
+      destruct x as [[l x₀] ζm].
+      iDestruct "Own" as (D d g) "(#⧖ & ⧗r & -> & %Hle & Fr & Own)".
+      iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]";
+        [solve_ndisj|].
+      rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
+      iDestruct "Own" as "[H Rest]".
+      iDestruct (pctx_own_mode_le with "Rest") as %Hk.
+      iDestruct (Rslv _ (pctx_mode K 1) (pctx_get K x₀) ζm (pctx_path K []) (pctx_depth K d) g D
+        tid _ with "LFT PROPH UNIQ TIME E Ghalf H1 ⧖ H") as "T";
+        [rewrite pctx_mode_add pctx_depth_sub; lia|lia|].
+      iDestruct (ctask_mono with "[H2] T") as "T".
+      { iIntros "(#Obs' & H1 & Own)".
+        iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+        iModIntro. iCombine "Obs' L Own" as "R". iExact "R". }
+      iApply (wp_skipn_ctask _ (advance_credits D) D with "TIME ⧖ T"); [done|].
+      iIntros "(#Obs' & L & H)".
+      iExists -[((l, x₀), ζm)]. iFrame "L I". iSplitL "⧗r Fr H Rest".
+      + iSplit; [|done]. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
+        rewrite /= !lty_nrc_plug !lty_size_plug Hn Hs. iFrame "⧖ ⧗r Fr". iSplit; [done|].
+        iSplit; [done|].
+        rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug Hs. iFrame.
+      + iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?].
+        by apply Imp.
   Qed.
 End typing.

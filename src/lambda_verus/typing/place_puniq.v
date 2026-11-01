@@ -19,9 +19,10 @@
     [unblock_tctx_oplace_deep], [unblock_tctx_oplace_uniq]: unblocking.
   - (Reads and writes are [type_read_place_instr] of [place_read.v] and
     [type_write_place_instr] of [place_write.v].)
-  - [lty_rslv], [type_resolve_oplace_deep_instr], [type_drop_oplace_deep_instr]: resolving
-    and dropping an owned place with nested unique borrows whose leaves are blocked
-    ([lty_rslv_uniq_blk]).
+  - [lty_rslv], [resolve_tctx_cons_oplace_deep], [type_drop_oplace_deep_instr]: resolving
+    (in a context) and dropping an owned place with nested unique borrows whose leaves are
+    blocked ([lty_rslv_uniq_blk]); resolving to a readable state is
+    [type_resolve_place_instr] of [place_res_rslv.v].
   - [unblock_tctx_oplace_shr_deep]: unblocking a shared-blocked hole (the shared borrow is
     [type_share_place_instr] of [place_share.v]).
 
@@ -1385,26 +1386,6 @@ Section oplace_rslv.
     iMod (fupd_mask_mono with "(back F1 F2)") as "$"; [solve_ndisj|].
     iCombine "Obs Obs'" as "Obs". iModIntro.
     iApply (proph_obs_impl with "Obs")=>/= ?[? Imp]? Imp'. by apply Imp, Imp'.
-  Qed.
-
-  Lemma type_resolve_oplace_deep_instr {𝔄} E L I p n (lt: lty 𝔄) Φ :
-    lty_rslv E L lt Φ →
-    typed_instr E L I +[p ◁ₗown{n} lt] Skip (λ _, +[])
-      (λ post '-[x], λ mask π, Φ x.1.2 x.2 [] π → post -[] mask π).
-  Proof.
-    iIntros (Rslv tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I [(%v & _ & Own) _] Obs".
-    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]";
-      [solve_ndisj|].
-    iDestruct (oplace_rslv_steps with "Own") as (D) "[#⧖ Upd]"; [done|].
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|]. iIntros "£ _".
-    iMod ("Upd" $! _ (⊤∖↑advN) with "[%] [%] LFT PROPH UNIQ TIME E Ghalf H1") as "Upd";
-      [apply _|solve_ndisj|].
-    iMod (lc_step_fupdN_elim_later with "[£] Upd") as "Upd".
-    { iApply (lc_weaken with "£"). rewrite /advance_credits. nia. }
-    iMod "Upd" as "[Obs' H1]".
-    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    wp_seq. iExists -[]. iFrame "L I". iSplit; [done|].
-    iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?]. by apply Imp.
   Qed.
 
   Lemma type_drop_oplace_deep_instr {𝔄} E L I p n (nz: Z) (lt: lty 𝔄) Φ :
