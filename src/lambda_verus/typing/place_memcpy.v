@@ -159,8 +159,8 @@ Section memcpy.
       (λ _, +[pd ◁ₗ pctx_plug Kd' (OfTy ty);
         ps ◁ₗ pctx_plug (pctx_retype Ks (uninitₛ (ty_bsize ty))) (OfTy (↯ (ty_bsize ty)))])
       (λ post '-[xd; xs], λ mask π, Φ (pctx_get Kd xd.1) π →
-        ∀ junk: ~~ (uninitₛ (ty_bsize ty)),
-        post -[(fd xd.1 (pctx_get Ks xs.1), xd.2); (pctx_reset Ks xs.1 junk, xs.2)] mask π).
+        post -[(fd xd.1 (pctx_get Ks xs.1), xd.2);
+          (pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) Ks xs.1 (), xs.2)] mask π).
   Proof.
     intros Hw Rslv Alvd Hns.
     have Hws: pctx_wty Ks ty (↯ (ty_bsize ty)) (pctx_retype Ks (uninitₛ (ty_bsize ty)))
@@ -228,9 +228,8 @@ Section memcpy.
     iIntros "!>" (bs) "(Hfbsd & Hbs & %Hlen)".
     iMod (fupd_mask_subseteq (⊤ ∖ ↑advN)) as "Hcl"; [solve_ndisj|].
     (* Close the source, uninitialized. *)
-    set junk := (() : ~~ (uninitₛ (ty_bsize ty))).
     rewrite /vplace_wcloser.
-    iMod ("Cls" $! junk 0 0 Ds with "[%] ⧖s [Hbs] []") as "[Ts B]".
+    iMod ("Cls" $! () 0 0 Ds with "[%] ⧖s [Hbs] []") as "[Ts B]".
     { lia. }
     { iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].
       rewrite -(ty_mty_eq (↯ _)) /= decide_True //. }
@@ -248,7 +247,7 @@ Section memcpy.
     iMod (fupd_mask_mono with "(Back2 A B)") as "H1"; [solve_ndisj|].
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro.
-    iExists -[(fd xd₀ (pctx_get Ks xs₀), ζd); (pctx_reset Ks xs₀ junk, ζs)]. iFrame "L I".
+    iExists -[(fd xd₀ (pctx_get Ks xs₀), ζd); (pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) Ks xs₀ (), ζs)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitL "Td"; [iExists _; by iFrame|]. iSplit; [|done]. iExists _. by iFrame. }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].

@@ -132,7 +132,7 @@ Section place_deep.
     intros post [[lx m] [[ly [y1 y2]] [[lc junk] []]]] mask π. simpl.
     destruct m as [[[[[l [[[[[l' [x1 x2]] ξb] db] gb] idxb]] ξa] da] ga] idxa].
     simpl. intros Hspec. rewrite /trans_upper /trans_tail /trans_lower /=.
-    intros _ _ _ _ _ _ _ _ _ Hres _. apply Hspec.
+    intros _ _ _ _ _ _ _ _ Hres _. apply Hspec.
     rewrite !uniq_bor_future_eq /=.
     rewrite (uniq_util.uniq_prvar_app_irrel (𝔄:=uniq_borₛ tri) _
       (l', (x1, (y1, y2)), ξb, db, gb, idxb) ξa π).

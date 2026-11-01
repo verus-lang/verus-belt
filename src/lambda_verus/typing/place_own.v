@@ -271,8 +271,8 @@ Section typing.
     typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (!ᵐ{ty.(ty_mty)} (pctx_vexpr K p))
       (λ v, +[v ◁ᵥ ty;
         p ◁ₗ pctx_plug (pctx_retype K (uninitₛ (ty_bsize ty))) (OfTy (↯ (ty_bsize ty)))])
-      (λ post '-[x], λ mask π, ∀ junk: ~~ (uninitₛ (ty_bsize ty)),
-        post -[pctx_get K x.1; (pctx_reset K x.1 junk, x.2)] mask π).
+      (λ post '-[x], post -[pctx_get K x.1;
+        (pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) K x.1 (), x.2)]).
   Proof.
     rename select (PctxVRoot K) into HR. rename select (PctxNoUniq K) into HK.
     destruct K as [| | |? 𝔄' n K| | | |]; try done; rewrite /PctxNoUniq /= in HK.
@@ -307,10 +307,7 @@ Section typing.
     iMod (lc_fupd_elim_laterN with "£ Gho1") as "Gho1".
     iApply (wp_bytes_own_move with "Pt1"); [solve_ndisj|].
     iIntros "!>" (vw fv bs) "(%Hfv & Hc & Hbs & %Hlen)". iModIntro.
-    set junk := (() : ~~ (uninitₛ (ty_bsize ty))).
-    iExists -[y; ((l, pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) K x₀ junk), ζm)]. iFrame "L I".
-    iSplitR "Obs"; last first.
-    { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
+    iExists -[y; ((l, pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) K x₀ ()), ζm)]. iFrame "L I Obs".
     iSplitR "Hbs Rest ⧗p Fr".
     { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists vw, D, fv. iSplit; [done|].
       iFrame "Hc".
@@ -325,7 +322,7 @@ Section typing.
     rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //
       pctx_loc_reset // pctx_mode_retype pctx_depth_retype /=.
     rewrite Hsz. iFrame "Rest".
-    iExists junk. iSplit; [done|]. rewrite /ofty_owned /=. iSplitL; [|done].
+    iExists (). iSplit; [done|]. rewrite /ofty_owned /=. iSplitL; [|done].
     iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].
     rewrite decode_value_tuple decide_True //.
   Qed.

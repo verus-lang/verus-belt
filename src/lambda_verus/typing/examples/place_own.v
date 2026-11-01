@@ -216,7 +216,7 @@ Section place_own.
     }
     intros post [[l [[lb v0] w]] []] mask π Hspec. rewrite /trans_upper /trans_tail /=.
     intros [[[[[l1 w1] ζi] d1] g1] idx1] Hc1 _ d g idx Hres
-      [[[l' [[lb' v'] w']] ζm'] []] (-> & Hx & _ & Hfin & _) _ _.
+      [[[l' [[lb' v'] w']] ζm'] []] (-> & Hx & _ & Hfin & _) _.
     simpl in Hc1, Hres, Hx, Hfin |- *. subst w1. injection Hx as -> ->.
     rewrite Hfin /oplace_blk_fin /= (uniq_util.uniq_prvar_app_irrel v0 7%Z ζi π) Hres. apply Hspec.
   Qed.
