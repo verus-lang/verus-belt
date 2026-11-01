@@ -44,7 +44,7 @@ Section typing.
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[l x] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
-    iDestruct "T" as (v Hp w D [-> Hw]) "(⧖ & Own)". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "T") as (v Hp w D [-> Hw]) "(⧖ & Own)". simpl in Hw. simplify_eq.
     destruct D as [|d]; [done|]. iDestruct "Own" as "(Pt & Fr & Gho)".
     iMod cumulative_time_receipt_0 as "⧗".
     iModIntro. iExists -[((l, x), [])]. iFrame "Obs". iSplit; [|done].
@@ -429,7 +429,7 @@ Section typing.
     destruct x as [[l x₀] ζm].
     rewrite /tctx_elt_interp.
     iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
-    iDestruct "Tb" as (vb Hpb wb db [-> Hwb]) "(#⧖b & Gb)".
+    iDestruct "Tb" as (vb Hpb wb db fvb [-> Hfvb]) "(Hcb & #⧖b & Gb)".
     have ?: Closed [] (pctx_expr K (ToLit p)).
     { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
@@ -477,7 +477,7 @@ Section typing.
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     (* Write. *)
     iApply (wp_bytes_own_forget with "Pt1"); [solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
-    iApply (wp_store_na with "Hbs"); [solve_ndisj|by eapply ty_val_wf|by rewrite Hlen -Hsz|].
+    iApply (wp_val_cells_store with "[$Hbs $Hcb]"); [solve_ndisj|done|by rewrite Hlen -Hsz|].
     iIntros "!> Hbs".
     (* Close the place at the new value. *)
     set d'' := (db + k0) `max` d. set g'' := db `max` g.
@@ -497,8 +497,7 @@ Section typing.
       iFrame "⧗p Fr". iSplit; [done|]. iSplit; [iPureIntro; lia|].
       rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //
         pctx_loc_reset // pctx_mode_retype pctx_depth_retype /=. rewrite Hsz'. iFrame "Rest".
-      iExists b. iSplit; [done|]. rewrite /ofty_owned. iFrame "Gb".
-      iApply (bytes_own_of_bytes with "Hbs"). by apply ty_bytes_encode. }
+      iExists b. iSplit; [done|]. rewrite /ofty_owned. by iFrame "Gb Hbs". }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].
     by apply Hπ.
   Qed.

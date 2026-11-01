@@ -176,6 +176,6 @@ Section shr_bytes_rules.
     iSplitR; [|iSplit; [|done]].
     - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr l) (S d)); [|done|done]. iFrame "⧖".
       rewrite /= /by_succ. iFrame "Pt Shr Pers".
-    - iExists _. iSplit; [done|]. iExists v, (S d). by iFrame "⧖ Gho'".
+    - rewrite -(tctx_val_intro_sep _ _ _ _ v (S d)); [|done|done]. by iFrame "⧖ Gho'".
   Qed.
 End shr_bytes_rules.

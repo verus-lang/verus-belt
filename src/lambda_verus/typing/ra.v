@@ -342,7 +342,7 @@ Section RA_bytes.
       (λ post '-[x], λ mask π, vra_valid VRA x π ∧ ∀ γ, post -[(γ, x)] mask π).
   Proof.
     iIntros (tid post mask iκs [x []]) "_ _ _ _ _ $ $ [p _] #Obs".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ _]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ _]".
     iMod (ra_alloc VRA ⊤ x with "[]") as (γ) "[Hx #Hinv]".
     { iApply (proph_obs_impl with "Obs"). by intros π [? _]. }
     iApply wp_ghost_op. iIntros "!> !>". iExists -[(γ, x)].
@@ -357,8 +357,8 @@ Section RA_bytes.
   Proof.
     iIntros (tid post mask iκs [[γ1 x1] [[γ2 x2] []]]) "_ _ #PROPH _ _ $ $ (p1 & p2 & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
-    iDestruct "p1" as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 [Hx1 #Hinv]]".
-    iDestruct "p2" as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 [Hx2 _]]".
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 [Hx1 #Hinv]]".
+    iDestruct (tctx_val_elim with "p2") as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 [Hx2 _]]".
     iAssert (own γ1 (◯ VraCar VRA (vra_op VRA x1 x2))) with "[Hx1 Hx2]" as "Hx".
     { rewrite -vra_car_op_eq auth_frag_op own_op. iFrame. }
     iApply wp_ghost_op. iIntros "!> !>". iExists -[(γ1, vra_op VRA x1 x2)].
@@ -376,7 +376,7 @@ Section RA_bytes.
   Proof.
     iIntros (tid post mask iκs [[γ x] [x1 [x2 []]]]) "_ _ #PROPH _ _ $ $ (p & _ & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & -> & _)"; [done|].
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ [Hx #Hinv]]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ [Hx #Hinv]]". simpl in Hw. simplify_eq.
     rewrite -vra_car_op_eq auth_frag_op. iDestruct "Hx" as "[Hx1 Hx2]".
     iApply wp_ghost_op. iIntros "!> !>". iExists -[(γ, x1); (γ, x2)].
     iSplitL; [|iApply (proph_obs_impl with "Obs"); by intros π [_ ?]].
@@ -404,7 +404,7 @@ Section RA_bytes.
         vra_frame_preserving_update VRA x y π ∧ post -[(γ, y)] mask π).
   Proof.
     iIntros (tid post mask iκs [[γ x] [y []]]) "_ _ _ _ _ $ $ (p & _ & _) #Obs".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ [Hx #Hinv]]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ [Hx #Hinv]]".
     iMod (ra_update VRA ⊤ γ x y with "Hinv Hx [Obs]") as "Hy"; [done| |].
     { iApply (proph_obs_impl with "Obs"). by intros π [? _]. }
     iApply wp_ghost_op. iIntros "!> !>". iExists -[(γ, y)].
@@ -421,7 +421,7 @@ Section RA_bytes.
   Proof.
     iIntros (tid post mask iκs [[γ x] [ys []]]) "_ _ #PROPH _ _ $ $ (p & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & %Hupd & _)"; [done|].
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ [Hx #Hinv]]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ [Hx #Hinv]]".
     iMod (ra_update_nondeterministic VRA ⊤ γ x _ ltac:(done) Hupd with "Hinv Hx")
       as (y) "[%Hin Hy]".
     iApply wp_ghost_op. iIntros "!> !>". iExists -[(γ, y)].
@@ -460,7 +460,7 @@ Section RA_bytes.
       (λ post '-[(_, (γ, x))], λ mask π, (vra_valid VRA x π → post -[] mask π)).
   Proof.
     iIntros (Alv tid post mask iκs [[l [γ x]] []]) "_ #TIME _ _ #E L $ [p _] #Obs".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ #Own]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ #Own]".
     destruct d as [|d]; [done|]. iDestruct (ra_shr_guard with "Own") as "#Shr".
     iDestruct (Alv with "L E") as "#Alv".
     iApply wp_fupd. rewrite /GhostOp.
@@ -491,8 +491,8 @@ Section RA_bytes.
     iIntros (Alv tid post mask iκs [[l1 [γ1 x1]] [[l2 [γ2 x2]] [y []]]])
       "_ #TIME #PROPH _ #E L $ (p1 & p2 & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hy & _)"; [done|].
-    iDestruct "p1" as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 #Own1]". simpl in Hw1. simplify_eq.
-    iDestruct "p2" as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 #Own2]".
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 #Own1]". simpl in Hw1. simplify_eq.
+    iDestruct (tctx_val_elim with "p2") as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 #Own2]".
     destruct d1 as [|d1]; [done|]. destruct d2 as [|d2]; [done|].
     iDestruct (ra_shr_guard with "Own1") as "#Shr1".
     iDestruct (ra_shr_guard with "Own2") as "#Shr2".
@@ -532,7 +532,7 @@ Section RA_bytes.
     iIntros (Alv tid post mask iκs [[l [γ x]] [y []]])
       "_ #TIME #PROPH _ #E L $ (p1 & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & %Hincl & _)"; [done|].
-    iDestruct "p1" as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 #Own1]". simpl in Hw1. simplify_eq.
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 #Own1]". simpl in Hw1. simplify_eq.
     destruct d1 as [|d1]; [done|].
     iDestruct (ra_shr_guard with "Own1") as "#Shr".
     iDestruct (Alv with "L E") as "#Alv".
@@ -564,8 +564,8 @@ Section RA_bytes.
     iIntros (Alv tid post mask iκs [[γ1 x] [[l [γ2 y]] [z []]]])
       "_ #TIME #PROPH _ #E L $ (p1 & p2 & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
-    iDestruct "p1" as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 [Hx _]]".
-    iDestruct "p2" as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 #Own2]".
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 [Hx _]]".
+    iDestruct (tctx_val_elim with "p2") as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 #Own2]".
     destruct d2 as [|d2]; [done|].
     iDestruct (ra_shr_guard with "Own2") as "#Shr".
     iDestruct (Alv with "L E") as "#Alv".
@@ -605,8 +605,8 @@ Section RA_bytes.
     iIntros (Alv tid post mask iκs [[γ1 x] [[l [γ2 y]] [zs []]]])
       "_ #TIME #PROPH _ #E L $ (p1 & p2 & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hupd & _)"; [done|].
-    iDestruct "p1" as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 [Hx _]]".
-    iDestruct "p2" as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 #Own2]".
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 [Hx _]]".
+    iDestruct (tctx_val_elim with "p2") as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 #Own2]".
     destruct d2 as [|d2]; [done|].
     iDestruct (ra_shr_guard with "Own2") as "#Shr".
     iDestruct (Alv with "L E") as "#Alv".

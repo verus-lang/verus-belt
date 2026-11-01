@@ -226,7 +226,7 @@ Section local_invariants.
   Proof.
     apply typed_inv_instr_ghost_op.
     iIntros (tid post mask iκs [[c ns] [x []]]) "#LFT #TIME #PROPH #UNIQ #E L I (_ & p2 & _) #Obs ⧗ _".
-    iDestruct "p2" as (vp Hp w d [-> Hw]) "[#⧖ Tra]".
+    iDestruct (tctx_val_elim with "p2") as (vp Hp w d [-> Hw]) "[#⧖ Tra]".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[#⧖S _]";
       [solve_ndisj|].
     iMod (proph_obs_sat with "PROPH Obs") as "%Sat". { set_solver. }
@@ -255,7 +255,7 @@ Section local_invariants.
   Proof.
     intros Halive. apply typed_instr_ghost_op.
     iIntros (tid post mask iκs [[[ns [[γ γt] d0]] c] []]) "#LFT #TIME #PROPH #UNIQ #E L I [p _] #Obs ⧗ ⧗1".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[_ (active & [%Hineq tok] & #inv)]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[_ (active & [%Hineq tok] & #inv)]".
     destruct I as [Il ϝ'].
     iDestruct "I" as (na_mask at_mask) "[%Hm [[cna_lft #ϝincl] Irest]]".
 
@@ -312,7 +312,7 @@ Section local_invariants.
   Proof.
     intros Halive HaliveI. apply typed_inv_instr_ghost_op.
     iIntros (tid post mask iκs [[l1 [[ns [[γ γt] d0]] c]] []]) "#LFT #TIME #PROPH #UNIQ #E L I [p _] #Obs ⧗ ⧗'".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ shrgho]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ shrgho]".
     destruct d as [|d]; first by done.
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[_ £]";
       [solve_ndisj|].
@@ -372,8 +372,8 @@ Section local_invariants.
       ).
   Proof.
     iIntros (tid post mask iκs [v [[[ns [[γ γt] d0]] c] []]]) "#LFT #TIME #PROPH #UNIQ E L I (p1 & p2 & _) #Obs".
-    iDestruct "p1" as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ gho1]".
-    iDestruct "p2" as (vp2 Hp2 w2 d2 [-> Hw2]) "[_ [tok closer]]".
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ gho1]".
+    iDestruct (tctx_val_elim with "p2") as (vp2 Hp2 w2 d2 [-> Hw2]) "[_ [tok closer]]".
     iApply wp_fupd. rewrite /GhostOp.
     iApply (wp_cumulative_time_receipt_linear with "TIME ⧖"); [solve_ndisj|]. iIntros "⧗big".
     wp_seq. wp_seq.

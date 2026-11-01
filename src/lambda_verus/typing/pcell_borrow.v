@@ -161,8 +161,8 @@ Section cell_shr_rules.
   Proof.
     iIntros (tid post mask iκs [[l g] [[l' [g' x]] []]]) "_ #TIME #PROPH _ _ $ $ (p & q & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
-    iDestruct "p" as (vp Hp wp dp [-> Hwp]) "[#⧖p #Own]". simpl in Hwp. simplify_eq.
-    iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q #Own']".
+    iDestruct (tctx_val_elim with "p") as (vp Hp wp dp [-> Hwp]) "[#⧖p #Own]". simpl in Hwp. simplify_eq.
+    iDestruct (tctx_val_elim with "q") as (vq Hq wq dq [-> Hwq]) "[#⧖q #Own']".
     rewrite /PCellBorrow.
     wp_bind p. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     wp_bind q. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
@@ -267,8 +267,8 @@ Section cell_uniq_rules.
     iIntros (Alv tid post mask iκs [[l g] [[[[[[l' [g' x]] ξi] di] gi] ξidx] []]])
       "#LFT #TIME #PROPH _ #E L $ (p & q & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
-    iDestruct "p" as (vp Hp wp dp [-> Hwp]) "[#⧖p #Own]". simpl in Hwp. simplify_eq.
-    iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp wp dp [-> Hwp]) "[#⧖p #Own]". simpl in Hwp. simplify_eq.
+    iDestruct (tctx_val_elim with "q") as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
     iDestruct "Uniq" as "(#Incl & [%Hle1 %Hle2] & Body)".
     rewrite /PCellBorrowMut.
     wp_bind p. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).

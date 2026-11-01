@@ -238,7 +238,7 @@ Section atomic_invariants.
   Proof.
     intros IAlv. apply typed_inv_instr_ghost_op.
     iIntros (tid post mask iκs [[c ns] [x []]]) "#LFT #TIME #PROPH #UNIQ #E L I (_ & p2 & _) #Obs ⧗ _".
-    iDestruct "p2" as (vp Hp w d [-> Hw]) "[#⧖ Tra]".
+    iDestruct (tctx_val_elim with "p2") as (vp Hp w d [-> Hw]) "[#⧖ Tra]".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[#⧖S £]";
       [solve_ndisj|].
     iDestruct (lc_weaken (d + 1) with "£") as "£"; [unfold advance_credits; lia|].
@@ -274,7 +274,7 @@ Section atomic_invariants.
     intros Halive. apply typed_atomic_ghost_op.
     iIntros ([[[ns γ] c] []] tid post mask na_mask at_mask iκs Hm1 Hm2).
     iIntros "#LFT #TIME #PROPH #UNIQ #E L I cna_lifetimes fnincl [p _] #Obs ⧗ _".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[_ [active #inv]]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[_ [active #inv]]".
     iMod (proph_obs_sat with "PROPH Obs") as "%Sat". { set_solver. }
     iDestruct "I" as "[ctr pool]".
     iMod (external_na_inv_cancel with "inv active pool") as "[P pool]". { set_solver. }
@@ -322,7 +322,7 @@ Section atomic_invariants.
     intros Halive HaliveI. apply typed_atomic_ghost_op.
     iIntros ([[l1 [[ns γ] c]] []] tid post mask na_mask at_mask iκs Hm1 Hm2).
     iIntros "#LFT #TIME #PROPH #UNIQ #E L [ctr pool] cna_lifetimes #fincl [p _] #Obs ⧗ ⧗'".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ shrgho]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ shrgho]".
     destruct d as [|d]; first by done.
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[_ £]";
       [solve_ndisj|].
@@ -386,8 +386,8 @@ Section atomic_invariants.
     intros IAlv. apply typed_atomic_ghost_op.
     iIntros ([v [[[ns γ] c] []]] tid post mask na_mask at_mask iκs Hm1 Hm2).
     iIntros "#LFT #TIME #PROPH #UNIQ E L [ctr pool] cna_lifetimes #fincl (p2 & p1 & _) #Obs ⧗ _".
-    iDestruct "p2" as (vp2 Hp2 w2 d [-> Hw2]) "[#⧖ gho1]".
-    iDestruct "p1" as (vp1 Hp1 w1 d1 [-> Hw1]) "[_ [handle closer]]".
+    iDestruct (tctx_val_elim with "p2") as (vp2 Hp2 w2 d [-> Hw2]) "[#⧖ gho1]".
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d1 [-> Hw1]) "[_ [handle closer]]".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[#⧖S £]";
       [solve_ndisj|].
     iDestruct (lc_weaken (d + 1) with "£") as "£"; [unfold advance_credits; lia|].

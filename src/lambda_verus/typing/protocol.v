@@ -186,7 +186,7 @@ Section storable_bytes.
       (λ post '-[x], λ mask π, ∀ n α, post -[(x, n, α)] mask π).
   Proof.
     iIntros (Alv tid post mask iκs [x1 []]) "#LFT #TIME _ _ #E L $ [p _] Obs".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ Gho]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ Gho]".
     iApply wp_fupd. rewrite /GhostOp.
     iApply (wp_cumulative_time_receipt2 with "TIME"); [solve_ndisj|]. iIntros "⧗".
     iDestruct (cumulative_time_receipt_sep 1 1 with "⧗") as "[⧗ _]".
@@ -220,7 +220,7 @@ Section storable_bytes.
       (λ post '-[(x, n, α)], λ mask π, post -[x] mask π).
   Proof.
     iIntros (tid post mask iκs [[[x0 [d0 g0]] α] []]) "#LFT #TIME _ _ _ $ $ [p _] Obs".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[_ Gho]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[_ Gho]".
     iDestruct "Gho" as (Hne) "(α & _ & Inh & #⧖2 & _)".
     iApply wp_fupd. rewrite /GhostOp.
     iApply (wp_cumulative_time_receipt2 with "TIME"); [solve_ndisj|]. iIntros "⧗".
@@ -257,7 +257,7 @@ Section storable_borrow.
   Proof.
     iIntros (Alv Incl tid post mask iκs [[l [[x0 [d0 g0]] α]] []])
       "#LFT #TIME _ _ #E L $ [p _] Obs".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ #Own]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ #Own]". simpl in Hw. simplify_eq.
     destruct d as [|d]; [done|].
     iDestruct (ghost_shr_elim _ _ (storable_ty ty) with "Own") as "#gho"; [done|].
     iDestruct (Alv with "L E") as "#Alv".
@@ -321,7 +321,7 @@ Section StorageProtocol_bytes.
     eval_path p = Some (MLitV v) → ty.(ty_val) x = Some v →
     ⧖d -∗ ty.(ty_gho_own) x d d tid -∗ tctx_elt_interp tid (p ◁ᵥ ty) x.
   Proof.
-    iIntros (Hp Hv) "⧖ Gho". iExists _. iSplit; [done|]. iExists v, d. by iFrame.
+    iIntros (Hp Hv) "⧖ Gho". rewrite -(tctx_val_intro_sep _ _ _ _ v d); [|done|done]. by iFrame.
   Qed.
 
   Notation "SP_Alloc: p s" := GhostOp (at level 102, p,s at level 1): expr_scope.
@@ -332,8 +332,8 @@ Section StorageProtocol_bytes.
       (λ post '-[a; c], λ mask π, vsp_rel a {[ k := c ]} π ∧ ∀ γ, post -[(γ, a)] mask π).
   Proof.
     iIntros (tid post mask iκs [a [c []]]) "_ _ #PROPH _ _ $ $ (p & s & _) #Obs".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ _]".
-    iDestruct "s" as (vs Hs w' d' [-> Hw']) "[_ HghoC]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ _]".
+    iDestruct (tctx_val_elim with "s") as (vs Hs w' d' [-> Hw']) "[_ HghoC]".
     iMod (sp_alloc_ns ⊤ NllftG a {[ k := c ]} (λ _ c, tyC.(gt_gho) c tid)
       with "PROPH [] [HghoC]") as "(%γ & %Hγ & Hsto & Htok)"; first solve_ndisj.
     { iApply (proph_obs_impl with "Obs"). by intros π [? _]. }
@@ -352,8 +352,8 @@ Section StorageProtocol_bytes.
   Proof.
     iIntros (tid post mask iκs [[γ1 a1] [[γ2 a2] []]]) "_ _ #PROPH _ _ $ $ (p1 & p2 & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & _)"; [done|].
-    iDestruct "p1" as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖ (%Hγ & #Hsto & Hown1)]".
-    iDestruct "p2" as (vp2 Hp2 w2 d2 [-> Hw2]) "[_ (_ & _ & Hown2)]".
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖ (%Hγ & #Hsto & Hown1)]".
+    iDestruct (tctx_val_elim with "p2") as (vp2 Hp2 w2 d2 [-> Hw2]) "[_ (_ & _ & Hown2)]".
     iAssert (sp_own γ1 (vsp_op a1 a2)) with "[Hown1 Hown2]" as "Hown".
     { rewrite sp_own_op. iFrame. }
     iApply wp_ghost_op. iIntros "!> !>". iExists -[(γ1, vsp_op a1 a2)].
@@ -372,7 +372,7 @@ Section StorageProtocol_bytes.
   Proof.
     iIntros (tid post mask iκs [[γ x] [x1 [x2 []]]]) "_ _ #PROPH _ _ $ $ (p & _ & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & -> & _)"; [done|].
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
     rewrite sp_own_op. iDestruct "Hown" as "[Hown1 Hown2]".
     iApply wp_ghost_op. iIntros "!> !>". iExists -[(γ, x1); (γ, x2)].
     iSplitL; [|iApply (proph_obs_impl with "Obs"); by intros π' [_ ?]].
@@ -394,8 +394,8 @@ Section StorageProtocol_bytes.
   Proof.
     iIntros (tid post mask iκs [[γ p] [s [new_p [new_s []]]]])
       "_ _ #PROPH _ _ $ $ (Hp & Hs & _ & _ & _) #Obs".
-    iDestruct "Hp" as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
-    iDestruct "Hs" as (vs Hs w' d' [-> Hw']) "[_ HghoC]".
+    iDestruct (tctx_val_elim with "Hp") as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "Hs") as (vs Hs w' d' [-> Hw']) "[_ HghoC]".
     iMod (sp_exchange p new_p {[ k := s ]} {[ k := new_s ]} γ _ ⊤ ltac:(set_solver)
       (proph_sub_diff' γ Hγ) with "PROPH Hsto [] Hown [HghoC]") as "(Hown & HghoC)".
     { iApply (proph_obs_impl with "Obs"). by intros π [? _]. }
@@ -417,8 +417,8 @@ Section StorageProtocol_bytes.
   Proof.
     iIntros (tid post mask iκs [[γ p] [s [new_p []]]])
       "_ _ #PROPH _ _ $ $ (Hp & Hs & _ & _) #Obs".
-    iDestruct "Hp" as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]".
-    iDestruct "Hs" as (vs Hs w' d' [-> Hw']) "[_ HghoC]".
+    iDestruct (tctx_val_elim with "Hp") as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]".
+    iDestruct (tctx_val_elim with "Hs") as (vs Hs w' d' [-> Hw']) "[_ HghoC]".
     iMod (sp_deposit p new_p {[ k := s ]} γ _ ⊤ ltac:(set_solver)
       (proph_sub_diff' γ Hγ) with "PROPH Hsto [] Hown [HghoC]") as "Hown".
     { iApply (proph_obs_impl with "Obs"). by intros π [? _]. }
@@ -438,7 +438,7 @@ Section StorageProtocol_bytes.
   Proof.
     iIntros (tid post mask iκs [[γ p] [new_p [new_s []]]])
       "_ _ #PROPH _ _ $ $ (Hp & _ & _ & _) #Obs".
-    iDestruct "Hp" as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "Hp") as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
     iMod (sp_withdraw p new_p {[ k := new_s ]} γ _ ⊤ ltac:(set_solver)
       (proph_sub_diff' γ Hγ) with "PROPH Hsto [] Hown") as "[Hown HghoC]".
     { iApply (proph_obs_impl with "Obs"). by intros π [? _]. }
@@ -457,7 +457,7 @@ Section StorageProtocol_bytes.
       (λ post '-[(γ, p); new_p], λ mask π, vsp_updates p new_p π ∧ post -[(γ, new_p)] mask π).
   Proof.
     iIntros (tid post mask iκs [[γ p] [new_p []]]) "_ _ #PROPH _ _ $ $ (Hp & _ & _) #Obs".
-    iDestruct "Hp" as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]".
+    iDestruct (tctx_val_elim with "Hp") as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]".
     iMod (sp_update p new_p γ _ ⊤ ltac:(set_solver)
       (proph_sub_diff' γ Hγ) with "PROPH Hsto [] Hown") as "Hown".
     { iApply (proph_obs_impl with "Obs"). by intros π [? _]. }
@@ -479,8 +479,8 @@ Section StorageProtocol_bytes.
   Proof.
     iIntros (tid post mask iκs [[γ p] [s [new_pss []]]])
       "_ _ #PROPH _ _ $ $ (Hp & Hs & _ & _) #Obs".
-    iDestruct "Hp" as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
-    iDestruct "Hs" as (vs Hs w' d' [-> Hw']) "[_ HghoC]".
+    iDestruct (tctx_val_elim with "Hp") as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "Hs") as (vs Hs w' d' [-> Hw']) "[_ HghoC]".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & %exchng & _)"; [done|].
     iMod (sp_exchange_nondeterministic p {[ k := s ]} _ γ _ ⊤ exchng ltac:(set_solver)
       (proph_sub_diff' γ Hγ) with "PROPH Hsto Hown [HghoC]")
@@ -542,7 +542,7 @@ Section StorageProtocol_bytes.
   Proof.
     iIntros (Alv tid post mask iκs [[l [γ p]] [s []]]) "_ #TIME #PROPH _ #E L $ (p1 & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & %guard & _)"; [done|].
-    iDestruct "p1" as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ #Own]". simpl in Hw1. simplify_eq.
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ #Own]". simpl in Hw1. simplify_eq.
     destruct d as [|d]; [done|].
     iDestruct (sr_shr_elim with "Own") as "#Hshr".
     iDestruct (Alv with "L E") as "#Alv".
@@ -578,8 +578,8 @@ Section StorageProtocol_bytes.
     iIntros (Alv tid post mask iκs [[l1 [γ1 x1]] [[l2 [γ2 x2]] [y []]]])
       "_ #TIME #PROPH _ #E L $ (p1 & p2 & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hy & _)"; [done|].
-    iDestruct "p1" as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 #Own1]". simpl in Hw1. simplify_eq.
-    iDestruct "p2" as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 #Own2]".
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 #Own1]". simpl in Hw1. simplify_eq.
+    iDestruct (tctx_val_elim with "p2") as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 #Own2]".
     destruct d1 as [|d1]; [done|]. destruct d2 as [|d2]; [done|].
     iDestruct (sr_shr_elim with "Own1") as "#Shr1".
     iDestruct (sr_shr_elim with "Own2") as "#Shr2".
@@ -620,7 +620,7 @@ Section StorageProtocol_bytes.
     iIntros (Alv tid post mask iκs [[l1 [γ x1]] [x2 []]])
       "_ #TIME #PROPH _ #E L $ (p1 & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & %Hincl & _)"; [done|].
-    iDestruct "p1" as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ #Own]". simpl in Hw1. simplify_eq.
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ #Own]". simpl in Hw1. simplify_eq.
     destruct d as [|d]; [done|].
     iDestruct (sr_shr_elim with "Own") as "#Shr".
     iDestruct (Alv with "L E") as "#Alv".
@@ -659,7 +659,7 @@ Section StorageProtocol_bytes.
         (t = ∅ → post -[(q, inhabitant)] mask π)).
   Proof.
     iIntros (Alv tid post mask iκs [[l [γ p]] []]) "_ #TIME #PROPH _ #E L $ (p1 & _) #Obs".
-    iDestruct "p1" as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ #Own]".
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ #Own]".
     destruct d as [|d]; [done|].
     iDestruct (sr_shr_elim with "Own") as "#Shr".
     iDestruct (Alv with "L E") as "#Alv".
@@ -703,9 +703,9 @@ Section StorageProtocol_bytes.
     iIntros (Alv tid post mask iκs [[γ p] [[l' [γ' p']] [s [new_p [new_s []]]]]])
       "_ #TIME #PROPH _ #E L $ (Hp & Hp' & Hs & _ & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & _)"; [done|].
-    iDestruct "Hp" as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
-    iDestruct "Hp'" as (vp' Hp' w' d' [-> Hw']) "[#⧖' #Own']".
-    iDestruct "Hs" as (vs Hs w'' d'' [-> Hw'']) "[_ HghoC]".
+    iDestruct (tctx_val_elim with "Hp") as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "Hp'") as (vp' Hp' w' d' [-> Hw']) "[#⧖' #Own']".
+    iDestruct (tctx_val_elim with "Hs") as (vs Hs w'' d'' [-> Hw'']) "[_ HghoC]".
     destruct d' as [|d']; [done|].
     iDestruct (sr_shr_elim with "Own'") as "#Shr".
     iDestruct (Alv with "L E") as "#Alv".
@@ -747,9 +747,9 @@ Section StorageProtocol_bytes.
     iIntros (Alv tid post mask iκs [[γ p] [[l' [γ' p']] [s [new_pss []]]]])
       "_ #TIME #PROPH _ #E L $ (Hp & Hp' & Hs & _ & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & %exchng & _)"; [done|].
-    iDestruct "Hp" as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
-    iDestruct "Hp'" as (vp' Hp' w' d' [-> Hw']) "[#⧖' #Own']".
-    iDestruct "Hs" as (vs Hs w'' d'' [-> Hw'']) "[_ HghoC]".
+    iDestruct (tctx_val_elim with "Hp") as (vp Hp w d [-> Hw]) "[#⧖ (%Hγ & #Hsto & Hown)]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "Hp'") as (vp' Hp' w' d' [-> Hw']) "[#⧖' #Own']".
+    iDestruct (tctx_val_elim with "Hs") as (vs Hs w'' d'' [-> Hw'']) "[_ HghoC]".
     destruct d' as [|d']; [done|].
     iDestruct (sr_shr_elim with "Own'") as "#Shr".
     iDestruct (Alv with "L E") as "#Alv".
@@ -799,8 +799,8 @@ Section StorageProtocol_bytes.
     iIntros (Alv tid post mask iκs [[[[[[l1 [γ1 x1]] ξi] di] gi] idx] [[l2 [γ2 x2]] []]])
       "#LFT #TIME #PROPH #UNIQ #E L $ (p1 & p2 & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & _)"; [done|].
-    iDestruct "p1" as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 Huniq]".
-    iDestruct "p2" as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 #Own2]".
+    iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d1 [-> Hw1]) "[#⧖1 Huniq]".
+    iDestruct (tctx_val_elim with "p2") as (vp2 Hp2 w2 d2 [-> Hw2]) "[#⧖2 #Own2]".
     destruct d2 as [|d2]; [done|].
     iDestruct (sr_shr_elim with "Own2") as "#Shr".
     iDestruct (Alv with "L E") as "#Alv".

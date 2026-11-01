@@ -51,7 +51,7 @@ Section memcpy_res.
     iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
     have ?: Closed [] (pctx_expr K (ToLit p)).
     { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
-    iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
+    iDestruct (tctx_val_elim with "Tw") as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Frw & Gw0)".
     iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     iDestruct (Alv with "L E") as "#Alv".

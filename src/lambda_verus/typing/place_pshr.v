@@ -1075,7 +1075,7 @@ Section memcpy.
     destruct x as [x₀ ζm].
     iDestruct "Tp" as (v Hp) "Tp". iEval (rewrite vplace_own_open) in "Tp".
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
-    iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
+    iDestruct (tctx_val_elim with "Tw") as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
     iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
@@ -1175,7 +1175,7 @@ Section memcpy.
     destruct x as [x ζm].
     iDestruct "Tp" as (v Hp) "Tp". rewrite vplace_own_eq.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
-    iDestruct "Tw" as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
+    iDestruct (tctx_val_elim with "Tw") as (vw Hpw ww dw [-> Hww]) "(#⧖w & Tw)". simpl in Hww. simplify_eq.
     destruct dw as [|dw]; [done|]. iDestruct "Tw" as "(Bs & Fr & Gw0)".
     iApply (wp_bytes_own_forget with "Bs"); [solve_ndisj|]. iIntros (bsw) "Hbsw %Hlenw".
     iDestruct (Alv with "L E") as "#Alv".

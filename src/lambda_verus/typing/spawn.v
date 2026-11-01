@@ -109,7 +109,7 @@ Section spawn.
   Arguments ty_gho_own {_ _ _} _ _ _ _ : simpl never.
   
   Lemma spawn_type {𝔄 𝔅 ℭ} (c: ~~ℭ) (Φ: (~~ℭ) → pred' (~~𝔅)) call_once_val call_once_tr (fty: type 𝔄) (retty: type 𝔅)
-      call_once `{!Send fty, !Send retty} :
+      call_once `{!Send fty, !Send retty, !NoCell 𝔅} :
     typed_val call_once ((fn<()>(∅; fty) → retty) call_once_tr) (call_once_val, c) →
     let E ϝ := ty_outlives_E fty static ++ ty_outlives_E retty static in
     typed_val (spawn (syn_mty 𝔅) call_once) ((fn(E; fty) → join_handle Φ retty)
@@ -153,7 +153,7 @@ Section spawn.
       iSimpl in "T1".
       rewrite !tctx_fun_val.
       iDestruct "T1" as "(%d1 & %Hphys1 & #Hd1 & Hgho1)".
-      iDestruct "T2" as (vp Hp wx d2 [-> Hval2]) "[#Hd2 Hgho2]".
+      iDestruct "T2" as (vp Hp wx d2 fv [-> Hfv2]) "(Hc & #Hd2 & Hgho2)".
       rewrite eval_path_of_val in Hp. simplify_eq.
       iCombine "Hd1 Hd2" as "Hd".
 
@@ -197,8 +197,8 @@ Section spawn.
       iMod (fupd_mask_mono with "X") as "X". { apply union_least; solve_ndisj. }
       iMod (fupd_mask_mono with "X") as "X". { apply union_least; solve_ndisj. }
       iDestruct "X" as (x' off) "[Hgho2 [#⧖off [%Habs [L cna_lifetimes]]]]".
-      have Hval' : fty.(ty_val) x' = fty.(ty_val) a.
-      { rewrite -!ty_val_eq. by apply syn_abstract_val_eq. }
+      have Hfv' : fty.(ty_fval) x' = fty.(ty_fval) a.
+      { rewrite -!ty_fval_eq. by apply syn_abstract_fval_eq. }
 
       iModIntro. wp_bind (lib.spawn.spawn _ _).
       iApply (spawn_spec spawnN (syn_mty 𝔅) _ (join_future retty (Φ c')) with "[- L I1 I2 cna_lifetimes]"); [solve_ndisj|..]; last first.
@@ -217,7 +217,7 @@ Section spawn.
       iIntros (?) "fin".
       do 2 wp_let.
 
-      iApply (type_call_iris (𝔄l:=[_]) () -[x'] [] _ _ (λ '(), FP ∅ +[fty] retty AtomicClosed)  with "LFT TIME PROPH UNIQ E [] [] I' [Hgho1] [Hgho2]").
+      iApply (type_call_iris (𝔄l:=[_]) () -[x'] [] _ _ (λ '(), FP ∅ +[fty] retty AtomicClosed)  with "LFT TIME PROPH UNIQ E [] [] I' [Hgho1] [Hgho2 Hc]").
       3: by iApply guards_refl.
       1: apply _.
       + move => ϝ'.
@@ -239,8 +239,8 @@ Section spawn.
         { iFrame "Hd". iDestruct (ty_gho_own_depth_mono with "Hgho1") as "[H _]"; last iFrame.
           all:lia. }
         done.
-      + rewrite/=. iSplit => //. rewrite tctx_val_val.
-        iExists _. iFrame "⧖off". iSplit; [by rewrite Hval'|].
+      + rewrite/=. iSplit => //. iExists _. iSplit; [done|].
+        iExists wx, _, fv. iFrame "Hc ⧖off". iSplit; [by rewrite Hfv'|].
         iDestruct (ty_gho_own_depth_mono with "Hgho2") as "[H _]"; last iFrame.
         all:lia.
       + iApply (proph_obs_impl with "Obs"). intros π Hpost.
@@ -248,7 +248,7 @@ Section spawn.
          * done.
          * apply Hpost1.
       + iClear "Obs Hd Hsd". iIntros (ret ? w) "_ I ret #Obs". wp_rec.
-        iDestruct "ret" as (vr Hvr w' d [-> Hw']) "[#Hd ret]".
+        iDestruct (tctx_val_elim with "ret") as (vr Hvr w' d [-> Hw']) "[#Hd ret]".
         rewrite eval_path_of_val in Hvr. simplify_eq.
         iApply (wp_persistent_time_receipt with "TIME Hd"); [trivial|].
         iIntros "£ #Hsd".

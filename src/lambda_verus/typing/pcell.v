@@ -282,7 +282,7 @@ Section pcell_rules.
       (λ post '-[(l, x)], λ mask π, ∀ g, post -[(l, g); (g, x)] mask π).
   Proof.
     iIntros (Hsz tid post mask iκs [[l x] []]) "_ _ _ _ _ $ $ [p _] Obs".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ Own]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ Own]". simpl in Hw. simplify_eq.
     rewrite /PCellNew. wp_bind p.
     iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & Gho)".
@@ -325,7 +325,7 @@ Section pcell_rules.
       (λ post '-[(l, x)], λ mask π, ∀ g, post -[(l, (g, (g, x)))] mask π).
   Proof.
     iIntros (Hsz tid post mask iκs [[l x] []]) "_ #TIME _ _ _ $ $ [p _] Obs".
-    iDestruct "p" as (vp Hp w d [-> Hw]) "[#⧖ Own]". simpl in Hw. simplify_eq.
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ Own]". simpl in Hw. simplify_eq.
     rewrite /PCellFromOwn. wp_bind p.
     iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & Gho)".
@@ -358,8 +358,8 @@ Section pcell_rules.
   Proof.
     iIntros (tid post mask iκs [[l g] [[g' x] []]]) "_ _ #PROPH _ _ $ $ (p & q & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
-    iDestruct "p" as (vp Hp wp dp [-> Hwp]) "[#⧖p Own]". simpl in Hwp. simplify_eq.
-    iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q Pt]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp wp dp [-> Hwp]) "[#⧖p Own]". simpl in Hwp. simplify_eq.
+    iDestruct (tctx_val_elim with "q") as (vq Hq wq dq [-> Hwq]) "[#⧖q Pt]".
     rewrite /PCellIntoInner.
     wp_bind p. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
     wp_bind q. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
@@ -524,7 +524,7 @@ Section pcell_atomics.
     iIntros (? Alv tid post mask iκs [[l g] [[l' [g' x]] []]])
       "#LFT #TIME #PROPH _ #E L $ (p & q & _) #Obs".
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
-    iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q #Own']".
+    iDestruct (tctx_val_elim with "q") as (vq Hq wq dq [-> Hwq]) "[#⧖q #Own']".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
     simpl in Hw. simplify_eq. wp_pure _.
     destruct d as [|d0]; [done|]. destruct dq as [|dq0]; [done|].
@@ -616,7 +616,7 @@ Section pcell_atomics.
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
     simpl in Hw. simplify_eq. wp_pure _.
     wp_bind r. iApply (wp_val with "r"). iIntros (v dy Hr Hv) "#⧖y Gy".
-    iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
+    iDestruct (tctx_val_elim with "q") as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
     destruct d as [|d0]; [done|]. iDestruct "Own" as "(#Gp & _ & _)".
     iApply wp_fupd.
     iApply (wp_cumulative_time_receipt2 with "TIME"); [solve_ndisj|]. iIntros "⧗".
@@ -682,7 +682,7 @@ Section pcell_atomics.
     simpl in Hw. simplify_eq. wp_pure _.
     wp_bind r1. iApply (wp_val with "r1"). iIntros (v1 d1 Hr1 Hv1) "_ _".
     wp_bind r2. iApply (wp_val with "r2"). iIntros (v2 dy Hr2 Hv2) "#⧖y Gy".
-    iDestruct "q" as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
+    iDestruct (tctx_val_elim with "q") as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
     destruct d as [|d0]; [done|]. iDestruct "Own" as "(#Gp & _ & _)".
     iApply wp_fupd.
     iApply (wp_cumulative_time_receipt2 with "TIME"); [solve_ndisj|]. iIntros "⧗".
