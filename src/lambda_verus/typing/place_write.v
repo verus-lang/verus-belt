@@ -83,7 +83,7 @@ Section write_acc.
       (ty: type 𝔅) x₀ ζm D tid p v (G: iProp Σ) Φ :
     Timeless G → lazyE ⊆ E → eval_path p = Some v →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_ulft K (OfTy ty)]) -∗ G -∗
-    £((D + 1) * (D + 2) + 1) -∗ ⧖D -∗ ⧗(lty_vnrc (pctx_plug K (OfTy ty))) -∗
+    £(3 * D + 5) -∗ ⧖D -∗ ⧗(lty_vnrc (pctx_plug K (OfTy ty))) -∗
     vroot_own (pctx_plug K (OfTy ty)) (pctx_vrfn K x₀ ζm (inl (PlaceIn (pctx_get K x₀)))) D
       tid v -∗
     (∀ (l: loc) dh gh, ⌜dh + pctx_dlev K ≤ D ∧ gh ≤ D⌝ -∗
@@ -111,7 +111,7 @@ Section write_acc.
   Lemma wp_vplace_wacc_strong {𝔅 𝔄 𝔅'} E n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} (ty: type 𝔅)
       (ty': type 𝔅') x₀ ζm D tid p v (G: iProp Σ) Φ :
     pctx_nosum K → ty_bsize ty' = ty_bsize ty → eval_path p = Some v →
-    G -∗ £((D + 1) * (D + 2) + 1) -∗ ⧖D -∗ ⧗(lty_vnrc (pctx_plug (POwn n K) (OfTy ty))) -∗
+    G -∗ £(3 * D + 5) -∗ ⧖D -∗ ⧗(lty_vnrc (pctx_plug (POwn n K) (OfTy ty))) -∗
     vroot_own (pctx_plug (POwn n K) (OfTy ty))
       (pctx_vrfn (POwn n K) x₀ ζm (inl (PlaceIn (pctx_get (POwn n K) x₀)))) D tid v -∗
     (∀ (l: loc) dh gh, ⌜dh + pctx_dlev (POwn n K) ≤ D ∧ gh ≤ D⌝ -∗
@@ -163,12 +163,12 @@ Section write_acc.
       of a value of type [ty'] ([pctx_wty]): from the place, a CPS around the address of
       the hole ([pctx_vexpr K p]), which gives the bytes and the ownership of the old value
       of the leaf (without laters), and a closer for a new value of type [ty']. The
-      enclosing borrows are opened with the later credits [£((D + 1) * (D + 2) + 1)]. *)
+      enclosing borrows are opened with the later credits [£(3 * D + 5)]. *)
   Lemma wp_vplace_wacc {𝔅 𝔄 𝔅' 𝔄'} E (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K}
       (ty: type 𝔅) (ty': type 𝔅') (K': pctx 𝔅' 𝔄') f x₀ ζm D tid p v (G: iProp Σ) Φ :
     pctx_wty K ty ty' K' f → Timeless G → lazyE ⊆ E → eval_path p = Some v →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_ulft K (OfTy ty)]) -∗ G -∗
-    £((D + 1) * (D + 2) + 1) -∗ ⧖D -∗ ⧗(lty_vnrc (pctx_plug K (OfTy ty))) -∗
+    £(3 * D + 5) -∗ ⧖D -∗ ⧗(lty_vnrc (pctx_plug K (OfTy ty))) -∗
     vroot_own (pctx_plug K (OfTy ty)) (pctx_vrfn K x₀ ζm (inl (PlaceIn (pctx_get K x₀)))) D
       tid v -∗
     (∀ (l: loc) dh gh, ⌜dh + pctx_dlev K ≤ D ∧ gh ≤ D⌝ -∗
@@ -225,7 +225,7 @@ Section write.
     { iApply (guards_transitive with "Ghalf"). iApply (guards_transitive with "Alv").
       by iApply pctx_alv_noshr. }
     have HM: D ≤ M by rewrite /M; lia.
-    iDestruct (lc_weaken (((D + 1) * (D + 2) + 1) + (1 + (1 + D * (D + 1)))) with "£")
+    iDestruct (lc_weaken ((3 * D + 5) + (1 + (1 + D * (D + 1)))) with "£")
       as "[£a [£r £s]]"; [rewrite /advance_credits; nia|].
     (* The access to the leaf, and its address. *)
     wp_bind (pctx_vexpr K p).

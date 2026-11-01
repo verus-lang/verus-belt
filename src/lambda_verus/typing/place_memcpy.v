@@ -96,7 +96,7 @@ Section memcpy.
     iDestruct (cumulative_time_receipt_sep 1 (S M) with "⧗") as "[⧗c ⧗k]".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗c ⧖m") as "[_ £]";
       [solve_ndisj|].
-    iDestruct (lc_weaken (((Dd + 1) * (Dd + 2) + 1) + (1 + (1 + Dd * (Dd + 1)))) with "£")
+    iDestruct (lc_weaken ((3 * Dd + 5) + (1 + (1 + Dd * (Dd + 1)))) with "£")
       as "[£a [£r £s]]"; [rewrite /advance_credits; nia|].
     iApply (wp_vplace_wacc _ Kd tyd ty Kd' fd with "LFT PROPH UNIQ GAd A £a ⧖d ⧗d Ownd");
       [done|solve_ndisj|done|].
@@ -195,7 +195,7 @@ Section memcpy.
     iDestruct (cumulative_time_receipt_sep 1 (S M) with "⧗") as "[⧗c ⧗k]".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗c ⧖m") as "[_ £]";
       [solve_ndisj|].
-    iDestruct (lc_weaken (((Dd + 1) * (Dd + 2) + 1) + (1 + (1 + Dd * (Dd + 1)))) with "£")
+    iDestruct (lc_weaken ((3 * Dd + 5) + (1 + (1 + Dd * (Dd + 1)))) with "£")
       as "[£a [£r £s]]"; [rewrite /advance_credits; nia|].
     iApply (wp_vplace_wacc _ Kd tyd ty Kd' fd with "LFT PROPH UNIQ GAd A £a ⧖d ⧗d Ownd");
       [done|solve_ndisj|done|].
@@ -214,7 +214,7 @@ Section memcpy.
     have ?: TCEq (to_val (pctx_vexpr Ks ps)) None by rewrite pctx_vexpr_to_val; constructor.
     iApply (wp_persistent_time_receipt with "TIME ⧖s"); [solve_ndisj|].
     iIntros "£s _".
-    iDestruct (lc_weaken ((Ds + 1) * (Ds + 2) + 1) with "£s") as "£s";
+    iDestruct (lc_weaken (3 * Ds + 5) with "£s") as "£s";
       [rewrite /advance_credits; nia|].
     iApply (wp_vplace_wacc _ Ks ty (↯ (ty_bsize ty)) (pctx_retype Ks (uninitₛ (ty_bsize ty)))
       (pctx_reset Ks) with "LFT PROPH UNIQ GBs B £s ⧖s ⧗s Owns");

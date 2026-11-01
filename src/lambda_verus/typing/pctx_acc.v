@@ -148,11 +148,12 @@ Section pctx_fun.
     end.
 
   (** The later credits for an access ([pctx_acc]), at a depth [d] and with [m] laters:
-      none below no unique borrow. *)
+      none below no unique borrow; otherwise, at each unique borrow, its laters (the owned
+      pointers above it) and one for its lazy contents. *)
   Definition pctx_acc_cred {𝔅 𝔄} (K: pctx 𝔅 𝔄) (m d: nat) : nat :=
-    match pctx_ulfts K with [] => 0 | _ => (d + 1) * (m + d + 2) end.
+    match pctx_ulfts K with [] => 0 | _ => m + 2 * d + 2 end.
 
-  Lemma pctx_acc_cred_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) m d : pctx_acc_cred K m d ≤ (d + 1) * (m + d + 2).
+  Lemma pctx_acc_cred_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) m d : pctx_acc_cred K m d ≤ m + 2 * d + 2.
   Proof. rewrite /pctx_acc_cred. destruct (pctx_ulfts K); lia. Qed.
 
   (** The context ends with [PUniq κ PHole] (the hole is the whole referent of the
@@ -640,11 +641,11 @@ Section pctx_acc.
   Proof.
     iIntros (HK HKs IH m p r x ζm q d g tid l E G HE ?) "#LFT #PROPH #UNIQ #Gk G £ /=".
     iIntros "(Pt & ⧗ & #TIME & N)".
-    iDestruct (lc_weaken (m + (1 + ((d + 1) * (m + d + 2) - m - 1))) with "£") as "[£m [£1 £]]";
-      [rewrite /pctx_acc_cred /=; nia|].
+    iDestruct (lc_weaken (m + (1 + 2 * d)) with "£") as "[£m [£1 £]]";
+      [rewrite /pctx_acc_cred /=; lia|].
     iMod (lc_fupd_elim_laterN with "£m N") as "(#Incl & %d' & %g' & %Hle & C)".
     iDestruct (lc_weaken (pctx_acc_cred K 0 d') with "£") as "£";
-      [have := pctx_acc_cred_le K 0 d'; nia|].
+      [have := pctx_acc_cred_le K 0 d'; lia|].
     rewrite ltype_own_cp_uniq_plug //.
     have ?: ↑NllftG ⊆ E. { trans lazyE; [apply lazyE_NllftG|done]. }
     have ?: ↑Nllft ∪ ↑prophN ⊆ E. { trans lazyE; [rewrite /lazyE; solve_ndisj|done]. }
@@ -784,9 +785,9 @@ Section vroot.
 
   (** The later credits for an access to the hole below a root pointer, at a depth [D]. *)
   Definition pctx_vacc_cred {𝔅 𝔄} (K: pctx 𝔅 𝔄) (D: nat) : nat :=
-    match pctx_ulfts K with [] => 0 | _ => (D + 1) * (D + 1) end.
+    match pctx_ulfts K with [] => 0 | _ => 2 * D + 3 end.
 
-  Lemma pctx_vacc_cred_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) D : pctx_vacc_cred K D ≤ (D + 1) * (D + 1).
+  Lemma pctx_vacc_cred_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) D : pctx_vacc_cred K D ≤ 2 * D + 3.
   Proof. rewrite /pctx_vacc_cred. destruct (pctx_ulfts K); lia. Qed.
 
   (** The closer of an access to the hole below a root pointer: as [pctx_closer], the root

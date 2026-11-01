@@ -55,7 +55,7 @@ Section leaf_acc.
       x₀ ζm D tid v E (G: iProp Σ) :
     Timeless G → lazyE ⊆ E →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_ulft K (OfTy ty)]) -∗ G -∗
-    £((D + 1) * (D + 2) + 1) -∗
+    £(3 * D + 5) -∗
     vroot_own (pctx_plug K (OfTy ty)) (pctx_vrfn K x₀ ζm (inl (PlaceIn (pctx_get K x₀)))) D tid v
       ={E}=∗
     ∃ (G': iProp Σ) dh gh, ⌜Timeless G'⌝ ∗ G' ∗ ⌜v = MLitV (VPtr (pctx_vrloc K (lty_size (OfTy ty)) x₀))⌝ ∗
@@ -175,8 +175,7 @@ Section sum_deep.
     { iApply (guards_transitive with "Ghalf Alv"). }
     set lt' := SumLty tyl j (OfTy (tyl +!! j)).
     set r' := (prfn_sum j (inl (PlaceIn a)) : prfn (xsumₛ 𝔄l)).
-    iDestruct (lc_weaken (pctx_vacc_cred K D + (3 * (D + 1) * D + (1 + 3 * (D + 1))))
-      with "£") as "[£a [£w [£1 £r]]]";
+    iDestruct (lc_weaken (pctx_vacc_cred K D + 1) with "£") as "[£a £1]";
       [have := pctx_vacc_cred_le K D; rewrite /advance_credits; nia|].
     iMod (vroot_acc K (OfTy (Σ! tyl)) with "LFT PROPH UNIQ Hu H1 £a Own")
       as (G' dh gh) "(% & G' & #G'G & -> & %Hdh & H & P & Cl)"; [solve_ndisj|].
@@ -186,7 +185,7 @@ Section sum_deep.
     { iApply (guards_transitive with "G'G Hu"). }
     (* The address of the hole. *)
     wp_bind (pctx_vexpr K p).
-    iApply (wp_wand with "[P G' £w]").
+    iApply (wp_wand with "[P G']").
     { iApply (wp_pctx_vptrs _ K (lty_size (OfTy (Σ! tyl))) G' x₀ p True%I with "[G'] P").
       iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
     iIntros (w) "(-> & _ & G' & P)".

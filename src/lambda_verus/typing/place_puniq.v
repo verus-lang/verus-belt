@@ -639,8 +639,8 @@ Section puniq.
     { iApply (guards_transitive with "Ghalf"). iApply (guards_transitive with "Alv").
       by iApply pctx_alv_noshr. }
     set y := pctx_get K x₀.
-    iDestruct (lc_weaken (pctx_vacc_cred K D + (D + (3 * (D + 1) * D + 1))) with "£")
-      as "[£a [£k [£w £c]]]"; [have := pctx_vacc_cred_le K D; rewrite /advance_credits; nia|].
+    iDestruct (lc_weaken (pctx_vacc_cred K D + (D + 1)) with "£")
+      as "[£a [£k £c]]"; [have := pctx_vacc_cred_le K D; rewrite /advance_credits; nia|].
     iMod (vroot_acc K (OfTy ty) with "LFT PROPH UNIQ Hu H1 £a Own")
       as (G' dh gh) "(% & G' & #G'G & -> & %Hdh & H & P & Cl)"; [solve_ndisj|].
     destruct Hdh as (Hdh & Hgh & Hin).
@@ -651,7 +651,7 @@ Section puniq.
     iDestruct "H" as (? ->) "[Pt1 Gho1]".
     (* The address of the hole. *)
     iApply wp_fupd. wp_bind (pctx_vexpr K p).
-    iApply (wp_wand with "[P G' £w]").
+    iApply (wp_wand with "[P G']").
     { iApply (wp_pctx_vptrs ⊤ K (lty_size (OfTy ty)) G' x₀ p True%I with "[G'] P").
       iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
     iIntros (w) "(-> & _ & G' & P)". wp_pure _.
@@ -961,8 +961,8 @@ Section puniq.
     { iApply (guards_transitive with "Ghalf"). iApply (guards_transitive with "Alv").
       iApply llftl_intersect_incl_r. }
     set y := pctx_get K x₀.
-    iDestruct (lc_weaken (pctx_vacc_cred K D + (3 * (D + 1) * D + (1 + 1))) with "£")
-      as "[£a [£w [£c1 £c2]]]"; [have := pctx_vacc_cred_le K D; rewrite /advance_credits; nia|].
+    iDestruct (lc_weaken (pctx_vacc_cred K D + (1 + 1)) with "£")
+      as "[£a [£c1 £c2]]"; [have := pctx_vacc_cred_le K D; rewrite /advance_credits; nia|].
     iMod (vroot_acc K (OfTy ty) with "LFT PROPH UNIQ Hu H1 £a Own")
       as (G' dh gh) "(% & G' & #G'G & -> & %Hdh & H & P & Cl)"; [solve_ndisj|].
     destruct Hdh as (Hdh & Hgh & Hin).
@@ -973,7 +973,7 @@ Section puniq.
     iDestruct "H" as (? idx ->) "Body".
     (* The address of the hole. *)
     iApply wp_fupd. wp_bind (pctx_vexpr K p).
-    iApply (wp_wand with "[P G' £w]").
+    iApply (wp_wand with "[P G']").
     { iApply (wp_pctx_vptrs ⊤ K (lty_size (OfTy ty)) G' x₀ p True%I with "[G'] P").
       iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
     iIntros (w) "(-> & _ & G' & P)". wp_pure _.
