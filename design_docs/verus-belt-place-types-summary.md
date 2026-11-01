@@ -806,7 +806,7 @@ Lemma type_write_place_instr {𝔅 𝔄 𝔅' 𝔄'} E L I p pb (K: pctx 𝔅 �
   `vplace_leaf_acc` (`place_deep.v`); strong: `ltype_own_plug` and `pctx_retype`.
 - **Deleted:** `type_write_oplace_instr` (`place_own.v`), `type_write_vplace_deep_instr`,
   `type_write_oplace_deep_instr` (`place_puniq.v`), and `type_store_own_bytes_instr`
-  (`value_ctx.v`): it is the strong instance for `K = POwn n PHole` after
+  (`value_ctx.v`): it is the instance `K = POwn n PHole`, `pctx_wty_same`, after
   `tctx_own_to_oplace` (with `resolve_just`, then `tctx_oplace_to_own`); it was unused.
   Examples ported: `place_own`, `place_struct`, `pcell_example`, `pcell_move`, `place_res`
   (programs `ToLit "r" <-{MInt i32} "five"` without `ReBor;;`; proofs
