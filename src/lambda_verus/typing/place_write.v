@@ -93,13 +93,13 @@ Section write_acc.
   Proof.
     iIntros (?? Hp) "#LFT #PROPH #UNIQ #Gu G £ #⧖ ⧗p Own HΦ".
     iMod (vplace_leaf_acc K ty x₀ ζm D tid v E G with "LFT PROPH UNIQ Gu G £ Own")
-      as (G' dh gh) "(% & G' & -> & %Hdh & #G'u & Pt1 & Gho1 & P & Cl)"; [done|done|].
+      as (G' dh gh) "(% & G' & -> & %Hdh & #G'u & Pt1 & Gho1 & P & Cl)"; [done|].
     destruct Hdh as (Hdh & Hgh & Hin).
     iApply (wp_wand with "[P G']").
     { iApply (wp_pctx_vptrs E K (lty_size (OfTy ty)) G' x₀ p True%I with "[G'] P").
       iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
     iIntros (w) "(-> & _ & G' & P)".
-    iApply ("HΦ" with "[%] Pt1 Gho1"); [done|].
+    iApply ("HΦ" with "[%] Pt1 Gho1"); [done|]. rewrite /vplace_wcloser.
     iIntros (y' dh' gh' D' HD) "#⧖' Pt Gho".
     iMod ("Cl" $! y' dh' gh' D' with "[//] ⧖' G' P Pt Gho") as "[Own $]".
     iModIntro. iApply (vplace_own_close K _ _ _ D' with "⧖' ⧗p").
@@ -140,6 +140,7 @@ Section write_acc.
     iIntros (w) "(-> & _ & _ & Rest)".
     iApply ("HΦ" with "[%] Pt1 Gho1").
     { rewrite /= pctx_depth_sub. lia. }
+    rewrite /vplace_wcloser.
     iIntros (y' dh' gh' D' (HD & Hdh' & Hgh')) "#⧖' Pt Gho". simpl in Hdh'.
     iModIntro. iFrame "G".
     have Hsz' : lty_size (OfTy ty') = lty_size (OfTy ty).
@@ -179,8 +180,8 @@ Section write_acc.
     - intros. iIntros "LFT PROPH UNIQ Gu G £ ⧖ ⧗p Own HΦ".
       iApply (wp_vplace_wacc_same with "LFT PROPH UNIQ Gu G £ ⧖ ⧗p Own HΦ"); done.
     - rename select (PctxVRoot K) into HR.
-      destruct K as [| | |𝔄'' n K| | | |]; try done.
-      have ?: PctxNoUniq K by done. intros _ _ Hp.
+      destruct K as [| | |? 𝔄'' n K| | | |]; try done; try (exfalso; exact Hnu).
+      have ?: PctxNoUniq K by exact Hnu. intros _ _ Hp.
       iIntros "_ _ _ _ G £ ⧖ ⧗p Own HΦ".
       iApply (wp_vplace_wacc_strong with "G £ ⧖ ⧗p Own HΦ"); done.
   Qed.
@@ -228,7 +229,7 @@ Section write.
     (* The access to the leaf, and its address. *)
     wp_bind (pctx_vexpr K p).
     iApply (wp_vplace_wacc _ K ty ty' K' f with "LFT PROPH UNIQ Hu H1 £a ⧖ ⧗p Own");
-      [done|apply _|solve_ndisj|done|].
+      [done|solve_ndisj|done|].
     iIntros (lK dh gh [Hdh Hgh]) "Pt1 Gho1 Cl".
     wp_bind pb. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
     (* Resolve the old value. *)
@@ -251,6 +252,7 @@ Section write.
     iMod (cumulative_persistent_time_receipt with "TIME ⧗k ⧖b") as "#⧖k"; [solve_ndisj|].
     set Dn := D `max` (pctx_dlev K + db).
     iCombine "⧖ ⧖k" as "⧖D".
+    rewrite /vplace_wcloser.
     iMod ("Cl" $! b db db Dn with "[%] [] Hbs Gb") as "[Own H1]"; [rewrite /Dn; lia| |].
     { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
