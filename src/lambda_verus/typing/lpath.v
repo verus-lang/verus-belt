@@ -748,7 +748,7 @@ Section pctx.
     - intros [H1 H2] H'. split; [by eapply prfn_rsv_weaken|]. by eapply IHK.
     - intros H H'. by eapply IHK.
     - destruct (psum_proj i x); [|intros; rewrite /prfn_dummy /=; by intros ???].
-      rewrite !(prfn_rsv_sum' _ _ x.2). intros H H'. by eapply IHK.
+      rewrite !(prfn_rsv_sum' _ _). intros H H'. by eapply IHK.
     - intros [H1 H2] H'. split; [by eapply IHK|].
       eapply uniq_prvar_dep_irrel, proph_dep_weaken; [|exact H2]. done.
     - intros _ _. exact (prfn_rsv_in (𝔄:=at_locₛ 𝔄') x ζl').
@@ -765,7 +765,7 @@ Section pctx.
     - intros H [H1 H2]. split; [by eapply prfn_rsv_weaken|]. by eapply IHK.
     - intros H H'. by eapply IHK.
     - destruct (psum_proj i x); [|intros; rewrite /prfn_dummy /=; by intros ???].
-      rewrite !(prfn_rsv_sum' _ _ x.2). intros H H'. by eapply IHK.
+      rewrite !(prfn_rsv_sum' _ _). intros H H'. by eapply IHK.
     - intros H [H1 H2]. split; [by eapply IHK|].
       eapply uniq_prvar_dep_irrel, proph_dep_weaken; [|exact H2]. done.
     - intros _ _. exact (prfn_rsv_in (𝔄:=at_locₛ 𝔄') x ζl').

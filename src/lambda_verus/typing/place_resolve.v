@@ -652,7 +652,7 @@ Section lty_mem.
       destruct (own_freeb n lt); [|done]. iFrame "Fr". by iApply IH.
     - rewrite /prod_node. destruct r as [|[r1 r2]]; [by iIntros "[]"|]. iIntros "[O1 O2]".
       iSplitL "O1"; [by iApply IH1|by iApply IH2].
-    - destruct r as [|[s pad]]; [by iIntros "[]"|]. rewrite /sum_node.
+    - destruct r as [|s]; [by iIntros "[]"|]. rewrite /sum_node.
       case_match; [|by iIntros "[]"]. iIntros "(Tag & O & Pad)".
       iFrame "Tag Pad". by iApply IH.
   Qed.

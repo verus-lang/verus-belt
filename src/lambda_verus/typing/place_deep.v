@@ -364,7 +364,7 @@ Section sum_deep.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)". have Hdl := pctx_vroot_dlev K.
     have ?: Closed [] (pctx_vexpr K p).
     { apply pctx_vexpr_closed. by eapply eval_path_closed. }
-    destruct (pctx_get K x₀) as [s pad] eqn:Hy.
+    remember (pctx_get K x₀) as s eqn:Hy. symmetry in Hy.
     destruct (to_xsum s) as [j a] eqn:Hj.
     have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
     subst s.

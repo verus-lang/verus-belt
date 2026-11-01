@@ -235,13 +235,13 @@ Section res_sum.
     lty_size (SumLty tyl i (OfRes (tyl +!! i))) = lty_size (OfRes (xsum_ty tyl)).
   Proof. done. Qed.
 
-  Lemma xsum_gho_res_pinj {𝔄l} i (tyl: typel 𝔄l) x0 pad d g tid :
+  Lemma xsum_gho_res_pinj {𝔄l} i (tyl: typel 𝔄l) x0 d g tid :
     ty_gho_res (Σ! tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_res (tyl +!! i) x0 d g tid.
   Proof. rewrite [ty_gho_res (Σ! tyl)]/ty_gho_res /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
 
   (** A resolved sum at a known variant [i] is a sum place whose payload is the resolved
       leaf of the variant, and back. *)
-  Lemma sum_res_unfold_own m {𝔄l} (tyl: typel 𝔄l) i (y: ~~ (𝔄l !!ₗ i)) pad d g tid l :
+  Lemma sum_res_unfold_own m {𝔄l} (tyl: typel 𝔄l) i (y: ~~ (𝔄l !!ₗ i)) d g tid l :
     ltype_own (Owned m) (OfRes (xsum_ty tyl)) (inl (PlaceIn (𝔄:=Σ! 𝔄l) (pinj i y))) d g tid l ⊣⊢
     ltype_own (Owned m) (SumLty tyl i (OfRes (tyl +!! i))) (prfn_sum i (inl (PlaceIn y)))
       d g tid l.
@@ -262,7 +262,7 @@ Section res_sum.
     ltype_own (Owned m) (OfRes (Σ! tyl)) (inl (PlaceIn y)) d g tid l.
   Proof.
     rewrite lty_rfn_sum. case_match eqn:Ha.
-    - apply psum_proj_Some in Ha. destruct y as [s pad]. simpl in Ha. subst s.
+    - apply psum_proj_Some in Ha. simpl in Ha. subst y.
       iIntros "H". iApply sum_res_unfold_own. iExact "H".
     - rewrite /ltype_own /=. by iIntros "[]".
   Qed.
@@ -301,7 +301,7 @@ Section res_sum.
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
     iDestruct "Own" as "[L1 Rest]". iSimpl in "L1". rewrite /res_leaf.
     iDestruct "L1" as (? ->) "[Pt1 Gho1]".
-    remember (pctx_get K x₀) as y eqn:Hy. destruct y as [s pad].
+    remember (pctx_get K x₀) as s eqn:Hy.
     destruct (to_xsum s) as [j a] eqn:Hj.
     have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
     subst s.

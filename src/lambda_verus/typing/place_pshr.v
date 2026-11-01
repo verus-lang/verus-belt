@@ -102,11 +102,11 @@ Section shr_view.
     shr_view κ ty y d g tid l -∗ (&shr{κ} ty).(ty_gho_own) (l, y) (S d) g tid.
   Proof. iIntros "#(Pt & Shr & Pers)". iFrame "Pt Shr". by iNext. Qed.
 
-  Lemma xsum_shr_pinj {𝔄l} (tyl: typel 𝔄l) i κ x0 pad d g tid :
+  Lemma xsum_shr_pinj {𝔄l} (tyl: typel 𝔄l) i κ x0 d g tid :
     ty_shr (Σ! tyl) κ (pinj i x0) d g tid ⊣⊢ ty_shr (tyl +!! i) κ x0 d g tid.
   Proof. rewrite [ty_shr (Σ! tyl)]/ty_shr /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
 
-  Lemma xsum_pers_pinj {𝔄l} (tyl: typel 𝔄l) i x0 pad d g tid :
+  Lemma xsum_pers_pinj {𝔄l} (tyl: typel 𝔄l) i x0 d g tid :
     ty_gho_pers (Σ! tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_pers (tyl +!! i) x0 d g tid.
   Proof. rewrite [ty_gho_pers (Σ! tyl)]/ty_gho_pers /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
 
@@ -297,7 +297,7 @@ Section pctx_shr.
         iApply (guards_transitive with "Gs"). iApply pctx_salv_incl.
       + iExists dh. iFrame "V". iPureIntro. lia.
     - destruct (pctx_in_sum_inv tyl i w K y Hin) as (z & Hy & Hin').
-      destruct y as [s pad]. simpl in Hy. subst s. rewrite psum_proj_or_pinj.
+      simpl in Hy. subst y. rewrite psum_proj_or_pinj.
       iIntros "#Gs £ #(Pt & Shr & Pers)".
       rewrite xsum_shr_pinj xsum_pers_pinj hlookup_hlist_set.
       iApply (IH with "Gs £"); [done|]. iFrame "Shr Pers".
@@ -927,7 +927,7 @@ Section case.
   Context `{!typeG Σ}.
 
   (** The guarded typed load of the tag of a sum from its shared view. *)
-  Lemma wp_load_tag_shr_view {𝔄l} E κ (tyl: typel 𝔄l) j a pad dh D tid (l: loc)
+  Lemma wp_load_tag_shr_view {𝔄l} E κ (tyl: typel 𝔄l) j a dh D tid (l: loc)
       (G: iProp Σ) (Φ: val → iProp Σ) :
     ↑NllftG ⊆ E →
     (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £(2 * (D + 1)) -∗
@@ -969,7 +969,7 @@ Section case.
     iDestruct "Tp" as (v Hp) "Tp". rewrite vplace_own_eq.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
     iDestruct (Alv with "L E") as "#Alv".
-    remember (pctx_get K2 x.2) as z eqn:Hz. destruct z as [s pad].
+    remember (pctx_get K2 x.2) as s eqn:Hz.
     destruct (to_xsum s) as [j a] eqn:Hj.
     have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
     subst s.
@@ -1033,7 +1033,7 @@ Section case.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
     iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
     set y := pctx_get K x₀.
-    remember (pctx_get K2 y.2) as z eqn:Hz. destruct z as [s pad].
+    remember (pctx_get K2 y.2) as s eqn:Hz.
     destruct (to_xsum s) as [j a] eqn:Hj.
     have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
     subst s.

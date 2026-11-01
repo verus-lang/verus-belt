@@ -30,7 +30,7 @@ Section place_sum.
   Lemma pctx_plug_cpd {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt : pctx_nonempty K → lty_is_cpd (pctx_plug K lt).
   Proof. by destruct K. Qed.
 
-  Lemma lty_rfn_sum_in {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) a pad ζm q :
+  Lemma lty_rfn_sum_in {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) a ζm q :
     lty_rfn (SumLty tyl i lt) (pinj i a) ζm q = prfn_sum i (lty_rfn lt a ζm (false :: q)).
   Proof. by rewrite lty_rfn_sum /= psum_proj_pinj. Qed.
 
@@ -42,7 +42,7 @@ Section place_sum.
     ltype_own (Owned m) (OfTy (Σ! tyl)) (inl (PlaceIn y)) d g tid l.
   Proof.
     rewrite lty_rfn_sum. case_match eqn:Ha.
-    - apply psum_proj_Some in Ha. destruct y as [s pad]. simpl in Ha. subst s.
+    - apply psum_proj_Some in Ha. simpl in Ha. subst y.
       iIntros "H". iApply sum_ofty_unfold_own. iExact "H".
     - rewrite /ltype_own /=. by iIntros "[]".
   Qed.
@@ -96,7 +96,7 @@ Section typing.
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
     iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
     iDestruct "L1" as (? ->) "[Pt1 Gho1]".
-    remember (pctx_get K x₀) as y eqn:Hy. destruct y as [s pad].
+    remember (pctx_get K x₀) as s eqn:Hy.
     destruct (to_xsum s) as [j a] eqn:Hj.
     have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
     subst s.
