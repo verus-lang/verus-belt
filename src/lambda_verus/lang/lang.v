@@ -71,6 +71,12 @@ Arguments MkTuple _%E.
     ([type_read_place_instr] of [typing/place_read.v]); notation [!ᶜ{m} e]. *)
 Definition read_copy (m : mty) (e : expr) : expr := Load Na1Ord m e.
 
+(** A move of a value of the MiniRust type [m] out of the place at the address [e]: a
+    non-atomic typed [Load]; the place is left uninitialized. It is the instruction of the
+    unified place move ([type_move_place_instr] of [typing/place_own.v]); notation
+    [!ᵐ{m} e]. *)
+Definition read_move (m : mty) (e : expr) : expr := Load Na1Ord m e.
+
 Fixpoint is_closed (X : list string) (e : expr) : bool :=
   match e with
   | Var x => bool_decide (x ∈ X)

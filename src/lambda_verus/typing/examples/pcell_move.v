@@ -42,15 +42,15 @@ Section pcell_move.
     let: "q" := OfLit (Alloc #8) in
     let: "five" := MLit (VInt 5) in
     Store Na1Ord (MInt i32) (ToLit "q") "five";;                (* q.0 = 5 *)
-    let: "v" := Load Na1Ord (MInt i32) (ToLit "c") in           (* move *c out *)
+    let: "v" := !ᵐ{MInt i32} (ToLit "c") in                     (* move *c out *)
     Store Na1Ord (MInt i32) (ToLit "q" +ₗ #4) "v";;             (* q.1 = v *)
     (#☠;; delete [ #4; ToLit "c"]);;                            (* drop c (moved out) *)
     let: "r" := OfLit (Alloc #8) in
-    let: "pair" := Load Na1Ord (syn_mty pairₛ) (ToLit "q") in   (* move *q out *)
+    let: "pair" := !ᵐ{syn_mty pairₛ} (ToLit "q") in             (* move *q out *)
     Store Na1Ord (syn_mty pairₛ) (ToLit "r") "pair";;           (* *r = pair *)
     (#☠;; delete [ #8; ToLit "q"]);;                            (* drop q (moved out) *)
     let: "s" := OfLit (Alloc #4) in
-    let: "w" := Load Na1Ord (MInt i32) (ToLit "r" +ₗ #4) in     (* move r.1 out *)
+    let: "w" := !ᵐ{MInt i32} (ToLit "r" +ₗ #4) in               (* move r.1 out *)
     Store Na1Ord (MInt i32) (ToLit "s") "w";;                   (* *s = w *)
     ((#☠;; #☠);; delete [ #8; ToLit "r"]);;                      (* drop r *)
     let: "b" := PCellIntoInner ["s"; "perm"] in                 (* s.into_inner(perm) *)
@@ -109,7 +109,7 @@ Section pcell_move.
       { eapply (tctx_incl_frame_l _ _ +[_]). eapply (tctx_incl_frame_r +[_] +[_]).
         apply tctx_own_to_oplace. }
       iApply (type_let with "[]").
-      { apply (type_move_oplace_instr _ _ _ vc 4 PHole cellt). done. }
+      { apply (type_move_place_instr _ _ _ vc (POwn 4 PHole) cellt). done. }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       (* q.1 = v *)
@@ -128,7 +128,7 @@ Section pcell_move.
       { eapply (tctx_incl_frame_l _ _ +[_]). eapply (tctx_incl_frame_r +[_] +[_]).
         apply (tctx_fold_oplace_prod _ _ _ _ PHole i32t cellt). }
       iApply (type_let with "[]").
-      { apply (type_move_oplace_instr _ _ _ vq 8 PHole (i32t * cellt)). done. }
+      { apply (type_move_place_instr _ _ _ vq (POwn 8 PHole) (i32t * cellt)). done. }
       { solve_typing. } { reflexivity. }
       iIntros (vpair). simpl_subst.
       (* *r = pair *)
@@ -150,7 +150,7 @@ Section pcell_move.
       { eapply (tctx_incl_frame_l _ _ +[_]). eapply (tctx_incl_frame_r +[_] +[_]).
         apply (tctx_unfold_oplace_prod _ _ _ _ PHole i32t cellt). }
       iApply (type_let with "[]").
-      { apply (type_move_oplace_instr _ _ _ vr 8 (PSnd (OfTy i32t) PHole) cellt). done. }
+      { apply (type_move_place_instr _ _ _ vr (POwn 8 (PSnd (OfTy i32t) PHole)) cellt). done. }
       { solve_typing. } { reflexivity. }
       iIntros (vw). simpl_subst.
       (* *s = w *)
