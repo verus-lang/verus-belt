@@ -12,7 +12,8 @@
   There is no outer borrow: blocking a leaf (a mutable borrow of a subplace at some
   lifetime [α], [type_borrow_oplace_instr]) leaves in the place the inheritance of the
   new borrow (pending ownership, [blocked_owned]), which is fired when [α] has ended
-  ([unblock_tctx_oplace]). A leaf can be read (copied, [type_read_oplace_instr]), moved
+  ([unblock_tctx_oplace]). A leaf can be read (copied, [type_read_place_instr] of
+  [place_read.v]), moved
   out (leaving it uninitialized, [type_move_oplace_instr]) and written
   ([type_write_oplace_instr], which also re-initializes an uninitialized leaf). Moving
   out and writing change the type of the leaf, so the place context is retyped
@@ -341,57 +342,6 @@ Section typing.
   Qed.
 
   (** * Reading, moving out of and writing a leaf *)
-
-  (** Copying the value out of the leaf at the hole of [K]: a typed [Load]. *)
-  Lemma type_read_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} `{!NoCell 𝔅}
-      (ty: type 𝔅) :
-    Copy ty →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)]
-      (Load Na1Ord ty.(ty_mty) (pctx_expr K (ToLit p)))
-      (λ v, +[v ◁ᵥ ty; p ◁ₗown{n} pctx_plug K (OfTy ty)])
-      (λ post '-[x], post -[pctx_get K x.1.2; x]).
-  Proof.
-    iIntros (Hcopy tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
-    destruct x as [[l x₀] ζm].
-    rewrite /tctx_elt_interp.
-    iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
-    have ?: Closed [] (pctx_expr K (ToLit p)).
-    { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
-    rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
-    iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
-    iDestruct "L1" as (? ->) "[Pt1 #Gho1]".
-    iDestruct (pctx_own_mode_le with "Rest") as %Hk.
-    set y := pctx_get K x₀.
-    set lr := l.
-    set lK := pctx_loc K (lty_size (OfTy ty)) x₀ lr.
-    set dh := pctx_depth K d.
-    have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
-    (* The address of the hole. *)
-    wp_bind (pctx_expr K (ToLit p)).
-    iApply (wp_wand with "[Rest]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
-        with "[] Rest").
-      - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-        by wp_pure _. }
-    iIntros (w) "(-> & _ & _ & Rest)".
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
-    iIntros "£ #⧖S". iApply wp_fupd.
-    iDestruct (lc_weaken (pctx_mode K 1) with "£") as "£";
-      [rewrite /advance_credits pctx_mode_add; nia|].
-    iMod (lc_fupd_elim_laterN with "£ Gho1") as "#Gho1'".
-    iDestruct (bytes_own_nocell_bytes with "Pt1") as (bs) "[Hbs %Hbs]".
-    destruct (ty_bytes_val _ _ _ Hbs) as [vw Hvw].
-    iApply (wp_load_na with "Hbs"); [by eapply ty_bytes_decode|].
-    iIntros "!> Hbs". iModIntro.
-    iExists -[y; ((l, x₀), ζm)]. iFrame "L I Obs".
-    iSplitR "Hbs Rest ⧗p Fr".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists vw, D. iSplit; [done|].
-      iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ dh g D D with "Gho1'") as "[$ _]"; lia. }
-    iSplit; [|done]. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g.
-    iFrame "⧖ ⧗p Fr". iSplit; [done|]. iSplit; [done|].
-    rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug. iFrame "Rest".
-    iExists y. iSplit; [done|]. rewrite /ofty_owned. iFrame "Gho1". by iApply bytes_own_of_bytes.
-  Qed.
 
   (** Moving the value out of the leaf at the hole of [K]: a typed [Load]; the leaf becomes
       uninitialized (its type is [↯ (ty_bsize ty)]: its bytes are kept, and represent any

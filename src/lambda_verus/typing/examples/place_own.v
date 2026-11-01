@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product uninit value_ctx own uniq_util uniq_bor place_own place_puniq place_resolve.
+From lrust.typing Require Export type programs cont int product uninit value_ctx own uniq_util uniq_bor place_own place_puniq place_resolve place_read.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -36,7 +36,7 @@ Section place_own.
     Endlft;;                                              (* unblock x.1 *)
     let: "three" := MLit (VInt 3) in
     Store Na1Ord (MInt i32) (ToLit "x") "three";;         (* x.0 = 3 *)
-    let: "v" := Load Na1Ord (MInt i32) (ToLit "x" +ₗ #4) in  (* x.1 *)
+    let: "v" := !ᶜ{MInt i32} (ToLit "x" +ₗ #4) in          (* x.1 *)
     ((#☠;; #☠);; delete [ #8; ToLit "x"]);;               (* drop x *)
     jump: "return" ["v"])%E.
 
@@ -93,7 +93,8 @@ Section place_own.
       { solve_typing. } { reflexivity. }
       (* x.1 *)
       iApply (type_let with "[]").
-      { apply (type_read_oplace_instr _ _ _ vx 8 (PSnd (OfTy i32t) PHole) i32t). apply _. }
+      { apply (type_read_place_instr _ _ _ vx (POwn 8 (PSnd (OfTy i32t) PHole)) (OfTy i32t) i32t
+          static); [by constructor|apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       (* drop x *)
