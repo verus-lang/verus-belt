@@ -42,6 +42,8 @@ Notation "rec: f xl := e" := (Rec f%binder xl%binder e%E)
   (at level 102, f, xl at level 1, e at level 200) : expr_scope.
 Notation "rec: f xl := e" := (locked (RecV f%binder xl%binder e%E))
   (at level 102, f, xl at level 1, e at level 200) : val_scope.
+Notation "!ᶜ{ m } e" := (read_copy m e%E)
+  (at level 9, m at level 200, e at level 9, format "!ᶜ{ m }  e") : expr_scope.
 Notation "e1 +ₗ e2" := (BinOp OffsetOp e1%E e2%E)
   (at level 50, left associativity) : expr_scope.
 
