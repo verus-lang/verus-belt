@@ -126,16 +126,19 @@ Section memcpy.
       [solve_ndisj|by rewrite Hlend (pctx_wty_bsize _ _ _ _ _ Hw)|intros ?; apply ty_bytes_length|..].
     { iFrame "Guard". iApply bytes_own_view_nocell. }
     iIntros "!>" (bs2) "(%Hbs2 & Hbsd & G2)".
-    iMod (fupd_mask_mono with "(Cls G2)") as "[Ts B]"; [solve_ndisj|].
+    iMod (fupd_mask_subseteq (⊤ ∖ ↑advN)) as "Hcl"; [solve_ndisj|].
+    iMod ("Cls" with "G2") as "[Ts B]".
     (* Close the destination at the copied value. *)
     iDestruct (cumulative_time_receipt_mono (pctx_dlev Kd) with "⧗k") as "⧗k"; [lia|].
     iMod (cumulative_persistent_time_receipt with "TIME ⧗k ⧖s") as "#⧖k"; [solve_ndisj|].
     set Dn := Dd `max` (pctx_dlev Kd + Ds).
     iCombine "⧖d ⧖k" as "⧖D".
     rewrite /vplace_wcloser.
-    iMod (fupd_mask_mono with "(Cld $! (pctx_get Ks xs₀) dhs ghs Dn [%] [] [Hbsd] Ghos)")
-      as "[Td A]"; [solve_ndisj|rewrite /Dn; lia| |by iApply bytes_own_of_bytes|].
+    iMod ("Cld" $! (pctx_get Ks xs₀) dhs ghs Dn with "[%] [] [Hbsd] Ghos") as "[Td A]".
+    { rewrite /Dn. lia. }
     { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
+    { by iApply bytes_own_of_bytes. }
+    iMod "Hcl" as "_".
     iMod (fupd_mask_mono with "(Back2 A B)") as "H1"; [solve_ndisj|].
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro. iExists -[(fd xd₀ (pctx_get Ks xs₀), ζd); (xs₀, ζs)]. iFrame "L I".
@@ -221,24 +224,27 @@ Section memcpy.
     iEval (rewrite /cbytes bytes_own_brepr) in "Pts".
     iDestruct "Pts" as (fbs fv) "(Hfbs & [%Hlenf %Hfv] & #Hrep)".
     iApply (wp_fbytes_memcopy with "[$Hbsd $Hfbs]");
-      [solve_ndisj|by rewrite Hlend (pctx_wty_bsize _ _ _ _ _ Hw)|done|].
+      [solve_ndisj|rewrite Hlend; by rewrite -(pctx_wty_bsize _ _ _ _ _ Hw)|done|].
     iIntros "!>" (bs) "(Hfbsd & Hbs & %Hlen)".
+    iMod (fupd_mask_subseteq (⊤ ∖ ↑advN)) as "Hcl"; [solve_ndisj|].
     (* Close the source, uninitialized. *)
     set junk := (() : ~~ (uninitₛ (ty_bsize ty))).
     rewrite /vplace_wcloser.
-    iMod (fupd_mask_mono with "(Cls $! junk 0 0 Ds [%] ⧖s [Hbs] [])") as "[Ts B]";
-      [solve_ndisj|lia| |done|].
+    iMod ("Cls" $! junk 0 0 Ds with "[%] ⧖s [Hbs] []") as "[Ts B]".
+    { lia. }
     { iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].
       rewrite -(ty_mty_eq (↯ _)) /= decide_True //. }
+    { done. }
     (* Close the destination at the moved value. *)
     iDestruct (cumulative_time_receipt_mono (pctx_dlev Kd) with "⧗k") as "⧗k"; [lia|].
     iMod (cumulative_persistent_time_receipt with "TIME ⧗k ⧖s") as "#⧖k"; [solve_ndisj|].
     set Dn := Dd `max` (pctx_dlev Kd + Ds).
     iCombine "⧖d ⧖k" as "⧖D".
-    iMod (fupd_mask_mono with "(Cld $! (pctx_get Ks xs₀) dhs ghs Dn [%] [] [Hfbsd] Ghos)")
-      as "[Td A]"; [solve_ndisj|rewrite /Dn; lia| | |].
+    iMod ("Cld" $! (pctx_get Ks xs₀) dhs ghs Dn with "[%] [] [Hfbsd] Ghos") as "[Td A]".
+    { rewrite /Dn. lia. }
     { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
     { rewrite /cbytes bytes_own_brepr. iExists fbs, fv. by iFrame "Hfbsd Hrep". }
+    iMod "Hcl" as "_".
     iMod (fupd_mask_mono with "(Back2 A B)") as "H1"; [solve_ndisj|].
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro.
