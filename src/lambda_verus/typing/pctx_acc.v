@@ -116,15 +116,25 @@ Section pctx_fun.
     | PShr κ K | PResUniq κ K => λ _, pctx_salv K κ
     end.
 
-  (** The bound of the lifetime of a borrow of the hole of [K]: the intersection of the
-      enclosing unique borrow lifetimes, down to the first shared reference or resolved
-      unique borrow at [κ], where it is the lifetime of the view of the hole
-      ([pctx_slft K' κ]); [static] for an owned path. *)
+  (** The lifetime of the view of the hole at the first shared reference or resolved unique
+      borrow on the path, if any. *)
+  Fixpoint pctx_vlft {𝔅 𝔄} (K: pctx 𝔅 𝔄) : option lft :=
+    match K with
+    | PHole => None
+    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_vlft K
+    | PShr κ K | PResUniq κ K => Some (pctx_slft K κ)
+    end.
+
+  (** The bound of the lifetime of a borrow of the hole of [K]: the lifetime of the view of
+      the hole below the first shared reference or resolved unique borrow, if any
+      ([pctx_vlft]; the unique borrows above it do not matter, e.g. [&**x: &'b T] for
+      [x: &'a mut &'b T]); otherwise the intersection of the enclosing unique borrow
+      lifetimes ([static] for an owned path). *)
   Fixpoint pctx_blft {𝔅 𝔄} (K: pctx 𝔅 𝔄) : lft :=
     match K with
     | PHole => static
     | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_blft K
-    | PUniq κ K => κ ⊓ pctx_blft K
+    | PUniq κ K => match pctx_vlft K with Some β => β | None => κ ⊓ pctx_blft K end
     | PShr κ K | PResUniq κ K => pctx_slft K κ
     end.
 
@@ -313,6 +323,25 @@ Section pctx_fun.
     induction K in HK, lt |- *; simpl; simpl in HK; auto; done.
   Qed.
 
+  Lemma pctx_vlft_noshr {𝔅 𝔄} (K: pctx 𝔅 𝔄) : pctx_noshr K → pctx_vlft K = None.
+  Proof. induction K; simpl; [done|auto|auto|auto|auto| |done|done]. intros [_ HK]. auto. Qed.
+
+  Lemma pctx_vlft_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) :
+    pctx_noshr K1 → pctx_vlft (pctx_app K1 K2) = pctx_vlft K2.
+  Proof.
+    induction K1 in K2 |- *; simpl; [done|auto|auto|auto|auto| |done|done]. intros [_ HK]. auto.
+  Qed.
+
+  (** Below a shared reference or a resolved unique borrow, [pctx_blft] is the lifetime of
+      the view. *)
+  Lemma pctx_blft_app_view {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) β :
+    pctx_noshr K1 → pctx_vlft K2 = Some β → pctx_blft K2 = β →
+    pctx_blft (pctx_app K1 K2) = β.
+  Proof.
+    induction K1 in K2 |- *; simpl; [done|auto|auto|auto|auto| |done|done].
+    intros [_ HK] Hv Hb. rewrite pctx_vlft_app // Hv. done.
+  Qed.
+
   (** Every enclosing borrow lifetime, above the first shared reference, outlives
       [pctx_blft]. *)
   Lemma pctx_blft_incl {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ :
@@ -320,7 +349,7 @@ Section pctx_fun.
   Proof.
     induction K; simpl; intros HK Hκ; [by apply not_elem_of_nil in Hκ|by auto|by auto|by auto|
       by auto| |done|done].
-    destruct HK as [_ HK]. apply elem_of_cons in Hκ as [->|Hκ].
+    destruct HK as [_ HK]. rewrite pctx_vlft_noshr //. apply elem_of_cons in Hκ as [->|Hκ].
     - iApply llftl_intersect_incl_l.
     - iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. by iApply IHK.
   Qed.

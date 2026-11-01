@@ -88,6 +88,13 @@ Section shr_view.
     by iApply (ty_gho_pers_depth_mono with "Pers").
   Qed.
 
+  Lemma shr_view_lft_mono {𝔄} κ κ' (ty: type 𝔄) y d g tid l :
+    κ' ⊑ κ -∗ shr_view κ ty y d g tid l -∗ shr_view κ' ty y d g tid l.
+  Proof.
+    iIntros "#Incl #(Pt & Shr & Pers)". iSplit; [by iApply (guards_transitive_right with "Incl Pt")|].
+    iSplit; [by iApply (ty_shr_lft_mono0 with "Incl Shr")|done].
+  Qed.
+
   (** The ownership predicate of a shared reference gives the shared view of its
       referent, after [g+1] laters. *)
   Lemma shr_bor_gho_view {𝔄} κ (ty: type 𝔄) (l: loc) y d g tid :
