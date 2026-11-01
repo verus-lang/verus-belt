@@ -109,7 +109,6 @@ Section memcpy.
     { iApply (lc_weaken with "£s"). nia. }
     iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
-    iModIntro.
     (* The first step of the address of the source: credits for its access. *)
     wp_bind (pctx_vexpr Ks ps).
     have ?: TCEq (to_val (pctx_vexpr Ks ps)) None by rewrite pctx_vexpr_to_val; constructor.
@@ -117,6 +116,7 @@ Section memcpy.
     iIntros "£s _".
     iApply (wp_vplace_racc _ Ks lt ty κs with "LFT PROPH UNIQ GBs B £s ⧖s ⧗s Owns");
       [done|solve_ndisj|done|].
+    rewrite /vplace_rcont.
     iIntros (ls G2 dd dhs ghs ([w Hw'] & ? & ?)) "#Guard G2 £dd #Ghos Cls".
     (* Copy the bytes. *)
     iApply wp_fupd.
@@ -132,6 +132,7 @@ Section memcpy.
     iMod (cumulative_persistent_time_receipt with "TIME ⧗k ⧖s") as "#⧖k"; [solve_ndisj|].
     set Dn := Dd `max` (pctx_dlev Kd + Ds).
     iCombine "⧖d ⧖k" as "⧖D".
+    rewrite /vplace_wcloser.
     iMod (fupd_mask_mono with "(Cld $! (pctx_get Ks xs₀) dhs ghs Dn [%] [] [Hbsd] Ghos)")
       as "[Td A]"; [solve_ndisj|rewrite /Dn; lia| |by iApply bytes_own_of_bytes|].
     { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
@@ -203,7 +204,6 @@ Section memcpy.
     { iApply (lc_weaken with "£s"). nia. }
     iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
-    iModIntro.
     (* The first step of the address of the source: credits for its access. *)
     wp_bind (pctx_vexpr Ks ps).
     have ?: TCEq (to_val (pctx_vexpr Ks ps)) None by rewrite pctx_vexpr_to_val; constructor.
@@ -224,6 +224,7 @@ Section memcpy.
     iIntros "!>" (bs) "(Hfbsd & Hbs & %Hlen)".
     (* Close the source, uninitialized. *)
     set junk := (() : ~~ (uninitₛ (ty_bsize ty))).
+    rewrite /vplace_wcloser.
     iMod (fupd_mask_mono with "(Cls $! junk 0 0 Ds [%] ⧖s [Hbs] [])") as "[Ts B]";
       [solve_ndisj|lia| |done|].
     { iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].

@@ -277,7 +277,7 @@ Section read_acc.
     WP pctx_vexpr K p @ E {{ Φ }}.
   Proof.
     assert (NoCell 𝔅) by exact (copy_nocell ty).
-    iIntros (Hl ? HE Hp) "#LFT #PROPH #UNIQ #Alv G £ #⧖ ⧗p Own HΦ".
+    iIntros (Hl ? HE Hp) "#LFT #PROPH #UNIQ #Alv G £ #⧖ ⧗p Own HΦ". rewrite /vplace_rcont.
     have Hdl: 1 ≤ pctx_dlev K by apply pctx_vroot_dlev.
     have ?: ↑NllftG ⊆ E. { trans lazyE; [apply lazyE_NllftG|done]. }
     iAssert (G &&{↑NllftG}&&> @[pctx_ulft K lt])%I as "#Hu".
@@ -421,7 +421,7 @@ Section read_acc.
       [apply pshr_cred_step|].
     iApply wp_fupd.
     iApply (wp_pshr_open _ K1 κ K2 lt (pctx_plug K2 lt) x ζm D tid _ p G
-      with "LFT PROPH UNIQ Hu Hs G £a ⧖ [] Own"); [done|done|done|done|..].
+      with "LFT PROPH UNIQ Hu Hs G £a ⧖ [] Own"); [done|done|done|..].
     { iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
     iIntros (dh Hdh [Hin1 [Hin2 Hvin]]) "G Own #V".
     iAssert (G &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
@@ -625,7 +625,7 @@ Section read_acc.
     vplace_rcont (PResUniq κ K2) lt ty x ζm D tid v E G Φ -∗
     WP pctx_vexpr (PResUniq κ K2) p @ E {{ Φ }}.
   Proof.
-    iIntros (Hl ? HE Hp) "#Alv G £ #⧖ ⧗p Own HΦ". rewrite /=.
+    iIntros (Hl ? HE Hp) "#Alv G £ #⧖ ⧗p Own HΦ". rewrite /vplace_rcont /=.
     destruct x as [[[[[lx z] ξi] d0] g0] idx0].
     iDestruct "Own" as (d g [Hd Hg]) "[-> (#Incl & %d' & %g' & %Hle' & V)]".
     rewrite lty_pat_plug lty_rfn_plug.
@@ -654,7 +654,7 @@ Section read_acc.
     vplace_rcont (PShr κ K2) lt ty x ζm D tid v E G Φ -∗
     WP pctx_vexpr (PShr κ K2) p @ E {{ Φ }}.
   Proof.
-    intros [-> ->] ? HE Hp. iIntros "#Alv G £ #⧖ ⧗p Own HΦ". rewrite /=.
+    intros [-> ->] ? HE Hp. iIntros "#Alv G £ #⧖ ⧗p Own HΦ". rewrite /vplace_rcont /=.
     iAssert (G &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
     { iApply (guards_transitive with "Alv"). iApply llftl_intersect_incl_l. }
     iDestruct (lc_weaken (pshr_cred D + 4 * (D + 1)) with "£") as "[£a £r]";
@@ -691,7 +691,7 @@ Section read_acc.
   Proof.
     assert (NoCell 𝔅) by exact (copy_nocell ty).
     iIntros (Hres Hp) "G £ #⧖ ⧗p Own HΦ".
-    destruct x as [l x₀]. rewrite /=.
+    destruct x as [l x₀]. rewrite /vplace_rcont /=.
     iDestruct "Own" as (d g -> Hle) "[Fr Own]".
     rewrite /ltype_own lty_pat_plug ltype_own_plug.
     iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
@@ -809,6 +809,7 @@ Section read.
     wp_bind (pctx_vexpr K p).
     iApply (wp_vplace_racc _ K lt ty κs with "LFT PROPH UNIQ Hg H1 £ ⧖ ⧗p Own");
       [done|solve_ndisj|done|].
+    rewrite /vplace_rcont.
     iIntros (l G2 dd dh gh ([w Hw] & ? & ?)) "#Guard G2 £ #Gho Cl".
     iApply (wp_load_na_guarded_gen _ _ _ w G2 (cbytes ty (pctx_get K x₀) l)
       (ty_bytes ty (pctx_get K x₀)) dd with "[$G2 $£]");
