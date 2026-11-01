@@ -256,7 +256,7 @@ Section lty.
     | OwnPtrLty _ lt => λ x, lty_vin lt x.2
     | ProdLty lt1 lt2 => λ x, lty_vin lt1 x.1 ∧ lty_vin lt2 x.2
     | SumLty _ i lt => λ x,
-        match psum_proj i x.1 with Some y => lty_vin lt y | None => False end
+        match psum_proj i x with Some y => lty_vin lt y | None => False end
     | ShrLty lt _ => λ x, lty_vin lt (snd x)
     end.
 
@@ -393,7 +393,7 @@ Section ltype_own.
       (r: prfn (Σ! 𝔅l)) (d g: nat) (tid: thread_id) (l: loc) : iProp Σ :=
     match r with
     | inl _ => False
-    | inr (s, pad) =>
+    | inr s =>
         match psum_proj i s with
         | None => False
         | Some r' =>
@@ -523,7 +523,7 @@ Section ltype_own.
       (r: prfn (Σ! 𝔅l)) (d g: nat) (tid: thread_id) (l: loc) : iProp Σ :=
     match r with
     | inl _ => False
-    | inr (s, pad) =>
+    | inr s =>
         match psum_proj i s with
         | None => False
         | Some r' =>
@@ -809,7 +809,7 @@ Section ltype_lemmas.
     (∀ r' tid' l', c1 r' d g tid' l' ⊢ c2 r' d' g' tid' l') →
     sum_node tyl i sz c1 r d g tid l ⊢ sum_node tyl i sz c2 r d' g' tid l.
   Proof.
-    intros Hc. destruct r as [?|[s pad]]; [done|]. rewrite /sum_node.
+    intros Hc. destruct r as [?|s]; [done|]. rewrite /sum_node.
     case_match; [|by iIntros "[]"]. iIntros "($ & C & $)". by iApply Hc.
   Qed.
 
@@ -820,8 +820,8 @@ Section ltype_lemmas.
 
   (** The node of a sum at the refinement of a payload. *)
   Lemma sum_node_sum {𝔅l} (tyl: typel 𝔅l) i sz
-      (c: prfn (𝔅l !!ₗ i) → nat → nat → thread_id → loc → iProp Σ) r pad d g tid l :
-    sum_node tyl i sz c (prfn_sum i r pad) d g tid l ⊣⊢
+      (c: prfn (𝔅l !!ₗ i) → nat → nat → thread_id → loc → iProp Σ) r d g tid l :
+    sum_node tyl i sz c (prfn_sum i r) d g tid l ⊣⊢
       tag_cell 𝔅l l i ∗
       c r d g tid (l +ₗ tag_size 𝔅l) ∗
       pad_cell ((l +ₗ tag_size 𝔅l) +ₗ sz) (sum_max 𝔅l - sz).
@@ -830,11 +830,11 @@ Section ltype_lemmas.
   (** A sum node at a structured refinement is at a payload refinement. *)
   Lemma sum_node_inv {𝔅l} (tyl: typel 𝔅l) i sz
       (c: prfn (𝔅l !!ₗ i) → nat → nat → thread_id → loc → iProp Σ) r d g tid l :
-    sum_node tyl i sz c r d g tid l -∗ ∃ r' pad, ⌜r = prfn_sum i r' pad⌝.
+    sum_node tyl i sz c r d g tid l -∗ ∃ r', ⌜r = prfn_sum i r'⌝.
   Proof.
-    destruct r as [?|[s pad]]; [by iIntros "[]"|]. rewrite /sum_node.
+    destruct r as [?|s]; [by iIntros "[]"|]. rewrite /sum_node.
     case_match eqn:Hs; [|by iIntros "[]"]. iIntros "_".
-    iExists _, pad. iPureIntro. rewrite /prfn_sum. f_equal. f_equal.
+    iExists _. iPureIntro. rewrite /prfn_sum. f_equal. f_equal.
     by apply psum_proj_Some.
   Qed.
 
@@ -1079,7 +1079,7 @@ Section ltype_lemmas.
     destruct k as [m|κ ξi];
       [|iModIntro; iFrame "G"; iExists d, g; by iApply ltype_own_uniq_core].
     rewrite /ltype_own /ltype_own_core /=.
-    iDestruct (sum_node_inv with "H") as %(r' & pad & ->).
+    iDestruct (sum_node_inv with "H") as %(r' & ->).
     rewrite sum_node_sum. iDestruct "H" as "(Tag & C & Pad)".
     iAssert (G &&{↑NllftG}&&> @[ty_lft (lty_fold lt)])%I as "#Gk'".
     { iApply (guards_transitive with "Gk"). iApply lty_lft_sum. }
@@ -1255,13 +1255,13 @@ Section unfold.
 
   (** ** Sums *)
 
-  Lemma xsum_gho_own_pinj {𝔄l} i (tyl: typel 𝔄l) x0 pad d g tid :
-    ty_gho_own (Σ! tyl) (pinj i x0, pad) d g tid ⊣⊢ ty_gho_own (tyl +!! i) x0 d g tid.
+  Lemma xsum_gho_own_pinj {𝔄l} i (tyl: typel 𝔄l) x0 d g tid :
+    ty_gho_own (Σ! tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_own (tyl +!! i) x0 d g tid.
   Proof. rewrite [ty_gho_own (Σ! tyl)]/ty_gho_own /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
 
   (** The bytes of a sum at variant [i]: the tag, the payload and the padding. *)
-  Lemma cbytes_sum {𝔄l} (ty: type (Σ! 𝔄l)) i (tyi: type (𝔄l !!ₗ i)) y pad l :
-    cbytes ty (pinj i y, pad) l ⊣⊢
+  Lemma cbytes_sum {𝔄l} (ty: type (Σ! 𝔄l)) i (tyi: type (𝔄l !!ₗ i)) y l :
+    cbytes ty (pinj i y) l ⊣⊢
       tag_cell 𝔄l l i ∗
       cbytes tyi y (l +ₗ tag_size 𝔄l) ∗
       pad_cell ((l +ₗ tag_size 𝔄l) +ₗ syn_bsize (𝔄l !!ₗ i))
@@ -1285,8 +1285,8 @@ Section unfold.
       iFrame "Bt Bp Bq HR". iPureIntro. apply syn_fbytes_sum. by exists bt, fp, bq.
   Qed.
 
-  Lemma ofty_owned_xsum m {𝔄l} (tyl: typel 𝔄l) i x pad d g tid l :
-    ofty_owned m (xsum_ty tyl) (pinj i x, pad) d g tid l ⊣⊢
+  Lemma ofty_owned_xsum m {𝔄l} (tyl: typel 𝔄l) i x d g tid l :
+    ofty_owned m (xsum_ty tyl) (pinj i x) d g tid l ⊣⊢
       tag_cell 𝔄l l i ∗
       ofty_owned m (tyl +!! i) x d g tid
         (l +ₗ tag_size 𝔄l) ∗
@@ -1297,8 +1297,8 @@ Section unfold.
     iSplit; [iIntros "(($ & $ & $) & $)"|iIntros "($ & ($ & $) & $)"].
   Qed.
 
-  Lemma ofty_owned_xsum_set m {𝔄l} (tyl: typel 𝔄l) i (ty: type (𝔄l !!ₗ i)) x pad d g tid l :
-    ofty_owned m (xsum_ty (hlist_set tyl i ty)) (pinj i x, pad) d g tid l ⊣⊢
+  Lemma ofty_owned_xsum_set m {𝔄l} (tyl: typel 𝔄l) i (ty: type (𝔄l !!ₗ i)) x d g tid l :
+    ofty_owned m (xsum_ty (hlist_set tyl i ty)) (pinj i x) d g tid l ⊣⊢
       tag_cell 𝔄l l i ∗
       ofty_owned m ty x d g tid (l +ₗ tag_size 𝔄l) ∗
       pad_cell ((l +ₗ tag_size 𝔄l) +ₗ syn_bsize (𝔄l !!ₗ i))
@@ -1307,9 +1307,9 @@ Section unfold.
 
   (** Unfolding a sum at a known variant [i] into a sum place whose payload is the
       leaf of the variant, and back. *)
-  Lemma sum_ofty_unfold_own m {𝔄l} (tyl: typel 𝔄l) i (y: ~~ (𝔄l !!ₗ i)) pad d g tid l :
-    ltype_own (Owned m) (OfTy (xsum_ty tyl)) (inl (PlaceIn (𝔄:=Σ! 𝔄l) (pinj i y, pad))) d g tid l ⊣⊢
-    ltype_own (Owned m) (SumLty tyl i (OfTy (tyl +!! i))) (prfn_sum i (inl (PlaceIn y)) pad)
+  Lemma sum_ofty_unfold_own m {𝔄l} (tyl: typel 𝔄l) i (y: ~~ (𝔄l !!ₗ i)) d g tid l :
+    ltype_own (Owned m) (OfTy (xsum_ty tyl)) (inl (PlaceIn (𝔄:=Σ! 𝔄l) (pinj i y))) d g tid l ⊣⊢
+    ltype_own (Owned m) (SumLty tyl i (OfTy (tyl +!! i))) (prfn_sum i (inl (PlaceIn y)))
       d g tid l.
   Proof.
     rewrite /ltype_own /= psum_proj_pinj /=.
@@ -1737,13 +1737,13 @@ Section cpd.
   Proof. iIntros "Ok". destruct p; simpl; try iApply pat_ok_leaf. done. Qed.
 
   (** The equalizer of a sum value, from the equalizer of its payload. *)
-  Lemma proph_eqz_sum {𝔄l} i (r: prfn (𝔄l !!ₗ i)) pad (x: ~~ (𝔄l !!ₗ i)) :
-    (prfn_den r :== vπ x) -∗ (prfn_den (prfn_sum i r pad) :== vπ (𝔄:=Σ! 𝔄l) (pinj i x, pad)).
+  Lemma proph_eqz_sum {𝔄l} i (r: prfn (𝔄l !!ₗ i)) (x: ~~ (𝔄l !!ₗ i)) :
+    (prfn_den r :== vπ x) -∗ (prfn_den (prfn_sum i r) :== vπ (𝔄:=Σ! 𝔄l) (pinj i x)).
   Proof.
     iIntros "Eqz".
-    have ?: Inj (=) (=) (λ a: (𝔄l !!ₗ i), ((pinj i a, pad) : (Σ! 𝔄l)%ST)).
-    { intros ?? [=Heq]. by apply pinj_Inj in Heq. }
-    iDestruct (proph_eqz_constr (λ a: (𝔄l !!ₗ i), ((pinj i a, pad) : (Σ! 𝔄l)%ST)) with "Eqz")
+    have ?: Inj (=) (=) (λ a: (𝔄l !!ₗ i), ((pinj i a) : (Σ! 𝔄l)%ST)).
+    { intros ?? Heq. by apply pinj_Inj in Heq. }
+    iDestruct (proph_eqz_constr (λ a: (𝔄l !!ₗ i), ((pinj i a) : (Σ! 𝔄l)%ST)) with "Eqz")
       as "Eqz".
     iApply (proph_eqz_eq with "Eqz").
     - by rewrite prfn_den_sum.
@@ -1890,14 +1890,14 @@ Section cpd.
       by iApply place_rfn_rel_eqz. }
     7: { iIntros "#LFT #PROPH #UNIQ #Gty #Ok #†κ G #⧖ N".
       rewrite ltype_own_cp_sum_owned.
-      iDestruct (sum_node_inv with "N") as %(r' & pad & ->).
+      iDestruct (sum_node_inv with "N") as %(r' & ->).
       rewrite sum_node_sum. iDestruct "N" as "(Tag & N & Pad)".
       iDestruct (pat_ok_sum with "Ok") as "Ok'".
       iAssert (G &&{↑NllftG}&&> @[ty_lft (lty_fold lt)])%I as "#Gty'".
       { iApply (guards_transitive with "Gty"). iApply lty_lft_sum. }
       iMod (IH with "LFT PROPH UNIQ Gty' Ok' †κ G ⧖ N")
         as "[$ (%x & %d' & %g' & Eqz & #⧖1 & O)]"; [done|].
-      iModIntro. iExists (pinj i x, pad), d', g'. iFrame "⧖1".
+      iModIntro. iExists (pinj i x), d', g'. iFrame "⧖1".
       iSplitL "Eqz"; [iNext; by iApply proph_eqz_sum|].
       rewrite /= ofty_owned_xsum_set. iFrame. }
     1,2,6: iIntros "#LFT #PROPH #UNIQ #Gty #Ok #†κ G #⧖ L"; destruct r as [lr|]; [|done];

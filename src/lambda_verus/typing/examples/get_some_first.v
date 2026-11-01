@@ -46,16 +46,16 @@ Section get_some_first.
 
   Definition get_some_first_spec : predl_trans' [uniq_borₛ opt_pairₛ] opt_refₛ :=
     λ post '-[m], λ mask π,
-      (∀ pad, uniq_bor_current (𝔄:=opt_pairₛ) m = (pinj (Xl:=[unitₛ; (intₛ i32 * intₛ i32)%ST]) 0%fin (), pad) →
+      (uniq_bor_current (𝔄:=opt_pairₛ) m = pinj (Xl:=[unitₛ; (intₛ i32 * intₛ i32)%ST]) 0%fin () →
         uniq_bor_future (𝔄:=opt_pairₛ) m π = vπ (uniq_bor_current (𝔄:=opt_pairₛ) m) π →
-        ∀ pad', post (pinj (Xl:=[unitₛ; uniq_borₛ (intₛ i32)]) 0%fin (), pad') mask π) ∧
-      (∀ (a: Z * Z) pad,
-        uniq_bor_current (𝔄:=opt_pairₛ) m = (pinj (Xl:=[unitₛ; (intₛ i32 * intₛ i32)%ST]) 1%fin a, pad) →
-        ∀ (r: ~~ (uniq_borₛ (intₛ i32))) pad',
+        post (pinj (Xl:=[unitₛ; uniq_borₛ (intₛ i32)]) 0%fin ()) mask π) ∧
+      (∀ (a: Z * Z),
+        uniq_bor_current (𝔄:=opt_pairₛ) m = pinj (Xl:=[unitₛ; (intₛ i32 * intₛ i32)%ST]) 1%fin a →
+        ∀ (r: ~~ (uniq_borₛ (intₛ i32))),
           uniq_bor_current r = a.1 →
           uniq_bor_future (𝔄:=opt_pairₛ) m π =
-            (pinj (Xl:=[unitₛ; (intₛ i32 * intₛ i32)%ST]) 1%fin (uniq_bor_future r π, a.2), pad) →
-          post (pinj (Xl:=[unitₛ; uniq_borₛ (intₛ i32)]) 1%fin r, pad') mask π).
+            pinj (Xl:=[unitₛ; (intₛ i32 * intₛ i32)%ST]) 1%fin (uniq_bor_future r π, a.2) →
+          post (pinj (Xl:=[unitₛ; uniq_borₛ (intₛ i32)]) 1%fin r) mask π).
 
   Lemma get_some_first_type ϝ α (k vb: val) :
     ⊢ typed_body [ϝ ⊑ₑ α] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
@@ -134,13 +134,13 @@ Section get_some_first.
         { reflexivity. }
     }
     intros post [m []] mask π. simpl.
-    destruct m as [[[[[l [s pad]] ξi] d] g] idx]. simpl.
+    destruct m as [[[[[l s] ξi] d] g] idx]. simpl.
     intros [HNone HSome].
     rewrite /trans_upper /trans_tail /=.
     destruct s as [[]|[a|[]]]; simpl.
-    - intros d0 g0 idx0 Hres pad0. eapply HNone; [done|rewrite uniq_bor_future_eq /=; exact Hres].
-    - intros m1 Hc1 m2 Hc2 Hres Hfin pad0.
-      apply (HSome a pad); [done|by rewrite Hc1 /psum_proj_or /=|].
+    - intros d0 g0 idx0 Hres. eapply HNone; [done|rewrite uniq_bor_future_eq /=; exact Hres].
+    - intros m1 Hc1 m2 Hc2 Hres Hfin.
+      apply (HSome a); [done|by rewrite Hc1 /psum_proj_or /=|].
       rewrite Hfin.
       destruct m1 as [[[[[l1 y1] ζi] d1] g1] idx1].
       destruct m2 as [[[[[l2 y2] ηi] d2] g2] idx2].

@@ -30,8 +30,8 @@ Section place_sum.
   Lemma pctx_plug_cpd {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt : pctx_nonempty K → lty_is_cpd (pctx_plug K lt).
   Proof. by destruct K. Qed.
 
-  Lemma lty_rfn_sum_in {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) a pad ζm q :
-    lty_rfn (SumLty tyl i lt) (pinj i a, pad) ζm q = prfn_sum i (lty_rfn lt a ζm (false :: q)) pad.
+  Lemma lty_rfn_sum_in {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) a ζm q :
+    lty_rfn (SumLty tyl i lt) (pinj i a) ζm q = prfn_sum i (lty_rfn lt a ζm (false :: q)).
   Proof. by rewrite lty_rfn_sum /= psum_proj_pinj. Qed.
 
   (** The interpretation of a sum place whose payload is a leaf, at the refinement of a
@@ -42,7 +42,7 @@ Section place_sum.
     ltype_own (Owned m) (OfTy (Σ! tyl)) (inl (PlaceIn y)) d g tid l.
   Proof.
     rewrite lty_rfn_sum. case_match eqn:Ha.
-    - apply psum_proj_Some in Ha. destruct y as [s pad]. simpl in Ha. subst s.
+    - apply psum_proj_Some in Ha. simpl in Ha. subst y.
       iIntros "H". iApply sum_ofty_unfold_own. iExact "H".
     - rewrite /ltype_own /=. by iIntros "[]".
   Qed.
@@ -83,7 +83,7 @@ Section typing.
       (p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)) +:: T)
       (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K (ToLit p))) of el)
-      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2).1 in
+      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
     move=> ->. iIntros "el".
@@ -96,10 +96,10 @@ Section typing.
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
     iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
     iDestruct "L1" as (? ->) "[Pt1 Gho1]".
-    remember (pctx_get K x₀) as y eqn:Hy. destruct y as [s pad].
-    destruct (to_xsum s) as [j a] eqn:Hj.
-    have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
-    subst s.
+    destruct (to_xsum (pctx_get K x₀)) as [j a] eqn:Hj.
+    have Hy: pinj j a = pctx_get K x₀.
+    { by rewrite -(semi_iso' to_xsum of_xsum (pctx_get K x₀)) Hj. }
+    try rewrite -Hy.
     set lr := l.
     set lK := pctx_loc K (lty_size (OfTy (Σ! tyl))) x₀ lr.
     (* The address of the hole. *)
@@ -119,14 +119,14 @@ Section typing.
     iDestruct (big_sepN_lookup _ _ j with "el") as "el".
     iApply ("el" $! _ (((l, x₀), ζm) -:: xl)
       with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
-    { iApply proph_obs_impl; [|done]=>/= ?. by rewrite -Hy /= to_xsum_pinj. }
+    { iApply proph_obs_impl; [|done]=>/= ?. by rewrite -?Hy to_xsum_pinj. }
     iFrame "T". iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g. iFrame "⧖".
     rewrite (lty_nrc_plug_eq K (OfTy (Σ! tyl)) (SumLty tyl j (OfTy (tyl +!! j)))) //
       (lty_size_plug_eq K _ (OfTy (Σ! tyl))) //.
     iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug -Hy lty_rfn_sum_in ltype_own_plug.
     iFrame "Rest".
-    iApply sum_ofty_unfold_own. iExists (pinj j a, pad). iSplit; [done|].
+    iApply sum_ofty_unfold_own. iExists (pinj j a). iSplit; [done|].
     rewrite /ofty_owned (cbytes_sum _ j (tyl +!! j)). by iFrame.
   Qed.
 

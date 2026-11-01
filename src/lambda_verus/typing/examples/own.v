@@ -57,8 +57,8 @@ Section own_bytes_tests.
   Lemma opt_ty_mty : opt_ty.(ty_mty) = MEnum [MTuple [] 0; MInt i32] (IntTy false 1) 5.
   Proof. by rewrite -ty_mty_eq. Qed.
 
-  Definition some_i32 (z: Z) : ~~(Σ! [unitₛ; intₛ i32]) := (inr (inl z), []).
-  Definition none_i32 : ~~(Σ! [unitₛ; intₛ i32]) := (inl (), []).
+  Definition some_i32 (z: Z) : ~~(Σ! [unitₛ; intₛ i32]) := inr (inl z).
+  Definition none_i32 : ~~(Σ! [unitₛ; intₛ i32]) := inl ().
 
   Lemma opt_ty_val_some z :
     int_in_range i32 z → opt_ty.(ty_val) (some_i32 z) = Some (VVariant 1 (VInt z)).

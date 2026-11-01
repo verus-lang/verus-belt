@@ -35,45 +35,45 @@ a boolean predicate 𝔄 → bool, which has 𝔄 in a negative position.
 Our more general version thus allows more types to pass this check.)
 *)
 
-Definition rlistₛ 𝔄 : syn_type := at_locₛ (listₛ (𝔄 * paddingₛ * locₛ) * paddingₛ).
+Definition rlistₛ 𝔄 : syn_type := at_locₛ (listₛ (𝔄 * locₛ)).
 
 Program Definition list_to_sumₛ {𝔄} : rlistₛ 𝔄 →ₛ at_locₛ (Σ! [unitₛ ; prodₛ 𝔄 (rlistₛ 𝔄)]) := {|
   syn_type_morphism_fn := λ l, match l with
-      | (loc0, ([], nil_padding)) => (loc0, (inl (), nil_padding))
-      | (loc0, ((x, padding, loc) :: xl, nil_padding)) => (loc0, (inr (inl (x, (loc, (xl, nil_padding)))), padding))
+      | (loc0, []) => (loc0, inl ())
+      | (loc0, (x, loc) :: xl) => (loc0, inr (inl (x, (loc, xl))))
   end;
   syn_type_morphism_proph_fn := λ l, match l with
-      | (loc, ([], nil_padding)) => (loc, (inl (), nil_padding))
-      | (loc0, ((x, padding, loc) :: xl, nil_padding)) => (loc0, (inr (inl (x, (loc, (xl, nil_padding)))), padding))
+      | (loc0, []) => (loc0, inl ())
+      | (loc0, (x, loc) :: xl) => (loc0, inr (inl (x, (loc, xl))))
   end;
 |}.
-Next Obligation. intros 𝔄 [loc0 [l np]] π. destruct l as [|[[a b] c] xl]; done. Qed.
-Next Obligation. intros 𝔄 [loc0 [l np]]. destruct l as [|[[a b] c] xl]; first done.
+Next Obligation. intros 𝔄 [loc0 l] π. destruct l as [|[a c] xl]; done. Qed.
+Next Obligation. intros 𝔄 [loc0 l]. destruct l as [|[a c] xl]; first done.
   fold indep_interp_of_syn_type. fold proph_interp_of_syn_type. simpl.
-  do 4 (rewrite List.app_nil_r). done.
+  by rewrite !List.app_nil_r.
 Qed.
-  
+
 Program Definition sum_to_listₛ {𝔄} : at_locₛ (Σ! [unitₛ ; prodₛ 𝔄 (rlistₛ 𝔄)]) →ₛ rlistₛ 𝔄  := {|
   syn_type_morphism_fn := λ s, match s with
-      | (loc0, (inl (), padding)) => (loc0, ([], padding))
-      | (loc0, (inr (inl (x, (loc, (xl, nil_padding)))), padding)) => (loc0, ((x, padding, loc) :: xl, nil_padding))
-      | (loc0, (inr (inr a), _)) => absurd a
-  end; 
+      | (loc0, inl ()) => (loc0, [])
+      | (loc0, inr (inl (x, (loc, xl)))) => (loc0, (x, loc) :: xl)
+      | (loc0, inr (inr a)) => absurd a
+  end;
   syn_type_morphism_proph_fn := λ s, match s with
-      | (loc0, (inl (), padding)) => (loc0, ([], padding))
-      | (loc0, (inr (inl (x, (loc, (xl, nil_padding)))), padding)) => (loc0, ((x, padding, loc) :: xl, nil_padding))
-      | (loc0, (inr (inr a), _)) => absurd a
-  end; 
+      | (loc0, inl ()) => (loc0, [])
+      | (loc0, inr (inl (x, (loc, xl)))) => (loc0, (x, loc) :: xl)
+      | (loc0, inr (inr a)) => absurd a
+  end;
 |}.
-Next Obligation. intros 𝔄 [loc0 [[[]|[[elem [loc [l np]]]|[]]] p]] π; done. Qed.
-Next Obligation. intros 𝔄 [loc0 [[[]|[[elem [loc [l np]]]|[]]] p]]; first done.
+Next Obligation. intros 𝔄 [loc0 [[]|[[elem [loc l]]|[]]]] π; done. Qed.
+Next Obligation. intros 𝔄 [loc0 [[]|[[elem [loc l]]|[]]]]; first done.
   fold indep_interp_of_syn_type. fold proph_interp_of_syn_type. simpl.
-  do 4 (rewrite List.app_nil_r). done.
+  by rewrite !List.app_nil_r.
 Qed.
 
 (** Both are pointers, to the same location: the bytes are the same. *)
 Lemma syn_bincl_sum_to_list {𝔄} : syn_bincl (sum_to_listₛ (𝔄:=𝔄)).
-Proof. apply syn_bincl_same; [done|]. by intros [l [[[]|[[x [loc [xl np]]]|[]]] p]]. Qed.
+Proof. apply syn_bincl_same; [done|]. by intros [l [[]|[[x [loc xl]]|[]]]]. Qed.
 
 Local Instance sum_list_isoₛ {𝔄} : @Isoₛ
     (at_locₛ (Σ! [unitₛ ; prodₛ 𝔄 (rlistₛ 𝔄)]))
@@ -83,44 +83,42 @@ Local Instance sum_list_isoₛ {𝔄} : @Isoₛ
 Proof.
   split.
     - split.
-      + fun_ext. intros [loc0 [[[]|[[elem [loc [l np]]]|[]]] p]]; trivial.
-      + fun_ext. intros [loc0 [[|[[a b] c] xl] np]]; trivial.
+      + fun_ext. intros [loc0 [[]|[[elem [loc l]]|[]]]]; trivial.
+      + fun_ext. intros [loc0 [|[a c] xl]]; trivial.
     - split.
-      + fun_ext. intros [loc0 [[[]|[[elem [loc [l np]]]|[]]] p]]; trivial.
-      + fun_ext. intros [loc0 [[|[[a b] c] xl] np]]; trivial.
+      + fun_ext. intros [loc0 [[]|[[elem [loc l]]|[]]]]; trivial.
+      + fun_ext. intros [loc0 [|[a c] xl]]; trivial.
     - done.
-    - intros x bs. destruct x as [loc0 [[[]|[[elem [loc [l np]]]|[]]] p]]; done.
+    - intros x bs. destruct x as [loc0 [[]|[[elem [loc l]]|[]]]]; done.
 Qed.
-    
-    
+
 Definition list_map1 {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) :
-    (list (~~(𝔄 * paddingₛ * locₛ))) → (list (~~(𝔅 * paddingₛ * locₛ))) :=
-    λ l, map (λ '(a, b, c), (f ~~$ₛ a, b, c)) l.
+    (list (~~(𝔄 * locₛ))) → (list (~~(𝔅 * locₛ))) :=
+    λ l, map (λ '(a, c), (f ~~$ₛ a, c)) l.
 Definition list_map2 {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) :
-    (list ((𝔄 * paddingₛ * locₛ))) → (list ((𝔅 * paddingₛ * locₛ))) :=
-    λ l, map (λ '(a, b, c), (f $ₛ a, b, c)) l.
+    (list ((𝔄 * locₛ))) → (list ((𝔅 * locₛ))) :=
+    λ l, map (λ '(a, c), (f $ₛ a, c)) l.
 Program Definition list_mapₛ {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : (rlistₛ 𝔄 →ₛ rlistₛ 𝔅) := {|
-  syn_type_morphism_fn := (λ (t: ~~(rlistₛ 𝔄)), match t with (loc0, (l, nil_pad)) =>
-    (loc0, (list_map1 f l, nil_pad)) end);
-  syn_type_morphism_proph_fn := (λ (t: (rlistₛ 𝔄)), match t with (loc0, (l, nil_pad)) =>
-    (loc0, (list_map2 f l, nil_pad)) end);
+  syn_type_morphism_fn := (λ (t: ~~(rlistₛ 𝔄)), match t with (loc0, l) =>
+    (loc0, list_map1 f l) end);
+  syn_type_morphism_proph_fn := (λ (t: (rlistₛ 𝔄)), match t with (loc0, l) =>
+    (loc0, list_map2 f l) end);
 |}.
 Next Obligation. fold indep_interp_of_syn_type. fold proph_interp_of_syn_type. intros.
-  destruct x as [loc [l nil_pad]]. simpl. f_equal. f_equal.
-  induction l as [|[[a b] c] xl]; trivial. 
+  destruct x as [loc l]. simpl. f_equal.
+  induction l as [|[a c] xl]; trivial.
   simpl. f_equal. f_equal.
    - rewrite syn_type_morphism_commutes. trivial.
    - apply IHxl.
 Qed.
 Next Obligation. fold indep_interp_of_syn_type. fold proph_interp_of_syn_type. intros.
-  destruct x as [loc [l nil_pad]]. simpl. f_equal. f_equal.
-  induction l as [|[[a b] c] xl]; trivial. 
+  destruct x as [loc l]. simpl. f_equal.
+  induction l as [|[a c] xl]; trivial.
   simpl. f_equal. f_equal.
    - rewrite <- syn_type_morphism_ξl. trivial.
    - apply IHxl.
 Qed.
 
-    
 (** The box of a list node owns the bytes of the sum; its size is syntactic. *)
 Definition list_node_size 𝔄 : nat := syn_bsize (Σ! [unitₛ ; prodₛ 𝔄 (rlistₛ 𝔄)]).
 
@@ -157,11 +155,11 @@ Section typing.
   
   Lemma list_resolve {𝔄} E L (ty: type 𝔄) Φ :
     resolve E L ty Φ → resolve E L (list_ty ty)
-        (λ '(_, (l, _)) π, lforall (λ '(x,_,_), Φ x π) l).
+        (λ '(_, l) π, lforall (λ '(x,_), Φ x π) l).
   Proof.
     move=> ?. apply fix_resolve=> ??. eapply resolve_impl; [solve_typing|].
-    intros [loc [l padding]].  generalize loc. clear loc.
-    induction l as [|[[x1 pad] loc]]; trivial.
+    intros [loc l]. generalize loc. clear loc.
+    induction l as [|[x1 loc]]; trivial.
   Qed.
 
   Lemma list_resolve_just {𝔄} E L (ty: type 𝔄) :

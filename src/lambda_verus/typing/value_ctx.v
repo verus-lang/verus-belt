@@ -80,16 +80,15 @@ Section value_rules.
     rewrite tctx_val_val. iExists 0%nat. by iFrame "⧖".
   Qed.
 
-  (** A variant value: the payload with the index of the variant. The legacy padding
-      component of the value is arbitrary. *)
+  (** A variant value: the payload with the index of the variant. *)
   Lemma type_mk_variant_val_instr {𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (t: Z) p E L I :
     t = Z.of_nat (fin_to_nat i) →
     typed_instr E L I +[p ◁ᵥ tyl +!! i] (MkVariant t p) (λ v, +[v ◁ᵥ Σ! tyl])
-      (λ post '-[a], λ mask π, ∀ pad, post -[(pinj i a, pad)] mask π).
+      (λ post '-[a], post -[pinj i a]).
   Proof.
     iIntros (-> tid post mask iκs [a []]) "_ _ _ _ _ $$ [p _] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "⧖ Gho".
-    wp_pure _. iExists -[(pinj i a, [])]. iSplitR "Obs".
+    wp_pure _. iExists -[pinj i a]. iSplitR "Obs".
     - iSplit; [|done]. rewrite tctx_val_val. iExists d. iFrame "⧖". iSplit.
       + iPureIntro. rewrite -ty_val_eq syn_val_pinj (ty_val_eq (tyl +!! i)) Hw //.
       + rewrite [ty_gho_own (Σ! tyl)]/ty_gho_own /xsum_ty /= to_xsum_pinj. done.

@@ -223,7 +223,7 @@ Section memcpy_deep.
     { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
     { by iApply bytes_own_of_bytes. }
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    set junk := vreplicate (ty_bsize ty) (LitV LitPoison).
+    set junk := (() : ~~ (uninitₛ (ty_bsize ty))).
     iModIntro. iExists -[(pctx_set K x₀ y, ζm); (lb, junk)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitR "Hbs Fr"; [|iSplitL; [|done]].
@@ -353,7 +353,7 @@ Section sum_deep.
       (p ◁ₗ pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ pctx_plug K (OfTy (Σ! tyl)) +:: T)
       (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_vexpr K p)) of el)
-      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1).1 in
+      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
     move=> -> Alv. iIntros "el".
@@ -364,10 +364,10 @@ Section sum_deep.
     iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)". have Hdl := pctx_vroot_dlev K.
     have ?: Closed [] (pctx_vexpr K p).
     { apply pctx_vexpr_closed. by eapply eval_path_closed. }
-    destruct (pctx_get K x₀) as [s pad] eqn:Hy.
-    destruct (to_xsum s) as [j a] eqn:Hj.
-    have Hs: s = pinj j a. { by rewrite -(semi_iso' to_xsum of_xsum s) Hj. }
-    subst s.
+    destruct (to_xsum (pctx_get K x₀)) as [j a] eqn:Hj.
+    have Hy: pctx_get K x₀ = pinj j a.
+    { by rewrite -(semi_iso' to_xsum of_xsum (pctx_get K x₀)) Hj. }
+    try rewrite Hy.
     iDestruct (Alv with "L E") as "#Alv".
     wp_bind (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_vexpr K p))%E.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
@@ -377,7 +377,7 @@ Section sum_deep.
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (OfTy (Σ! tyl))])%I as "#Hu".
     { iApply (guards_transitive with "Ghalf Alv"). }
     set lt' := SumLty tyl j (OfTy (tyl +!! j)).
-    set r' := (prfn_sum j (inl (PlaceIn a)) pad : prfn (xsumₛ 𝔄l)).
+    set r' := (prfn_sum j (inl (PlaceIn a)) : prfn (xsumₛ 𝔄l)).
     iDestruct (lc_weaken (pctx_vacc_cred K D + (3 * (D + 1) * D + (1 + 3 * (D + 1))))
       with "£") as "[£a [£w [£1 £r]]]";
       [have := pctx_vacc_cred_le K D; rewrite /advance_credits; nia|].
@@ -403,7 +403,7 @@ Section sum_deep.
          the body to the sum place. *)
       iEval (rewrite (pctx_kind_uniq K κ) //) in "H".
       iEval (rewrite /pctx_vcloser (pctx_kind_uniq K κ) //) in "Cl".
-      iDestruct "H" as (? idx ->) "Body". rewrite Hy.
+      iDestruct "H" as (? idx ->) "Body". rewrite ?Hy.
       iMod (fractional.frac_split_guard_in_half NllftG G' G' with "G' []")
         as (γ2) "[A [B [#Gh2 #Back2]]]"; [solve_ndisj|iApply guards_refl|].
       iAssert (G' &&{↑NllftG}&&> @[κ])%I as "#G'κ".
@@ -419,11 +419,11 @@ Section sum_deep.
       iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Tag & Pay & Pad)".
       iDestruct "Tag" as (bt) "[Bt %Hbt]".
       iApply (wp_load_na with "Bt"); [exact Hbt|]. iIntros "!> Bt".
-      iSpecialize ("CloseB" $! (pinj j a, pad) dh gh with "[Bt Pay Pad Gho1] ⧗1").
+      iSpecialize ("CloseB" $! (pinj j a) dh gh with "[Bt Pay Pad Gho1] ⧗1").
       { iNext. iFrame "⧖' Gho1". rewrite (cbytes_sum _ j (tyl +!! j)). by iFrame. }
       iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [solve_ndisj|].
       iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [solve_ndisj|].
-      iMod (cpd_unfold_uniq lt' κ (pctx_hξi K x₀) (pinj j a, pad) r' dh gh tid lK
+      iMod (cpd_unfold_uniq lt' κ (pctx_hξi K x₀) (pinj j a) r' dh gh tid lK
         with "LFT PROPH UNIQ G'κ G' [Body]") as "[Own G']"; [done|done|done| | | |solve_ndisj| |].
       { rewrite /r' prfn_rsv_sum. apply prfn_rsv_in. }
       { intros π. rewrite /r' prfn_den_sum /= prfn_den_in. by rewrite psum_map1_pinj. }
@@ -443,16 +443,16 @@ Section sum_deep.
       iDestruct (big_sepN_lookup _ _ j with "el") as "el".
       iApply ("el" $! _ ((x₀, ζm) -:: xl)
         with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
-      { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?Hy /= to_xsum_pinj. }
+      { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?Hy to_xsum_pinj. }
       iFrame "T". iExists _. iSplit; [done|].
       iApply (vplace_own_close with "⧖ [⧗p]");
         [by rewrite (lty_vnrc_plug_eq K lt' (OfTy (Σ! tyl)))|].
-      rewrite Hy lty_rfn_sum_in. iExact "Own".
+      rewrite ?Hy lty_rfn_sum_in. iExact "Own".
     - (* [Owned] mode. *)
       iEval (rewrite (pctx_kind_owned K) //) in "H".
       iEval (rewrite /pctx_vcloser (pctx_kind_owned K) //) in "Cl".
       set mh := pctx_hmode K 0.
-      iDestruct "H" as (? ->) "[Pt1 Gho1]". rewrite Hy.
+      iDestruct "H" as (? ->) "[Pt1 Gho1]". rewrite ?Hy.
       iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Tag & Pay & Pad)".
       iDestruct "Tag" as (bt) "[Bt %Hbt]".
       iApply (wp_load_na with "Bt"); [exact Hbt|]. iIntros "!> Bt".
@@ -463,18 +463,18 @@ Section sum_deep.
       { by iApply big_sepL_pat_ok_nil. }
       { done. }
       { iIntros "_ !>". iSplit; [|done]. iApply sum_ofty_unfold_own.
-        iExists (pinj j a, pad). iSplit; [done|].
+        iExists (pinj j a). iSplit; [done|].
         rewrite /ofty_owned (cbytes_sum _ j (tyl +!! j)). by iFrame. }
       iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|]. iModIntro.
       wp_pure _. wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
       iDestruct (big_sepN_lookup _ _ j with "el") as "el".
       iApply ("el" $! _ ((x₀, ζm) -:: xl)
         with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
-      { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?Hy /= to_xsum_pinj. }
+      { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?Hy to_xsum_pinj. }
       iFrame "T". iExists _. iSplit; [done|].
       iApply (vplace_own_close with "⧖ [⧗p]");
         [by rewrite (lty_vnrc_plug_eq K lt' (OfTy (Σ! tyl)))|].
-      rewrite Hy lty_rfn_sum_in. iExact "Own".
+      rewrite ?Hy lty_rfn_sum_in. iExact "Own".
   Qed.
 
   Lemma type_case_oplace_deep {𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (Σ! 𝔄l) 𝔄)
@@ -484,7 +484,7 @@ Section sum_deep.
       (p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)) +:: T)
       (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K (ToLit p))) of el)
-      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2).1 in
+      (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
     iIntros (??) "el".

@@ -117,16 +117,14 @@ Proof.
       + apply proph_dep_constr. apply (FIX 𝔄2 i).
    - induction l; first by (clear FIX; done). destruct x. apply proph_dep_constr2.
       + apply FIX. + apply IHl.
-   - destruct x as [x padding]. generalize padding. induction l as [|𝔄₀ 𝔄l]; first by (clear FIX; done). clear padding. intros padding.
+   - induction l as [|𝔄₀ 𝔄l]; first by (clear FIX; done).
      destruct x as [x|x].
-     + apply (proph_dep_constr (λ a, (inl a, padding)) _ _ (FIX 𝔄₀ x)).
-     + clear FIX. have h1 := IH𝔄l x padding.
+     + apply (proph_dep_constr inl _ _ (FIX 𝔄₀ x)).
+     + clear FIX. have h1 := IH𝔄l x.
        replace (@ξl (xsumₛ (@cons syn_type 𝔄₀ 𝔄l))
-       (@pair (@psum syn_type indep_interp_of_syn_type (@cons syn_type 𝔄₀ 𝔄l)) 
-          (list lang.val)
-          (@inr (indep_interp_of_syn_type 𝔄₀) (@psum syn_type indep_interp_of_syn_type 𝔄l) x)
-          padding)) with (@ξl (xsumₛ 𝔄l) (@pair (@psum syn_type indep_interp_of_syn_type 𝔄l) (list lang.val) x padding)).
-       * apply (proph_dep_constr (λ '(a, b), (inr a, b)) _ _ h1).
+          (@inr (indep_interp_of_syn_type 𝔄₀) (@psum syn_type indep_interp_of_syn_type 𝔄l) x))
+         with (@ξl (xsumₛ 𝔄l) x).
+       * apply (proph_dep_constr inr _ _ h1).
        * simpl. destruct (to_xsum (psum_map1 (λ (A : syn_type) (x0 : ~~ A), ξl x0) x)). trivial.
    - destruct x. apply (proph_dep_constr (λ i, (_,i))). apply (FIX 𝔄).
    - destruct x as [[[[[l x0] ξi] d'] g'] idx]. simpl.

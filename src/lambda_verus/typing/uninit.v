@@ -61,7 +61,7 @@ Section typing.
   Next Obligation. done. Qed.
    
   Program Definition unit_to_uninit0ₛ : Π! [] →ₛ uninitₛ 0 := {|
-    syn_type_morphism_fn := const [# ] ;
+    syn_type_morphism_fn := const () ;
     syn_type_morphism_proph_fn := const () ;
   |}.
   Next Obligation. done. Qed.
@@ -69,17 +69,12 @@ Section typing.
   
   Lemma uninit_unit E L : eqtype E L (↯ 0) () (uninit0_to_unitₛ) (unit_to_uninit0ₛ).
   Proof.
-    apply eqtype_unfold. { 
+    apply eqtype_unfold. {
       split.
-        + split.
-          * fun_ext. intros x. simpl. unfold indep_interp_of_syn_type in x.
-            refine (match x with vnil => _ end). trivial.
-          * fun_ext. intros. destruct x. done.
-        + split.
-          * fun_ext. intros x. destruct x. trivial.
-          * fun_ext. intros x. destruct x. trivial.
+        + split; fun_ext; by intros [].
+        + split; fun_ext; by intros [].
         + done.
-        + intros. refine (match x with vnil => _ end). done.
+        + by intros [].
     }
     { by apply syn_bincl_same. }
     iIntros "_!>_". iSplit; [iApply lft_equiv_refl|].
@@ -95,14 +90,14 @@ Section typing.
   Proof. eapply proj2, uninit_unit. Qed.
 
   Program Definition uninit_joinₛ {n m} : (uninitₛ n * uninitₛ m) →ₛ (uninitₛ (n + m)) := {|
-    syn_type_morphism_fn := uncurry vapp ;
+    syn_type_morphism_fn := const () ;
     syn_type_morphism_proph_fn := const () ;
   |}.
   Next Obligation. done. Qed.
   Next Obligation. done. Qed.
   
   Program Definition uninit_splitₛ {n m} : (uninitₛ (n + m)) →ₛ (uninitₛ n * uninitₛ m) := {|
-    syn_type_morphism_fn := @vsepat _ n m ;
+    syn_type_morphism_fn := const ((), ()) ;
     syn_type_morphism_proph_fn := const ((), ()) ;
   |}.
   Next Obligation. done. Qed.
@@ -111,7 +106,7 @@ Section typing.
   Lemma syn_bincl_uninit_split {n m} : syn_bincl (uninit_splitₛ (n:=n) (m:=m)).
   Proof.
     split; [by rewrite syn_bsize_prod|]. intros x R fbs.
-    cbn [syn_type_morphism_fn uninit_splitₛ]. destruct (@vsepat _ n m x) as [a b].
+    cbn [syn_type_morphism_fn uninit_splitₛ]. destruct x.
     rewrite syn_fbytes_pair !syn_fbytes_uninit. split.
     - intros [Hl [bs ->]]. rewrite length_fmap in Hl.
       exists (inr <$> take n bs), (inr <$> drop n bs). rewrite -fmap_app take_drop.
@@ -126,13 +121,12 @@ Section typing.
     eqtype E L (↯ (m + n)) (↯ m * ↯ n) uninit_splitₛ uninit_joinₛ.
   Proof.
     apply eqtype_unfold.
-    { destruct (@vapp_vsepat_iso val m n) as [A B]. split.
-      - split; trivial.
-      - split; trivial; fun_ext; intro x.
-        + destruct x; done. + destruct x as [[] []]. done.
+    { split.
+      - split; fun_ext; by [intros []|intros [[] []]].
+      - split; fun_ext; by [intros []|intros [[] []]].
       - rewrite /syn_bsize /= !seq_size_cons seq_size_nil /=. lia.
-      - intros x bs. cbn [syn_mty syn_val]. rewrite decode_pad decode_pad_pair.
-        destruct (syn_type_morphism_fn _ x). case_decide; naive_solver.
+      - intros [] bs. cbn [syn_mty syn_val]. rewrite decode_pad decode_pad_pair.
+        case_decide; naive_solver.
     }
     { apply syn_bincl_uninit_split. }
     iIntros "_!>_". iSplit; [iApply lft_equiv_refl|].

@@ -152,8 +152,8 @@ Section place_pshr.
 
   Definition get_or_zero_pb_spec : predl_trans' [at_locₛ (at_locₛ opt_i32ₛ)] (intₛ i32) :=
     λ post '-[(_, m)], λ mask π,
-      (∀ pad, m.2 = (pinj (Xl:=[unitₛ; intₛ i32]) 0%fin (), pad) → post 0%Z mask π) ∧
-      (∀ v pad, m.2 = (pinj (Xl:=[unitₛ; intₛ i32]) 1%fin v, pad) → post v mask π).
+      (m.2 = pinj (Xl:=[unitₛ; intₛ i32]) 0%fin () → post 0%Z mask π) ∧
+      (∀ v, m.2 = pinj (Xl:=[unitₛ; intₛ i32]) 1%fin v → post v mask π).
 
   Lemma get_or_zero_pb_type ϝ α (k vb: val) :
     ⊢ typed_body [ϝ ⊑ₑ α] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
@@ -203,7 +203,7 @@ Section place_pshr.
         { solve_typing. }
         { reflexivity. }
     }
-    intros post [[lb [l1 [s pad]]] []] mask π. simpl.
+    intros post [[lb [l1 s]] []] mask π. simpl.
     intros [Hnone Hsome]. destruct s as [[]|[v|[]]]; simpl.
     - intros _. by eapply Hnone.
     - intros _. by eapply Hsome.

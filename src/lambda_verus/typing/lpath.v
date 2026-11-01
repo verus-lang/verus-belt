@@ -103,8 +103,8 @@ Section lty_rfn.
        [false :: q]) and the padding. (If the value is of another variant, the place is
        not owned, see [sum_node]; the refinement is a constant.) *)
     | SumLty _ i lt => λ x ζm q,
-        match psum_proj i x.1 with
-        | Some y => prfn_sum i (lty_rfn lt y ζm (false :: q)) x.2
+        match psum_proj i x with
+        | Some y => prfn_sum i (lty_rfn lt y ζm (false :: q))
         | None => prfn_dummy x
         end
     (* A shared reference (whose referent does not change) keeps its value. *)
@@ -118,8 +118,8 @@ Section lty_rfn.
 
   Lemma lty_rfn_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) x ζm q :
     lty_rfn (SumLty tyl i lt) x ζm q =
-      match psum_proj i x.1 with
-      | Some y => prfn_sum i (lty_rfn lt y ζm (false :: q)) x.2
+      match psum_proj i x with
+      | Some y => prfn_sum i (lty_rfn lt y ζm (false :: q))
       | None => prfn_dummy x
       end.
   Proof. done. Qed.
@@ -134,7 +134,7 @@ Section lty_rfn.
     6: { rewrite (IH _ (false :: q)); [done|].
       intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
       by rewrite -app_assoc. }
-    5: { destruct (psum_proj i x.1); [|done].
+    5: { destruct (psum_proj i x); [|done].
       rewrite (IH _ (false :: q)); [done|].
       intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
       by rewrite -app_assoc. }
@@ -209,10 +209,10 @@ Section lty_rfn.
   Proof.
     induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | |] in x, q |- *;
       intros Hb Hr; try done.
-    5: { revert Hr. rewrite lty_rfn_sum. destruct (psum_proj i x.1) as [y|];
+    5: { revert Hr. rewrite lty_rfn_sum. destruct (psum_proj i x) as [y|];
         [|intros; apply prfn_dummy_dep].
       rewrite prfn_rsv_sum prfn_den_sum. intros Hr.
-      apply (proph_dep_constr (λ a, (pinj i a, x.2))). by apply IH. }
+      apply (proph_dep_constr (λ a, (pinj i a))). by apply IH. }
     - simpl in *. rewrite prfn_den_inl. by rewrite prfn_rsv_inl in Hr.
     - destruct Hr as [Hr Hξ]. apply (proph_dep_weaken _ (ζl ++ ζl)); [set_solver|].
       apply (proph_dep_constr2 pair); [by apply IH|exact Hξ].
@@ -302,7 +302,7 @@ Section pctx.
     | PFst K _ => λ x, pctx_get K x.1
     | PSnd _ K => λ x, pctx_get K x.2
     | POwn _ K => λ x, pctx_get K x.2
-    | PSum _ i w K => λ x, pctx_get K (psum_proj_or i x.1 w)
+    | PSum _ i w K => λ x, pctx_get K (psum_proj_or i x w)
     | PUniq _ K => λ x, pctx_get K (uniq_bor_current x)
     | PShr _ K => λ x, pctx_get K x.2
     end.
@@ -313,7 +313,7 @@ Section pctx.
     | PFst K _ => λ x y, (pctx_set K x.1 y, x.2)
     | PSnd _ K => λ x y, (x.1, pctx_set K x.2 y)
     | POwn _ K => λ x y, (x.1, pctx_set K x.2 y)
-    | PSum _ i w K => λ x y, (pinj i (pctx_set K (psum_proj_or i x.1 w) y), x.2)
+    | PSum _ i w K => λ x y, (pinj i (pctx_set K (psum_proj_or i x w) y))
     | PUniq _ K => λ x y, uniq_bor_set_current x (pctx_set K (uniq_bor_current x) y)
     | PShr _ K => λ x y, (x.1, pctx_set K x.2 y)
     end.
@@ -399,7 +399,7 @@ Section pctx.
     | PHole => λ _, True
     | PFst K _ => λ x, pctx_in K x.1
     | PSnd _ K | POwn _ K | PShr _ K => λ x, pctx_in K x.2
-    | PSum _ i _ K => λ x, match psum_proj i x.1 with Some y => pctx_in K y | None => False end
+    | PSum _ i _ K => λ x, match psum_proj i x with Some y => pctx_in K y | None => False end
     | PUniq _ K => λ x, pctx_in K (uniq_bor_current x)
     end.
 
@@ -422,7 +422,7 @@ Section pctx.
     | PSnd lt1 K => λ x l, pctx_loc K n x.2 (l +ₗ lty_size lt1)
     | POwn _ K => λ x _, pctx_loc K n x.2 x.1
     | @PSum _ 𝔄l _ i w K => λ x l,
-        pctx_loc K n (psum_proj_or i x.1 w)
+        pctx_loc K n (psum_proj_or i x w)
           (l +ₗ tag_size 𝔄l)
     | PUniq _ K => λ x _, pctx_loc K n (uniq_bor_current x) (uniq_bor_loc x)
     | PShr _ K => λ x _, pctx_loc K n x.2 x.1
@@ -468,8 +468,8 @@ Section pctx.
         inr (lty_rfn lt1 x.1 ζm (false :: q), pctx_rfn K x.2 ζm (true :: q) r)
     | POwn _ K => λ x ζm q r, inr (x.1, pctx_rfn K x.2 ζm (false :: q) r)
     | PSum _ i _ K => λ x ζm q r,
-        match psum_proj i x.1 with
-        | Some y => prfn_sum i (pctx_rfn K y ζm (false :: q) r) x.2
+        match psum_proj i x with
+        | Some y => prfn_sum i (pctx_rfn K y ζm (false :: q) r)
         | None => prfn_dummy x
         end
     | PUniq _ K => λ x ζm q r,
@@ -614,7 +614,7 @@ Section pctx.
     induction K in x |- *; simpl;
       [by intros|intros; by rewrite IHK // -surjective_pairing..| | |
        intros; by rewrite IHK // -surjective_pairing].
-    - rewrite /psum_proj_or. destruct x as [s pad]. simpl.
+    - rewrite /psum_proj_or. simpl.
       case_match eqn:Hs; [|intros []]. intros Hin.
       rewrite IHK //. by rewrite -(psum_proj_Some _ _ _ Hs).
     - intros. by rewrite IHK // uniq_bor_set_current_id.
@@ -689,7 +689,7 @@ Section pctx.
       pctx_rfn K x ζm q (lty_rfn lt (pctx_get K x) ζm (pctx_path K q)).
   Proof.
     induction K in lt, x, q |- *; simpl; try by rewrite ?IHK.
-    rewrite /psum_proj_or. destruct (psum_proj i x.1); [by rewrite IHK|done].
+    rewrite /psum_proj_or. destruct (psum_proj i x); [by rewrite IHK|done].
   Qed.
 
   Lemma pctx_rfn_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoShr K} x y ζm q r :
@@ -698,7 +698,7 @@ Section pctx.
     rename select (PctxNoShr K) into HK. rewrite /PctxNoShr in HK.
     induction K in HK, x, y, q, r |- *; simpl; simpl in HK; try done;
       try (intros; by rewrite ?IHK).
-    - rewrite psum_proj_pinj /psum_proj_or. destruct (psum_proj i x.1); [|done].
+    - rewrite psum_proj_pinj /psum_proj_or. destruct (psum_proj i x); [|done].
       intros. by rewrite IHK.
     - destruct HK as [_ HK].
       intros. by rewrite uniq_bor_loc_set uniq_bor_current_set uniq_bor_ξi_set IHK.
@@ -721,7 +721,7 @@ Section pctx.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
-    - destruct (psum_proj i x.1); [by rewrite IHK|done].
+    - destruct (psum_proj i x); [by rewrite IHK|done].
   Qed.
 
   (** More generally, adding an entry for a path below the hole. *)
@@ -736,7 +736,7 @@ Section pctx.
       f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app app_assoc. by apply lpath_app_cons_ne.
     - by rewrite IHK.
-    - destruct (psum_proj i x.1); [by rewrite IHK|done].
+    - destruct (psum_proj i x); [by rewrite IHK|done].
   Qed.
 
   Lemma pctx_rfn_rsv {𝔅 𝔄} (K: pctx 𝔅 𝔄) x ζm q (r r': prfn 𝔅) ζl ζl' :
@@ -747,8 +747,8 @@ Section pctx.
     - intros [H1 H2] H'. split; [by eapply IHK|]. by eapply prfn_rsv_weaken.
     - intros [H1 H2] H'. split; [by eapply prfn_rsv_weaken|]. by eapply IHK.
     - intros H H'. by eapply IHK.
-    - destruct (psum_proj i x.1); [|intros; rewrite /prfn_dummy /=; by intros ???].
-      rewrite !(prfn_rsv_sum' _ _ x.2). intros H H'. by eapply IHK.
+    - destruct (psum_proj i x); [|intros; rewrite /prfn_dummy /=; by intros ???].
+      rewrite !(prfn_rsv_sum' _ _). intros H H'. by eapply IHK.
     - intros [H1 H2] H'. split; [by eapply IHK|].
       eapply uniq_prvar_dep_irrel, proph_dep_weaken; [|exact H2]. done.
     - intros _ _. exact (prfn_rsv_in (𝔄:=at_locₛ 𝔄') x ζl').
@@ -764,8 +764,8 @@ Section pctx.
     - intros H [H1 H2]. split; [by eapply IHK|]. by eapply prfn_rsv_weaken.
     - intros H [H1 H2]. split; [by eapply prfn_rsv_weaken|]. by eapply IHK.
     - intros H H'. by eapply IHK.
-    - destruct (psum_proj i x.1); [|intros; rewrite /prfn_dummy /=; by intros ???].
-      rewrite !(prfn_rsv_sum' _ _ x.2). intros H H'. by eapply IHK.
+    - destruct (psum_proj i x); [|intros; rewrite /prfn_dummy /=; by intros ???].
+      rewrite !(prfn_rsv_sum' _ _). intros H H'. by eapply IHK.
     - intros H [H1 H2]. split; [by eapply IHK|].
       eapply uniq_prvar_dep_irrel, proph_dep_weaken; [|exact H2]. done.
     - intros _ _. exact (prfn_rsv_in (𝔄:=at_locₛ 𝔄') x ζl').
@@ -849,7 +849,7 @@ Section pctx.
         ptr_cell l x.1 ∗ ⌜d ≠ 0%nat⌝ ∗ ▷^m (freeable_sz n' (pctx_size K n) x.1) ∗
         pctx_own K n (m + 1) x.2 ζm (false :: q) (pred d) g tid x.1
     | @PSum _ 𝔄l tyl i _ K => λ x ζm q d g tid l,
-        match psum_proj i x.1 with
+        match psum_proj i x with
         | Some y =>
             tag_cell 𝔄l l i ∗
             pctx_own K n m y ζm (false :: q) d g tid
@@ -879,7 +879,7 @@ Section pctx.
     - rewrite /own_node lty_size_plug IHK //. iSplit.
       + iIntros "($ & $ & $ & $ & $)".
       + iIntros "($ & $ & $ & $ & $)".
-    - rewrite /psum_proj_or. destruct (psum_proj i x.1) as [y|].
+    - rewrite /psum_proj_or. destruct (psum_proj i x) as [y|].
       + rewrite sum_node_sum lty_size_plug IHK //. iSplit.
         * iIntros "($ & [$ $] & $)".
         * iIntros "[$ ($ & $ & $)]".
@@ -895,7 +895,7 @@ Section pctx.
     - iIntros "[A _]". by iApply IHK.
     - iIntros "[_ A]". by iApply IHK.
     - iIntros "(_ & _ & _ & A)". by iApply IHK.
-    - destruct (psum_proj i x.1); [|by iIntros "[]"]. iIntros "(_ & A & _)". by iApply IHK.
+    - destruct (psum_proj i x); [|by iIntros "[]"]. iIntros "(_ & A & _)". by iApply IHK.
   Qed.
 
   Lemma pctx_own_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x y ζm q d g tid l :
@@ -903,7 +903,7 @@ Section pctx.
     pctx_own K n m (pctx_set K x y) ζm q d g tid l = pctx_own K n m x ζm q d g tid l.
   Proof.
     induction K in m, x, y, q, d, l |- *; simpl; try (intros; by rewrite ?IHK).
-    rewrite psum_proj_pinj /psum_proj_or. destruct (psum_proj i x.1); [|done].
+    rewrite psum_proj_pinj /psum_proj_or. destruct (psum_proj i x); [|done].
     intros. by rewrite IHK.
   Qed.
 
@@ -911,7 +911,7 @@ Section pctx.
     pctx_in K x → pctx_loc K n (pctx_set K x y) l = pctx_loc K n x l.
   Proof.
     induction K in x, y, l |- *; simpl; try (intros; by rewrite ?IHK).
-    - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x.1); [|done].
+    - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x); [|done].
       intros. by rewrite IHK.
     - intros. by rewrite uniq_bor_current_set uniq_bor_loc_set IHK.
   Qed.
@@ -924,7 +924,7 @@ Section pctx.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
     - rewrite IHK. f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app. by apply lpath_app_cons_ne.
-    - destruct (psum_proj i x.1); [by rewrite IHK|done].
+    - destruct (psum_proj i x); [by rewrite IHK|done].
   Qed.
 
   Lemma pctx_own_blk_cons_below {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm ζi q s d g tid l :
@@ -939,7 +939,7 @@ Section pctx.
       f_equal. f_equal. apply lty_rfn_blk_irrel=> r' /=.
       rewrite decide_False; [done|]. rewrite pctx_path_app app_assoc. by apply lpath_app_cons_ne.
     - by rewrite IHK.
-    - destruct (psum_proj i x.1); [by rewrite IHK|done].
+    - destruct (psum_proj i x); [by rewrite IHK|done].
   Qed.
 
   Lemma pctx_own_depth_mono {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x ζm q d g d' g' tid l :
@@ -952,7 +952,7 @@ Section pctx.
     - iIntros "[A B]". iSplitL "A"; [by iApply (ltype_own_owned_depth_mono with "A")|].
       by iApply IHK.
     - iIntros "($ & % & $ & A)". iSplit; [iPureIntro; lia|]. iApply (IHK with "A"); lia.
-    - destruct (psum_proj i x.1); [|by iIntros "[]"].
+    - destruct (psum_proj i x); [|by iIntros "[]"].
       iIntros "($ & A & $)". by iApply IHK.
   Qed.
 
@@ -965,7 +965,7 @@ Section pctx.
     - iIntros "[_ A]". by iApply IHK.
     - iIntros "(_ & %Hd & _ & A)". iDestruct (IHK with "A") as %?.
       rewrite pctx_mode_add. iPureIntro. lia.
-    - destruct (psum_proj i x.1); [|by iIntros "[]"]. iIntros "(_ & A & _)". by iApply IHK.
+    - destruct (psum_proj i x); [|by iIntros "[]"]. iIntros "(_ & A & _)". by iApply IHK.
   Qed.
 
   (** ** The address of the hole
@@ -1008,7 +1008,7 @@ Section pctx.
         iApply (wp_load_na with "Hbs"); [exact Hbs|].
         iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
       iIntros (v) "($ & [$ $] & $ & $)". by iFrame.
-    - destruct (psum_proj i x.1) as [y|] eqn:Hy; [|by iIntros "_ []"].
+    - destruct (psum_proj i x) as [y|] eqn:Hy; [|by iIntros "_ []"].
       iIntros "WP (Tag & Own & Pad)". iApply (wp_wand with "[- Tag Pad]").
       { iApply (IHK m y (false :: q) d (l +ₗ tag_size 𝔄l) _ R
           with "[WP] Own").
@@ -1082,7 +1082,7 @@ Section pctx.
     prfn_den (pctx_rfn K x ζm q r) π = prfn_den (pctx_rfn K x ζm q r') π.
   Proof.
     intros Heq. induction K in x, q, r, r', Heq |- *; simpl; try by rewrite ?(IHK _ _ r r').
-    - destruct (psum_proj i x.1); [|done]. rewrite /prfn_sum /= !psum_map1_pinj.
+    - destruct (psum_proj i x); [|done]. rewrite /prfn_sum /= !psum_map1_pinj.
       by rewrite (IHK _ _ r r').
     - rewrite (IHK _ _ r r') //. f_equal. apply uniq_prvar_app_irrel.
   Qed.
@@ -1156,7 +1156,7 @@ Section pctx.
     | PFst K _ => λ x y, (pctx_reset K x.1 y, x.2)
     | PSnd _ K => λ x y, (x.1, pctx_reset K x.2 y)
     | POwn _ K => λ x y, (x.1, pctx_reset K x.2 y)
-    | PSum _ i w K => λ x y, pctx_reset K (psum_proj_or i x.1 w) y
+    | PSum _ i w K => λ x y, pctx_reset K (psum_proj_or i x w) y
     | PUniq _ K => λ x y, uniq_bor_retype x (pctx_reset K (uniq_bor_current x) y)
     | PShr _ K => λ x y, (x.1, pctx_reset K x.2 y)
     end.

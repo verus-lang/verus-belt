@@ -24,7 +24,6 @@ Inductive syn_type := intₛ (_: IntType) | boolₛ | unitₛ | Propₛ | positi
 | namespaceₛ
 | uninitₛ (_: nat)
 | locₛ
-| paddingₛ
 | funₛ (_: syn_type) (_: syn_type)
 | exec_funₛ (_: syn_type)
 | join_handleₛ (_: syn_type)
@@ -60,7 +59,7 @@ Fixpoint indep_interp_of_syn_type (𝔄: syn_type) : Type :=
   | prodₛ 𝔄₀ 𝔄₁ => indep_interp_of_syn_type 𝔄₀ * indep_interp_of_syn_type 𝔄₁
   | sumₛ 𝔄₀ 𝔄₁ => indep_interp_of_syn_type 𝔄₀ + indep_interp_of_syn_type 𝔄₁
   | xprodₛ 𝔄l => plist indep_interp_of_syn_type 𝔄l
-  | xsumₛ 𝔄l => psum indep_interp_of_syn_type 𝔄l * list val
+  | xsumₛ 𝔄l => psum indep_interp_of_syn_type 𝔄l
   | at_locₛ 𝔄₀  => loc * indep_interp_of_syn_type 𝔄₀ 
   | uniq_borₛ 𝔄₀  => loc * indep_interp_of_syn_type 𝔄₀ * positive * nat * nat * Idx
   | blockedₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀ * positive * positive  (* first elem is only to show inhabitness *)
@@ -70,10 +69,9 @@ Fixpoint indep_interp_of_syn_type (𝔄: syn_type) : Type :=
   | invₛ 𝔄₀ => namespace * gname * indep_interp_of_syn_type 𝔄₀
   | local_invₛ 𝔄₀ => namespace * (gname * gname * nat) * indep_interp_of_syn_type 𝔄₀
   | namespaceₛ => namespace
-  | uninitₛ n => vec val n
+  | uninitₛ n => ()
   | pcellₛ _ => positive
   | locₛ => loc
-  | paddingₛ => list val
   | funₛ 𝔄₀ 𝔄₁ => (indep_interp_of_syn_type 𝔄₀ → indep_interp_of_syn_type 𝔄₁)
   | exec_funₛ 𝔄₀ => val * indep_interp_of_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
@@ -90,7 +88,7 @@ Fixpoint proph_interp_of_syn_type (𝔄: syn_type) : Type :=
   | prodₛ 𝔄₀ 𝔄₁ => proph_interp_of_syn_type 𝔄₀ * proph_interp_of_syn_type 𝔄₁
   | sumₛ 𝔄₀ 𝔄₁ => proph_interp_of_syn_type 𝔄₀ + proph_interp_of_syn_type 𝔄₁
   | xprodₛ 𝔄l => plist proph_interp_of_syn_type 𝔄l
-  | xsumₛ 𝔄l => psum proph_interp_of_syn_type 𝔄l * list val
+  | xsumₛ 𝔄l => psum proph_interp_of_syn_type 𝔄l
   | at_locₛ 𝔄 => loc * proph_interp_of_syn_type 𝔄
   | uniq_borₛ 𝔄 => proph_interp_of_syn_type 𝔄 * proph_interp_of_syn_type 𝔄
   | blockedₛ 𝔄₀  => ()
@@ -100,7 +98,6 @@ Fixpoint proph_interp_of_syn_type (𝔄: syn_type) : Type :=
   | uninitₛ n => ()
   | pcellₛ _ => positive
   | locₛ => loc
-  | paddingₛ => list val
   | invₛ 𝔄₀ => namespace * gname * indep_interp_of_syn_type 𝔄₀
   | local_invₛ 𝔄₀ => namespace * (gname * gname * nat) * indep_interp_of_syn_type 𝔄₀
   | namespaceₛ => namespace
@@ -119,7 +116,7 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
   | prodₛ 𝔄₀ 𝔄₁ => abstracted_syn_type 𝔄₀ * abstracted_syn_type 𝔄₁
   | sumₛ 𝔄₀ 𝔄₁ => abstracted_syn_type 𝔄₀ + abstracted_syn_type 𝔄₁
   | xprodₛ 𝔄l => plist abstracted_syn_type 𝔄l
-  | xsumₛ 𝔄l => psum abstracted_syn_type 𝔄l * list val
+  | xsumₛ 𝔄l => psum abstracted_syn_type 𝔄l
   | at_locₛ 𝔄₀  => loc * abstracted_syn_type 𝔄₀ 
   | uniq_borₛ 𝔄₀  => loc * abstracted_syn_type 𝔄₀ * positive
   | blockedₛ 𝔄₀ => ()
@@ -129,10 +126,9 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
   | invₛ 𝔄₀ => namespace * gname * abstracted_syn_type 𝔄₀
   | local_invₛ 𝔄₀ => namespace * abstracted_syn_type 𝔄₀
   | namespaceₛ => namespace
-  | uninitₛ n => vec val n
+  | uninitₛ n => ()
   | pcellₛ _ => positive
   | locₛ => loc
-  | paddingₛ => list val
   | funₛ 𝔄₀ 𝔄₁ => (indep_interp_of_syn_type 𝔄₀ → indep_interp_of_syn_type 𝔄₁)
   | exec_funₛ 𝔄₀ => val * abstracted_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => abstracted_syn_type 𝔄₀
@@ -144,7 +140,7 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
 Fixpoint syn_type_beq 𝔄 𝔅 : bool :=
   match 𝔄, 𝔅 with
   | boolₛ, boolₛ | (), () | Propₛ, Propₛ | positiveₛ, positiveₛ
-  | locₛ, locₛ | paddingₛ, paddingₛ | namespaceₛ, namespaceₛ | maskₛ, maskₛ
+  | locₛ, locₛ | namespaceₛ, namespaceₛ | maskₛ, maskₛ
     => true
   | intₛ it, intₛ it' => bool_decide (it = it')
   | uninitₛ n, uninitₛ m => bool_decide (n = m)
@@ -226,8 +222,8 @@ Proof.
     + elim; [move=> ?; exact -[]|]=> ?? IH /andb_True [??].
       split; by [apply FIX|apply IH].
     + elim; [done|]=>/= 𝔄 ? IH. case Eq: (inh_syn_type' 𝔄)=>/= H.
-      * split; last by exact []. left. apply FIX. by rewrite Eq.
-      * split; last by exact []. right. by apply IH.
+      * left. apply FIX. by rewrite Eq.
+      * right. by apply IH.
     + move=> 𝔄 x. exact (inhabitant, fst (FIX 𝔄) x).
     + move=> 𝔄 x. exact (inhabitant, fst (FIX 𝔄) x, inhabitant, 0, 0, inhabitant).
     + move=> 𝔄 x. exact (fst (FIX 𝔄) x, inhabitant, inhabitant).
@@ -250,7 +246,7 @@ Proof.
       eapply FIX; [|apply a| |apply b].
     + elim; [done|]=> 𝔄 ? IH. rewrite negb_andb. case Eq: (inh_syn_type' 𝔄)
       =>/= ?[??]; [by apply IH|]. eapply FIX; [|done]. by rewrite Eq.
-    + move=> l n [ps _]. move: l n ps.
+    + move=> l n ps. move: l n ps.
       elim; [move=> ?; by apply absurd|]=> ?? IH.
       rewrite negb_orb=> /andb_True[??] [?|?]; by [eapply FIX|apply IH].
     + move=> 𝔄 Hneg [_ x]. exact (snd (FIX 𝔄) Hneg x).
@@ -282,8 +278,8 @@ Proof.
     + elim; [move=> ?; exact -[]|]=> ?? IH /andb_True [??].
       split; by [apply FIX|apply IH].
     + elim; [done|]=>/= 𝔄 ? IH. case Eq: (inh_syn_type 𝔄)=>/= H.
-      * split; last by exact []. left. apply FIX. by rewrite Eq.
-      * split; last by exact []. right. by apply IH.
+      * left. apply FIX. by rewrite Eq.
+      * right. by apply IH.
     + move=> 𝔄 x. exact (inhabitant, fst (FIX 𝔄) x).
     + move=> 𝔄 x. exact (fst (FIX 𝔄) x, fst (FIX 𝔄) x).
     + move=> 𝔄 x. exact (fst (@of_just_and_neg_inh_syn_type' 𝔄) x).
@@ -305,7 +301,7 @@ Proof.
       eapply FIX; [|apply a| |apply b].
     + elim; [done|]=> 𝔄 ? IH. rewrite negb_andb. case Eq: (inh_syn_type 𝔄)
       =>/= ?[??]; [by apply IH|]. eapply FIX; [|done]. by rewrite Eq.
-    + move=> l n [x _]. move: l n x.
+    + move=> l n x. move: l n x.
       elim; [move=> ?; by apply absurd|]=> ?? IH.
       rewrite negb_orb=> /andb_True[??] [?|?]; by [eapply FIX|apply IH].
     + move=> 𝔄 Hneg [_ x]. exact (snd (FIX 𝔄) Hneg x).
@@ -374,7 +370,7 @@ Fixpoint vπ {𝔄} : ~~𝔄 → proph_asn → 𝔄 :=
   | prodₛ 𝔄₀ 𝔄₁ => λ x π , (@vπ 𝔄₀ (fst x) π, @vπ 𝔄₁ (snd x) π)
   | sumₛ 𝔄₀ 𝔄₁ => λ x π , match x with inl x0 => inl (@vπ 𝔄₀ x0 π) | inr x1 => inr (@vπ 𝔄₁ x1 π) end
   | xprodₛ 𝔄l => λ x π , pmap (λ _ x0 , vπ x0 π) x
-  | xsumₛ 𝔄l => λ x π , (psum_map1 (λ _ x0, vπ x0 π) x.1, x.2)
+  | xsumₛ 𝔄l => λ x π , psum_map1 (λ _ x0, vπ x0 π) x
   | at_locₛ 𝔄₀  => λ x π , (fst x, @vπ 𝔄₀ (snd x) π)
   | invₛ 𝔄₀  => λ x π , (fst (fst x), snd (fst x), snd x)
   | local_invₛ 𝔄₀  => λ x π , (fst (fst x), snd (fst x), snd x)
@@ -392,7 +388,6 @@ Fixpoint vπ {𝔄} : ~~𝔄 → proph_asn → 𝔄 :=
   | storableₛ 𝔄₀ => λ x π, x
   | uninitₛ n => λ x π, ()
   | pcellₛ _ => λ x π, x
-  | paddingₛ => λ x π, x
   | funₛ 𝔄₀ 𝔄₁ => λ x π, x
   | join_handleₛ 𝔄₀  => λ x π , x
   | exec_funₛ 𝔄₀  => λ x π , x
@@ -417,7 +412,7 @@ Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   | prodₛ 𝔄₀ 𝔄₁ => λ x , (@ξl 𝔄₀ (fst x) ++ @ξl 𝔄₁ (snd x))
   | sumₛ 𝔄₀ 𝔄₁ => λ x , match x with inl x0 => (@ξl 𝔄₀ x0) | inr x1 => (@ξl 𝔄₁ x1) end
   | xprodₛ 𝔄l => λ x , List.concat (plist_to_list (pmap (λ _ x0 , ξl x0) x))
-  | xsumₛ 𝔄l => λ '(x, pad) ,
+  | xsumₛ 𝔄l => λ x ,
       match to_xsum (psum_map1 (λ _ x0, ξl x0) x) return (list proph_var) with
           xinj _ l => l
       end
@@ -438,7 +433,6 @@ Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   | storableₛ 𝔄₀ => λ x , []
   | uninitₛ n => λ x , []
   | pcellₛ _ => λ x , []
-  | paddingₛ => λ x , []
   | funₛ 𝔄₀ 𝔄₁ => λ x , []
   | join_handleₛ 𝔄₀  => λ x , []
   | exec_funₛ 𝔄₀  => λ x , []
@@ -503,7 +497,7 @@ Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   | prodₛ 𝔄₀ 𝔄₁ => λ x , (@syn_abstract 𝔄₀ (fst x), @syn_abstract 𝔄₁ (snd x))
   | sumₛ 𝔄₀ 𝔄₁ => λ x , match x with inl x0 => inl (@syn_abstract 𝔄₀ x0) | inr x1 => inr (@syn_abstract 𝔄₁ x1) end
   | xprodₛ 𝔄l => λ x , pmap (λ _ x0 , syn_abstract x0) x
-  | xsumₛ 𝔄l => λ '(x, padding) , (psum_map1 (λ _ x0, syn_abstract x0) x, padding)
+  | xsumₛ 𝔄l => λ x , psum_map1 (λ _ x0, syn_abstract x0) x
   | at_locₛ 𝔄₀  => λ x , (fst x, @syn_abstract 𝔄₀ (snd x))
   | invₛ 𝔄₀  => λ x , (fst (fst x), snd (fst x), @syn_abstract 𝔄₀ (snd x))
   | local_invₛ 𝔄₀  => λ x , (fst (fst x), @syn_abstract 𝔄₀ (snd x))
@@ -515,7 +509,6 @@ Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   | storableₛ 𝔄₀ => λ x , (@syn_abstract 𝔄₀ x.1.1, x.1.2, x.2)
   | uninitₛ n => λ x , x
   | pcellₛ _ => λ x , x
-  | paddingₛ => λ x , x
   | funₛ 𝔄₀ 𝔄₁ => λ x , x
   | join_handleₛ 𝔄₀  => λ x , @syn_abstract 𝔄₀ x
   | exec_funₛ 𝔄₀  => λ x  , (fst x, @syn_abstract 𝔄₀ (snd x))
@@ -536,8 +529,7 @@ Layouts (sizes are abstract and there is no alignment yet):
   [at_locₛ], [uniq_borₛ], [exec_funₛ]) are [MPtr];
 - a product is a tuple whose fields are laid out one after the other ([seq_tuple]);
 - [Σ! 𝔄l] is an enum with a tag of type [enum_tag (length 𝔄l)] at offset 0 and the
-  data of each variant right after the tag ([seq_enum]); the legacy padding component
-  of [~~(Σ! 𝔄l)] is ignored;
+  data of each variant right after the tag ([seq_enum]);
 - [uninitₛ n] is [n] bytes of padding ([MTuple [] n]);
 - a cell [pcellₛ m] (a multi-byte cell, whose value [~~(pcellₛ m)] is its group, see
   [lang/heap_cells.v]) is its content's MiniRust type [m], if [m] is well formed (and
@@ -587,7 +579,7 @@ Fixpoint syn_val {𝔄} : ~~𝔄 → option Value :=
   | prodₛ 𝔄₀ 𝔄₁ => λ '(x₀, x₁),
       v₀ ← @syn_val 𝔄₀ x₀; v₁ ← @syn_val 𝔄₁ x₁; Some (VTuple [v₀; v₁])
   | xprodₛ 𝔄l => λ x, VTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) x))
-  | xsumₛ 𝔄l => λ '(x, _),
+  | xsumₛ 𝔄l => λ x,
       match to_xsum (psum_map1 (λ _ x0, syn_val x0) x) return option Value with
         xinj i ov => VVariant (Z.of_nat (fin_to_nat i)) <$> ov
       end
@@ -605,7 +597,7 @@ Fixpoint syn_fval {𝔄} : ~~𝔄 → option FValue :=
   | prodₛ 𝔄₀ 𝔄₁ => λ '(x₀, x₁),
       fv₀ ← @syn_fval 𝔄₀ x₀; fv₁ ← @syn_fval 𝔄₁ x₁; Some (FVTuple [fv₀; fv₁])
   | xprodₛ 𝔄l => λ x, FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) x))
-  | xsumₛ 𝔄l => λ '(x, _),
+  | xsumₛ 𝔄l => λ x,
       match to_xsum (psum_map1 (λ _ x0, syn_fval x0) x) return option FValue with
         xinj i ofv => FVVariant (Z.of_nat (fin_to_nat i)) <$> ofv
       end
@@ -724,10 +716,9 @@ Proof.
     + intros vs. destruct (syn_val x) as [w|] eqn:Hw; [|done]. simpl.
       destruct (mapM _ _) as [ws|] eqn:Hws; [|done]. intros [= <-].
       constructor; [by apply (FIX _ x w Hw)|]. by apply (IH xl).
-  - destruct x as [x pad].
-    assert (∀ (i: fin (length l)) (x0 : ~~ (l !!ₗ i)) v0,
+  - assert (∀ (i: fin (length l)) (x0 : ~~ (l !!ₗ i)) v0,
       syn_val x0 = Some v0 → val_wf (syn_mty (l !!ₗ i)) v0) as Hall.
-    { clear x pad v. induction l as [|𝔄0 l IH]; intros i; [inv_fin i|].
+    { clear x v. induction l as [|𝔄0 l IH]; intros i; [inv_fin i|].
       inv_fin i; [apply FIX|apply IH]. }
     clear FIX.
     replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
@@ -756,10 +747,10 @@ Proof.
     { induction l as [|𝔄 l IH]; [done|]. destruct x as [x xl].
       move: Hl=> /= /andb_True[H Hl]. by rewrite (FIX _ x H) (IH xl Hl). }
     clear FIX. rewrite mapM_fmap_fv_lift -option_fmap_compose. done.
-  - destruct x as [x pad]. move=> Hl.
+  - move=> Hl.
     assert (∀ (i: fin (length l)) (x0 : ~~ (l !!ₗ i)),
       syn_fval x0 = fv_lift <$> syn_val x0) as Hall.
-    { clear x pad. induction l as [|𝔄0 l IH]; intros i; [inv_fin i|].
+    { clear x. induction l as [|𝔄0 l IH]; intros i; [inv_fin i|].
       move: Hl=> /= /andb_True[H Hl]. inv_fin i; [intros x0; by apply (FIX _ x0)|by apply IH]. }
     clear FIX.
     replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
@@ -968,8 +959,7 @@ Proof.
         - intros i. dependent destruction i. + apply FIX. + apply IH𝔄l.
     }
     clear FIX.
-    destruct x as [x padding]. destruct x' as [x' padding'].
-    simpl. simpl in Hab. inversion Hab as [[Ha Hb]]. subst padding'.
+    simpl. simpl in Hab. rename Hab into Ha.
     replace x with (of_xsum (to_xsum x)) in Ha; last by rewrite semi_iso'.
     replace x' with (of_xsum (to_xsum x')) in Ha; last by rewrite semi_iso'.
     replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
@@ -1011,8 +1001,7 @@ Proof.
         - intros i. dependent destruction i. + apply FIX. + apply IH𝔄l.
     }
     clear FIX.
-    destruct x as [x padding]. destruct x' as [x' padding'].
-    simpl. simpl in Hab. inversion Hab as [[Ha Hb]]. subst padding'.
+    simpl. simpl in Hab. rename Hab into Ha.
     replace x with (of_xsum (to_xsum x)) in Ha; last by rewrite semi_iso'.
     replace x' with (of_xsum (to_xsum x')) in Ha; last by rewrite semi_iso'.
     replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
@@ -1227,25 +1216,25 @@ Next Obligation. intros 𝔄 x π. done. Qed.
 Next Obligation. intros 𝔄 x. simpl. rewrite List.app_nil_r. done. Qed.
 
 Program Definition psum_mapₛ {𝔄l 𝔅l} (fl : plist2 (λ 𝔄 𝔅, 𝔄 →ₛ 𝔅) 𝔄l 𝔅l) : ((xsumₛ 𝔄l) →ₛ (xsumₛ 𝔅l)) := {|
-  syn_type_morphism_fn := λ '(x0, padding) , (psum_map (p2map (@syn_type_morphism_fn) fl) x0, padding) ;
-  syn_type_morphism_proph_fn := λ '(x0, padding) , (psum_map (p2map (@syn_type_morphism_proph_fn) fl) x0, padding) ;
+  syn_type_morphism_fn := psum_map (p2map (@syn_type_morphism_fn) fl) ;
+  syn_type_morphism_proph_fn := psum_map (p2map (@syn_type_morphism_proph_fn) fl) ;
 |}.
-Next Obligation. induction 𝔄l; intros 𝔅l fl [x padding] π.
+Next Obligation. induction 𝔄l; intros 𝔅l fl x π.
   - destruct 𝔅l; trivial. contradiction.
   - destruct 𝔅l; first by contradiction.
     simpl. simpl in IH𝔄l.
     destruct fl, x; trivial.
     + simpl. rewrite <- syn_type_morphism_commutes. trivial.
-    + simpl. simpl in IH𝔄l. have j := IH𝔄l 𝔅l ptl (p, padding) π. simpl in j.
+    + simpl. simpl in IH𝔄l. have j := IH𝔄l 𝔅l ptl p π. simpl in j.
       inversion j as [j1]. rewrite j1. trivial.
 Qed.
-Next Obligation. induction 𝔄l; intros 𝔅l fl [x padding].
+Next Obligation. induction 𝔄l; intros 𝔅l fl x.
   - destruct 𝔅l; contradiction.
   - destruct 𝔅l; first by contradiction.
     simpl. simpl in IH𝔄l.
     destruct fl, x; trivial.
     + simpl. rewrite <- syn_type_morphism_ξl. trivial.
-    + simpl. simpl in IH𝔄l. have j := IH𝔄l 𝔅l ptl (p, padding).
+    + simpl. simpl in IH𝔄l. have j := IH𝔄l 𝔅l ptl p.
       destruct (to_xsum (psum_map1 (λ (A : syn_type) (x0 : ~~ A), ξl x0) p)).
       destruct (to_xsum (psum_map1 (λ (A : syn_type) (x0 : ~~ A), ξl x0)
            (psum_map (@syn_type_morphism_fn -2<$> ptl) p))).

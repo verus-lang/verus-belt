@@ -53,7 +53,7 @@ Section pctx_fun.
     | PFst K _ => λ k x, pctx_kind K (Owned (kind_laters k)) x.1
     | PSnd _ K => λ k x, pctx_kind K (Owned (kind_laters k)) x.2
     | POwn _ K => λ k x, pctx_kind K (Owned (kind_laters k + 1)) x.2
-    | PSum _ i w K => λ k x, pctx_kind K (Owned (kind_laters k)) (psum_proj_or i x.1 w)
+    | PSum _ i w K => λ k x, pctx_kind K (Owned (kind_laters k)) (psum_proj_or i x w)
     | PUniq κ K => λ _ x, pctx_kind K (Uniq κ (uniq_bor_ξi x)) (uniq_bor_current x)
     (* Only meaningful below no shared reference ([PctxNoShr]); as [POwn]. *)
     | PShr _ K => λ k x, pctx_kind K (Owned (kind_laters k + 1)) x.2
@@ -128,7 +128,7 @@ Section pctx_fun.
     | PHole => λ _, 1%positive
     | PFst K _ => λ x, pctx_hξi K x.1
     | PSnd _ K | POwn _ K | PShr _ K => λ x, pctx_hξi K x.2
-    | PSum _ i w K => λ x, pctx_hξi K (psum_proj_or i x.1 w)
+    | PSum _ i w K => λ x, pctx_hξi K (psum_proj_or i x w)
     | PUniq _ K => λ x, match K with
         | PHole => uniq_bor_ξi x
         | _ => pctx_hξi K (uniq_bor_current x)
@@ -144,7 +144,7 @@ Section pctx_fun.
     | POwn _ K => λ x l, ptr_cell l x.1 ∗
         pctx_ptrs K n x.2 x.1
     | @PSum _ _ _ 𝔄l _ i w K => λ x l,
-        pctx_ptrs K n (psum_proj_or i x.1 w) (l +ₗ tag_size 𝔄l)
+        pctx_ptrs K n (psum_proj_or i x w) (l +ₗ tag_size 𝔄l)
     | PUniq _ K => λ x l, ptr_cell l (uniq_bor_loc x) ∗
         pctx_ptrs K n (uniq_bor_current x) (uniq_bor_loc x)
     | PShr _ K => λ x l, ptr_cell l x.1 ∗ pctx_ptrs K n x.2 x.1
@@ -187,7 +187,7 @@ Section pctx_fun.
     pctx_in K x → pctx_kind K k (pctx_set K x y) = pctx_kind K k x.
   Proof.
     induction K in k, x, y |- *; simpl; try (intros; by rewrite ?IHK).
-    - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x.1); [|done].
+    - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x); [|done].
       intros. by rewrite IHK.
     - intros. by rewrite uniq_bor_current_set uniq_bor_ξi_set IHK.
   Qed.
@@ -196,7 +196,7 @@ Section pctx_fun.
     pctx_in K x → pctx_hξi K (pctx_set K x y) = pctx_hξi K x.
   Proof.
     induction K in x, y |- *; simpl; try (intros; by rewrite ?IHK).
-    - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x.1); [|done].
+    - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x); [|done].
       intros. by rewrite IHK.
     - destruct K; intros; by rewrite ?uniq_bor_current_set ?uniq_bor_ξi_set ?IHK.
   Qed.
@@ -281,7 +281,7 @@ Section pctx_fun.
     pctx_in K x → pctx_ptrs K n (pctx_set K x y) l = pctx_ptrs K n x l.
   Proof.
     induction K in x, y, l |- *; simpl; try (intros; by rewrite ?IHK).
-    - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x.1); [|done].
+    - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x); [|done].
       intros. by rewrite IHK.
     - intros. by rewrite uniq_bor_current_set uniq_bor_loc_set IHK.
   Qed.
@@ -325,7 +325,7 @@ Section wp_pctx.
         iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
       iIntros (v) "($ & [$ $] & $ & $)".
     - iIntros "WP Ptrs".
-      iApply (IHK (psum_proj_or i x.1 w) (l +ₗ tag_size 𝔄l) _ R
+      iApply (IHK (psum_proj_or i x w) (l +ₗ tag_size 𝔄l) _ R
         with "[WP] Ptrs").
       wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
       iFrame. done.
@@ -502,7 +502,7 @@ Section pctx_acc.
     pctx_acc_stmt K lt → pctx_acc_stmt (PSum tyl i w K) lt.
   Proof.
     iIntros (IH m p r x ζm q d g tid l E G ??) "#LFT #PROPH #UNIQ #Gk G £ /= Own".
-    rewrite /psum_proj_or. destruct (psum_proj i x.1) as [y|] eqn:Hy; [|by rewrite /sum_node].
+    rewrite /psum_proj_or. destruct (psum_proj i x) as [y|] eqn:Hy; [|by rewrite /sum_node].
     rewrite sum_node_sum lty_size_plug. iDestruct "Own" as "(Tag & Own & Pad)".
     iMod (IH with "LFT PROPH UNIQ Gk G £ Own") as (G' dh gh) "(% & G' & #G'G & % & H & P & Cl)";
       [done..|].
