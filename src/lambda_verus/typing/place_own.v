@@ -247,7 +247,7 @@ Section typing.
     iFrame "L I". iSplit; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
     iSplitL "Body".
-    { rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr lK) D); [|by rewrite eval_path_of_val|done]. iFrame "⧖". iFrame "Incl Body".
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr lK) D); [|done|done]. iFrame "⧖". iFrame "Incl Body".
       iPureIntro; lia. }
     iSplit; [|done]. rewrite /tctx_elt_interp. iExists (MLitV (VPtr l)). iSplit; [done|].
     iExists D, d, g. iFrame "⧖".
@@ -382,17 +382,15 @@ Section typing.
     iDestruct (lc_weaken (pctx_mode K 1) with "£") as "£";
       [rewrite /advance_credits pctx_mode_add; nia|].
     iMod (lc_fupd_elim_laterN with "£ Gho1") as "Gho1".
-    rewrite bytes_own_brepr. iDestruct "Pt1" as (fbs fv) "(Hfbs & [%Hlenf %Hfv] & #Hrep)".
-    iApply (wp_fbytes_load with "[$Hfbs $Hrep]"); [solve_ndisj|].
-    iIntros "!>" (vw bs) "(Hbs & %Hd & Hus)". iModIntro.
-    have Hlen : length bs = ty_bsize ty by rewrite (decode_value_length _ _ _ Hd).
+    iApply (wp_bytes_own_move with "Pt1"); [solve_ndisj|].
+    iIntros "!>" (vw fv bs) "(%Hfv & Hc & Hbs & %Hlen)". iModIntro.
     set junk := (() : ~~ (uninitₛ (ty_bsize ty))).
     iExists -[y; ((l, pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) K x₀ junk), ζm)]. iFrame "L I".
     iSplitR "Obs"; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
     iSplitR "Hbs Rest ⧗p Fr".
     { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists vw, D, fv. iSplit; [done|].
-      iSplitL "Hus"; [iExists fbs, bs; by iFrame "Hrep Hus"|].
+      iFrame "Hc".
       iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ dh g D D with "Gho1") as "[$ _]"; lia. }
     have Hsz : lty_size (OfTy (↯ (ty_bsize ty))) = lty_size (OfTy ty).
     { rewrite /lty_size. change (syn_bsize (uninitₛ (ty_bsize ty))) with (ty_bsize ty).
