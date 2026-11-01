@@ -47,7 +47,7 @@ Section bnew.
     wp_bind (Alloc _). iApply (wp_alloc_bytes with "[//]"); [lia|].
     iIntros "!>" (l sz) "(%Hsz & Fr & Hbs)". have ?: sz = n by lia. subst sz.
     wp_pure _. iModIntro.
-    set junk := (vreplicate n (LitV LitPoison) : ~~ (uninitₛ n)).
+    set junk := (() : ~~ (uninitₛ n)).
     iExists -[(l, junk)]. iSplitR "Obs".
     - iSplit; [|done]. rewrite tctx_val_val. iExists 1%nat. iSplit; [done|]. iFrame "⧖1".
       rewrite /= /by_succ. iSplitL "Hbs".

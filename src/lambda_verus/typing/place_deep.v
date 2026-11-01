@@ -223,7 +223,7 @@ Section memcpy_deep.
     { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
     { by iApply bytes_own_of_bytes. }
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    set junk := vreplicate (ty_bsize ty) (LitV LitPoison).
+    set junk := (() : ~~ (uninitₛ (ty_bsize ty))).
     iModIntro. iExists -[(pctx_set K x₀ y, ζm); (lb, junk)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitR "Hbs Fr"; [|iSplitL; [|done]].

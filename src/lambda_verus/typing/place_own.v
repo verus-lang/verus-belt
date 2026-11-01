@@ -439,7 +439,7 @@ Section typing.
     have Hlen := ty_bytes_length _ _ _ Hbs.
     iApply (wp_load_na with "Hbs"); [by eapply ty_bytes_decode|].
     iIntros "!> Hbs". iModIntro.
-    set junk := vreplicate (ty_bsize ty) (LitV LitPoison).
+    set junk := (() : ~~ (uninitₛ (ty_bsize ty))).
     iExists -[y; ((l, pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) K x₀ junk), ζm)]. iFrame "L I".
     iSplitR "Obs"; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
