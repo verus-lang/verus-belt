@@ -724,3 +724,35 @@ Lemma type_read_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot
 - **Deviations from the requested statement.** The extra class `PctxRead K` (above); no
   `Skip`; `pctx_rleaf` is a notation for `pctx_rleafb K true` (the flag tracks whether
   resolved leaves are readable).
+
+## Unified place move (branch `proto/move-unify`, 2026-11-01)
+
+One rule moves the value out of a leaf of any owned path: `type_move_place_instr`
+(`typing/place_own.v`).
+
+```coq
+Lemma type_move_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot K} `{!PctxNoUniq K}
+    (ty: type 𝔅) :
+  pctx_nosum K →
+  typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (!ᵐ{ty.(ty_mty)} (pctx_vexpr K p))
+    (λ v, +[v ◁ᵥ ty;
+      p ◁ₗ pctx_plug (pctx_retype K (uninitₛ (ty_bsize ty))) (OfTy (↯ (ty_bsize ty)))])
+    (λ post '-[x], λ mask π, ∀ junk: ~~ (uninitₛ (ty_bsize ty)),
+      post -[pctx_get K x.1; (pctx_reset K x.1 junk, x.2)] mask π).
+```
+
+- **Instruction.** `read_move m e := Load Na1Ord m e` (`lang/lang.v`), notation `!ᵐ{m} e`
+  (`lang/notation.v`, as `!ᶜ`); `W.of_expr` reifies it as a `Load`. No `Skip`.
+- **Contexts.** Rust moves only out of owned paths: `PctxNoUniq K` (no `PUniq`, `PShr`,
+  `PResUniq`), so the root step (`PctxVRoot`) is `POwn n`: `p ◁ₗ pctx_plug (POwn n K') lt` is
+  `p ◁ₗown{n} pctx_plug K' lt`. The value may contain cells (they are moved with it,
+  `val_cells`).
+- **Sums (deviation: `pctx_nosum` kept).** The payload of a sum place `SumLty tyl i lt` has
+  the type of variant `i` (`lt: lty (𝔄l !!ₗ i)`), so a payload left uninitialized (of type
+  `uninitₛ n`) under the same variant is not expressible without a new place-type
+  constructor (or a retyped `typel`, for which there is no type of the retyped payload);
+  `pctx_retype` drops the sum layer, which is only sound without sums. Moving the whole sum
+  (and then matching on the value) is allowed.
+- **Deleted:** `type_move_oplace_instr` (`place_own.v`). Examples ported: `place_own`
+  (`box_pair`: `!ᵐ{MPtr} (ToLit "b")`, context `POwn (PTR_SIZE + 4) (PFst PHole _)`),
+  `pcell_move` (three moves).

@@ -362,7 +362,7 @@ Section typing.
         post -[pctx_get K x.1; (pctx_reset K x.1 junk, x.2)] mask π).
   Proof.
     rename select (PctxVRoot K) into HR. rename select (PctxNoUniq K) into HK.
-    destruct K as [| | |𝔄' n K| | | |]; try done; rewrite /PctxNoUniq /= in HK.
+    destruct K as [| | |? 𝔄' n K| | | |]; try done; rewrite /PctxNoUniq /= in HK.
     have ?: PctxNoUniq K by done.
     iIntros (Hns tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
     destruct x as [[l x₀] ζm]. rewrite /read_move /=.
