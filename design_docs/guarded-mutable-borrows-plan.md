@@ -75,13 +75,22 @@ Candidate M1:
     place machinery unblocking `pcell`), and the owned `a` does not record that `κ` is
     dead.
   - Candidate fixes:
-    1. **GMB-aware sharing.** The `pcell` type's sharing goes through a GMB operation
-       `a γ s ={E}=∗ sh γ s κ ∗ ([†κ] ={E}=∗ a γ s)`, whose inheritance normalises
-       outstanding lends at any `κ' ⊑ κ`, using `[†κ] → [†κ']`. (L3) takes `sh γ s κ`
-       and `κ' ⊑ κ` instead of a bare guard.
-       - To check: whether `ty_share`, which receives `&{κ}(ty_own)` and not the owned
-         `a`, can install such a normaliser. If not, the generic inheritance has to run a
-         type-specific hook.
+    1. **Weak shared form plus settle.** There are two forms of the move right:
+       - `a γ s`: no lend outstanding, so (L1) holds;
+       - `a♭ γ s α`: lends may be outstanding at lifetimes `⊑ α`, so (L1) does not hold.
+
+       The lemmas:
+       - `gmb_weaken : a γ s ={E}=∗ a♭ γ s α`, applied when the value is shared at `α`
+         (before the borrow is created);
+       - `gmb_settle : [†α] -∗ a♭ γ s α ={E}=∗ a γ s`, applied at unblocking. It runs the
+         parked inheritances of the lends, using `[†α] → [†κ']`.
+
+       (L3) takes a guard of `a♭ γ s α` and `κ' ⊑ α`. The generic share and unblock rules
+       apply the lifted versions on `bytes_own`: `bytes_own ↦ bytes_own♭ α` and back. These
+       are the identity for types without cells, and the `type` record gets no new field.
+       This is needed because a semantic type's ownership must justify a move whenever it
+       is owned. A lend happens while the move right sits in a borrow, accessible only
+       through a guard, so the borrow must hold a weaker proposition than `ty_own`.
     2. **`a` records the sharing lifetime,** and (L1) succeeds whenever the recorded lend
        lifetime `κ' ⊑ κ_sh` is dead; an owned `a` then proves `[†κ_sh]` through a
        persistent witness deposited at inheritance.
