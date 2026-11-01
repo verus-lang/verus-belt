@@ -346,7 +346,7 @@ Section typing.
   (** Moving the value out of the leaf at the hole of [K]: a typed [Load]; the leaf becomes
       uninitialized (its type is [↯ (ty_bsize ty)]: its bytes are kept, and represent any
       value of [↯]). *)
-  Lemma type_move_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} `{!NoCell 𝔅}
+  Lemma type_move_oplace_instr {𝔅 𝔄} E L I p n (K: pctx 𝔅 𝔄) `{!PctxNoUniq K}
       (ty: type 𝔅) :
     pctx_nosum K →
     typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)]
@@ -384,17 +384,17 @@ Section typing.
     iDestruct (lc_weaken (pctx_mode K 1) with "£") as "£";
       [rewrite /advance_credits pctx_mode_add; nia|].
     iMod (lc_fupd_elim_laterN with "£ Gho1") as "Gho1".
-    iDestruct (bytes_own_nocell_bytes with "Pt1") as (bs) "[Hbs %Hbs]".
-    destruct (ty_bytes_val _ _ _ Hbs) as [vw Hvw].
-    have Hlen := ty_bytes_length _ _ _ Hbs.
-    iApply (wp_load_na with "Hbs"); [by eapply ty_bytes_decode|].
-    iIntros "!> Hbs". iModIntro.
+    rewrite bytes_own_brepr. iDestruct "Pt1" as (fbs fv) "(Hfbs & [%Hlenf %Hfv] & #Hrep)".
+    iApply (wp_fbytes_load with "[$Hfbs $Hrep]"); [solve_ndisj|].
+    iIntros "!>" (vw bs) "(Hbs & %Hd & Hus)". iModIntro.
+    have Hlen : length bs = ty_bsize ty by rewrite (decode_value_length _ _ _ Hd).
     set junk := (() : ~~ (uninitₛ (ty_bsize ty))).
     iExists -[y; ((l, pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) K x₀ junk), ζm)]. iFrame "L I".
     iSplitR "Obs"; last first.
     { iApply (proph_obs_impl with "Obs")=> π Hπ. by apply Hπ. }
     iSplitR "Hbs Rest ⧗p Fr".
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists vw, D. iSplit; [done|].
+    { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists vw, D, fv. iSplit; [done|].
+      iSplitL "Hus"; [iExists fbs, bs; by iFrame "Hrep Hus"|].
       iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ dh g D D with "Gho1") as "[$ _]"; lia. }
     have Hsz : lty_size (OfTy (↯ (ty_bsize ty))) = lty_size (OfTy ty).
     { rewrite /lty_size. change (syn_bsize (uninitₛ (ty_bsize ty))) with (ty_bsize ty).

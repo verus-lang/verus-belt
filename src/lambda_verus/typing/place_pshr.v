@@ -1132,7 +1132,7 @@ Section memcpy.
     iModIntro. iExists -[(lw, zz); (x₀, ζm)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitL "Hbsw Fr"; [|iSplitL; [|done]].
-      - iExists _. iSplit; [done|]. iExists (VPtr lw), (S (S M)). iSplit; [done|].
+      - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr lw) (S (S M))); [|done|done].
         iSplit; [done|].
         iSplitL "Hbsw"; [by iApply bytes_own_of_bytes|]. iSplitL "Fr".
         + by rewrite -Hszw.
@@ -1225,7 +1225,7 @@ Section memcpy.
     iModIntro. iExists -[(lw, zz); (x, ζm)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitL "Hbsw Fr"; [|iSplitL; [|done]].
-      - iExists _. iSplit; [done|]. iExists (VPtr lw), (S (S M)). iSplit; [done|].
+      - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr lw) (S (S M))); [|done|done].
         iSplit; [done|].
         iSplitL "Hbsw"; [by iApply bytes_own_of_bytes|]. iSplitL "Fr".
         + by rewrite -Hszw.

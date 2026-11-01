@@ -144,7 +144,7 @@ Section memcpy_res.
     iModIntro. iExists -[(lw, zh); ((l, x₀), ζm)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitL "Hbsw Frw"; [|iSplitL; [|done]].
-      - iExists _. iSplit; [done|]. iExists (VPtr lw), (S (S M)). iSplit; [done|].
+      - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr lw) (S (S M))); [|done|done].
         iSplit; [done|].
         iSplitL "Hbsw"; [by iApply bytes_own_of_bytes|]. iSplitL "Frw".
         + by rewrite -Hszw.

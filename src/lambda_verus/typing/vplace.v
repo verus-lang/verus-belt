@@ -134,7 +134,7 @@ Section conv.
     iDestruct "T" as (v Hp D) "(⧖ & _ & %d & %g & %Hle & %y & -> & %Phys & Gho)".
     destruct Phys as (w & -> & Hw).
     iModIntro. iExists -[x]. iFrame "Obs". iSplit; [|done].
-    iExists _. iSplit; [done|]. iExists w, D. iSplit; [done|]. iFrame "⧖".
+    rewrite -(tctx_val_intro_sep _ _ _ _ w D); [|done|done]. iFrame "⧖".
     iDestruct (ty_gho_own_depth_mono _ d g D D with "Gho") as "[$ _]"; lia.
   Qed.
 

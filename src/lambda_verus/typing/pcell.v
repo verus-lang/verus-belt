@@ -295,7 +295,7 @@ Section pcell_rules.
     iExists -[(l, g); (g, x)]. iSplitR "Obs"; last first.
     { iApply (proph_obs_impl with "Obs"). intros π Hpost. apply Hpost. }
     iSplitL "Free Hls"; [|iSplitL; [|done]].
-    - iExists _. iSplit; [done|]. iExists (VPtr l), (S d). iSplit; [done|]. iFrame "⧖".
+    - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr l) (S d)); [|done|done]. iFrame "⧖".
       iSplitL "Hls"; [|iSplitL; [|done]].
       + rewrite bytes_own_pcell_ty; [|apply ty_mty_wf]. iExists cs. by iFrame "Hg Hls".
       + rewrite pcell_ty_bsize; [|apply ty_mty_wf]. iFrame "Free".
@@ -411,11 +411,11 @@ Section pcell_rules.
     iApply (wp_pcell_memcopy_len with "[$Hls $Hbs0]"); [done|done|].
     iIntros "!>" (bs) "(Hbs & %Hlen & Hls)". iExists -[(l, g); (l', u)]. iFrame "Obs".
     iSplitL "Hls Free"; [|iSplitL; [|done]].
-    - iExists _. iSplit; [done|]. iExists (VPtr l), (S d). iSplit; [done|]. iFrame "⧖".
+    - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr l) (S d)); [|done|done]. iFrame "⧖".
       iSplitL "Hls"; [|iSplitL; [|done]].
       + rewrite bytes_own_pcell_ty //. iExists cs. by iFrame.
       + rewrite /ty_bsize pcell_ty_mty //.
-    - iExists _. iSplit; [done|]. iExists (VPtr l'), (S d'). iSplit; [done|]. iFrame "⧖'".
+    - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr l') (S d')); [|done|done]. iFrame "⧖'".
       iSplitL "Hbs"; [|iSplitL; [|done]].
       + by iApply (uninit_bytes_own with "Hbs").
       + iEval (rewrite /ty_bsize pcell_ty_mty //) in "Free'". done.
@@ -443,11 +443,11 @@ Section pcell_rules.
     iApply (wp_pcell_move_len with "[$Hls $Hbs0]"); [done|done|done|].
     iIntros "!>" (bs) "(Hbs & %Hlen & Hls)". iExists -[(l, g); (l', u)]. iFrame "Obs".
     iSplitL "Hls Free"; [|iSplitL; [|done]].
-    - iExists _. iSplit; [done|]. iExists (VPtr l), (S d). iSplit; [done|]. iFrame "⧖".
+    - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr l) (S d)); [|done|done]. iFrame "⧖".
       iSplitL "Hls"; [|iSplitL; [|done]].
       + rewrite bytes_own_pcell_ty //. iExists cs. by iFrame.
       + rewrite /ty_bsize pcell_ty_mty //.
-    - iExists _. iSplit; [done|]. iExists (VPtr l'), (S d'). iSplit; [done|]. iFrame "⧖'".
+    - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr l') (S d')); [|done|done]. iFrame "⧖'".
       iSplitL "Hbs"; [|iSplitL; [|done]].
       + by iApply (uninit_bytes_own with "Hbs").
       + iEval (rewrite /ty_bsize pcell_ty_mty //) in "Free'". done.

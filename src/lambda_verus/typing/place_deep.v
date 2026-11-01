@@ -231,7 +231,7 @@ Section memcpy_deep.
         iApply (vplace_own_close K _ _ _ Dn with "[] ⧗p");
           [iApply (persistent_time_receipt_mono with "⧖D"); rewrite /Dn; lia|].
         by rewrite pctx_get_set pctx_vrfn_set.
-      - iExists _. iSplit; [done|]. iExists (VPtr lb), (S dr). iSplit; [done|]. iFrame "⧖r".
+      - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr lb) (S dr)); [|done|done]. iFrame "⧖r".
         iSplitL "Hbs".
         + iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].
           rewrite -(ty_mty_eq (↯ _)) /= decide_True //. by rewrite (ty_bytes_length _ _ _ Hbs).
@@ -324,7 +324,7 @@ Section memcpy_deep.
     iModIntro. iExists -[(lw, pctx_get K x₀); (x₀, ζm)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitL "Hbsw Fr"; [|iSplitL; [|done]].
-      - iExists _. iSplit; [done|]. iExists (VPtr lw), (S M). iSplit; [done|].
+      - rewrite -(tctx_val_intro_sep _ _ _ _ (VPtr lw) (S M)); [|done|done].
         iSplit; [iApply (persistent_time_receipt_mono with "⧖S"); lia|].
         iSplitL "Hbsw"; [by iApply bytes_own_of_bytes|]. iSplitL "Fr".
         + by rewrite -Hszw.
