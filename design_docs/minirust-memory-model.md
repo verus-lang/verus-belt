@@ -904,3 +904,119 @@ pure verification condition, e.g. `typed_pptr_*`, `typed_*_inv_*`, `type_pcell_b
 hence `pcell_example_type`, `spawn_type`, `assert_type`), also `Eqdep.Eq_rect_eq.eq_rect_eq`.
 The atomic invariants use `Classical_Prop.classic` (case on `Send ty`), as before. None
 of these is new.
+
+## Outcome: stage 6 (word layer removal)
+
+Stage 6 removes what stage 5 left word-based ("Still legacy, and why" above), on the branch
+`proto/word-delete`, merged into `memory-model` step by step (`--no-ff`, each after a clean
+full build). No `Admitted`, no new axioms. In total about 8 600 lines removed and 1 900
+added (from `27ddfad`).
+
+### A. `cloc` and the `#↦∗_` guards (merge `ffde693`)
+
+- The guards `@[κ] &&{…}&&> l #↦∗_` are gone from `&uniq` (`uniq_bor.v`, `uniq_util.v`),
+  the place types (`ltype.v`: `uniq_node`, `uniq_nval`, `view_leaf`), the paths
+  (`lpath.v`: `wp_pctx_expr` has neither the guard nor its credits; `pctx_loc_guard`
+  deleted), the accessors (`pctx_acc.v`: `pctx_pguards`, `pctx_vpguards`, `pctx_hlft`
+  deleted) and all `place_*` files.
+- `cloc` is `loc` everywhere: `at_clocₛ` was merged into `at_locₛ` (`at_cloc_mapₛ`
+  deleted), `~~(uniq_borₛ 𝔄)` holds a `loc`, `cloc_take l n`/`cloc_skip l n` became
+  `l`/`l +ₗ n`, `loc_dummy` replaces `cloc_dummy`. Deleted: `cbytes_at_cloc`,
+  `syn_bytes_at_cloc`, `pctx_loc_empty`, `oplace_loc_empty`, `guards_empty_cell`, the
+  `take`/`drop` of `repeat` lemmas.
+- **Kept:** the later-credit budgets of the callers (`pshr_cred`, `pctx_vacc_cred`) still
+  count the credits the deleted guards consumed; they are now larger than needed. Shrinking
+  them only changes arithmetic side conditions, so it was not done.
+
+### B. The word heap and the word-level language (merge `e82b1b1`)
+
+- `lang/lib/spawn.v` is on bytes: `spawn` and `join` are parametrized by the MiniRust
+  type `m` of the result (a `Store`/`Load` of `MBool` for the flag at `c`, the data at
+  `c +ₗ 1`; `join_spec` assumes `mty_wf m`). `typing/spawn.v` uses
+  `spawn (syn_mty 𝔅) call_once` and `join_handle spawnN (syn_mty 𝔄)`.
+- Deleted from the language (`lang.v`): `Read`, `Write`, `CAS` with their evaluation
+  contexts and head steps, `word_to_byte`; the notations `!`, `<-`, `<-{Σ}`
+  (`notation.v`) and their tactics (`tactics.v`, `proofmode.v`).
+- `heap.v` (3 161 → about 1 350 lines): the word points-to `↦`/`↦∗`/`↦!∗`, `phys_rel`, the
+  word heap and its cell map are deleted; `heap_maps_ctx σ` is `bytes_ctx σ`; `naN` moved
+  here. `lifting.v`: the word WP rules are deleted (`wp_eq_loc` is on `l ↦b [b]`);
+  `new_delete.v`: `wp_new`, `wp_delete` are on bytes; `races.v`, `adequacy.v` lost their
+  word cases. `AbstractByte` lost the `Word` constructor and its parameter.
+- Deleted files: `util/non_atomic_cell_map.v`. `util/cellmap.v` keeps `fcmap` (used by
+  the cells of `heap_cells.v`); its `cmap` camera and logic are deleted.
+
+### C1. Closures (merge `c886fd9`)
+
+`tctx_elt` has a single constructor `TCtx_sem`: the legacy word element `p ◁ ty` and the
+blocked element `p ◁{κ} ty` (and their lemmas, `typed_instr_ty`, `type_val`,
+`type_resolve*`, `type_path_instr`, `type_letpath`, the word rules of `bool`/`int`) are
+deleted. **Deviation:** closures are not MiniRust values, so function values are typed by
+a new semantic element `p ◁ᶠ ty` (`type_context.v`, `fun_own`: the path evaluates to the
+closure `x.1` of the value `x` of `ty : type (exec_funₛ ℭ)`, with its ghost ownership;
+lemmas `tctx_fun_val`, `wp_fun`) instead of a value-based `◁ᵥ`. `typed_val`,
+`function.v`, `spawn.v`, `soundness.v` and `examples/function.v` use `◁ᶠ`.
+
+### C2. The word fields of the type record (merge `7e01136`)
+
+- `type`: `ty_size`, `ty_phys`, `ty_size_eq`, `ty_size_eq2`, `ty_phys_eq2` and `ty_own`
+  are deleted, as are the corresponding fields of `simple_type`, `plain_type`,
+  `ghost_type` (`st_concrete`, `pt_concrete`, `gt_size0`, `gt_phys0`, …). `type_equiv'`,
+  `type_dist'`, `TypeNonExpansive`, `TypeContractive` lost their size/phys components;
+  `Copy` lost `copy_concrete`, `Send` lost `send_change_tid_phys`, `Sync` is
+  ownership ∧ persistence ∧ sharing. `JustLoc`, `StackOkay`, `by_just_loc` deleted.
+- `syn_type.v`: `size_of`, `syn_phys`, `pad`, `syn_phys_size_eq`,
+  `syn_abstract_phys_eq` deleted; `Isoₛ` lost `syn_iso_size_eq` and `syn_iso_phys_eq`.
+- `heap.v`: `fancy_val`/`FVal`/`FCell`/`all_concrete` deleted.
+- Every type definition lost its size/phys fields and obligations; fixed on the way:
+  `int_send`/`int_sync` were stated for the wrong type.
+
+### C4. One subtyping (merge `f6964a6`)
+
+- `type_incl ty ty' f` (`type.v`) now starts with `⌜syn_bincl f⌝`: `f` preserves the size
+  and the fancy byte representation (`syn_fbytes`, moved to `type.v`). A parent owns the
+  bytes of its referent, so retyping a box, a reference or a borrow needs this; for
+  `f = idₛ` it is trivial (`syn_bincl_id`). The byte-only `btype_incl`/`bsubtype` and
+  `subtype_bsubtype_id`/`uniq_bytes_bsubtype` are deleted; renamed: `own_bytes_bsubtype`
+  → `own_bytes_subtype`, `shr_bytes_bsubtype` → `shr_bytes_subtype`,
+  `own_bytes_btype_incl`/`shr_bytes_btype_incl` → `…_type_incl`, `tctx_bsubtype_*` →
+  `tctx_subtype_*`, `bytes_own_btype_incl` → `bytes_own_bincl`.
+- `syn_bincl` lemmas: `syn_bincl_compose`, `syn_bincl_iso` (`type.v`); `syn_bincl_same`
+  (same MiniRust type and fancy value: pointers, zero-sized types),
+  `syn_bincl_at_loc_map`, `syn_bincl_prod_map`, `syn_bincl_to_cons_prod`,
+  `syn_bincl_of_cons_prod` (`bytes_layout.v`, with the new `syn_fbytes_zst`,
+  `syn_fbytes_uninit`, `syn_fbytes_xprod_nil/cons`, `syn_bsize_prod`,
+  `syn_bsize_xprod_cons`); `syn_bincl_prod_assoc/left_id/right_id` (`product.v`),
+  `syn_bincl_psum_map` (`sum.v`), `syn_bincl_uninit_split` (`uninit.v`),
+  `syn_bincl_sum_to_list` (`examples/list.v`).
+- New hypotheses: `syn_bincl f` for `mod_ty_in/out/inout/outin/subtype/eqtype` (an `Isoₛ`
+  only relates plain bytes), `eqtype_unfold`, `eqtype_unfold_default`,
+  `type_incl_default`, the `simple`/`plain`/`ghost` helpers, `base_subtype`/
+  `base_eqtype` and `fix_subtype`/`fix_eqtype` (the limit needs it at every step).
+- The commented-out `xprod_ty_app_prod` was deleted.
+
+### C3. Sum padding and uninitialized values (merge `293bea2`)
+
+- `~~(Σ! 𝔄l)` is `psum ~~ 𝔄l` (was `psum ~~ 𝔄l * list val`), likewise its prophecy and
+  abstracted sorts. `psum_mapₛ`, `syn_val`, `syn_fval`, the place refinements of sums
+  (`prfn_struct`, `prfn_sum i r` without the padding argument, `prfn_den_sum`,
+  `prfn_wit_sum`, `prfn_rsv_sum`), `sum_node_inv`, `type_mk_variant_val_instr` (the
+  transformer no longer quantifies over a padding) and all users were adapted. The bytes
+  of the padding of an enum are of course still there (`pad_cell` in `ltype.v`).
+- The syntactic type `paddingₛ` is deleted; the list example uses
+  `rlistₛ 𝔄 := at_locₛ (listₛ (𝔄 * locₛ))`.
+- `~~(uninitₛ n)` is `()` (was `vec val n`); the "junk" values of moved-out leaves are
+  `()`.
+
+### Still word-based, and why
+
+- **The expression language.** Expressions are λRust expressions with MiniRust memory
+  operations: closures, continuations (`vec val n` arguments), `Alloc`/`Free`/`+ₗ` and the
+  case on a tag work on λRust values (`#l`, `#z`, `LitPoison`), converted from MiniRust
+  values with `ToLit`/`OfLit`. These are values of the expression language, not of
+  memory; replacing them changes the language and the adequacy proof, not the memory
+  model.
+- **Function values** (`◁ᶠ`, C1) carry a λRust closure for the same reason.
+
+**Axioms.** See the final report: `Print Assumptions` of the examples is unchanged from
+the baseline (`functional_extensionality_dep`, and `Eqdep.Eq_rect_eq.eq_rect_eq` for the
+rules with a pure verification condition).

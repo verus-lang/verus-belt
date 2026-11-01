@@ -51,9 +51,7 @@ Section typing.
   Qed.
 
   Global Instance mod_ty_send {𝔄 𝔅} `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty
-    (syn_abstract_consistent0 : ∀ x x', syn_abstract x = syn_abstract x' →
-        syn_abstract (fⁱ ~~$ₛ x) = syn_abstract (fⁱ ~~$ₛ x'))
-    (syn_abstract_consistent1 : ∀ x x', syn_abstract x = syn_abstract x' →
+    (syn_abstract_consistent : ∀ x x', syn_abstract x = syn_abstract x' →
         syn_abstract (f ~~$ₛ x) = syn_abstract (f ~~$ₛ x'))
     : Send ty → Send (<{f;fⁱ}> ty).
   Proof.
@@ -65,7 +63,7 @@ Section typing.
        iDestruct "X" as (x' off) "[gho [⧖ [%Habs [G H]]]]".
        iExists (f ~~$ₛ x'). iExists off. iFrame. 
        unfold mod_ty. simpl. rewrite semi_iso'. iFrame "gho". iPureIntro.
-       have Hs := syn_abstract_consistent1 _ _ Habs. rewrite semi_iso' in Hs.
+       have Hs := syn_abstract_consistent _ _ Habs. rewrite semi_iso' in Hs.
        trivial.
   Qed.
 

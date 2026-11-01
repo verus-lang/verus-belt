@@ -920,3 +920,12 @@ example); the byte files took the plain names (`pcell_bytes.v` → `pcell.v`,
 `typed_ra_*`, …) and `ra_bytes.v`/`protocol_bytes.v` were merged into `ra.v`/`protocol.v`.
 See "Outcome: stage 5 / §10 step 6" in `minirust-memory-model.md` for the details and
 for what stays legacy (`ty_phys`/`ty_size`, `cloc` and the `#↦∗_` guards, the word heap).
+
+## 18. Outcome: stage 6, the word layer removed (2026-11-01)
+
+What §17 left word-based is gone: `cloc` and the `#↦∗_` guards, the word heap and the
+word-level language (`Read`/`Write`/`CAS`; `lang/lib/spawn.v` is on bytes), the word
+fields of the type record (`ty_size`, `ty_phys`, `syn_phys`), the sum padding component
+and `paddingₛ`. `type_incl`/`subtype` are the byte-preserving ones (`syn_bincl`).
+Function values are typed by `p ◁ᶠ ty`. See "Outcome: stage 6 (word layer removal)" in
+`minirust-memory-model.md`.

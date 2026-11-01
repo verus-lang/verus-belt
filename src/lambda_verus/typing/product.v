@@ -261,8 +261,7 @@ Section typing.
     elim.
      - apply _.
      - intros. apply mod_ty_send; last by apply _.
-       + intros [x1 xs1] [x2 xs2]. simpl. intros Ha. inversion Ha. trivial.
-       + intros [x1 xs1] [x2 xs2]. simpl. intros Ha. inversion Ha. trivial.
+       intros [x1 xs1] [x2 xs2]. simpl. intros Ha. inversion Ha. trivial.
   Qed.
   
   Global Instance xprod_sync {𝔄l} (tyl: typel 𝔄l) : ListSync tyl → Sync (Π! tyl).
