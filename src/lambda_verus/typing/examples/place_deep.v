@@ -7,9 +7,11 @@ Set Default Proof Using "Type".
 
 The body of [swap_snd] of the deleted legacy example [place_deep.v], on bytes: the arguments are
 boxes of bytes ([own_bytes]); the pair [( **x).1] (8 bytes, below two unique borrows) is
-copied out and assigned with byte-level [MemCopy]s
-([type_memcpy_copy_from_oplace_deep_instr], [type_memcpy_oplace_deep_instr]). The box
-[c] for the result is passed in uninitialized (there is no byte [new] rule yet). *)
+copied out and assigned with byte copies ([<-ᵇ{8}], [MemCopy]): a copy from a readable place
+into the box [c] viewed as an owned place, whose type changes from [↯ 8] to the copied type
+([type_memcpy_copy_place_instr], a strong update), and a move from the box [y] into the place
+([type_memcpy_move_place_instr], [y] becomes [↯ 8]). The box [c] for the result is passed
+in uninitialized. *)
 
 Section place_deep.
   Context `{!typeG Σ}.
@@ -88,8 +90,7 @@ Section place_deep.
       { solve_typing. } { reflexivity. }
       (* ( **x).1 = y *)
       iApply typed_body_tctx_incl.
-      { eapply (tctx_incl_frame_l _ _ +[_]). eapply (tctx_incl_frame_r +[_] +[_]).
-        apply tctx_own_to_oplace. }
+      { eapply (tctx_incl_frame_l _ _ +[_; _]). apply tctx_own_to_oplace. }
       iApply type_seq.
       { eapply (type_memcpy_move_place_instr _ _ _ vx vy
           (POwn PTR_SIZE (PUniq α (PUniq β (PSnd (OfTy i32t) PHole)))) (i32t * i32t) _ _ _
@@ -120,6 +121,8 @@ Section place_deep.
       { apply (type_drop_oplace_instr _ _ _ vy 8 8 (OfTy (↯ 8)) (const (const True)));
           [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
+      (* c as a box *)
+      iApply typed_body_tctx_incl. { apply tctx_oplace_to_own. }
       iApply type_jump.
       { rewrite elem_of_list_singleton. reflexivity. }
       { solve_typing. }
@@ -128,7 +131,7 @@ Section place_deep.
     }
     intros post [[lx m] [[ly [y1 y2]] [[lc junk] []]]] mask π. simpl.
     destruct m as [[[[[l [[[[[l' [x1 x2]] ξb] db] gb] idxb]] ξa] da] ga] idxa].
-    simpl. intros Hspec. rewrite /trans_upper /trans_tail /=.
+    simpl. intros Hspec. rewrite /trans_upper /trans_tail /trans_lower /=.
     intros _ _ _ _ _ _ _ _ _ Hres _. apply Hspec.
     rewrite !uniq_bor_future_eq /=.
     rewrite (uniq_util.uniq_prvar_app_irrel (𝔄:=uniq_borₛ tri) _

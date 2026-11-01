@@ -88,8 +88,7 @@ Section new_examples.
       { solve_typing. } { reflexivity. }
       (* ( **x).1 = y *)
       iApply typed_body_tctx_incl.
-      { eapply (tctx_incl_frame_l _ _ +[_]). eapply (tctx_incl_frame_r +[_] +[_]).
-        apply tctx_own_to_oplace. }
+      { eapply (tctx_incl_frame_l _ _ +[_; _]). apply tctx_own_to_oplace. }
       iApply type_seq.
       { eapply (type_memcpy_move_place_instr _ _ _ vx vy
           (POwn PTR_SIZE (PUniq α (PUniq β (PSnd (OfTy i32t) PHole)))) (i32t * i32t) _ _ _
@@ -120,6 +119,8 @@ Section new_examples.
       { apply (type_drop_oplace_instr _ _ _ vy 8 8 (OfTy (↯ 8)) (const (const True)));
           [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
+      (* c as a box *)
+      iApply typed_body_tctx_incl. { apply tctx_oplace_to_own. }
       iApply type_jump.
       { rewrite elem_of_list_singleton. reflexivity. }
       { solve_typing. }
@@ -128,7 +129,7 @@ Section new_examples.
     }
     intros post [[lx m] [[ly [y1 y2]] []]] mask π. simpl.
     destruct m as [[[[[l [[[[[l' [x1 x2]] ξb] db] gb] idxb]] ξa] da] ga] idxa].
-    simpl. intros Hspec. rewrite /trans_upper /trans_tail /=.
+    simpl. intros Hspec. rewrite /trans_upper /trans_tail /trans_lower /=.
     intros lc junk _ _ _ _ _ _ _ _ _ Hres _. apply Hspec.
     rewrite !uniq_bor_future_eq /=.
     rewrite (uniq_util.uniq_prvar_app_irrel (𝔄:=uniq_borₛ tri) _

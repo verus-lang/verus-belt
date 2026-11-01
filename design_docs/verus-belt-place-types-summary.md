@@ -812,3 +812,74 @@ Lemma type_write_place_instr {𝔅 𝔄 𝔅' 𝔄'} E L I p pb (K: pctx 𝔅 �
   (programs `ToLit "r" <-{MInt i32} "five"` without `ReBor;;`; proofs
   `eapply (type_write_place_instr _ _ _ vr v5 (PUniq β PHole) i32t i32t);
   [apply pctx_wty_same|apply resolve_just|solve_typing]`).
+
+## Unified place memcpy (branch `proto/memcpy-unify`, 2026-11-01)
+
+A byte copy between places, `pctx_vexpr Kd pd <-ᵇ{n} pctx_vexpr Ks ps` (`memcpy n e1 e2 :=
+MemCopy Na1Ord n e1 e2`, `lang/lang.v`; notation `e1 <-ᵇ{n} e2`, level 80; reified as a
+`MemCopy`), is byte-preserving (no typed memcpy). Two rules (`typing/place_memcpy.v`), by the
+source:
+
+```coq
+Lemma type_memcpy_copy_place_instr {𝔅d 𝔄d 𝔅 𝔄 𝔄d'} E L I pd ps (Kd: pctx 𝔅d 𝔄d)
+    `{!PctxNoShr Kd} `{!PctxVRoot Kd} (tyd: type 𝔅d) (Kd': pctx 𝔅 𝔄d') fd Φ
+    (Ks: pctx 𝔅 𝔄) `{!PctxVRoot Ks} `{!PctxRead Ks} (lt: lty 𝔅) (ty: type 𝔅) κs :
+  pctx_wty Kd tyd ty Kd' fd → resolve E L tyd Φ →
+  lctx_lft_alive E L (pctx_ulft Kd (OfTy tyd)) →
+  pctx_rleaf Ks lt ty κs → Copy ty → lctx_lft_alive E L (pctx_ralv Ks lt ⊓ κs) →
+  typed_instr E L I +[pd ◁ₗ pctx_plug Kd (OfTy tyd); ps ◁ₗ pctx_plug Ks lt]
+    (pctx_vexpr Kd pd <-ᵇ{ty_bsize ty} pctx_vexpr Ks ps)
+    (λ _, +[pd ◁ₗ pctx_plug Kd' (OfTy ty); ps ◁ₗ pctx_plug Ks lt])
+    (λ post '-[xd; xs], λ mask π, Φ (pctx_get Kd xd.1) π →
+      post -[(fd xd.1 (pctx_get Ks xs.1), xd.2); xs] mask π).
+
+Lemma type_memcpy_move_place_instr {𝔅d 𝔄d 𝔅 𝔄 𝔄d'} E L I pd ps (Kd: pctx 𝔅d 𝔄d)
+    `{!PctxNoShr Kd} `{!PctxVRoot Kd} (tyd: type 𝔅d) (Kd': pctx 𝔅 𝔄d') fd Φ
+    (Ks: pctx 𝔅 𝔄) `{!PctxVRoot Ks} `{!PctxNoUniq Ks} (ty: type 𝔅) :
+  pctx_wty Kd tyd ty Kd' fd → resolve E L tyd Φ →
+  lctx_lft_alive E L (pctx_ulft Kd (OfTy tyd)) → pctx_nosum Ks →
+  typed_instr E L I +[pd ◁ₗ pctx_plug Kd (OfTy tyd); ps ◁ₗ pctx_plug Ks (OfTy ty)]
+    (pctx_vexpr Kd pd <-ᵇ{ty_bsize ty} pctx_vexpr Ks ps)
+    (λ _, +[pd ◁ₗ pctx_plug Kd' (OfTy ty);
+      ps ◁ₗ pctx_plug (pctx_retype Ks (uninitₛ (ty_bsize ty))) (OfTy (↯ (ty_bsize ty)))])
+    (λ post '-[xd; xs], λ mask π, Φ (pctx_get Kd xd.1) π →
+      ∀ junk: ~~ (uninitₛ (ty_bsize ty)),
+      post -[(fd xd.1 (pctx_get Ks xs.1), xd.2); (pctx_reset Ks xs.1 junk, xs.2)] mask π).
+```
+
+- **Two rules (justified deviation from "one").** The source side differs in kind: a copy
+  source is a `Copy` leaf of any readable place (also below shared references and resolved
+  unique borrows, where it is only guarded: `wp_memcopy_guarded_gen`), which stays; a move
+  source is any leaf of an owned path without sums (as for `type_move_place_instr`), whose
+  fancy bytes (with their cells) are transferred (`wp_fbytes_memcopy`) and which becomes
+  `↯`. One statement would need a computed source result (unchanged place vs retyped
+  place, and two transformers) and a disjunction of the two side conditions, for no gain.
+- **Destination.** Any writable place as in `type_write_place_instr`, with the new type
+  given by `pctx_wty Kd tyd ty Kd' fd` (same type, or strong update along an owned path
+  without sums); the old value is resolved. The old "memcpy into a `↯` box changing its type"
+  is the strong instance with `Kd = POwn n PHole`, `tyd = ↯ n` (`by apply pctx_wty_strong`),
+  after `tctx_own_to_oplace`.
+- **Sizes.** The instruction copies `ty_bsize ty` bytes; `pctx_wty` gives
+  `ty_bsize ty = ty_bsize tyd` (`pctx_wty_bsize`).
+- **Steps.** The first step of the destination address (`wp_cumulative_time_receipt_linear`,
+  bound with `pctx_vexpr_to_val`) gives the credits for the destination access and the
+  resolution and the time receipts to raise the depth of the destination; the first step of
+  the source address (`wp_persistent_time_receipt`) the credits for the source access. No
+  `Skip`.
+- **Read access.** `wp_vplace_racc` (`place_read.v`) is the read rule's case analysis on the
+  shape of the context, factored as an access (a CPS around the address, `vplace_rcont`): the
+  address of the leaf, a guard of its bytes by a token `G2` with `dd` laters (the bytes
+  themselves, `guards_refl`, for an owned leaf; the shared view's guard for a shared one), the
+  persistent ownership of the value, and a closer. `type_read_place_instr` is now this access
+  plus `wp_load_na_guarded_gen`; the per-shape read lemmas (`type_read_vplace_noshr`,
+  `_pshr`, `_pshr_root`, `_ores`, `_res`, `_res_root`) and `wp_view_read` were replaced by
+  the per-shape accesses (`wp_vplace_racc_noshr`, … , `wp_view_racc`), and
+  `wp_load_shr_view` (`place_pshr.v`, only used by them) was deleted.
+- **Deleted:** `type_memcpy_vplace_deep_instr`, `type_memcpy_oplace_deep_instr`,
+  `type_memcpy_copy_from_vplace_deep_instr` (`place_deep.v`),
+  `type_memcpy_copy_from_vplace_pshr_instr`, `type_memcpy_copy_from_oplace_pshr_instr`,
+  `type_memcpy_copy_from_vplace_pshr_root_instr` (`place_pshr.v`),
+  `type_memcpy_copy_from_oplace_res_instr` (and the file `place_res_copy.v`). Examples
+  ported: `place_deep` (`swap_snd`) and `new` (`swap_snd_n`): programs
+  `ToLit "c" <-ᵇ{8} (… +ₗ #4)` and `(… +ₗ #4) <-ᵇ{8} ToLit "y"`; the boxes `c` and `y` are
+  viewed as owned places (`tctx_own_to_oplace`) for the copies.
