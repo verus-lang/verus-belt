@@ -23,7 +23,7 @@ Section int_ty.
 
   Global Instance int_ty_copy it : Copy (int_ty it).
   Proof.
-    split. - typeclasses eauto.
+    split. - apply _. - typeclasses eauto.
     - intros. by apply copy_shr_default.
   Qed.
 End int_ty.
@@ -36,7 +36,7 @@ Section int.
 
   Global Instance int_copy: Copy int.
   Proof.
-    split. - typeclasses eauto.
+    split. - apply _. - typeclasses eauto.
     - intros. by apply copy_shr_default.
   Qed.
   

@@ -111,7 +111,7 @@ Section shr_bytes_rules.
 
   Lemma shr_bytes_copy {𝔄} κ (ty: type 𝔄) : Copy (&shr{κ} ty).
   Proof.
-    split. - typeclasses eauto.
+    split. - apply _. - typeclasses eauto.
     - intros. by apply copy_shr_default.
   Qed.
 
@@ -132,7 +132,7 @@ Section shr_bytes_rules.
   Qed.
   (** Reading the referent of a [Copy] type through a shared reference: a guarded typed
       [Load]. *)
-  Lemma type_load_shr_bytes_copy_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p E L I :
+  Lemma type_load_shr_bytes_copy_instr {𝔄} κ (ty: type 𝔄) p E L I :
     Copy ty → lctx_lft_alive E L κ →
     typed_instr E L I +[p ◁ᵥ &shr{κ} ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
       (λ v, +[p ◁ᵥ &shr{κ} ty; v ◁ᵥ ty]) (λ post '-[a], post -[a; a.2]).

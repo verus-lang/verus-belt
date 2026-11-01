@@ -323,6 +323,7 @@ Section fix_ty.
   Proof.
     move=> ?. have ?: ∀n, Copy (Tn T n) by elim; apply _.
     split; rewrite /fix_ty /=.
+    - exact (copy_nocell (Tn T 0)).
     - move=> >. eapply @limit_preserving; [|apply _].
       apply limit_preserving_Persistent=> ??? Eq. apply Eq.
     - move=> >. eapply @limit_preserving; [|intros; apply copy_shr].

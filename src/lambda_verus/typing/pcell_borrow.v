@@ -192,7 +192,7 @@ Section cell_shr_rules.
 
   (** Reading the contents through a shared borrow of them (non-atomically): a guarded
       typed [Load] through the cell. *)
-  Lemma type_cell_shr_load_instr {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) p E L I :
+  Lemma type_cell_shr_load_instr {𝔄} κ (ty: type 𝔄) p E L I :
     Copy ty → lctx_lft_alive E L κ →
     typed_instr E L I +[p ◁ᵥ cell_shr_ty κ ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
       (λ v, +[v ◁ᵥ ty]) (λ post '-[(_, (_, x))], λ mask π, post -[x] mask π).

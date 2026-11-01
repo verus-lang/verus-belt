@@ -226,6 +226,7 @@ Section typing.
     move=> ?. have Copy: ∀i, Copy (hlookup tyl i).
     { move=> *. by apply TCHForall_lookup. }
     split.
+    - apply _.
     - intros x d g tid. unfold ty_gho_own, xsum_ty.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
     - intros κ x d g tid. unfold ty_shr, ty_gho_own, xsum_ty.

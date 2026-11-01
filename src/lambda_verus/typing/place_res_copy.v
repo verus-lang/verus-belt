@@ -32,7 +32,7 @@ Section memcpy_res.
 
   Lemma type_memcpy_copy_from_oplace_res_instr {ℭ 𝔅 𝔄 𝔅'} E L I pw p n n'
       (K: pctx (uniq_borₛ 𝔅) 𝔄) `{!PctxNoUniq K} κ (K2: pctx ℭ 𝔅) `{!PctxNoShr K2}
-      (lt0: lty ℭ) `{!NoCell ℭ} (ty: type ℭ) κs (tyw: type 𝔅') Φ (sz: nat) :
+      (lt0: lty ℭ) (ty: type ℭ) κs (tyw: type 𝔅') Φ (sz: nat) :
     view_rleaf lt0 ty κs → Copy ty → resolve E L tyw Φ → sz = ty_bsize ty →
     ty_bsize tyw = sz → lctx_lft_alive E L (pctx_salv K2 κ ⊓ κs) →
     typed_instr E L I

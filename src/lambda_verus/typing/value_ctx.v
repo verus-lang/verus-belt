@@ -96,7 +96,7 @@ Section value_rules.
   Qed.
 
   (** Reading the pointee of a box of a [Copy] type: a typed [Load]. *)
-  Lemma type_load_own_bytes_copy_instr {𝔄} `{!NoCell 𝔄} n (ty: type 𝔄) p E L I :
+  Lemma type_load_own_bytes_copy_instr {𝔄} n (ty: type 𝔄) p E L I :
     Copy ty →
     typed_instr E L I +[p ◁ᵥ own_bytes n ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
       (λ v, +[p ◁ᵥ own_bytes n ty; v ◁ᵥ ty]) (λ post '-[a], post -[a; a.2]).

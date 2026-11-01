@@ -255,7 +255,7 @@ Section memcpy_deep.
       number of unique borrows, in both modes of the hole) into a box: a byte-level
       [MemCopy]. The old contents of the box are resolved; the place does not change. *)
   Lemma type_memcpy_copy_from_vplace_deep_instr {𝔅 𝔄 𝔅'} E L I pw p n (K: pctx 𝔅 𝔄)
-      `{!PctxNoShr K} `{!PctxVRoot K} `{!NoCell 𝔅} (ty: type 𝔅) (tyw: type 𝔅') Φ (sz: nat) :
+      `{!PctxNoShr K} `{!PctxVRoot K} (ty: type 𝔅) (tyw: type 𝔅') Φ (sz: nat) :
     Copy ty → resolve E L tyw Φ → sz = ty_bsize ty → ty_bsize tyw = sz →
     lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
     typed_instr E L I +[pw ◁ᵥ own_bytes n tyw; p ◁ₗ pctx_plug K (OfTy ty)]

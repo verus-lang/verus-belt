@@ -126,7 +126,7 @@ Section shr_view.
   Qed.
 
   (** The value of a [Copy] type from its sharing predicate, guarded by [G]. *)
-  Lemma shr_view_copy {𝔄} `{!NoCell 𝔄} κ (ty: type 𝔄) `{!Copy ty} y d g tid l (G: iProp Σ) E :
+  Lemma shr_view_copy {𝔄} κ (ty: type 𝔄) `{!Copy ty} y d g tid l (G: iProp Σ) E :
     ↑NllftG ⊆ E → Timeless G →
     (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £((g + 1) + (g + 1)) -∗
     shr_view κ ty y d g tid l ={E}=∗
@@ -707,7 +707,7 @@ Section typing.
   (** ** (b) Reading a leaf below a shared reference *)
 
   (** The guarded typed load of a [Copy] value from its shared view. *)
-  Lemma wp_load_shr_view {𝔄} `{!NoCell 𝔄} E κ (ty: type 𝔄) `{!Copy ty} z dh D tid (l: loc) (G: iProp Σ)
+  Lemma wp_load_shr_view {𝔄} E κ (ty: type 𝔄) `{!Copy ty} z dh D tid (l: loc) (G: iProp Σ)
       (Φ: val → iProp Σ) :
     ↑NllftG ⊆ E → Timeless G →
     (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £(4 * (D + 1)) -∗ shr_view κ ty z dh D tid l -∗
@@ -1128,7 +1128,7 @@ Section memcpy.
       not change. The first step (the address of the box) gives the credits for the
       address of the source, the copy itself those for the box. *)
   Lemma type_memcpy_copy_from_vplace_pshr_instr {ℭ 𝔅 𝔄 𝔅'} E L I pw p n
-      (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ)
+      (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) (lt: lty ℭ)
       (tyw: type 𝔅') Φ (sz: nat) :
     Copy (lty_fold lt) → resolve E L tyw Φ → sz = ty_bsize (lty_fold lt) → ty_bsize tyw = sz →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
@@ -1213,7 +1213,7 @@ Section memcpy.
   Qed.
 
   Lemma type_memcpy_copy_from_oplace_pshr_instr {ℭ 𝔅 𝔄 𝔅'} E L I pw p n n'
-      (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K} κ (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ)
+      (K: pctx (at_locₛ 𝔅) 𝔄) `{!PctxNoShr K} κ (K2: pctx ℭ 𝔅) (lt: lty ℭ)
       (tyw: type 𝔅') Φ (sz: nat) :
     Copy (lty_fold lt) → resolve E L tyw Φ → sz = ty_bsize (lty_fold lt) → ty_bsize tyw = sz →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
@@ -1230,7 +1230,7 @@ Section memcpy.
 
   (** The same, below the shared reference at the root. *)
   Lemma type_memcpy_copy_from_vplace_pshr_root_instr {ℭ 𝔅 𝔅'} E L I pw p n κ
-      (K2: pctx ℭ 𝔅) `{!NoCell ℭ} (lt: lty ℭ) (tyw: type 𝔅') Φ (sz: nat) :
+      (K2: pctx ℭ 𝔅) (lt: lty ℭ) (tyw: type 𝔅') Φ (sz: nat) :
     Copy (lty_fold lt) → resolve E L tyw Φ → sz = ty_bsize (lty_fold lt) → ty_bsize tyw = sz →
     lctx_lft_alive E L (pctx_salv K2 κ) →
     typed_instr E L I +[pw ◁ᵥ own_bytes n tyw; p ◁ₗ ShrLty (pctx_plug K2 lt) κ]
