@@ -17,7 +17,7 @@
     [ResOwn ty]; below a shared reference, any place type [lt], read at its folded type
     [ty = lty_fold lt] (the referent of a shared reference is a read-only view). Blocked
     leaves are not readable.
-  - The lifetimes that must be alive ([pctx_ralv K lt]): the lifetime of the folded type at
+  - The lifetimes that must be alive ([pctx_alv K lt]): the lifetime of the folded type at
     each unique borrow outside the shared part ([pctx_ulft], to open the borrows), and,
     below the first shared reference or resolved unique borrow at [κ], [pctx_salv K2 κ] (the
     lifetimes of the guarded loads of the pointers of the view, [place_pshr.v]).
@@ -63,18 +63,6 @@ Section pctx_read.
     | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_rleafb K
     | PUniq _ K | PResUniq _ K => λ _, pctx_rleafb K false
     | PShr _ _ => λ _ lt ty κs, ty = lty_fold lt ∧ κs = static
-    end.
-
-  (** The lifetimes that must be alive to read the hole of [K]: below a unique borrow, the
-      lifetime of its folded type (to open it); below a shared reference or a resolved
-      unique borrow, the lifetimes of the guarded loads of the pointers in the view
-      ([pctx_salv]). *)
-  Fixpoint pctx_ralv {𝔅 𝔄} (K: pctx 𝔅 𝔄) : lty 𝔅 → lft :=
-    match K in pctx 𝔅 𝔄 return lty 𝔅 → lft with
-    | PHole => λ _, static
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_ralv K
-    | PUniq κ K => λ lt, ty_lft (lty_fold (UniqLty (pctx_plug K lt) κ)) ⊓ pctx_ralv K lt
-    | PShr κ K | PResUniq κ K => λ _, pctx_salv K κ
     end.
 
   (** The siblings below a unique borrow are simple, down to the first shared reference
@@ -178,32 +166,25 @@ Section pctx_read.
     intros [_ HK]. eauto.
   Qed.
 
-  Lemma pctx_ralv_noshr {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
-    pctx_noshr K → ⊢ pctx_ralv K lt ⊑ pctx_ulft K lt.
-  Proof.
-    induction K; simpl; [iIntros; iApply guards_refl|auto|auto|auto|auto| |done|done]. intros _.
-    iApply llftl_intersect_incl_l.
-  Qed.
-
-  Lemma pctx_ralv_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) lt :
+  Lemma pctx_alv_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) lt :
     pctx_noshr K1 →
-    ⊢ pctx_ralv (pctx_app K1 K2) lt ⊑ pctx_ulft K1 (pctx_plug K2 lt) ⊓ pctx_ralv K2 lt.
+    ⊢ pctx_alv (pctx_app K1 K2) lt ⊑ pctx_ulft K1 (pctx_plug K2 lt) ⊓ pctx_alv K2 lt.
   Proof.
     induction K1 as [|? ? ? K1 IH ?|? ? ? ? K1 IH|? ? ? K1 IH|? ? ? ? ? K1 IH|𝔅' 𝔄' κ' K1 IH| |]
       in K2 |- *;
       intros HK; [|exact (IH K2 HK)..| |done|done].
     - iApply llftl_incl_glb; [iApply lft_incl_static|iApply guards_refl].
-    - destruct HK as [_ HK]. cbn [pctx_ralv pctx_app pctx_ulft]. iApply llftl_incl_glb.
+    - destruct HK as [_ HK]. cbn [pctx_alv pctx_app pctx_ulft]. iApply llftl_incl_glb.
       + rewrite pctx_plug_app. iApply llftl_intersect_incl_l.
       + iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|].
         iApply llftl_incl_trans; [by iApply IH|]. iApply llftl_intersect_incl_r.
   Qed.
 
-  Lemma pctx_ralv_app_shr {ℭ 𝔅 𝔄} (K1: pctx (at_locₛ 𝔅) 𝔄) κ (K2: pctx ℭ 𝔅) lt :
+  Lemma pctx_alv_app_shr {ℭ 𝔅 𝔄} (K1: pctx (at_locₛ 𝔅) 𝔄) κ (K2: pctx ℭ 𝔅) lt :
     pctx_noshr K1 →
-    ⊢ pctx_ralv (pctx_app K1 (PShr κ K2)) lt ⊑
+    ⊢ pctx_alv (pctx_app K1 (PShr κ K2)) lt ⊑
       pctx_ulft K1 (ShrLty (pctx_plug K2 lt) κ) ⊓ pctx_salv K2 κ.
-  Proof. apply pctx_ralv_app. Qed.
+  Proof. apply pctx_alv_app. Qed.
 
   Lemma pctx_salv_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) κ :
     pctx_noshr K1 → pctx_salv (pctx_app K1 K2) κ = pctx_salv K2 (pctx_slft K1 κ).
@@ -275,7 +256,7 @@ Section read_acc.
   Lemma wp_vplace_racc_noshr {𝔅 𝔄} E (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K}
       (lt: lty 𝔅) (ty: type 𝔅) κs `{!Copy ty} x ζm D tid p v (G: iProp Σ) Φ :
     lty_rleaf false lt ty κs → Timeless G → lazyE ⊆ E → eval_path p = Some v →
-    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_ralv K lt ⊓ κs]) -∗ G -∗
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_alv K lt ⊓ κs]) -∗ G -∗
     £(advance_credits D) -∗ ⧖D -∗ ⧗(lty_vnrc (pctx_plug K lt)) -∗
     vroot_own (pctx_plug K lt) (pctx_vrfn K x ζm (lty_rfn lt (pctx_get K x) ζm (pctx_vpath K)))
       D tid v -∗
@@ -289,7 +270,7 @@ Section read_acc.
     have ?: ↑Nllft ⊆ E. { trans lazyE; [rewrite /lazyE; solve_ndisj|done]. }
     iAssert (G &&{↑NllftG}&&> @[pctx_ulft K lt])%I as "#Hu".
     { iApply (guards_transitive with "Alv").
-      iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|]. by iApply pctx_ralv_noshr. }
+      iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|]. by iApply pctx_alv_noshr. }
     iAssert (G &&{↑NllftG}&&> @[κs])%I as "#Hκs".
     { iApply (guards_transitive with "Alv"). iApply llftl_intersect_incl_r. }
     set y := pctx_get K x.
@@ -404,7 +385,7 @@ Section read_acc.
       (G: iProp Σ) Φ :
     let K := pctx_app K1 (PShr κ K2) in
     pctx_rleaf K lt ty κs → Timeless G → lazyE ⊆ E → eval_path p = Some v →
-    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_ralv K lt ⊓ κs]) -∗ G -∗
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_alv K lt ⊓ κs]) -∗ G -∗
     £(advance_credits D) -∗ ⧖D -∗ ⧗(lty_vnrc (pctx_plug K lt)) -∗
     vroot_own (pctx_plug K lt) (pctx_vrfn K x ζm (lty_rfn lt (pctx_get K x) ζm (pctx_vpath K)))
       D tid v -∗
@@ -419,7 +400,7 @@ Section read_acc.
       @[pctx_ulft K1 (ShrLty (pctx_plug K2 lt) κ) ⊓ pctx_salv K2 κ])%I as "#Hus".
     { iApply (guards_transitive with "Alv").
       iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
-      by iApply pctx_ralv_app_shr. }
+      by iApply pctx_alv_app_shr. }
     iAssert (G &&{↑NllftG}&&> @[pctx_ulft K1 (ShrLty (pctx_plug K2 lt) κ)])%I as "#Hu".
     { iApply (guards_transitive with "Hus"). iApply llftl_intersect_incl_l. }
     iAssert (G &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
@@ -560,7 +541,7 @@ Section read_acc.
       (G: iProp Σ) Φ :
     let K := POwn n (pctx_app K1 (PResUniq κ K2)) in
     pctx_rleaf K lt ty κs → Timeless G → ↑NllftG ⊆ E → eval_path p = Some v →
-    (G &&{↑NllftG}&&> @[pctx_ralv K lt ⊓ κs]) -∗ G -∗
+    (G &&{↑NllftG}&&> @[pctx_alv K lt ⊓ κs]) -∗ G -∗
     £(advance_credits D) -∗ ⧖D -∗ ⧗(lty_vnrc (pctx_plug K lt)) -∗
     vroot_own (pctx_plug K lt) (pctx_vrfn K x ζm (lty_rfn lt (pctx_get K x) ζm (pctx_vpath K)))
       D tid v -∗
@@ -579,7 +560,7 @@ Section read_acc.
     { iApply (guards_transitive with "Alv").
       iApply llftl_incl_glb; [|iApply llftl_intersect_incl_r].
       iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
-      iApply llftl_incl_trans; [by iApply (pctx_ralv_app K1 (PResUniq κ K2))|].
+      iApply llftl_incl_trans; [by iApply (pctx_alv_app K1 (PResUniq κ K2))|].
       iApply llftl_intersect_incl_r. }
     set lt1 := ResUniqLty (pctx_plug K2 lt) κ.
     rewrite /ltype_own lty_pat_plug ltype_own_plug.
@@ -623,7 +604,7 @@ Section read_acc.
   Lemma wp_vplace_racc_res_root {ℭ 𝔅} E κ (K2: pctx ℭ 𝔅) `{!PctxRead K2} (lt: lty ℭ)
       (ty: type ℭ) κs `{!Copy ty} x ζm D tid p v (G: iProp Σ) Φ :
     pctx_rleaf (PResUniq κ K2) lt ty κs → Timeless G → ↑NllftG ⊆ E → eval_path p = Some v →
-    (G &&{↑NllftG}&&> @[pctx_ralv (PResUniq κ K2) lt ⊓ κs]) -∗ G -∗
+    (G &&{↑NllftG}&&> @[pctx_alv (PResUniq κ K2) lt ⊓ κs]) -∗ G -∗
     £(advance_credits D) -∗ ⧖D -∗ ⧗(lty_vnrc (pctx_plug (PResUniq κ K2) lt)) -∗
     vroot_own (pctx_plug (PResUniq κ K2) lt)
       (pctx_vrfn (PResUniq κ K2) x ζm
@@ -652,7 +633,7 @@ Section read_acc.
   Lemma wp_vplace_racc_pshr_root {ℭ 𝔅} E κ (K2: pctx ℭ 𝔅) (lt: lty ℭ) (ty: type ℭ) κs
       `{!Copy ty} x ζm D tid p v (G: iProp Σ) Φ :
     pctx_rleaf (PShr κ K2) lt ty κs → Timeless G → ↑NllftG ⊆ E → eval_path p = Some v →
-    (G &&{↑NllftG}&&> @[pctx_ralv (PShr κ K2) lt ⊓ κs]) -∗ G -∗
+    (G &&{↑NllftG}&&> @[pctx_alv (PShr κ K2) lt ⊓ κs]) -∗ G -∗
     £(advance_credits D) -∗ ⧖D -∗ ⧗(lty_vnrc (pctx_plug (PShr κ K2) lt)) -∗
     vroot_own (pctx_plug (PShr κ K2) lt)
       (pctx_vrfn (PShr κ K2) x ζm
@@ -738,7 +719,7 @@ Section read_acc.
   Lemma wp_vplace_racc {𝔅 𝔄} E (K: pctx 𝔅 𝔄) `{!PctxVRoot K} `{!PctxRead K}
       (lt: lty 𝔅) (ty: type 𝔅) κs `{!Copy ty} x ζm D tid p v (G: iProp Σ) Φ :
     pctx_rleaf K lt ty κs → Timeless G → lazyE ⊆ E → eval_path p = Some v →
-    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_ralv K lt ⊓ κs]) -∗ G -∗
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[pctx_alv K lt ⊓ κs]) -∗ G -∗
     £(advance_credits D) -∗ ⧖D -∗ ⧗(lty_vnrc (pctx_plug K lt)) -∗
     vroot_own (pctx_plug K lt) (pctx_vrfn K x ζm (lty_rfn lt (pctx_get K x) ζm (pctx_vpath K)))
       D tid v -∗
@@ -794,7 +775,7 @@ Section read.
       change. *)
   Lemma type_read_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot K} `{!PctxRead K}
       (lt: lty 𝔅) (ty: type 𝔅) κs :
-    pctx_rleaf K lt ty κs → Copy ty → lctx_lft_alive E L (pctx_ralv K lt ⊓ κs) →
+    pctx_rleaf K lt ty κs → Copy ty → lctx_lft_alive E L (pctx_alv K lt ⊓ κs) →
     typed_instr E L I +[p ◁ₗ pctx_plug K lt] (!ᶜ{ty.(ty_mty)} (pctx_vexpr K p))
       (λ v, +[v ◁ᵥ ty; p ◁ₗ pctx_plug K lt])
       (λ post '-[x], post -[pctx_get K x.1; x]).
@@ -810,7 +791,7 @@ Section read.
     iIntros "£ _". iApply wp_fupd.
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
       [solve_ndisj|].
-    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ralv K lt ⊓ κs])%I as "#Hg".
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_alv K lt ⊓ κs])%I as "#Hg".
     { iApply (guards_transitive with "Ghalf Alv"). }
     wp_bind (pctx_vexpr K p).
     iApply (wp_vplace_racc _ K lt ty κs with "LFT PROPH UNIQ Hg H1 £ ⧖ ⧗p Own");

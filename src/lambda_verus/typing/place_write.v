@@ -7,9 +7,9 @@
   order and nesting (no shared reference and no resolved unique borrow on the path,
   [PctxNoShr]; the siblings below a unique borrow are simple); its root step is an owned
   pointer (a place rooted at an owned location, [p ◁ₗown{n} …]) or a unique borrow
-  ([PctxVRoot]). The old value is resolved ([resolve E L ty Φ]); the lifetime of the
-  folded type at the outermost unique borrow must be alive ([pctx_ulft]: [static] if there
-  is none).
+  ([PctxVRoot]). The old value is resolved ([resolve E L ty Φ]); the lifetimes needed
+  to access the hole must be alive ([pctx_alv], [pctx_acc.v]: the lifetime of the folded
+  type at each unique borrow, [static] if there is none).
 
   - The new type ([pctx_wty K ty ty' K' f], computed by the constructors): in general the
     type of the leaf is kept ([pctx_wty_same]: [ty' = ty], the new context is [K] and the
@@ -198,7 +198,7 @@ Section write.
       resolved. *)
   Lemma type_write_place_instr {𝔅 𝔄 𝔅' 𝔄'} E L I p pb (K: pctx 𝔅 𝔄) `{!PctxNoShr K}
       `{!PctxVRoot K} (ty: type 𝔅) (ty': type 𝔅') (K': pctx 𝔅' 𝔄') f Φ :
-    pctx_wty K ty ty' K' f → resolve E L ty Φ → lctx_lft_alive E L (pctx_ulft K (OfTy ty)) →
+    pctx_wty K ty ty' K' f → resolve E L ty Φ → lctx_lft_alive E L (pctx_alv K (OfTy ty)) →
     typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty); pb ◁ᵥ ty']
       (pctx_vexpr K p <-{ty'.(ty_mty)} pb)
       (λ _, +[p ◁ₗ pctx_plug K' (OfTy ty')])
@@ -222,7 +222,8 @@ Section write.
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
       [solve_ndisj|].
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (OfTy ty)])%I as "#Hu".
-    { iApply (guards_transitive with "Ghalf Alv"). }
+    { iApply (guards_transitive with "Ghalf"). iApply (guards_transitive with "Alv").
+      by iApply pctx_alv_noshr. }
     have HM: D ≤ M by rewrite /M; lia.
     iDestruct (lc_weaken (((D + 1) * (D + 2) + 1) + (1 + (1 + D * (D + 1)))) with "£")
       as "[£a [£r £s]]"; [rewrite /advance_credits; nia|].

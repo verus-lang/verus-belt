@@ -155,43 +155,6 @@ End shr_view.
 Section pctx_shr.
   Context `{!typeG Σ}.
 
-  (** The lifetime of the shared view of the hole of [K], below a shared reference at
-      [κ]: a unique borrow at [κ'] gives [κ ⊓ κ'] (its sharing predicate), a shared
-      reference at [κ'] gives [κ'] (its ownership predicate is persistent). *)
-  Fixpoint pctx_slft {𝔅 𝔄} (K: pctx 𝔅 𝔄) (κ: lft) : lft :=
-    match K with
-    | PHole => κ
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_slft K κ
-    | PUniq κ' K | PResUniq κ' K => pctx_slft K (κ ⊓ κ')
-    | PShr κ' K => pctx_slft K κ'
-    end.
-
-  (** The lifetimes that must be alive to load the pointers on the path (and the hole):
-      their intersection. *)
-  Fixpoint pctx_salv {𝔅 𝔄} (K: pctx 𝔅 𝔄) (κ: lft) : lft :=
-    match K with
-    | PHole => κ
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_salv K κ
-    | PUniq κ' K | PResUniq κ' K => pctx_salv K (κ ⊓ κ')
-    | PShr κ' K => κ ⊓ pctx_salv K κ'
-    end.
-
-  Lemma pctx_salv_incl {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ : ⊢ pctx_salv K κ ⊑ κ.
-  Proof.
-    induction K in κ |- *; simpl; [iApply guards_refl|by iApply IHK|by iApply IHK|by iApply IHK|
-      by iApply IHK| | |].
-    - iApply llftl_incl_trans; [iApply IHK|]. iApply llftl_intersect_incl_l.
-    - iApply llftl_intersect_incl_l.
-    - iApply llftl_incl_trans; [iApply IHK|]. iApply llftl_intersect_incl_l.
-  Qed.
-
-  Lemma pctx_salv_slft {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ : ⊢ pctx_salv K κ ⊑ pctx_slft K κ.
-  Proof.
-    induction K in κ |- *; simpl; [iApply guards_refl|by iApply IHK|by iApply IHK|by iApply IHK|
-      by iApply IHK|by iApply IHK| |by iApply IHK].
-    iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply IHK.
-  Qed.
-
   Lemma pctx_in_sum_inv {𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) y :
     pctx_in (PSum tyl i w K) y → ∃ z, y = pinj i z ∧ pctx_in K z.
   Proof.

@@ -58,8 +58,8 @@ Section memcpy.
       `{!PctxNoShr Kd} `{!PctxVRoot Kd} (tyd: type 𝔅d) (Kd': pctx 𝔅 𝔄d') fd Φ
       (Ks: pctx 𝔅 𝔄) `{!PctxVRoot Ks} `{!PctxRead Ks} (lt: lty 𝔅) (ty: type 𝔅) κs :
     pctx_wty Kd tyd ty Kd' fd → resolve E L tyd Φ →
-    lctx_lft_alive E L (pctx_ulft Kd (OfTy tyd)) →
-    pctx_rleaf Ks lt ty κs → Copy ty → lctx_lft_alive E L (pctx_ralv Ks lt ⊓ κs) →
+    lctx_lft_alive E L (pctx_alv Kd (OfTy tyd)) →
+    pctx_rleaf Ks lt ty κs → Copy ty → lctx_lft_alive E L (pctx_alv Ks lt ⊓ κs) →
     typed_instr E L I +[pd ◁ₗ pctx_plug Kd (OfTy tyd); ps ◁ₗ pctx_plug Ks lt]
       (pctx_vexpr Kd pd <-ᵇ{ty_bsize ty} pctx_vexpr Ks ps)
       (λ _, +[pd ◁ₗ pctx_plug Kd' (OfTy ty); ps ◁ₗ pctx_plug Ks lt])
@@ -81,8 +81,9 @@ Section memcpy.
       (fractional.half γh) with "H1 []") as (γ2) "[A [B [#Gh2 #Back2]]]";
       [solve_ndisj|iApply guards_refl|].
     iAssert (fractional.half γ2 &&{↑NllftG}&&> @[pctx_ulft Kd (OfTy tyd)])%I as "#GAd".
-    { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "Ghalf Alvd"). }
-    iAssert (fractional.half γ2 &&{↑NllftG}&&> @[pctx_ralv Ks lt ⊓ κs])%I as "#GBs".
+    { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "Ghalf").
+      iApply (guards_transitive with "Alvd"). by iApply pctx_alv_noshr. }
+    iAssert (fractional.half γ2 &&{↑NllftG}&&> @[pctx_alv Ks lt ⊓ κs])%I as "#GBs".
     { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "Ghalf Alvs"). }
     iCombine "⧖d ⧖s" as "⧖m". set M := Dd `max` Ds.
     have HM: Dd ≤ M ∧ Ds ≤ M by rewrite /M; lia.
@@ -153,7 +154,7 @@ Section memcpy.
       `{!PctxNoShr Kd} `{!PctxVRoot Kd} (tyd: type 𝔅d) (Kd': pctx 𝔅 𝔄d') fd Φ
       (Ks: pctx 𝔅 𝔄) `{!PctxVRoot Ks} `{!PctxNoUniq Ks} (ty: type 𝔅) :
     pctx_wty Kd tyd ty Kd' fd → resolve E L tyd Φ →
-    lctx_lft_alive E L (pctx_ulft Kd (OfTy tyd)) → pctx_nosum Ks →
+    lctx_lft_alive E L (pctx_alv Kd (OfTy tyd)) → pctx_nosum Ks →
     typed_instr E L I +[pd ◁ₗ pctx_plug Kd (OfTy tyd); ps ◁ₗ pctx_plug Ks (OfTy ty)]
       (pctx_vexpr Kd pd <-ᵇ{ty_bsize ty} pctx_vexpr Ks ps)
       (λ _, +[pd ◁ₗ pctx_plug Kd' (OfTy ty);
@@ -179,7 +180,8 @@ Section memcpy.
       (fractional.half γh) with "H1 []") as (γ2) "[A [B [#Gh2 #Back2]]]";
       [solve_ndisj|iApply guards_refl|].
     iAssert (fractional.half γ2 &&{↑NllftG}&&> @[pctx_ulft Kd (OfTy tyd)])%I as "#GAd".
-    { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "Ghalf Alvd"). }
+    { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "Ghalf").
+      iApply (guards_transitive with "Alvd"). by iApply pctx_alv_noshr. }
     iAssert (fractional.half γ2 &&{↑NllftG}&&> @[pctx_ulft Ks (OfTy ty)])%I as "#GBs".
     { rewrite pctx_ulft_nouniq -llftl_tok_unit_equiv. iApply guards_true. }
     iCombine "⧖d ⧖s" as "⧖m". set M := Dd `max` Ds.
