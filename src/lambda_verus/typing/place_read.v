@@ -3,28 +3,34 @@
   One rule, [type_read_place_instr], copies the value of a [Copy] leaf out of any place
   rooted at a value ([p ◁ₗ pctx_plug K lt], [vplace.v]), with the instruction
   [!ᶜ{ty_mty ty} (pctx_vexpr K p)] ([read_copy], a typed [Load]); the place does not
-  change. The context [K] may mix fields, sums, owned pointers, unique borrows and shared
-  references in any order and nesting ([PctxRead]: the siblings below a unique borrow are
-  simple, down to the first shared reference); its root step is an owned pointer (a place
-  rooted at an owned location, [p ◁ₗown{n} …]), a unique borrow or a shared reference
-  ([PctxVRoot]).
+  change. The context [K] may mix fields, sums, owned pointers, unique borrows, shared
+  references and resolved unique borrows in any order and nesting ([PctxRead]: the siblings
+  below a unique borrow are simple, down to the first shared reference, so in particular a
+  resolved unique borrow is below no unique borrow); its root step is an owned pointer (a
+  place rooted at an owned location, [p ◁ₗown{n} …]), a unique borrow, a shared reference or
+  a resolved unique borrow ([PctxVRoot]).
 
-  - The readable leaves ([pctx_rleaf K lt ty κs]): outside a shared reference, an unblocked
-    leaf [OfTy ty] ([κs = static]) or a shared-blocked leaf [ShrBlocked ty β] ([κs = β],
-    which must be alive); below a shared reference, any place type [lt], read at its folded
-    type [ty = lty_fold lt] (the referent of a shared reference is a read-only view).
-    Blocked leaves are not readable.
+  - The readable leaves ([pctx_rleaf K lt ty κs], [lty_rleaf] of [place_res_ops.v]):
+    outside a shared reference, an unblocked leaf [OfTy ty] ([κs = static]), a
+    shared-blocked leaf [ShrBlocked ty β] ([κs = β], which must be alive) and, below no
+    unique borrow or resolved unique borrow, a resolved leaf [OfRes ty] of a type with
+    [ResOwn ty]; below a shared reference, any place type [lt], read at its folded type
+    [ty = lty_fold lt] (the referent of a shared reference is a read-only view). Blocked
+    leaves are not readable.
   - The lifetimes that must be alive ([pctx_ralv K lt]): the lifetime of the folded type at
-    each unique borrow outside the shared part ([pctx_ulft], to open the borrows), and, below
-    the first shared reference at [κ], [pctx_salv K2 κ] (the lifetimes of the guarded loads of
-    the pointers of the shared part, [place_pshr.v]).
+    each unique borrow outside the shared part ([pctx_ulft], to open the borrows), and,
+    below the first shared reference or resolved unique borrow at [κ], [pctx_salv K2 κ] (the
+    lifetimes of the guarded loads of the pointers of the view, [place_pshr.v]).
   - No [Skip]: the first program step (of the address, or the load itself) gives the
     credits.
 
-  The proof splits [K] at its first shared reference ([pctx_read_split]): the part above
-  it is accessed with [vroot_acc] ([pctx_acc.v]); below it, the shared view of the
-  referent is pushed through the rest of the context ([wp_pshr_open], [wp_pshr_open_root]
-  of [place_pshr.v]). *)
+  The proof splits [K] at its first shared reference or resolved unique borrow
+  ([pctx_read_split], with [pctx_app]): the part above it is accessed with [vroot_acc]
+  ([pctx_acc.v]), or split with [ltype_own_plug] above a resolved unique borrow; below a
+  shared reference, the shared view of the referent is pushed through the rest of the
+  context ([wp_pshr_open], [wp_pshr_open_root] of [place_pshr.v]); below a resolved unique
+  borrow, the view of its referent is accessed ([view_pctx_acc] of [place_res_ops.v]) down
+  to the hole or to the next shared reference ([wp_view_read]). *)
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
