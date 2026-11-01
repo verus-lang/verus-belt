@@ -1015,20 +1015,21 @@ Section cells.
        (∀ k cs' v c, 𝛼' !! k = Some (cs', v) → c ∈ cs' →
           ∃ k' cs'', 𝛼 !! k' = Some (cs'', v) ∧ c ∈ cs'') ∧
        (∀ l', (∀ i : nat, (i < length fbs)%nat → l' ≠ l +ₗ i) → 𝛼' !! inl l' = 𝛼 !! inl l')⌝ ∗
-      bheap 𝛼' ∗ ([∗ list] i ↦ v ∈ vs, bpt (inl (l +ₗ i)) (inr v)).
+      bheap 𝛼' ∗ ([∗ list] i ↦ v ∈ vs, bpt (inl (l +ₗ i)) (inr v)) ∗
+      ([∗ list] fb; v ∈ fbs; vs, match fb with inl c => ∃ u, bunt u c v | inr _ => True end).
   Proof.
     iInduction fbs as [|fb fbs] "IH" forall (𝛼 l); iIntros "H● Hfbs".
-    { iModIntro. iExists 𝛼, []. iFrame "H●". iSplit; [|done]. iPureIntro.
+    { iModIntro. iExists 𝛼, []. iFrame "H●". iSplit; [|by iSplit]. iPureIntro.
       split_and!; try done. intros k cs' v c Hk Hc. eauto. }
     rewrite heap_mapsto_fbytes_cons. iDestruct "Hfbs" as "[Hl Hfbs]".
     destruct fb as [c|b]; simpl.
-    - iMod (fcmap_untether with "H● Hl") as (k cells1 cells2 v u) "([%Hrow %Hu] & H● & Hl & _)".
+    - iMod (fcmap_untether with "H● Hl") as (k cells1 cells2 v u) "([%Hrow %Hu] & H● & Hl & Hun)".
       destruct (is_row_for_lc_loc _ _ _ _ _ _ _ _ _ _ Hrow) as (-> & -> & Hk).
       iMod ("IH" $! _ (l +ₗ 1) with "H● Hfbs")
-        as (𝛼' vs) "([%Hlen [%Hphi [%Hvs [%Hcells %Hsame]]]] & H● & Hvs)".
+        as (𝛼' vs) "([%Hlen [%Hphi [%Hvs [%Hcells %Hsame]]]] & H● & Hvs & Hus)".
       have Hu' : 𝛼 !! inr u = None by done.
-      iModIntro. iExists 𝛼', (v :: vs). iFrame "H●". iSplit; last first.
-      { iSplitL "Hl"; [by rewrite shift_loc_0_nat|].
+      iModIntro. iExists 𝛼', (v :: vs). iFrame "H● Hus". iSplit; last first.
+      { iSplitR "Hun"; [|by iExists u]. iSplitL "Hl"; [by rewrite shift_loc_0_nat|].
         iApply (big_sepL_impl with "Hvs"). iIntros "!>" (i v' _) "H". by rewrite shift_loc_S. }
       iPureIntro. split_and!.
       + by rewrite /= Hlen.
@@ -1051,8 +1052,8 @@ Section cells.
         { intros [= ->]. apply (Hl' 0%nat); [simpl; lia|]. by rewrite shift_loc_0_nat. }
         by rewrite lookup_insert_ne.
     - iMod ("IH" $! _ (l +ₗ 1) with "H● Hfbs")
-        as (𝛼' vs) "([%Hlen [%Hphi [%Hvs [%Hcells %Hsame]]]] & H● & Hvs)".
-      iModIntro. iExists 𝛼', ((RSt 0, b) :: vs). iFrame "H●". iSplit; last first.
+        as (𝛼' vs) "([%Hlen [%Hphi [%Hvs [%Hcells %Hsame]]]] & H● & Hvs & Hus)".
+      iModIntro. iExists 𝛼', ((RSt 0, b) :: vs). iFrame "H● Hus". iSplit; last first.
       { iSplitL "Hl"; [by rewrite shift_loc_0_nat|].
         iApply (big_sepL_impl with "Hvs"). iIntros "!>" (i v' _) "H". by rewrite shift_loc_S. }
       iPureIntro. split_and!; [by rewrite /= Hlen|done| |done|].
@@ -1063,10 +1064,13 @@ Section cells.
         simpl. lia.
   Qed.
 
-  Lemma bytes_ctx_fbytes_forget E σB l fbs :
+  (** Untethering every byte-cell of fancy bytes: the cells are in transit
+      ([unt_fbytes]), and the bytes at [l] are their final bytes (for a move of a value
+      with several sibling groups). *)
+  Lemma bytes_ctx_fbytes_untether E σB l fbs :
     ↑naN ⊆ E →
     bytes_ctx σB -∗ heap_mapsto_fbytes l fbs ={E}=∗ ∃ bs,
-      bytes_ctx σB ∗ l ↦b bs ∗ ⌜length bs = length fbs⌝.
+      bytes_ctx σB ∗ l ↦b bs ∗ unt_fbytes fbs bs.
   Proof.
     iIntros (?) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hfbs".
     iDestruct "Cells" as (R ρ NC NS CW) "(Hreg & Hdyn & Hnc & Hns & Hcw & [%Hcwf %Hlive] & #HR & #HNS & Hcwe & Hρ)".
@@ -1077,7 +1081,7 @@ Section cells.
     have Hcwf' := Hcwf. have Hlive' := Hlive.
     destruct Hlive as [Hlive1 Hlive2].
     iMod (bheap_untether_fbytes with "H● Hfbs")
-      as (𝛼' vs) "([%Hlen [%Hphi [%Hvs [%Hcells %Hsame]]]] & H● & Hvs)".
+      as (𝛼' vs) "([%Hlen [%Hphi [%Hvs [%Hcells %Hsame]]]] & H● & Hvs & Hus)".
     have Hvs' : ∀ (i : nat) v, vs !! i = Some v → v.1 = RSt 0.
     { intros i v Hv. destruct (Hvs i v Hv) as [(b & _ & ->)|(c & rest & Hc & Hk)]; [done|].
       eapply (row_end_rst 𝛼 R ρ NC NS (fst <$> CW)); [done..| |done|done].
@@ -1085,7 +1089,7 @@ Section cells.
       apply lookup_fmap_Some in He as ([k' G] & <- & HkCW).
       apply (Hcwd g' (k', G) m' cs' HkCW HR' i j);
         [rewrite -Hlen; by eapply lookup_lt_Some|done|done]. }
-    iModIntro. iExists (snd <$> vs). iSplitR "Hvs"; [|iSplitL].
+    iModIntro. iExists (snd <$> vs). iSplitR "Hvs Hus"; [|iSplitL "Hvs"].
     - iExists 𝛼', M. rewrite Hphi. iFrame "H● Hbank Entries".
       iSplit; [done|]. iSplit; [done|]. iExists R, ρ, NC, NS, CW.
       iFrame "Hreg Hdyn Hnc Hns Hcw HR HNS Hcwe Hρ". iPureIntro. split; [done|split].
@@ -1100,7 +1104,20 @@ Section cells.
     - rewrite heap_mapsto_fbytes_bytes /heap_mapsto_fbytes !big_sepL_fmap.
       iApply (big_sepL_impl with "Hvs"). iIntros "!>" (i [ls b] Hv) "H".
       have /= Hls := Hvs' i _ Hv. by subst.
-    - by rewrite length_fmap.
+    - rewrite /unt_fbytes big_sepL2_fmap_r. iApply (big_sepL2_impl with "Hus").
+      iIntros "!>" (i fb [ls b] Hfb Hv) "H". have /= Hls := Hvs' i _ Hv. subst ls.
+      destruct fb as [c|b']; simpl; [done|].
+      destruct (Hvs i _ Hv) as [(b0 & Hb0 & Heq)|(c & rest & Hc & _)]; simplify_eq; done.
+  Qed.
+
+  Lemma bytes_ctx_fbytes_forget E σB l fbs :
+    ↑naN ⊆ E →
+    bytes_ctx σB -∗ heap_mapsto_fbytes l fbs ={E}=∗ ∃ bs,
+      bytes_ctx σB ∗ l ↦b bs ∗ ⌜length bs = length fbs⌝.
+  Proof.
+    iIntros (?) "Hctx Hfbs".
+    iMod (bytes_ctx_fbytes_untether with "Hctx Hfbs") as (bs) "(Hctx & Hl & Hu)"; [done|].
+    iDestruct (big_sepL2_length with "Hu") as %Hlen. iModIntro. iExists bs. by iFrame.
   Qed.
 
   Lemma untethered_rows 𝛼 cs bs :

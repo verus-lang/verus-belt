@@ -224,6 +224,16 @@ Section cells_defs.
       : iProp Σ :=
     greg g m cs ∗ [∗ list] c; b ∈ cs; bs, ∃ u, bunt u c (RSt 0, b).
 
+  (** Fancy bytes in transit (after [bytes_ctx_fbytes_untether]), with the bytes [bs]: each
+      byte-cell of [fbs] heads an untethered row whose final byte is the byte of [bs] at its
+      position, and the plain bytes of [fbs] are those of [bs]. This is the form of the
+      several (sibling) groups of a value with cells in transit: [untethered g m cs bs] is
+      [unt_fbytes (inl <$> cs) bs] ([untethered_fbytes]). *)
+  Definition unt_fb (fb : positive + abyte) (b : abyte) : iProp Σ :=
+    match fb with inl c => ∃ u, bunt u c (RSt 0, b) | inr b' => ⌜b' = b⌝ end.
+  Definition unt_fbytes (fbs : list (positive + abyte)) (bs : list abyte) : iProp Σ :=
+    [∗ list] fb; b ∈ fbs; bs, unt_fb fb b.
+
   (** Fancy bytes at locations: [l +ₗ i] points to the byte-cell or the byte [fbs !! i]. *)
   Definition heap_mapsto_fbytes (l : loc) (fbs : list (positive + abyte)) : iProp Σ :=
     [∗ list] i ↦ fb ∈ fbs, bpt (inl (l +ₗ i)) (fb_rst fb).
