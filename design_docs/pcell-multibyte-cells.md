@@ -2,7 +2,7 @@
 
 Status: steps 1–3 implemented (2026-10-30), branch `memory-model`; see §9 Outcome. §10 step 1
 done (2026-10-31); see §11. §10 steps 2 and 3 done; see §12 and §13. §10 step 4 done; see §14.
-§10 step 5 done; see §15 and §16.
+§10 step 5 done; see §15 and §16. Moves of values with cells: see §19.
 Context: `design_docs/minirust-memory-model.md` (stages 1–5). `pcell` is the last user of the
 legacy word layer.
 
@@ -929,3 +929,129 @@ fields of the type record (`ty_size`, `ty_phys`, `syn_phys`), the sum padding co
 and `paddingₛ`. `type_incl`/`subtype` are the byte-preserving ones (`syn_bincl`).
 Function values are typed by `p ◁ᶠ ty`. See "Outcome: stage 6 (word layer removal)" in
 `minirust-memory-model.md`.
+
+## 19. Outcome: moves of values with cells (2026-11-01)
+
+Values that contain cells are moved by the generic move and store rules, without `NoCell`
+(branch `proto/val-cells`). A typed `Load` of a value untethers all its cells, a typed
+`Store` retethers them at the new location, a `MemCopy` moves them verbatim. No
+`Admitted`; no new axioms.
+
+### Heap: several groups in transit (`lang/heap.v`, `lang/heap_cells.v`, `lang/lifting.v`)
+
+A value may embed several sibling groups (each possibly with nested groups). Instead of one
+`untethered g m cs bs` per group, its cells are in transit pointwise, along its fancy
+bytes:
+
+    unt_fb fb b := match fb with inl c => ∃ u, bunt u c (RSt 0, b) | inr b' => ⌜b' = b⌝ end
+    unt_fbytes fbs bs := [∗ list] fb; b ∈ fbs; bs, unt_fb fb b
+
+(each byte-cell of `fbs` heads an untethered row whose final byte is the byte of `bs` at its
+position; the plain bytes of `fbs` are those of `bs`). `untethered g m cs bs` is
+`greg g m cs ∗ unt_fbytes (inl <$> cs) bs` (`untethered_fbytes`).
+
+    bytes_ctx_fbytes_untether : bytes_ctx σB -∗ heap_mapsto_fbytes l fbs ={E}=∗
+      ∃ bs, bytes_ctx σB ∗ l ↦b bs ∗ unt_fbytes fbs bs
+    bytes_ctx_unt_fbytes_decode : bytes_ctx σB -∗ brepr m fbs fv -∗ unt_fbytes fbs bs -∗
+      ⌜∃ v, decode_value m bs = Some v⌝
+    bytes_ctx_unt_fbytes_rewrite : decode_value m bs' = decode_value m bs →
+      bytes_ctx σB -∗ brepr m fbs fv -∗ unt_fbytes fbs bs ==∗
+        bytes_ctx σB ∗ unt_fbytes (fb_mix fbs bs') bs' ∗ brepr m (fb_mix fbs bs') fv ∗
+        ⌜length bs' = length fbs⌝
+    bytes_ctx_fbytes_retether : bytes_ctx σB -∗ unt_fbytes fbs bs -∗ l ↦b bs ={E}=∗
+      bytes_ctx σB ∗ heap_mapsto_fbytes l fbs
+    bytes_ctx_fbytes_retether_gen : decode_value m bs' = decode_value m bs →
+      bytes_ctx σB -∗ brepr m fbs fv -∗ unt_fbytes fbs bs -∗ l ↦b bs' ={E}=∗
+        bytes_ctx σB ∗ heap_mapsto_fbytes l (fb_mix fbs bs') ∗ brepr m (fb_mix fbs bs') fv
+
+- `fb_mix fbs bs'` (`lang/fvalue.v`) keeps the byte-cells of `fbs` and takes the plain bytes
+  of `bs'`; `frepr_mix` (from `frepr_rebytes`) says that it represents the same fancy value.
+- **What `w` is (§8).** The decode lemma is compositionality (`frepr_decode`) with the final
+  bytes of the rows: the byte at each cell position is the final byte of its untethered
+  row (`unt_fbytes_final`). The cells and all nested cells are frozen while in transit, so
+  the bytes `bs` at the old location, and their decoding `w`, stay valid; a new location may
+  hold any bytes that decode to `w` (`encode m w` after a `Store`).
+- **The rewrite** is the single-group one generalised to a virtual root: `rewrite_pure` now
+  takes the root as fancy bytes `fbs` that represent `fv` at `m` (a group `g` is the root
+  `inl <$> cs`, `FVCell g`), and `bheap_rewrite_fbs` writes the rows headed by the
+  byte-cells of `fbs`. The groups embedded in the root are found by `frepr_inl_cell` and
+  `frepr_rebytes`; the nested ones by the induction from the root down, as before.
+- **Single-group lemmas are corollaries** (`bytes_ctx_pcell_untether`,
+  `bytes_ctx_pcell_retether_eq`, `bytes_ctx_untethered_rewrite`), and
+  `bytes_ctx_fbytes_forget` is untether-and-leak. Deleted: `bheap_untethers`,
+  `bheap_retethers`, `bheap_rewrite_unts`, the old `rewrite_pure`,
+  `bytes_ctx_untethered_write` and `bytes_ctx_pcell_retether` (superseded by `_gen`).
+- **WP rules** (`lifting.v`): `wp_fbytes_load` (`Load` of fancy bytes: `l ↦b bs`, the value
+  `w` with `decode_value m bs = Some w`, `unt_fbytes fbs bs`), `wp_fbytes_store` (`Store` of
+  `w` into plain bytes retethers, giving the fancy bytes `fb_mix fbs (encode m w)`), and
+  `wp_fbytes_memcopy` (a verbatim move of fancy bytes into plain bytes).
+
+### Typing: `val_own` over fancy values (`typing/value_ctx.v`)
+
+    val_cells m fv w := ∃ fbs bs, ⌜decode_value m bs = Some w⌝ ∗ brepr m fbs fv ∗ unt_fbytes fbs bs
+    val_own ty x tid v := ∃ w d fv, ⌜v = MLitV w ∧ ty.(ty_fval) x = Some fv⌝ ∗
+      val_cells ty.(ty_mty) fv w ∗ ⧖d ∗ ty.(ty_gho_own) x d d tid
+
+`fbs` is the shape of the fancy bytes the value was loaded from (only the positions of its
+byte-cells and the static registry matter), `bs` the bytes at the old location.
+
+**The reduction lemmas.** A value with a MiniRust value has no cells in transit:
+
+    Lemma val_own_val ty x tid v w0 : ty.(ty_val) x = Some w0 →
+      val_own ty x tid v ⊣⊢ ∃ d, ⌜v = MLitV w0⌝ ∗ ⧖d ∗ ty.(ty_gho_own) x d d tid.
+    Lemma val_own_nocell `{!NoCell 𝔄} ty x tid v :
+      val_own ty x tid v ⊣⊢ ∃ w d, ⌜v = MLitV w ∧ ty.(ty_val) x = Some w⌝ ∗ ⧖d ∗ ty.(ty_gho_own) x d d tid.
+
+(from `val_cells_plain`: `val_cells m (fv_lift w0) w -∗ ⌜w = w0⌝`, and `val_cells_intro`).
+The existing proofs use them through `tctx_val_nocell`/`tctx_val_elim` (destructing a
+value of a type without cells, the old intro pattern unchanged) and `val_own_intro_sep`
+(introducing a value with a MiniRust value); `tctx_val_val` and `wp_val` now take
+`NoCell`, and `wp_val_cells` is the general form. Helpers: `wp_bytes_own_move` (a `Load`
+of `bytes_own ty l y` gives `val_cells` and plain bytes left behind) and
+`wp_val_cells_store` (a `Store` of a value with `val_cells` gives `bytes_own ty l y`).
+
+### Rules
+
+- **`NoCell` removed:** `type_move_oplace_instr`, `type_memcpy_vplace_deep_instr`,
+  `type_memcpy_oplace_deep_instr`. The store rules (`type_store_own_bytes_instr`,
+  `type_write_oplace_instr`, `type_write_vplace_deep_instr`,
+  `type_write_oplace_deep_instr`) had no `NoCell`, but their value could not contain cells;
+  now it can (they use `wp_val_cells_store`). `spawn_type` passes an argument with cells
+  (in transit) to the new thread; `type_resolve_val_instr` and `resolve_tctx_cons_val` drop
+  the cells of a value (leak them, as for any dropped `PCell`).
+- **Deleted, subsumed:** `type_pcell_move_instr`, `type_pcell_memcpy_instr` (no callers)
+  with `wp_pcell_move_len`, `wp_pcell_memcopy_len`, `uninit_bytes_own`, `bytes_own_uninit`.
+  A move of a `PCell` box is the generic place move followed by a place write (the example
+  below). (The old `type_pcell_memcpy_instr` copied into a box of `↯`, changing its type; the
+  deep memcpy rules keep the type of the leaf, so that exact form is not a single rule.)
+- **`NoCell` that remain:**
+  - everything through `Copy` (`copy_nocell`: copying a cell would duplicate it): the read
+    rule, the copy loads, the memcpy-copy rules, `copy_val_tctx_incl`;
+  - writes through a cell (`type_pcell_store_sc_instr`, `type_pcell_mcas_instr`,
+    `type_cell_uniq_store_instr`): the heap-level cell writes only write plain values
+    (`fv_lift v`) into a group;
+  - **new (deviation)**, where the proof needs a MiniRust value: `type_mk_variant_val_instr`
+    (the payload; building a value with cells from parts is not supported),
+    `tctx_subtype_val` (the hypothesis compares `ty_val`), `tctx_ty_to_vplace` (the leaf of
+    a value-rooted place holds a MiniRust value), `spawn_type` for the result (`finish`
+    stores a MiniRust value), and `tctx_val_val`/`wp_val`. All their callers have concrete
+    types without cells, so no caller changed.
+
+### Example (`typing/examples/pcell_move.v`)
+
+`pcell_move_type`: `PCell::new(17)` in a box `c`; a box `q` of `(i32, PCell<i32>)` (an
+uninitialised box split by `uninit_plus_prod_1`) gets `q.0 = 5` and `q.1 = *c` (the cell
+moved out of `c` with `type_move_oplace_instr`, stored with `type_write_oplace_instr`); the
+pair `*q` is moved into a box `r` (fancy value `FVTuple [FVInt 5; FVCell g]`); `r.1` is moved
+into a box `s`; `PCell::into_inner(s, perm)` gives back the box of `17`, which is read and
+returned. The specification is `post 17` (the group `g` of the permission is the one in
+`s`). Its axioms are those of `pcell_example` (`functional_extensionality_dep`,
+`eq_rect_eq`); about 2 minutes.
+
+### Limits
+
+- Values with cells arise only from loads: `MkTuple`/`MkVariant` of values with cells (or a
+  `val_cells` for a composite built from parts) are not provided.
+- Moves out of places below unique borrows (there is no deep move rule) are not provided;
+  memcpy into them is.
+

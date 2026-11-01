@@ -192,7 +192,7 @@ Section subtype.
   (** ** MiniRust values *)
 
   (** A value of [ty] is a value of [ty'], if the MiniRust values agree (e.g. pointers:
-      boxes, references). *)
+      boxes, references; values without cells). *)
   Lemma tctx_subtype_val {𝔄 𝔅 𝔄l} `{!NoCell 𝔄} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) (T: tctx 𝔄l) p E L :
     subtype E L ty ty' f → (∀ x, ty'.(ty_val) (f ~~$ₛ x) = ty.(ty_val) x) →
     tctx_incl E L (p ◁ᵥ ty +:: T) (p ◁ᵥ ty' +:: T)

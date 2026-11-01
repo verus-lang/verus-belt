@@ -6,10 +6,14 @@ Set Default Proof Using "Type".
 
 (** * Typing MiniRust values (stage 4 of the MiniRust memory model)
 
-The element [p ◁ᵥ ty] types a path that evaluates to a MiniRust value [MLitV w], the
-MiniRust value of [x] ([ty_val x = Some w]): it is the result of a typed [Load] of
-[ty_mty ty] and the argument of a typed [Store]. It is a semantic element ([TCtx_sem]),
-so the type context needs no new case. (The legacy word element [p ◁ ty] was deleted in
+The element [p ◁ᵥ ty] types a path that evaluates to a MiniRust value [MLitV w]: it is
+the result of a typed [Load] of [ty_mty ty] and the argument of a typed [Store]. The value
+[x] may contain cells ([PCell]s): [w] is then the value loaded from the fancy bytes of the
+fancy value [ty_fval x], whose cells are in transit ([val_cells]), and a [Store] of [w]
+retethers them. For a type without cells ([NoCell]), or a value with a MiniRust value, this
+is the plain form [ty_val x = Some w] ([val_own_nocell], [val_own_val], [tctx_val_elim],
+[val_own_intro_sep]). It is a semantic element ([TCtx_sem]), so the type context needs no
+new case. (The legacy word element [p ◁ ty] was deleted in
 stage 6.)
 
 Pointers are MiniRust values too ([VPtr l]); the address argument of [Load], [Store],
@@ -220,7 +224,7 @@ Section value_rules.
     rewrite tctx_val_val. iExists 0%nat. by iFrame "⧖".
   Qed.
 
-  (** A variant value: the payload with the index of the variant. *)
+  (** A variant value: the payload (without cells) with the index of the variant. *)
   Lemma type_mk_variant_val_instr {𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) `{!NoCell (𝔄l !!ₗ i)}
       (t: Z) p E L I :
     t = Z.of_nat (fin_to_nat i) →

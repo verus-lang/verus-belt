@@ -108,6 +108,8 @@ Section spawn.
       
   Arguments ty_gho_own {_ _ _} _ _ _ _ : simpl never.
   
+  (** The argument may contain cells (they travel to the new thread in transit); the result
+      has none ([NoCell 𝔅]): [finish] stores it as a MiniRust value in the join handle. *)
   Lemma spawn_type {𝔄 𝔅 ℭ} (c: ~~ℭ) (Φ: (~~ℭ) → pred' (~~𝔅)) call_once_val call_once_tr (fty: type 𝔄) (retty: type 𝔅)
       call_once `{!Send fty, !Send retty, !NoCell 𝔅} :
     typed_val call_once ((fn<()>(∅; fty) → retty) call_once_tr) (call_once_val, c) →

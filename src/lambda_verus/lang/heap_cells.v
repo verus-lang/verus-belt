@@ -24,9 +24,13 @@ The lemmas about the cell groups of [heap.v] (see the comment on cell groups the
 [design_docs/pcell-multibyte-cells.md]):
 - the compositionality lemma in the byte context ([cells_decode]);
 - creating and destroying a group ([bytes_ctx_pcell_create], [bytes_ctx_pcell_destroy]);
-- untethering and retethering a group ([bytes_ctx_pcell_untether],
-  [bytes_ctx_pcell_retether_gen]), for moves; a group in transit can be rewritten with bytes
-  that decode to the same value ([bytes_ctx_untethered_rewrite]), also when it embeds cells;
+- untethering and retethering, for moves: all the cells of fancy bytes at once, i.e. the
+  several (sibling) groups of a value, each of which may embed cells
+  ([bytes_ctx_fbytes_untether], [bytes_ctx_fbytes_retether_gen]; in transit:
+  [unt_fbytes]); fancy bytes in transit can be rewritten with bytes that decode to the same
+  value ([bytes_ctx_unt_fbytes_rewrite]). The lemmas for one group
+  ([bytes_ctx_pcell_untether], [bytes_ctx_pcell_retether_gen],
+  [bytes_ctx_untethered_rewrite]) are their instances;
 - accesses through cells: reads ([bytes_ctx_cell_read_begin_guarded]) and two-phase writes
   ([bytes_ctx_cell_write_begin], [bytes_ctx_cell_write_end]) of a plain sub-value of a group,
   which may be nested in a live group;

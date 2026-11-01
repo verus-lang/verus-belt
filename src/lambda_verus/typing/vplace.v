@@ -113,6 +113,8 @@ Section conv.
 
   (** * Leaves *)
 
+  (** The leaf of a place rooted at a value holds a MiniRust value, so the value has no
+      cells. *)
   Lemma tctx_ty_to_vplace {𝔄} `{!NoCell 𝔄} E L p (ty: type 𝔄) :
     tctx_incl E L +[p ◁ᵥ ty] +[p ◁ₗ OfTy ty] (λ post '-[a], post -[(a, [])]).
   Proof.
