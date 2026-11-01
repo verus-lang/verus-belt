@@ -267,7 +267,7 @@ Section place_pshr.
       (* &( **x).0 *)
       iApply (type_let with "[]").
       { eapply (type_share_place_instr _ _ _ vx (PUniq α (PShr β (PFst PHole (OfTy i32t))))
-          static (OfTy i32t) i32t); [by split|solve_typing]. }
+          β (OfTy i32t) i32t); [by split|simpl; solve_typing..]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       (* fold back *)

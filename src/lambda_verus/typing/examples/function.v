@@ -111,7 +111,7 @@ Section bfn_examples.
       { solve_typing. } { reflexivity. }
       iApply (type_let with "[]").
       { eapply (type_share_place_instr _ _ _ vx (PUniq α (PShr β (PFst PHole (OfTy i32t))))
-          static (OfTy i32t) i32t); [by split|solve_typing]. }
+          β (OfTy i32t) i32t); [by split|simpl; solve_typing..]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       iApply type_seq.

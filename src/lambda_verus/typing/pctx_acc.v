@@ -81,14 +81,61 @@ Section pctx_fun.
     | PUniq κ K => κ :: pctx_ulfts K
     end.
 
-  (** The lifetime at which the hole is reborrowed, for a fresh lifetime [α]: the
-      intersection of all enclosing borrow lifetimes and [α] (syntactically, so that
-      [[†α]] gives its death without a mask). *)
-  Fixpoint pctx_blft {𝔅 𝔄} (K: pctx 𝔅 𝔄) (α: lft) : lft :=
+  (** The lifetime of the shared view of the hole of [K], below a shared reference (or a
+      resolved unique borrow) at [κ]: a unique borrow at [κ'] gives [κ ⊓ κ'] (its sharing
+      predicate), a shared reference at [κ'] gives [κ'] (its ownership predicate is
+      persistent). *)
+  Fixpoint pctx_slft {𝔅 𝔄} (K: pctx 𝔅 𝔄) (κ: lft) : lft :=
     match K with
-    | PHole => α
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K | PResUniq _ K => pctx_blft K α
-    | PUniq κ K => κ ⊓ pctx_blft K α
+    | PHole => κ
+    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_slft K κ
+    | PUniq κ' K | PResUniq κ' K => pctx_slft K (κ ⊓ κ')
+    | PShr κ' K => pctx_slft K κ'
+    end.
+
+  (** The lifetimes that must be alive to load the pointers on the path below a shared
+      reference (or a resolved unique borrow) at [κ], and the hole: their intersection. *)
+  Fixpoint pctx_salv {𝔅 𝔄} (K: pctx 𝔅 𝔄) (κ: lft) : lft :=
+    match K with
+    | PHole => κ
+    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_salv K κ
+    | PUniq κ' K | PResUniq κ' K => pctx_salv K (κ ⊓ κ')
+    | PShr κ' K => κ ⊓ pctx_salv K κ'
+    end.
+
+  (** The lifetimes that must be alive to access the hole of [K] (to read, write, share or
+      borrow it): at each unique borrow above the first shared reference or resolved unique
+      borrow, the lifetime of its folded type (to open it, [pctx_ulft]); at the first shared
+      reference or resolved unique borrow at [κ], [pctx_salv K' κ] (the guarded loads of the
+      pointers of the view). [static] for an owned path. *)
+  Fixpoint pctx_alv {𝔅 𝔄} (K: pctx 𝔅 𝔄) : lty 𝔅 → lft :=
+    match K in pctx 𝔅 𝔄 return lty 𝔅 → lft with
+    | PHole => λ _, static
+    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_alv K
+    | PUniq κ K => λ lt, ty_lft (lty_fold (UniqLty (pctx_plug K lt) κ)) ⊓ pctx_alv K lt
+    | PShr κ K | PResUniq κ K => λ _, pctx_salv K κ
+    end.
+
+  (** The lifetime of the view of the hole at the first shared reference or resolved unique
+      borrow on the path, if any. *)
+  Fixpoint pctx_vlft {𝔅 𝔄} (K: pctx 𝔅 𝔄) : option lft :=
+    match K with
+    | PHole => None
+    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_vlft K
+    | PShr κ K | PResUniq κ K => Some (pctx_slft K κ)
+    end.
+
+  (** The bound of the lifetime of a borrow of the hole of [K]: the lifetime of the view of
+      the hole below the first shared reference or resolved unique borrow, if any
+      ([pctx_vlft]; the unique borrows above it do not matter, e.g. [&**x: &'b T] for
+      [x: &'a mut &'b T]); otherwise the intersection of the enclosing unique borrow
+      lifetimes ([static] for an owned path). *)
+  Fixpoint pctx_blft {𝔅 𝔄} (K: pctx 𝔅 𝔄) : lft :=
+    match K with
+    | PHole => static
+    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_blft K
+    | PUniq κ K => match pctx_vlft K with Some β => β | None => κ ⊓ pctx_blft K end
+    | PShr κ K | PResUniq κ K => pctx_slft K κ
     end.
 
   (** The number of owned pointers and unique borrows on the path (the depth decreases by
@@ -101,11 +148,12 @@ Section pctx_fun.
     end.
 
   (** The later credits for an access ([pctx_acc]), at a depth [d] and with [m] laters:
-      none below no unique borrow. *)
+      none below no unique borrow; otherwise, at each unique borrow, its laters (the owned
+      pointers above it) and one for its lazy contents. *)
   Definition pctx_acc_cred {𝔅 𝔄} (K: pctx 𝔅 𝔄) (m d: nat) : nat :=
-    match pctx_ulfts K with [] => 0 | _ => (d + 1) * (m + d + 2) end.
+    match pctx_ulfts K with [] => 0 | _ => m + 2 * d + 2 end.
 
-  Lemma pctx_acc_cred_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) m d : pctx_acc_cred K m d ≤ (d + 1) * (m + d + 2).
+  Lemma pctx_acc_cred_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) m d : pctx_acc_cred K m d ≤ m + 2 * d + 2.
   Proof. rewrite /pctx_acc_cred. destruct (pctx_ulfts K); lia. Qed.
 
   (** The context ends with [PUniq κ PHole] (the hole is the whole referent of the
@@ -247,33 +295,75 @@ Section pctx_fun.
       iApply llftl_incl_trans; [iApply pctx_ulft_incl|]. by iApply IHK.
   Qed.
 
-  Lemma pctx_blft_incl {𝔅 𝔄} (K: pctx 𝔅 𝔄) α κ :
-    κ ∈ pctx_ulfts K → ⊢ pctx_blft K α ⊑ κ.
+  Lemma pctx_salv_incl {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ : ⊢ pctx_salv K κ ⊑ κ.
   Proof.
-    induction K; simpl; intros Hκ; [by apply not_elem_of_nil in Hκ|by auto|by auto|by auto|
-      by auto| |by auto|by auto].
-    apply elem_of_cons in Hκ as [->|Hκ].
+    induction K in κ |- *; simpl; [iApply guards_refl|by iApply IHK|by iApply IHK|by iApply IHK|
+      by iApply IHK| | |].
+    - iApply llftl_incl_trans; [iApply IHK|]. iApply llftl_intersect_incl_l.
+    - iApply llftl_intersect_incl_l.
+    - iApply llftl_incl_trans; [iApply IHK|]. iApply llftl_intersect_incl_l.
+  Qed.
+
+  Lemma pctx_salv_slft {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ : ⊢ pctx_salv K κ ⊑ pctx_slft K κ.
+  Proof.
+    induction K in κ |- *; simpl; [iApply guards_refl|by iApply IHK|by iApply IHK|by iApply IHK|
+      by iApply IHK|by iApply IHK| |by iApply IHK].
+    iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply IHK.
+  Qed.
+
+  Lemma pctx_alv_noshr {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
+    pctx_noshr K → ⊢ pctx_alv K lt ⊑ pctx_ulft K lt.
+  Proof.
+    induction K; simpl; [iIntros; iApply guards_refl|auto|auto|auto|auto| |done|done]. intros _.
+    iApply llftl_intersect_incl_l.
+  Qed.
+
+  Lemma pctx_alv_nouniq {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} lt : pctx_alv K lt = static.
+  Proof.
+    rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
+    induction K in HK, lt |- *; simpl; simpl in HK; auto; done.
+  Qed.
+
+  Lemma pctx_vlft_noshr {𝔅 𝔄} (K: pctx 𝔅 𝔄) : pctx_noshr K → pctx_vlft K = None.
+  Proof. induction K; simpl; [done|auto|auto|auto|auto| |done|done]. intros [_ HK]. auto. Qed.
+
+  Lemma pctx_vlft_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) :
+    pctx_noshr K1 → pctx_vlft (pctx_app K1 K2) = pctx_vlft K2.
+  Proof.
+    induction K1 in K2 |- *; simpl; [done|auto|auto|auto|auto| |done|done]. intros [_ HK]. auto.
+  Qed.
+
+  (** Below a shared reference or a resolved unique borrow, [pctx_blft] is the lifetime of
+      the view. *)
+  Lemma pctx_blft_app_view {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) β :
+    pctx_noshr K1 → pctx_vlft K2 = Some β → pctx_blft K2 = β →
+    pctx_blft (pctx_app K1 K2) = β.
+  Proof.
+    induction K1 in K2 |- *; simpl; [done|auto|auto|auto|auto| |done|done].
+    intros [_ HK] Hv Hb. rewrite pctx_vlft_app // Hv. done.
+  Qed.
+
+  (** Every enclosing borrow lifetime, above the first shared reference, outlives
+      [pctx_blft]. *)
+  Lemma pctx_blft_incl {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ :
+    pctx_noshr K → κ ∈ pctx_ulfts K → ⊢ pctx_blft K ⊑ κ.
+  Proof.
+    induction K; simpl; intros HK Hκ; [by apply not_elem_of_nil in Hκ|by auto|by auto|by auto|
+      by auto| |done|done].
+    destruct HK as [_ HK]. rewrite pctx_vlft_noshr //. apply elem_of_cons in Hκ as [->|Hκ].
     - iApply llftl_intersect_incl_l.
     - iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. by iApply IHK.
   Qed.
 
-  Lemma pctx_blft_incl_r {𝔅 𝔄} (K: pctx 𝔅 𝔄) α : ⊢ pctx_blft K α ⊑ α.
+  (** A new blocked (or shared-blocked) lifetime [α] below [pctx_blft K] is below every
+      enclosing borrow lifetime. *)
+  Lemma pat_ok_blft {𝔅 𝔄} (K: pctx 𝔅 𝔄) α p :
+    pctx_noshr K → pat_blk_lfts p = [α] →
+    α ⊑ pctx_blft K -∗ [∗ list] κ ∈ pctx_ulfts K, pat_ok κ p.
   Proof.
-    induction K; simpl; try by auto. iApply guards_refl.
-    iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply IHK.
-  Qed.
-
-  Lemma pctx_blft_dead {𝔅 𝔄} (K: pctx 𝔅 𝔄) α : [†α] -∗ [†pctx_blft K α].
-  Proof.
-    induction K; simpl; try by auto. iIntros "†". rewrite llftl_end_inter. iRight. by iApply IHK.
-  Qed.
-
-  (** The new blocked lifetime is below every enclosing borrow lifetime. *)
-  Lemma pat_ok_blft {𝔅 𝔄} (K: pctx 𝔅 𝔄) α :
-    ⊢ [∗ list] κ ∈ pctx_ulfts K, pat_ok κ (PatBlocked (pctx_blft K α)).
-  Proof.
-    iApply big_sepL_intro. iIntros "!>" (i κ Hi). iApply pat_ok_blocked.
-    iApply pctx_blft_incl. by eapply elem_of_list_lookup_2.
+    iIntros (HK Hp) "#Incl". iApply big_sepL_intro. iIntros "!>" (i κ Hi).
+    rewrite /pat_ok Hp big_sepL_singleton. iApply (llftl_incl_trans with "Incl").
+    iApply pctx_blft_incl; [done|]. by eapply elem_of_list_lookup_2.
   Qed.
 
   Lemma pat_ok_ulfts_leaf {𝔅 𝔄} (K: pctx 𝔅 𝔄) :
@@ -303,11 +393,6 @@ Section pctx_fun.
     induction K in HK |- *; simpl; simpl in HK; auto; done.
   Qed.
 
-  Lemma pctx_blft_nouniq {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoUniq K} α : pctx_blft K α = α.
-  Proof.
-    rename select (PctxNoUniq K) into HK. rewrite /PctxNoUniq in HK.
-    induction K in HK |- *; simpl; simpl in HK; auto; done.
-  Qed.
 End pctx_fun.
 
 (** * The address of the hole *)
@@ -556,11 +641,11 @@ Section pctx_acc.
   Proof.
     iIntros (HK HKs IH m p r x ζm q d g tid l E G HE ?) "#LFT #PROPH #UNIQ #Gk G £ /=".
     iIntros "(Pt & ⧗ & #TIME & N)".
-    iDestruct (lc_weaken (m + (1 + ((d + 1) * (m + d + 2) - m - 1))) with "£") as "[£m [£1 £]]";
-      [rewrite /pctx_acc_cred /=; nia|].
+    iDestruct (lc_weaken (m + (1 + 2 * d)) with "£") as "[£m [£1 £]]";
+      [rewrite /pctx_acc_cred /=; lia|].
     iMod (lc_fupd_elim_laterN with "£m N") as "(#Incl & %d' & %g' & %Hle & C)".
     iDestruct (lc_weaken (pctx_acc_cred K 0 d') with "£") as "£";
-      [have := pctx_acc_cred_le K 0 d'; nia|].
+      [have := pctx_acc_cred_le K 0 d'; lia|].
     rewrite ltype_own_cp_uniq_plug //.
     have ?: ↑NllftG ⊆ E. { trans lazyE; [apply lazyE_NllftG|done]. }
     have ?: ↑Nllft ∪ ↑prophN ⊆ E. { trans lazyE; [rewrite /lazyE; solve_ndisj|done]. }
@@ -700,9 +785,9 @@ Section vroot.
 
   (** The later credits for an access to the hole below a root pointer, at a depth [D]. *)
   Definition pctx_vacc_cred {𝔅 𝔄} (K: pctx 𝔅 𝔄) (D: nat) : nat :=
-    match pctx_ulfts K with [] => 0 | _ => (D + 1) * (D + 1) end.
+    match pctx_ulfts K with [] => 0 | _ => 2 * D + 3 end.
 
-  Lemma pctx_vacc_cred_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) D : pctx_vacc_cred K D ≤ (D + 1) * (D + 1).
+  Lemma pctx_vacc_cred_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) D : pctx_vacc_cred K D ≤ 2 * D + 3.
   Proof. rewrite /pctx_vacc_cred. destruct (pctx_ulfts K); lia. Qed.
 
   (** The closer of an access to the hole below a root pointer: as [pctx_closer], the root

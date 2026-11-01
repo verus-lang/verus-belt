@@ -43,7 +43,7 @@ Section get_first.
   Lemma get_first_type ϝ α (k vb: val) :
     ⊢ typed_body [ϝ ⊑ₑ α] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
-          λ v: vec val 1, +[vhd v ◁ᵥ &uniq{α ⊓ α} i32t] } ret_uniq]
+          λ v: vec val 1, +[vhd v ◁ᵥ &uniq{α} i32t] } ret_uniq]
         +[vb ◁ᵥ &uniq{α} (i32t * i32t)%T]
         (subst "return" k (subst "b" vb get_first)) get_first_spec.
   Proof.
@@ -55,21 +55,21 @@ Section get_first.
       iApply type_seq.
       { apply (type_unfold_vplace_prod_instr _ _ _ vb (PUniq α PHole) i32t i32t). simpl. solve_typing. }
       { solve_typing. } { reflexivity. }
-      (* &mut ( *b).0, at α ⊓ α *)
+      (* &mut ( *b).0, at α *)
       iApply (type_let with "[]").
       { apply (type_borrow_place_instr _ _ _ vb (PUniq α (PFst PHole (OfTy i32t))) α i32t);
-          [solve_typing|simpl; solve_typing]. }
+          [solve_typing|simpl; solve_typing..]. }
       { solve_typing. } { simpl. reflexivity. }
       iIntros (vr0). simpl_subst.
-      (* &mut ( *b).1, at α ⊓ α *)
+      (* &mut ( *b).1, at α *)
       iApply (type_let with "[]").
       { apply (type_borrow_place_instr _ _ _ vb
-          (PUniq α (PSnd (Blocked i32t (α ⊓ α)) PHole)) α i32t); [solve_typing|simpl; solve_typing]. }
+          (PUniq α (PSnd (Blocked i32t α) PHole)) α i32t); [solve_typing|simpl; solve_typing..]. }
       { solve_typing. } { simpl. reflexivity. }
       iIntros (vr1). simpl_subst.
       (* resolve the borrow of field 1 *)
       iApply type_seq.
-      { apply (type_resolve_val_instr vr1 (&uniq{α ⊓ α} i32t)). apply uniq_bor.uniq_resolve.
+      { apply (type_resolve_val_instr vr1 (&uniq{α} i32t)). apply uniq_bor.uniq_resolve.
         solve_typing. }
       { solve_typing. } { reflexivity. }
       (* drop b while both fields are blocked *)

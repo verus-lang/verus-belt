@@ -88,6 +88,13 @@ Section shr_view.
     by iApply (ty_gho_pers_depth_mono with "Pers").
   Qed.
 
+  Lemma shr_view_lft_mono {𝔄} κ κ' (ty: type 𝔄) y d g tid l :
+    κ' ⊑ κ -∗ shr_view κ ty y d g tid l -∗ shr_view κ' ty y d g tid l.
+  Proof.
+    iIntros "#Incl #(Pt & Shr & Pers)". iSplit; [by iApply (guards_transitive_right with "Incl Pt")|].
+    iSplit; [by iApply (ty_shr_lft_mono0 with "Incl Shr")|done].
+  Qed.
+
   (** The ownership predicate of a shared reference gives the shared view of its
       referent, after [g+1] laters. *)
   Lemma shr_bor_gho_view {𝔄} κ (ty: type 𝔄) (l: loc) y d g tid :
@@ -154,43 +161,6 @@ End shr_view.
 
 Section pctx_shr.
   Context `{!typeG Σ}.
-
-  (** The lifetime of the shared view of the hole of [K], below a shared reference at
-      [κ]: a unique borrow at [κ'] gives [κ ⊓ κ'] (its sharing predicate), a shared
-      reference at [κ'] gives [κ'] (its ownership predicate is persistent). *)
-  Fixpoint pctx_slft {𝔅 𝔄} (K: pctx 𝔅 𝔄) (κ: lft) : lft :=
-    match K with
-    | PHole => κ
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_slft K κ
-    | PUniq κ' K | PResUniq κ' K => pctx_slft K (κ ⊓ κ')
-    | PShr κ' K => pctx_slft K κ'
-    end.
-
-  (** The lifetimes that must be alive to load the pointers on the path (and the hole):
-      their intersection. *)
-  Fixpoint pctx_salv {𝔅 𝔄} (K: pctx 𝔅 𝔄) (κ: lft) : lft :=
-    match K with
-    | PHole => κ
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_salv K κ
-    | PUniq κ' K | PResUniq κ' K => pctx_salv K (κ ⊓ κ')
-    | PShr κ' K => κ ⊓ pctx_salv K κ'
-    end.
-
-  Lemma pctx_salv_incl {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ : ⊢ pctx_salv K κ ⊑ κ.
-  Proof.
-    induction K in κ |- *; simpl; [iApply guards_refl|by iApply IHK|by iApply IHK|by iApply IHK|
-      by iApply IHK| | |].
-    - iApply llftl_incl_trans; [iApply IHK|]. iApply llftl_intersect_incl_l.
-    - iApply llftl_intersect_incl_l.
-    - iApply llftl_incl_trans; [iApply IHK|]. iApply llftl_intersect_incl_l.
-  Qed.
-
-  Lemma pctx_salv_slft {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ : ⊢ pctx_salv K κ ⊑ pctx_slft K κ.
-  Proof.
-    induction K in κ |- *; simpl; [iApply guards_refl|by iApply IHK|by iApply IHK|by iApply IHK|
-      by iApply IHK|by iApply IHK| |by iApply IHK].
-    iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply IHK.
-  Qed.
 
   Lemma pctx_in_sum_inv {𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) y :
     pctx_in (PSum tyl i w K) y → ∃ z, y = pinj i z ∧ pctx_in K z.
@@ -405,7 +375,7 @@ Section pshr_addr.
       depth at most [D] (each pointer on the path decreases the depth). With [4 * (D + 1)]
       more (for a guarded typed load of a [Copy] leaf), they are the credits of one program
       step. *)
-  Definition pshr_cred (D: nat) : nat := 7 * D * D + 12 * D + 3.
+  Definition pshr_cred (D: nat) : nat := 3 * D * D + 9 * D + 5.
 
   Lemma pshr_cred_step D : pshr_cred D + 4 * (D + 1) ≤ advance_credits D.
   Proof. rewrite /pshr_cred /advance_credits. destruct D; [lia|nia]. Qed.
@@ -514,14 +484,14 @@ Section pshr_addr.
     set lK := pctx_vloc K1 (lty_size lt1) x₀.
     iAssert (G' &&{↑NllftG}&&> @[pctx_ulft K1 lt1])%I as "#G'u".
     { iApply (guards_transitive with "G'G Gu"). }
-    have Hrest: 3 * (D + 1) * pred (pctx_dlev K1) + ((D + 1) + ((D + 1) +
-      (D * (D + 3) + 2 * (D + 1) * D))) ≤ pshr_cred D - pctx_vacc_cred K1 D.
+    have Hrest: (D + 1) + ((D + 1) +
+      (D * (D + 3) + 2 * (D + 1) * D)) ≤ pshr_cred D - pctx_vacc_cred K1 D.
     { have := pctx_vacc_cred_le K1 D. rewrite /pshr_cred. nia. }
-    iDestruct (lc_weaken _ Hrest with "£") as "(£w & £m & £g & £r)".
+    iDestruct (lc_weaken _ Hrest with "£") as "(£m & £g & £r)".
     iApply (wp_pshr_hole E κ K2 lt y D tid with "Gs"); [done|].
     (* The address of the leaf. *)
     wp_bind (pctx_vexpr K1 e).
-    iApply (wp_wand with "[P G' £w WPe]").
+    iApply (wp_wand with "[P G' WPe]").
     { iApply (wp_pctx_vptrs E K1 (lty_size lt1) G' x₀ e True%I with "[G' WPe] P").
       iApply (wp_wand with "WPe"). iIntros (?) "->". by iFrame. }
     iIntros (w) "(-> & _ & G' & P)".

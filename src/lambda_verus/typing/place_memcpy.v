@@ -58,8 +58,8 @@ Section memcpy.
       `{!PctxNoShr Kd} `{!PctxVRoot Kd} (tyd: type 𝔅d) (Kd': pctx 𝔅 𝔄d') fd Φ
       (Ks: pctx 𝔅 𝔄) `{!PctxVRoot Ks} `{!PctxRead Ks} (lt: lty 𝔅) (ty: type 𝔅) κs :
     pctx_wty Kd tyd ty Kd' fd → resolve E L tyd Φ →
-    lctx_lft_alive E L (pctx_ulft Kd (OfTy tyd)) →
-    pctx_rleaf Ks lt ty κs → Copy ty → lctx_lft_alive E L (pctx_ralv Ks lt ⊓ κs) →
+    lctx_lft_alive E L (pctx_alv Kd (OfTy tyd)) →
+    pctx_rleaf Ks lt ty κs → Copy ty → lctx_lft_alive E L (pctx_alv Ks lt ⊓ κs) →
     typed_instr E L I +[pd ◁ₗ pctx_plug Kd (OfTy tyd); ps ◁ₗ pctx_plug Ks lt]
       (pctx_vexpr Kd pd <-ᵇ{ty_bsize ty} pctx_vexpr Ks ps)
       (λ _, +[pd ◁ₗ pctx_plug Kd' (OfTy ty); ps ◁ₗ pctx_plug Ks lt])
@@ -81,8 +81,9 @@ Section memcpy.
       (fractional.half γh) with "H1 []") as (γ2) "[A [B [#Gh2 #Back2]]]";
       [solve_ndisj|iApply guards_refl|].
     iAssert (fractional.half γ2 &&{↑NllftG}&&> @[pctx_ulft Kd (OfTy tyd)])%I as "#GAd".
-    { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "Ghalf Alvd"). }
-    iAssert (fractional.half γ2 &&{↑NllftG}&&> @[pctx_ralv Ks lt ⊓ κs])%I as "#GBs".
+    { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "Ghalf").
+      iApply (guards_transitive with "Alvd"). by iApply pctx_alv_noshr. }
+    iAssert (fractional.half γ2 &&{↑NllftG}&&> @[pctx_alv Ks lt ⊓ κs])%I as "#GBs".
     { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "Ghalf Alvs"). }
     iCombine "⧖d ⧖s" as "⧖m". set M := Dd `max` Ds.
     have HM: Dd ≤ M ∧ Ds ≤ M by rewrite /M; lia.
@@ -95,7 +96,7 @@ Section memcpy.
     iDestruct (cumulative_time_receipt_sep 1 (S M) with "⧗") as "[⧗c ⧗k]".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗c ⧖m") as "[_ £]";
       [solve_ndisj|].
-    iDestruct (lc_weaken (((Dd + 1) * (Dd + 2) + 1) + (1 + (1 + Dd * (Dd + 1)))) with "£")
+    iDestruct (lc_weaken ((3 * Dd + 5) + (1 + (1 + Dd * (Dd + 1)))) with "£")
       as "[£a [£r £s]]"; [rewrite /advance_credits; nia|].
     iApply (wp_vplace_wacc _ Kd tyd ty Kd' fd with "LFT PROPH UNIQ GAd A £a ⧖d ⧗d Ownd");
       [done|solve_ndisj|done|].
@@ -153,14 +154,14 @@ Section memcpy.
       `{!PctxNoShr Kd} `{!PctxVRoot Kd} (tyd: type 𝔅d) (Kd': pctx 𝔅 𝔄d') fd Φ
       (Ks: pctx 𝔅 𝔄) `{!PctxVRoot Ks} `{!PctxNoUniq Ks} (ty: type 𝔅) :
     pctx_wty Kd tyd ty Kd' fd → resolve E L tyd Φ →
-    lctx_lft_alive E L (pctx_ulft Kd (OfTy tyd)) → pctx_nosum Ks →
+    lctx_lft_alive E L (pctx_alv Kd (OfTy tyd)) → pctx_nosum Ks →
     typed_instr E L I +[pd ◁ₗ pctx_plug Kd (OfTy tyd); ps ◁ₗ pctx_plug Ks (OfTy ty)]
       (pctx_vexpr Kd pd <-ᵇ{ty_bsize ty} pctx_vexpr Ks ps)
       (λ _, +[pd ◁ₗ pctx_plug Kd' (OfTy ty);
         ps ◁ₗ pctx_plug (pctx_retype Ks (uninitₛ (ty_bsize ty))) (OfTy (↯ (ty_bsize ty)))])
       (λ post '-[xd; xs], λ mask π, Φ (pctx_get Kd xd.1) π →
-        ∀ junk: ~~ (uninitₛ (ty_bsize ty)),
-        post -[(fd xd.1 (pctx_get Ks xs.1), xd.2); (pctx_reset Ks xs.1 junk, xs.2)] mask π).
+        post -[(fd xd.1 (pctx_get Ks xs.1), xd.2);
+          (pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) Ks xs.1 (), xs.2)] mask π).
   Proof.
     intros Hw Rslv Alvd Hns.
     have Hws: pctx_wty Ks ty (↯ (ty_bsize ty)) (pctx_retype Ks (uninitₛ (ty_bsize ty)))
@@ -179,7 +180,8 @@ Section memcpy.
       (fractional.half γh) with "H1 []") as (γ2) "[A [B [#Gh2 #Back2]]]";
       [solve_ndisj|iApply guards_refl|].
     iAssert (fractional.half γ2 &&{↑NllftG}&&> @[pctx_ulft Kd (OfTy tyd)])%I as "#GAd".
-    { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "Ghalf Alvd"). }
+    { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "Ghalf").
+      iApply (guards_transitive with "Alvd"). by iApply pctx_alv_noshr. }
     iAssert (fractional.half γ2 &&{↑NllftG}&&> @[pctx_ulft Ks (OfTy ty)])%I as "#GBs".
     { rewrite pctx_ulft_nouniq -llftl_tok_unit_equiv. iApply guards_true. }
     iCombine "⧖d ⧖s" as "⧖m". set M := Dd `max` Ds.
@@ -193,7 +195,7 @@ Section memcpy.
     iDestruct (cumulative_time_receipt_sep 1 (S M) with "⧗") as "[⧗c ⧗k]".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗c ⧖m") as "[_ £]";
       [solve_ndisj|].
-    iDestruct (lc_weaken (((Dd + 1) * (Dd + 2) + 1) + (1 + (1 + Dd * (Dd + 1)))) with "£")
+    iDestruct (lc_weaken ((3 * Dd + 5) + (1 + (1 + Dd * (Dd + 1)))) with "£")
       as "[£a [£r £s]]"; [rewrite /advance_credits; nia|].
     iApply (wp_vplace_wacc _ Kd tyd ty Kd' fd with "LFT PROPH UNIQ GAd A £a ⧖d ⧗d Ownd");
       [done|solve_ndisj|done|].
@@ -212,7 +214,7 @@ Section memcpy.
     have ?: TCEq (to_val (pctx_vexpr Ks ps)) None by rewrite pctx_vexpr_to_val; constructor.
     iApply (wp_persistent_time_receipt with "TIME ⧖s"); [solve_ndisj|].
     iIntros "£s _".
-    iDestruct (lc_weaken ((Ds + 1) * (Ds + 2) + 1) with "£s") as "£s";
+    iDestruct (lc_weaken (3 * Ds + 5) with "£s") as "£s";
       [rewrite /advance_credits; nia|].
     iApply (wp_vplace_wacc _ Ks ty (↯ (ty_bsize ty)) (pctx_retype Ks (uninitₛ (ty_bsize ty)))
       (pctx_reset Ks) with "LFT PROPH UNIQ GBs B £s ⧖s ⧗s Owns");
@@ -228,9 +230,8 @@ Section memcpy.
     iIntros "!>" (bs) "(Hfbsd & Hbs & %Hlen)".
     iMod (fupd_mask_subseteq (⊤ ∖ ↑advN)) as "Hcl"; [solve_ndisj|].
     (* Close the source, uninitialized. *)
-    set junk := (() : ~~ (uninitₛ (ty_bsize ty))).
     rewrite /vplace_wcloser.
-    iMod ("Cls" $! junk 0 0 Ds with "[%] ⧖s [Hbs] []") as "[Ts B]".
+    iMod ("Cls" $! () 0 0 Ds with "[%] ⧖s [Hbs] []") as "[Ts B]".
     { lia. }
     { iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].
       rewrite -(ty_mty_eq (↯ _)) /= decide_True //. }
@@ -248,7 +249,7 @@ Section memcpy.
     iMod (fupd_mask_mono with "(Back2 A B)") as "H1"; [solve_ndisj|].
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro.
-    iExists -[(fd xd₀ (pctx_get Ks xs₀), ζd); (pctx_reset Ks xs₀ junk, ζs)]. iFrame "L I".
+    iExists -[(fd xd₀ (pctx_get Ks xs₀), ζd); (pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) Ks xs₀ (), ζs)]. iFrame "L I".
     iSplitR "Obs Obs'".
     { iSplitL "Td"; [iExists _; by iFrame|]. iSplit; [|done]. iExists _. by iFrame. }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=> π [Hπ HΦ].

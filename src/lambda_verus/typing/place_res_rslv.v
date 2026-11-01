@@ -92,15 +92,19 @@ End resolve_share_rsv.
 
 (** * The resolution judgement *)
 
-Definition lty_res `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (lt lt': lty 𝔄) (k: nat)
-    (Φ: ~~𝔄 → blk_map → lpath → proph_asn → Prop) : Prop :=
-  lty_size lt' = lty_size lt ∧ lty_nrc lt' = lty_nrc lt ∧
-  ∀ G m x ζm q d g D tid l, Timeless G → m + d ≤ D → g ≤ D →
+(* A record (not a conjunction), so that unification never unfolds it: e.g. applying
+   [lty_res_prod] (of [k1 + k2] steps) to a goal of [2] steps fails at once. *)
+Record lty_res `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (lt lt': lty 𝔄) (k: nat)
+    (Φ: ~~𝔄 → blk_map → lpath → proph_asn → Prop) : Prop := LtyRes {
+  lty_res_size : lty_size lt' = lty_size lt;
+  lty_res_nrc : lty_nrc lt' = lty_nrc lt;
+  lty_res_upd : ∀ G m x ζm q d g D tid l, Timeless G → m + d ≤ D → g ≤ D →
     ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
       (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗ ⧖D -∗
       ltype_own (Owned m) lt (lty_rfn lt x ζm q) d g tid l -∗
       ctask (advance_credits D) k
-        (⟨π, Φ x ζm q π⟩ ∗ G ∗ ltype_own (Owned m) lt' (lty_rfn lt' x ζm q) d g tid l).
+        (⟨π, Φ x ζm q π⟩ ∗ G ∗ ltype_own (Owned m) lt' (lty_rfn lt' x ζm q) d g tid l)
+}.
 
 Section lty_res.
   Context `{!typeG Σ}.
@@ -108,7 +112,7 @@ Section lty_res.
   (** Any place may be kept as it is. *)
   Lemma lty_res_id {𝔄} E L (lt: lty 𝔄) : lty_res E L lt lt 0 (λ _ _ _ _, True).
   Proof.
-    split; [done|]. split; [done|].
+    split; [done|done|].
     iIntros (G m x ζm q d g D tid l ???) "_ _ _ _ _ _ $ _ $ /=". iModIntro.
     by iApply proph_obs_true.
   Qed.
@@ -117,7 +121,7 @@ Section lty_res.
     lty_res E L lt lt' k Φ → (∀ x ζm q π, Φ x ζm q π → Φ' x ζm q π) →
     lty_res E L lt lt' k Φ'.
   Proof.
-    intros (Hs & Hn & Rslv) Himp. split; [done|]. split; [done|].
+    intros [Hs Hn Rslv] Himp. split; [done|done|].
     iIntros (G m x ζm q d g D tid l ???) "LFT PROPH UNIQ TIME E L G ⧖ Own".
     iDestruct (Rslv with "LFT PROPH UNIQ TIME E L G ⧖ Own") as "T"; [done..|].
     iApply (ctask_mono with "[] T"). iIntros "(Obs & $ & $) !>".
@@ -128,7 +132,7 @@ Section lty_res.
   Lemma lty_res_ofty {𝔄} E L (ty: type 𝔄) Φ :
     resolve_keep E L ty Φ → lty_res E L (OfTy ty) (OfRes ty) 1 (λ x _ _, Φ x).
   Proof.
-    intros Rslv. split; [done|]. split; [done|].
+    intros Rslv. split; [done|done|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "LFT PROPH UNIQ TIME E L G _ Own".
     rewrite /ltype_own /= /leaf_owned_s /leaf_owned /ofty_owned /=.
     iDestruct "Own" as (x' ->) "[Pt Gho]". iModIntro. iIntros "£".
@@ -146,7 +150,7 @@ Section lty_res.
   Lemma lty_res_copy {𝔄} E L (ty: type 𝔄) `{!Copy ty} Φ :
     resolve E L ty Φ → lty_res E L (OfTy ty) (OfTy ty) 1 (λ x _ _, Φ x).
   Proof.
-    intros Rslv. split; [done|]. split; [done|].
+    intros Rslv. split; [done|done|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "LFT PROPH UNIQ TIME E L G _ Own".
     rewrite /ltype_own /= /leaf_owned_s /leaf_owned /ofty_owned /=.
     iDestruct "Own" as (x' ->) "[Pt #Gho]". iModIntro. iIntros "£".
@@ -163,8 +167,8 @@ Section lty_res.
     lty_res E L (ProdLty lt1 lt2) (ProdLty lt1' lt2') (k1 + k2)
       (λ x ζm q π, Φ1 x.1 ζm (false :: q) π ∧ Φ2 x.2 ζm (true :: q) π).
   Proof.
-    intros (Hs1 & Hn1 & Rslv1) (Hs2 & Hn2 & Rslv2).
-    split; [done|]. split; [by rewrite /= Hn1 Hn2|].
+    intros [Hs1 Hn1 Rslv1] [Hs2 Hn2 Rslv2].
+    split; [done|by rewrite /= Hn1 Hn2|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "#LFT #PROPH #UNIQ #TIME #E #L G #⧖ Own".
     rewrite /ltype_own /= /prod_node. iDestruct "Own" as "[Own1 Own2]".
     iApply ctask_fupd.
@@ -186,7 +190,7 @@ Section lty_res.
     lty_res E L lt lt' k Φ →
     lty_res E L (OwnPtrLty n lt) (OwnPtrLty n lt') k (λ x ζm q π, Φ x.2 ζm (false :: q) π).
   Proof.
-    intros (Hs & Hn & Rslv). split; [done|]. split; [by rewrite /= Hn|].
+    intros [Hs Hn Rslv]. split; [done|by rewrite /= Hn|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "LFT PROPH UNIQ TIME E L G ⧖ Own".
     rewrite /ltype_own /=. destruct x as [l' x]. iDestruct "Own" as "(Pt & %Hd0 & Fr & Own)".
     iDestruct (Rslv G (m + 1) x ζm (false :: q) (pred d) g D tid _ with
@@ -200,7 +204,7 @@ Section lty_res.
     lty_res E L (SumLty tyl i lt) (SumLty tyl i lt') k
       (λ x ζm q π, ∀ y, psum_proj i x = Some y → Φ y ζm (false :: q) π).
   Proof.
-    intros (Hs & Hn & Rslv). split; [done|]. split; [done|].
+    intros [Hs Hn Rslv]. split; [done|done|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "LFT PROPH UNIQ TIME E L G ⧖ Own".
     rewrite lty_rfn_sum. destruct (psum_proj i x) as [y|] eqn:Hy; last first.
     { by rewrite /ltype_own /= /prfn_dummy /sum_node /=. }
@@ -344,7 +348,7 @@ Section lty_res_uniq.
     lty_res E L (UniqLty (OfTy ty) κ) (ResUniqLty (OfTy ty) κ) 1 (λ x _ _ π,
       (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 = vπ (uniq_bor_current x) π).
   Proof.
-    intros Alv. split; [done|]. split; [done|].
+    intros Alv. split; [done|done|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "LFT PROPH UNIQ TIME E GL G ⧖ Own".
     destruct x as [[[[[l' x0] ξi] d0] g0] idx0].
     rewrite /ltype_own /=. iDestruct "Own" as "[Pt N]".
@@ -361,7 +365,7 @@ Section lty_res_uniq.
       (π (uniq_prvar (uniq_bor_current x) (uniq_bor_ξi x))).1 =
         prfn_den (lty_rfn lt (uniq_bor_current x) ζm (false :: q)) π).
   Proof.
-    intros Alv Alvs Hc Hv. split; [done|]. split; [done|].
+    intros Alv Alvs Hc Hv. split; [done|done|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "LFT PROPH UNIQ TIME E GL G ⧖ Own".
     destruct x as [[[[[l' x0] ξi] d0] g0] idx0].
     rewrite /ltype_own /=. iDestruct "Own" as "[Pt N]".
@@ -379,15 +383,16 @@ End lty_res_uniq.
   [ResUniqLty lt κ] ([vroot_res_uniq_leaf], [vroot_res_uniq_cpd], from the [nval]s of
   [uniq_nval_res_leaf], [uniq_nval_res_cpd]). (An owned pointer at the root is the hole of
   [POwn n PHole], resolved by [lty_res].) *)
-Definition vroot_res `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (lt lt': lty 𝔄) (k: nat)
-    (Φ: ~~𝔄 → blk_map → proph_asn → Prop) : Prop :=
-  lty_vnrc lt' = lty_vnrc lt ∧
-  ∀ G x ζm D tid v, Timeless G →
+Record vroot_res `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (lt lt': lty 𝔄) (k: nat)
+    (Φ: ~~𝔄 → blk_map → proph_asn → Prop) : Prop := VrootRes {
+  vroot_res_vnrc : lty_vnrc lt' = lty_vnrc lt;
+  vroot_res_upd : ∀ G x ζm D tid v, Timeless G →
     ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
       (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗ ⧖D -∗
       vroot_own lt (lty_vrfn lt x ζm) D tid v -∗
       ctask (advance_credits D) k
-        (⟨π, Φ x ζm π⟩ ∗ G ∗ vroot_own lt' (lty_vrfn lt' x ζm) D tid v).
+        (⟨π, Φ x ζm π⟩ ∗ G ∗ vroot_own lt' (lty_vrfn lt' x ζm) D tid v)
+}.
 
 Section vroot_res.
   Context `{!typeG Σ}.
@@ -428,14 +433,16 @@ End vroot_res.
   itself ([K = PHole], [vroot_res]) or a sub-place of a place rooted at an owned location
   ([K = POwn n K'], [lty_res] at the hole, at the path [pctx_vpath K]). Below a unique borrow,
   a shared reference or a resolved unique borrow there is nothing to resolve (a resolved place
-  has no interpretation in [Uniq] mode). *)
-Definition pctx_res `{!typeG Σ} {𝔅 𝔄} (E: elctx) (L: llctx) (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅)
-    (k: nat) (Φ: ~~𝔅 → blk_map → lpath → proph_asn → Prop) : Prop :=
-  match K with
-  | PHole => vroot_res E L lt lt' k (λ x ζm, Φ x ζm [])
-  | POwn _ _ => lty_res E L lt lt' k Φ
-  | _ => False
-  end.
+  has no interpretation in [Uniq] mode). An inductive (as [lty_res] and [vroot_res] are
+  records), so that unification never unfolds it: [apply pctx_res_own] (or
+  [pctx_res_root]), then the [lty_res] (or [vroot_res]) instances. *)
+Inductive pctx_res `{!typeG Σ} (E: elctx) (L: llctx) :
+    ∀ {𝔅 𝔄}, pctx 𝔅 𝔄 → lty 𝔅 → lty 𝔅 → nat →
+      (~~𝔅 → blk_map → lpath → proph_asn → Prop) → Prop :=
+| pctx_res_root {𝔅} (lt lt': lty 𝔅) k Φ :
+    vroot_res E L lt lt' k Φ → pctx_res E L PHole lt lt' k (λ x ζm _, Φ x ζm)
+| pctx_res_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') (lt lt': lty 𝔅) k Φ :
+    lty_res E L lt lt' k Φ → pctx_res E L (POwn n K) lt lt' k Φ.
 
 Section typing.
   Context `{!typeG Σ}.
@@ -444,18 +451,20 @@ Section typing.
       program steps ([skipn k]; no memory access, no new lifetime, no new borrow): the place
       is kept, at the same value, with [lt'] (resolved leaves [OfRes], resolved unique borrows
       [ResUniqLty], …) at the hole, and [Φ] is learnt. Forgetting the place afterwards
-      ([tctx_incl_resolve_head]) gives up it, e.g. a unique borrow at the end of its use. *)
+      ([tctx_incl_resolve_head]) gives up it, e.g. a unique borrow at the end of its use.
+      The instruction [e] is any expression equal to [skipn k], so that [k] is given by the
+      derivation of [pctx_res] (solve that premise first; the equation is then [done]):
+      unification cannot infer [k] from the program. *)
   Lemma type_resolve_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxNoUniq K}
-      (lt lt': lty 𝔅) k Φ :
-    pctx_res E L K lt lt' k Φ →
-    typed_instr E L I +[p ◁ₗ pctx_plug K lt] (place_resolve.skipn k)
+      (lt lt': lty 𝔅) k Φ e :
+    pctx_res E L K lt lt' k Φ → place_resolve.skipn k = e →
+    typed_instr E L I +[p ◁ₗ pctx_plug K lt] e
       (const +[p ◁ₗ pctx_plug K lt'])
       (λ post '-[x], λ mask π, Φ (pctx_get K x.1) x.2 (pctx_vpath K) π → post -[x] mask π).
   Proof.
-    rename select (PctxNoUniq K) into HK.
-    destruct K as [| | |𝔅 𝔄' n K| | | |]; try done; intros HR.
+    rename select (PctxNoUniq K) into HK. intros HR <-. revert HK.
+    destruct HR as [𝔅 lt lt' k Φ [Hn Rslv]|𝔅 𝔄' n K lt lt' k Φ [Hs Hn Rslv]]; intros HK.
     - (* The root. *)
-      destruct HR as [Hn Rslv].
       iIntros (tid post mask iκs [x []])
         "#LFT #TIME #PROPH #UNIQ #E L I [(%v & %Hp & Own) _] Obs".
       destruct x as [x₀ ζm]. rewrite vplace_own_eq.
@@ -477,7 +486,6 @@ Section typing.
         by apply Imp.
     - (* The hole of a place rooted at an owned location. *)
       have ?: PctxNoUniq K by done.
-      destruct HR as (Hs & Hn & Rslv).
       iIntros (tid post mask iκs [x []])
         "#LFT #TIME #PROPH #UNIQ #E L I [(%v & %Hp & Own) _] Obs".
       destruct x as [[l x₀] ζm].

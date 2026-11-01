@@ -182,8 +182,8 @@ Section unblock.
   Qed.
 
   (** Once [α] has ended, the blocked leaf at the hole of [K2] in the view of the resolved
-      unique borrow at the hole of [K] (it was reborrowed below the borrow, at
-      [pctx_blft (PUniq κ K2) α]) is unblocked: its inheritance is fired (inside its
+      unique borrow at the hole of [K] (it was reborrowed below the borrow, at [α]) is
+      unblocked: its inheritance is fired (inside its
       borrow at the lifetime of the view), and it is shared at that lifetime. The value of
       the leaf is the final value of its reborrow. *)
   Lemma unblock_tctx_oplace_res {ℭ 𝔅 𝔄 𝔄l 𝔄l'} p n α (K: pctx (uniq_borₛ 𝔅) 𝔄)
@@ -193,7 +193,7 @@ Section unblock.
     lctx_lft_incl E L (pctx_slft K2 κ) (ty_lft ty) →
     unblock_tctx E L α T T' f →
     unblock_tctx E L α
-      (p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (Blocked ty (pctx_blft (PUniq κ K2) α))) κ)
+      (p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (Blocked ty (α))) κ)
         +:: T)
       (p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (OfTy ty)) κ) +:: T')
       (λ π '(x -:: xl), λ '(x' -:: xl'),
@@ -209,7 +209,6 @@ Section unblock.
     iIntros (Alv Incl Un G tid [x xl] ?)
       "#LFT #TIME #PROPH #UNIQ #E #L G #†α /=[(%v & %Hp & Own) T]".
     destruct x as [[l x₀] ζm].
-    set β := pctx_blft (PUniq κ K2) α.
     iDestruct "Own" as (D d g) "(#⧖0 & ⧗ & -> & %Hle & Fr & Own)".
     (* The receipts of the leaf. *)
     set e0 := pctx_mode K 0 + 1.
@@ -242,7 +241,7 @@ Section unblock.
     { iApply (guards_transitive with "GhT"). iApply (guards_transitive with "Lα").
       iApply llftl_intersect_incl_r. }
     (* The hole of [K]: the resolved unique borrow. *)
-    set lt1 := ResUniqLty (pctx_plug K2 (Blocked ty β)) κ.
+    set lt1 := ResUniqLty (pctx_plug K2 (Blocked ty α)) κ.
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
     iDestruct "Own" as "[H Rest]".
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
@@ -259,12 +258,12 @@ Section unblock.
     iMod (lc_fupd_elim_laterN with "£m N") as "(#InclK & %d' & %g' & %Hle' & V)".
     rewrite lty_pat_plug lty_rfn_plug.
     set w := pctx_get K2 z. set ζi := blk_lookup ζm (pctx_path K2 (false :: q0)).
-    iDestruct (view_pctx_acc K2 κ (Blocked ty β) 0 (PatBlocked β)
+    iDestruct (view_pctx_acc K2 κ (Blocked ty α) 0 (PatBlocked α)
       (inl (PlaceGhost w ζi)) z ζm (false :: q0) d' g' tid ly (fractional.half γ1)
       with "Hs V") as (dh gh) "([%Hdh [%Hgh %Hin]] & Vh & #Gs & Cl)".
     iEval (rewrite /= /view_leaf) in "Vh". iRename "Vh" into "Bor".
     set κh := pctx_slft K2 κ.
-    set lh := pctx_loc K2 (lty_size (Blocked ty β)) z ly.
+    set lh := pctx_loc K2 (lty_size (Blocked ty α)) z ly.
     iMod (fractional.frac_split_guard_in_half NllftG (fractional.half γ1) (fractional.half γ1)
       with "GP []") as (γ2) "[H1 [H2 [#Gh2 #Back2]]]"; [solve_ndisj|iApply guards_refl|].
     iAssert (fractional.half γ2 &&{↑NllftG}&&> @[κh])%I as "#H2κ".
@@ -275,7 +274,7 @@ Section unblock.
     iMod (llftl_bor_acc_guarded with "LFT Bor H2κ H1") as "[Inh Close]"; [solve_ndisj|].
     iMod (lc_fupd_elim_later with "£1 Inh") as "Inh".
     iMod (fupd_mask_mono with "(Inh [])") as "Upd1"; [rewrite /lazyE; solve_ndisj| |].
-    { by iApply pctx_blft_dead. }
+    { iExact "†α". }
     iMod (guarded_upd_run with "H2ty H2 Upd1")
       as "(H2 & %x' & %d1 & %g1 & Eqz & #⧖1 & Pt1 & Gho1)"; [rewrite /lazyE; solve_ndisj|].
     (* The credits of the second receipt, for the leaf. *)
@@ -327,7 +326,7 @@ Section unblock.
         ltype_own_plug.
       iSplitR "Rest"; last first.
       { iApply (pctx_own_depth_mono with "Rest"); lia. }
-      rewrite /= /res_node /= (lty_fold_plug_eq' K2 (OfTy ty) (Blocked ty β)) //.
+      rewrite /= /res_node /= (lty_fold_plug_eq' K2 (OfTy ty) (Blocked ty α)) //.
       iFrame "Pt". iApply bi.laterN_intro.
       iFrame "InclK". iExists dn, gn. iSplit.
       { iPureIntro. rewrite pctx_depth_sub. lia. }
@@ -339,7 +338,7 @@ Section unblock.
 
   (** Once [α] has ended, the shared-blocked leaf at the hole of [K2] in the view of the
       resolved unique borrow at the hole of [K] (it was shared below the borrow, at
-      [pctx_blft (PUniq κ K2) α]) is shared at the lifetime of the view: its inheritance
+      [α]) is shared at the lifetime of the view: its inheritance
       is fired inside its borrow (kept in the view, [view_leaf]), and the restored leaf
       is shared ([leaf_share_view]), with the credits of its receipt. Its value does not
       change. *)
@@ -351,14 +350,13 @@ Section unblock.
     unblock_tctx E L α T T' f →
     unblock_tctx E L α
       (p ◁ₗown{n} pctx_plug K
-        (ResUniqLty (pctx_plug K2 (ShrBlocked ty (pctx_blft (PUniq κ K2) α))) κ) +:: T)
+        (ResUniqLty (pctx_plug K2 (ShrBlocked ty (α))) κ) +:: T)
       (p ◁ₗown{n} pctx_plug K (ResUniqLty (pctx_plug K2 (OfTy ty)) κ) +:: T')
       (λ π '(x -:: xl), λ '(x' -:: xl'), x' = x ∧ f π xl xl').
   Proof.
     iIntros (Alv Incl Un G tid [x xl] ?)
       "#LFT #TIME #PROPH #UNIQ #E #L G #†α /=[(%v & %Hp & Own) T]".
     destruct x as [[l x₀] ζm].
-    set β := pctx_blft (PUniq κ K2) α.
     iDestruct "Own" as (D d g) "(#⧖0 & ⧗ & -> & %Hle & Fr & Own)".
     (* The receipt of the leaf. *)
     set e0 := pctx_mode K 0 + 1.
@@ -369,7 +367,7 @@ Section unblock.
       rewrite (_: 0 + (0 + pctx_mode K 0) + 1 = e0); [|rewrite /e0; lia].
       rewrite /e'. lia. }
     have He'1: 1 ≤ e'. { unfold e', e0. have := pctx_ne_ge K2 (pctx_mode K 0 + 1) 0. lia. }
-    have Hsb: lty_nrc (ShrBlocked ty β) e' (pctx_nmm K2 e0 0) = 1.
+    have Hsb: lty_nrc (ShrBlocked ty α) e' (pctx_nmm K2 e0 0) = 1.
     { simpl. destruct e'; [lia|done]. }
     rewrite Hnrc Hsb.
     iDestruct (cumulative_time_receipt_sep with "⧗") as "[⧗r ⧗a]".
@@ -386,7 +384,7 @@ Section unblock.
     iAssert (fractional.half γ1 &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
     { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
     (* The hole of [K]: the resolved unique borrow. *)
-    set lt1 := ResUniqLty (pctx_plug K2 (ShrBlocked ty β)) κ.
+    set lt1 := ResUniqLty (pctx_plug K2 (ShrBlocked ty α)) κ.
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
     iDestruct "Own" as "[H Rest]".
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
@@ -402,13 +400,13 @@ Section unblock.
     iMod (lc_fupd_elim_laterN with "£m N") as "(#InclK & %d' & %g' & %Hle' & V)".
     rewrite lty_pat_plug lty_rfn_plug.
     set w := pctx_get K2 z.
-    iDestruct (view_pctx_acc K2 κ (ShrBlocked ty β) 0 (PatShrBlocked β)
+    iDestruct (view_pctx_acc K2 κ (ShrBlocked ty α) 0 (PatShrBlocked α)
       (inl (PlaceIn w)) z ζm (false :: q0) d' g' tid ly (fractional.half γ1)
       with "Hs V") as (dh gh) "([%Hdh [%Hgh %Hin]] & Vh & #Gs & Cl)".
     iEval (rewrite /= /view_leaf) in "Vh".
     iDestruct "Vh" as (x1 ->) "(_ & _ & _ & %d1 & %g1 & [%Hd1 %Hg1] & Bor)".
     set κh := pctx_slft K2 κ.
-    set lh := pctx_loc K2 (lty_size (ShrBlocked ty β)) z ly.
+    set lh := pctx_loc K2 (lty_size (ShrBlocked ty α)) z ly.
     have Hdl: pctx_dlev K2 ≤ D.
     { rewrite pctx_depth_sub in Hle'. lia. }
     iDestruct (lc_weaken (1 + (m2 + d1 + 1)) with "£") as "[£1 £s]".
@@ -418,7 +416,7 @@ Section unblock.
     iMod (llftl_bor_acc_guarded with "LFT Bor Hsl GP") as "[Inh Close]"; [solve_ndisj|].
     iMod (lc_fupd_elim_later with "£1 Inh") as "Inh".
     iMod (fupd_mask_mono with "(Inh [])") as "Own1"; [rewrite /lazyE; solve_ndisj| |].
-    { by iApply pctx_blft_dead. }
+    { iExact "†α". }
     (* Close the borrow at the restored contents. *)
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
     iMod ("Close" $! (ofty_owned m2 ty w d1 g1 tid lh) with "[Own1]") as "[Bor GP]".
@@ -443,7 +441,7 @@ Section unblock.
     iFrame "Fr". rewrite Hnrc /= Nat.add_0_r. iFrame "⧗r".
     iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug -/y Hy. iFrame "Rest".
-    rewrite /= /res_node /= (lty_fold_plug_eq' K2 (OfTy ty) (ShrBlocked ty β)) //.
+    rewrite /= /res_node /= (lty_fold_plug_eq' K2 (OfTy ty) (ShrBlocked ty α)) //.
     iFrame "Pt". iApply bi.laterN_intro.
     iFrame "InclK". iExists d', g'. iSplit; [done|].
     rewrite lty_pat_plug lty_rfn_plug. iExact "V'".
