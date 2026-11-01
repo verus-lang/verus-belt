@@ -88,6 +88,11 @@ Definition write (m : mty) (e1 e2 : expr) : expr := Store Na1Ord m e1 e2.
     [typing/place_memcpy.v]); notation [e1 <-ᵇ{n} e2]. *)
 Definition memcpy (n : nat) (e1 e2 : expr) : expr := MemCopy Na1Ord n e1 e2.
 
+(** A shared borrow of the place at the address [e]: the pointer value of the address
+    ([OfLit]). It is the instruction of the unified shared borrow ([type_share_place_instr]
+    of [typing/place_share.v]); notation [&ˢ e]. *)
+Definition share (e : expr) : expr := OfLit e.
+
 Fixpoint is_closed (X : list string) (e : expr) : bool :=
   match e with
   | Var x => bool_decide (x ∈ X)

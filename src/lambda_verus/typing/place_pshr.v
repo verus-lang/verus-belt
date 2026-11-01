@@ -44,8 +44,8 @@
     hole of [K1];
   - (b) [shr_view_copy]: the ownership of a [Copy] leaf from its shared view (used by the
     read access [wp_vplace_racc] of [place_read.v], for the read rule and the byte copies);
-  - (c) [type_share_vplace_pshr_instr]: a shared reference to a sub-place, at
-    [pctx_slft K2 κ];
+  - (c) a shared reference to a sub-place, at [pctx_slft K2 κ]: [type_share_place_instr] of
+    [place_share.v];
   - (d) [type_case_vplace_pshr]: case analysis on a sum (a guarded typed [Load] of its
     tag), recording the variant in the place type;
   - (e) resolve/drop: a [ShrLty] is a leaf ([lty_rslv_shr]).
@@ -735,102 +735,8 @@ Section typing.
   (* (b) Reading a leaf below a shared reference: the read access [wp_vplace_racc] of
      [place_read.v] ([shr_view_copy] and the guard of the bytes of the shared view). *)
 
-  (** ** (c) Shared borrow of a sub-place below a shared reference *)
-
-  Lemma type_share_vplace_pshr_root_instr {ℭ 𝔅} E L I p κ (K2: pctx ℭ 𝔅) (lt: lty ℭ) :
-    lctx_lft_alive E L (pctx_salv K2 κ) →
-    typed_instr E L I +[p ◁ₗ ShrLty (pctx_plug K2 lt) κ] (OfLit (pctx_expr K2 (ToLit p)))
-      (λ v, +[v ◁ᵥ &shr{pctx_slft K2 κ} (lty_fold lt); p ◁ₗ ShrLty (pctx_plug K2 lt) κ])
-      (λ post '-[x], post -[(pctx_loc K2 (lty_size lt) x.1.2 x.1.1, pctx_get K2 x.1.2); x]).
-  Proof.
-    iIntros (Alv tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
-    destruct x as [x ζm].
-    iDestruct "Tp" as (v Hp) "Tp". rewrite vplace_own_eq.
-    iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
-    iDestruct (Alv with "L E") as "#Alv".
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
-    iIntros "£ #⧖S". iApply wp_fupd.
-    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
-      [solve_ndisj|].
-    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
-    { iApply (guards_transitive with "Ghalf Alv"). }
-    iDestruct (lc_weaken (pshr_cred D) with "£") as "£a";
-      [have := pshr_cred_step D; lia|].
-    wp_bind (pctx_expr K2 (ToLit p)).
-    iApply (wp_pshr_open_root _ κ K2 lt (pctx_plug K2 lt) x D tid v p (fractional.half γh)
-      with "Hs H1 £a [] Own"); [solve_ndisj|done|done|..].
-    { iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
-    iIntros (dh Hdh [Hin2 Hvin]) "H1 Own #V".
-    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    wp_pure _. iModIntro.
-    iExists -[(pctx_loc K2 (lty_size lt) x.2 x.1, pctx_get K2 x.2); (x, ζm)].
-    iFrame "L I Obs". iSplitR "Own ⧗p".
-    { rewrite tctx_val_val. iExists D. iFrame "⧖". iSplit; [done|].
-      destruct D as [|D']; [lia|].
-      iDestruct (shr_view_depth_mono _ _ _ _ _ D' (S D') with "V") as "#V'"; [lia|lia|].
-      iApply (shr_bor_gho_of_view with "V'"). }
-    iSplit; [|done]. iExists _. iSplit; [done|]. rewrite vplace_own_eq. iExists D. by iFrame.
-  Qed.
-
-  (** A shared reference to the hole of [K2] below the shared reference at the hole of [K]
-      ([&( *r).f] for [r: &T], [&( **x).0] for [x: &mut &(T, U)], …), at the lifetime of
-      the view of the hole ([pctx_slft K2 κ]: the innermost shared reference, intersected
-      with the unique borrows below it). The place is unchanged; [K]'s borrows need only
-      be alive during the instruction. *)
-  Lemma type_share_vplace_pshr_instr {ℭ 𝔅 𝔄} E L I p (K: pctx (at_locₛ 𝔅) 𝔄)
-      `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx ℭ 𝔅) (lt: lty ℭ) :
-    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
-    lctx_lft_alive E L (pctx_salv K2 κ) →
-    typed_instr E L I +[p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 lt) κ)]
-      (OfLit (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K p)))))
-      (λ v, +[v ◁ᵥ &shr{pctx_slft K2 κ} (lty_fold lt);
-        p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 lt) κ)])
-      (λ post '-[x], post -[(pctx_loc K2 (lty_size lt) (pctx_get K x.1).2 (pctx_get K x.1).1,
-        pctx_get K2 (pctx_get K x.1).2); x]).
-  Proof.
-    iIntros (Alv1 Alv2 tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
-    destruct x as [x₀ ζm].
-    iDestruct "Tp" as (v Hp) "Tp". iEval (rewrite vplace_own_open) in "Tp".
-    iDestruct "Tp" as (D) "(#⧖ & ⧗p & Own)".
-    iDestruct (Alv1 with "L E") as "#Alv1". iDestruct (Alv2 with "L E") as "#Alv2".
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
-    iIntros "£ #⧖S". iApply wp_fupd.
-    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
-      [solve_ndisj|].
-    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)])%I
-      as "#Hu". { iApply (guards_transitive with "Ghalf Alv1"). }
-    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
-    { iApply (guards_transitive with "Ghalf Alv2"). }
-    iDestruct (lc_weaken (pshr_cred D) with "£") as "£a";
-      [have := pshr_cred_step D; lia|].
-    set y := pctx_get K x₀.
-    wp_bind (pctx_expr K2 _).
-    iApply (wp_pshr_open _ K κ K2 lt (pctx_plug K2 lt) x₀ ζm D tid _ p (fractional.half γh)
-      with "LFT PROPH UNIQ Hu Hs H1 £a ⧖ [] Own"); [solve_ndisj|done|done|..].
-    { iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
-    iIntros (dh Hdh [Hin1 [Hin2 Hvin]]) "H1 Own #V".
-    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    wp_pure _. iModIntro.
-    iExists -[(pctx_loc K2 (lty_size lt) y.2 y.1, pctx_get K2 y.2); (x₀, ζm)].
-    iFrame "L I Obs". iSplitR "Own ⧗p".
-    { rewrite tctx_val_val. iExists D. iFrame "⧖". iSplit; [done|].
-      destruct D as [|D']; [lia|].
-      iDestruct (shr_view_depth_mono _ _ _ _ _ D' (S D') with "V") as "#V'"; [lia|lia|].
-      iApply (shr_bor_gho_of_view with "V'"). }
-    iSplit; [|done]. iExists _. iSplit; [done|]. by iApply (vplace_own_close with "⧖ ⧗p").
-  Qed.
-
-  Lemma type_share_oplace_pshr_instr {ℭ 𝔅 𝔄} E L I p n (K: pctx (at_locₛ 𝔅) 𝔄)
-      `{!PctxNoShr K} κ (K2: pctx ℭ 𝔅) (lt: lty ℭ) :
-    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 lt) κ)) →
-    lctx_lft_alive E L (pctx_salv K2 κ) →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 lt) κ)]
-      (OfLit (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p))))))
-      (λ v, +[v ◁ᵥ &shr{pctx_slft K2 κ} (lty_fold lt);
-        p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 lt) κ)])
-      (λ post '-[x], post -[(pctx_loc K2 (lty_size lt) (pctx_get K x.1.2).2 (pctx_get K x.1.2).1,
-        pctx_get K2 (pctx_get K x.1.2).2); x]).
-  Proof. intros. by apply (type_share_vplace_pshr_instr _ _ _ _ (POwn n K)). Qed.
+  (* (c) The shared borrow of a sub-place below a shared reference is
+     [type_share_place_instr] of [place_share.v]. *)
 End typing.
 
 (** * (d) Case analysis on a sum below a shared reference *)

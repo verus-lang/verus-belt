@@ -22,8 +22,8 @@
   - [lty_rslv], [type_resolve_oplace_deep_instr], [type_drop_oplace_deep_instr]: resolving
     and dropping an owned place with nested unique borrows whose leaves are blocked
     ([lty_rslv_uniq_blk]).
-  - [type_share_oplace_deep_instr], [unblock_tctx_oplace_shr_deep]: shared borrow of the
-    hole ([Owned] mode) and unblocking.
+  - [unblock_tctx_oplace_shr_deep]: unblocking a shared-blocked hole (the shared borrow is
+    [type_share_place_instr] of [place_share.v]).
 
   See [design_docs/verus-belt-phase3-design.md], section "PUniq", and the examples [examples/get_first.v] and [examples/place_deep.v]. *)
 
@@ -1174,111 +1174,7 @@ Section puniq.
     injection Hx as -> Hx. naive_solver.
   Qed.
 
-  (** * Shared borrow of a leaf below unique borrows *)
-
-  (** A shared borrow of the leaf at the hole of [K] (in [Owned] mode, below any number of
-      unique borrows) at [pctx_blft K α] (as [type_share_oplace_instr]): the leaf becomes
-      shared-blocked; its value does not change, so no reservation is extended. *)
-  Lemma type_share_vplace_deep_instr {𝔅 𝔄} E L I p α (K: pctx 𝔅 𝔄) `{!PctxNoShr K} `{!PctxVRoot K} (ty: type 𝔅) :
-    pctx_uend K = None →
-    elctx_sat E L (ty_outlives_E ty α) → lctx_lft_alive E L (pctx_ulft K (OfTy ty) ⊓ α) →
-    typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (Share;; OfLit (pctx_vexpr K p))
-      (λ w, +[w ◁ᵥ &shr{pctx_blft K α} ty; p ◁ₗ pctx_plug K (ShrBlocked ty (pctx_blft K α))])
-      (λ post '-[x], post -[(pctx_vloc K (lty_size (OfTy ty)) x.1, pctx_get K x.1); x]).
-  Proof.
-    intros Hu Out Alv tid post mask iκs [x []].
-    iIntros "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
-    destruct x as [x₀ ζm].
-    rewrite /tctx_elt_interp.
-    iDestruct "T" as (v Hp) "T". iEval (rewrite vplace_own_open) in "T".
-    iDestruct "T" as (D) "(#⧖ & ⧗p & Own)". have Hdl: 1 ≤ pctx_dlev K by apply pctx_vroot_dlev.
-    have ?: Closed [] (pctx_vexpr K p).
-    { apply pctx_vexpr_closed. by eapply eval_path_closed. }
-    iDestruct (Out with "L E") as "#Out".
-    iDestruct (elctx_interp_ty_outlives_E with "Out") as "#Incl".
-    iDestruct (Alv with "L E") as "#Alv".
-    set β := pctx_blft K α.
-    (* Two steps, for credits and a cumulative time receipt (for the unblocking, if the leaf
-       is below a unique borrow, see [lty_nrc]). *)
-    wp_bind (Seq Skip Skip). wp_bind Skip. iApply wp_fupd.
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [set_solver|].
-    iIntros "£ #⧖S". wp_let. iModIntro. wp_let. iApply wp_fupd.
-    iApply (wp_cumulative_time_receipt_linear with "TIME ⧖S"); [set_solver|].
-    iIntros "⧗". wp_let. iModIntro. wp_let.
-    iDestruct (cumulative_time_receipt_mono 1 with "⧗") as "⧗1"; [lia|].
-    iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
-      [solve_ndisj|].
-    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (OfTy ty)])%I as "#Hu".
-    { iApply (guards_transitive with "Ghalf"). iApply (guards_transitive with "Alv").
-      iApply llftl_intersect_incl_l. }
-    iAssert (fractional.half γh &&{↑NllftG}&&> @[β])%I as "#Hβ".
-    { iApply (guards_transitive with "Ghalf"). iApply (guards_transitive with "Alv").
-      iApply pctx_ulft_blft. }
-    set y := pctx_get K x₀.
-    iDestruct (lc_weaken (pctx_vacc_cred K D + (3 * (D + 1) * D + (D + (D + 1))))
-      with "£") as "[£a [£w [£k £s]]]";
-      [have := pctx_vacc_cred_le K D; rewrite /advance_credits; nia|].
-    iMod (vroot_acc K (OfTy ty) with "LFT PROPH UNIQ Hu H1 £a Own")
-      as (G' dh gh) "(% & G' & #G'G & -> & %Hdh & H & P & Cl)"; [solve_ndisj|].
-    destruct Hdh as (Hdh & Hgh & Hin).
-    have Hm := pctx_hmode_le K 0.
-    iEval (rewrite (pctx_kind_owned K) //) in "H".
-    iEval (rewrite /pctx_vcloser (pctx_kind_owned K) //) in "Cl".
-    set mh := pctx_hmode K 0.
-    set lK := pctx_vloc K (lty_size (OfTy ty)) x₀.
-    iDestruct "H" as (? ->) "[Pt1 Gho1]".
-    (* The address of the hole. *)
-    iApply wp_fupd. wp_bind (pctx_vexpr K p).
-    iApply (wp_wand with "[P G' £w]").
-    { iApply (wp_pctx_vptrs ⊤ K (lty_size (OfTy ty)) G' x₀ p True%I with "[G'] P").
-      iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
-    iIntros (w) "(-> & _ & G' & P)". wp_pure _.
-    iDestruct (lc_weaken mh with "£k") as "£k"; [lia|].
-    iMod (lc_fupd_elim_laterN with "£k Gho1") as "Gho1".
-    (* Share the contents of the leaf. *)
-    iAssert (β ⊑ ty_lft ty)%I as "#Inclβ".
-    { iApply llftl_incl_trans; [iApply pctx_blft_incl_r|]. iApply "Incl". }
-    iMod (ofty_owned_share mh with "LFT Inclβ Hβ H2 [£s] Pt1 Gho1") as "(H2 & #Pers & Leaf)".
-    { iApply (lc_weaken with "£s"). lia. }
-    iAssert ((@[β] &&{↑NllftG; gh+1}&&> cbytes ty y lK) ∗
-      ty.(ty_shr) β y dh gh tid)%I as "#[GPt Shr]".
-    { by iDestruct "Leaf" as (? ->) "(#$ & #$ & _)". }
-    iMod ("Cl" $! (ShrBlocked ty β) (inl (PlaceIn y)) dh gh D [] 1%Qp True%I
-      with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Leaf]") as "(Own & H1 & _)".
-    { intros ??. apply prfn_rsv_in. }
-    { lia. }
-    { iRight. iApply big_sepL_intro. iIntros "!>" (i κ Hi). rewrite /pat_ok /=. iSplit; [|done].
-      iApply pctx_blft_incl. by eapply elem_of_list_lookup_2. }
-    { done. }
-    { iIntros "_ !>". by iFrame "Leaf". }
-    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    iModIntro. iExists -[(lK, y); (x₀, ζm)].
-    iFrame "L I". iSplit; last first.
-    { iApply (proph_obs_impl with "Obs")=> π Hπ. exact Hπ. }
-    iSplitR.
-    { iExists _. iSplit; [by rewrite eval_path_of_val|]. rewrite -(val_own_intro_sep _ _ _ _ _ D); [|done|done].
-      iFrame "⧖".
-      destruct D as [|D']; [lia|].
-      iApply (shr_bor_own_intro with "[] Shr Pers"); [lia|lia|].
-      iApply (lguards_weaken_later with "GPt"). lia. }
-    iSplit; [|done]. iExists _. iSplit; [done|].
-    iApply (vplace_own_close with "⧖ [⧗p ⧗1]"); [|done].
-    iDestruct (cumulative_time_receipt_sep with "[$⧗p $⧗1]") as "⧗".
-    iApply (cumulative_time_receipt_mono with "⧗"). rewrite !lty_vnrc_plug /=.
-    destruct (pctx_vne K); lia.
-  Qed.
-
-  Lemma type_share_oplace_deep_instr {𝔅 𝔄} E L I p n α (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (ty: type 𝔅) :
-    pctx_uend K = None →
-    elctx_sat E L (ty_outlives_E ty α) → lctx_lft_alive E L (pctx_ulft K (OfTy ty) ⊓ α) →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy ty)] (Share;; OfLit (pctx_expr K (ToLit p)))
-      (λ w, +[w ◁ᵥ &shr{pctx_blft K α} ty; p ◁ₗown{n} pctx_plug K (ShrBlocked ty (pctx_blft K α))])
-      (λ post '-[x], post -[(pctx_loc K (lty_size (OfTy ty)) x.1.2
-          x.1.1, pctx_get K x.1.2); x]).
-  Proof.
-    intros. eapply typed_instr_tr_impl; [|by apply (type_share_vplace_deep_instr _ _ _ _ _ (POwn n K))].
-    intros post [x []] mask π. by rewrite /pctx_vloc /=.
-  Qed.
+  (** * Unblocking a shared leaf below unique borrows *)
 
   (** Unblocking a shared leaf below unique borrows, once [α] has ended (as
       [unblock_tctx_oplace_shr]): the value and the depths do not change; the receipt of

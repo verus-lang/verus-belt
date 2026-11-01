@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product sum value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_read.
+From lrust.typing Require Export type programs cont int product sum value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_read place_share.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -217,8 +217,8 @@ Section place_pshr.
   ```
   The argument is a unique borrow value, the root of the place: `**x` (a shared reference,
   below [PUniq 'a], in [Uniq] mode) is unfolded and the view of `***x` is changed to a
-  pair; `&( **x).0` is a shared reference at ['b] ([type_share_vplace_pshr_instr],
-  [K = PUniq 'a PHole], [K2 = PFst PHole _]): the shared reference stored in `*x` is
+  pair; `&( **x).0` is a shared reference at ['b] ([type_share_place_instr],
+  [K = PUniq 'a (PShr 'b (PFst PHole _))]): the shared reference stored in `*x` is
   loaded from the body of the unique borrow, so the result does not depend on ['a] (as in
   Rust); the place is folded back and `x` is resolved to its current value.
   *)
@@ -226,7 +226,7 @@ Section place_pshr.
     Skip;;                                                     (* x as a place *)
     ReBor;;                                                    (* unfold **x *)
     ReBor;;                                                    (* view ***x as a pair *)
-    let: "r" := OfLit (ToLit (Load Na1Ord MPtr (ToLit "x"))) in (* &( **x).0 *)
+    let: "r" := &ˢ (ToLit (Load Na1Ord MPtr (ToLit "x"))) in (* &( **x).0 *)
     ReBor;; ReBor;;                                            (* fold back *)
     Skip;;                                                     (* resolve x *)
     jump: "return" ["r"])%E.
@@ -266,8 +266,8 @@ Section place_pshr.
       { solve_typing. } { reflexivity. }
       (* &( **x).0 *)
       iApply (type_let with "[]").
-      { apply (type_share_vplace_pshr_instr _ _ _ vx (PUniq α PHole) β
-          (PFst PHole (OfTy i32t)) (OfTy i32t)); solve_typing. }
+      { eapply (type_share_place_instr _ _ _ vx (PUniq α (PShr β (PFst PHole (OfTy i32t))))
+          static (OfTy i32t) i32t); [by split|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       (* fold back *)
