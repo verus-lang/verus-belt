@@ -148,7 +148,7 @@ Section place_res.
   fin(x) == ((3, ( **old(x)).1), fin( *old(x)))`. The argument is a box of bytes, an owned
   place; `*x`, `**x` (and `**x` as a pair) are unfolded; `( **x).0` is reborrowed
   ([type_borrow_oplace_deep_instr]); `x` is resolved ([type_resolve_oplace_res_instr],
-  [lty_res_uniq_cpd]); `( **x).1` is read in the view ([type_read_oplace_res_instr], a
+  [lty_res_uniq_cpd]); `( **x).1` is read in the view ([type_read_place_instr], a
   guarded typed load); `*r = 3` is a typed [Store] through the reborrow; when the local
   lifetime ends, `( **x).0` is unblocked in the view ([unblock_tctx_oplace_res]) and read;
   the slot is dropped.
@@ -159,14 +159,14 @@ Section place_res.
     let: "r" := ReBor;;
       OfLit (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x"))))) in  (* &mut ( **x).0 *)
     (Skip;; #☠);;                                                (* resolve x *)
-    let: "b" := Load Na1Ord (MInt i32)
+    let: "b" := !ᶜ{MInt i32}
       (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x")))) +ₗ #4) in  (* ( **x).1 *)
     let: "three" := MLit (VInt 3) in
     Skip;;                                                       (* r as a place *)
     (ReBor;; Store Na1Ord (MInt i32) (ToLit "r") "three");;      (* *r = 3 *)
     Skip;;                                                       (* resolve r *)
     Endlft;;                                                     (* unblock ( **x).0 *)
-    let: "a" := Load Na1Ord (MInt i32)
+    let: "a" := !ᶜ{MInt i32}
       (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x"))))) in  (* ( **x).0 *)
     (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "x"]);;           (* drop x *)
     jump: "return" ["a"; "b"])%E.
@@ -226,8 +226,9 @@ Section place_res.
       { solve_typing. } { reflexivity. }
       (* ( **x).1 *)
       iApply (type_let with "[]").
-      { eapply typed_instr_tr_impl; [|apply (type_read_oplace_res_instr _ _ _ vx PTR_SIZE PHole α
-          (PUniq β (PSnd (Blocked i32t (α ⊓ (β ⊓ γ))) PHole)) i32t); [apply _|solve_typing]].
+      { eapply typed_instr_tr_impl; [|apply (type_read_place_instr _ _ _ vx
+          (POwn PTR_SIZE (PResUniq α (PUniq β (PSnd (Blocked i32t (α ⊓ (β ⊓ γ))) PHole))))
+          (OfTy i32t) i32t static); [by constructor|apply _|solve_typing]].
         (* (the transformer, stated without the local lifetime) *)
         instantiate (1 := λ post '-[x], post -[(uniq_bor_current (𝔄:=pairₛ)
           (uniq_bor_current (𝔄:=uniq_borₛ pairₛ) x.1.2)).2; x]).
@@ -260,8 +261,9 @@ Section place_res.
         apply unblock_tctx_nil. }
       (* ( **x).0 *)
       iApply (type_let with "[]").
-      { apply (type_read_oplace_res_instr _ _ _ vx PTR_SIZE PHole α
-          (PUniq β (PFst PHole (OfTy i32t))) i32t); [apply _|solve_typing]. }
+      { apply (type_read_place_instr _ _ _ vx
+          (POwn PTR_SIZE (PResUniq α (PUniq β (PFst PHole (OfTy i32t))))) (OfTy i32t) i32t static);
+          [by constructor|apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (va). simpl_subst.
       (* drop x *)
