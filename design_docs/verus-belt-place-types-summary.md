@@ -978,3 +978,67 @@ Lemma type_borrow_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxNoS
 - **Deviations.** Two `Skip`s inside the instruction (above); the leaf is `OfTy ty` only (Rust
   forbids borrowing a borrowed or moved-out place; a shared-blocked leaf is not mutably
   borrowable).
+
+## Unified place resolve (branch `proto/resolve-unify`, 2026-11-01)
+
+One rule resolves a place to a readable state, at the hole of any context whose path is
+owned, the root unique borrow included: `type_resolve_place_instr`
+(`typing/place_res_rslv.v`).
+
+```coq
+Definition pctx_res {𝔅 𝔄} (E: elctx) (L: llctx) (K: pctx 𝔅 𝔄) (lt lt': lty 𝔅)
+    (k: nat) (Φ: ~~𝔅 → blk_map → lpath → proph_asn → Prop) : Prop :=
+  match K with
+  | PHole => vroot_res E L lt lt' k (λ x ζm, Φ x ζm [])
+  | POwn _ _ => lty_res E L lt lt' k Φ
+  | _ => False
+  end.
+
+Lemma type_resolve_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxNoUniq K}
+    (lt lt': lty 𝔅) k Φ :
+  pctx_res E L K lt lt' k Φ →
+  typed_instr E L I +[p ◁ₗ pctx_plug K lt] (place_resolve.skipn k)
+    (const +[p ◁ₗ pctx_plug K lt'])
+    (λ post '-[x], λ mask π, Φ (pctx_get K x.1) x.2 (pctx_vpath K) π → post -[x] mask π).
+```
+
+- **Purely ghost.** The program is `skipn k` (`k` steps, one batch of credits per step for
+  the `ctask` of the judgement); no memory access, no new lifetime or borrow. The place stays,
+  at the same value; its hole becomes readable but not mutable (`OfRes`, `ResUniqLty`, or
+  unchanged), and `Φ` is learnt. The resolution is the generic one: `lty_res` (leaves by
+  `resolve_keep`, any type by `resolve_keep_just`, `Copy` leaves by `resolve`; structural;
+  unfolded unique borrows by `lty_res_uniq_leaf`/`_cpd`).
+- **Contexts.** `PctxNoUniq K`: the hole is in the owned part of the place, below the root
+  owned pointer (`K = POwn n K'`, `lty_res` at the hole, through `ltype_own_plug`), or it is the
+  root of a place rooted at a value (`K = PHole`). Below a unique borrow, a shared reference or
+  a resolved unique borrow there is nothing to resolve (resolved places have no
+  interpretation in `Uniq` mode; the nested borrows are resolved from outside, by
+  `lty_res_uniq_*` on the `UniqLty` above them).
+- **Root.** New judgement `vroot_res E L lt lt' k Φ` (as `lty_res`, on `vroot_own`), with
+  `vroot_res_uniq_leaf` and `vroot_res_uniq_cpd`: a unique borrow value `p ◁ₗ UniqLty lt κ`
+  becomes `p ◁ₗ ResUniqLty lt κ`, its prophecy pre-resolved to the current value. For this,
+  the proofs of `lty_res_uniq_leaf`/`_cpd` were factored through new lemmas on the `nval`s
+  (`uniq_nval_res_leaf`, `uniq_nval_res_cpd`: the node minus its pointer cell), used by both.
+- **Deleted:** `type_resolve_oplace_res_instr` (`place_res_rslv.v`; the instance
+  `K = POwn n PHole`), `type_resolve_vplace_uniq_instr` (`place_resolve.v`; now the root
+  instance `vroot_res_uniq_cpd`, which also needs `lty_vok lt` and `lty_sbl lt` alive instead
+  of `lty_uniq_rslv lt` and the shared lifetimes alive, and covers a leaf referent too, then
+  `tctx_incl_resolve_head` to forget the place) with its proof machinery (`ltype_owned_rslv`,
+  `proph_idx_bor_gen_preresolve_rsv_acc`, `cpd_preresolve`, `lty_uniq_rslv`, `lty_shr_lfts`,
+  `lty_nunblk`, `rslv_cost`, `lctx_lft_alive_list`), `type_resolve_oplace_instr`
+  (`place_resolve.v`) and `type_resolve_oplace_deep_instr` (`place_puniq.v`): resolving and
+  forgetting an owned place is the new rule followed by forgetting (their judgements
+  `lty_resolve`/`lty_rslv` stay, for `resolve_tctx_cons_oplace(_deep)` and the drops).
+  Examples ported: `place_res` (`res_pair`, `res_nested`: `K = POwn n PHole`, `cbn [pctx_res]`
+  before the `lty_res` instances). New example `place_res_root` (`downgrade`:
+  `fn downgrade<'a>(x: &'a mut (i32, i32)) -> &'a (i32, i32) { &*x }`, the root of `x` is
+  resolved and its referent shared below the resolved borrow, `K = PResUniq α PHole`).
+- **Kept (different operations).** `type_resolve_val_instr` (`value_ctx.v`): resolving a
+  value `p ◁ᵥ ty` (not a place) and forgetting it, used throughout the examples for borrow
+  values; `tctx_incl_resolve_head`/`_lower` (`type_context.v`): forgetting context elements
+  (no resolution, no step); `tctx_drop_vplace_uniq`: giving up a root unique borrow with only
+  blocked leaves without a program step (a `tctx_incl`); `resolve_tctx_cons_oplace(_deep)`:
+  resolution of the context at a jump; the drops.
+- **Deviations.** The judgement is per shape of `K` (`pctx_res`: `vroot_res` at the root,
+  `lty_res` at a hole below an owned pointer), since `lty_res` is stated on memory nodes and a
+  root has no pointer cell; the resolved place is kept (forget it to give it up).
