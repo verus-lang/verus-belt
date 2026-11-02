@@ -1027,3 +1027,195 @@ Deviations: the value map is a function `fv` with its prophecy `fp` (as
   `gmb_b γ (ty_fval x) ∗ ty_gho_own ty x` (or a `gmb_b_uniq`). Instances used with `&uniq`
   must be created with bytes mask `lazyB` (`gmb_create_mask`).
 - Typed moves of `pcell` need `↑gmbN` (they have `⊤`).
+
+## Outcome: phase 3
+
+Implemented in the new `typing/gmb_cells.v` (the layer) and `typing/gmb_cells_tests.v`
+(tests), next to the old cell heap, which is untouched. The GMB library changed (prepaid
+credits, see "Changes to the GMB library" below). No typing-rule statement changed.
+`Print Assumptions` of the tests: closed under the global context.
+
+### The instance
+
+```
+Definition gcell_reg g γ m := g ↪[gcells_name]□ (γ, m).          (* registry fragment *)
+Definition gfb l fb := match fb with inl _ => True | inr b => l ↦b [b] end.
+Definition gfbytes l fbs := [∗ list] i ↦ fb ∈ fbs, gfb (l +ₗ i) fb.
+Fixpoint gcells l m fv :=               (* the move rights of the nested cells *)
+  match fv with
+  | FVCell g => ∃ γ, gcell_reg g γ m ∗ gmb_a γ l
+  | FVTuple fvs => (MTuple fs _: field k at (o, fm) ↦ gcells (l +ₗ o) fm fvk)
+  | FVVariant t d => (MEnum vars tag _: gcells (l +ₗ int_size tag) vm d, vm = vars !! t)
+  | _ => True end.
+Definition gcont l m fv := ∃ R fbs, gfbytes l fbs ∗ ⌜frepr R m fbs fv ∧ reg_wf R⌝ ∗ gcells l m fv.
+Definition gcont_c m := λ l fv, gcont l m fv.      (* the c of a cell of type m *)
+Definition gcells_inv := ∃ Reg, ghost_map_auth gcells_name 1 Reg ∗
+  [∗ map] g ↦ e ∈ Reg, gmb_inv (gcont_c e.2) e.1 ∗ ⌜gmb_bmask e.1 = lazyB⌝.
+Definition gcells_ctx := inv gcellsN gcells_inv.              (* gcellsN := nroot.@"gcells" *)
+```
+- `gcont` is timeless (`gcells_timeless`, `gcont_timeless`). It is also the predicate of a
+  value with cells at `l` that is not the contents of a cell (what a typed move moves).
+- **Fancy bytes.** `FValue`, `FVCell`, `frepr` and `fv_cells` are reused. A cell id `g` is a
+  key of the registry, which names its instance `γ` and contents type `m`. The registry `R`
+  of `frepr` is local and only needs `reg_wf` (the byte-cell ids `cs` of a cell are
+  irrelevant: `gcont_cell` uses `replicate (mty_size m) g`). Cell identity and position come
+  from `gcells`, which follows the structure of `m` (not `fv_cells`/`fv_sub`), so zero-size
+  cells are owned too.
+- **The registry is global** (class `gcellsGS Σ` with `gmbG Σ loc FValue`, a ghost map
+  `positive → gmb_name * mty`, and a ghost name; `gcellsGpreS`, `gcellsΣ`,
+  `gcells_ctx_alloc : ⊢ |={E}=> ∃ _ : gcellsGS Σ, gcells_ctx`). It is needed because:
+  1. moving nested cells needs their instance invariants, and `gcont` cannot mention
+     `gmb_inv (gcont_c m') γ'` (the definition would be circular, and `gmb_inv c` is not
+     contractive in `c`: its state invariant is a guard at step-index 0);
+  2. the recursion of a move must be well-founded. A chain of nested cells being moved
+     consists of distinct instances (each holds a `gmb_moving` token, exclusive with
+     `gmb_a`), all registered. So the nesting depth is at most `size Reg`, which is the fuel of
+     the recursion. Heights stored per cell do not work: the contents of a nested cell can be
+     deepened by its own lends while the outer cell is idle.
+
+  Opening the registry costs one credit (the later of its invariant); the step that
+  moves can get it from a time receipt (`wp_persistent_time_receipt` gives
+  `£ (advance_credits 0) = £ 10`).
+
+### Lemmas
+
+Registry, create, destroy, owner access, (L2), (L3):
+```
+Lemma gcont_cell l m g γ : gcell_reg g γ m -∗ gmb_a γ l -∗ gcont l m (FVCell g).
+Lemma gcont_cell_inv l m g : gcont l m (FVCell g) -∗ ∃ γ, gcell_reg g γ m ∗ gmb_a γ l.
+Lemma gcell_create E l m fv : ↑gcellsN ⊆ E →                         (* PCell::new *)
+  gcells_ctx -∗ gcont l m fv ={E}=∗ ∃ g γ, ⌜gmb_depth γ = 0 ∧ gmb_bmask γ = lazyB⌝ ∗
+    gcell_reg g γ m ∗ gmb_inv (gcont_c m) γ ∗ gmb_b γ fv ∗ gcont l m (FVCell g).
+Lemma gcell_destroy E l m g γ fv : ↑Nllft ⊆ E →                       (* into_inner *)
+  gcell_reg g γ m -∗ gmb_inv (gcont_c m) γ -∗ gcont l m (FVCell g) -∗ gmb_b γ fv ={E}=∗ gcont l m fv.
+Lemma gcell_acc E l m g γ fv : ↑NllftUsr ∪ ↑NllftUsr2 ⊆ E →
+  gcell_reg g γ m -∗ gmb_inv (gcont_c m) γ -∗ gcont l m (FVCell g) -∗ gmb_b γ fv ={E}=∗
+    gcont l m fv ∗ (∀ fv', gcont l m fv' ={E}=∗ gcont l m (FVCell g) ∗ gmb_b γ fv').
+Lemma gcell_share G F n γ l m fv : ↑NllftUsr2 ⊆ F →                   (* (L2) *)
+  gmb_inv (gcont_c m) γ -∗ (G &&{F; n}&&> gmb_a γ l) -∗ (G &&{F; n}&&> gmb_b γ fv) -∗
+    (G &&{F; n}&&> gcont l m fv).
+Lemma gcell_lend E γ κ l m : ↑Nllft ⊆ E → gmb_depth γ = 0 →           (* (L3) *)
+  llft_ctx -∗ gmb_inv (gcont_c m) γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ l) -∗ £ 1 -∗
+  &{κ} (∃ fv, gmb_b γ fv) -∗ @[κ] ={E}=∗ &{κ} (∃ fv, gcont l m fv) ∗ @[κ].
+Lemma gcell_lend_pred E γ κ l m (Φ : FValue → iProp Σ) : ↑Nllft ⊆ E → gmb_depth γ = 0 →
+  llft_ctx -∗ gmb_inv (gcont_c m) γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ l) -∗ £ 1 -∗
+  &{κ} (∃ fv, gmb_b γ fv ∗ Φ fv) -∗ @[κ] ={E}=∗ &{κ} (∃ fv, gcont l m fv ∗ Φ fv) ∗ @[κ].
+(* and gcell_lend_guarded, with G &&{↑NllftG}&&> @[κ] *)
+```
+Moves (any number of sibling and nested cells; re-encoding allowed):
+```
+Definition gtransit m fv v := ⌜val_wf m v⌝ ∗          (* the cells of a moved value *)
+  ∀ l' bs', ⌜decode_value m bs' = Some v⌝ -∗ l' ↦b bs' ={lazyE}=∗ gcont l' m fv.
+Lemma gcont_open E l m fv : lazyE ∪ ↑gcellsN ⊆ E → mty_wf m →
+  gcells_ctx -∗ £ 1 -∗ gcont l m fv ={E}=∗ ∃ bs v, l ↦b bs ∗ ⌜decode_value m bs = Some v⌝ ∗ gtransit m fv v.
+Lemma wp_gcont_load_move E l m fv : lazyE ∪ ↑gcellsN ⊆ E → mty_wf m →
+  {{{ gcells_ctx ∗ £ 1 ∗ gcont l m fv }}} Load Na1Ord m #l @ E
+  {{{ v bs, RET MLitV v; l ↦b bs ∗ ⌜length bs = mty_size m⌝ ∗ gtransit m fv v }}}.
+Lemma wp_gtransit_store E l' m fv v bs0 : lazyE ∪ ↑naN ⊆ E → mty_wf m → length bs0 = mty_size m →
+  {{{ ▷ l' ↦b bs0 ∗ gtransit m fv v }}} Store Na1Ord m #l' (MLit v) @ E {{{ RET #☠; gcont l' m fv }}}.
+Lemma wp_gcont_move E l l' m fv bs0 : lazyE ∪ ↑gcellsN ∪ ↑naN ⊆ E → mty_wf m → length bs0 = mty_size m →
+  {{{ gcells_ctx ∗ £ 1 ∗ gcont l m fv ∗ ▷ l' ↦b bs0 }}}
+    Store Na1Ord m #l' (Load Na1Ord m #l) @ E {{{ bs, RET #☠; l ↦b bs ∗ gcont l' m fv }}}.
+Lemma wp_gcont_memcopy E l l' m fv bs0 : (as wp_gcont_move)
+  {{{ gcells_ctx ∗ £ 1 ∗ gcont l m fv ∗ ▷ l' ↦b bs0 }}}
+    MemCopy Na1Ord (mty_size m) #l' #l @ E {{{ bs, RET #☠; l ↦b bs ∗ gcont l' m fv }}}.
+```
+`gcont_open` is `gopen_rec` (induction on the fuel and on the `frepr` derivation; the
+fields of tuples and the payload of enums are split by `big_sepL_fields`): it moves every
+cell with `gmb_move_tok`, opens its contents, and assembles the bytes (`fill_fields`); the
+closers re-split the new bytes along the same structure (`fb_mix`) and put every cell back
+with its closer at its new location.
+
+Accesses to plain sub-values (`fv_sub m fv o m' (fv_lift vo)`; `fv_repl` is `fv_upd` that
+remembers the old sub-value), on owned contents (the owner's `gcell_acc`, or an opened lend):
+```
+Lemma gcont_sub_acc l m fv o m' vo : mty_wf m → fv_sub m fv o m' (fv_lift vo) →
+  gcont l m fv ⊢ ∃ bs, ⌜decode_value m' bs = Some vo⌝ ∗ (l +ₗ o) ↦b bs ∗
+    (∀ bs' vn fvn, ⌜decode_value m' bs' = Some vn⌝ -∗
+       ⌜fv_repl m fv o m' (fv_lift vo) (fv_lift vn) fvn⌝ -∗ (l +ₗ o) ↦b bs' -∗ gcont l m fvn).
+Lemma gcont_sub_view (the read-only form, with the same bytes)
+Lemma wp_gcont_load_na_sub / wp_gcont_load_sc_sub E l m fv o m' vo :
+  mty_wf m → fv_sub m fv o m' (fv_lift vo) →
+  {{{ gcont l m fv }}} Load Na1Ord/ScOrd m' #(l +ₗ o) @ E {{{ RET MLitV vo; gcont l m fv }}}.
+Lemma wp_gcont_store_na_sub / wp_gcont_store_sc_sub E l m fv o m' vo vn fvn :
+  ↑naN ⊆ E → mty_wf m → val_wf m' vn → fv_repl m fv o m' (fv_lift vo) (fv_lift vn) fvn →
+  {{{ gcont l m fv }}} Store Na1Ord/ScOrd m' #(l +ₗ o) (MLit vn) @ E {{{ RET #☠; gcont l m fvn }}}.
+Lemma wp_gcont_mcas_sub E l m fv o m' vo v1 v2 fvn :
+  ↑naN ⊆ E → mty_wf m → val_wf m' v2 → fv_repl m fv o m' (fv_lift vo) (fv_lift v2) fvn →
+  {{{ gcont l m fv }}} MCAS m' #(l +ₗ o) (MLit v1) (MLit v2) @ E
+  {{{ b, RET MLitV (VBool b); (⌜b = true ∧ vo = v1⌝ ∗ gcont l m fvn) ∨ (⌜b = false ∧ vo ≠ v1⌝ ∗ gcont l m fv) }}}.
+```
+Shared reads (guards of `gcont`, e.g. from `gcell_share` with `F := ↑naN`):
+```
+Lemma wp_gcont_load_na_guarded E l m fv o m' vo G d : ↑naN ⊆ E → mty_wf m → fv_sub m fv o m' (fv_lift vo) →
+  {{{ (G &&{↑naN; d}&&> gcont l m fv) ∗ G ∗ £ (2*d) }}} Load Na1Ord m' #(l +ₗ o) @ E {{{ RET MLitV vo; G }}}.
+Lemma wp_gcont_load_sc_guarded (the same with ScOrd and £ d; from the new wp_load_sc_guarded_gen)
+Lemma wp_gcell_load_na_shared / wp_gcell_load_sc_shared E γ l m fv o m' vo G d :
+  {{{ gmb_inv (gcont_c m) γ ∗ (G &&{↑naN; d}&&> gmb_a γ l) ∗ (G &&{↑naN; d}&&> gmb_b γ fv) ∗ G ∗ £ … }}} …
+```
+Other: `gcont_of_bytes`, `gcont_lift_bytes` (values without cells), `gfbytes_app`,
+`gcells_tuple`, `gcells_enum`, `gcells_lift`, `gcells_repl`.
+
+### Changes to the GMB library (`lifetime/guarded_bor.v`)
+
+The move of a value with cells moves every nested cell, so (L1) must not cost credits: the
+number of nested cells is not known before the move.
+- **Prepaid credits.** The lent-out state `Out` of `other_inv` stores `£ (1 + gmb_depth γ)`
+  given by the lend (they pay for the refutation in (L1)), and the pending state `Pend` one
+  credit (for the later of the claim invariant). Lazy lends store `£ 4` (was `£ 3`; one more
+  for the pending state while a mover settles).
+- `gmb_move_tok E γ s : ↑Nllft ∪ ↑gmbN ∪ gmb_bmask γ ⊆ E → gmb_inv γ -∗ gmb_a γ s ={E}=∗
+  ∃ t, c s t ∗ gmb_moving γ t ∗ (∀ s', gmb_moving γ t -∗ c s' t ={E}=∗ gmb_a γ s')`, with the
+  token `gmb_moving` (the mover's `a_out(t)`) and `gmb_a_moving_excl`. `gmb_move` no longer
+  takes credits.
+- New `gmb_acc` (the owner of `gmb_a` and `gmb_b` changes the contents).
+- Statements that gained `£ (1 + gmb_depth γ)`: `gmb_lend_start(_lazy)`, `gmb_lend(_later)`,
+  `gmb_lend_guarded(_later, _lazy)`, `gmb_lend_proph(_map, _map_lazy)` (and `£ 3` → `£ 4`
+  for the lazy ones); `gmb_lend_uniq` takes `£ 5 -∗ £ (1 + gmb_depth γ)` (was `£ 4`). The
+  tests were adapted.
+
+### Tests (`typing/gmb_cells_tests.v`)
+
+- `test_gcell_create_read_destroy`: store, create, read through the cell (owner access),
+  destroy, read the plain bytes.
+- `test_gcell_nested_move`: `PCell<(i32, PCell<i32>)>`: create the inner cell, then the
+  outer one; write the first field (owner access, `wp_gcont_store_na_sub` with a nested cell
+  in the second field); typed move of the outer cell (`Store m (Load m)`, re-encoding);
+  destroy the outer cell; read the first field (7); destroy the inner cell at its new
+  location; read it (9).
+- `test_gcell_siblings_memcopy`: two sibling cells `(PCell<i32>, PCell<i32>)` moved by one
+  `MemCopy`; both destroyed at the new location.
+- `test_gcell_shared_read`: non-atomic and atomic reads through (L2) guards.
+- `test_gcell_mcas`: a successful and a failing `MCAS` through the owner access, then an
+  atomic shared read.
+- `test_gcell_lend_write_end_move`: the owner shares `gmb_a` at `κ`, the permission holder
+  lends `gmb_b` (with a ghost variable tracking the value, `gcell_lend_pred`); a write
+  through the borrow; `κ` ends during a `Skip`; the lender's inheritance gives `gmb_b` at the
+  written value, the owner's the move right; `MemCopy` moves the cell; destroy; read 7.
+
+### Deviations
+
+- The global registry and the credit for opening it (see above).
+- The GMB library changes above (statement changes of the lend lemmas and `gmb_move`).
+- Stores and `MCAS` at sub-positions need the old sub-value to be plain (a replaced range
+  with cells is not owned by the contents). Atomic stores and `MCAS` are on owned contents
+  (owner access or an opened lend); through (L2) guards only loads (a guard gives back the
+  same proposition).
+- Moves and the sub-position lemmas need `mty_wf m`.
+- Cells are created with depth 0 and bytes mask `lazyB` (required by `gmb_lend_uniq`);
+  lends of cells cost `£ 1`.
+
+### For phase 4
+
+- Add `gcellsGS Σ` to the typing context class (or next to `typeG`), allocate the registry
+  at adequacy (`gcells_ctx_alloc`), and carry `gcells_ctx` like `llft_ctx`.
+- `bytes_own ty l x` becomes `gcont l (ty_mty ty) fv` with `ty_fval x = Some fv` (with
+  `ty_fbytes R ty x fbs` for the pure part); a value of `pcell_ty` at `l` is
+  `gcont l m (FVCell g)`, i.e. `gcell_reg g γ m ∗ gmb_a γ l`; its persistent ghost can hold
+  `gcell_reg g γ m ∗ gmb_inv (gcont_c m) γ ∗ ⌜gmb_depth γ = 0 ∧ gmb_bmask γ = lazyB⌝`.
+- `val_cells m fv w` (values in transit) becomes `gtransit m fv w`. The typed `Load` needs
+  `£ 1` (from a time receipt), `gcells_ctx`, and the mask `lazyE ∪ ↑gcellsN`.
+- `cell_points_to ty` owns `gmb_b γ (ty_fval x)`; `gmb_lend_uniq`'s interface: `c := gcont_c m`
+  must be related to `fbytes ty l` (`fbytes ty l fv ⊢ gcont l m fv` and back, for
+  `ty_mty ty = m`), the lend takes `£ 1` more for the prepaid credit.
+- `gcell_lend_pred` is the eager (L3) with the ownership predicate of the contents type.
