@@ -1030,7 +1030,7 @@ Deviations: the value map is a function `fv` with its prophecy `fp` (as
 
 ## Outcome: phase 3
 
-Implemented in the new `typing/gmb_cells.v` (the layer) and `typing/gmb_cells_tests.v`
+Merge 56f98c2. Implemented in the new `typing/gmb_cells.v` (the layer) and `typing/gmb_cells_tests.v`
 (tests), next to the old cell heap, which is untouched. The GMB library changed (prepaid
 credits, see "Changes to the GMB library" below). No typing-rule statement changed.
 `Print Assumptions` of the tests: closed under the global context.
