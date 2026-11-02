@@ -218,7 +218,8 @@ Section typing.
     set y := pctx_get K x₀. set ζi := blk_lookup ζm (pctx_path K []).
     set k0 := pctx_mode K 0.
     (* Unblock the leaf: fire the inheritance of the borrow and settle it. *)
-    iMod (fupd_mask_mono with "(L1 †α)") as "Upd1"; [rewrite /lazyE; solve_ndisj|].
+    iDestruct (blocked_owned_fire with "L1 †α") as "Upd1".
+    iMod (fupd_mask_mono with "Upd1") as "Upd1"; [rewrite /lazyB; solve_ndisj|].
     iMod (guarded_upd_run with "Gty GP Upd1") as "(GP & %y1 & %d1 & %g1 & Eqz & #⧖1 & O1)";
       [rewrite /lazyE; solve_ndisj|].
     iDestruct "O1" as "[Pt1 Gho1]".

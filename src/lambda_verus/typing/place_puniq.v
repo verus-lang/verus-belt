@@ -190,17 +190,19 @@ Section puniq.
   Lemma vplace_conv_prod_fold {𝔅1 𝔅2 𝔄} (K: pctx (𝔅1 * 𝔅2) 𝔄) (ty1: type 𝔅1) (ty2: type 𝔅2) :
     vplace_conv K (ProdLty (OfTy ty1) (OfTy ty2)) (OfTy (ty1 * ty2)) (=).
   Proof.
-    iIntros (x ζm dh gh D tid lh G E ? HE ??) "#LFT #PROPH #UNIQ _ #Gk G _ _ _ H".
+    iIntros (x ζm dh gh D tid lh G E ? HE ??) "#LFT #PROPH #UNIQ _ #Gk G _ £ _ H".
+    iDestruct (lc_weaken 1 with "£") as "£"; [lia|].
     destruct (pctx_get K x) as [y1 y2] eqn:Hy.
     iModIntro. iExists (y1, y2), [], 1%Qp. iSplit; [done|]. iSplit.
     { iPureIntro. intros ??. apply prfn_rsv_in. }
     iSplitR; [done|]. iIntros "_".
     destruct (pctx_uend K) as [κ|] eqn:Hu.
     - rewrite (pctx_kind_uniq K κ) //.
-      iApply (prod_ofty_fold_uniq with "LFT PROPH UNIQ [] G H"); [trans lazyE; [|set_solver];
-        rewrite /lazyE; solve_ndisj|].
-      iApply (guards_transitive with "Gk"). iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
-      iApply pctx_ulft_ulfts. by apply pctx_uend_ulfts.
+      iApply (prod_ofty_fold_uniq with "LFT PROPH UNIQ [] [] G £ H"); [trans lazyE; [|set_solver];
+        rewrite /lazyE; solve_ndisj| |].
+      { iApply (guards_transitive with "Gk"). iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
+        iApply pctx_ulft_ulfts. by apply pctx_uend_ulfts. }
+      iApply (guards_transitive with "Gk"). iApply llftl_intersect_incl_r.
     - rewrite (pctx_kind_owned K) //. iModIntro. iFrame "G". by iApply prod_ofty_unfold_own.
   Qed.
 
@@ -336,11 +338,7 @@ Section puniq.
       with "[] [ξ'tok] [Gh' Pt ⧗ ⧗1 Gh1 ξ'back]") as (idx'') "(Tok & #Bor' & H1 & H2)".
     { (* Back to the body of [&uniq], at the same state. *)
       iIntros "!>" (c2 w2) "Q". iModIntro. iNext.
-      iDestruct "Q" as "[Q|[_ $]]". rewrite /cpd_body /uniq_gbody /cpd_body.
-      iDestruct "Q" as (p2 r2) "(#Ok & % & Gh2 & Upd)". iExists p2, r2. iFrame "Ok Gh2".
-      iSplit; [done|]. iApply (guarded_upd_mono with "[] Upd").
-      iIntros "[#⧖2 N] !>". iFrame "⧖2".
-      by iApply (ltype_owned_leaf_node_uniq with "TIME LFT PROPH UNIQ Ok ⧖2 N"). }
+      iDestruct "Q" as "[Q|[_ $]]". by iApply cpd_body_leaf. }
     { by rewrite big_sepL_singleton. }
     { iIntros "ξ'tok". rewrite big_sepL_singleton.
       iMod ("ξ'back" with "ξ'tok") as "[Tok1 $]".
@@ -349,8 +347,9 @@ Section puniq.
       iSplit; [by rewrite /pat_ok|]. iSplit.
       { iPureIntro. intros π. rewrite Hw /r_o /= !prfn_den_in /= prfn_wit_in.
         f_equal; try apply uniq_prvar_app_irrel. }
-      iApply guarded_upd_intro. iModIntro. iFrame "⧖'".
-      rewrite /node /= /uniq_node. iEval (rewrite /v cbytes_uniq_bor) in "Pt".
+      iApply (cpd_contents_eager (UniqLty (OfTy ty) κ') with "LFT PROPH UNIQ [] ⧖' [-]");
+        [done|done|by rewrite /pat_ok|].
+      rewrite /= /uniq_node. iEval (rewrite /v cbytes_uniq_bor) in "Pt".
       iFrame "Pt TIME Incl'".
       iSplitL "⧗". { iApply (cumulative_time_receipt_mono with "⧗"). lia. }
       iExists d1, g1. iSplit; [done|]. iExists y, idx'. iSplit; [done|].
@@ -415,6 +414,7 @@ Section puniq.
     iDestruct (lc_weaken 1 with "£") as "£"; [lia|].
     iMod (lc_fupd_elim_later with "£ Body") as (p1 r1) "(_ & _ & Gh' & Upd)".
     iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
+    iDestruct (cpd_contents_guarded with "Upd") as "Upd".
     iMod (guarded_upd_run with "Hty H2 Upd") as "(H2 & #⧖' & N)"; [set_solver|].
     iDestruct "N" as "(Pt & _ & _ & #Incl' & %d2 & %g2 & %Hle2 & C)".
     iDestruct "C" as (y0 idx1 ->) "Body1".
@@ -688,15 +688,17 @@ Section puniq.
         iApply (persistent_time_receipt_mono with "⧖"). lia. }
       iModIntro. iSplitR "Tok1"; [|iExists idx1; by iFrame "Tok1 Bor1"].
       rewrite (pctx_kind_owned K) // /= /blocked_owned. iIntros "#†α".
-      iMod (fupd_mask_mono with "(Back1 †α)") as "Lender"; [rewrite /lazyE; solve_ndisj|].
-      iMod (lc_fupd_elim_later with "£c Lender") as "Lender". iModIntro.
-      iApply (guarded_upd_mono with "[⧗k] [Lender]");
-        [|iApply (uniq_lender_settle with "LFT PROPH †α Lender")].
-      iIntros "(%x & %d1 & %g1 & Eqz & #⧖1 & Gho & Pt)".
+      iMod (fupd_mask_mono with "(Back1 †α)") as "Lender"; [rewrite /lazyB; solve_ndisj|].
+      iMod (lc_fupd_elim_later with "£c Lender") as "Lender".
+      iMod (uniq_lender_unblock with "LFT PROPH †α Lender") as (fv) "[B Upd]".
+      iModIntro. iExists fv. iFrame "B".
+      iApply (guarded_upd_mono with "[⧗k] Upd").
+      iIntros "(%x & %d1 & %g1 & %Hx & Eqz & #⧖1 & Gho)".
       iMod (cumulative_persistent_time_receipt with "TIME ⧗k ⧖1") as "#⧖1'";
         [rewrite /lazyE; solve_ndisj|].
-      iModIntro. iExists x, d1, g1. rewrite /ofty_owned /=. iFrame "Eqz Pt Gho".
-      iApply (persistent_time_receipt_mono with "⧖1'"). lia. }
+      iModIntro. iExists d1, g1.
+      iSplit; [iApply (persistent_time_receipt_mono with "⧖1'"); lia|].
+      iExists x. by iFrame "Eqz Gho". }
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iDestruct "Bor1" as (idx1) "[Tok1 #Bor1]".
     iModIntro. iExists -[(lK, y, ζi, dh, gh, idx1); (x₀, (pctx_vpath K, ζi) :: ζm)].
@@ -796,8 +798,8 @@ Section puniq.
     iEval (rewrite (pctx_kind_owned K) //) in "Hb".
     set y := pctx_get K x₀. set ζi := blk_lookup ζm (pctx_vpath K).
     (* Unblock the leaf: fire the inheritance of the borrow and settle it. *)
-    iMod (fupd_mask_mono with "(Hb [])") as "Upd1"; [rewrite /lazyE; solve_ndisj| |].
-    { iExact "†α". }
+    iDestruct (blocked_owned_fire with "Hb †α") as "Upd1".
+    iMod (fupd_mask_mono with "Upd1") as "Upd1"; [rewrite /lazyB; solve_ndisj|].
     iMod (guarded_upd_run with "Hty H2 Upd1") as "(H2 & %y1 & %d1 & %g1 & Eqz & #⧖1 & O1)";
       [rewrite /lazyE; solve_ndisj|].
     iDestruct "O1" as "[Pt1 Gho1]".
@@ -897,17 +899,15 @@ Section puniq.
     iDestruct (guards_transitive with "Ghh Gty") as "#Ght".
     iMod (proph_idx_bor_gen_acc_idx with "LFT UNIQ Gh2 Tok Bor H1") as (wπ') "[Body Close]";
       [done|].
-    rewrite /uniq_gbody cpd_body_cell.
+    rewrite uniq_gbody_cell.
     iMod (lc_fupd_elim_later with "£' Body") as "Body".
-    iDestruct "Body" as (p' r') "(_ & %Hw' & Gh' & Upd)".
+    iDestruct "Body" as (p' r') "(_ & %Hw' & Gh' & C)".
     iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
-    iMod (guarded_upd_run with "[] H2 Upd") as "[H2 [#⧖ Node]]"; [done| |].
-    { iApply "Ght". }
-    rewrite leaf_node_inl.
-    iDestruct (leaf_owned_unblock _ 0 with "LFT [] Ok †κ' H2 ⧖ Node") as "Upd".
-    { iApply "Ght". }
-    iMod (fupd_mask_mono with "Upd") as "[H2 (%y & %d' & %g' & Rel & #⧖' & Pt & Gho)]";
+    iDestruct (leaf_contents_unblock_at with "LFT Ok †κ' C") as "Upd".
+    iMod (fupd_mask_mono with "Upd") as (fv) "[B Upd]"; [by etrans; [apply lazyB_lazyE|]|].
+    iMod (guarded_upd_run with "Ght H2 Upd") as "[H2 (%d' & %g' & #⧖' & %y & %Hy & Rel & Gho)]";
       [done|].
+    iDestruct (fbytes_cbytes with "B") as "Pt"; [done|].
     iMod (ghost_var_update_halves (lstate_triv y) with "Gh Gh'") as "[Gh Gh']".
     iSpecialize ("Close" $! (uniq_cell y d' g' γ) (vπ (uniq_cell y d' g' γ))).
     iMod (fupd_mask_mono with "(Close [Gh' Pt Gho])") as "[Tok H1]"; [done| |].
