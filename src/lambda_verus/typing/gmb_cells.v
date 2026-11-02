@@ -1,7 +1,6 @@
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import invariants ghost_map.
-From lrust.typing Require Export type.
-From lrust.typing Require Import uniq_util.
+From lrust.typing Require Export type gcont.
 From lrust.lifetime Require Import lifetime_full guarded_bor.
 From guarding Require Import guard tactics.
 From iris.program_logic Require Import ectx_lifting.
@@ -41,24 +40,8 @@ well-founded because the instances of a chain of nested cells are distinct (each
 moving state, [gmb_moving], while its descendants are moved) and registered, and the
 registry is finite. *)
 
-(** ** The registry *)
-Definition gcellsN : namespace := nroot .@ "gcells".
-
-Class gcellsGS Σ := GCellsGS {
-  #[global] gcells_gmbG :: gmbG Σ loc FValue;
-  #[global] gcells_regG :: ghost_mapG Σ positive (gmb_name * mty);
-  gcells_name : gname
-}.
-
-Class gcellsGpreS Σ := GCellsGpreS {
-  #[global] gcells_pre_gmbG :: gmbG Σ loc FValue;
-  #[global] gcells_pre_regG :: ghost_mapG Σ positive (gmb_name * mty)
-}.
-
-Definition gcellsΣ : gFunctors := #[gmbΣ loc FValue; ghost_mapΣ positive (gmb_name * mty)].
-
-Global Instance subG_gcellsGpreS {Σ} : subG gcellsΣ Σ → gcellsGpreS Σ.
-Proof. solve_inG. Qed.
+(** The definitions of the registry, of the contents [gcont] and of the masks are in
+    [typing/gcont.v]. *)
 
 (** ** Lists and big separating conjunctions over fields *)
 
@@ -176,160 +159,9 @@ Definition fb_base (fbs : list (positive + abyte)) : list abyte :=
 Lemma length_fb_base fbs : length (fb_base fbs) = length fbs.
 Proof. by rewrite /fb_base length_fmap. Qed.
 
-Section gcells_defs.
-  Context `{!typeG Σ, !gcellsGS Σ}.
-  Implicit Types (l : loc) (m : mty) (fv : FValue) (fbs : list (positive + abyte)).
-
-  (** The move right of a cell (the placement is a location, the contents a fancy value). *)
-  Notation gca γ l := (gmb_a (S:=loc) (T:=FValue) γ l).
-
-  (** The registry: the cell [g] is the instance [γ], with contents of MiniRust type [m]. *)
-  Definition gcell_reg (g : positive) (γ : gmb_name) (m : mty) : iProp Σ :=
-    g ↪[gcells_name]□ (γ, m).
-
-  (** Plain bytes of fancy bytes, at their locations. *)
-  Definition gfb l (fb : positive + abyte) : iProp Σ :=
-    match fb with inl _ => True | inr b => l ↦b [b] end.
-  Definition gfbytes l fbs : iProp Σ := [∗ list] i ↦ fb ∈ fbs, gfb (l +ₗ i) fb.
-
-  (** The move rights of the cells nested in [fv], at their locations (following the
-      structure of [m]). *)
-  Fixpoint gcells l m fv {struct fv} : iProp Σ :=
-    match fv with
-    | FVCell g => ∃ γ, gcell_reg g γ m ∗ gca γ l
-    | FVTuple fvs =>
-        match m with
-        | MTuple fs _ =>
-            (fix go (k : nat) (fvs : list FValue) : iProp Σ :=
-               match fvs with
-               | [] => True
-               | fv :: fvs =>
-                   match fs !! k with Some (o, fm) => gcells (l +ₗ Z.of_nat o) fm fv | None => True end ∗
-                   go (S k) fvs
-               end) 0%nat fvs
-        | _ => True
-        end
-    | FVVariant t d =>
-        match m with
-        | MEnum vars tag _ =>
-            match vars !! Z.to_nat t with Some vm => gcells (l +ₗ Z.of_nat (int_size tag)) vm d | None => True end
-        | _ => True
-        end
-    | _ => True
-    end%I.
-
-  (** The contents of a cell of type [m] at [l]: the exact fancy bytes of [fv]. *)
-  Definition gcont l m fv : iProp Σ :=
-    ∃ (R : gmap positive (mty * list positive)) fbs,
-      gfbytes l fbs ∗ ⌜frepr R m fbs fv ∧ reg_wf R⌝ ∗ gcells l m fv.
-  Definition gcont_c m : loc → FValue → iProp Σ := λ l fv, gcont l m fv.
-
-  (** The registry invariant: the authority of the registry, and the instance invariants of
-      the registered cells (whose bytes mask is [lazyB]). *)
-  Definition gcells_inv : iProp Σ :=
-    ∃ Reg : gmap positive (gmb_name * mty), ghost_map_auth gcells_name 1 Reg ∗
-      [∗ map] g ↦ e ∈ Reg, gmb_inv (gcont_c e.2) e.1 ∗ ⌜gmb_bmask e.1 = lazyB⌝.
-  Definition gcells_ctx : iProp Σ := inv gcellsN gcells_inv.
-
-  Global Instance gcell_reg_persistent g γ m : Persistent (gcell_reg g γ m).
-  Proof. apply _. Qed.
-  Global Instance gcell_reg_timeless g γ m : Timeless (gcell_reg g γ m).
-  Proof. apply _. Qed.
-  Global Instance gcells_ctx_persistent : Persistent gcells_ctx.
-  Proof. apply _. Qed.
-  Global Instance gfb_timeless l fb : Timeless (gfb l fb).
-  Proof. destruct fb; apply _. Qed.
-  Global Instance gfbytes_timeless l fbs : Timeless (gfbytes l fbs).
-  Proof. apply _. Qed.
-
-  Lemma gcells_tuple l fs sz fvs :
-    gcells l (MTuple fs sz) (FVTuple fvs) ⊣⊢
-    [∗ list] k ↦ fv ∈ fvs, match fs !! k with Some (o, fm) => gcells (l +ₗ Z.of_nat o) fm fv | None => True end.
-  Proof.
-    assert (∀ k1, (fix go (k : nat) (fvs : list FValue) : iProp Σ :=
-               match fvs with
-               | [] => True
-               | fv :: fvs =>
-                   match fs !! k with Some (o, fm) => gcells (l +ₗ Z.of_nat o) fm fv | None => True end ∗
-                   go (S k) fvs
-               end) k1 fvs ⊣⊢
-      [∗ list] k ↦ fv ∈ fvs, match fs !! (k1 + k)%nat with
-        Some (o, fm) => gcells (l +ₗ Z.of_nat o) fm fv | None => True end) as Hgo.
-    { induction fvs as [|fv fvs IH]; intros k1; simpl; [done|].
-      rewrite Nat.add_0_r IH. do 3 f_equiv. by rewrite Nat.add_succ_r. }
-    exact (Hgo 0%nat).
-  Qed.
-
-  Lemma gcells_enum l vars tag sz t d :
-    gcells l (MEnum vars tag sz) (FVVariant t d) ⊣⊢
-    match vars !! Z.to_nat t with Some vm => gcells (l +ₗ Z.of_nat (int_size tag)) vm d | None => True end.
-  Proof. done. Qed.
-
-  Global Instance gcells_timeless l m fv : Timeless (gcells l m fv).
-  Proof.
-    revert l m. induction fv as [z|b|lp|fvs IH|t d IH|g] using FValue_ind'; intros l m; simpl;
-      try apply _.
-    - destruct m as [| | |fs sz|]; try apply _. generalize 0%nat.
-      induction IH as [|fv fvs Hfv _ IH']; intros k; [apply _|].
-      apply bi.sep_timeless; [|apply IH']. destruct (fs !! k) as [[o fm]|]; [apply Hfv|apply _].
-  Qed.
-
-  Global Instance gcont_timeless l m fv : Timeless (gcont l m fv).
-  Proof. apply _. Qed.
-  Global Instance gcont_c_timeless m l fv : Timeless (gcont_c m l fv).
-  Proof. apply _. Qed.
-
-  (** A value without cells has no cells. *)
-  Lemma gcells_lift l m v : ⊢ gcells l m (fv_lift v).
-  Proof.
-    revert l m. induction v as [z|b|lp|vs IH|t d IH] using Value_ind'; intros l m;
-      try (by rewrite /=).
-    - destruct m as [| | |fs sz|]; try (by rewrite /=).
-      rewrite /fv_lift -/fv_lift gcells_tuple. iApply big_sepL_intro. iIntros "!>" (k fv Hk).
-      rewrite list_lookup_map in Hk. destruct (vs !! k) as [vk|] eqn:Hvk; [|done].
-      simpl in Hk. injection Hk as <-.
-      destruct (fs !! k) as [[o fm]|]; [|done]. iApply (Forall_lookup_1 _ _ _ _ IH Hvk).
-    - destruct m as [| | | |vars tag sz]; try (by rewrite /=). rewrite /fv_lift -/fv_lift gcells_enum.
-      destruct (vars !! _); [iApply IH|done].
-  Qed.
-
-  (** ** Bytes at their locations *)
-  Lemma heap_mapsto_bytes_pos l bs : l ↦b bs ⊣⊢ [∗ list] i ↦ b ∈ bs, (l +ₗ i) ↦b [b].
-  Proof.
-    revert l. induction bs as [|b bs IH]; intros l.
-    - by rewrite heap_mapsto_bytes_nil.
-    - rewrite heap_mapsto_bytes_cons big_sepL_cons shift_loc_0_nat IH. f_equiv.
-      apply big_sepL_proper=> i b' _. by rewrite shift_loc_S.
-  Qed.
-
-  Lemma gfbytes_bytes l bs : gfbytes l (inr <$> bs) ⊣⊢ l ↦b bs.
-  Proof. by rewrite /gfbytes big_sepL_fmap heap_mapsto_bytes_pos. Qed.
-
-  Lemma gfbytes_cells l cs : gfbytes l (inl <$> cs) ⊣⊢ True.
-  Proof.
-    rewrite /gfbytes big_sepL_fmap /=. iSplit; [by iIntros|]. iIntros "_".
-    by iApply big_sepL_intro.
-  Qed.
-
-  Lemma gfbytes_app l fbs1 fbs2 :
-    gfbytes l (fbs1 ++ fbs2) ⊣⊢ gfbytes l fbs1 ∗ gfbytes (l +ₗ length fbs1) fbs2.
-  Proof.
-    rewrite /gfbytes big_sepL_app. f_equiv. apply big_sepL_proper=> j fb _.
-    by rewrite shift_loc_assoc_nat.
-  Qed.
-
-  Lemma heap_mapsto_bytes_pos_shift l (o : nat) bs :
-    (l +ₗ o) ↦b bs ⊣⊢ [∗ list] j ↦ b ∈ bs, (l +ₗ (o + j)%nat) ↦b [b].
-  Proof. rewrite heap_mapsto_bytes_pos. apply big_sepL_proper=> j b _. by rewrite shift_loc_assoc_nat. Qed.
-
-  Lemma gfbytes_shift l (o : nat) fbs :
-    gfbytes (l +ₗ o) fbs ⊣⊢ [∗ list] j ↦ fb ∈ fbs, gfb (l +ₗ (o + j)%nat) fb.
-  Proof. apply big_sepL_proper=> j b _. by rewrite shift_loc_assoc_nat. Qed.
-End gcells_defs.
-
 (** ** Moving all the cells of a value: the deep opening *)
 Section gcells_open.
-  Context `{!typeG Σ, !gcellsGS Σ}.
+  Context `{!typeG Σ}.
   Implicit Types (l : loc) (m : mty) (fv : FValue) (fbs : list (positive + abyte)).
   Notation gca γ l := (gmb_a (S:=loc) (T:=FValue) γ l).
 
@@ -716,11 +548,8 @@ Proof.
   rewrite -{2}(list_insert_id fvs k fvk) //. by econstructor.
 Qed.
 
-Lemma lazyE_gcellsN : lazyE ## ↑gcellsN.
-Proof. rewrite /lazyE /gcellsN /gmbN /uniqN /NllftUsr /prophN /Nllft. solve_ndisj. Qed.
-
 Section gcells_api.
-  Context `{!typeG Σ, !gcellsGS Σ}.
+  Context `{!typeG Σ}.
   Implicit Types (l : loc) (m : mty) (fv : FValue) (fbs : list (positive + abyte)).
   Notation gca γ l := (gmb_a (S:=loc) (T:=FValue) γ l).
 
@@ -728,9 +557,23 @@ Section gcells_api.
 
   The cells of a value that has been loaded by a typed move ([gcont_open]), with the value
   [v] that the move loaded: bytes at any location [l'] that decode to [v] give back the
-  contents at [l'] (with the cells at their new locations). *)
+  contents at [l'] (with the cells at their new locations). For a value without cells,
+  [v] is its MiniRust value ([gtransit_lift_inv]). *)
   Definition gtransit m fv (v : Value) : iProp Σ :=
-    ⌜val_wf m v⌝ ∗ ∀ l' bs', ⌜decode_value m bs' = Some v⌝ -∗ l' ↦b bs' ={lazyE}=∗ gcont l' m fv.
+    ⌜val_wf m v ∧ ∀ w0, fv = fv_lift w0 → v = w0⌝ ∗
+    ∀ l' bs', ⌜decode_value m bs' = Some v⌝ -∗ l' ↦b bs' ={lazyE}=∗ gcont l' m fv.
+
+  Lemma gtransit_lift m w : val_wf m w → ⊢ gtransit m (fv_lift w) w.
+  Proof.
+    iIntros (Hw). iSplit. { iPureIntro. split; [done|]. by intros w0 ?%fv_lift_inj. }
+    iIntros (l' bs' Hd) "Hbs !>". by iApply gcont_of_bytes.
+  Qed.
+
+  Lemma gtransit_lift_inv m w0 w : gtransit m (fv_lift w0) w -∗ ⌜w = w0⌝.
+  Proof. iIntros "[[_ %H] _]". iPureIntro. by apply H. Qed.
+
+  Lemma gtransit_wf m fv w : gtransit m fv w -∗ ⌜val_wf m w⌝.
+  Proof. by iIntros "[[% _] _]". Qed.
 
   (** The deep opening, with the registry: it moves all the cells of [fv] (and the cells
       nested in them); the location [l] then holds plain bytes that decode at [m]. *)
@@ -739,7 +582,13 @@ Section gcells_api.
     gcells_ctx -∗ £ 1 -∗ gcont l m fv ={E}=∗
       ∃ bs v, l ↦b bs ∗ ⌜decode_value m bs = Some v⌝ ∗ gtransit m fv v.
   Proof.
-    iIntros (HE Hwf) "#GC Lc (%R & %fbs & Hfb & [%Hrep %HR] & Hc)".
+    iIntros (HE Hwf) "#GC Lc C".
+    destruct (decide (fv_cells fv = [])) as [Hnc|Hc].
+    { destruct (fv_nocells_lift _ Hnc) as [w0 ->].
+      iDestruct (gcont_lift_bytes with "C") as (bs) "[Hbs %Hd]".
+      iModIntro. iExists bs, w0. iFrame "Hbs". iSplit; [done|].
+      iApply gtransit_lift. by eapply decode_value_wf. }
+    iDestruct "C" as (R fbs) "(Hfb & [%Hrep %HR] & Hc)".
     iInv "GC" as (Reg) "[>Auth Ctx]" "Hcl".
     iMod (lc_fupd_elim_later with "Lc Ctx") as "#Ctx".
     iMod (fupd_mask_subseteq lazyE) as "Hclm".
@@ -750,9 +599,47 @@ Section gcells_api.
     iMod "Hclm" as "_". iMod ("Hcl" with "[Auth]") as "_".
     { iNext. iExists Reg. iFrame "Auth Ctx". }
     iModIntro. iExists bs, v. iFrame "Hbs". iSplit; [done|]. iSplit.
-    { iPureIntro. by eapply decode_value_wf. }
+    { iPureIntro. split; [by eapply decode_value_wf|]. intros w0 ->. by rewrite fv_cells_lift in Hc. }
     iIntros (l' bs' Hd') "Hbs'". iMod ("Cl" with "[//] Hbs'") as "(Hfb & Hc & %Hrep')".
     iModIntro. iExists R, _. by iFrame.
+  Qed.
+
+  (** The registry, opened, for several deep openings in one step ([gcells_open_with]). *)
+  Definition greg_open (Reg : gmap positive (gmb_name * mty)) : iProp Σ :=
+    greg_ctx Reg ∗ ghost_map_auth gcells_name 1 Reg.
+
+  Lemma gcells_open_with E (P Q : iProp Σ) :
+    lazyE ∪ ↑gcellsN ⊆ E →
+    gcells_ctx -∗ £ 1 -∗ (∀ Reg, greg_open Reg -∗ P ={lazyE}=∗ greg_open Reg ∗ Q) -∗ P ={E}=∗ Q.
+  Proof.
+    iIntros (HE) "#GC Lc HPQ P".
+    iInv "GC" as (Reg) "[>Auth Ctx]" "Hcl".
+    iMod (lc_fupd_elim_later with "Lc Ctx") as "#Ctx".
+    iMod (fupd_mask_subseteq lazyE) as "Hclm". { have := lazyE_gcellsN. set_solver. }
+    iMod ("HPQ" $! Reg with "[$Ctx $Auth] P") as "[[_ Auth] Q]".
+    iMod "Hclm" as "_". iMod ("Hcl" with "[Auth]") as "_". { iNext. iExists Reg. iFrame "Auth Ctx". }
+    by iModIntro.
+  Qed.
+
+  (** Dropping the cells of contents (e.g. to overwrite or free their memory): they are
+      moved out, and their contents leaked. *)
+  Lemma gcont_forget_open Reg l m fv :
+    mty_wf m → greg_open Reg -∗ gcont l m fv ={lazyE}=∗
+      greg_open Reg ∗ ∃ bs, l ↦b bs ∗ ⌜length bs = mty_size m⌝.
+  Proof.
+    iIntros (Hwf) "[#Ctx Auth] (%R & %fbs & Hfb & [%Hrep %HR] & Hc)".
+    iMod (gopen_rec Reg (size Reg) R m fbs fv HR Hrep [] l Hwf with "Ctx Auth [] Hfb Hc")
+      as (bs v) "(Auth & _ & Hbs & %Hd & _)".
+    { constructor. } { by intros ? ?%elem_of_nil. } { simpl. lia. } { by rewrite /gtoks. }
+    iModIntro. iFrame "Ctx Auth". iExists bs. iFrame. iPureIntro. by eapply decode_value_length.
+  Qed.
+
+  Lemma gcont_forget E l m fv :
+    lazyE ∪ ↑gcellsN ⊆ E → mty_wf m →
+    gcells_ctx -∗ £ 1 -∗ gcont l m fv ={E}=∗ ∃ bs, l ↦b bs ∗ ⌜length bs = mty_size m⌝.
+  Proof.
+    iIntros (HE Hwf) "#GC Lc C". iApply (gcells_open_with with "GC Lc [] C"); [done|].
+    iIntros (Reg) "O C". by iApply (gcont_forget_open with "O C").
   Qed.
 
   Lemma gtransit_close E l' m fv v bs' :
@@ -775,9 +662,6 @@ Section gcells_api.
 
   Lemma gcont_cell_inv l m g : gcont l m (FVCell g) -∗ ∃ γ, gcell_reg g γ m ∗ gca γ l.
   Proof. iIntros "(%R & %fbs & _ & _ & Hc)". by iEval (simpl) in "Hc". Qed.
-
-  Lemma gcell_reg_agree g γ γ' m m' : gcell_reg g γ m -∗ gcell_reg g γ' m' -∗ ⌜γ = γ' ∧ m = m'⌝.
-  Proof. iIntros "H1 H2". by iDestruct (ghost_map_elem_agree with "H1 H2") as %[= -> ->]. Qed.
 
   (** (L0) Creation ([PCell::new]): the contents at [l] become a cell, an instance with
       bytes mask [lazyB], registered as [g]. The location then holds the cell
@@ -877,11 +761,8 @@ End gcells_api.
 
 (** ** Access to plain sub-values of owned contents (for borrows and owners) *)
 Section gcells_sub.
-  Context `{!typeG Σ, !gcellsGS Σ}.
+  Context `{!typeG Σ}.
   Implicit Types (l : loc) (m : mty) (fv : FValue) (fbs : list (positive + abyte)).
-
-  Lemma gcells_lift_iff l m v : gcells l m (fv_lift v) ⊣⊢ True.
-  Proof. iSplit; [by iIntros|]. iIntros "_". iApply gcells_lift. Qed.
 
   (** Replacing a plain sub-value by a plain one does not change the cells. *)
   Lemma gcells_repl l m fv o m' vo vn fvn :
@@ -945,24 +826,11 @@ Section gcells_sub.
     iPureIntro. by apply fv_sub_repl_refl.
   Qed.
 
-  (** Values without cells. *)
-  Lemma gcont_of_bytes l m bs v : decode_value m bs = Some v → l ↦b bs -∗ gcont l m (fv_lift v).
-  Proof.
-    iIntros (Hd) "Hbs". iExists ∅, (inr <$> bs). rewrite gfbytes_bytes. iFrame "Hbs". iSplit.
-    - iPureIntro. split; [by constructor|]. by intros ???.
-    - iApply gcells_lift.
-  Qed.
-
-  Lemma gcont_lift_bytes l m v : gcont l m (fv_lift v) -∗ ∃ bs, l ↦b bs ∗ ⌜decode_value m bs = Some v⌝.
-  Proof.
-    iIntros "(%R & %fbs & Hfb & [%Hrep _] & _)". destruct (frepr_lift _ _ _ _ Hrep) as (bs & -> & Hd).
-    rewrite gfbytes_bytes. iExists bs. by iFrame.
-  Qed.
 End gcells_sub.
 
 (** ** Program steps *)
 Section gcells_wp.
-  Context `{!typeG Σ, !gcellsGS Σ}.
+  Context `{!typeG Σ}.
   Implicit Types (l : loc) (m : mty) (fv : FValue).
   Notation gca γ l := (gmb_a (S:=loc) (T:=FValue) γ l).
 
@@ -988,7 +856,7 @@ Section gcells_wp.
     {{{ ▷ l' ↦b bs0 ∗ gtransit m fv v }}} Store Na1Ord m (Lit $ LitLoc l') (MLit v) @ E
     {{{ RET LitV LitPoison; gcont l' m fv }}}.
   Proof.
-    iIntros (HE Hwf Hlen Φ) "[Hbs [%Hvwf Cl]] HΦ". iApply wp_fupd.
+    iIntros (HE Hwf Hlen Φ) "[Hbs [[%Hvwf _] Cl]] HΦ". iApply wp_fupd.
     iApply (wp_store_na with "Hbs"); [set_solver|done|done|]. iIntros "!> Hbs".
     iMod (fupd_mask_subseteq lazyE) as "Hclm"; [set_solver|].
     iMod ("Cl" with "[%] Hbs") as "C"; [by apply decode_encode_value|].
@@ -1165,13 +1033,3 @@ Section gcells_wp.
   Qed.
 End gcells_wp.
 
-(** ** Allocation of the registry *)
-Lemma gcells_ctx_alloc `{!typeG Σ, !gcellsGpreS Σ} E :
-  ⊢ |={E}=> ∃ _ : gcellsGS Σ, gcells_ctx.
-Proof.
-  iMod (ghost_map_alloc_empty (K:=positive) (V:=gmb_name * mty)) as (γr) "Auth".
-  set (H := GCellsGS Σ _ _ γr).
-  iMod (inv_alloc gcellsN E (@gcells_inv _ _ H) with "[Auth]") as "#GC".
-  { iNext. iExists ∅. iFrame "Auth". by rewrite big_sepM_empty. }
-  iModIntro. iExists H. done.
-Qed.

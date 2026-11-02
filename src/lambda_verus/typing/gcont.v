@@ -175,7 +175,7 @@ Proof.
 Qed.
 
 (** The cells of a tuple laid out in sequence ([seq_tuple]), field by field. *)
-Lemma layout_fields_shift o ms : layout_fields o ms = (λ f, ((o + f.1)%nat, f.2)) <$> layout_fields 0 ms.
+Lemma layout_fields_shift0 o ms : layout_fields o ms = (λ f, ((o + f.1)%nat, f.2)) <$> layout_fields 0 ms.
 Proof.
   revert o. induction ms as [|m ms IH]; intros o; [done|]. simpl. f_equal; [by rewrite Nat.add_0_r|].
   rewrite (IH (o + mty_size m)%nat) (IH (0 + mty_size m)%nat).
@@ -189,7 +189,7 @@ Lemma mcells_seq_tuple_cons m ms fv fvs :
 Proof.
   rewrite /seq_tuple !mcells_tuple imap_cons /= mshift_0. f_equal.
   rewrite -concat_imap_mshift. f_equal. apply imap_ext=> k fvk _.
-  rewrite /= layout_fields_shift list_lookup_fmap.
+  rewrite /= layout_fields_shift0 list_lookup_fmap.
   destruct (layout_fields 0 ms !! k) as [[o fm]|]; simpl; [|done].
   by rewrite mshift_mshift.
 Qed.
