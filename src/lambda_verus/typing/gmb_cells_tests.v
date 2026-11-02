@@ -33,11 +33,11 @@ Section gmb_cells_tests.
   (** A plain [i32] at [l], made into a cell. *)
   Lemma gcell_new_i32 E l v bs :
     ↑gcellsN ⊆ E → decode_value (MInt i32) bs = Some v →
-    gcells_ctx -∗ l ↦b bs ={E}=∗ ∃ g γ, ⌜gmb_depth γ = 0⌝ ∗ gcell_reg g γ (MInt i32) ∗
+    gcells_ctx -∗ l ↦b bs ={E}=∗ ∃ g γ, gcell_reg g γ (MInt i32) ∗
       gmb_inv (gcont_c (MInt i32)) γ ∗ gmb_b γ (fv_lift v) ∗ gcont l (MInt i32) (FVCell g).
   Proof.
     iIntros (HE Hd) "#GC Hbs". iDestruct (gcont_of_bytes with "Hbs") as "C"; [done|].
-    iMod (gcell_create with "GC C") as (g γ) "([%Hdp _] & #Hreg & #GI & B & C)"; [done|].
+    iMod (gcell_create with "GC C") as (g γ) "(_ & #Hreg & #GI & B & C)"; [done|].
     iModIntro. iExists g, γ. by iFrame "∗#".
   Qed.
 
@@ -53,7 +53,7 @@ Section gmb_cells_tests.
     iIntros (HE Hlen Φ) "[#GC Hl] HΦ".
     wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [set_solver|apply int5_wf|done|].
     iIntros "!> Hl". wp_seq.
-    iMod (gcell_new_i32 _ _ (VInt 5) with "GC Hl") as (g γ) "(_ & #Hreg & #GI & B & C)";
+    iMod (gcell_new_i32 _ _ (VInt 5) with "GC Hl") as (g γ) "(#Hreg & #GI & B & C)";
       [set_solver|apply dec5|].
     iMod (gcell_acc with "Hreg GI C B") as "[C Cl]".
     { assert (↑NllftUsr ∪ ↑NllftUsr2 ⊆@{coPset} ↑Nllft) by solve_ndisj. set_solver. }
@@ -177,10 +177,10 @@ Section gmb_cells_tests.
     have HllftUsr : ↑NllftUsr ∪ ↑NllftUsr2 ⊆@{coPset} E.
     { trans lazyE; [apply lazyE_NllftUsr|set_solver]. }
     have HNllft : ↑Nllft ⊆@{coPset} E. { trans lazyE; [rewrite /lazyE; set_solver|set_solver]. }
-    iMod (gcell_new_i32 _ (l +ₗ 4) (VInt 9) with "GC Hl2") as (g1 γ1) "(_ & #Hreg1 & #GI1 & B1 & C1)";
+    iMod (gcell_new_i32 _ (l +ₗ 4) (VInt 9) with "GC Hl2") as (g1 γ1) "(#Hreg1 & #GI1 & B1 & C1)";
       [set_solver|done|].
     iDestruct (gcont_pair_intro _ (VInt 5) with "Hl1 C1") as "C0"; [done|].
-    iMod (gcell_create with "GC C0") as (g0 γ0) "([%Hd0 _] & #Hreg0 & #GI0 & B0 & C0)"; [set_solver|].
+    iMod (gcell_create with "GC C0") as (g0 γ0) "(_ & #Hreg0 & #GI0 & B0 & C0)"; [set_solver|].
     (* write the first field *)
     iMod (gcell_acc with "Hreg0 GI0 C0 B0") as "[C Cl]"; [done|].
     wp_bind (Store _ _ _ _). rewrite {1}loc_0.
@@ -220,9 +220,9 @@ Section gmb_cells_tests.
   Proof.
     iIntros (HE Hd1 Hd2 Hlen Φ) "(#GC & Lc & Hl1 & Hl2 & Hl') HΦ".
     have HNllft : ↑Nllft ⊆@{coPset} E. { trans lazyE; [rewrite /lazyE; set_solver|set_solver]. }
-    iMod (gcell_new_i32 _ l (VInt 5) with "GC Hl1") as (g0 γ0) "(_ & #Hreg0 & #GI0 & B0 & C0)";
+    iMod (gcell_new_i32 _ l (VInt 5) with "GC Hl1") as (g0 γ0) "(#Hreg0 & #GI0 & B0 & C0)";
       [set_solver|done|].
-    iMod (gcell_new_i32 _ (l +ₗ 4) (VInt 9) with "GC Hl2") as (g1 γ1) "(_ & #Hreg1 & #GI1 & B1 & C1)";
+    iMod (gcell_new_i32 _ (l +ₗ 4) (VInt 9) with "GC Hl2") as (g1 γ1) "(#Hreg1 & #GI1 & B1 & C1)";
       [set_solver|done|].
     iDestruct (gcont_pair_cells with "C0 C1") as "C".
     wp_bind (MemCopy _ _ _ _).
@@ -249,7 +249,7 @@ Section gmb_cells_tests.
     iIntros (HE Hlen Φ) "[#GC Hl] HΦ".
     wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [set_solver|apply int5_wf|done|].
     iIntros "!> Hl". wp_seq.
-    iMod (gcell_new_i32 _ _ (VInt 5) with "GC Hl") as (g γ) "(_ & #Hreg & #GI & B & C)";
+    iMod (gcell_new_i32 _ _ (VInt 5) with "GC Hl") as (g γ) "(#Hreg & #GI & B & C)";
       [set_solver|apply dec5|].
     iDestruct (gcont_cell_inv with "C") as (γ') "[Hreg' A]".
     iDestruct (gcell_reg_agree with "Hreg Hreg'") as %[<- _].
@@ -288,7 +288,7 @@ Section gmb_cells_tests.
     { assert (↑NllftUsr ∪ ↑NllftUsr2 ⊆@{coPset} ↑Nllft) by solve_ndisj. set_solver. }
     wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [set_solver|apply int5_wf|done|].
     iIntros "!> Hl". wp_seq.
-    iMod (gcell_new_i32 _ _ (VInt 5) with "GC Hl") as (g γ) "(_ & #Hreg & #GI & B & C)";
+    iMod (gcell_new_i32 _ _ (VInt 5) with "GC Hl") as (g γ) "(#Hreg & #GI & B & C)";
       [set_solver|apply dec5|].
     iMod (gcell_acc with "Hreg GI C B") as "[C Cl]"; [done|].
     wp_bind (MCAS _ _ _ _). rewrite {1}loc_0.
@@ -341,7 +341,7 @@ Section gmb_cells_tests.
     have HNllft : ↑Nllft ⊆@{coPset} E. { trans lazyE; [rewrite /lazyE; set_solver|set_solver]. }
     wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [set_solver|apply int5_wf|done|].
     iIntros "!> Hl". wp_seq.
-    iMod (gcell_new_i32 _ _ (VInt 5) with "GC Hl") as (g γ) "(%Hd & #Hreg & #GI & B & C)";
+    iMod (gcell_new_i32 _ _ (VInt 5) with "GC Hl") as (g γ) "(#Hreg & #GI & B & C)";
       [set_solver|apply dec5|].
     iDestruct (gcont_cell_inv with "C") as (γ') "[Hreg' A]".
     iDestruct (gcell_reg_agree with "Hreg Hreg'") as %[<- _].
@@ -354,7 +354,7 @@ Section gmb_cells_tests.
     iMod (llftl_borrow _ κ (∃ fv, gmb_b γ fv ∗ Ψ fv) with "LFT [B V1]") as "[Bor InhB]"; [done| |].
     { iNext. iExists (FVInt 5). iFrame "B V1". iPureIntro. by exists (VInt 5). }
     iMod (gcell_lend_pred _ γ κ l (MInt i32) Ψ with "LFT GI Ga' Lc1 Bor Alive") as "[Bor Alive]";
-      [done|done|].
+      [done|].
     (* write through the borrow *)
     iMod (llftl_bor_acc with "LFT Bor Alive") as "[Cb Close]"; [done|].
     iMod (bi.later_exist_except_0 with "Cb") as (fv) "[>C [>%Hfv >V1]]".

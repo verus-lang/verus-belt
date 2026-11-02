@@ -89,7 +89,7 @@ Section GmbProphTests.
   Proof.
     iIntros "#LFT #PROPH #UNIQ Auth C Lc".
     have ? : ↑Nllft ⊆ E0 by rewrite /E0; solve_ndisj.
-    iMod (gmb_create cc _ 0 with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)".
+    iMod (gmb_create cc _ with "C") as (γ) "(%Hb & #Inv & A & B)".
     iMod (llftl_begin with "LFT") as (κ) "[Alive #End]"; first done.
     (* the owner shares [gmb_a] *)
     iMod (share_timeless with "A") as "[#Ga InhA]"; [done|].
@@ -106,7 +106,7 @@ Section GmbProphTests.
     iMod (gmb_lend_proph_map cc E0 κ (PrVar pairi ξi) (g0, t) idx (perm_pl γ ξi)
             (PrVar posi ζi) t (cont_pl s ζi) (λ y, (g0, y)) (@[κ]) γ s 0
             with "LFT PROPH UNIQ Inv Ga Lc0 [Lc] [] [] Alive Loanζ Tok IBor")
-      as "(#Obs & (%idx' & Tokζ & #IBorζ) & Alive)"; [rewrite /E0; solve_ndisj|lia|by rewrite Hd| | |].
+      as "(#Obs & (%idx' & Tokζ & #IBorζ) & Alive)"; [rewrite /E0; solve_ndisj|done| | |].
     { iApply guards_refl. }
     { iIntros (G' wπ ?) "_ $ >B". iModIntro. iExists t. iFrame "B". iIntros "C".
       iModIntro. iExists (vπ (𝔄:=positiveₛ) t). iSplitL "C"; [by iNext|].
@@ -152,7 +152,7 @@ Section GmbProphTests.
   Proof.
     iIntros "#LFT #PROPH #UNIQ C Lc".
     have ? : ↑Nllft ⊆ E0 by rewrite /E0; solve_ndisj.
-    iMod (gmb_create cc _ 0 with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)".
+    iMod (gmb_create cc _ with "C") as (γ) "(%Hb & #Inv & A & B)".
     iMod (llftl_begin with "LFT") as (κ) "[Alive #End]"; first done.
     iMod (share_timeless with "A") as "[#Ga InhA]"; [done|].
     iMod (proph_loan_intro pairi E0 ((g0, t) : positive * positive) with "PROPH UNIQ")
@@ -166,7 +166,7 @@ Section GmbProphTests.
     iMod (gmb_lend_proph_map cc E0 κ (PrVar pairi ξi) (g0, t) idx (perm_pl γ ξi)
             (PrVar posi ζi) t (cont_pl s ζi) (λ y, (g0, y)) (@[κ]) γ s 0
             with "LFT PROPH UNIQ Inv Ga Lc0 [Lc] [] [] Alive Loanζ Tok IBor")
-      as "(_ & _ & Alive)"; [rewrite /E0; solve_ndisj|lia|by rewrite Hd| | |].
+      as "(_ & _ & Alive)"; [rewrite /E0; solve_ndisj|done| | |].
     { iApply guards_refl. }
     { iIntros (G' wπ ?) "_ $ >B". iModIntro. iExists t. iFrame "B". iIntros "C".
       iModIntro. iExists (vπ (𝔄:=positiveₛ) t). iSplitL "C"; [by iNext|].
@@ -192,7 +192,7 @@ Section GmbProphTests.
     iIntros "#LFT #PROPH #UNIQ C £".
     iDestruct (lc_split 1 5 with "£") as "[Pre £]". iDestruct (lc_split 1 4 with "£") as "[£1 £3]".
     have ? : ↑Nllft ⊆ E0 by rewrite /E0; solve_ndisj.
-    iMod (gmb_create_mask cc _ 0 (↑Nllft) with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)";
+    iMod (gmb_create_mask cc _ (↑Nllft) with "C") as (γ) "(%Hb & #Inv & A & B)";
       first solve_ndisj.
     iMod (llftl_begin with "LFT") as (κ) "[Alive #End]"; first done.
     iMod (share_timeless with "A") as "[#Ga InhA]"; [done|].
@@ -208,7 +208,7 @@ Section GmbProphTests.
     iMod (gmb_lend_proph_map_lazy cc E0 κ (PrVar pairi ξi) (g0, t) idx (perm_pl_lz γ ξi)
             (PrVar posi ζi) t (cont_pl s ζi) (λ y, (g0, y)) (@[κ]) γ s 0
             with "LFT PROPH UNIQ Inv Ga Lc0 [Pre] £3 [] [£1] Alive Loanζ Tok IBor")
-      as "(_ & _ & Alive)"; [rewrite /E0; solve_ndisj|lia|by rewrite Hd| | |].
+      as "(_ & _ & Alive)"; [rewrite /E0; solve_ndisj|done| | |].
     { iApply guards_refl. }
     { iIntros (G' wπ ?) "_ $ P".
       iMod (lc_fupd_elim_later with "£1 P") as "P".
@@ -237,7 +237,7 @@ Section GmbProphTests.
   Proof.
     iIntros "#LFT #PROPH #UNIQ Auth C Lc".
     have ? : ↑Nllft ⊆ E0 by rewrite /E0; solve_ndisj.
-    iMod (gmb_create cc _ 0 with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)".
+    iMod (gmb_create cc _ with "C") as (γ) "(%Hb & #Inv & A & B)".
     iMod (llftl_begin with "LFT") as (κ) "[Alive #End]"; first done.
     iMod (share_timeless with "A") as "[#Ga InhA]"; [done|].
     iMod (proph_loan_intro posi E0 t with "PROPH UNIQ") as (ξi) "Loan";
@@ -249,7 +249,7 @@ Section GmbProphTests.
     iMod lc_zero as "Lc0".
     iMod (gmb_lend_proph cc E0 κ (PrVar posi ξi) t idx (perm_pl1 γ ξi) (cont_pl s ξi) (@[κ])
             γ s 0 with "LFT UNIQ Inv Ga Lc0 [Lc] [] [] Alive Tok IBor")
-      as (idx') "(Tok & #IBor' & Alive)"; [done|lia|by rewrite Hd| | |].
+      as (idx') "(Tok & #IBor' & Alive)"; [done|done| | |].
     { iApply guards_refl. }
     { iIntros (wπ) ">B". iModIntro. iExists t. iFrame "B". iIntros "C". iModIntro.
       iSplitL "C"; [by iNext|].

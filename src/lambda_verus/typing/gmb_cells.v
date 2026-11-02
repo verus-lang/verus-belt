@@ -779,16 +779,16 @@ Section gcells_api.
   Lemma gcell_reg_agree g γ γ' m m' : gcell_reg g γ m -∗ gcell_reg g γ' m' -∗ ⌜γ = γ' ∧ m = m'⌝.
   Proof. iIntros "H1 H2". by iDestruct (ghost_map_elem_agree with "H1 H2") as %[= -> ->]. Qed.
 
-  (** (L0) Creation ([PCell::new]): the contents at [l] become a cell, an instance of depth
-      [0] and bytes mask [lazyB], registered as [g]. The location then holds the cell
+  (** (L0) Creation ([PCell::new]): the contents at [l] become a cell, an instance with
+      bytes mask [lazyB], registered as [g]. The location then holds the cell
       itself ([gcont l m (FVCell g)], i.e. the move right). *)
   Lemma gcell_create E l m fv :
     ↑gcellsN ⊆ E →
-    gcells_ctx -∗ gcont l m fv ={E}=∗ ∃ g γ, ⌜gmb_depth γ = 0 ∧ gmb_bmask γ = lazyB⌝ ∗
+    gcells_ctx -∗ gcont l m fv ={E}=∗ ∃ g γ, ⌜gmb_bmask γ = lazyB⌝ ∗
       gcell_reg g γ m ∗ gmb_inv (gcont_c m) γ ∗ gmb_b γ fv ∗ gcont l m (FVCell g).
   Proof.
     iIntros (HE) "#GC C".
-    iMod (gmb_create_mask (gcont_c m) E 0 lazyB l fv with "C") as (γ) "([%Hd %Hb] & #GI & Ha & Hb)".
+    iMod (gmb_create_mask (gcont_c m) E lazyB l fv with "C") as (γ) "(%Hb & #GI & Ha & Hb)".
     { rewrite /lazyB /gmbN /uniqN /NllftUsr /prophN /Nllft. solve_ndisj. }
     iInv "GC" as (Reg) "[>Auth Ctx]" "Hcl".
     set g := fresh (dom Reg).
@@ -832,40 +832,40 @@ Section gcells_api.
       (G &&{F; n}&&> gcont l m fv).
   Proof. iIntros (?) "GI Ga Gb". by iApply (gmb_share (gcont_c m) with "GI Ga Gb"). Qed.
 
-  (** (L3) Mutable access: a lend of the contents, for an instance of depth [0] (the lend
-      prepays a credit for the moves). *)
+  (** (L3) Mutable access: a lend of the contents, with a share guard at step-index [0]
+      (the lend prepays a credit for the moves). *)
   Lemma gcell_lend E γ κ l m :
-    ↑Nllft ⊆ E → gmb_depth γ = 0 →
+    ↑Nllft ⊆ E →
     llft_ctx -∗ gmb_inv (gcont_c m) γ -∗ (@[κ] &&{↑NllftG}&&> gca γ l) -∗ £ 1 -∗
     &{κ} (∃ fv, gmb_b γ fv) -∗ @[κ] ={E}=∗ &{κ} (∃ fv, gcont l m fv) ∗ @[κ].
   Proof.
-    iIntros (HE Hd) "#LFT #GI #Ga Lc Bor Alive".
-    iApply (gmb_lend (gcont_c m) with "LFT GI Ga [Lc] Bor Alive"); [done|by rewrite Hd].
+    iIntros (HE) "#LFT #GI #Ga Lc Bor Alive".
+    iApply (gmb_lend (gcont_c m) with "LFT GI Ga Lc Bor Alive"); done.
   Qed.
 
   Lemma gcell_lend_guarded E G γ κ l m :
-    Timeless G → ↑Nllft ⊆ E → gmb_depth γ = 0 →
+    Timeless G → ↑Nllft ⊆ E →
     llft_ctx -∗ gmb_inv (gcont_c m) γ -∗ (@[κ] &&{↑NllftG}&&> gca γ l) -∗ £ 1 -∗
     &{κ} (∃ fv, gmb_b γ fv) -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗
       &{κ} (∃ fv, gcont l m fv) ∗ G.
   Proof.
-    iIntros (HG HE Hd) "#LFT #GI #Ga Lc Bor #Gk G".
-    iApply (gmb_lend_guarded (gcont_c m) with "LFT GI Ga [Lc] Bor Gk G"); [done|by rewrite Hd].
+    iIntros (HG HE) "#LFT #GI #Ga Lc Bor #Gk G".
+    iApply (gmb_lend_guarded (gcont_c m) with "LFT GI Ga Lc Bor Gk G"); done.
   Qed.
 
   (** (L3) with a predicate [Φ] of the logical contents, carried by the borrow (e.g. the
       ownership predicate of the type of the contents): the lender gets back the
       permission at the final contents, with [Φ] of them. *)
   Lemma gcell_lend_pred E γ κ l m (Φ : FValue → iProp Σ) :
-    ↑Nllft ⊆ E → gmb_depth γ = 0 →
+    ↑Nllft ⊆ E →
     llft_ctx -∗ gmb_inv (gcont_c m) γ -∗ (@[κ] &&{↑NllftG}&&> gca γ l) -∗ £ 1 -∗
     &{κ} (∃ fv, gmb_b γ fv ∗ Φ fv) -∗ @[κ] ={E}=∗ &{κ} (∃ fv, gcont l m fv ∗ Φ fv) ∗ @[κ].
   Proof.
-    iIntros (HE Hd) "#LFT #GI #Ga Lc Bor Alive". iMod lc_zero as "Lc0".
+    iIntros (HE) "#LFT #GI #Ga Lc Bor Alive". iMod lc_zero as "Lc0".
     iMod (llftl_bor_acc_special with "LFT Bor Alive") as "(Fb & Tok & Close)"; first done.
     iMod (bi.later_exist_except_0 with "Fb") as (fv) "[>Fb Φ]".
-    iMod (gmb_lend_start (gcont_c m) _ γ κ l fv 0 with "LFT GI Ga Lc0 [Lc] Tok Fb")
-      as "[C Lent]"; [done|lia|by rewrite Hd|].
+    iMod (gmb_lend_start (gcont_c m) _ γ κ l fv 0 with "LFT GI Ga Lc0 Lc Tok Fb")
+      as "[C Lent]"; [done|].
     iApply (fupd_mask_mono (↑Nllft)); first done.
     iApply ("Close" $! (∃ fv', gcont l m fv' ∗ Φ fv')%I with "[Lent C Φ]").
     iSplitR "C Φ"; last first. { iNext. iExists fv. iFrame. }

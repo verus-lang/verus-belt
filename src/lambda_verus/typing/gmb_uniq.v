@@ -29,8 +29,12 @@ The instance and the types are abstract, related by an interface:
 - the contents [c l fv] of the instance are the fancy bytes of [ty] at [l] ([Hc], [Hb]);
 - the permission type has trivial bytes ([Hpf], [Hpz]);
 - its ownership predicate at [fv y] is the permission [gmb_b γ (ty_fval y)] and the ownership
-  predicate of [ty] at [y] ([HGf], which may settle a claim, and [HGb]);
-- the bytes mask of the instance is [lazyB]. *)
+  predicate of [ty] at [y] ([HGf], which may settle a claim, and [HGb]; they are persistent
+  hypotheses, so that they may depend on persistent facts such as the registry entry of the
+  instance);
+- the bytes mask of the instance is [lazyB].
+The owner's share guard may have any step-index [n] (paid with [£ n], and [£ (1 + n)] prepaid
+for the moves, see [gmb_lend_start]). *)
 
 Section gmb_uniq.
   Context `{!typeG Σ}.
@@ -39,25 +43,25 @@ Section gmb_uniq.
   Context `{c_timeless : !∀ l fv, Timeless (c l fv)}.
 
   Lemma gmb_lend_uniq {𝔄p 𝔄} (pty: type 𝔄p) (ty: type 𝔄) (fv: ~~𝔄 → ~~𝔄p) (fp: 𝔄 → 𝔄p)
-      (fvp: FValue) γ (l lp: loc) (y: ~~𝔄) ξi d g idx κ tid E G :
+      (fvp: FValue) γ (l lp: loc) (y: ~~𝔄) ξi d g idx κ tid E G n :
     Timeless G → Inj eq eq fp → (∀ y π, vπ (fv y) π = fp (vπ y π)) →
     lazyE ⊆ E → gmb_bmask γ = lazyB →
     (∀ x fv0, ty.(ty_fval) x = Some fv0 → c l fv0 ⊢ cbytes ty x l) →
     (∀ fv0, fbytes ty l fv0 ⊢ c l fv0) →
     (∀ v, pty.(ty_fval) v = Some fvp) → (∀ v, cbytes pty v lp ⊣⊢ True) →
-    (∀ y' d' g', ty_gho_own pty (fv y') d' g' tid ⊢ |={lazyE}=>
-       ∃ fv0, ⌜ty.(ty_fval) y' = Some fv0⌝ ∗ gmb_b γ fv0 ∗ ty_gho_own ty y' d' g' tid) →
-    (∀ y' d' g' fv0, ty.(ty_fval) y' = Some fv0 →
-       gmb_b γ fv0 ∗ ty_gho_own ty y' d' g' tid ⊢ ty_gho_own pty (fv y') d' g' tid) →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ gmb_inv c γ -∗
-    (@[κ] &&{↑NllftG}&&> gmb_a γ l) -∗ κ ⊑ ty_lft pty -∗ ty_lft pty ⊑ ty_lft ty -∗
-    (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £ 5 -∗ £ (1 + gmb_depth γ) -∗
+    □ (∀ y' d' g', ty_gho_own pty (fv y') d' g' tid ={lazyE}=∗
+       ∃ fv0, ⌜ty.(ty_fval) y' = Some fv0⌝ ∗ gmb_b γ fv0 ∗ ty_gho_own ty y' d' g' tid) -∗
+    □ (∀ y' d' g' fv0, ⌜ty.(ty_fval) y' = Some fv0⌝ -∗
+       gmb_b γ fv0 ∗ ty_gho_own ty y' d' g' tid -∗ ty_gho_own pty (fv y') d' g' tid) -∗
+    (@[κ] &&{↑NllftG; n}&&> gmb_a γ l) -∗ κ ⊑ ty_lft pty -∗ ty_lft pty ⊑ ty_lft ty -∗
+    (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £ 5 -∗ £ n -∗ £ (1 + n) -∗
     uniq_body pty (fv y) ξi d g idx κ tid lp ={E}=∗ ∃ ζi ζidx,
       ⟨π, (π (uniq_prvar (fv y) ξi)).1 = fp ((π (uniq_prvar y ζi)).1)⟩ ∗
       uniq_body ty y ζi d g ζidx κ tid l ∗ G.
   Proof using All.
-    iIntros (HT Hinj Hcomm HE Hbm Hc Hb Hfvp Hpz HGf HGb)
-      "#LFT #PROPH #UNIQ #GI #Ga #In #Incl #Gk G £ Pre".
+    iIntros (HT Hinj Hcomm HE Hbm Hc Hb Hfvp Hpz)
+      "#LFT #PROPH #UNIQ #GI #HGf #HGb #Ga #In #Incl #Gk G £ Lcn Pre".
     iIntros "(%κp & %γo & #Inclp & (Gho & Tok) & ⧗ & #Bor)".
     have ?: ↑Nllft ∪ ↑prophN ⊆ E. { etrans; [|done]. rewrite /lazyE. set_solver. }
     iDestruct (lc_split 1 4 with "£") as "[£1 £3]".
@@ -68,18 +72,17 @@ Section gmb_uniq.
     (* Only the first component of the old controller matters. *)
     set fπ := λ (cc: (uniq_cellₛ 𝔄)),
       ((fp cc.1, (1%positive, (1%positive, 1%positive))) : uniq_cellₛ 𝔄p).
-    iMod lc_zero as "Lc0".
     iMod (gmb_lend_proph_map_lazy c E κ (uniq_prvar (fv y) ξi) (uniq_cell (fv y) d g γo) idx
-      (uniq_gbody κp pty tid lp) ζ (uniq_cell y d g γn) (uniq_gbody κ ty tid l) fπ G γ l 0
-      with "LFT PROPH UNIQ GI Ga Lc0 Pre £3 Gk [Gho Ghn' £1] G Loan Tok Bor")
-      as "(#Obs & Bor' & G)"; [done|lia| |].
+      (uniq_gbody κp pty tid lp) ζ (uniq_cell y d g γn) (uniq_gbody κ ty tid l) fπ G γ l n
+      with "LFT PROPH UNIQ GI Ga Lcn Pre £3 Gk [Gho Ghn' £1] G Loan Tok Bor")
+      as "(#Obs & Bor' & G)"; [done| |].
     { (* the forward direction: force the payload of the permission, split the permission
          off its ownership predicate, and build the new body from the contents *)
       iIntros (G' wπ ?) "#G'k G' Body".
       iMod (uniq_gbody_triv_open with "Gho Body") as "(_ & Gho & Gho' & P)".
       iMod (uniq_payload_force with "[] G' £1 P") as "(G' & #⧖ & GhoP & _)"; [done| |].
       { iApply (guards_transitive with "G'k In"). }
-      iDestruct (HGf with "GhoP") as "X".
+      iDestruct ("HGf" with "GhoP") as "X".
       iMod (fupd_mask_mono with "X") as (fv0 Hfv0) "[B GhoC]"; [done|].
       iModIntro. iFrame "G'". iExists fv0. iFrame "B". iIntros "C".
       iDestruct (Hc with "C") as "Pt"; [done|].
@@ -133,7 +136,7 @@ Section gmb_uniq.
           by rewrite Hw0 prfn_place_den. }
         iDestruct (proph_eqz_constr fp with "Eqz") as "Eqz".
         iApply (proph_eqz_eq with "Eqz"); [done|]. fun_ext=>π /=. by rewrite Hcomm. }
-      iApply HGb; [done|]. iFrame. }
+      iApply "HGb"; [done|]. iFrame. }
     iDestruct "Bor'" as (ζidx) "[Tok' #Bor']".
     iModIntro. iExists ζi, ζidx. iFrame "G".
     iSplitR. { iApply (proph_obs_impl with "Obs")=> π ->. done. }
