@@ -392,7 +392,15 @@ Section typing.
 
   Lemma syn_bincl_prod_assoc {𝔄 𝔅 ℭ} : syn_bincl (prod_assocₛ (𝔄:=𝔄) (𝔅:=𝔅) (ℭ:=ℭ)).
   Proof.
-    split; [rewrite !syn_bsize_prod; lia|]. intros [x [y z]] R fbs. rewrite /= !syn_fbytes_pair.
+    split; [rewrite !syn_bsize_prod; lia|]. split; last first.
+    { intros [x [y z]] R fbs fv fv' _ Hx Hx'.
+      destruct (mcells_pair (𝔅:=𝔅 * ℭ) x (y, z) fv Hx) as (fx & fyz & Hfx & Hfyz & ->).
+      destruct (mcells_pair (𝔄:=𝔅) (𝔅:=ℭ) y z fyz Hfyz) as (fy & fz & Hfy & Hfz & ->).
+      destruct (mcells_pair (𝔄:=𝔄 * 𝔅) (𝔅:=ℭ) (x, y) z fv' Hx') as (fxy & fz' & Hfxy & Hfz' & ->).
+      destruct (mcells_pair (𝔄:=𝔄) (𝔅:=𝔅) x y fxy Hfxy) as (fx' & fy' & Hfx' & Hfy' & ->).
+      rewrite Hfx in Hfx'. rewrite Hfy in Hfy'. rewrite Hfz in Hfz'. simplify_eq.
+      rewrite syn_bsize_prod mshift_app mshift_mshift -app_assoc. done. }
+    intros [x [y z]] R fbs. rewrite /= !syn_fbytes_pair.
     split.
     - intros (f1 & f23 & -> & H1 & H23). apply syn_fbytes_pair in H23 as (f2 & f3 & -> & H2 & H3).
       exists (f1 ++ f2), f3. split; [by rewrite assoc|]. split; [|done].
@@ -404,7 +412,12 @@ Section typing.
 
   Lemma syn_bincl_prod_left_id {𝔄} : syn_bincl (prod_left_idₛ (𝔄:=𝔄)).
   Proof.
-    split; [by rewrite syn_bsize_prod|]. intros [[] x] R fbs. rewrite /= syn_fbytes_pair.
+    split; [by rewrite syn_bsize_prod|]. split; last first.
+    { intros [[] x] R fbs fv fv' _ Hx Hx'.
+      destruct (mcells_pair (𝔄:=()) (𝔅:=𝔄) () x fv Hx) as (fu & fx & Hfu & Hfx & ->).
+      simpl in Hx'. rewrite Hfx in Hx'. injection Hx' as <-. simpl in Hfu. injection Hfu as <-.
+      rewrite /= mshift_0. done. }
+    intros [[] x] R fbs. rewrite /= syn_fbytes_pair.
     split.
     - intros (f1 & f2 & -> & H1 & H2). by apply syn_fbytes_zst in H1 as ->.
     - intros H. exists [], fbs. split; [done|]. split; [by apply syn_fbytes_zst|done].
@@ -412,7 +425,12 @@ Section typing.
 
   Lemma syn_bincl_prod_right_id {𝔄} : syn_bincl (prod_right_idₛ (𝔄:=𝔄)).
   Proof.
-    split; [rewrite syn_bsize_prod; change (syn_bsize ()) with 0%nat; lia|]. intros [x []] R fbs. rewrite /= syn_fbytes_pair.
+    split; [rewrite syn_bsize_prod; change (syn_bsize ()) with 0%nat; lia|]. split; last first.
+    { intros [x []] R fbs fv fv' _ Hx Hx'.
+      destruct (mcells_pair (𝔄:=𝔄) (𝔅:=()) x () fv Hx) as (fx & fu & Hfx & Hfu & ->).
+      simpl in Hx'. rewrite Hfx in Hx'. injection Hx' as <-. simpl in Hfu. injection Hfu as <-.
+      by rewrite /= app_nil_r. }
+    intros [x []] R fbs. rewrite /= syn_fbytes_pair.
     split.
     - intros (f1 & f2 & -> & H1 & H2). apply syn_fbytes_zst in H2 as ->; [|done..].
       by rewrite app_nil_r.

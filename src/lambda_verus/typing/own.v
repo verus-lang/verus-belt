@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import freeable_util bytes_layout.
+From lrust.typing Require Import freeable_util bytes_layout gmb_cells.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
@@ -12,15 +12,15 @@ heap (see [lang/heap.v]): it owns the bytes that represent the value of the poin
 bytes (see [design_docs/minirust-memory-model.md], "Outcome: stage 3"). It replaced the
 legacy word-level [own_ptr] (deleted in stage 5).
 
-The bytes are _fancy bytes_ (§10 step 4 of [design_docs/pcell-multibyte-cells.md]): the
-edges of the locations [l], [l +ₗ 1], ... point to bytes or to the byte-cells of cell
-groups ([heap_mapsto_fbytes]), and represent the fancy value [ty_fval x] at [ty_mty ty]
-([ty_fbytes R ty x fbs], with a static registry [R] whose fragments [greg] are owned:
-[frepr] depends only on the static registry). A value of a type without cells
-([NoCell]), or with a MiniRust value, owns plain bytes [l ↦b bs] with [ty_bytes ty x bs]
-([bytes_own_nocell], [bytes_own_to_bytes]); the fancy bytes of any value can be turned into
-plain bytes by dropping its cells ([wp_bytes_own_forget]). The fancy bytes split along
-the layout of pairs ([bytes_own_pair]).
+The bytes are the _contents_ [gcont l (ty_mty ty) (ty_fval x)] of phase 4 of
+[design_docs/guarded-mutable-borrows-plan.md] ([typing/gcont.v]): the plain bytes of the
+fancy bytes of the fancy value of [x], and the move rights of the cells that it embeds
+(which are GMB instances, [typing/gmb_cells.v]); the bytes at the positions of a cell are the
+contents of the cell. A value of a type without cells ([NoCell]), or with a MiniRust value,
+owns plain bytes [l ↦b bs] with [ty_bytes ty x bs] ([bytes_own_nocell],
+[bytes_own_to_bytes]); the fancy bytes of any value can be turned into plain bytes by
+dropping its cells ([bytes_own_forget], which needs the registry of the cells). The fancy
+bytes split along the layout of pairs ([bytes_own_pair]).
 
 The pointee is read and written with the typed [Load] and [Store] of [ty_mty ty]:
 [wp_own_bytes_load], [wp_own_bytes_store], [wp_own_bytes_new] and
@@ -31,39 +31,41 @@ Implicit Type 𝔄 𝔅: syn_type.
 Section own_bytes.
   Context `{!typeG Σ}.
 
-  (** The static registry [R]: its fragments. *)
-  Definition greg_map (R: gmap positive (mty * list positive)) : iProp Σ :=
-    [∗ map] g ↦ e ∈ R, greg g e.1 e.2.
-
-  Global Instance greg_map_persistent R : Persistent (greg_map R).
-  Proof. apply _. Qed.
-  Global Instance greg_map_timeless R : Timeless (greg_map R).
-  Proof. apply _. Qed.
-
-  (** Two fragments of the static registry agree: their union is a fragment that contains
-      both. *)
-  Lemma greg_map_union R1 R2 :
-    greg_map R1 -∗ greg_map R2 -∗ ⌜R1 ⊆ R1 ∪ R2 ∧ R2 ⊆ R1 ∪ R2⌝ ∗ greg_map (R1 ∪ R2).
+  (** The contents of a tuple laid out in sequence: those of its first field and those of
+      the others (the cells of the two parts are distinct, so their local registries can be
+      merged, [frepr_union]). *)
+  Lemma gcont_seq_tuple_cons l m ms fv fvs :
+    gcont l (seq_tuple (m :: ms)) (FVTuple (fv :: fvs)) ⊣⊢
+    gcont l m fv ∗ gcont (l +ₗ mty_size m) (seq_tuple ms) (FVTuple fvs).
   Proof.
-    iIntros "#H1 #H2". iSplit.
-    - iSplit; [iPureIntro; apply map_union_subseteq_l|].
-      rewrite map_subseteq_spec. iIntros (g [m cs] Hg).
-      destruct (R1 !! g) as [[m' cs']|] eqn:Hg1.
-      + iDestruct (big_sepM_lookup with "H1") as "G1"; [done|].
-        iDestruct (big_sepM_lookup with "H2") as "G2"; [done|].
-        iDestruct (greg_agree with "G1 G2") as %[Hm Hc]. simpl in Hm, Hc. subst.
-        iPureIntro. by apply lookup_union_Some_l.
-      + iPureIntro. by rewrite lookup_union_r.
-    - rewrite /greg_map. iApply big_sepM_intro. iIntros "!>" (g e Hg).
-      apply lookup_union_Some_raw in Hg as [Hg|[_ Hg]].
-      + by iApply (big_sepM_lookup with "H1").
-      + by iApply (big_sepM_lookup with "H2").
+    rewrite /gcont. iSplit.
+    - iIntros "(%R & %fbs & Hfb & [%Hrep %HR] & C)".
+      iDestruct (gcells_seq_tuple_cons with "C") as "[C1 C2]".
+      apply frepr_seq_tuple_cons in Hrep as (f1 & f2 & -> & Hl1 & H1 & H2).
+      rewrite gfbytes_app Hl1. iDestruct "Hfb" as "[F1 F2]".
+      iSplitL "F1 C1"; iExists R, _; by iFrame.
+    - iIntros "[(%R1 & %f1 & F1 & [%H1 %HR1] & C1) (%R2 & %f2 & F2 & [%H2 %HR2] & C2)]".
+      iDestruct (gcells_disj with "C1 C2") as %Hd; [done|done|].
+      destruct (frepr_union _ _ _ _ _ _ _ _ H1 H2 HR1 HR2 Hd) as (R & H1' & H2' & HR).
+      have Hl1 := frepr_length _ _ _ _ HR1 H1.
+      iExists R, (f1 ++ f2). rewrite gfbytes_app Hl1. iFrame "F1 F2".
+      iSplit; [|iApply gcells_seq_tuple_cons; iFrame]. iPureIntro. split; [|done].
+      apply frepr_seq_tuple_cons. by exists f1, f2.
   Qed.
 
-  (** The fancy bytes at [l] represent [x]. It is sealed: unifying it with other
-      predicates would unfold the fancy points-to and the representation. *)
+  Lemma gcont_seq_tuple_nil l : gcont l (seq_tuple []) (FVTuple []) ⊣⊢ True.
+  Proof.
+    iSplit; [by iIntros|]. iIntros "_". iExists ∅, []. rewrite gcells_seq_tuple_nil.
+    iSplit; [by rewrite /gfbytes|]. iSplit; [|done]. iPureIntro. split.
+    - by apply frepr_seq_tuple_nil.
+    - by intros ???.
+  Qed.
+
+  (** The fancy bytes at [l] represent [x]: they are the contents ([gcont], [typing/gcont.v])
+      of the fancy value of [x] at the MiniRust type of [ty]. It is sealed: unifying it with
+      other predicates would unfold the contents and the representation. *)
   Definition bytes_own_def {𝔄} (ty: type 𝔄) (l: loc) (x: ~~𝔄) : iProp Σ :=
-    ∃ R fbs, heap_mapsto_fbytes l fbs ∗ ⌜ty_fbytes R ty x fbs⌝ ∗ greg_map R.
+    ∃ fv, ⌜ty.(ty_fval) x = Some fv⌝ ∗ gcont l ty.(ty_mty) fv.
   Local Definition bytes_own_aux : seal (@bytes_own_def). Proof. by eexists. Qed.
   Definition bytes_own := bytes_own_aux.(unseal).
   Definition bytes_own_unseal : @bytes_own = @bytes_own_def := bytes_own_aux.(seal_eq).
@@ -72,35 +74,65 @@ Section own_bytes.
   Global Instance bytes_own_timeless {𝔄} (ty: type 𝔄) l x : Timeless (bytes_own ty l x).
   Proof. rewrite bytes_own_unseal. apply _. Qed.
 
-  (** Types with the same fancy bytes have the same byte ownership. *)
+  (** The contents of a value. *)
+  Lemma bytes_own_gcont {𝔄} (ty: type 𝔄) l x fv :
+    ty.(ty_fval) x = Some fv → bytes_own ty l x ⊣⊢ gcont l ty.(ty_mty) fv.
+  Proof.
+    intros Hfv. rewrite bytes_own_unseal /bytes_own_def. iSplit.
+    - iIntros "(%fv' & %Hfv' & C)". rewrite Hfv in Hfv'. by injection Hfv' as <-.
+    - iIntros "C". iExists fv. by iFrame.
+  Qed.
+
+  Lemma bytes_own_fval {𝔄} (ty: type 𝔄) l x : bytes_own ty l x -∗ ⌜is_Some (ty.(ty_fval) x)⌝.
+  Proof. rewrite bytes_own_unseal. iIntros "(%fv & %Hfv & _)". by iExists fv. Qed.
+
+  (** The fancy bytes of the contents represent the value. *)
+  Lemma bytes_own_fbytes {𝔄} (ty: type 𝔄) l x :
+    bytes_own ty l x ⊣⊢ ∃ R fbs fv, gfbytes l fbs ∗
+      ⌜ty_fbytes R ty x fbs ∧ reg_wf R ∧ ty.(ty_fval) x = Some fv⌝ ∗ gcells l ty.(ty_mty) fv.
+  Proof.
+    rewrite bytes_own_unseal /bytes_own_def. iSplit.
+    - iIntros "(%fv & %Hfv & %R & %fbs & Hfb & [%Hrep %HR] & C)". iExists R, fbs, fv. iFrame.
+      iPureIntro. split_and!; [|done|done]. split; [by erewrite frepr_length|eauto].
+    - iIntros "(%R & %fbs & %fv & Hfb & ([_ (%fv' & %Hfv' & %Hrep)] & %HR & %Hfv) & C)".
+      rewrite Hfv in Hfv'. injection Hfv' as <-. iExists fv. iSplit; [done|].
+      iExists R, fbs. by iFrame.
+  Qed.
+
+  (** Types with the same fancy bytes and the same cells have the same byte ownership. *)
   Lemma bytes_own_iff {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) l x x' :
     (∀ R fbs, ty_fbytes R ty x fbs ↔ ty_fbytes R ty' x' fbs) →
+    (∀ R fbs fv fv', ty_fbytes R ty x fbs → ty.(ty_fval) x = Some fv → ty'.(ty_fval) x' = Some fv' →
+       mcells ty.(ty_mty) fv = mcells ty'.(ty_mty) fv') →
     bytes_own ty l x ⊣⊢ bytes_own ty' l x'.
-  Proof. intros Hb. rewrite bytes_own_unseal /bytes_own_def. by setoid_rewrite Hb. Qed.
+  Proof.
+    intros Hb Hc. rewrite !bytes_own_fbytes. iSplit.
+    - iIntros "(%R & %fbs & %fv & Hfb & (%Hfb & %HR & %Hfv) & C)".
+      have Hfb' := proj1 (Hb R fbs) Hfb. destruct Hfb' as [? (fv' & Hfv' & ?)].
+      iExists R, fbs, fv'. iFrame "Hfb". iSplit; [iPureIntro; split_and!; [by apply Hb|done|done]|].
+      by rewrite !gcells_mcells (Hc R fbs fv fv').
+    - iIntros "(%R & %fbs & %fv' & Hfb & (%Hfb' & %HR & %Hfv') & C)".
+      have Hfb := proj2 (Hb R fbs) Hfb'. have Hfb0 := Hfb. destruct Hfb0 as [? (fv & Hfv & ?)].
+      iExists R, fbs, fv. iFrame "Hfb". iSplit; [iPureIntro; split_and!; [by apply Hb|done|done]|].
+      by rewrite !gcells_mcells (Hc R fbs fv fv').
+  Qed.
 
   Lemma bytes_own_same {𝔄} (ty ty': type 𝔄) l x : bytes_own ty l x ⊣⊢ bytes_own ty' l x.
-  Proof. apply bytes_own_iff=> ??. apply ty_fbytes_same. Qed.
-
-  (** The form of [lang/heap_cells.v]: fancy bytes with [brepr]. *)
-  Lemma bytes_own_brepr {𝔄} (ty: type 𝔄) l x :
-    bytes_own ty l x ⊣⊢ ∃ fbs fv, heap_mapsto_fbytes l fbs ∗
-      ⌜length fbs = ty_bsize ty ∧ ty.(ty_fval) x = Some fv⌝ ∗ brepr ty.(ty_mty) fbs fv.
   Proof.
-    rewrite bytes_own_unseal /bytes_own_def /brepr /greg_map. iSplit.
-    - iIntros "(%R & %fbs & Hfbs & (%Hlen & %fv & %Hfv & %Hrep) & HR)".
-      iExists fbs, fv. iFrame. by iPureIntro.
-    - iIntros "(%fbs & %fv & Hfbs & [%Hlen %Hfv] & %R & %Hrep & HR)".
-      iExists R, fbs. iFrame. iPureIntro. split; [done|]. by exists fv.
+    apply bytes_own_iff; [intros; apply ty_fbytes_same|].
+    intros R fbs fv fv' _ Hfv Hfv'. rewrite (ty_fval_same ty ty') Hfv' in Hfv.
+    injection Hfv as ->. by rewrite (ty_mty_same ty ty').
   Qed.
+
+  Lemma ty_fval_val' {𝔄} (ty: type 𝔄) x v : ty.(ty_val) x = Some v → ty.(ty_fval) x = Some (fv_lift v).
+  Proof. rewrite -ty_val_eq -ty_fval_eq. apply syn_fval_val. Qed.
 
   (** Plain bytes. *)
   Lemma bytes_own_of_bytes {𝔄} (ty: type 𝔄) l x bs :
     ty_bytes ty x bs → l ↦b bs -∗ bytes_own ty l x.
   Proof.
-    rewrite bytes_own_unseal /bytes_own_def.
-    iIntros (Hbs) "Hbs". iExists ∅, (inr <$> bs). rewrite -heap_mapsto_fbytes_bytes.
-    iFrame "Hbs". iSplit; [|by rewrite /greg_map big_sepM_empty]. iPureIntro.
-    apply ty_fbytes_syn, syn_fbytes_bytes. by apply (ty_bytes_syn ty).
+    iIntros ((v & Hv & Hd)) "Hbs". rewrite (bytes_own_gcont _ _ _ (fv_lift v)); [|by apply ty_fval_val'].
+    by iApply gcont_of_bytes.
   Qed.
 
   (** The reduction lemmas: the fancy bytes of a value with a MiniRust value, or of a value
@@ -108,19 +140,18 @@ Section own_bytes.
   Lemma bytes_own_to_bytes {𝔄} (ty: type 𝔄) l x v :
     ty.(ty_val) x = Some v → bytes_own ty l x -∗ ∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝.
   Proof.
-    rewrite bytes_own_unseal /bytes_own_def.
-    iIntros (Hv) "(%R & %fbs & Hfbs & %Hfb & _)". rewrite ty_fbytes_syn in Hfb.
-    rewrite -ty_val_eq in Hv. apply (syn_fbytes_val _ _ _ _ Hv) in Hfb as (bs & -> & Hbs).
-    iExists bs. rewrite heap_mapsto_fbytes_bytes. iFrame. iPureIntro. by apply (ty_bytes_syn ty).
+    iIntros (Hv) "Bytes". rewrite (bytes_own_gcont _ _ _ (fv_lift v)); [|by apply ty_fval_val'].
+    iDestruct (gcont_lift_bytes with "Bytes") as (bs) "[Hbs %Hd]". iExists bs. iFrame.
+    iPureIntro. by exists v.
   Qed.
 
   Lemma bytes_own_nocell {𝔄} `{!NoCell 𝔄} (ty: type 𝔄) l x :
     bytes_own ty l x ⊣⊢ ∃ bs, l ↦b bs ∗ ⌜ty_bytes ty x bs⌝.
   Proof.
     iSplit.
-    - rewrite bytes_own_unseal /bytes_own_def. iIntros "(%R & %fbs & Hfbs & %Hfb & _)". rewrite ty_fbytes_syn in Hfb.
-      apply syn_fbytes_nocell in Hfb as (bs & -> & Hbs); [|done].
-      iExists bs. rewrite heap_mapsto_fbytes_bytes. iFrame. iPureIntro. by apply (ty_bytes_syn ty).
+    - iIntros "Bytes". iDestruct (bytes_own_fval with "Bytes") as %[fv Hfv].
+      move: (Hfv). rewrite ty_fval_nocell // => /fmap_Some [v [Hv _]].
+      by iApply (bytes_own_to_bytes with "Bytes").
     - iIntros "(%bs & Hbs & %Hbs)". by iApply bytes_own_of_bytes.
   Qed.
 
@@ -153,70 +184,42 @@ Section own_bytes.
     rewrite bytes_own_nocell. iIntros "(%bs & _ & %Hbs)". iPureIntro. by eapply ty_bytes_val.
   Qed.
 
-  Lemma bytes_own_length {𝔄} (ty: type 𝔄) l x :
-    bytes_own ty l x -∗ ∃ fbs, heap_mapsto_fbytes l fbs ∗ ⌜length fbs = ty_bsize ty⌝ ∗
-      (heap_mapsto_fbytes l fbs -∗ bytes_own ty l x).
+  (** Dropping the cells of the bytes (e.g. to overwrite or deallocate them): they are
+      moved out ([gcont_forget]), which needs the registry and a credit. *)
+  Lemma bytes_own_forget {𝔄} (ty: type 𝔄) l x E :
+    lazyE ∪ ↑gcellsN ⊆ E →
+    gcells_ctx -∗ £ 1 -∗ bytes_own ty l x ={E}=∗ ∃ bs, l ↦b bs ∗ ⌜length bs = ty_bsize ty⌝.
   Proof.
-    rewrite bytes_own_unseal /bytes_own_def.
-    iIntros "(%R & %fbs & Hfbs & %Hfb & #HR)". iExists fbs. iFrame "Hfbs".
-    iSplit; [by destruct Hfb|]. iIntros "Hfbs". iExists R, fbs. by iFrame "Hfbs HR".
+    iIntros (?) "#GC Lc Bytes". rewrite bytes_own_unseal. iDestruct "Bytes" as (fv _) "C".
+    iApply (gcont_forget with "GC Lc C"); [done|apply ty_mty_wf].
   Qed.
 
-  (** Dropping the cells of the bytes (e.g. to overwrite or deallocate them). *)
   Lemma wp_bytes_own_forget {𝔄} (ty: type 𝔄) l x E e Φ :
-    TCEq (to_val e) None → ↑naN ⊆ E →
-    bytes_own ty l x -∗
+    lazyE ∪ ↑gcellsN ⊆ E →
+    gcells_ctx -∗ £ 1 -∗ bytes_own ty l x -∗
     (∀ bs, l ↦b bs -∗ ⌜length bs = ty_bsize ty⌝ -∗ WP e @ E {{ Φ }}) -∗ WP e @ E {{ Φ }}.
   Proof.
-    rewrite bytes_own_unseal /bytes_own_def.
-    iIntros (??) "(%R & %fbs & Hfbs & [%Hlen _] & _) Hwp".
-    iApply (wp_fbytes_forget with "Hfbs"); [done..|]. iIntros (bs) "Hbs %Hlen'".
-    iApply ("Hwp" with "Hbs"). by rewrite Hlen' Hlen.
+    iIntros (?) "#GC Lc Bytes Hwp".
+    iMod (bytes_own_forget with "GC Lc Bytes") as (bs) "[Hbs %Hlen]"; [done|].
+    by iApply ("Hwp" with "Hbs").
   Qed.
 
   (** The fancy bytes of a pair: those of its components, one after the other. *)
   Lemma bytes_own_pair {𝔄 𝔅} (ty: type (𝔄 * 𝔅)) (ty1: type 𝔄) (ty2: type 𝔅) l x1 x2 :
     bytes_own ty l (x1, x2) ⊣⊢ bytes_own ty1 l x1 ∗ bytes_own ty2 (l +ₗ ty_bsize ty1) x2.
   Proof.
-    rewrite bytes_own_unseal /bytes_own_def. setoid_rewrite ty_fbytes_syn. iSplit.
-    - iIntros "(%R & %fbs & Hfbs & %Hfb & #HR)".
-      apply syn_fbytes_pair in Hfb as (f1 & f2 & -> & H1 & H2).
-      rewrite heap_mapsto_fbytes_app (syn_fbytes_length _ _ _ H1) -(ty_bsize_eq ty1).
-      iDestruct "Hfbs" as "[F1 F2]".
-      iSplitL "F1"; iExists R, _; iFrame "∗#"; by iPureIntro.
-    - iIntros "[(%R1 & %f1 & F1 & %H1 & #HR1) (%R2 & %f2 & F2 & %H2 & #HR2)]".
-      iDestruct (greg_map_union with "HR1 HR2") as "[[%Hs1 %Hs2] HR]".
-      iExists (R1 ∪ R2), (f1 ++ f2).
-      rewrite heap_mapsto_fbytes_app (syn_fbytes_length _ _ _ H1) -(ty_bsize_eq ty1).
-      iFrame "F1 F2 HR". iPureIntro. apply syn_fbytes_pair. exists f1, f2.
-      split; [done|]. split; [by eapply (syn_fbytes_mono R1)|by eapply (syn_fbytes_mono R2)].
-  Qed.
-
-  (** The fancy bytes of a cell (for the [PCell] types of §10 step 5): a value [g] of
-      [pcellₛ m] (with a well-formed content type [m]) is a cell group, and its fancy
-      bytes at [l] are exactly the location side of the group ([loc_side]): the edges of
-      the locations [l], [l +ₗ 1], ... to the byte-cells of [g]. *)
-  Lemma frepr_cell_inv (R: gmap positive (mty * list positive)) m
-      (fbs: list (positive + AbstractByte)) g :
-    frepr R m fbs (FVCell g) → ∃ cs, R !! g = Some (m, cs) ∧ fbs = inl <$> cs.
-  Proof. inversion 1 as [? ? cs| ? ? v ? Hv| |]; [by eauto|]. by destruct v. Qed.
-
-  Lemma bytes_own_pcell {m} (ty: type (pcellₛ m)) l (g: ~~(pcellₛ m)) :
-    mty_wf m →
-    bytes_own ty l g ⊣⊢ ∃ cs, loc_side l g m cs ∗ ⌜length cs = mty_size m⌝.
-  Proof.
-    intros Hwf. rewrite bytes_own_unseal /bytes_own_def /ty_fbytes /ty_bsize -ty_mty_eq -ty_fval_eq /= decide_True //.
-    iSplit.
-    - iIntros "(%R & %fbs & Hfbs & (%Hlen & %fv & %Hfv & %Hrep) & #HR)".
-      injection Hfv as <-.
-      destruct (frepr_cell_inv _ _ _ _ Hrep) as (cs & HRg & ->).
-      iExists cs. iSplit; [|by rewrite length_fmap in Hlen]. iSplit.
-      + by iDestruct (big_sepM_lookup with "HR") as "?".
-      + by rewrite /heap_mapsto_fbytes big_sepL_fmap.
-    - iIntros "(%cs & [#Hg Hls] & %Hlen)". iExists {[g := (m, cs)]}, (inl <$> cs).
-      rewrite /heap_mapsto_fbytes big_sepL_fmap /greg_map big_sepM_singleton. iFrame "Hls Hg".
-      iPureIntro. split; [by rewrite length_fmap|]. exists (FVCell g). split; [done|].
-      apply frepr_cell. by rewrite lookup_singleton.
+    rewrite bytes_own_unseal /bytes_own_def -!ty_fval_eq -!ty_mty_eq /ty_bsize -ty_mty_eq.
+    change (syn_mty (𝔄 * 𝔅)) with (seq_tuple [syn_mty 𝔄; syn_mty 𝔅]).
+    change (syn_fval (𝔄:=𝔄 * 𝔅) (x1, x2)) with
+      (fv₀ ← syn_fval x1; fv₁ ← syn_fval x2; Some (FVTuple [fv₀; fv₁])). iSplit.
+    - iIntros "(%fv & %Hfv & C)".
+      destruct (syn_fval x1) as [fv₀|]; [|done]. destruct (syn_fval x2) as [fv₁|]; [|done].
+      simpl in Hfv. injection Hfv as <-.
+      rewrite !gcont_seq_tuple_cons gcont_seq_tuple_nil right_id.
+      iDestruct "C" as "[C1 C2]". iSplitL "C1"; iExists _; by iFrame.
+    - iIntros "[(%fv₀ & %H₀ & C1) (%fv₁ & %H₁ & C2)]". rewrite H₀ H₁ /=.
+      iExists _. iSplit; [done|].
+      rewrite !gcont_seq_tuple_cons gcont_seq_tuple_nil right_id. iFrame.
   Qed.
 
   (** Zero-sized values: their fancy bytes are empty. *)
@@ -239,15 +242,11 @@ Section own_bytes.
     intros. iSplit; [by iIntros|]. iIntros "_". by iApply bytes_own_zst_emp.
   Qed.
 
-  (** The fancy bytes of a zero-sized value do not depend on the location. *)
+  (** The fancy bytes of a zero-sized value with a MiniRust value do not depend on the
+      location. *)
   Lemma bytes_own_zst_loc {𝔄} (ty: type 𝔄) l l' x :
-    ty_bsize ty = 0 → bytes_own ty l x ⊣⊢ bytes_own ty l' x.
-  Proof.
-    intros Hz. rewrite bytes_own_unseal /bytes_own_def.
-    iSplit; iIntros "(%R & %fbs & _ & %Hfb & HR)"; iExists R, fbs; iFrame "HR";
-      have Hfb' := Hfb; destruct Hfb' as [Hlen _]; rewrite Hz in Hlen;
-      apply nil_length_inv in Hlen; subst fbs; rewrite /heap_mapsto_fbytes /=; by iSplit.
-  Qed.
+    ty_bsize ty = 0 → is_Some (ty.(ty_val) x) → bytes_own ty l x ⊣⊢ bytes_own ty l' x.
+  Proof. intros. by rewrite !bytes_own_zst_true. Qed.
 
   (** The sharing predicate is structural, as for [own_ptr]: a guard of the bytes and
       the sharing predicate of the contents, under one later. *)
@@ -372,7 +371,7 @@ Section own_bytes_rules.
 
   (** Writing the pointee: a typed [Store] of the value of [y] replaces [x] by [y];
       the ownership of [x] is given back. *)
-  Lemma wp_own_bytes_store {𝔄} n (ty: type 𝔄) l x y v d g tid E :
+  Lemma wp_own_bytes_store {𝔄} `{!NoCell 𝔄} n (ty: type 𝔄) l x y v d g tid E :
     ↑naN ⊆ E → ty.(ty_val) y = Some v →
     {{{ (own_bytes n ty).(ty_gho_own) (l, x) (S d) g tid ∗ ▷ ty.(ty_gho_own) y d g tid }}}
       Store Na1Ord ty.(ty_mty) #l (MLit v) @ E
@@ -381,8 +380,8 @@ Section own_bytes_rules.
   Proof.
     iIntros (? Hv Φ) "[Own Gho'] HΦ".
     iDestruct "Own" as "(Bytes & Free & Gho)".
-    iApply (wp_bytes_own_forget with "Bytes"); [done..|]. iIntros (bs) "Hbs %Hlen".
-    iApply (wp_store_na with "Hbs"); [done|by eapply ty_val_wf|done|].
+    iDestruct (bytes_own_nocell_bytes with "Bytes") as (bs) "[Hbs %Hbs]".
+    iApply (wp_store_na with "Hbs"); [done|by eapply ty_val_wf|by eapply ty_bytes_length|].
     iIntros "!> Hbs". iApply "HΦ". iFrame. iApply (bytes_own_of_bytes with "Hbs").
     by apply ty_bytes_encode.
   Qed.
@@ -405,14 +404,15 @@ Section own_bytes_rules.
   Qed.
 
   (** Deallocating a box; the ownership of its contents is given back. *)
-  Lemma wp_own_bytes_delete {𝔄} (ty: type 𝔄) l x d g tid E :
+  Lemma wp_own_bytes_delete {𝔄} `{!NoCell 𝔄} (ty: type 𝔄) l x d g tid E :
     ↑naN ⊆ E → (0 < ty_bsize ty)%nat →
     {{{ (own_bytes (ty_bsize ty) ty).(ty_gho_own) (l, x) (S d) g tid }}}
       Free #(ty_bsize ty) #l @ E
     {{{ RET #☠; ▷ ty.(ty_gho_own) x d g tid }}}.
   Proof.
     iIntros (? Hsz Φ) "(Bytes & Free & Gho) HΦ".
-    iApply (wp_bytes_own_forget with "Bytes"); [done..|]. iIntros (bs) "Hbs %Hlen".
+    iDestruct (bytes_own_nocell_bytes with "Bytes") as (bs) "[Hbs %Hbs]".
+    have Hlen := ty_bytes_length _ _ _ Hbs.
     rewrite freeable_sz_full. iDestruct "Free" as "[Free|%Hz]".
     - iApply (wp_free_bytes with "[$Hbs Free]"); [done|by rewrite Hlen|by rewrite Hlen|].
       iIntros "!> _". by iApply "HΦ".
@@ -430,8 +430,9 @@ Section own_bytes_rules.
          iDestruct "X" as (x' off) "[gho [#⧖off [%Habs [G H]]]]".
          iExists (x.1, x'), (off). iModIntro. iFrame "G H ⧖off gho Hfree".
          iSplitL "Hown".
-         + iApply (bytes_own_iff with "Hown"). intros R fbs.
-           rewrite /ty_fbytes -!ty_fval_eq. by rewrite (syn_abstract_fval_eq _ _ _ Habs).
+         + iApply (bytes_own_iff with "Hown").
+           * intros R fbs. rewrite /ty_fbytes -!ty_fval_eq. by rewrite (syn_abstract_fval_eq _ _ _ Habs).
+           * intros R fbs fv fv' _. rewrite -!ty_fval_eq (syn_abstract_fval_eq _ _ _ Habs). congruence.
          + iPureIntro. simpl. rewrite Habs. trivial.
   Qed.
 

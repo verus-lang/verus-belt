@@ -105,7 +105,9 @@ Section typing.
 
   Lemma syn_bincl_uninit_split {n m} : syn_bincl (uninit_splitₛ (n:=n) (m:=m)).
   Proof.
-    split; [by rewrite syn_bsize_prod|]. intros x R fbs.
+    split; [by rewrite syn_bsize_prod|]. split; last first.
+    { intros x R fbs fv fv' _ Hx Hx'. simpl in *. simplify_eq. done. }
+    intros x R fbs.
     cbn [syn_type_morphism_fn uninit_splitₛ]. destruct x.
     rewrite syn_fbytes_pair !syn_fbytes_uninit. split.
     - intros [Hl [bs ->]]. rewrite length_fmap in Hl.
