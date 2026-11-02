@@ -9,8 +9,9 @@ Set Default Proof Using "Type".
 
 (** * Cells as guarded mutable borrows: the decodability layer
 
-Phase 3 of [design_docs/guarded-mutable-borrows-plan.md] (see "Outcome: phase 3" there).
-A cell is an instance [γ] of the GMB library ([lifetime/guarded_bor.v]) over ordinary
+Phase 3 of [design_docs/guarded-mutable-borrows-plan.md] (see "Outcome: phase 3" there);
+since phase 4, the bytes of the types are these contents ([bytes_own] in [typing/own.v]), and
+the [PCell] types are defined on them ([typing/pcell.v]). A cell is an instance [γ] of the GMB library ([lifetime/guarded_bor.v]) over ordinary
 memory: the placement is the location [l] of the cell, the logical contents are a fancy
 value [fv], and the contents are
 
@@ -23,7 +24,7 @@ value [fv], and the contents are
   in [fv] (at its offset [o], following the structure of [m]), with the registry fact
   [gcell_reg g' γ' m'] that names its instance and type.
 
-So the decodability invariant (D3) of the old cell heap is a property of the contents,
+So the decodability invariant (D3) of the former physical cell heap is a property of the contents,
 held by whoever has them: the instance when idle, the mover during (L1), the borrow during
 (L3). [gcont] also is the predicate of a value with cells at [l] that is not itself the
 contents of a cell (a typed move moves such values).

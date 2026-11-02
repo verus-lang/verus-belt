@@ -9,8 +9,9 @@ Set Default Proof Using "Type".
 The element [p ◁ᵥ ty] types a path that evaluates to a MiniRust value [MLitV w]: it is
 the result of a typed [Load] of [ty_mty ty] and the argument of a typed [Store]. The value
 [x] may contain cells ([PCell]s): [w] is then the value loaded from the fancy bytes of the
-fancy value [ty_fval x], whose cells are in transit ([val_cells]), and a [Store] of [w]
-retethers them. For a type without cells ([NoCell]), or a value with a MiniRust value, this
+fancy value [ty_fval x], whose cells (GMB instances, [typing/gmb_cells.v]) are in transit
+with it ([val_cells]), and a [Store] of [w] puts them back at the new location. For a type
+without cells ([NoCell]), or a value with a MiniRust value, this
 is the plain form [ty_val x = Some w] ([val_own_nocell], [val_own_val], [tctx_val_elim],
 [val_own_intro_sep]). It is a semantic element ([TCtx_sem]), so the type context needs no
 new case. (The legacy word element [p ◁ ty] was deleted in

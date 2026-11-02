@@ -417,7 +417,7 @@ Record type `{!typeG Σ} 𝔄 := {
      [ty_val_eq]): a parent owns bytes that decode to [ty_val x] at [ty_mty] (see
      [ty_bytes]); the size in bytes is [ty_bsize = mty_size ty_mty].
      [ty_fval x] is the fancy value of [x] (see [syn_fval] and [lang/fvalue.v]): its
-     MiniRust value where the cells it embeds are their groups. It is determined by the
+     MiniRust value where the cells it embeds are their ids. It is determined by the
      syntactic type too ([ty_fval_eq]); for a type without cells it is
      [fv_lift <$> ty_val x] ([ty_fval_nocell]). *)
   ty_mty: mty;
@@ -546,8 +546,8 @@ Global Arguments ty_bsize {_ _ _} _ / : simpl nomatch.
 Definition ty_bytes `{!typeG Σ} {𝔄} (ty: type 𝔄) (x: ~~𝔄) (bs: list abyte) : Prop :=
   ∃ v, ty.(ty_val) x = Some v ∧ decode_value ty.(ty_mty) bs = Some v.
 
-(** [ty_fbytes R ty x fbs]: the fancy bytes [fbs] (byte-cells or bytes) represent the value
-    [x] of [ty], with the static registry [R] of cell groups: they have the size
+(** [ty_fbytes R ty x fbs]: the fancy bytes [fbs] (positions of cells or bytes) represent the
+    value [x] of [ty], with a local registry [R] of the cells: they have the size
     [ty_bsize ty], and represent the fancy value [ty_fval x] at [ty_mty] ([frepr]). This
     is what a parent owns for its pointee (see [bytes_own] in [typing/own.v]). For a
     value with a MiniRust value, and so for every value of a type without cells, the fancy
