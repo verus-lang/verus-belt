@@ -7,6 +7,7 @@ From lrust.typing Require Export base uniq_cmra lstate.
 From lrust.typing Require Export lft_contexts.
 From lrust.typing Require Export lifetime.
 From lrust.lifetime Require Import lifetime_full.
+From lrust.lifetime Require Export guarded_bor.
 From guarding.lib Require Import fractional cancellable.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -451,7 +452,7 @@ Record type `{!typeG Σ} 𝔄 := {
      fancy updates (e.g. a lazy payload) can be run inside. The law ends in [d] steps;
      see the comment at the top of the file. *)
   ty_share E κ x d g tid G :
-      ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E → Timeless G →
+      ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ E → Timeless G →
       llft_ctx -∗ κ ⊑ lft_intersect_list ty_lfts -∗ ty_gho_pers x d g tid -∗
       (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
       &{κ} (ty_gho_own x d g tid) ={E}=∗ |={E}▷=>^d |={E}=> G ∗ ty_shr κ x d g tid;
@@ -1558,7 +1559,7 @@ End traits.
 (** * resolve *)
 
 Definition resolve `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (ty: type 𝔄) (Φ: ~~ 𝔄 → proph_asn → Prop) : Prop :=
-  ∀G F x d g tid, Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F →
+  ∀G F x d g tid, Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ F →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗ (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗
     ty.(ty_gho_own) x d g tid ={F}=∗ |={F}▷=>^(d*(g+1)) |={F}=> ⟨π, Φ x π⟩ ∗ G.
 Global Instance: Params (@resolve) 3 := {}.
@@ -1576,7 +1577,7 @@ Definition resolve' `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (ty: type 𝔄)
     value is left. *)
 Definition resolve_keep `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (ty: type 𝔄)
     (Φ: ~~ 𝔄 → proph_asn → Prop) : Prop :=
-  ∀G F x d g tid, Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F →
+  ∀G F x d g tid, Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ F →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗ (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗
     ty.(ty_gho_own) x d g tid ={F}=∗ |={F}▷=>^(d*(g+1)) |={F}=>
       ⟨π, Φ x π⟩ ∗ G ∗ ty.(ty_gho_res) x d g tid.

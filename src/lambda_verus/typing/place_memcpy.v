@@ -102,7 +102,7 @@ Section memcpy.
       [done|solve_ndisj|done|].
     iIntros (ld dh gh [Hdh Hgh]) "Ptd Ghod Cld".
     (* Resolve the old value of the destination. *)
-    iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN))
+    iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN ∖ ↑gmbN))
       with "LFT PROPH UNIQ TIME E Ghalf H2 Ghod") as "ToObs"; [set_solver|].
     iMod (lc_fupd_elim_later with "£r ToObs") as "ToObs".
     iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
@@ -201,7 +201,7 @@ Section memcpy.
       [done|solve_ndisj|done|].
     iIntros (ld dh gh [Hdh Hgh]) "Ptd Ghod Cld".
     (* Resolve the old value of the destination. *)
-    iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN))
+    iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN ∖ ↑gmbN))
       with "LFT PROPH UNIQ TIME E Ghalf H2 Ghod") as "ToObs"; [set_solver|].
     iMod (lc_fupd_elim_later with "£r ToObs") as "ToObs".
     iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].

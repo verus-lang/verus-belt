@@ -261,7 +261,7 @@ End lty_mem.
 
 Definition lty_resolve `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (lt: lty 𝔄)
     (Φ: ~~𝔄 → proph_asn → Prop) : Prop :=
-  ∀ G F m x ζm q d g tid l, Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F →
+  ∀ G F m x ζm q d g tid l, Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ F →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
     (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗
     ltype_own (Owned m) lt (lty_rfn lt x ζm q) d g tid l ={F}=∗
@@ -494,7 +494,7 @@ Section oplace.
   Lemma oplace_resolve_steps {𝔄} E L n (lt: lty 𝔄) Φ x tid v :
     lty_resolve E L lt Φ →
     oplace_own n lt x tid v -∗ ∃ D, ⧖D ∗ ∀ G F, ⌜Timeless G⌝ -∗
-      ⌜↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F⌝ -∗
+      ⌜↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ F⌝ -∗
       llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
       (G &&{↑NllftG}&&> llctx_interp L) -∗ G ={F}=∗
         |={F}▷=>^(D*(D+1)) |={F}=> ⟨π, Φ x.1.2 π⟩ ∗ G.

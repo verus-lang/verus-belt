@@ -117,7 +117,7 @@ From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.typing Require Export type.
 From lrust.typing Require Import uniq_util uniq_bor own shr_bor bytes_layout product freeable_util sum.
-From lrust.lifetime Require Import lifetime_full.
+From lrust.lifetime Require Import lifetime_full guarded_bor.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
 
@@ -475,7 +475,7 @@ Section ltype_own.
         | PatShrBlocked α => ∃ x, place_rfn_rel lr x ∗
             (@[κ ⊓ α] &&{↑NllftG; g+1}&&> cbytes ty x l) ∗
             ty.(ty_shr) (κ ⊓ α) x d g tid ∗ ty.(ty_gho_pers) x d g tid ∗
-            ∃ d' g', ⌜d' ≤ d ∧ g' ≤ g⌝ ∗ &{κ} ([†α] ={lazyE}=∗ ofty_owned m ty x d' g' tid l)
+            ∃ d' g', ⌜d' ≤ d ∧ g' ≤ g⌝ ∗ &{κ} ([†α] ={lazyB}=∗ ofty_owned m ty x d' g' tid l)
         | _ => ∃ x, place_rfn_rel lr x ∗
             (@[κ] &&{↑NllftG; g+1}&&> cbytes ty x l) ∗
             ty.(ty_shr) κ x d g tid ∗ ty.(ty_gho_pers) x d g tid
@@ -1549,7 +1549,7 @@ Section cpd.
   (** Folding back. The contents are forced (with a guard for the lifetime of the type and a
       later credit): the payload of the leaf holds its bytes eagerly. *)
   Lemma prod_ofty_fold_uniq {𝔄 𝔅} (ty1: type 𝔄) (ty2: type 𝔅) κ ξi x1 x2 d g tid l E G :
-    Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
+    Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ E →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
     (G &&{↑NllftG}&&> @[ty_lft (prod_ty ty1 ty2)]) -∗ G -∗ £1 -∗
     ltype_own (Uniq κ ξi) (ProdLty (OfTy ty1) (OfTy ty2))

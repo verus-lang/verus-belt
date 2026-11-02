@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.lifetime Require Import lifetime_full.
+From lrust.lifetime Require Import lifetime_full guarded_bor.
 From lrust.util Require Export proph_bor.
 From guarding Require Import guard tactics.
 From lrust.typing Require Import own bytes_layout.
@@ -129,7 +129,7 @@ Section uniq_util.
     a program step. A lender gets a guard when it unblocks: the blocked entries of
     the type context hold a pending ownership ([tctx_pending]) that is settled with
     a guard for the lifetime of the type. *)
-  Definition lazyE : coPset := ↑Nllft ∪ ↑prophN ∪ ↑uniqN.
+  Definition lazyE : coPset := ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN.
 
   Lemma lazyE_NllftUsr : ↑NllftUsr ∪ ↑NllftUsr2 ⊆ lazyE.
   Proof. rewrite /lazyE /NllftUsr /NllftUsr2. solve_ndisj. Qed.
@@ -1257,7 +1257,7 @@ Section uniq_util_bytes.
       {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (d: nat) (g: nat)
       (κ: lft) (tid: thread_id) (l: loc) E
    :
-    (↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E) →
+    (↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ E) →
     ⊢ llft_ctx -∗
       proph_ctx -∗
       uniq_ctx -∗ ⧖(S d `max` g) -∗
@@ -1310,7 +1310,7 @@ Section uniq_util_bytes.
       The later credits come from the time receipts. *)
   Lemma resolve_uniq_body {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l E L G F :
     Timeless G →
-    lctx_lft_alive E L κ → ↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F →
+    lctx_lft_alive E L κ → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ F →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ κ ⊑ ty_lft ty -∗ elctx_interp E -∗
     (G &&{↑NllftG}&&> llctx_interp L) -∗
     G -∗ ⧖(S d `max` g) -∗
@@ -1571,7 +1571,7 @@ Section uniq_util_bytes.
     :
       Timeless G →
       Inj eq eq fp → (∀ y π, vπ (fv y) π = fp (vπ y π)) →
-      ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
+      ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ E →
       llft_ctx -∗
       proph_ctx -∗
       uniq_ctx -∗
@@ -1627,7 +1627,7 @@ Section uniq_util_bytes.
     :
       Timeless G →
       Inj eq eq ((!ₛ) f) →
-      ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
+      ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ E →
       llft_ctx -∗
       proph_ctx -∗
       uniq_ctx -∗
@@ -1671,7 +1671,7 @@ Section uniq_util_bytes.
     :
       Timeless G →
       Inj eq eq ((!ₛ) f) →
-      ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
+      ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ E →
       llft_ctx -∗
       proph_ctx -∗
       uniq_ctx -∗
@@ -1721,7 +1721,7 @@ Section uniq_util_bytes.
   (** Reborrowing records no summary of the final value: the inheritance only gives
       back the restored borrow (see [uniq_restored]). *)
   Lemma uniq_body_reborrow {𝔄} (ty: type 𝔄) x ξi d g idx κ κ' tid l E :
-    ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
+    ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ E →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ κ' ⊑ κ -∗ ⧗1 -∗
     uniq_body ty x ξi d g idx κ tid l ={E}=∗ ∃ ζi idx',
       uniq_body ty x ζi d g idx' κ' tid l ∗
