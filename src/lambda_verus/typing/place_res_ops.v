@@ -273,8 +273,8 @@ Section unblock.
     (* Open the borrow of the leaf and fire its inheritance. *)
     iMod (llftl_bor_acc_guarded with "LFT Bor H2κ H1") as "[Inh Close]"; [solve_ndisj|].
     iMod (lc_fupd_elim_later with "£1 Inh") as "Inh".
-    iMod (fupd_mask_mono with "(Inh [])") as "Upd1"; [rewrite /lazyE; solve_ndisj| |].
-    { iExact "†α". }
+    iDestruct (blocked_owned_fire with "Inh †α") as "Upd1".
+    iMod (fupd_mask_mono with "Upd1") as "Upd1"; [rewrite /lazyB; solve_ndisj|].
     iMod (guarded_upd_run with "H2ty H2 Upd1")
       as "(H2 & %x' & %d1 & %g1 & Eqz & #⧖1 & Pt1 & Gho1)"; [rewrite /lazyE; solve_ndisj|].
     (* The credits of the second receipt, for the leaf. *)
@@ -290,9 +290,10 @@ Section unblock.
     iMod ("Close" $! (cbytes ty x' lh ∗ ▷^m2 ty_gho_own ty x' d1 g1 tid)%I
       with "[Pt1 Gho1]") as "[Bor H1]".
     { iSplitR "Pt1 Gho1"; [|iNext; iFrame "Pt1"; by iApply bi.laterN_intro].
-      iIntros "!> Q !> !>". rewrite /blocked_owned. iIntros "_ !>".
-      iApply guarded_upd_intro. iModIntro. iExists x', d1, g1. iFrame "Q ⧖1".
-      iNext. by iApply proph_eqz_obs. }
+      iIntros "!> [Pt Gho] !> !>". iApply blocked_owned_intro.
+      rewrite cbytes_fbytes. iDestruct "Pt" as (fv Hfv) "B". iExists fv. iFrame "B".
+      iApply guarded_upd_intro. iModIntro. iExists d1, g1. iFrame "⧖1".
+      iExists x'. iFrame "Gho". iSplit; [done|]. iNext. by iApply proph_eqz_obs. }
     iMod "Upd" as "_".
     iMod (fupd_mask_mono with "(Back2 H1 H2)") as "GP"; [solve_ndisj|].
     (* Share the leaf into the view. *)
