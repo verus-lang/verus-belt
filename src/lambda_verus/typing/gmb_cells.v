@@ -844,3 +844,88 @@ Section gcells_api.
     iApply (gmb_lend_guarded (gcont_c m) with "LFT GI Ga [Lc] Bor Gk G"); [done|by rewrite Hd].
   Qed.
 End gcells_api.
+
+(** ** Access to plain sub-values of owned contents (for borrows and owners) *)
+Section gcells_sub.
+  Context `{!typeG Σ, !gcellsGS Σ}.
+  Implicit Types (l : loc) (m : mty) (fv : FValue) (fbs : list (positive + abyte)).
+
+  Lemma gcells_lift_iff l m v : gcells l m (fv_lift v) ⊣⊢ True.
+  Proof. iSplit; [by iIntros|]. iIntros "_". iApply gcells_lift. Qed.
+
+  (** Replacing a plain sub-value by a plain one does not change the cells. *)
+  Lemma gcells_repl l m fv o m' vo vn fvn :
+    fv_repl m fv o m' (fv_lift vo) (fv_lift vn) fvn → gcells l m fvn ⊣⊢ gcells l m fv.
+  Proof.
+    intros Hr. remember (fv_lift vo) as fo eqn:Hfo. remember (fv_lift vn) as fnew eqn:Hfn.
+    revert l. induction Hr as [m fvo fv'|fs sz fvs k off fm fvk o m' fvo fv' fvk' Hk Hfvk Hr IH
+      |vars tag sz t d vm o m' fvo fv' d' Hvm Hr IH]; intros l; subst.
+    - by rewrite !gcells_lift_iff.
+    - rewrite !gcells_tuple. apply big_sepL_same_length; [by rewrite length_insert|].
+      intros j fvj fvj' Hj Hj'. destruct (decide (j = k)) as [->|Hne].
+      + rewrite list_lookup_insert in Hj; [|by eapply lookup_lt_Some]. injection Hj as <-.
+        rewrite Hfvk in Hj'. injection Hj' as <-. rewrite Hk. by apply IH.
+      + rewrite list_lookup_insert_ne in Hj; [|done]. rewrite Hj in Hj'. by injection Hj' as <-.
+    - rewrite !gcells_enum Hvm. by apply IH.
+  Qed.
+
+  (** The plain sub-value at [o] of owned contents: its bytes, and the contents with any
+      new plain sub-value there. *)
+  Lemma gcont_sub_acc l m fv o m' vo :
+    mty_wf m → fv_sub m fv o m' (fv_lift vo) →
+    gcont l m fv ⊢ ∃ bs, ⌜decode_value m' bs = Some vo⌝ ∗ (l +ₗ o) ↦b bs ∗
+      (∀ bs' vn fvn, ⌜decode_value m' bs' = Some vn⌝ -∗
+         ⌜fv_repl m fv o m' (fv_lift vo) (fv_lift vn) fvn⌝ -∗ (l +ₗ o) ↦b bs' -∗ gcont l m fvn).
+  Proof.
+    iIntros (Hwf Hsub) "(%R & %fbs & Hfb & [%Hrep %HR] & Hc)".
+    destruct (frepr_sub_plain _ _ _ _ _ _ _ HR Hrep Hsub Hwf (fv_cells_lift vo))
+      as (bs & v & Hsl & Hd & Hv). apply fv_lift_inj in Hv. subst v.
+    have Hb := fv_sub_bound _ _ _ _ _ Hsub Hwf. have Hl := frepr_length _ _ _ _ HR Hrep.
+    rewrite /gfbytes (big_sepL_select (in_rng o (mty_size m'))) big_sepL_rng; [|lia].
+    rewrite Hsl big_sepL_fmap. iDestruct "Hfb" as "[Hbs Hrest]".
+    iExists bs. iSplit; [done|]. iSplitL "Hbs"; [by rewrite heap_mapsto_bytes_pos_shift|].
+    iIntros (bs' vn fvn Hd' Hr) "Hbs'".
+    have Hl' := decode_value_length _ _ _ Hd'. have Hlb := decode_value_length _ _ _ Hd.
+    iExists R, (list_inserts o (inr <$> bs') fbs). iSplitL "Hbs' Hrest"; [|iSplit].
+    - have Hsl' : list_slice o (mty_size m') (list_inserts o (inr <$> bs') fbs) = inr <$> bs'.
+      { replace (list_inserts o (inr <$> bs') fbs) with (list_inserts (o + 0) (inr <$> bs') fbs)
+          by by rewrite Nat.add_0_r.
+        rewrite list_slice_inserts_in; [|lia|rewrite length_fmap; lia].
+        rewrite list_inserts_all //. rewrite length_fmap /list_slice length_take length_drop. lia. }
+      iEval (rewrite /gfbytes). iApply (big_sepL_select (in_rng o (mty_size m'))).
+      iSplitL "Hbs'".
+      { iApply (big_sepL_rng with "[Hbs']"); [rewrite length_inserts; lia|].
+        rewrite Hsl' big_sepL_fmap. by rewrite heap_mapsto_bytes_pos_shift. }
+      iApply (big_sepL_same_length with "Hrest"); [by rewrite length_inserts|].
+      intros i fb' fb Hi' Hi. case_decide as Hin; [done|].
+      rewrite list_lookup_inserts_Some in Hi'. destruct Hi' as [[_ Hi']|[Hr' _]].
+      + rewrite Hi in Hi'. by injection Hi' as <-.
+      + exfalso. apply Hin. rewrite length_fmap in Hr'. rewrite /in_rng. lia.
+    - iPureIntro. split; [|done]. eapply frepr_upd; [done|done|by eapply fv_repl_upd|done|done].
+    - by rewrite (gcells_repl _ _ _ _ _ _ _ _ Hr).
+  Qed.
+
+  Lemma gcont_sub_view l m fv o m' vo :
+    mty_wf m → fv_sub m fv o m' (fv_lift vo) →
+    gcont l m fv ⊢ ∃ bs, ⌜decode_value m' bs = Some vo⌝ ∗ (l +ₗ o) ↦b bs ∗
+      ((l +ₗ o) ↦b bs -∗ gcont l m fv).
+  Proof.
+    iIntros (Hwf Hsub) "C". iDestruct (gcont_sub_acc with "C") as (bs Hd) "[Hbs Cl]"; [done..|].
+    iExists bs. iFrame "Hbs". iSplit; [done|]. iIntros "Hbs". iApply ("Cl" with "[//] [] Hbs").
+    iPureIntro. by apply fv_sub_repl_refl.
+  Qed.
+
+  (** Values without cells. *)
+  Lemma gcont_of_bytes l m bs v : decode_value m bs = Some v → l ↦b bs -∗ gcont l m (fv_lift v).
+  Proof.
+    iIntros (Hd) "Hbs". iExists ∅, (inr <$> bs). rewrite gfbytes_bytes. iFrame "Hbs". iSplit.
+    - iPureIntro. split; [by constructor|]. by intros ???.
+    - iApply gcells_lift.
+  Qed.
+
+  Lemma gcont_lift_bytes l m v : gcont l m (fv_lift v) -∗ ∃ bs, l ↦b bs ∗ ⌜decode_value m bs = Some v⌝.
+  Proof.
+    iIntros "(%R & %fbs & Hfb & [%Hrep _] & _)". destruct (frepr_lift _ _ _ _ Hrep) as (bs & -> & Hd).
+    rewrite gfbytes_bytes. iExists bs. by iFrame.
+  Qed.
+End gcells_sub.
