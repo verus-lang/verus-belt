@@ -220,7 +220,7 @@ Section sum_deep.
       iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [solve_ndisj|].
       iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [solve_ndisj|].
       iMod (cpd_unfold_uniq lt' κ (pctx_hξi K x₀) (pinj j a) r' dh gh tid lK
-        with "LFT PROPH UNIQ G'κ G' [Body]") as "[Own G']"; [done|done|done| | | |solve_ndisj| |].
+        with "LFT PROPH UNIQ G'κ G' [Body]") as "[Own G']"; [done|done|done|by eexists| | | |solve_ndisj| |].
       { rewrite /r' prfn_rsv_sum. apply prfn_rsv_in. }
       { intros π. rewrite /r' prfn_den_sum /= prfn_den_in. by rewrite psum_map1_pinj. }
       { iIntros (d0 g0) "[Gho Pt] !>". rewrite lty_fold_sum_ofty.
@@ -290,19 +290,22 @@ Section sum_deep.
   Lemma vplace_conv_sum_fold {𝔄l 𝔄} (K: pctx (Σ! 𝔄l) 𝔄) (tyl: typel 𝔄l) i :
     vplace_conv K (SumLty tyl i (OfTy (tyl +!! i))) (OfTy (Σ! tyl)) (=).
   Proof.
-    iIntros (x ζm dh gh D tid lh G E ? HE ??) "#LFT #PROPH #UNIQ _ #Gk G _ _ _ H".
+    iIntros (x ζm dh gh D tid lh G E ? HE ??) "#LFT #PROPH #UNIQ _ #Gk G _ £ _ H".
+    iDestruct (lc_weaken 1 with "£") as "£"; [lia|].
     iModIntro. iExists (pctx_get K x), [], 1%Qp. iSplit; [done|]. iSplit.
     { iPureIntro. intros ??. apply prfn_rsv_in. }
     iSplitR; [done|]. iIntros "_".
     destruct (pctx_uend K) as [κ|] eqn:Hu.
     - rewrite (pctx_kind_uniq K κ) //. rewrite -(lty_fold_sum_ofty tyl i).
-      iApply (cpd_fold_uniq (SumLty tyl i (OfTy (tyl +!! i))) with "LFT PROPH UNIQ [] G H");
-        [done| |trans lazyE; [rewrite /lazyE; solve_ndisj|set_solver]|].
+      iApply (cpd_fold_uniq (SumLty tyl i (OfTy (tyl +!! i))) with "LFT PROPH UNIQ [] [] G £ H");
+        [done| |set_solver| |].
       + iIntros (d' g') "N". iDestruct (sum_ofty_own_rfn 0 with "N") as "N".
         rewrite lty_fold_sum_ofty /ltype_own /= /ofty_owned. iDestruct "N" as (? ->) "[$ $]".
         done.
       + iApply (guards_transitive with "Gk"). iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
         by iApply pctx_ulft_uend.
+      + iApply (guards_transitive with "Gk"). rewrite lty_fold_sum_ofty.
+        iApply llftl_intersect_incl_r.
     - rewrite (pctx_kind_owned K) //. iModIntro. iFrame "G". by iApply sum_ofty_own_rfn.
   Qed.
 
