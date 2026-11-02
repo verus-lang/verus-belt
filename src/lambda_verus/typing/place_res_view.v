@@ -370,7 +370,7 @@ Section unnest.
         cpd_gbody κp γf ty node tid l (uniq_cell x₀ d g γ) wπ) ↔
       ((⌜∀ π, (wπ π).1 = prfn_den r π⌝ ∗ ghost_var γ (1/2) (lstate p r) ∗ cpd_tok γf) ∗
         (pat_ok κp p ∗ ghost_var γ (1/2) (lstate p r) ∗
-         guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗ node p r d g tid l)))).
+         cpd_contents κp ty node p r d g tid l))).
   Proof.
     iIntros "!>" (wπ). iSplit.
     - iIntros "([Gh Tf] & [Body|[Tf' _]])"; [|by iDestruct (cpd_tok_excl with "Tf Tf'") as "[]"].
@@ -401,6 +401,12 @@ Section lty_share_view.
     | ProdLty lt1 lt2 => lty_vok lt1 ∧ lty_vok lt2
     | OfRes _ | ResUniqLty _ _ => False
     end.
+
+  Lemma lty_vok_simple {𝔄} (lt: lty 𝔄) : lty_vok lt → lty_simple lt.
+  Proof.
+    induction lt; simpl; try done; try (intros [_ ?]; by auto); try by auto.
+    intros [??]. split; auto.
+  Qed.
 
   (** A place in a borrow at [κ] (in [Owned m] mode) is shared into its view at [κ], in
       [m + 2*d + 3] steps (a level of nesting of unique borrows takes two steps, and
@@ -618,9 +624,9 @@ Section lty_share_view4.
       the state of the compound place), its lazy contents are run, and the referent is
       shared into its view at [κ ⊓ κ'] (two steps per level). *)
   Lemma share_view_uniq_cpd {𝔄} (lt: lty 𝔄) κ' :
-    lty_is_cpd lt → share_view_stmt lt → share_view_stmt (UniqLty lt κ').
+    lty_is_cpd lt → lty_simple lt → share_view_stmt lt → share_view_stmt (UniqLty lt κ').
   Proof.
-    iIntros (Hc IH κ m x ζm q d g g' tid l G E ???) "#LFT #PROPH #UNIQ #Gκ #Incl G Bor".
+    iIntros (Hc Hs IH κ m x ζm q d g g' tid l G E ???) "#LFT #PROPH #UNIQ #Gκ #Incl G Bor".
     have ?: ↑Nllft ⊆ E by (trans lazyE; [rewrite /lazyE; solve_ndisj|done]).
     destruct x as [[[[[l' x0] ξi] d0] g0] idx0].
     rewrite /ltype_own /= /uniq_node /= ltype_own_cp_uniq_cpd //.
@@ -671,17 +677,21 @@ Section lty_share_view4.
       (λ wπ, ⌜∀ π, (wπ π).1 = prfn_den r' π⌝ ∗ ghost_var γ (1/2) (lstate (lty_pat lt) r') ∗
         cpd_tok γf)%I with "LFT IBor [] Bor") as "Bor"; [done| |].
     { iNext. iApply cpd_gbody_pin. }
-    iMod (llftl_sep_split with "LFT Bor") as "[_ Bor]"; [done|].
+    iDestruct (llftl_bor_iff _ _ (ghost_var γ (1/2) (lstate (lty_pat lt) r') ∗
+      (pat_ok κp (lty_pat lt) ∗ cpd_contents κp (lty_fold lt) node (lty_pat lt) r' d1 g1 tid l'))
+      with "[] Bor") as "Bor".
+    { iIntros "!> !>". iSplit; [iIntros "(A & B & C)"|iIntros "(B & A & C)"]; iFrame. }
     iMod (llftl_sep_split with "LFT Bor") as "[_ Bor]"; [done|].
     iAssert (G &&{↑NllftG}&&> @[κ ⊓ κ'])%I as "#Gκκ".
     { iApply (guards_transitive with "Gκ"). iApply llftl_incl_glb; [iApply guards_refl|].
       iApply llftl_incl_trans; [iApply "Incl"|]. iApply llftl_intersect_incl_l. }
     iAssert (@[κ ⊓ κ'] &&{↑NllftG}&&> @[ty_lft (lty_fold lt)])%I as "#Gty".
     { iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply "I'". }
-    iMod (llftl_bor_guarded_upd_step with "LFT Gκκ Gty G Bor") as "Upd";
-      [done|rewrite /lazyE in H0; solve_ndisj|].
+    iMod (llftl_bor_cpd_contents_step with "LFT Gκκ Gty [] G Bor") as "Upd"; [done..| |].
+    { iApply (cpd_contents_eager_leaf with "LFT PROPH UNIQ"); done. }
     iModIntro. iApply (step_fupdN_nmono (S (2 * d1 + 3))); [lia|]. cbn [Nat.iter].
     iModIntro. iNext. iMod "Upd" as "[Bor G]".
+    iMod (llftl_sep_split with "LFT Bor") as "[_ Bor]"; [done|].
     iMod (llftl_sep_split with "LFT Bor") as "[_ Bor]"; [done|].
     iAssert (κ ⊓ κ' ⊑ ty_lft (lty_fold lt))%I as "#Incl2".
     { iApply "Gty". }
@@ -700,7 +710,7 @@ Section lty_share_view4.
     - apply share_view_ofty.
     - apply share_view_blocked.
     - destruct Hv as [Hc Hv]. destruct lt; try done;
-        [apply share_view_uniq_leaf|apply share_view_uniq_cpd; [done|by apply IH]..].
+        [apply share_view_uniq_leaf|apply share_view_uniq_cpd; [done|by apply lty_vok_simple|by apply IH]..].
     - apply share_view_own, IH, Hv.
     - destruct Hv. apply share_view_prod; [by apply IH1|by apply IH2].
     - apply share_view_shrblk.

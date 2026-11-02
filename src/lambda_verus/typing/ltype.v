@@ -2057,6 +2057,69 @@ Section cpd.
     iExists x. by iFrame.
   Qed.
 
+  (** The leaf view of the contents of a simple compound place, from an eager node. *)
+  Lemma cpd_contents_eager_leaf {𝔄} (lt: lty 𝔄) κp p r d g tid l :
+    lty_is_cpd lt → lty_simple lt →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗
+    □ (pat_ok κp p -∗ ⧖(S d `max` g) ∗ ltype_own_cp false lt (Owned 0) p r d g tid l -∗
+       leaf_contents κp (lty_fold lt) p r d g tid l).
+  Proof.
+    iIntros (??) "#LFT #PROPH #UNIQ !> #Ok [⧖ N]".
+    by iDestruct (cpd_contents_eager with "LFT PROPH UNIQ Ok ⧖ N") as "[_ $]".
+  Qed.
+
+  (** Running the lazy view of the contents of a compound body inside a borrow at [κ],
+      given a guard for [κ] and a later credit; the borrow is closed with the eager node,
+      from which the leaf view is rebuilt (with [Leaf]). *)
+  Lemma llftl_bor_cpd_contents {𝔄} E κ κp (ty: type 𝔄) node p r d g tid l G :
+    Timeless G → ↑Nllft ⊆ E → lazyE ⊆ E →
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ (@[κ] &&{↑NllftG}&&> @[ty_lft ty]) -∗
+    □ (pat_ok κp p -∗ ⧖(S d `max` g) ∗ node p r d g tid l -∗ leaf_contents κp ty p r d g tid l) -∗
+    G -∗ £1 -∗ &{κ} (pat_ok κp p ∗ cpd_contents κp ty node p r d g tid l) ={E}=∗
+      &{κ} (pat_ok κp p ∗ ⧖(S d `max` g) ∗ node p r d g tid l) ∗ G.
+  Proof.
+    iIntros (???) "#LFT #Gk #κP #Leaf G £ Bor".
+    iMod (fractional.frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Back]]]";
+      [solve_ndisj|].
+    iMod (llftl_bor_acc_guarded with "LFT Bor Gh H1") as "[C Close]"; [done|].
+    iMod (lc_fupd_elim_later with "£ C") as "[#Ok C]".
+    iDestruct (cpd_contents_guarded with "C") as "Upd".
+    iMod (guarded_upd_run with "[] H2 Upd") as "[H2 Q]"; [done| |].
+    { iApply (guards_transitive with "Gh κP"). }
+    iDestruct ("Close" $! (pat_ok κp p ∗ ⧖(S d `max` g) ∗ node p r d g tid l)%I with "[Q]")
+      as "Close".
+    { iSplitR; [|by iNext; iFrame "Ok"]. iIntros "!> [#Ok' Q] !> !>". iFrame "Ok'". iSplit.
+      - iApply guarded_upd_intro. by iModIntro.
+      - by iApply ("Leaf" with "Ok'"). }
+    iMod (fupd_mask_mono with "Close") as "[$ H1]"; [done|].
+    iApply (fupd_mask_mono with "(Back H1 H2)"). solve_ndisj.
+  Qed.
+
+  (** As [llftl_bor_cpd_contents], taking a step instead of a later credit. *)
+  Lemma llftl_bor_cpd_contents_step {𝔄} E κ κp (ty: type 𝔄) node p r d g tid l G :
+    Timeless G → ↑Nllft ⊆ E → lazyE ⊆ E →
+    llft_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ (@[κ] &&{↑NllftG}&&> @[ty_lft ty]) -∗
+    □ (pat_ok κp p -∗ ⧖(S d `max` g) ∗ node p r d g tid l -∗ leaf_contents κp ty p r d g tid l) -∗
+    G -∗ &{κ} (pat_ok κp p ∗ cpd_contents κp ty node p r d g tid l) ={E}=∗ ▷ |={E}=>
+      &{κ} (pat_ok κp p ∗ ⧖(S d `max` g) ∗ node p r d g tid l) ∗ G.
+  Proof.
+    iIntros (???) "#LFT #Gk #κP #Leaf G Bor".
+    iMod (fractional.frac_split_guard_in_half with "G Gk") as (γ) "[H1 [H2 [#Gh #Back]]]";
+      [solve_ndisj|].
+    iMod (llftl_bor_acc_guarded with "LFT Bor Gh H1") as "[C Close]"; [done|].
+    iModIntro. iNext. iDestruct "C" as "[#Ok C]".
+    iDestruct (cpd_contents_guarded with "C") as "Upd".
+    iMod (guarded_upd_run with "[] H2 Upd") as "[H2 Q]"; [done| |].
+    { iApply (guards_transitive with "Gh κP"). }
+    iDestruct ("Close" $! (pat_ok κp p ∗ ⧖(S d `max` g) ∗ node p r d g tid l)%I with "[Q]")
+      as "Close".
+    { iSplitR; [|by iNext; iFrame "Ok"]. iIntros "!> [#Ok' Q] !> !>". iFrame "Ok'". iSplit.
+      - iApply guarded_upd_intro. by iModIntro.
+      - by iApply ("Leaf" with "Ok'"). }
+    iMod (fupd_mask_mono with "Close") as "[$ H1]"; [done|].
+    iApply (fupd_mask_mono with "(Back H1 H2)"). solve_ndisj.
+  Qed.
+
   (** The node of a simple compound place is seen as the leaf of its folded type, as in
       [cpd_contents_eager]: at a structured refinement, it is blocked at [κp]. *)
   Lemma ltype_owned_leaf_node {𝔄} (lt: lty 𝔄) κp p r d g tid l :

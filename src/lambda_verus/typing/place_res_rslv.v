@@ -302,8 +302,7 @@ Section lty_res_uniq.
       "[[[£1 £s] £t] £n]"; [rewrite /advance_credits /n; nia|].
     iMod (proph_idx_bor_gen_resolve_share_rsv ⊤ κ (lty_sbl lt) (uniq_prvar x₀ ξi) c idx ζl P uπ
       (pat_ok κp (lty_pat lt) ∗ ghost_var γ (1/2) (lstate (lty_pat lt) r') ∗
-       guarded_upd lazyE @[ty_lft (lty_fold lt)] (⧖(S d' `max` g') ∗
-         node (lty_pat lt) r' d' g' tid l'))
+       cpd_contents κp (lty_fold lt) node (lty_pat lt) r' d' g' tid l')
       (lty_view lt κ 0 (lty_pat lt) r' d' g tid l') G n
       with "LFT PROPH UNIQ Gκs [Gh Tf] [£1 £s £t £n] G Tok Bor") as "(#Obs & G & V)";
       [solve_ndisj| | |].
@@ -312,8 +311,8 @@ Section lty_res_uniq.
         as "#Iff".
       iAssert (▷ ((⌜∀ π, (wπ π).1 = prfn_den r' π⌝ ∗ ghost_var γ (1/2) (lstate (lty_pat lt) r') ∗
         cpd_tok γf) ∗ (pat_ok κp (lty_pat lt) ∗ ghost_var γ (1/2) (lstate (lty_pat lt) r') ∗
-        guarded_upd lazyE @[ty_lft (lty_fold lt)] (⧖(S d' `max` g') ∗
-          node (lty_pat lt) r' d' g' tid l'))))%I with "[Gh Tf Body]" as "H".
+        cpd_contents κp (lty_fold lt) node (lty_pat lt) r' d' g' tid l')))%I
+        with "[Gh Tf Body]" as "H".
       { iNext. iApply ("Iff" $! wπ). iFrame. }
       iDestruct "H" as "[(_ & Gh & Tf) P0]". iModIntro. iFrame "P0". iNext.
       iIntros "P0". iDestruct ("Iff" $! uπ) as "[_ I2]".
@@ -321,10 +320,15 @@ Section lty_res_uniq.
     { iIntros (Hh HTh) "#Hκs Hh Bb".
       iAssert (Hh &&{↑NllftG}&&> @[κ])%I as "#Hκ".
       { iApply (guards_transitive with "Hκs"). iApply llftl_intersect_incl_l. }
+      iDestruct (llftl_bor_iff _ _ (ghost_var γ (1/2) (lstate (lty_pat lt) r') ∗
+        (pat_ok κp (lty_pat lt) ∗ cpd_contents κp (lty_fold lt) node (lty_pat lt) r' d' g' tid l'))
+        with "[] Bb") as "Bb".
+      { iIntros "!> !>". iSplit; [iIntros "(A & B & C)"|iIntros "(B & A & C)"]; iFrame. }
       iMod (llftl_sep_split with "LFT Bb") as "[_ Bb]"; [solve_ndisj|].
+      iMod (llftl_bor_cpd_contents with "LFT Hκ Incl [] Hh £1 Bb") as "[Bb Hh]";
+        [solve_ndisj|rewrite /lazyE; solve_ndisj| |].
+      { iApply (cpd_contents_eager_leaf with "LFT PROPH UNIQ"); [done|by apply lty_vok_simple]. }
       iMod (llftl_sep_split with "LFT Bb") as "[_ Bb]"; [solve_ndisj|].
-      iMod (llftl_bor_guarded_upd with "LFT Hκ Incl Hh £1 Bb") as "[Bb Hh]";
-        [solve_ndisj|rewrite /lazyE; solve_ndisj|].
       iMod (llftl_sep_split with "LFT Bb") as "[_ Bb]"; [solve_ndisj|].
       iMod (lty_share_view lt Hv κ 0 x0 ζm q d' g' g tid l' Hh ⊤ HTh
         ltac:(solve_ndisj) ltac:(lia) with "LFT PROPH UNIQ Hκ Incl Hh [Bb]") as "Upd".

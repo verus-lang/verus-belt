@@ -188,7 +188,7 @@ Section typing.
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ Hd'") as "(Hd'' & £)"; [trivial|..].
     iDestruct (lc_weaken (1 + 1) with "£") as "[£1' £f]"; [rewrite /advance_credits; nia|].
 
-    iMod (uniq_body_transform (points_to_ty ty) ty (l, x) x d g ξi ξidx κ tid c l _ _ (pair_with_loc_trackedₛ l) (λ d g, (S d, g)) with "LFT PROPH UNIQ Incl [] [⧗' £1'] HguardsK H1 £f [UniqBody]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
+    iMod (uniq_body_transform (points_to_ty ty) ty (l, x) x d g ξi ξidx κ tid c l _ _ (pair_with_loc_trackedₛ l) (λ d g, (S d, g)) (λ fw' fw, fbytes ty l fw' ∗ ⌜fw = FVTuple []⌝)%I with "LFT PROPH UNIQ Incl [] [⧗' £1'] HguardsK H1 £f [UniqBody]") as (ζi ζidx) "[#Obs2 [UniqBody H1]]". { set_solver. }
     { iApply guards_refl. }
     { iIntros "[gho _]".
       iMod (lc_fupd_elim_later with "£1' gho") as "gho".
@@ -201,8 +201,11 @@ Section typing.
         iMod (cumulative_persistent_time_receipt with "TIME ⧗' ⧖2") as "#⧖2'".
         { rewrite /lazyE. solve_ndisj. }
         iModIntro. iApply (persistent_time_receipt_mono with "⧖2'"). simpl. lia. }
-      iIntros (x2 d2 g2) "(gho & pt2)". iModIntro.
-      iFrame "free gho pt2". rewrite /cbytes bytes_own_zst_true //. }
+      iSplitR.
+      { iIntros (fw') "B". iModIntro. iExists (FVTuple []). iFrame "B". iSplit; [|done].
+        iExists (l, x). iSplit; [done|]. rewrite /cbytes bytes_own_zst_true //. }
+      iIntros (x2 d2 g2 fw' fw Hx2) "[B ->] gho". iModIntro. iSplit; [done|].
+      iFrame "free gho". by iApply (fbytes_cbytes with "B"). }
     { iApply (uniq_body_loc with "UniqBody"). intros ?. rewrite /cbytes !bytes_own_zst_true //. }
     iDestruct ("Halfback" with "H1 H2") as "X".
     iMod (fupd_mask_mono with "X") as "L". { set_solver. }
