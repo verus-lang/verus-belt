@@ -242,6 +242,7 @@ src/lambda_verus/lifetime/lifetime_internals/reborrow.v
 src/lambda_verus/lifetime/lifetime_internals/unborrow.v
 src/lambda_verus/lifetime/lifetime_internals/unnest.v
 src/lambda_verus/lifetime/lifetime_full.v
+src/lambda_verus/lifetime/lifetime_special_tests.v
 
 src/lambda_verus/util/basic.v
 src/lambda_verus/util/vector.v
