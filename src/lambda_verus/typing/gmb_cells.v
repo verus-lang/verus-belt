@@ -4,6 +4,8 @@ From lrust.typing Require Export type.
 From lrust.typing Require Import uniq_util.
 From lrust.lifetime Require Import lifetime_full guarded_bor.
 From guarding Require Import guard tactics.
+From iris.program_logic Require Import ectx_lifting.
+From lrust.lang Require tactics.
 Set Default Proof Using "Type".
 
 (** * Cells as guarded mutable borrows: the decodability layer
@@ -929,3 +931,219 @@ Section gcells_sub.
     rewrite gfbytes_bytes. iExists bs. by iFrame.
   Qed.
 End gcells_sub.
+
+(** ** Program steps *)
+Section gcells_wp.
+  Context `{!typeG Σ, !gcellsGS Σ}.
+  Implicit Types (l : loc) (m : mty) (fv : FValue).
+  Notation gca γ l := (gmb_a (S:=loc) (T:=FValue) γ l).
+
+  (** *** Moves: typed [Load]/[Store] and verbatim [MemCopy] of a value with cells *)
+
+  (** A typed [Load] moves the cells of the value (and the cells nested in them) out: the
+      location keeps plain bytes, and the cells travel with the loaded value. *)
+  Lemma wp_gcont_load_move E l m fv :
+    lazyE ∪ ↑gcellsN ⊆ E → mty_wf m →
+    {{{ gcells_ctx ∗ £ 1 ∗ gcont l m fv }}} Load Na1Ord m (Lit $ LitLoc l) @ E
+    {{{ v bs, RET MLitV v; l ↦b bs ∗ ⌜length bs = mty_size m⌝ ∗ gtransit m fv v }}}.
+  Proof.
+    iIntros (HE Hwf Φ) "(#GC & Lc & C) HΦ".
+    iMod (gcont_open with "GC Lc C") as (bs v) "(Hbs & %Hd & Tr)"; [done..|].
+    iApply (wp_load_na with "Hbs"); [done|]. iIntros "!> Hbs". iApply "HΦ". iFrame.
+    iPureIntro. by eapply decode_value_length.
+  Qed.
+
+  (** A typed [Store] of a value whose cells are in transit puts them at the new location:
+      the bytes there are [encode_value m v], which decode to [v] (re-encoding). *)
+  Lemma wp_gtransit_store E l' m fv v bs0 :
+    lazyE ∪ ↑naN ⊆ E → mty_wf m → length bs0 = mty_size m →
+    {{{ ▷ l' ↦b bs0 ∗ gtransit m fv v }}} Store Na1Ord m (Lit $ LitLoc l') (MLit v) @ E
+    {{{ RET LitV LitPoison; gcont l' m fv }}}.
+  Proof.
+    iIntros (HE Hwf Hlen Φ) "[Hbs [%Hvwf Cl]] HΦ". iApply wp_fupd.
+    iApply (wp_store_na with "Hbs"); [set_solver|done|done|]. iIntros "!> Hbs".
+    iMod (fupd_mask_subseteq lazyE) as "Hclm"; [set_solver|].
+    iMod ("Cl" with "[%] Hbs") as "C"; [by apply decode_encode_value|].
+    iMod "Hclm" as "_". by iApply "HΦ".
+  Qed.
+
+  (** A typed move: [Store m (Load m)]. *)
+  Lemma wp_gcont_move E l l' m fv bs0 :
+    lazyE ∪ ↑gcellsN ∪ ↑naN ⊆ E → mty_wf m → length bs0 = mty_size m →
+    {{{ gcells_ctx ∗ £ 1 ∗ gcont l m fv ∗ ▷ l' ↦b bs0 }}}
+      Store Na1Ord m (Lit $ LitLoc l') (Load Na1Ord m (Lit $ LitLoc l)) @ E
+    {{{ bs, RET LitV LitPoison; l ↦b bs ∗ gcont l' m fv }}}.
+  Proof.
+    iIntros (HE Hwf Hlen Φ) "(#GC & Lc & C & Hl') HΦ".
+    wp_bind (Load _ _ _). iApply (wp_gcont_load_move with "[$GC $Lc $C]"); [set_solver|done|].
+    iIntros "!>" (v bs) "(Hbs & _ & Tr)".
+    iApply (wp_gtransit_store with "[$Hl' $Tr]"); [set_solver|done|done|].
+    iIntros "!> C". iApply "HΦ". iFrame.
+  Qed.
+
+  (** A verbatim move: [MemCopy]. The bytes at the new location are the old ones. *)
+  Lemma wp_gcont_memcopy E l l' m fv bs0 :
+    lazyE ∪ ↑gcellsN ∪ ↑naN ⊆ E → mty_wf m → length bs0 = mty_size m →
+    {{{ gcells_ctx ∗ £ 1 ∗ gcont l m fv ∗ ▷ l' ↦b bs0 }}}
+      MemCopy Na1Ord (mty_size m) (Lit $ LitLoc l') (Lit $ LitLoc l) @ E
+    {{{ bs, RET LitV LitPoison; l ↦b bs ∗ gcont l' m fv }}}.
+  Proof.
+    iIntros (HE Hwf Hlen Φ) "(#GC & Lc & C & Hl') HΦ".
+    iMod (gcont_open with "GC Lc C") as (bs v) "(Hbs & %Hd & Tr)"; [set_solver|done|].
+    iApply wp_fupd. iApply (wp_memcopy with "[$Hl' $Hbs]"); [set_solver|done|by eapply decode_value_length|].
+    iIntros "!> [Hl' Hbs]".
+    iMod (gtransit_close with "Tr Hl'") as "C"; [set_solver|done|].
+    iModIntro. iApply "HΦ". iFrame.
+  Qed.
+
+  (** *** Accesses to plain sub-values of owned contents (e.g. through a lend) *)
+  Lemma wp_gcont_load_na_sub E l m fv o m' vo :
+    mty_wf m → fv_sub m fv o m' (fv_lift vo) →
+    {{{ gcont l m fv }}} Load Na1Ord m' (Lit $ LitLoc (l +ₗ o)) @ E
+    {{{ RET MLitV vo; gcont l m fv }}}.
+  Proof.
+    iIntros (Hwf Hsub Φ) "C HΦ". iDestruct (gcont_sub_view with "C") as (bs Hd) "[Hbs Cl]"; [done..|].
+    iApply (wp_load_na with "Hbs"); [done|]. iIntros "!> Hbs". iApply "HΦ". by iApply "Cl".
+  Qed.
+
+  Lemma wp_gcont_load_sc_sub E l m fv o m' vo :
+    mty_wf m → fv_sub m fv o m' (fv_lift vo) →
+    {{{ gcont l m fv }}} Load ScOrd m' (Lit $ LitLoc (l +ₗ o)) @ E
+    {{{ RET MLitV vo; gcont l m fv }}}.
+  Proof.
+    iIntros (Hwf Hsub Φ) "C HΦ". iDestruct (gcont_sub_view with "C") as (bs Hd) "[Hbs Cl]"; [done..|].
+    iApply (wp_load_sc with "Hbs"); [done|]. iIntros "!> Hbs". iApply "HΦ". by iApply "Cl".
+  Qed.
+
+  Lemma wp_gcont_store_na_sub E l m fv o m' vo vn fvn :
+    ↑naN ⊆ E → mty_wf m → val_wf m' vn → fv_repl m fv o m' (fv_lift vo) (fv_lift vn) fvn →
+    {{{ gcont l m fv }}} Store Na1Ord m' (Lit $ LitLoc (l +ₗ o)) (MLit vn) @ E
+    {{{ RET LitV LitPoison; gcont l m fvn }}}.
+  Proof.
+    iIntros (HE Hwf Hvn Hr Φ) "C HΦ". have Hsub := fv_repl_sub _ _ _ _ _ _ _ Hr.
+    have Hwf' := fv_sub_wf _ _ _ _ _ Hsub Hwf.
+    iDestruct (gcont_sub_acc with "C") as (bs Hd) "[Hbs Cl]"; [done..|].
+    iApply (wp_store_na with "Hbs"); [done|done|by eapply decode_value_length|].
+    iIntros "!> Hbs". iApply "HΦ". iApply ("Cl" with "[%] [//] Hbs"). by apply decode_encode_value.
+  Qed.
+
+  Lemma wp_gcont_store_sc_sub E l m fv o m' vo vn fvn :
+    ↑naN ⊆ E → mty_wf m → val_wf m' vn → fv_repl m fv o m' (fv_lift vo) (fv_lift vn) fvn →
+    {{{ gcont l m fv }}} Store ScOrd m' (Lit $ LitLoc (l +ₗ o)) (MLit vn) @ E
+    {{{ RET LitV LitPoison; gcont l m fvn }}}.
+  Proof.
+    iIntros (HE Hwf Hvn Hr Φ) "C HΦ". have Hsub := fv_repl_sub _ _ _ _ _ _ _ Hr.
+    have Hwf' := fv_sub_wf _ _ _ _ _ Hsub Hwf.
+    iDestruct (gcont_sub_acc with "C") as (bs Hd) "[Hbs Cl]"; [done..|].
+    iApply (wp_store_sc with "Hbs"); [done|done|by eapply decode_value_length|].
+    iIntros "!> Hbs". iApply "HΦ". iApply ("Cl" with "[%] [//] Hbs"). by apply decode_encode_value.
+  Qed.
+
+  (** Compare-and-exchange of a plain sub-value. *)
+  Lemma wp_gcont_mcas_sub E l m fv o m' vo v1 v2 fvn :
+    ↑naN ⊆ E → mty_wf m → val_wf m' v2 → fv_repl m fv o m' (fv_lift vo) (fv_lift v2) fvn →
+    {{{ gcont l m fv }}} MCAS m' (Lit $ LitLoc (l +ₗ o)) (MLit v1) (MLit v2) @ E
+    {{{ b, RET MLitV (VBool b);
+        (⌜b = true ∧ vo = v1⌝ ∗ gcont l m fvn) ∨ (⌜b = false ∧ vo ≠ v1⌝ ∗ gcont l m fv) }}}.
+  Proof.
+    iIntros (HE Hwf Hv2 Hr Φ) "C HΦ". have Hsub := fv_repl_sub _ _ _ _ _ _ _ Hr.
+    have Hwf' := fv_sub_wf _ _ _ _ _ Hsub Hwf.
+    iDestruct (gcont_sub_acc with "C") as (bs Hd) "[Hbs Cl]"; [done..|].
+    iApply (wp_mcas with "Hbs"); [done|done|done|].
+    iIntros "!>" (b) "[[[-> ->] Hbs]|[[-> %Hne] Hbs]]"; iApply "HΦ".
+    - iLeft. iSplit; [done|]. iApply ("Cl" with "[%] [//] Hbs"). by apply decode_encode_value.
+    - iRight. iSplit; [done|]. iApply ("Cl" with "[//] [%] Hbs"). by apply fv_sub_repl_refl.
+  Qed.
+
+  (** *** Guarded loads of plain sub-values (shared access, through (L2)) *)
+  Lemma wp_gcont_load_na_guarded E l m fv o m' vo G d :
+    ↑naN ⊆ E → mty_wf m → fv_sub m fv o m' (fv_lift vo) →
+    {{{ (G &&{↑naN; d}&&> gcont l m fv) ∗ G ∗ £ (2*d) }}}
+      Load Na1Ord m' (Lit $ LitLoc (l +ₗ o)) @ E
+    {{{ RET MLitV vo; G }}}.
+  Proof.
+    iIntros (HE Hwf Hsub Φ) "(#Guard & G & £) HΦ".
+    iApply (wp_load_na_guarded_gen _ _ _ _ _ (gcont l m fv) (λ bs, decode_value m' bs = Some vo)
+      with "[$Guard $G $£]"); [done|by intros ? ->| |done].
+    iIntros "!> C". iDestruct (gcont_sub_view with "C") as (bs Hd) "[Hbs Cl]"; [done..|].
+    iExists bs. by iFrame.
+  Qed.
+
+  (** The atomic load of a guarded proposition [P] that contains bytes [bs] with [Ψ bs] (as
+      [wp_load_na_guarded_gen]; the guard is opened around the single step). *)
+  Lemma wp_load_sc_guarded_gen E l m v G P (Ψ : list abyte → Prop) d :
+    ↑naN ⊆ E → (∀ bs, Ψ bs → decode_value m bs = Some v) →
+    {{{ (G &&{↑naN; d}&&> P) ∗ □ (P -∗ ∃ bs, ⌜Ψ bs⌝ ∗ l ↦b bs ∗ (l ↦b bs -∗ P)) ∗ G ∗ £ d }}}
+      Load ScOrd m (Lit $ LitLoc l) @ E
+    {{{ RET MLitV v; G }}}.
+  Proof.
+    iIntros (? HΨ Φ) "(#Guard & #HP & G & £) HΦ".
+    iApply wp_lift_atomic_base_step_no_fork; auto.
+    iIntros (σ1 stepcnt κ κs n') "[Hσ Ht]". iDestruct "Hσ" as (hF) "(HB & HhF & %REL & ato)".
+    iMod (guards_open_later with "Guard G") as "Open"; [done|].
+    iMod (lc_fupd_elim_laterN with "£ Open") as ">[P Back]".
+    iDestruct ("HP" with "P") as (bs HΨbs) "[Hbs Hcl]".
+    have Hdec := HΨ _ HΨbs. have Hlen := decode_value_length _ _ _ Hdec.
+    iDestruct (bytes_ctx_lookup with "HB Hbs") as %Hrange.
+    iMod ("Back" with "[Hbs Hcl]") as "G"; [by iApply "Hcl"|].
+    have Hrange' := Hrange.
+    iModIntro. iSplit. { iPureIntro. eexists _, _, _, _. by eapply LoadScS. }
+    iNext; iIntros (e2 σ2 efs Hstep) "credit"; lrust.lang.tactics.inv_head_step.
+    match goal with H : mem_range _ _ _ ?bs' |- _ =>
+      have Heq := mem_range_det _ _ _ _ _ _ Hrange' H ltac:(lia) end. subst.
+    match goal with H : decode_value _ _ = Some _ |- _ => rewrite Hdec in H; simplify_eq end.
+    iMod (time_interp_step with "Ht") as "$". iModIntro. iSplit; [done|].
+    iSplitR "HΦ G"; [by iFrame|]. by iApply "HΦ".
+  Qed.
+
+  Lemma wp_gcont_load_sc_guarded E l m fv o m' vo G d :
+    ↑naN ⊆ E → mty_wf m → fv_sub m fv o m' (fv_lift vo) →
+    {{{ (G &&{↑naN; d}&&> gcont l m fv) ∗ G ∗ £ d }}}
+      Load ScOrd m' (Lit $ LitLoc (l +ₗ o)) @ E
+    {{{ RET MLitV vo; G }}}.
+  Proof.
+    iIntros (HE Hwf Hsub Φ) "(#Guard & G & £) HΦ".
+    iApply (wp_load_sc_guarded_gen _ _ _ _ _ (gcont l m fv) (λ bs, decode_value m' bs = Some vo)
+      with "[$Guard $G $£]"); [done|by intros ? ->| |done].
+    iIntros "!> C". iDestruct (gcont_sub_view with "C") as (bs Hd) "[Hbs Cl]"; [done..|].
+    iExists bs. by iFrame.
+  Qed.
+
+  (** Shared reads through a cell: guards of its move right and of its permission ((L2)). *)
+  Lemma wp_gcell_load_na_shared E γ l m fv o m' vo G d :
+    ↑naN ⊆ E → mty_wf m → fv_sub m fv o m' (fv_lift vo) →
+    {{{ gmb_inv (gcont_c m) γ ∗ (G &&{↑naN; d}&&> gca γ l) ∗ (G &&{↑naN; d}&&> gmb_b γ fv) ∗
+        G ∗ £ (2*d) }}}
+      Load Na1Ord m' (Lit $ LitLoc (l +ₗ o)) @ E
+    {{{ RET MLitV vo; G }}}.
+  Proof.
+    iIntros (HE Hwf Hsub Φ) "(#GI & #Ga & #Gb & G & £) HΦ".
+    iDestruct (gcell_share with "GI Ga Gb") as "Gc".
+    { rewrite /naN /NllftUsr2. solve_ndisj. }
+    by iApply (wp_gcont_load_na_guarded with "[$Gc $G $£]").
+  Qed.
+
+  Lemma wp_gcell_load_sc_shared E γ l m fv o m' vo G d :
+    ↑naN ⊆ E → mty_wf m → fv_sub m fv o m' (fv_lift vo) →
+    {{{ gmb_inv (gcont_c m) γ ∗ (G &&{↑naN; d}&&> gca γ l) ∗ (G &&{↑naN; d}&&> gmb_b γ fv) ∗
+        G ∗ £ d }}}
+      Load ScOrd m' (Lit $ LitLoc (l +ₗ o)) @ E
+    {{{ RET MLitV vo; G }}}.
+  Proof.
+    iIntros (HE Hwf Hsub Φ) "(#GI & #Ga & #Gb & G & £) HΦ".
+    iDestruct (gcell_share with "GI Ga Gb") as "Gc".
+    { rewrite /naN /NllftUsr2. solve_ndisj. }
+    by iApply (wp_gcont_load_sc_guarded with "[$Gc $G $£]").
+  Qed.
+End gcells_wp.
+
+(** ** Allocation of the registry *)
+Lemma gcells_ctx_alloc `{!typeG Σ, !gcellsGpreS Σ} E :
+  ⊢ |={E}=> ∃ _ : gcellsGS Σ, gcells_ctx.
+Proof.
+  iMod (ghost_map_alloc_empty (K:=positive) (V:=gmb_name * mty)) as (γr) "Auth".
+  set (H := GCellsGS Σ _ _ γr).
+  iMod (inv_alloc gcellsN E (@gcells_inv _ _ H) with "[Auth]") as "#GC".
+  { iNext. iExists ∅. iFrame "Auth". by rewrite big_sepM_empty. }
+  iModIntro. iExists H. done.
+Qed.
