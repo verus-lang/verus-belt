@@ -47,56 +47,95 @@ own sharing has ended.
 
 The placement `s` is a generalisation of the proposal; see §3 for why it is needed.
 
-## 2. Model (phase 1 has to settle it)
+## 2. Model (user proposal `gmb_model_proposal.md`, as refined 2026-11-02)
 
-Candidate M1:
-- **Instance state.** An Iris invariant (namespace inside `↑NllftUsr`) holds the
-  authoritative ghost state: placement `●s`, contents `●E t`. Its state is one of:
-  - `idle`: holds `c(s,t)`;
-  - `out`: `c` taken by (L1), or by a shared opening;
-  - `lent κ' inh`: during (L3).
-- **The two sides.** `a γ s := ◯s ∗ tokA`; `b γ t := ◯E t ∗ tokB`. They live in disjoint
-  ghost cells, so guards of the two combine (`guards_and_point`, as was done for
-  `loc_side`/`gdyn`).
-- **(L2):** combine the guards of `a` and `b`. The invariant is guarded by `True`. Inside
-  the combined guard, agreement shows the state is `idle` at `(s,t)`.
-- **(L3):**
-  - Open the `b`-borrow guarded by `@[κ]` (`llftl_bor_acc_guarded`).
-  - Move `b` into the invariant.
-  - Create a **fresh** borrow of `∃t, c(s,t) ∗ wtok γ t` with `llftl_borrow`. Its
-    inheritance `inh` is stored in the invariant (state `lent κ inh`), not given to either
-    side.
-  - The `b`-borrow's content becomes `True`. Its back-map takes `b γ t'` (the current
-    value) out of the invariant, which can be done without the dead token, because the
-    writer updates `●E`/`◯E` there.
-  - The result is the fresh borrow.
-- **(L4) for the `a` side.** Running `inh` needs `[†κ]`.
-  - **Open problem P1:** the owner of `a` gets it back through generic inheritance (the
-    place machinery unblocking `pcell`), and the owned `a` does not record that `κ` is
-    dead.
-  - Candidate fixes:
-    1. **Weak shared form plus settle.** There are two forms of the move right:
-       - `a γ s`: no lend outstanding, so (L1) holds;
-       - `a♭ γ s α`: lends may be outstanding at lifetimes `⊑ α`, so (L1) does not hold.
+### 2.1 Lifetime-logic extension: special openings
 
-       The lemmas:
-       - `gmb_weaken : a γ s ={E}=∗ a♭ γ s α`, applied when the value is shared at `α`
-         (before the borrow is created);
-       - `gmb_settle : [†α] -∗ a♭ γ s α ={E}=∗ a γ s`, applied at unblocking. It runs the
-         parked inheritances of the lends, using `[†α] → [†κ']`.
+```
+Lemma llftl_bor_acc_special E P κ :
+  ↑Nllft ⊆ E →
+  llft_ctx -∗ &{κ} P -∗ @[κ] ={E}=∗ ▷ P ∗ special_open κ ∗
+    (∀ Q, ▷ (▷ Q ∗ [†κ] ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P ∗ special_open κ) ∗ ▷ Q
+          ={↑Nllft}=∗ &{κ} Q ∗ @[κ]).
+special_open κ &&{↑NllftG ∪ ↑NllftO}&&> @[κ]      (persistent law)
+```
 
-       (L3) takes a guard of `a♭ γ s α` and `κ' ⊑ α`. The generic share and unblock rules
-       apply the lifted versions on `bytes_own`: `bytes_own ↦ bytes_own♭ α` and back. These
-       are the identity for types without cells, and the `type` record gets no new field.
-       This is needed because a semantic type's ownership must justify a move whenever it
-       is owned. A lend happens while the move right sits in a borrow, accessible only
-       through a guard, so the borrow must hold a weaker proposition than `ty_own`.
-    2. **`a` records the sharing lifetime,** and (L1) succeeds whenever the recorded lend
-       lifetime `κ' ⊑ κ_sh` is dead; an owned `a` then proves `[†κ_sh]` through a
-       persistent witness deposited at inheritance.
-    3. **A new primitive in the lifetime logic:** a borrow with a *shared* inheritance
-       that anyone holding `[†κ]` can run once.
-- **Checkpoint:** phase 1 reports which fix works before anything is built on it.
+- **Back-maps already run eagerly** at lifetime end (step 2 of `llftl_end`,
+  `outer_kill_lt_step2` in `lifetime_internals/expire_lt.v`). So `special_open κ` comes back
+  to the model through the back-map before the end completes.
+- **The dead token in the back-map is fine.** `[†κ]` is created in step 1, before the
+  tokens are collected. The two invariants of the model may be out of sync during the end,
+  and the `NllftO` invariant (`lifetime_full.v:86`) is open during step 2: back-maps run
+  with `↑Nbox ∪ ↑NllftUsr ∪ ↑NllftUsr2`, which excludes `↑NllftO`.
+- **The certificate.** Put ghost state into the `NllftO` invariant certifying that the
+  registry of `special_open` tokens is in sync with the alive/dead registry. The guard law
+  is then stated with mask `↑NllftG ∪ ↑NllftO`.
+  - So a back-map holding `[†κ]` cannot use it to reach `@[κ]`, and no contradiction can be
+    derived inside it.
+  - Outside the end procedure, the guard is available.
+- **The registry** is keyed so that ending an atomic lifetime collects the tokens of every
+  intersection containing it.
+- **Variants needed:**
+  - a guarded version, taking `G &&{↑NllftG}&&> @[κ]` like `llftl_bor_acc_guarded`;
+  - an indexed-borrow version;
+  - a version for prophetic borrows (`proph_bor`, the `&uniq` bodies), for L3p.
+- **Reopening.** A borrow that is later reopened, reborrowed, split, joined or unnested
+  keeps its back-map chain. Check that step 2 runs the composed chain.
+
+### 2.2 GMB ghost state and invariants
+
+- **Ghost state.** Two copies of an authoritative state, `Auth`/`Auth2(opt_s, opt_t)`,
+  with `opt_s : option S` and `opt_t : In t | Out κ`. Fragments:
+  - `a(s)`: `opt_s = Some s`; exclusive.
+  - `a_out(t)`: `opt_s = None`, `opt_t = In t`.
+  - `b(t)`: `opt_t = In t`; exclusive.
+  - `b_out(s, κ)`: `opt_s = Some s`, `opt_t = Out κ`.
+
+  `a` and `b` live in disjoint ghost names, so their guards combine (`guards_and_point`).
+- **`guard_inv`** := `True &&{↑NllftUsr2}&&> ∃ opt_s opt_t, Auth(opt_s, opt_t) ∗ …`, with
+  one case per state:
+
+  | State | Holds |
+  |---|---|
+  | `(Some s, In t)` | `c(s, t)` |
+  | `(Some s, Out κ)` | `True` (contents lent) |
+  | `(None, In t)` | `True` (contents with the mover) |
+  | `(None, Out κ)` | `False` |
+  | destroyed | `True` (terminal state, for L0) |
+
+- **`other_inv`** := `inv NllftUsr (∃ opt_s opt_t, Auth2(opt_s, opt_t) ∗ …)`. In state
+  `Out κ` (with `opt_s = Some s`) it holds the token `special_open κ` and the guard
+  `special_open κ &&{↑NllftG ∪ ↑NllftO}&&> a(s)`; otherwise `True`.
+
+### 2.3 Laws
+
+- **(L1) forward.**
+  - In state `Out κ`: take the token and the guard from `other_inv`, and combine them with
+    the owned, exclusive `a(s)` (`guards_and_pers_with_excl`, `T := a(s)`). This gives
+    `False`. It needs mask `↑NllftG ∪ ↑NllftO` and a step or credit for the guard's later.
+  - In state `In t`: move to `(None, In t)` and take `c(s, t)`.
+- **(L1) back.** From `(None, In t)` to `(Some s', In t)`, depositing `c(s', t)`.
+- **(L2).**
+  - Combine the guards of `a(s)` and `b(t)`.
+  - `guards_strengthen_exists` against `guard_inv` gives the persistent fact that the
+    state is `(Some s, In t)`.
+  - `guards_weaken` projects out `c(s, t)`. This works although `c` is not a point prop.
+- **(L3).** Inputs: `@[κ] &&> a(s)` and `&{κ}(∃ t, b(t))`.
+  1. Open the borrow with the special accessor.
+  2. Move `b(t)` to `b_out(s, κ)`, and the state to `(Some s, Out κ)`.
+  3. Take `c(s, t)` out of `guard_inv`.
+  4. Store the token and the guard `special_open κ &&> @[κ] &&> a(s)` in `other_inv`. The
+     second guard comes from the owner's share at `α` and `κ ⊑ α`.
+  5. Close with `Q := ∃ t', c(s, t')` and the back-map `c(s, t') ⇛ b(t') ∗ special_open κ`.
+     The back-map moves the state to `(Some s, In t')`, deposits `c`, and returns the token
+     from `other_inv`.
+
+  `s` cannot change during the lend, because `a(s)` is only guarded.
+- **(L4)** is automatic. When `κ` ends, step 2 runs the back-map, so the state is back to
+  `In` before anyone can own `a(s)` again.
+- **(L0).** Allocate the ghost state and both invariants; destroy into the terminal state.
+- **No typing-rule changes:** `pcell_ty` owns plain `a(s)`, and the share and unblock rules
+  are untouched.
 
 ## 3. Instantiation: the decodability layer
 
@@ -142,14 +181,20 @@ Candidate M1:
 
 ## 4. Phases (each a merge, with a clean full build)
 
+0. **Lifetime-logic extension (§2.1).**
+   - Special openings: plain, guarded and indexed, with the guard law
+     `special_open κ &&{↑NllftG ∪ ↑NllftO}&&> @[κ]`.
+   - A registry of special tokens, kept in sync with the alive/dead registry, with its
+     certificate in the `NllftO` invariant.
+   - Collection of the tokens in step 2 of `llftl_end`, including intersections and
+     composed back-map chains.
+   - Tests: open specially, close, end the lifetime; reopen the borrow normally and
+     reborrow it, then end.
 1. **GMB library (non-prophetic).**
    - New file `lifetime/guarded_bor.v` (or `typing/`, if it needs `typeG`).
-   - Contents: the statement of (L0)–(L4) with the placement, model M1, and the
-     resolution of P1.
-   - Tests: a toy instance, `c(s,t) := s ↦ t`, exercising every law, including move after
-     lend and restoration of both sides.
-   - **Checkpoint with the user:** the model, P1's resolution, and any extension of the
-     lifetime logic.
+   - Contents: the laws (L0)–(L4) over §2.2–§2.3.
+   - Tests: a toy instance, `c(s,t) := s ↦ t`, exercising every law, including a move after
+     a lend.
 2. **Prophetic GMB (L3p)** on `proph_bor` / `uniq_body` / `cpd_body` (`uniq_util.v`),
    with the value map from `t` to the borrow's value, and resolution at the end.
 3. **Decodability layer.** The instance `c_g(l, fv)` over fancy bytes, with nested cells
@@ -180,10 +225,10 @@ Candidate M1:
    - Port `pcell_tests`, `pcell_example`, `pcell_move`, `ra` and `protocol`.
 6. **Docs.** Outcome sections in this file and in `pcell-multibyte-cells.md`.
 
-## 5. Decisions for the user
+## 5. Decisions
 
-1. The placement parameter `s`, instantiated with the location (recommended), versus `c`
-   over the group's contents with the pin threaded everywhere.
-2. Whether extending the lifetime logic is acceptable if P1 needs it (fix 3).
-3. Whether to delete the physical cell heap in phase 5 (recommended), or to keep it as a
-   second model.
+1. The placement is the location (§3).
+2. P1 is solved by the special openings of §2.1, which extend the lifetime logic. No
+   typing-rule changes are needed.
+3. Whether to delete the physical cell heap in phase 5 (recommended), or keep it as a
+   second model: still open.
