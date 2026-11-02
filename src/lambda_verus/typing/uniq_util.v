@@ -825,7 +825,7 @@ Section uniq_util_bytes.
     uniq_payload ty tid l x d g ≡{n}≡ uniq_payload ty' tid l x d g.
   Proof.
     intros Hl Hg. rewrite /uniq_payload (guarded_upd_lft_equiv _ _ _ _ Hl) (cbytes_same ty ty' x l).
-    f_equiv. f_equiv. f_equiv. apply Hg.
+    do 3 f_equiv. apply Hg.
   Qed.
 
   Lemma uniq_payload_proper {𝔄} (ty ty': type 𝔄) tid tid' l x d g :
@@ -834,7 +834,37 @@ Section uniq_util_bytes.
     uniq_payload ty tid l x d g ⊣⊢ uniq_payload ty' tid' l x d g.
   Proof.
     intros Hl Hg. rewrite /uniq_payload (guarded_upd_lft_equiv _ _ _ _ Hl) (cbytes_same ty ty' x l).
-    f_equiv. f_equiv. f_equiv. apply Hg.
+    do 3 f_equiv. apply Hg.
+  Qed.
+
+  Lemma ofty_gho_ne {𝔄} n m (ty ty': type 𝔄) lr fv d g tid tid' :
+    (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid') →
+    ofty_gho m ty lr fv d g tid ≡{n}≡ ofty_gho m ty' lr fv d g tid'.
+  Proof.
+    intros Hg. rewrite /ofty_gho. f_equiv=> x. rewrite (ty_fval_same ty ty').
+    do 2 f_equiv. f_equiv. apply Hg.
+  Qed.
+
+  Lemma leaf_contents_ne {𝔄} n κp (ty ty': type 𝔄) p r d g tid tid' l :
+    (⊢ ty_lft ty ≡ₗ ty_lft ty') →
+    (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid') →
+    leaf_contents κp ty p r d g tid l ≡{n}≡ leaf_contents κp ty' p r d g tid' l.
+  Proof.
+    intros Hl Hg. rewrite /leaf_contents. f_equiv=> fv.
+    rewrite /leaf_owned_b /leaf_owned_lz. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
+    have Hl': ∀ fv, lr_fval ty lr fv ↔ lr_fval ty' lr fv.
+    { intros. destruct lr; rewrite /lr_fval //. by rewrite (ty_fval_same ty ty'). }
+    have Hub: ((fbytes ty l fv ∗ ⌜lr_fval ty lr fv⌝) ∗
+      guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗ ofty_gho 0 ty lr fv d g tid))%I ≡{n}≡
+      ((fbytes ty' l fv ∗ ⌜lr_fval ty' lr fv⌝) ∗
+      guarded_upd lazyE @[ty_lft ty'] (⧖(S d `max` g) ∗ ofty_gho 0 ty' lr fv d g tid'))%I.
+    { rewrite (fbytes_same ty ty') (guarded_upd_lft_equiv _ _ _ _ Hl).
+      f_equiv; [f_equiv; by rewrite Hl'|]. f_equiv. f_equiv. by apply ofty_gho_ne. }
+    (* [PatBlocked] separately: [f_equiv] takes long to fail on it. *)
+    destruct p as [|α| | | | |]; try exact Hub.
+    rewrite /blocked_owned. do 3 f_equiv. f_equiv=> fv'.
+    rewrite (fbytes_same ty ty') (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv.
+    f_equiv. do 2 (f_equiv=>?). f_equiv. by apply ofty_gho_ne.
   Qed.
 
   Lemma uniq_gbody_ne {𝔄} n κp (ty ty': type 𝔄) tid l c wπ :
@@ -842,16 +872,8 @@ Section uniq_util_bytes.
     (∀ x d g, ty.(ty_gho_own) x d g tid ≡{n}≡ ty'.(ty_gho_own) x d g tid) →
     uniq_gbody κp ty tid l c wπ ≡{n}≡ uniq_gbody κp ty' tid l c wπ.
   Proof.
-    intros Hl Hg. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
-    do 3 f_equiv. rewrite (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv. f_equiv.
-    rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
-    have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ≡{n}≡ ofty_owned 0 ty' x d g tid l.
-    { intros x d g. rewrite /ofty_owned (cbytes_same ty ty' x l). f_equiv. apply Hg. }
-    (* [PatBlocked] separately: [f_equiv=>?] takes about 25 s to fail on it. *)
-    destruct p; [|rewrite /blocked_owned; f_equiv; f_equiv;
-      rewrite (guarded_upd_lft_equiv _ _ _ _ Hl); f_equiv; do 3 (f_equiv=>?);
-      do 2 f_equiv; apply Hofty|..];
-      f_equiv=>?; f_equiv; apply Hofty.
+    intros Hl Hg. rewrite /uniq_gbody. f_equiv=> p. f_equiv=> r.
+    do 3 f_equiv. by apply leaf_contents_ne.
   Qed.
 
   Lemma uniq_gbody_proper {𝔄} κp (ty ty': type 𝔄) tid tid' l c wπ :
@@ -859,31 +881,19 @@ Section uniq_util_bytes.
     (∀ x d g, ty.(ty_gho_own) x d g tid ⊣⊢ ty'.(ty_gho_own) x d g tid') →
     uniq_gbody κp ty tid l c wπ ⊣⊢ uniq_gbody κp ty' tid' l c wπ.
   Proof.
-    intros Hl Hg. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
-    do 3 f_equiv. rewrite (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv. f_equiv.
-    rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
-    have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ⊣⊢ ofty_owned 0 ty' x d g tid' l.
-    { intros x d g. rewrite /ofty_owned (cbytes_same ty ty' x l). f_equiv. apply Hg. }
-    (* [PatBlocked] separately: [f_equiv=>?] takes about 25 s to fail on it. *)
-    destruct p; [|rewrite /blocked_owned; f_equiv; f_equiv;
-      rewrite (guarded_upd_lft_equiv _ _ _ _ Hl); f_equiv; do 3 (f_equiv=>?);
-      do 2 f_equiv; apply Hofty|..];
-      f_equiv=>?; f_equiv; apply Hofty.
+    intros Hl Hg. apply equiv_dist=> n. rewrite /uniq_gbody. f_equiv=> p. f_equiv=> r.
+    do 3 f_equiv. apply leaf_contents_ne; [done|]=> x d g. by rewrite Hg.
   Qed.
 
   Lemma uniq_gbody_loc {𝔄} κp (ty: type 𝔄) tid l l' c wπ :
     (∀ x, cbytes ty x l ⊣⊢ cbytes ty x l') →
     uniq_gbody κp ty tid l c wπ ⊣⊢ uniq_gbody κp ty tid l' c wπ.
   Proof.
-    intros Hl. rewrite /uniq_gbody /cpd_body. f_equiv=> p. f_equiv=> r.
-    do 3 f_equiv. f_equiv. f_equiv.
-    rewrite /leaf_node /leaf_owned. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
-    have Hofty: ∀ x d g, ofty_owned 0 ty x d g tid l ⊣⊢ ofty_owned 0 ty x d g tid l'.
-    { intros. by rewrite /ofty_owned Hl. }
-    (* [PatBlocked] separately: [f_equiv=>?] takes long to fail on it. *)
-    destruct p; [|rewrite /blocked_owned; f_equiv; f_equiv; f_equiv; do 3 (f_equiv=>?);
-      do 2 f_equiv; apply Hofty|..];
-      f_equiv=>?; f_equiv; apply Hofty.
+    intros Hl. rewrite /uniq_gbody /leaf_contents. f_equiv=> p. f_equiv=> r.
+    do 3 f_equiv. f_equiv=> fv. f_equiv.
+    rewrite /leaf_owned_b. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
+    destruct p as [|α| | | | |]; try by rewrite (fbytes_loc ty l l').
+    rewrite /blocked_owned. do 2 f_equiv. f_equiv=> fv'. by rewrite (fbytes_loc ty l l').
   Qed.
 
   Lemma uniq_body_loc {𝔄} (ty: type 𝔄) x ξi d g idx κ tid l l' :
@@ -959,20 +969,32 @@ Section uniq_util_bytes.
 
   (** ** The trivial state *)
 
+  (** At the trivial state, the contents are the payload. *)
+  Lemma leaf_contents_triv {𝔄} κp (ty: type 𝔄) x d g tid l :
+    leaf_contents κp ty PatLeaf (inl (PlaceIn x)) d g tid l ⊣⊢ uniq_payload ty tid l x d g.
+  Proof.
+    rewrite /leaf_contents /leaf_owned_b /leaf_owned_lz uniq_payload_cell /=. iSplit.
+    - iIntros "(%fv & [B %Hx] & Upd)". iSplitL "B"; [by iApply (fbytes_cbytes with "B")|].
+      iApply (guarded_upd_mono with "[] Upd").
+      iIntros "[$ (%x' & _ & -> & Gho)] !>". done.
+    - iIntros "[Pt Upd]". rewrite cbytes_fbytes. iDestruct "Pt" as (fv Hfv) "B".
+      iExists fv. iFrame "B". iSplit; [done|]. iApply (guarded_upd_mono with "[] Upd").
+      iIntros "[$ Gho] !>". iExists x. by iFrame.
+  Qed.
+
   (** At the trivial state, the body is the payload. *)
   Lemma uniq_gbody_triv_open {𝔄} κp (ty: type 𝔄) γ tid l x d g wπ :
     ghost_var γ (1/2) (lstate_triv x) -∗ ▷ uniq_gbody κp ty tid l (uniq_cell x d g γ) wπ -∗
     ◇ (⌜∀ π, (wπ π).1 = vπ x π⌝ ∗ ghost_var γ (1/2) (lstate_triv x) ∗
        ghost_var γ (1/2) (lstate_triv x) ∗ ▷ uniq_payload ty tid l x d g).
   Proof.
-    iIntros "Gh Body". rewrite /uniq_gbody cpd_body_cell.
+    iIntros "Gh Body". rewrite uniq_gbody_cell.
     iMod (bi.later_exist_except_0 with "Body") as (p) "Body".
     iMod (bi.later_exist_except_0 with "Body") as (r) "(_ & >%Hw & >Gh' & Upd)".
     iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
     iModIntro. iFrame "Gh Gh'". iSplit.
     { iPureIntro. intros π. by rewrite Hw prfn_den_in. }
-    iNext. rewrite uniq_payload_cell. iApply (guarded_upd_mono with "[] Upd").
-    iIntros "[$ H] !>". rewrite leaf_node_inl leaf_owned_triv /ofty_owned. iDestruct "H" as "[$ $]".
+    iNext. by rewrite leaf_contents_triv.
   Qed.
 
   Lemma uniq_gbody_triv_open' {𝔄} κp (ty: type 𝔄) γ tid l x d g wπ :
@@ -980,13 +1002,12 @@ Section uniq_util_bytes.
     ⌜∀ π, (wπ π).1 = vπ x π⌝ ∗ ghost_var γ (1/2) (lstate_triv x) ∗
        ghost_var γ (1/2) (lstate_triv x) ∗ uniq_payload ty tid l x d g.
   Proof.
-    iIntros "Gh Body". rewrite /uniq_gbody cpd_body_cell.
+    iIntros "Gh Body". rewrite uniq_gbody_cell.
     iDestruct "Body" as (p r) "(_ & %Hw & Gh' & Upd)".
     iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
     iFrame "Gh Gh'". iSplit.
     { iPureIntro. intros π. by rewrite Hw prfn_den_in. }
-    rewrite uniq_payload_cell. iApply (guarded_upd_mono with "[] Upd").
-    iIntros "[$ H] !>". rewrite leaf_node_inl leaf_owned_triv /ofty_owned. iDestruct "H" as "[$ $]".
+    by rewrite leaf_contents_triv.
   Qed.
 
   Lemma uniq_gbody_triv_close' {𝔄} κp (ty: type 𝔄) γ tid l x d g wπ :
@@ -994,11 +1015,10 @@ Section uniq_util_bytes.
     ghost_var γ (1/2) (lstate_triv x) -∗ uniq_payload ty tid l x d g -∗
     uniq_gbody κp ty tid l (uniq_cell x d g γ) wπ.
   Proof.
-    iIntros (Hw) "Gh P". rewrite /uniq_gbody cpd_body_cell.
+    iIntros (Hw) "Gh P". rewrite uniq_gbody_cell.
     iExists PatLeaf, (inl (PlaceIn x)). iFrame "Gh". iSplit; [iApply pat_ok_leaf|].
     iSplit. { iPureIntro. intros π. by rewrite Hw prfn_den_in. }
-    rewrite uniq_payload_cell. iApply (guarded_upd_mono with "[] P").
-    iIntros "($ & Gho & Pt) !>". rewrite leaf_node_inl leaf_owned_triv /ofty_owned. by iFrame.
+    by rewrite leaf_contents_triv.
   Qed.
 
   Lemma uniq_gbody_triv_close {𝔄} κp (ty: type 𝔄) γ tid l x d g wπ :
@@ -1124,10 +1144,11 @@ Section uniq_util_bytes.
         first by solve_ndisj.
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
     iMod ("Back" with "[Inner] ⧗") as "[$ $]"; [|done].
-    iNext. iApply (uniq_payload_map with "[] [] [] Inner").
+    iNext. iApply (uniq_payload_map with "[] [] [] [] Inner").
     - iApply guards_refl.
     - iIntros "_". iFrame "⧖".
-    - iIntros "[Gho $]". iModIntro.
+    - by iIntros "$".
+    - iIntros "Gho". iModIntro.
       iDestruct (ty_gho_own_depth_mono with "Gho") as "[$ _]"; lia.
   Qed.
 
@@ -1180,6 +1201,28 @@ Section uniq_util_bytes.
       (tid: thread_id) (l: loc) : iProp Σ :=
     ∃ c wπ, .PC[uniq_prvar x₀ ξi] c wπ ∗ uniq_gbody κp ty tid l c wπ.
 
+  (** Once [κp] has ended, the lender can force the bytes of what it got back, with the
+      mask [lazyB] and without a guard: the contents are unblocked
+      ([leaf_contents_unblock]); the ghost part is in a lazy update, where the equalizer of
+      the controller is composed with the refinement. *)
+  Lemma uniq_lender_unblock {𝔄} κp (ty: type 𝔄) x₀ ξi tid l :
+    llft_ctx -∗ proph_ctx -∗ [†κp] -∗ uniq_lender κp ty x₀ ξi tid l ={lazyB}=∗
+    ∃ fv, fbytes ty l fv ∗ guarded_upd lazyE @[ty_lft ty] (∃ x d g,
+      ⌜ty.(ty_fval) x = Some fv⌝ ∗ ▷ ((λ π, (π (uniq_prvar x₀ ξi)).1) :== vπ x) ∗
+      ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid).
+  Proof.
+    iIntros "#LFT #PROPH #†κ (%c & %wπ & Pc & Body)".
+    rewrite (uniq_cell_surj c) uniq_gbody_cell.
+    iDestruct "Body" as (p r) "(#Ok & %Hw & _ & C)".
+    iMod (leaf_contents_unblock with "LFT Ok †κ C") as (fv) "[B Upd]".
+    iModIntro. iExists fv. iFrame "B". iApply (guarded_upd_mono with "[Pc] Upd").
+    iIntros "(%d' & %g' & ⧖ & %x & %Hx & Rel & Gho) !>". iExists x, d', g'.
+    iFrame "⧖ Gho". iSplit; [done|].
+    iDestruct (place_rfn_rel_eqz with "Rel") as "Eqz". iNext.
+    iApply (uniq_ctrl_eqz_fst with "PROPH Pc").
+    iApply (proph_eqz_eq with "Eqz"); [|done]. fun_ext=> π /=. by rewrite Hw prfn_place_den.
+  Qed.
+
   (** Once [κp] has ended, the lender can settle what it got back, with a guard for
       the lifetime of the type: the contents are unblocked, and the equalizer of the
       controller is composed with the refinement. *)
@@ -1189,17 +1232,12 @@ Section uniq_util_bytes.
       ▷ ((λ π, (π (uniq_prvar x₀ ξi)).1) :== vπ x) ∗ ⧖(S d `max` g) ∗
       ty.(ty_gho_own) x d g tid ∗ cbytes ty x l).
   Proof.
-    iIntros "#LFT #PROPH #†κ (%c & %wπ & Pc & Body)".
-    rewrite /uniq_gbody (uniq_cell_surj c) cpd_body_cell.
-    iDestruct "Body" as (p r) "(#Ok & %Hw & _ & Upd)".
-    iIntros (G ?) "#Gty G". iMod (guarded_upd_run with "Gty G Upd") as "[G [#⧖ Node]]";
+    iIntros "#LFT #PROPH #†κ L" (G ?) "#Gty G".
+    iDestruct (uniq_lender_unblock with "LFT PROPH †κ L") as "X".
+    iMod (fupd_mask_mono with "X") as (fv) "[B Upd]"; [apply lazyB_lazyE|].
+    iMod (guarded_upd_run with "Gty G Upd") as "[$ (%x & %d & %g & %Hx & Eqz & ⧖ & Gho)]";
       [done|].
-    iMod (leaf_node_unblock with "LFT Gty Ok †κ G ⧖ Node")
-      as "[$ (%x & %d' & %g' & Rel & ⧖' & Pt & Gho)]".
-    iModIntro. iExists x, d', g'. iFrame "⧖' Pt Gho".
-    iDestruct (place_rfn_rel_eqz with "Rel") as "Eqz". iNext.
-    iApply (uniq_ctrl_eqz_fst with "PROPH Pc").
-    iApply (proph_eqz_eq with "Eqz"); [|done]. fun_ext=> π /=. by rewrite Hw prfn_place_den.
+    iModIntro. iExists x, d, g. iFrame. by iApply (fbytes_cbytes with "B").
   Qed.
 
   Lemma alloc_uniq_body
@@ -1294,10 +1332,10 @@ Section uniq_util_bytes.
       { unfold advance_credits. nia. }
       iDestruct "£" as "[[[[£f £1] £d] £k] $]".
       (* Run the lazy update of the payload inside the borrow. *)
+      iMod (llftl_sep_split with "LFT Bor") as "[Pt Bor]"; [solve_ndisj|].
       iMod (llftl_bor_guarded_upd with "LFT Wκ In W £f Bor") as "[Bor W]";
         [solve_ndisj|rewrite /lazyE; solve_ndisj|].
-      iMod (llftl_sep_split with "LFT Bor") as "[_ Bor]"; [solve_ndisj|].
-      iMod (llftl_sep_split with "LFT Bor") as "[Gho Pt]"; [solve_ndisj|].
+      iMod (llftl_sep_split with "LFT Bor") as "[_ Gho]"; [solve_ndisj|].
       iMod (llftl_bor_guard with "LFT Pt") as "$"; [solve_ndisj|].
       (* The persistent predicate of the contents, for [ty_share]. *)
       iMod (llftl_bor_guarded_extract _ _ _ _ (ty.(ty_gho_pers) x d g tid)
@@ -1319,12 +1357,32 @@ Section uniq_util_bytes.
 
   (** ** Changing the type and lifetime *)
 
+  Lemma ofty_gho_iff {𝔄} (ty ty': type 𝔄) m lr fv d g tid :
+    □ (∀x d g tid, ty.(ty_gho_own) x d g tid ↔ ty'.(ty_gho_own) x d g tid) -∗
+    ofty_gho m ty lr fv d g tid -∗ ofty_gho m ty' lr fv d g tid.
+  Proof.
+    iIntros "#EqOwn (%x & %Hx & Rel & Gho)". iExists x. rewrite (ty_fval_same ty' ty).
+    iFrame "Rel". iSplit; [done|]. iNext. by iApply "EqOwn".
+  Qed.
+
+  Lemma blocked_owned_iff {𝔄} (ty ty': type 𝔄) m α lr tid l :
+    ty_lft ty ≡ₗ ty_lft ty' -∗
+    □ (∀x d g tid, ty.(ty_gho_own) x d g tid ↔ ty'.(ty_gho_own) x d g tid) -∗
+    blocked_owned m ty α lr tid l -∗ blocked_owned m ty' α lr tid l.
+  Proof.
+    iIntros "#[_ Incl'] #EqOwn L †α". iMod ("L" with "†α") as (fv) "[B Upd]". iModIntro.
+    iExists fv. rewrite (fbytes_same ty ty'). iFrame "B".
+    iApply (guarded_upd_weaken with "Incl'"). iApply (guarded_upd_mono with "[] Upd").
+    iIntros "(%d' & %g' & ⧖ & O) !>". iExists d', g'. iFrame "⧖".
+    by iApply (ofty_gho_iff with "EqOwn O").
+  Qed.
+
   Lemma leaf_owned_iff {𝔄} (ty ty': type 𝔄) m p r d g tid l :
     ty_lft ty ≡ₗ ty_lft ty' -∗
     □ (∀x d g tid, ty.(ty_gho_own) x d g tid ↔ ty'.(ty_gho_own) x d g tid) -∗
     leaf_owned false m ty p r d g tid l -∗ leaf_owned false m ty' p r d g tid l.
   Proof.
-    iIntros "#[_ Incl'] #EqOwn L".
+    iIntros "#Lfts #EqOwn L".
     iAssert (□ ∀ x d g, ofty_owned m ty x d g tid l -∗ ofty_owned m ty' x d g tid l)%I
       as "#Hofty".
     { iIntros "!>" (x' d' g') "[Pt Gho]". rewrite /ofty_owned (cbytes_same ty ty'). iFrame "Pt".
@@ -1332,10 +1390,23 @@ Section uniq_util_bytes.
     destruct r as [lr|]; [|done]. rewrite /leaf_owned.
     destruct p; try (iDestruct "L" as (x') "[Rel O]"; iExists x'; iFrame "Rel";
       by iApply "Hofty").
-    rewrite /blocked_owned. iIntros "†α". iMod ("L" with "†α") as "Upd". iModIntro.
-    iApply (guarded_upd_weaken with "Incl'"). iApply (guarded_upd_mono with "[] Upd").
-    iIntros "(%x' & %d' & %g' & Rel & ⧖ & O) !>". iExists x', d', g'. iFrame.
-    by iApply "Hofty".
+    iApply (blocked_owned_iff with "Lfts EqOwn L").
+  Qed.
+
+  Lemma leaf_contents_iff {𝔄} κp (ty ty': type 𝔄) p r d g tid l :
+    ty_lft ty ≡ₗ ty_lft ty' -∗
+    □ (∀x d g tid, ty.(ty_gho_own) x d g tid ↔ ty'.(ty_gho_own) x d g tid) -∗
+    leaf_contents κp ty p r d g tid l -∗ leaf_contents κp ty' p r d g tid l.
+  Proof.
+    iIntros "#[Incl Incl'] #EqOwn (%fv & B & Upd)". iExists fv.
+    rewrite /leaf_owned_b /leaf_owned_lz.
+    destruct (norm_pat κp p r) as [|α| | | | |];
+      try (iDestruct "B" as "[B %Hlr]"; rewrite (fbytes_same ty ty'); iFrame "B";
+        iSplit; [iPureIntro; destruct (prfn_place r); rewrite /lr_fval //;
+          by rewrite (ty_fval_same ty' ty)|];
+        iApply (guarded_upd_weaken with "Incl'"); iApply (guarded_upd_mono with "[] Upd");
+        iIntros "[$ O] !>"; by iApply (ofty_gho_iff with "EqOwn O")).
+    iSplitL; [|done]. iApply (blocked_owned_iff with "[] EqOwn B"). by iSplit.
   Qed.
 
   Lemma uniq_gbody_iff {𝔄} κp (ty ty': type 𝔄) tid l c wπ :
@@ -1343,10 +1414,8 @@ Section uniq_util_bytes.
     □ (∀x d g tid, ty.(ty_gho_own) x d g tid ↔ ty'.(ty_gho_own) x d g tid) -∗
     uniq_gbody κp ty tid l c wπ -∗ uniq_gbody κp ty' tid l c wπ.
   Proof.
-    iIntros "#[Incl Incl'] #EqOwn". rewrite /uniq_gbody /cpd_body.
-    iIntros "(%p & %r & $ & $ & $ & Upd)".
-    iApply (guarded_upd_weaken with "Incl'"). iApply (guarded_upd_mono with "[] Upd").
-    iIntros "[$ L] !>". iApply (leaf_owned_iff with "[] EqOwn L"). by iSplit.
+    iIntros "#Lfts #EqOwn". rewrite /uniq_gbody.
+    iIntros "(%p & %r & $ & $ & $ & C)". iApply (leaf_contents_iff with "Lfts EqOwn C").
   Qed.
 
   Lemma incl_uniq_persγ {𝔄} (ty ty': type 𝔄) x ξi idx κ κ' κp tid l :
