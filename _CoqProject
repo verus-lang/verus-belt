@@ -245,6 +245,8 @@ src/lambda_verus/lifetime/lifetime_full.v
 src/lambda_verus/lifetime/lifetime_special_tests.v
 src/lambda_verus/lifetime/guarded_bor.v
 src/lambda_verus/lifetime/guarded_bor_tests.v
+src/lambda_verus/lifetime/guarded_bor_proph.v
+src/lambda_verus/lifetime/guarded_bor_proph_tests.v
 
 src/lambda_verus/util/basic.v
 src/lambda_verus/util/vector.v
