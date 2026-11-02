@@ -442,3 +442,201 @@ to observe values).
 - The (L2) mask must contain `↑NllftUsr2` (it does if it contains `↑NllftG`).
 - Not provided: an indexed-borrow version of (L3) (phase 0 closes indexed special openings
   to full borrows anyway), and the prophetic (L3p) (phase 2).
+
+## Outcome: phase 2
+
+Implemented in `lifetime/guarded_bor.v` (lends at the level of special openings),
+`util/proph_bor.v` (special openings of prophetic borrows) and the new
+`lifetime/guarded_bor_proph.v` (L3p); tests in `lifetime/guarded_bor_proph_tests.v`. No
+axioms (`Print Assumptions` of the lemmas and tests: closed under the global context).
+Nothing else changed; the statements of the phase-1 laws are unchanged.
+
+**Result.** (L3p) holds for prophetic borrows whose payload gives back the contents
+*eagerly* (in the back-map). It does **not** hold, with the model of §2, for the bodies of
+`&uniq{κ} ty` (`uniq_body`, `uniq_gbody`/`cpd_body`), whose contents are lazy. So the
+lemma that phase 4 wanted ("uniq body of the permission type at `κ` + share guard of `a` ⇒
+uniq body of `ty` at `κ`") is not provided. Why, and the proposed extension (phase 2b), are
+below.
+
+### Lemmas
+
+(L3) split at a special opening (`guarded_bor.v`; the phase-1 `gmb_lend*` are now proved
+with them):
+```
+Definition gmb_lent γ s κ : iProp Σ.        (* b_out(s, κ); timeless *)
+Lemma gmb_lend_start E γ κ s t n :
+  ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+  llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
+  special_open κ -∗ gmb_b γ t ={E}=∗ c s t ∗ gmb_lent γ s κ.
+Lemma gmb_lend_stop γ κ s t' :
+  gmb_inv γ -∗ gmb_lent γ s κ -∗ c s t' ={↑NllftUsr ∪ ↑NllftUsr2}=∗
+    gmb_b γ t' ∗ special_open κ.
+```
+
+Special openings of generalized prophetic borrows (`proph_bor.v`; phase 0's join pattern,
+through `llftl_bor_idx_acc_special_guarded`):
+```
+Lemma proph_idx_bor_gen_acc_rebody_special_guarded E κ ξ x idx (P Q: pv_val ξ → pv_proph ξ → iProp Σ) G :
+  Timeless G → ↑Nllft ⊆ E →
+  llft_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P -∗ G ={E}=∗ ∃ wπ,
+    ▷ P x wπ ∗ special_open κ ∗
+    (∀ x1 wπ1, ▷ Q x1 wπ1 -∗
+       ▷ (∀ x2 wπ2, ▷ Q x2 wπ2 ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P x2 wπ2 ∗ special_open κ)
+       ={↑Nllft}=∗ ∃ idx', proph_bor_tok ξ x1 idx' ∗ proph_idx_bor_gen κ ξ idx' Q ∗ G).
+Lemma proph_idx_bor_gen_map_special E κ ξ x idx (P: pv_val ξ → pv_proph ξ → iProp Σ)
+    ζ y (Q: pv_val ζ → pv_proph ζ → iProp Σ) (fπ: proj1_sig (pv_ty ζ) → proj1_sig (pv_ty ξ)) G :
+  Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
+  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  (∀ G' wπ, ⌜Timeless G'⌝ -∗ (G' &&{↑NllftG}&&> @[κ]) -∗ G' -∗
+     special_open κ -∗ ▷ P x wπ ={E}=∗
+     G' ∗ ∃ wζ, ▷ Q y wζ ∗
+     (∀ y' wζ', ▷ .PC[ζ] y' wζ' -∗ ▷ Q y' wζ' ={↑NllftUsr ∪ ↑NllftUsr2}=∗
+        (▷ ∃ x', P x' (λ π, fπ (π ζ))) ∗ special_open κ)) -∗
+  G -∗ proph_loan ζ y -∗ proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P ={E}=∗
+    ⟨π, π ξ = fπ (π ζ)⟩ ∗ (∃ idx', proph_bor_tok ζ y idx' ∗ proph_idx_bor_gen κ ζ idx' Q) ∗ G.
+```
+They are `proph_idx_bor_gen_acc_rebody_guarded` and `proph_idx_bor_gen_map` (the accessor
+under `uniq_body_transform_gen`) with the token added.
+
+(L3p) (`guarded_bor_proph.v`, over the phase-1 section variables `c`, `Timeless (c s t)`):
+```
+Lemma gmb_lend_proph E κ ξ x idx (P Q: pv_val ξ → pv_proph ξ → iProp Σ) G γ s n :
+  Timeless G → ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+  llft_ctx -∗ uniq_ctx -∗ gmb_inv c γ -∗
+  (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  (∀ wπ, ▷ P x wπ ={E}=∗ ∃ t, gmb_b γ t ∗ (c s t ={E}=∗ ▷ Q x wπ ∗
+     (∀ x2 wπ2, ▷ Q x2 wπ2 ={↑NllftUsr ∪ ↑NllftUsr2}=∗
+        ∃ t', ▷ c s t' ∗ (gmb_b γ t' -∗ ▷ P x2 wπ2)))) -∗
+  G -∗ proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P ={E}=∗
+    ∃ idx', proph_bor_tok ξ x idx' ∗ proph_idx_bor_gen κ ξ idx' Q ∗ G.
+Lemma gmb_lend_proph_map E κ ξ x idx (P: pv_val ξ → pv_proph ξ → iProp Σ)
+    ζ y (Q: pv_val ζ → pv_proph ζ → iProp Σ) (fπ: proj1_sig (pv_ty ζ) → proj1_sig (pv_ty ξ)) G γ s n :
+  Timeless G → ↑Nllft ∪ ↑prophN ⊆ E → n ≤ gmb_depth γ →
+  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ gmb_inv c γ -∗
+  (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+  (∀ G' wπ, ⌜Timeless G'⌝ -∗ (G' &&{↑NllftG}&&> @[κ]) -∗ G' -∗ ▷ P x wπ ={E}=∗
+     G' ∗ ∃ t, gmb_b γ t ∗ (c s t ={E}=∗ ∃ wζ, ▷ Q y wζ ∗
+       (∀ y' wζ', ▷ .PC[ζ] y' wζ' -∗ ▷ Q y' wζ' ={↑NllftUsr ∪ ↑NllftUsr2}=∗
+          ∃ t', ▷ c s t' ∗ (gmb_b γ t' -∗ ▷ ∃ x', P x' (λ π, fπ (π ζ)))))) -∗
+  G -∗ proph_loan ζ y -∗ proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P ={E}=∗
+    ⟨π, π ξ = fπ (π ζ)⟩ ∗ (∃ idx', proph_bor_tok ζ y idx' ∗ proph_idx_bor_gen κ ζ idx' Q) ∗ G.
+```
+- `gmb_lend_proph` keeps the prophecy variable, its value and its controller: resolving the
+  new borrow resolves `ξ` itself.
+- `gmb_lend_proph_map` is the value-map version: the old variable is pre-resolved to `fπ` of
+  the fresh one (e.g. `fπ y := (g, y)` for the permission's value `(g, x)` and the contents'
+  `x`), so resolving the new borrow resolves the old one consistently, and the old borrow's
+  body is restored at the controller `fπ ζ` when `κ` ends.
+- The caller splits the permission off the old payload and builds the new payload from the
+  contents. The way back, from the final new payload, runs in the back-map and must give
+  back the contents there (`∃ t', ▷ c s t' ∗ …`).
+
+### Tests (`guarded_bor_proph_tests.v`)
+
+The toy instance of phase 1, with contents in `positive` (a type of prophecy values). The
+lender holds a generalized prophetic borrow of the permission
+(`proph_loan_borrow_gen`).
+- `test_proph_map_write_resolve_end_move`: the `borrow_mut` shape. The permission's
+  variable `ξ` ranges over pairs `(g0, t)`, the contents' variable `ζ` over `t`. Lend with
+  `gmb_lend_proph_map` (`fπ y := (g0, y)`); write `t'` through the new borrow
+  (`proph_idx_bor_gen_acc_idx`); resolve it (`proph_idx_bor_gen_resolve_share`); end `κ`.
+  The test concludes `⟨π, π ξ = (g0, t')⟩`, and that the lender's inheritance gives
+  `gmb_b γ t'` (observed with (L2)); the owner then moves.
+- `test_proph_inplace_write_resolve_end_move`: the same with `gmb_lend_proph` (one
+  variable, `⟨π, π ξ = t'⟩`).
+- `test_proph_lend_abandoned`: after the lend, the lender drops its new borrow, the
+  observation and its inheritance; after `[†κ]` the owner moves.
+
+### Why (L3p) fails for `&uniq` bodies
+
+1. **The back-map must give back the contents.** (L4) lets the owner move after `κ`
+   without the lender. So when `κ` ends, the contents must be back in the instance before
+   anyone can own `gmb_a γ s`. The only code that runs at the end of `κ` is the back-map of
+   the special opening (step 2 of `llftl_end`). It runs at mask `↑NllftUsr ∪ ↑NllftUsr2`, and
+   phase 0 requires it to also return `special_open κ`, which is how `gmb_move` refutes the
+   lent-out state. That is the back-map `c(s, t') ⇛ b(t') ∗ special_open κ` of §2.3.
+2. **The `&uniq` body does not have the contents at that point.** In
+   `uniq_gbody κp ty tid l c wπ`, the bytes `cbytes ty x l` (which phase 3 identifies with
+   `c_g(l, ty_fval x)`) are inside `guarded_upd lazyE @[ty_lft ty] (⧖ ∗ leaf_node …)`. For a
+   pattern `PatBlocked α`, they are behind a further `[†α] ={lazyE}=∗ guarded_upd …`
+   (`blocked_owned`). The rules that act on the borrow during `κ` create such states:
+   - writes through unfolded places (`norm_pat` blocks at `κp`);
+   - reborrows (`PatBlocked κ'`);
+   - transformations (`uniq_gbody_map` maps lazily).
+3. **The back-map cannot force the body.** Forcing needs:
+   - the mask `lazyE ⊇ ↑Nllft`, which is open during step 2;
+   - a guard of `@[ty_lft ty]`;
+   - for blocked parts, `[†α]`. The guarded special accessor gives the back-map no dead
+     token (the opening is at a temporary lifetime).
+
+   So no back-map can produce `c s t'` from the final new body.
+4. **Deferring the settlement does not work either.** Suppose the back-map only returned the
+   token and stored the lazy body in `other_inv` ("pending"). Then:
+   - (L2) and (L3) need the contents in `guard_inv`;
+   - (L1) needs the owner to force the body. `gmb_move` has neither `[†κ]` nor a guard for
+     the payload's lifetime. The owner does not even know `κ`: the same `gmb_a` share can
+     serve many lends.
+
+   The lender could settle: its old body can be closed at `PatBlocked κ`, which receives
+   `[†κ]`. But (L4) must not depend on the lender.
+
+### Proposed extension (phase 2b): pending lends, settled by either side
+
+All of the following stays within the current lifetime logic.
+
+1. **Registered shares.** Before sharing at `α`, the owner turns `gmb_a γ s` into
+   `gmb_a_sh γ s α`, an a-state `Shared s α`, equivalent to `Here s` for `guard_inv`. The
+   lazy (L3p) takes `@[κ] &&{↑NllftG; n}&&> gmb_a_sh γ s α` and `κ ⊑ α`.
+   - The owner unshares with
+     `gmb_a_sh γ s α ∗ [†α] ∗ (G &&{↑NllftG}&&> @[β]) ∗ G ={lazyE ∪ ↑gmbN}=∗ gmb_a γ s ∗ G`.
+     This settles a pending lend: `[†κ]` follows from `κ ⊑ α`.
+   - `β` is the payload's lifetime (`ty_lft ty`), fixed when the instance is created, like
+     the depth.
+2. **Pending state.** The back-map moves the b-side from `Out s κ` to `Pending s κ`. It
+   stores the final new payload (under `▷`) and the b fragment in `other_inv`, and returns
+   the token.
+   - The payload comes with a settle law, fixed at the lend:
+     `▷ Q ∗ [†κ] ∗ guard of β ={lazyE}=∗ ∃ t', c s t' ∗ R t'`. For `&uniq`, this is forcing
+     `uniq_gbody κ ty` with `leaf_node_unblock`, and splitting `ofty_owned` into the bytes
+     and the rest.
+3. **A settle lock.** Use an invariant `inv gmbN K`, with an exclusive token `K` and
+   `gmbN` disjoint from `lazyE`. A settler:
+   - takes `K` and puts it into `other_inv` with the state `Taken`;
+   - closes `other_inv` and forces the payload (`gmbN` stays open);
+   - reopens `other_inv`, deposits `c s t'` (b-state `In t'`), and leaves `R t'` for the
+     lender (state `Settled t'`);
+   - gives back `K`.
+
+   Anyone who meets `Taken` while holding `K` has a contradiction. The back-map holds its
+   own b fragment, so it never meets `Taken`.
+4. **The lender's claim.** `gmb_claim γ κ ∗ [†κ] ∗ guard of β ={lazyE ∪ ↑gmbN}=∗
+   ∃ t', gmb_b γ t' ∗ R t'` either settles the lend or takes the residue. It runs in the
+   lazy update of the old body. `gmb_lend_proph_map`'s way back would build that old body
+   at `PatBlocked κ` (with `pat_ok` from `κ ⊑ κp`), so that its `blocked_owned` gets `[†κ]`.
+5. **At the `&uniq` level.** A special `uniq_body_transform_gen`, through
+   `proph_idx_bor_gen_map_special`, with `κp := κ` for the new borrow, gives
+   `uniq_body (permission type) at κ ⇒ uniq_body ty at κ`. Its way back is items 2 and 4.
+6. **Typing (phase 4).**
+   - The share predicate of `pcell ty` at `α'` carries the registered root:
+     `∃ α, α' ⊑ α ∗ (@[α'] &&> gmb_a_sh γ s α)`. `ty_share` registers the share, by
+     opening the borrow it gets.
+   - The ownership is `gmb_a γ s ∨ ∃ α, gmb_a_sh γ s α ∗ [†α]`. The move unshares first;
+     typing has `lazyE` and a guard of `ty_lft ty` at that point.
+
+### How phase 4 uses phase 2 as it stands
+
+- `gmb_lend_start`/`gmb_lend_stop` and `proph_idx_bor_gen_map_special` are the building
+  blocks of item 5.
+- `gmb_lend_proph_map` is (L3p) when the new payload gives back the contents in the
+  back-map. This holds for payloads that keep the bytes outside any lazy update, but not
+  for `&uniq{κ} ty`.
+- Phase 3 does not depend on phase 2. It can proceed with (L0)–(L3) and the toy-tested
+  laws; `type_pcell_borrow_mut_instr` returning `&uniq{κ} ty` waits for phase 2b.
+
+### Deviations
+
+- No lemma at the level of `uniq_body`/`cpd_body` (see above). The value map is a
+  prophecy map `fπ`, as in `proph_idx_bor_gen_map`, rather than a `syn_type` morphism.
+- The lend lemmas take the payload split as a client view shift, rather than fixing the
+  payload to `gmb_b`/`c`.
