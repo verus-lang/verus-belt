@@ -314,4 +314,82 @@ Section gmb_cells_tests.
     iIntros "!> [A B]". iApply "HΦ". iExists g, γ. iSplitR; [done|].
     iSplitL "A"; [by iApply (gcont_cell with "Hreg A")|done].
   Qed.
+  Lemma step_fupd_frame_Nllft E (P : iProp Σ) :
+    ↑Nllft ⊆ E → (|={↑Nllft}[∅]▷=> P) ⊢ |={E}[E∖↑Nllft]▷=> P.
+  Proof.
+    intros HE. rewrite (step_fupd_mask_frame_r _ _ (E∖↑Nllft)); [|set_solver|set_solver].
+    rewrite -union_difference_L // left_id_L. done.
+  Qed.
+
+  (** (L3) and (L4): the owner shares the move right at [κ], the permission holder lends
+      the permission (with its value tracked by a ghost variable); a write through the
+      borrow; the end of [κ] (during a [Skip]); the lender gets back the permission at the
+      final value, the owner the move right, and the cell is moved by a verbatim copy and
+      destroyed. *)
+  Lemma test_gcell_lend_write_end_move E l l' bs bs' :
+    ↑naN ∪ ↑gcellsN ∪ lazyE ⊆ E → length bs = 4%nat → length bs' = 4%nat →
+    {{{ llft_ctx ∗ gcells_ctx ∗ £ 2 ∗ ▷ l ↦b bs ∗ ▷ l' ↦b bs' }}}
+      Store Na1Ord (MInt i32) (#l) (MLit (VInt 5)) ;;
+      Store Na1Ord (MInt i32) (#l) (MLit (VInt 7)) ;;
+      Skip ;;
+      MemCopy Na1Ord 4 (#l') (#l) ;;
+      Load Na1Ord (MInt i32) (#l') @ E
+    {{{ RET MLitV (VInt 7); ∃ bs1, l ↦b bs1 }}}.
+  Proof using All.
+    iIntros (HE Hlen Hlen' Φ) "(#LFT & #GC & Lc & Hl & Hl') HΦ".
+    iDestruct (lc_split 1 1 with "Lc") as "[Lc1 Lc2]".
+    have HNllft : ↑Nllft ⊆@{coPset} E. { trans lazyE; [rewrite /lazyE; set_solver|set_solver]. }
+    wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [set_solver|apply int5_wf|done|].
+    iIntros "!> Hl". wp_seq.
+    iMod (gcell_new_i32 _ _ (VInt 5) with "GC Hl") as (g γ) "(%Hd & #Hreg & #GI & B & C)";
+      [set_solver|apply dec5|].
+    iDestruct (gcont_cell_inv with "C") as (γ') "[Hreg' A]".
+    iDestruct (gcell_reg_agree with "Hreg Hreg'") as %[<- _].
+    iMod (ghost_var_alloc (FVInt 5)) as (γv) "[V1 V2]".
+    iMod (llftl_begin with "LFT") as (κ) "[Alive #End]"; [done|].
+    (* the owner shares the move right; the permission holder lends the permission *)
+    iMod (llftl_borrow_shared _ κ (gca γ l) with "[A]") as "[#Ga InhA]"; [done|by iNext|].
+    iDestruct (guards_remove_later_rhs with "Ga") as "#Ga'".
+    set Ψ := (λ fv : FValue, ⌜∃ v, fv = fv_lift v⌝ ∗ ghost_var γv (1/2) fv)%I.
+    iMod (llftl_borrow _ κ (∃ fv, gmb_b γ fv ∗ Ψ fv) with "LFT [B V1]") as "[Bor InhB]"; [done| |].
+    { iNext. iExists (FVInt 5). iFrame "B V1". iPureIntro. by exists (VInt 5). }
+    iMod (gcell_lend_pred _ γ κ l (MInt i32) Ψ with "LFT GI Ga' Lc1 Bor Alive") as "[Bor Alive]";
+      [done|done|].
+    (* write through the borrow *)
+    iMod (llftl_bor_acc with "LFT Bor Alive") as "[Cb Close]"; [done|].
+    iMod (bi.later_exist_except_0 with "Cb") as (fv) "[>C [>%Hfv >V1]]".
+    iDestruct (ghost_var_agree with "V1 V2") as %->.
+    wp_bind (Store _ _ _ _). rewrite {1}loc_0.
+    iApply (wp_gcont_store_na_sub _ _ _ _ _ _ (VInt 5) (VInt 7) (FVInt 7) with "C");
+      [set_solver|apply MInt_wf|apply int7_wf|constructor|].
+    iIntros "!> C".
+    iMod (ghost_var_update_halves (FVInt 7) with "V1 V2") as "[V1 V2]".
+    iDestruct ("Close" $! (∃ fv, gcont l (MInt i32) fv ∗ Ψ fv)%I with "[C V1]") as "X".
+    { iSplitR. { iIntros "!> [$ _]". done. } iNext. iExists (FVInt 7). iFrame. iPureIntro. by exists (VInt 7). }
+    iMod (fupd_mask_mono with "X") as "[_ Alive]"; [done|].
+    wp_seq.
+    (* the end of [κ] *)
+    wp_bind Skip.
+    iApply (wp_step_fupd _ E (E∖↑Nllft) _ [†κ] with "[Alive]"); [set_solver| |].
+    { iApply step_fupd_frame_Nllft; [done|]. by iApply "End". }
+    wp_seq. iIntros "#Dead". iModIntro. wp_seq.
+    iMod ("InhA" with "Dead") as ">A".
+    iMod (fupd_mask_mono with "(InhB Dead)") as (fv') "(>B & >%Hfv' & >V1)"; [done|].
+    iDestruct (ghost_var_agree with "V1 V2") as %->.
+    (* the owner moves the cell, and destroys it *)
+    iDestruct (gcont_cell with "Hreg A") as "C".
+    wp_bind (MemCopy _ _ _ _).
+    iApply (wp_gcont_memcopy _ _ _ (MInt i32) with "[$GC $Lc2 $C $Hl']"); [set_solver|apply MInt_wf|done|].
+    iIntros "!>" (bs1) "[Hl C]". wp_seq.
+    iMod (gcell_destroy with "Hreg GI C B") as "C"; [done|].
+    iDestruct (gcont_lift_bytes _ _ (VInt 7) with "C") as (bs2) "[Hl' %Hd2]".
+    iApply (wp_load_na with "Hl'"); [done|]. iIntros "!> _". iApply "HΦ". by iExists _.
+  Qed.
 End gmb_cells_tests.
+
+Print Assumptions test_gcell_create_read_destroy.
+Print Assumptions test_gcell_nested_move.
+Print Assumptions test_gcell_siblings_memcopy.
+Print Assumptions test_gcell_shared_read.
+Print Assumptions test_gcell_mcas.
+Print Assumptions test_gcell_lend_write_end_move.
