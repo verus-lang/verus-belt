@@ -837,3 +837,193 @@ In total, about 12 files, about 90 lemmas of which about 15 are substantial, rou
    `gmb_move`'s side condition becomes `lazyE ⊆ E`. The back-map itself only stores, at
    `↑NllftUsr ∪ ↑NllftUsr2`, and never meets the locked state: it holds its own b fragment
    (state `Out`).
+
+## Outcome: phase 2b (steps 1–4)
+
+Implemented as specified by the audit, with the deviations listed per step. No typing-rule
+statement changed (the examples build unchanged). `Print Assumptions` of the new lemmas and
+tests: closed under the global context (lifetime and GMB layer), or only
+`functional_extensionality_dep` (typing layer, as before).
+
+### Step 1: dead token for the guarded back-maps (merge 1d63c9f)
+
+- Internals (`unborrow.v`): the back-map hypothesis of `llft_vs_for_unborrow_end`,
+  `inner_unborrow_end` and `outer_unborrow_end` also receives `∃ k ∈ al, Dead k` (the atom
+  being killed, in the `k ∈ al` branch). `llftl_idx_acc_back_vs` (local) passes
+  `llft_dead_def' κ ∗ llft_dead_def' (set_map LtAtomSwell idx.2)`.
+- New public lemmas (`lifetime_full.v`), old statements unchanged:
+  ```
+  Lemma llftl_bor_acc_maybe_swell'_dead E P κ' κ : ↑Nllft ⊆ E →
+    llft_ctx -∗ (llft_alive_def' κ' &&{↑NllftG}&&> @[κ]) -∗ &{κ} P -∗ llft_alive_def' κ' -∗
+    |={E}=> ▷ P ∗ (∀ Q, ▷ (▷ Q ∗ (∃ κ'', κ ⊑ κ'' ∗ [†κ'']) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P) ∗ ▷ Q
+                    ={↑Nllft}=∗ &{κ} Q ∗ llft_alive_def' κ').
+  Lemma llftl_bor_acc_guarded_dead E G κ P : Timeless G → ↑Nllft ⊆ E →
+    llft_ctx -∗ &{κ} P -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗
+      ▷ P ∗ (∀ Q, ▷ (▷ Q ∗ (∃ κ'', κ ⊑ κ'' ∗ [†κ'']) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P) ∗ ▷ Q
+                  ={↑Nllft}=∗ &{κ} Q ∗ G).
+  Lemma llftl_bor_acc_special_guarded_dead E G κ P :     (* closer as above, with the token *)
+  Lemma llftl_bor_idx_acc_special_guarded_dead E G κ idx P :
+  ```
+  `∃ κ'', κ ⊑ κ'' ∗ [†κ'']` is `basically_dead κ` (uniq_util.v) and `gmb_bdead κ`.
+- `proph_bor.v`: `proph_idx_bor_gen_acc_rebody_special_guarded_dead` and
+  `proph_idx_bor_gen_map_special_dead` (the way back gets the dead token); the phase-2
+  statements are derived from them.
+- Deviation: the atomic accessor is not changed: it already gives `[†κ]`.
+
+### Step 2: bytes outside the lifetime guard in `&uniq` bodies (merge f06ed8a)
+
+The bytes of the leaves of `&uniq` bodies are quantified over the fancy value and kept
+outside the guarded update of the ghost part (`uniq_util.v`):
+```
+Definition fbytes ty l fv := ∃ x, ⌜ty_fval x = Some fv⌝ ∗ cbytes ty x l.
+Lemma cbytes_fbytes ty x l : cbytes ty x l ⊣⊢ ∃ fv, ⌜ty_fval x = Some fv⌝ ∗ fbytes ty l fv.
+Definition ofty_gho m ty lr fv d g tid := ∃ x, ⌜ty_fval x = Some fv⌝ ∗ place_rfn_rel lr x ∗ ▷^m ty_gho_own x d g tid.
+Definition blocked_owned m ty α lr tid l :=
+  [†α] ={lazyB}=∗ ∃ fv, fbytes ty l fv ∗ guarded_upd lazyE @[ty_lft ty]
+    (∃ d' g', ⧖((m + S d') `max` g') ∗ ofty_gho m ty lr fv d' g' tid).
+Definition leaf_contents κp ty p r d g tid l :=        (* p' := norm_pat κp p r, lr := prfn_place r *)
+  ∃ fv, leaf_owned_b 0 ty p' lr fv tid l ∗ leaf_owned_lz ty p' lr fv d g tid.
+  (* unblocked: fbytes ty l fv ∗ ⌜lr_fval ty lr fv⌝ and guarded_upd lazyE @[ty_lft ty] (⧖ ∗ ofty_gho 0 …);
+     blocked: blocked_owned and True *)
+Definition uniq_payload ty tid l x d g := cbytes ty x l ∗ guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗ ty_gho_own x d g tid).
+Definition uniq_gbody κp ty tid l c wπ := ∃ p r, pat_ok κp p ∗ ⌜…⌝ ∗ ghost_var (cell_γ c) ½ (lstate p r) ∗
+  leaf_contents κp ty p r (cell_d c) (cell_g c) tid l.
+Definition cpd_contents κp ty node p r d g tid l :=
+  guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗ node p r d g tid l) ∧ leaf_contents κp ty p r d g tid l.
+Definition cpd_body κp ty node tid l c wπ := … ∗ cpd_contents κp ty node p r (cell_d c) (cell_g c) tid l.
+Lemma leaf_contents_unblock κp ty p r d g tid l :
+  llft_ctx -∗ pat_ok κp p -∗ [†κp] -∗ leaf_contents κp ty p r d g tid l ={lazyB}=∗
+    ∃ fv, fbytes ty l fv ∗ guarded_upd lazyE @[ty_lft ty] (∃ d' g', ⧖(S d' `max` g') ∗ ofty_gho 0 ty (prfn_place r) fv d' g' tid).
+```
+`lazyB := ↑Nllft ∪ ↑prophN ∪ ↑uniqN`. In `ltype.v`:
+```
+Lemma ltype_owned_bytes_unblock lt κ tid : lty_simple lt → owned_bytes_unblock lt κ tid.
+  (* ltype_own_cp false lt (Owned m) p r d g tid l, with pat_ok κ p, [†κ], ⧖ ={lazyB}=∗
+     ∃ fv, fbytes (lty_fold lt) l fv ∗ guarded_upd lazyE @[ty_lft (lty_fold lt)]
+       (∃ x d' g', ⌜ty_fval x = Some fv⌝ ∗ ▷ (prfn_den r :== vπ x) ∗ ⧖((m + S d') `max` g') ∗ ▷^m ty_gho_own x d' g' tid) *)
+Lemma cpd_contents_eager lt κp p r d g tid l : lty_is_cpd lt → lty_simple lt →
+  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ pat_ok κp p -∗ ⧖(S d `max` g) -∗
+  ltype_own_cp false lt (Owned 0) p r d g tid l -∗ cpd_contents κp (lty_fold lt) (ltype_own_cp false lt (Owned 0)) p r d g tid l.
+```
+`ltype_owned_unblock_fold` keeps its statement (derived from `ltype_owned_bytes_unblock`).
+
+Deviations from the audit's "Shape":
+- No new bytes/ghost fixpoints mirroring `ltype_own_cp`: the compound body holds *both* views
+  of the same resources (`cpd_contents`, a conjunction): the lazy node (for the openers) and
+  the leaf contents of the folded type (for the closing view shift). The producers build both
+  (eagerly: `cpd_contents_eager`; from a payload: `cpd_contents_payload`). So the `Conv`
+  parameter of `cpd_rebody`/`_ext`/`cpd_rebody_gen` is gone (the closers take `cpd_contents`),
+  `prod_node_leaf` is removed, and the back-maps are `cpd_body_leaf` (no update).
+- `fbytes` is stated with a witness value (equivalent to the fancy-bytes form of
+  `bytes_own_brepr` whenever some value has that fancy value); all layout reasoning stays at the
+  value level.
+- Blocked leaves have no lazy part (their inheritance gives both parts); `leaf_rcpt` gives the
+  receipt only for unblocked states.
+- The folds of compound bodies back to the leaf at the trivial state force the contents:
+  `prod_ofty_fold_uniq` and `cpd_fold_uniq` take a guard for the lifetime of the folded type
+  and `£1` (their callers, `vplace_conv` instances, have them). `cpd_unfold_uniq` requires a
+  structured refinement.
+- `shr_blocked_owned` keeps one inheritance (its mask becomes `lazyB`; it already fires at
+  `↑Nllft` with a stored credit), and so does the view of shared-blocked leaves.
+- `uniq_gbody_map` always blocks the old body at `κp` and takes a split way back
+  (`BackB` on `fbytes` at `lazyB`, with a residue `RB`, and `BackG` on the ghost part); so do
+  `uniq_body_transform(_gen, _lazy)` (pptr.v instantiates `RB`).
+- Resolution and sharing inside borrows use `llftl_bor_cpd_contents(_step)` (`ltype.v`).
+
+### Step 3: lazy GMB lends, claims, settle lock, `b_uniq`/`b_shr` (merge 2977149)
+
+`lifetime/guarded_bor.v`. New namespaces `gmbN`, `gmbLN := gmbN.@"lock"`,
+`gmbCN := gmbN.@"claim"`. An instance has a _bytes mask_ `gmb_bmask γ` (disjoint from
+`gmbN`, recorded in `gmb_inv`). The b-side gains `GmbOut s κ lz` (lazy-capable lend, storing
+`£3`) and `GmbPend s κ γc γp` (pending lazy lend). A pending lend lives in a claim invariant
+(`inv gmbCN`) holding the b fragment and the payload (`▷ Q`, its settle law at the bytes mask,
+the dead token, `£3`); while it is settled the settler holds the lock token (from
+`inv gmbLN`) and leaves it in the claim invariant; the settled permission and residue are
+deposited there (with a credit) for the lender.
+```
+Lemma gmb_create E d s t : c s t ={E}=∗ ∃ γ, ⌜gmb_depth γ = d ∧ gmb_bmask γ = ∅⌝ ∗ gmb_inv γ ∗ gmb_a γ s ∗ gmb_b γ t.
+Lemma gmb_create_mask E d EB s t : EB ## ↑gmbN →
+  c s t ={E}=∗ ∃ γ, ⌜gmb_depth γ = d ∧ gmb_bmask γ = EB⌝ ∗ gmb_inv γ ∗ gmb_a γ s ∗ gmb_b γ t.
+Lemma gmb_move E γ s : ↑Nllft ∪ ↑gmbN ∪ gmb_bmask γ ⊆ E →
+  gmb_inv γ -∗ £ (1 + gmb_depth γ) -∗ gmb_a γ s ={E}=∗ ∃ t, c s t ∗ (∀ s', c s' t ={E}=∗ gmb_a γ s').
+  (* a pending lend is settled first: the mover forces the payload *)
+Lemma gmb_lend_start_lazy E γ κ s t n : ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+  llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗ £ 3 -∗
+  special_open κ -∗ gmb_b γ t ={E}=∗ c s t ∗ gmb_lent_lz γ s κ.
+Lemma gmb_lend_stop_lazy γ κ s (Q : iProp Σ) (R : T → iProp Σ) :
+  gmb_inv γ -∗ gmb_lent_lz γ s κ -∗ ▷ Q -∗ gmb_bdead κ -∗
+  (Q -∗ gmb_bdead κ ={gmb_bmask γ}=∗ ∃ t, c s t ∗ R t) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ gmb_claim γ R ∗ special_open κ.
+Lemma gmb_claim_take E γ R : ↑NllftUsr ∪ ↑NllftUsr2 ∪ ↑gmbN ∪ gmb_bmask γ ⊆ E →
+  gmb_inv γ -∗ gmb_claim γ R ={E}=∗ ∃ t, gmb_b γ t ∗ R t.
+Definition gmb_b_uniq γ R := (∃ t, gmb_b γ t ∗ R t) ∨ gmb_claim γ R.     Notation gmb_b_shr := gmb_b.
+Lemma gmb_b_uniq_settle E γ R : (mask as gmb_claim_take) → gmb_inv γ -∗ gmb_b_uniq γ R ={E}=∗ ∃ t, gmb_b_shr γ t ∗ R t.
+Lemma gmb_lend_guarded_lazy E G γ κ s n Q R : Timeless G → ↑Nllft ∪ ↑gmbN ∪ gmb_bmask γ ⊆ E → n ≤ gmb_depth γ →
+  llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗ £ 1 -∗ £ 3 -∗
+  &{κ} (gmb_b_uniq γ R) -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ (∀ t, R t -∗ c s t ={E}=∗ ▷ Q) -∗
+  □ (Q -∗ gmb_bdead κ ={gmb_bmask γ}=∗ ∃ t, c s t ∗ R t) ={E}=∗ &{κ} Q ∗ G.
+```
+`guarded_bor_proph.v`: `gmb_lend_proph_map_lazy` (as `gmb_lend_proph_map`, with `£ 3`; the
+way back gets `gmb_bdead κ` and returns `∃ QS R, ▷ QS ∗ (QS -∗ gmb_bdead κ ={gmb_bmask γ}=∗
+∃ t', c s t' ∗ R t') ∗ (gmb_claim c γ R -∗ ▷ ∃ x', P x' (λ π, fπ (π ζ)))`). The eager (L3)/(L3p)
+statements are unchanged. Tests: `test_lazy_lend_claim`, `test_lazy_lend_abandoned` (the owner
+forces and moves), `test_proph_lazy_lend_abandoned`; the old tests use masks with `↑gmbN`.
+
+In the typing layer: `lazyE := ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN` (so the ghost layer can take
+the lock; `lazyB ## ↑gmbN`). The masks of `ty_share` (type record) and of the resolution
+interfaces (`↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F`, in type.v, type_context.v,
+place_resolve.v, place_puniq.v, uniq_util.v) become `↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN`
+(`timeN ⊆ Nllft`; the 5-fold union is beyond `solve_ndisj`'s depth). The explicit resolution
+masks of place_write.v and place_memcpy.v exclude `gmbN` too.
+
+Deviations:
+- The settle lock is `inv gmbLN` (a token), but the pending payload is in a per-lend claim
+  invariant in `gmbCN` (not in `other_inv`): the lender's claim is that invariant, so it needs
+  no agreement on its residue `R`. The lock token is the placeholder of the payload while it
+  is being forced.
+- `£3` (not `£2`) are stored: two for the laters of the payload, one for the deposited residue.
+- `gmb_b_uniq` is indexed by the residue `R` (a claim cannot carry `t`, audit Q5.4);
+  `gmb_b_shr` is `gmb_b`.
+- `gmb_create` also states `gmb_bmask γ = ∅`; `gmb_move` needs `↑gmbN ∪ gmb_bmask γ` in its mask.
+
+### Step 4: (L3p) for `&uniq` bodies
+
+`typing/gmb_uniq.v` (abstract `c : loc → FValue → iProp`, abstract permission and contents
+types):
+```
+Lemma gmb_lend_uniq {𝔄p 𝔄} (pty: type 𝔄p) (ty: type 𝔄) (fv: ~~𝔄 → ~~𝔄p) (fp: 𝔄 → 𝔄p)
+    (fvp: FValue) γ (l lp: loc) (y: ~~𝔄) ξi d g idx κ tid E G :
+  Timeless G → Inj eq eq fp → (∀ y π, vπ (fv y) π = fp (vπ y π)) →
+  lazyE ⊆ E → gmb_bmask γ = lazyB →
+  (∀ x fv0, ty.(ty_fval) x = Some fv0 → c l fv0 ⊢ cbytes ty x l) →
+  (∀ fv0, fbytes ty l fv0 ⊢ c l fv0) →
+  (∀ v, pty.(ty_fval) v = Some fvp) → (∀ v, cbytes pty v lp ⊣⊢ True) →
+  (∀ y' d' g', ty_gho_own pty (fv y') d' g' tid ⊢ |={lazyE}=>
+     ∃ fv0, ⌜ty.(ty_fval) y' = Some fv0⌝ ∗ gmb_b γ fv0 ∗ ty_gho_own ty y' d' g' tid) →
+  (∀ y' d' g' fv0, ty.(ty_fval) y' = Some fv0 →
+     gmb_b γ fv0 ∗ ty_gho_own ty y' d' g' tid ⊢ ty_gho_own pty (fv y') d' g' tid) →
+  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ gmb_inv c γ -∗
+  (@[κ] &&{↑NllftG}&&> gmb_a γ l) -∗ κ ⊑ ty_lft pty -∗ ty_lft pty ⊑ ty_lft ty -∗
+  (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £ 4 -∗
+  uniq_body pty (fv y) ξi d g idx κ tid lp ={E}=∗ ∃ ζi ζidx,
+    ⟨π, (π (uniq_prvar (fv y) ξi)).1 = fp ((π (uniq_prvar y ζi)).1)⟩ ∗
+    uniq_body ty y ζi d g ζidx κ tid l ∗ G.
+```
+The new body is fresh with pattern lifetime `κ`. Its final body is stored lazily (settle law:
+`leaf_contents_unblock` with `[†κ]` from the dead token, then `fbytes ⊢ c`); the old body is
+given back blocked at `κ` (`κ ⊑ κp_old`), and its lazy ghost update takes the claim and
+rebuilds the permission's ownership from the residue. (The permission's ownership may hold a
+`gmb_b_uniq`: the forward hypothesis is a `lazyE` update, which can settle it.)
+Test (`typing/gmb_uniq_tests.v`, toy instance `c l fv := fbytes ty l fv`):
+`test_gmb_uniq_abandoned` — a permission borrow from `alloc_uniq_body`, the lend, the new
+borrow dropped, `κ` ended; the owner moves (`gmb_move` forces the stored bytes).
+
+Deviations: the value map is a function `fv` with its prophecy `fp` (as
+`uniq_body_transform_gen`); the share guard is at step-index 0.
+
+### For phase 3/4
+
+- The typing instance of phase 4 has to discharge the interface of `gmb_lend_uniq`: `c` vs.
+  `fbytes`, the zero-size permission (`cell_points_to`), and its ownership predicate as
+  `gmb_b γ (ty_fval x) ∗ ty_gho_own ty x` (or a `gmb_b_uniq`). Instances used with `&uniq`
+  must be created with bytes mask `lazyB` (`gmb_create_mask`).
+- Typed moves of `pcell` need `↑gmbN` (they have `⊤`).
