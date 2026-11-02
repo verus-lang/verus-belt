@@ -716,7 +716,7 @@ Proof.
   rewrite -{2}(list_insert_id fvs k fvk) //. by econstructor.
 Qed.
 
-Definition lazyE_gcellsN : lazyE ## ↑gcellsN.
+Lemma lazyE_gcellsN : lazyE ## ↑gcellsN.
 Proof. rewrite /lazyE /gcellsN /gmbN /uniqN /NllftUsr /prophN /Nllft. solve_ndisj. Qed.
 
 Section gcells_api.

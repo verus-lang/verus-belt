@@ -41,8 +41,10 @@ ghost name, one in each invariant: the state invariant [guard_inv], a guard
 [True &&{↑NllftUsr2}&&> …] holding the contents when idle, and [other_inv], an invariant in
 [NllftUsr] holding, while lent out for [κ], the token [special_open κ] and the guard
 [special_open κ &&> gmb_a γ s]. In (L1), an owned [gmb_a γ s] together with that guard
-refutes the lent-out state; this needs the credits of [gmb_move] (one for the later of
-[other_inv], [gmb_depth γ] for the step-index of the stored guard).
+refutes the lent-out state; this needs credits (one for the later of [other_inv],
+[gmb_depth γ] for the step-index of the stored guard), which the lend prepays: they are
+stored in [other_inv] with the token, so that (L1) itself needs no credits (a move of a value
+with cells moves all its nested cells, whose number is not known in advance).
 
 We assume that [c] is timeless. This lets the state invariant be a guard without a later
 ([True &&{↑NllftUsr2}&&> …]), so that (L2) gives a guard of [c s t] at the step-index of its
