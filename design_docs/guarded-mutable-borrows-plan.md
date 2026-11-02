@@ -1,6 +1,6 @@
 # Guarded mutable borrows, and a decodability layer built on them (plan)
 
-Status: plan (2026-11-01). It follows the user's proposal
+Status: plan (2026-11-01; all decisions made 2026-11-02). It follows the user's proposal
 `proposed-abstraction-guarded-mutable-borrows.md` and route C of §20 of
 `pcell-multibyte-cells.md`: keep Rust's semantics, where a typed move re-encodes the
 contents of a cell. Goal: `PCell::borrow`/`borrow_mut` return `&shr{κ} ty`/`&uniq{κ} ty`,
@@ -230,5 +230,4 @@ special_open κ &&{↑NllftG ∪ ↑NllftO}&&> @[κ]      (persistent law)
 1. The placement is the location (§3).
 2. P1 is solved by the special openings of §2.1, which extend the lifetime logic. No
    typing-rule changes are needed.
-3. Whether to delete the physical cell heap in phase 5 (recommended), or keep it as a
-   second model: still open.
+3. The physical cell heap is deleted in phase 5 (user decision, 2026-11-02).
