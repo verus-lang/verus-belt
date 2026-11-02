@@ -128,29 +128,8 @@ Section uniq_util.
     other half, paying for the later in front of the contents with a later credit or
     a program step. A lender gets a guard when it unblocks: the blocked entries of
     the type context hold a pending ownership ([tctx_pending]) that is settled with
-    a guard for the lifetime of the type. *)
-  Definition lazyE : coPset := ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN.
-
-  Lemma lazyE_NllftUsr : ↑NllftUsr ∪ ↑NllftUsr2 ⊆ lazyE.
-  Proof. rewrite /lazyE /NllftUsr /NllftUsr2. solve_ndisj. Qed.
-
-  Lemma lazyE_NllftG : ↑NllftG ⊆ lazyE.
-  Proof. rewrite /lazyE /NllftG. solve_ndisj. Qed.
-
-  (** The mask of the bytes layer of the bodies of unique borrows (the inheritances of
-      blocked leaves, see [blocked_owned]): the bytes can be forced with this mask and dead
-      tokens only, without a guard for the lifetime of the type. It is included in
-      [lazyE], the mask of the (guarded) ghost layer. *)
-  Definition lazyB : coPset := ↑Nllft ∪ ↑prophN ∪ ↑uniqN.
-
-  Lemma lazyB_lazyE : lazyB ⊆ lazyE.
-  Proof. rewrite /lazyB /lazyE. set_solver. Qed.
-
-  Lemma lazyB_Nllft : ↑Nllft ⊆ lazyB.
-  Proof. rewrite /lazyB. set_solver. Qed.
-
-  Lemma lazyB_NllftG : ↑NllftG ⊆ lazyB.
-  Proof. rewrite /lazyB /NllftG. solve_ndisj. Qed.
+    a guard for the lifetime of the type. The masks [lazyE] and [lazyB] are defined in
+    [gcont.v]. *)
 
   (** ** Place refinements *)
 

@@ -290,6 +290,7 @@ src/lambda_verus/typing/lifetime.v
 src/lambda_verus/typing/lft_contexts.v
 src/lambda_verus/typing/inv_context.v
 src/lambda_verus/typing/lstate.v
+src/lambda_verus/typing/gcont.v
 src/lambda_verus/typing/type.v
 src/lambda_verus/typing/type_context.v
 src/lambda_verus/typing/cont_context.v
