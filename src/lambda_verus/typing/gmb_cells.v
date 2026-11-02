@@ -531,4 +531,153 @@ Section gcells_open.
         destruct (lookup_lt_is_Some_2 ys j) as [y Hy]; [rewrite Hlys; by eapply lookup_lt_Some|].
         rewrite fb_mix_slice. exact (Hrep j _ y Hp Hy).
   Qed.
+  Lemma gtoks_cons a A : gtoks (a :: A) ⊣⊢ gmb_moving (S:=loc) a.1 a.2 ∗ gtoks A.
+  Proof. by rewrite /gtoks big_sepL_cons. Qed.
+
+  Lemma fb_mix_plain bs bs' : length bs' = length bs → fb_mix (inr <$> bs) bs' = inr <$> bs'.
+  Proof.
+    revert bs'. induction bs as [|b bs IH]; intros [|b' bs'] Hlen; simpl in *; try done; try lia.
+    f_equal. apply IH. lia.
+  Qed.
+
+  Lemma fb_mix_take n fbs bs : take n (fb_mix fbs bs) = fb_mix (take n fbs) (take n bs).
+  Proof. by rewrite /fb_mix -zip_with_take. Qed.
+
+  Lemma mty_wf_tuple_inv fs sz :
+    mty_wf (MTuple fs sz) → fields_disjoint fs ∧
+      Forall (λ f, f.1 + mty_size f.2 ≤ sz)%nat fs ∧ Forall (λ f, mty_wf f.2) fs.
+  Proof. by inversion 1. Qed.
+  Lemma mty_wf_enum_inv vars tag sz :
+    mty_wf (MEnum vars tag sz) →
+      Forall (λ vm, int_size tag + mty_size vm ≤ sz ∧ mty_wf vm)%nat vars ∧ (int_size tag ≤ sz)%nat.
+  Proof. by inversion 1. Qed.
+
+  (** The deep opening: by induction on the fuel, and on the representation. *)
+  Lemma gopen_rec Reg k R m fbs fv : reg_wf R → frepr R m fbs fv → gopen_stmt Reg k R m fbs fv.
+  Proof.
+    revert R m fbs fv. induction k as [k IHk] using lt_wf_ind. intros R m fbs fv HR Hrep.
+    induction Hrep as [m g cs Hg|m bs v Hdec|fs sz fbs fvs Hlen Hlenf Hfs IH Hpad
+      |vars tag sz fbs t vm d bst Hlen Htag Ht Ht0 Hvm Hd IH Hpad];
+      intros A l Hwf HA Hrng Hsz; iIntros "#Ctx Auth Toks Hfb Hc".
+    - (* a cell: move it, and open its contents with less fuel *)
+      iEval (simpl) in "Hc". iDestruct "Hc" as (γ) "[#Hreg Ha]".
+      iDestruct (ghost_map_lookup with "Auth Hreg") as %Hγ.
+      iDestruct (big_sepM_lookup with "Ctx") as "[#GI %Hbm]"; [exact Hγ|]. simpl in Hbm.
+      iDestruct (gtoks_excl with "Toks Ha") as %Hnin.
+      iMod (gmb_move_tok (gcont_c m) lazyE γ l with "GI Ha") as (t) "(Hct & Tok & Back)".
+      { rewrite Hbm. pose proof lazyB_lazyE. rewrite /lazyE. set_solver. }
+      have HA' : NoDup ((γ, t) :: A).*1 by constructor.
+      have Hrng' : ∀ a, a ∈ (γ, t) :: A → ∃ g m', Reg !! g = Some (a.1, m').
+      { intros a [->|Ha]%elem_of_cons; [by exists g, m|by apply Hrng]. }
+      have Hcount := reg_count _ _ HA' Hrng'. simpl in Hcount.
+      destruct k as [|k']; [lia|].
+      iDestruct "Hct" as (R' fbs') "(Hfb' & [%Hrep' %HR'] & Hc')".
+      iMod (IHk k' ltac:(lia) R' m fbs' t HR' Hrep' ((γ, t) :: A) l Hwf HA' Hrng' ltac:(simpl; lia)
+        with "Ctx Auth [Tok Toks] Hfb' Hc'") as (bs v) "(Auth & Toks' & Hbs & %Hd & Cl)".
+      { rewrite gtoks_cons. iFrame. }
+      rewrite gtoks_cons. iDestruct "Toks'" as "[Tok Toks]".
+      iModIntro. iExists bs, v. iFrame "Auth Toks Hbs". iSplit; [done|].
+      iIntros (l' bs' Hd') "Hbs'".
+      iMod ("Cl" with "[//] Hbs'") as "(Hfb' & Hc' & %Hrep'')".
+      iMod ("Back" $! l' with "Tok [Hfb' Hc']") as "Ha'".
+      { rewrite /gcont_c /gcont. iExists R', _. by iFrame. }
+      iModIntro. have Hlen := decode_value_length _ _ _ Hd'. have Hcs := HR _ _ _ Hg.
+      rewrite fb_mix_cells; [|lia]. iSplitR; [by rewrite gfbytes_cells|]. iSplitL.
+      + iEval (simpl). iExists γ. by iFrame "Hreg Ha'".
+      + iPureIntro. by constructor.
+    - (* plain bytes *)
+      rewrite gfbytes_bytes. iModIntro. iExists bs, v. iFrame. iSplit; [done|].
+      iIntros (l' bs' Hd') "Hbs'".
+      have Hlen := decode_value_length _ _ _ Hd'. have Hlen' := decode_value_length _ _ _ Hdec.
+      rewrite fb_mix_plain; [|lia]. rewrite gfbytes_bytes. iModIntro. iFrame.
+      iSplit; [iApply gcells_lift|]. iPureIntro. by constructor.
+    - (* a tuple: its fields *)
+      destruct (mty_wf_tuple_inv _ _ Hwf) as (Hdisj & Hin & Hwfs).
+      rewrite gcells_tuple_zip; [|done].
+      iMod (gopen_fields Reg k R fs fvs fbs A l with "Ctx Auth Toks Hfb Hc")
+        as (bs vs) "(Auth & Toks & Hbs & %Hbsp & Cl)"; [done|by rewrite Hlen|done..|].
+      destruct Hbsp as (Hlenbs & Hlenvs & Hdecs & _).
+      iModIntro. iExists bs, (VTuple vs). iFrame "Auth Toks Hbs". iSplit.
+      { iPureIntro. rewrite decode_value_tuple decide_True; [|lia]. apply fmap_Some_2.
+        apply mapM_Some, Forall2_same_length_lookup. split; [done|]. intros ? ? ? ? ?. by eapply Hdecs. }
+      iIntros (l' bs' Hd') "Hbs'".
+      move: Hd'. rewrite decode_value_tuple. case_decide as Hlen'; [|done].
+      intros (vs' & Hvs' & [= <-])%fmap_Some_1. apply mapM_Some, Forall2_same_length_lookup in Hvs'.
+      destruct Hvs' as [_ Hvs'].
+      iMod ("Cl" with "[%] [%] Hbs'") as "(Hfb & Hc & %Hreps)"; [lia|done|].
+      iModIntro. iFrame "Hfb". rewrite gcells_tuple_zip; [|done]. iFrame "Hc".
+      iPureIntro. apply frepr_tuple; [rewrite fb_mix_length; lia|done|done|].
+      intros i fb Hi Hnf. destruct (lookup_lt_is_Some_2 fbs i) as [fb0 Hfb0].
+      { rewrite -(fb_mix_length fbs bs'); [|lia]. by eapply lookup_lt_Some. }
+      destruct (Hpad i fb0 Hfb0 Hnf) as [b0 ->].
+      destruct (lookup_lt_is_Some_2 bs' i) as [b' Hb'].
+      { rewrite Hlen'. rewrite -Hlen. by eapply lookup_lt_Some. }
+      rewrite (fb_mix_lookup _ _ _ _ _ Hfb0 Hb') in Hi. injection Hi as <-. by eexists.
+    - (* an enum: its payload, as a single field *)
+      destruct (mty_wf_enum_inv _ _ _ Hwf) as [Hvars Htagsz].
+      destruct (Forall_lookup_1 _ _ _ _ Hvars Hvm) as [Hszvm Hwfvm].
+      set fs := [(int_size tag, vm)].
+      have Hdisj : fields_disjoint fs.
+      { intros [|[]] [|[]] ??????; simpl; intros; simplify_eq; lia. }
+      have Hnf : ∀ i, ¬ in_field fs i ↔ (i < int_size tag ∨ int_size tag + mty_size vm ≤ i)%nat.
+      { intros i. rewrite /fs /in_field. split.
+        - intros Hi. destruct (decide (i < int_size tag)%nat); [by left|]. right.
+          destruct (decide (int_size tag + mty_size vm ≤ i)%nat); [done|]. exfalso. apply Hi.
+          exists (int_size tag, vm). split; [by left|simpl; lia].
+        - intros Hi (f & ->%elem_of_list_singleton & ?). simpl in *. lia. }
+      have Htk : ∀ i, (i < int_size tag)%nat → ∃ b, fbs !! i = Some (inr b) ∧ bst !! i = Some b.
+      { intros i Hi. have : take (int_size tag) fbs !! i = (inr <$> bst) !! i by rewrite Htag.
+        rewrite lookup_take // list_lookup_fmap.
+        destruct (fbs !! i) as [fbi|] eqn:Hfbi.
+        - destruct (bst !! i); simpl; intros; simplify_eq. eauto.
+        - exfalso. apply lookup_ge_None in Hfbi. lia. }
+      have Hpad' : ∀ i fb, fbs !! i = Some fb → ¬ in_field fs i → is_plain fb.
+      { intros i fb Hi [Hi'|Hi']%Hnf.
+        - destruct (Htk i Hi') as (b & Hb & _). rewrite Hb in Hi. injection Hi as <-. by eexists.
+        - by eapply Hpad. }
+      iEval (rewrite gcells_enum Hvm) in "Hc".
+      iMod (gopen_fields Reg k R fs [d] fbs A l with "Ctx Auth Toks Hfb [Hc]")
+        as (bs vs) "(Auth & Toks & Hbs & %Hbsp & Cl)"; [done| | |done|done| |done|done|done| |].
+      { rewrite /fs Forall_singleton /=. lia. }
+      { rewrite /fs Forall_singleton. done. }
+      { intros [|[]] f fvj; simpl; intros; simplify_eq. done. }
+      { rewrite /= right_id. done. }
+      destruct Hbsp as (Hlenbs & Hlenvs & Hdecs & Hpadbs).
+      destruct vs as [|vd [|]]; simpl in Hlenvs; try lia.
+      have Hvd := Hdecs 0%nat _ vd eq_refl eq_refl. simpl in Hvd.
+      have Hbst : take (int_size tag) bs = bst.
+      { apply list_eq. intros i. destruct (decide (i < int_size tag)%nat).
+        - rewrite lookup_take // Hpadbs; [|apply Hnf; by left].
+          destruct (Htk i l0) as (b & Hb & Hbi). by rewrite /fb_base list_lookup_fmap Hb Hbi.
+        - rewrite lookup_take_ge; [|lia]. symmetry. apply lookup_ge_None.
+          have : length (take (int_size tag) fbs) = length (inr <$> bst : list (positive + abyte)) by rewrite Htag.
+          rewrite length_take length_fmap. lia. }
+      iModIntro. iExists bs, (VVariant t vd). iFrame "Auth Toks Hbs". iSplit.
+      { iPureIntro. rewrite decode_value_enum decide_True; [|lia]. rewrite Hbst Ht /=.
+        rewrite decide_True //. by rewrite Hvm /= Hvd. }
+      iIntros (l' bs' Hd') "Hbs'".
+      move: Hd'. rewrite decode_value_enum. case_decide as Hlen'; [|done].
+      destruct (decode_int tag (take (int_size tag) bs')) as [t'|] eqn:Ht'; simpl; [|done].
+      case_decide; [|done]. destruct (vars !! Z.to_nat t') as [vm'|] eqn:Hvm'; simpl; [|done].
+      intros (vd' & Hvd' & [= <- <-])%fmap_Some_1. rewrite Hvm in Hvm'. injection Hvm' as <-.
+      iMod ("Cl" with "[%] [%] Hbs'") as "(Hfb & Hc & %Hreps)"; [lia| |].
+      { intros [|[]] f vj; simpl; intros; simplify_eq. done. }
+      iModIntro. iFrame "Hfb". iSplitL "Hc".
+      { rewrite Hvm. iDestruct "Hc" as "[$ _]". }
+      iPureIntro. eapply (frepr_enum R vars tag sz _ t vm d (take (int_size tag) bs')).
+      + rewrite fb_mix_length; lia.
+      + rewrite fb_mix_take Htag fb_mix_plain //. rewrite length_take.
+        have : length (take (int_size tag) fbs) = length (inr <$> bst : list (positive + abyte)) by rewrite Htag.
+        rewrite length_take length_fmap. lia.
+      + done.
+      + done.
+      + done.
+      + exact (Hreps 0%nat _ d eq_refl eq_refl).
+      + intros i fb Hi Hge. destruct (lookup_lt_is_Some_2 fbs i) as [fb0 Hfb0].
+        { rewrite -(fb_mix_length fbs bs'); [|lia]. by eapply lookup_lt_Some. }
+        destruct (Hpad i fb0 Hfb0 Hge) as [b0 ->].
+        destruct (lookup_lt_is_Some_2 bs' i) as [b' Hb'].
+        { rewrite Hlen'. rewrite -Hlen. by eapply lookup_lt_Some. }
+        rewrite (fb_mix_lookup _ _ _ _ _ Hfb0 Hb') in Hi. injection Hi as <-. by eexists.
+  Qed.
 End gcells_open.
