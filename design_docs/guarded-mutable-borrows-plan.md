@@ -985,7 +985,7 @@ Deviations:
   `gmb_b_shr` is `gmb_b`.
 - `gmb_create` also states `gmb_bmask γ = ∅`; `gmb_move` needs `↑gmbN ∪ gmb_bmask γ` in its mask.
 
-### Step 4: (L3p) for `&uniq` bodies
+### Step 4: (L3p) for `&uniq` bodies (merge 24cd44b)
 
 `typing/gmb_uniq.v` (abstract `c : loc → FValue → iProp`, abstract permission and contents
 types):
