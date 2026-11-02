@@ -49,13 +49,13 @@ Section pcell.
   Proof. iIntros "[H1 _] [H2 _]". iApply (gcell_reg_agree with "H1 H2"). Qed.
 
   Program Definition pcell_ty (m: mty) : type (pcellₛ m) :=
-    ty_of_st {|
+    @ty_of_st _ _ (pcellₛ m) ({|
       st_lfts := []; st_E := [];
-      st_gho g _ _ _ := (∃ γ, gcell_pers g γ (syn_mty (pcellₛ m)))%I;
-    |}.
-  Next Obligation. move=> *. apply _. Qed.
-  Next Obligation. move=> *. by iIntros "$". Qed.
-  Next Obligation. move=> *. by iIntros. Qed.
+      st_gho g _ _ _ := ∃ γ, gcell_pers g γ (syn_mty (pcellₛ m));
+    |}%I : simple_type (pcellₛ m)).
+  Solve Obligations with
+    (try (move=> *; apply _)); (try (move=> *; by iIntros "$")); (try (move=> * ? Hin; by apply elem_of_nil in Hin)).
+  Next Obligation. move=> ????????? H. simpl in H. by apply elem_of_nil in H. Qed.
 
   Global Instance pcell_res_own m : ResOwn (pcell_ty m).
   Proof. done. Qed.
@@ -215,7 +215,7 @@ Section cell_points_to.
     iMod (cell_own_share with "LFT Pers Pt") as "#Pt"; [solve_ndisj|].
     iMod (ty_share with "LFT Incl Pers' Gκ G Bor") as "Shr"; [done..|].
     iModIntro. iApply (step_fupdN_wand with "Shr"). iIntros ">[$ $] !>".
-    by iApply (cell_shr_mono with "Pt").
+    iApply (cell_shr_mono with "Pt"); lia.
   Qed.
   Next Obligation.
     intros 𝔄 ty κ x n0 d g tid ξ R Hin.
@@ -272,5 +272,5 @@ Section cell_points_to.
 
   Lemma cell_points_to_cbytes {𝔄} (ty: type 𝔄) l x :
     cbytes (cell_points_to_ty ty) x l ⊣⊢ True.
-  Proof. rewrite /cbytes bytes_own_zst_true //. apply cell_points_to_bsize. Qed.
+  Proof. rewrite /cbytes bytes_own_zst_true //. Qed.
 End cell_points_to.
