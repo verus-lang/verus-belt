@@ -274,3 +274,121 @@ Section cell_points_to.
     cbytes (cell_points_to_ty ty) x l ⊣⊢ True.
   Proof. rewrite /cbytes bytes_own_zst_true //. Qed.
 End cell_points_to.
+
+(** * Creating and destroying a [PCell]
+
+A [PCell] (or any value that contains cells) is moved by the generic move rules: a typed
+[Load] out of a place ([type_move_place_instr]) moves its cells out with the loaded value
+([val_cells]), and a typed [Store] of the loaded value ([type_write_place_instr]) puts them
+back at the new location; a [MemCopy] into a place ([type_memcpy_move_place_instr]) moves
+them verbatim. *)
+Section pcell_rules.
+  Context `{!typeG Σ}.
+
+  (** [PCell::new]: the contents of a box become a cell (a new instance of the GMB library,
+      registered, [gcell_create]). The box now holds the cell, and the permission is
+      returned (a ghost value). *)
+  Definition PCellNew : val := (λ: ["p"], MkTuple [])%V.
+
+  Lemma type_pcell_new_instr {𝔄} n (ty: type 𝔄) p E L I :
+    typed_instr E L I +[p ◁ᵥ own_bytes n ty] (PCellNew [p])
+      (λ v, +[p ◁ᵥ own_bytes n (pcell_ty ty.(ty_mty)); v ◁ᵥ cell_points_to_ty ty])
+      (λ post '-[(l, x)], λ mask π, ∀ g, post -[(l, g); (g, x)] mask π).
+  Proof.
+    iIntros (tid post mask iκs [[l x] []]) "_ #TIME _ _ _ $ I [p _] Obs".
+    iDestruct (invctx_interp_gcells with "I") as "[#GC $]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ Own]". simpl in Hw. simplify_eq.
+    have Hm := ty_mty_wf ty.
+    rewrite /PCellNew. wp_bind p.
+    iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
+    destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & Gho)".
+    iDestruct (bytes_own_fval with "Bytes") as %[fv Hfv].
+    rewrite (bytes_own_gcont _ _ _ fv) //.
+    iMod (gcell_create with "GC Bytes") as (g γ) "(%Hbm & #Hreg & #GI & B & C)"; [solve_ndisj|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [done|]. iIntros "£ _".
+    iMod (lc_fupd_elim_later with "[£] Gho") as "Gho".
+    { iApply (lc_weaken with "£"). rewrite /advance_credits. lia. }
+    wp_rec.
+    eapply (tac_wp_pure []); [apply (pure_mk_tuple [])|done|tc_solve|simpl; iApply wp_value].
+    iExists -[(l, g); (g, x)]. iSplitR "Obs"; last first.
+    { iApply (proph_obs_impl with "Obs"). intros π Hpost. apply Hpost. }
+    iSplitL "Free C"; [|iSplitL; [|done]].
+    - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ (VPtr l) (S d)); [|done|done].
+      iFrame "⧖". iSplitL "C"; [|iSplitL].
+      + by rewrite bytes_own_pcell_ty.
+      + by rewrite pcell_ty_bsize.
+      + iNext. rewrite pcell_ty_own //. iExists γ. by iFrame "Hreg GI".
+    - rewrite tctx_val_val. iExists (S d). iSplit; [done|]. iFrame "⧖".
+      iSplitL "B"; [iExists γ, fv; by iFrame "Hreg GI B"|].
+      iDestruct (ty_gho_own_depth_mono _ d (S d) (S d) (S d) with "Gho") as "[$ _]"; lia.
+  Qed.
+
+  (** The form of [PCell::new] where the box holds the cell and the (zero-sized)
+      permission, as a pair. *)
+  Definition PCellFromOwn : val := (λ: ["p"], "p")%V.
+
+  Lemma pcell_pair_bsize {𝔄} (ty: type 𝔄) :
+    ty_bsize (pcell_ty ty.(ty_mty) * cell_points_to_ty ty)%T = ty_bsize ty.
+  Proof.
+    rewrite /ty_bsize -ty_mty_eq /= decide_True; [|apply ty_mty_wf].
+    rewrite /seq_size /=. lia.
+  Qed.
+
+  Lemma type_pcell_from_own_instr {𝔄} n (ty: type 𝔄) p E L I :
+    typed_instr E L I +[p ◁ᵥ own_bytes n ty] (PCellFromOwn [p])
+      (λ v, +[v ◁ᵥ own_bytes n (pcell_ty ty.(ty_mty) * cell_points_to_ty ty)%T])
+      (λ post '-[(l, x)], λ mask π, ∀ g, post -[(l, (g, (g, x)))] mask π).
+  Proof.
+    iIntros (tid post mask iκs [[l x] []]) "_ #TIME _ _ _ $ I [p _] Obs".
+    iDestruct (invctx_interp_gcells with "I") as "[#GC $]".
+    iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[#⧖ Own]". simpl in Hw. simplify_eq.
+    have Hm := ty_mty_wf ty.
+    rewrite /PCellFromOwn. wp_bind p.
+    iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
+    destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & Gho)".
+    iDestruct (bytes_own_fval with "Bytes") as %[fv Hfv].
+    rewrite (bytes_own_gcont _ _ _ fv) //.
+    iMod (gcell_create with "GC Bytes") as (g γ) "(%Hbm & #Hreg & #GI & B & C)"; [solve_ndisj|].
+    wp_rec.
+    iExists -[(l, (g, (g, x)))]. iSplitR "Obs"; last first.
+    { iApply (proph_obs_impl with "Obs"). intros π Hpost. apply Hpost. }
+    iSplit; [|done]. rewrite tctx_val_val. iExists (S d). iSplit; [done|]. iFrame "⧖".
+    iSplitL "C"; [|iSplitL "Free"].
+    - rewrite (bytes_own_pair _ (pcell_ty ty.(ty_mty)) (cell_points_to_ty ty)).
+      iSplitL; [by rewrite bytes_own_pcell_ty|iApply cell_points_to_bytes_own].
+    - by rewrite pcell_pair_bsize.
+    - iNext. iSplitR; [rewrite pcell_ty_own //; iExists γ; by iFrame "Hreg GI"|].
+      iSplitL "B"; [iExists γ, fv; by iFrame "Hreg GI B"|]. done.
+  Qed.
+
+  (** [PCell::into_inner]: a box holding a cell and the permission of the cell give back a
+      box holding the contents (the instance is destroyed, [gcell_destroy]). *)
+  Definition PCellIntoInner : val := (λ: ["pcell"; "perm"], "pcell")%V.
+
+  Lemma type_pcell_into_inner_instr {𝔄} n (ty: type 𝔄) p q E L I :
+    typed_instr E L I +[p ◁ᵥ own_bytes n (pcell_ty ty.(ty_mty)); q ◁ᵥ cell_points_to_ty ty]
+      (PCellIntoInner [p; q]) (λ v, +[v ◁ᵥ own_bytes n ty])
+      (λ post '-[(l, g); (g', x)], λ mask π, g = g' ∧ post -[(l, x)] mask π).
+  Proof.
+    iIntros (tid post mask iκs [[l g] [[g' x] []]]) "_ #TIME #PROPH _ _ $ $ (p & q & _) #Obs".
+    iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
+    iDestruct (tctx_val_elim with "p") as (vp Hp wp dp [-> Hwp]) "[#⧖p Own]". simpl in Hwp. simplify_eq.
+    iDestruct (tctx_val_elim with "q") as (vq Hq wq dq [-> Hwq]) "[#⧖q [Pt Gho]]".
+    have Hm := ty_mty_wf ty.
+    rewrite /PCellIntoInner.
+    wp_bind p. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
+    wp_bind q. iApply (wp_wand with "[]"); [by iApply wp_eval_path|]. iIntros (? ->).
+    destruct dp as [|dp]; [done|].
+    iDestruct "Own" as "(Bytes & Free & _)".
+    iDestruct "Pt" as (γ fv Hfv) "[#(Hreg & GI & _) B]".
+    rewrite bytes_own_pcell_ty //.
+    iMod (gcell_destroy with "Hreg GI Bytes B") as "C"; [solve_ndisj|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖q"); [done|]. iIntros "_ #⧖S".
+    wp_rec. iExists -[(l, x)]. iSplitR "Obs"; last first.
+    { iApply (proph_obs_impl with "Obs"). by intros π [_ ?]. }
+    iSplit; [|done]. rewrite tctx_val_val. iExists (S dq). iSplit; [done|]. iFrame "⧖S".
+    iSplitL "C"; [by rewrite (bytes_own_gcont _ _ _ fv)|]. iSplitL "Free".
+    - iEval (rewrite pcell_ty_mty //) in "Free". by rewrite /ty_bsize.
+    - iNext. iDestruct (ty_gho_own_depth_mono _ dq dq dq (S dq) with "Gho") as "[$ _]"; lia.
+  Qed.
+End pcell_rules.
