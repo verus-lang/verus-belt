@@ -1219,3 +1219,238 @@ number of nested cells is not known before the move.
   must be related to `fbytes ty l` (`fbytes ty l fv ⊢ gcont l m fv` and back, for
   `ty_mty ty = m`), the lend takes `£ 1` more for the prepaid credit.
 - `gcell_lend_pred` is the eager (L3) with the ownership predicate of the contents type.
+
+## Outcome: phase 4
+
+Two merges: `proto/gmb-anyidx` (the GMB library accepts share guards at any step-index) and
+`proto/gmb-typing` (the typing layer on GMB). No generic typing-rule statement changed (the
+rules of places, values, functions and lifetimes keep their statements; their proofs
+changed). The PCell rules changed, as planned. The typing layer no longer depends on the
+physical cell heap (`lang/heap_cells.v`, the cell parts of `lang/heap.v`, `util/cellmap.v`,
+the cell WP rules): no file of `typing/` uses them. `Print Assumptions` of the examples:
+`functional_extensionality_dep` and (for `pcell_borrows`) `Eqdep.Eq_rect_eq.eq_rect_eq`.
+
+### Part 1: share guards at any step-index (GMB library)
+
+The instance depth `gmb_depth` is removed. A lend stores the owner's share guard *at its own
+step-index* `n`, with the credits `£ (1 + n)` for its refutation in (L1), in the lent-out
+state of `other_inv` (`∃ n, (special_open κ &&{↑NllftG ∪ ↑NllftO; n}&&> gmb_a γ s) ∗ £ (1 + n)`).
+So (L3) and (L3p) accept any `n`, paying `£ n` to open the guard and prepaying `£ (1 + n)`:
+```
+Lemma gmb_create_mask E EB s t : EB ## ↑gmbN →
+  c s t ={E}=∗ ∃ γ, ⌜gmb_bmask γ = EB⌝ ∗ gmb_inv γ ∗ gmb_a γ s ∗ gmb_b γ t.
+Lemma gmb_lend_start E γ κ s t n : ↑Nllft ⊆ E →
+  llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
+  £ (1 + n) -∗ special_open κ -∗ gmb_b γ t ={E}=∗ c s t ∗ gmb_lent γ s κ.
+(* likewise gmb_lend_start_lazy, gmb_lend_later, gmb_lend_guarded_later,
+   gmb_lend_guarded_lazy, gmb_lend_proph(_map, _map_lazy); gmb_lend, gmb_lend_guarded:
+   £ 1 at step-index 0 *)
+```
+`gmb_lend_uniq` (`typing/gmb_uniq.v`) takes a share guard at any `n`, and its interface
+hypotheses on the ownership of the permission type are persistent iProp hypotheses (so that
+they may use persistent facts, e.g. the registry entry of the cell):
+```
+Lemma gmb_lend_uniq {𝔄p 𝔄} (pty: type 𝔄p) (ty: type 𝔄) (fv: ~~𝔄 → ~~𝔄p) (fp: 𝔄 → 𝔄p)
+    (fvp: FValue) γ (l lp: loc) (y: ~~𝔄) ξi d g idx κ tid E G n :
+  Timeless G → Inj eq eq fp → (∀ y π, vπ (fv y) π = fp (vπ y π)) →
+  lazyE ⊆ E → gmb_bmask γ = lazyB →
+  (∀ x fv0, ty.(ty_fval) x = Some fv0 → c l fv0 ⊢ cbytes ty x l) →
+  (∀ fv0, fbytes ty l fv0 ⊢ c l fv0) →
+  (∀ v, pty.(ty_fval) v = Some fvp) → (∀ v, cbytes pty v lp ⊣⊢ True) →
+  llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ gmb_inv c γ -∗
+  □ (∀ y' d' g', ty_gho_own pty (fv y') d' g' tid ={lazyE}=∗
+     ∃ fv0, ⌜ty.(ty_fval) y' = Some fv0⌝ ∗ gmb_b γ fv0 ∗ ty_gho_own ty y' d' g' tid) -∗
+  □ (∀ y' d' g' fv0, ⌜ty.(ty_fval) y' = Some fv0⌝ -∗
+     gmb_b γ fv0 ∗ ty_gho_own ty y' d' g' tid -∗ ty_gho_own pty (fv y') d' g' tid) -∗
+  (@[κ] &&{↑NllftG; n}&&> gmb_a γ l) -∗ κ ⊑ ty_lft pty -∗ ty_lft pty ⊑ ty_lft ty -∗
+  (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £ 5 -∗ £ n -∗ £ (1 + n) -∗
+  uniq_body pty (fv y) ξi d g idx κ tid lp ={E}=∗ ∃ ζi ζidx,
+    ⟨π, (π (uniq_prvar (fv y) ξi)).1 = fp ((π (uniq_prvar y ζi)).1)⟩ ∗
+    uniq_body ty y ζi d g ζidx κ tid l ∗ G.
+```
+This is what lets `borrow_mut` use the guard of the bytes of the cell that a shared
+reference `&shr{κ} (pcell_ty m)` holds (at step-index `g+1`, for the depth `g` of the type
+context element).
+
+### Part 2: the typing layer on GMB
+
+**Registry and masks.** The new `typing/gcont.v` (before `type.v`) has the registry class
+`gcellsGS` (now a field of `typeG`; `typePreG`/`typeΣ` have `gcellsGpreS`/`gcellsΣ`), the
+definitions `gcell_reg`, `gfbytes`, `gcells`, `gcont`, `gcont_c`, `gcells_inv`,
+`gcells_ctx` of phase 3, `lazyE`/`lazyB` (moved from `uniq_util.v`, with the tactic
+`solve_lazyE` for complemented masks), `gcells_ctx_alloc`, and:
+```
+Fixpoint mcells (m : mty) (fv : FValue) : list (nat * positive * mty).  (* the cells of fv, with offsets and types *)
+Lemma gcells_mcells l m fv : gcells l m fv ⊣⊢ [∗ list] c ∈ mcells m fv, gcell_at l c.
+Lemma gcells_disj R1 R2 m1 m2 fbs1 fbs2 fv1 fv2 l1 l2 :
+  frepr R1 m1 fbs1 fv1 → frepr R2 m2 fbs2 fv2 →
+  gcells l1 m1 fv1 -∗ gcells l2 m2 fv2 -∗ ⌜∀ g, g ∈ fv_cells fv1 → g ∉ fv_cells fv2⌝.
+Lemma frepr_union R1 R2 m1 m2 fbs1 fbs2 fv1 fv2 : … → (disjoint cells) →
+  ∃ R, frepr R m1 fbs1 fv1 ∧ frepr R m2 fbs2 fv2 ∧ reg_wf R.
+```
+The registry is allocated at adequacy (`type_soundness`) and **carried by the invariant
+context**: `invctx_interp tid mask iκs I := gcells_ctx ∗ invctx_interp_core tid mask iκs I`
+(`invctx_interp_gcells` extracts it). The rules that need it (typed moves, overwrites,
+drops, `PCell::new`) are `typed_instr`s, which have `I`.
+
+**Bytes.** `bytes_own` (`typing/own.v`) is the contents:
+```
+Definition bytes_own_def {𝔄} (ty: type 𝔄) (l: loc) (x: ~~𝔄) : iProp Σ :=
+  ∃ fv, ⌜ty.(ty_fval) x = Some fv⌝ ∗ gcont l ty.(ty_mty) fv.
+Lemma bytes_own_gcont ty l x fv : ty.(ty_fval) x = Some fv → bytes_own ty l x ⊣⊢ gcont l ty.(ty_mty) fv.
+Lemma bytes_own_iff {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) l x x' :
+  (∀ R fbs, ty_fbytes R ty x fbs ↔ ty_fbytes R ty' x' fbs) →
+  (∀ R fbs fv fv', ty_fbytes R ty x fbs → ty.(ty_fval) x = Some fv → ty'.(ty_fval) x' = Some fv' →
+     mcells ty.(ty_mty) fv = mcells ty'.(ty_mty) fv') →
+  bytes_own ty l x ⊣⊢ bytes_own ty' l x'.
+Lemma bytes_own_forget ty l x E : lazyE ∪ ↑gcellsN ⊆ E →
+  gcells_ctx -∗ £ 1 -∗ bytes_own ty l x ={E}=∗ ∃ bs, l ↦b bs ∗ ⌜length bs = ty_bsize ty⌝.
+```
+The reduction lemmas (`bytes_own_of_bytes`, `bytes_own_to_bytes`, `bytes_own_nocell`,
+`bytes_own_view(_nocell)`, `bytes_own_pair`, `bytes_own_zst_*`) keep their statements, except
+`bytes_own_zst_loc` (needs a MiniRust value) and `wp_bytes_own_forget` (registry and credit);
+`bytes_own_brepr`, `bytes_own_length`, `bytes_own_pcell` and `greg_map` are gone.
+`wp_own_bytes_store`/`wp_own_bytes_delete` need `NoCell` (they overwrite or free the old
+value without the registry). `syn_bincl f` (type inclusion) also requires
+`syn_cells_pres f` (the cells of `x` and `f x` have the same `mcells`); the existing
+`syn_bincl` lemmas (`same`, `prod_map`, `to_cons_prod`, `prod_assoc`, `left_id`, `right_id`,
+`psum_map`, `uninit_split`, `compose`, `iso`) are proved with it.
+
+**Values in transit.** `val_cells m fv w := gtransit m fv w`, where `gtransit` now also
+records the plain value (`⌜val_wf m v ∧ ∀ w0, fv = fv_lift w0 → v = w0⌝`). The move rule
+takes one credit and the registry:
+```
+Lemma wp_bytes_own_move {𝔄} E (ty: type 𝔄) l y : lazyE ∪ ↑gcellsN ⊆ E →
+  {{{ gcells_ctx ∗ £ 1 ∗ bytes_own ty l y }}} Load Na1Ord ty.(ty_mty) #l @ E
+  {{{ w fv bs, RET MLitV w; ⌜ty.(ty_fval) y = Some fv⌝ ∗ val_cells ty.(ty_mty) fv w ∗
+      l ↦b bs ∗ ⌜length bs = ty_bsize ty⌝ }}}.
+Lemma wp_val_cells_store {𝔄} E (ty: type 𝔄) l bs0 e w y fv :
+  lazyE ∪ ↑naN ⊆ E → IntoVal e (MLitV w) → ty.(ty_fval) y = Some fv → length bs0 = ty_bsize ty →
+  {{{ ▷ l ↦b bs0 ∗ val_cells ty.(ty_mty) fv w }}} Store Na1Ord ty.(ty_mty) #l e @ E
+  {{{ RET #☠; bytes_own ty l y }}}.
+```
+The move from a place (`type_move_place_instr`), the write (`type_write_place_instr`, which
+forgets the old bytes) and the memcpy rules (`wp_gcont_memcopy`, now also giving the length)
+take the extra credit from their time receipts. Freeing memory: `mem_cell l n` is
+`∃ m fv, ⌜mty_wf m ∧ mty_size m = n⌝ ∗ gcont l m fv`; `lty_omem` is
+`lty_omem_gen mem_cell`, and `wp_drop_boxes` takes `lty_omemb` (plain bytes); the drop rules
+forget all the cells of the memory of the place in one opening of the registry
+(`lty_omem_forget_gc`, one credit).
+
+**The types** (`typing/pcell.v`):
+```
+Definition gcell_pers g γ m := gcell_reg g γ m ∗ gmb_inv (gcont_c m) γ ∗ ⌜gmb_bmask γ = lazyB⌝.
+Program Definition pcell_ty (m: mty) : type (pcellₛ m) :=      (* a simple type *)
+  ty_of_st {| st_lfts := []; st_E := []; st_gho g _ _ _ := ∃ γ, gcell_pers g γ (syn_mty (pcellₛ m)) |}.
+Lemma bytes_own_pcell_ty m l g : mty_wf m → bytes_own (pcell_ty m) l g ⊣⊢ gcont l m (FVCell g).
+                                        (* = ∃ γ, gcell_reg g γ m ∗ gmb_a γ l: the move right *)
+Definition cell_own ty g x := ∃ γ fv, ⌜ty.(ty_fval) x = Some fv⌝ ∗ gcell_pers g γ ty.(ty_mty) ∗ gmb_b γ fv.
+Definition cell_shr ty κ g x n := ∃ γ fv, ⌜ty.(ty_fval) x = Some fv⌝ ∗ gcell_pers g γ ty.(ty_mty) ∗
+  (@[κ] &&{↑NllftG; n}&&> gmb_b γ fv).
+Program Definition cell_points_to_ty ty : type (trackedₛ (pcellₛ (syn_mty 𝔄) * 𝔄)) :=
+  {| ty_gho_own x d g tid := cell_own ty x.1 x.2 ∗ ty.(ty_gho_own) x.2 d g tid;
+     ty_gho_pers x d g tid := cell_pers ty x.1 x.2 ∗ ty.(ty_gho_pers) x.2 d g tid;
+     ty_shr κ x d g tid := cell_shr ty κ x.1 x.2 g ∗ ty.(ty_shr) κ x.2 d g tid; … |}.
+```
+The sharing of the permission (`cell_own_share`) needs no step: the borrow of `cell_own` is,
+given the persistent part, a borrow of the timeless `gmb_b γ fv`, hence a guard at
+step-index `0` (`llftl_bor_guard_later`, `guards_remove_later_rhs`).
+
+**The rules** (`typing/pcell.v`, `typing/pcell_borrow.v`):
+```
+Lemma type_pcell_new_instr {𝔄} n (ty: type 𝔄) p E L I :
+  typed_instr E L I +[p ◁ᵥ own_bytes n ty] (PCellNew [p])
+    (λ v, +[p ◁ᵥ own_bytes n (pcell_ty ty.(ty_mty)); v ◁ᵥ cell_points_to_ty ty])
+    (λ post '-[(l, x)], λ mask π, ∀ g, post -[(l, g); (g, x)] mask π).
+Lemma type_pcell_from_own_instr {𝔄} n (ty: type 𝔄) p E L I :
+  typed_instr E L I +[p ◁ᵥ own_bytes n ty] (PCellFromOwn [p])
+    (λ v, +[v ◁ᵥ own_bytes n (pcell_ty ty.(ty_mty) * cell_points_to_ty ty)%T])
+    (λ post '-[(l, x)], λ mask π, ∀ g, post -[(l, (g, (g, x)))] mask π).
+Lemma type_pcell_into_inner_instr {𝔄} n (ty: type 𝔄) p q E L I :
+  typed_instr E L I +[p ◁ᵥ own_bytes n (pcell_ty ty.(ty_mty)); q ◁ᵥ cell_points_to_ty ty]
+    (PCellIntoInner [p; q]) (λ v, +[v ◁ᵥ own_bytes n ty])
+    (λ post '-[(l, g); (g', x)], λ mask π, g = g' ∧ post -[(l, x)] mask π).
+Lemma type_pcell_borrow_instr {𝔄} κ (ty: type 𝔄) p q E L I :
+  typed_instr E L I
+    +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &shr{κ} (cell_points_to_ty ty)]
+    (PCellBorrow [p; q]) (λ v, +[v ◁ᵥ &shr{κ} ty])
+    (λ post '-[(l, g); (_, (g', x))], λ mask π, g = g' ∧ post -[(l, x)] mask π).
+Lemma type_pcell_borrow_mut_instr {𝔄} κ (ty: type 𝔄) p q E L I :
+  lctx_lft_alive E L κ →
+  typed_instr E L I
+    +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &uniq{κ} (cell_points_to_ty ty)]
+    (PCellBorrowMut [p; q]) (λ v, +[v ◁ᵥ &uniq{κ} ty])
+    (λ post '-[(l, g); bor], λ mask π,
+      let '(_, (g', x), _, _, _, _) := bor in g = g' ∧
+      ∀ bor', uniq_bor_current bor' = x →
+        uniq_bor_future bor' π = (uniq_bor_future bor π).2 →
+        (uniq_bor_future bor π).1 = g →
+        uniq_bor_loc bor' = l →
+        post -[bor'] mask π).
+Lemma type_pcell_load_sc_instr {𝔄} κ (ty: type 𝔄) p q E L I :   (* unchanged statement *)
+  Copy ty → lctx_lft_alive E L κ → typed_instr E L I
+    +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &shr{κ} (cell_points_to_ty ty)]
+    (Load ScOrd ty.(ty_mty) (ToLit p))
+    (λ v, +[v ◁ᵥ ty]) (λ post '-[(_, g); (_, (g', x))], λ mask π, g = g' ∧ post -[x] mask π).
+(* type_pcell_store_sc_instr, type_pcell_mcas_instr: unchanged statements *)
+```
+- `borrow`: (L2) on the guard of the move right (from the guard of the bytes of the cell,
+  `guard_pcell_gca`) and the guard of the permission (`cell_shr`), both weakened to a common
+  step-index; the result is the guard of `gcont l m fv`, i.e. of `bytes_own ty l x`.
+- `borrow_mut`: (L3p) through `pcell_lend_uniq` (an instance of `gmb_lend_uniq` with
+  `c := gcont_c m`, `pty := cell_points_to_ty ty`, `fv y := (g, y)`); the guard of the move
+  right is at the step-index of the shared reference.
+- The atomic store and compare-and-exchange lend the contents (`pcell_lend_open`: the lend
+  and the opening of the new unique borrow), write them at offset `0`
+  (`wp_gcont_store_sc_sub`, `wp_gcont_mcas_sub`) and resolve the new borrow; the prophecy of
+  the permission is then `(g, _)` of the written value.
+- Moves of values containing cells go through the generic move/memcpy rules.
+
+**Deleted:** `cell_shr_ty`, `cell_uniq_ty`, `pinned_ty`, `PinPred`, `cell_loc`,
+`cell_uniq_loc`, `type_cell_shr_load_instr`, `type_cell_uniq_store_instr`, `uniq_cell_open`,
+`guard_cell_*`, `wp_brepr_length`, `bytes_own_brepr`, `bytes_own_pcell`, `greg_map`,
+`wp_delete_fbytes`, `unt_fbytes_plain*`.
+
+**Ported:** `pcell_example` (the read through the new `&shr{κ} i32` uses
+`type_load_shr_bytes_copy_instr`), `pcell_move` (unchanged derivation); `ra.v` and
+`protocol.v` needed nothing (they use only `shr_bytes_own_zst`). `gmb_cells_tests`,
+`gmb_uniq_tests` adapted.
+
+**New example** (`typing/examples/pcell_borrows.v`, `pcell_borrows_type`, Qed ≈ 6 min):
+a box of `(i32, i32)` becomes a cell (`from_own`); the cell is shared at `α` and the
+permission uniquely borrowed at `κ ⊑ α` (the shared reference is weakened to `κ`);
+`borrow_mut` gives `m: &uniq{κ} (i32, i32)`; `*m` is unfolded, `( *m).0` is reborrowed at
+`β ⊑ κ` and written (`7`) through the reborrow; `β`, `κ`, `α` end (the reborrowed field is
+unblocked in `*m`, `m` resolved, the permission and the cell unblocked); the pair is shared
+at `γ`, `borrow` gives `s: &shr{γ} (i32, i32)`, and `( *s).0` is read with the place rules
+below a shared reference; after `γ` ends, the cell is moved into another box (generic move
+rule), the permission moved out, and `into_inner` gives back the contents. The specification
+says that the value read through `borrow` is `7`.
+
+### Deviations
+
+- The sharing predicate of `pcell_ty` is not a guard of `gmb_a`: the value of a cell (its id)
+  does not determine its location, so the predicate cannot mention the move right. The move
+  right is guarded through the bytes of the cell (the guard of `bytes_own (pcell_ty m) l g` that
+  a `&shr` holds, `guard_pcell_gca`), at the step-index `g+1` of the shared reference; for
+  (L3p) this needed share guards at any step-index (part 1) instead of step-index 0.
+- `gcells_ctx` is carried by `invctx_interp` rather than as a new hypothesis of the
+  judgments (whose statements and proof patterns are then unchanged).
+- The ownership of `cell_points_to_ty` holds the eager `gmb_b` (not `gmb_b_uniq`): the
+  lend of `gmb_lend_uniq` gives the lender back an eager permission (its lazy ghost update
+  takes the claim). It is not structural (no depth shift), as `gmb_lend_uniq` requires.
+- `syn_bincl` gained `syn_cells_pres` (needed for `bytes_own_iff` now that the bytes own the
+  move rights of the cells at their offsets).
+- `PCellNew`/`PCellFromOwn` no longer need `0 < ty_bsize ty` (GMB cells may be zero-sized).
+- In the example, the field is written through a reborrow of the field (not directly through
+  `m`); local lifetimes in the unblock relations are removed by computation
+  (`unblock_tctx_impl`, then `cbn` of `pctx_get`/`pctx_set`/`*_blk_fin`).
+
+### For phase 5
+
+- Delete the physical cell heap: `lang/heap_cells.v`, the cell parts of `lang/heap.v`
+  (`heap_mapsto_fbytes`, byte-cells, `fcmap`, banks, D3, `gnest`, and the `cellmap` export),
+  `util/cellmap.v`, the cell WP rules of `lang/lifting.v` (`wp_pcell_*`, `wp_fbytes_*`), and
+  `lang/pcell_tests.v`. Nothing in `typing/` uses them; `typing/` still imports `lang/heap.v`
+  (for `l ↦b bs`), which exports `util/cellmap.v`.
+- `FValue`, `FVCell`, `frepr` and `fv_cells` (`lang/fvalue.v`) stay.
