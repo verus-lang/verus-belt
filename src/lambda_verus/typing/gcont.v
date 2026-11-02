@@ -59,6 +59,14 @@ only. [lazyE] contains [↑gmbN], so that the ghost layer can take the settle lo
 [lazyB] does not. *)
 Definition lazyE : coPset := ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN.
 
+(** For masks given as complements ([⊤ ∖ ↑advN], ...): the union of the four namespaces is
+    beyond the depth of [solve_ndisj]. *)
+Lemma lazyE_subseteq E : ↑Nllft ⊆ E → ↑prophN ⊆ E → ↑uniqN ⊆ E → ↑gmbN ⊆ E → lazyE ⊆ E.
+Proof. intros. rewrite /lazyE. set_solver. Qed.
+
+Ltac solve_lazyE :=
+  repeat apply union_least; try (apply lazyE_subseteq); solve_ndisj.
+
 Lemma lazyE_NllftUsr : ↑NllftUsr ∪ ↑NllftUsr2 ⊆ lazyE.
 Proof. rewrite /lazyE /NllftUsr /NllftUsr2. solve_ndisj. Qed.
 

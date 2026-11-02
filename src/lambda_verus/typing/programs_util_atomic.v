@@ -96,10 +96,11 @@ Section programs_util_atomic.
   Proof.
     intros Hvs. apply typed_inv_instr_ghost_op.
     iIntros (tid post mask iκs xl) "#LFT #TIME #PROPH #UNIQ #E L I T Obs ⧗ ⧗'".
+    iDestruct "I" as "[#GC I]".
     iDestruct "I" as (na_mask at_mask) "[[%Hm1 %Hm2] [[I1 #I1'] [I2 Iat]]]".
     iMod (Hvs xl tid post mask na_mask at_mask iκs Hm1 Hm2 with
       "LFT TIME PROPH UNIQ E L Iat I1 I1' T Obs ⧗ ⧗'") as
       (xl' mask' at_mask' Hmasks') "(L & Iat & I1 & T & Obs)".
-    iModIntro. iExists xl', mask'. iFrame "L T Obs". iExists na_mask, at_mask'. iFrame "#∗". by iPureIntro.
+    iModIntro. iExists xl', mask'. iFrame "L T Obs GC". iExists na_mask, at_mask'. iFrame "#∗". by iPureIntro.
   Qed.
 End programs_util_atomic.

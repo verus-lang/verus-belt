@@ -154,11 +154,11 @@ Section atomic_invariants.
       id.
   Proof.
     iIntros (tid post mask iκs xl) "#LFT #TIME #PROPH #UNIQ #E L I _ Obs".
-    destruct xl. iDestruct "I" as (na_mask at_mask Hmask) "[I1 [I2 %Iat2]]".
+    destruct xl. iDestruct "I" as "[#GC I]". iDestruct "I" as (na_mask at_mask Hmask) "[I1 [I2 %Iat2]]".
     subst at_mask.
     iApply wp_global_atomic_lock; first by done.
     iNext. iIntros "[pool ctr]".
-    iExists -[], mask. iFrame. iPureIntro; set_solver.
+    iExists -[], mask. iFrame "GC". iFrame. iPureIntro; set_solver.
   Qed.
   
   Lemma typed_atomic_unlock E L Il ϝ :
@@ -169,11 +169,11 @@ Section atomic_invariants.
       id.
   Proof.
     iIntros (tid post mask iκs xl) "#LFT #TIME #PROPH #UNIQ #E L I _ Obs".
-    destruct xl. iDestruct "I" as (na_mask at_mask Hmask) "[I1 [I2 [Iat1 Iat2]]]".
+    destruct xl. iDestruct "I" as "[#GC I]". iDestruct "I" as (na_mask at_mask Hmask) "[I1 [I2 [Iat1 Iat2]]]".
     iDestruct (atomic_lock_ctr_top with "Iat1") as "%Hat_mask". subst at_mask.
     iApply (wp_global_atomic_unlock with "[Iat1 Iat2]"). { iFrame. }
     iNext. iIntros "_".
-    iExists -[], mask. iFrame. iExists ⊤. iSplit; iPureIntro; set_solver.
+    iExists -[], mask. iFrame "GC". iFrame. iExists ⊤. iSplit; iPureIntro; set_solver.
   Qed.
   
   Local Lemma change_tid_in {𝔄} (ty : type 𝔄) x d g tid κs L : 
@@ -243,14 +243,14 @@ Section atomic_invariants.
       [solve_ndisj|].
     iDestruct (lc_weaken (d + 1) with "£") as "£"; [unfold advance_credits; lia|].
     destruct I as [Il fnlft al].
-    iDestruct "I" as (na_mask at_mask) "[IA [[cna_lifetimes IB] IC]]".
+    iDestruct "I" as "[#GC I]". iDestruct "I" as (na_mask at_mask) "[IA [[cna_lifetimes IB] IC]]".
     iDestruct (lctx_ictx_alive_all_guards _ _ _ _ _ _ IAlv with "L E IB") as "#AllGuards".
     iMod (change_tid_in ty x d d with "LFT UNIQ TIME £ ⧖S [Tra] AllGuards L cna_lifetimes")
       as (tid' x' d') "[%TidsEq [gho' [#⧖' [%Habs [L cna_lifetimes]]]]]"; [by iNext|].
     iMod (external_inv_na_alloc ATOMIC_POOL ns with "[gho']") as (γ) "[inv active]"; last first.
      - iMod persistent_time_receipt_0 as "⧖0".
        iModIntro. iExists -[(ns, γ, c)], mask. iFrame "L".
-       iSplitL "IA IC cna_lifetimes IB"; [iExists na_mask, at_mask; by iFrame|].
+       iSplitL "IA IC cna_lifetimes IB"; [iFrame "GC"; iExists na_mask, at_mask; by iFrame|].
        iSplitL; [iSplit; [|done]; rewrite tctx_val_val; iExists 0%nat|].
        { iFrame "⧖0". iSplit; [done|]. by iFrame. }
        iApply (proph_obs_impl with "Obs"). intros π [_ Hpost]. apply Hpost.

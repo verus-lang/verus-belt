@@ -225,8 +225,9 @@ Section write.
     { iApply (guards_transitive with "Ghalf"). iApply (guards_transitive with "Alv").
       by iApply pctx_alv_noshr. }
     have HM: D ≤ M by rewrite /M; lia.
-    iDestruct (lc_weaken ((3 * D + 5) + (1 + (1 + D * (D + 1)))) with "£")
-      as "[£a [£r £s]]"; [rewrite /advance_credits; nia|].
+    iDestruct (lc_weaken ((3 * D + 5) + (1 + (1 + D * (D + 1))) + 1) with "£")
+      as "[[£a [£r £s]] £f]"; [rewrite /advance_credits; nia|].
+    iDestruct (invctx_interp_gcells with "I") as "[#GC I]".
     (* The access to the leaf, and its address. *)
     wp_bind (pctx_vexpr K p).
     iApply (wp_vplace_wacc _ K ty ty' K' f with "LFT PROPH UNIQ Hu H1 £a ⧖ ⧗p Own");
@@ -244,9 +245,9 @@ Section write.
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
     (* Write. *)
     iApply wp_fupd.
-    iApply (wp_bytes_own_forget with "Pt1"); [solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
+    iApply (wp_bytes_own_forget with "GC £f Pt1"); [solve_ndisj|]. iIntros (bs) "Hbs %Hlen".
     iApply (wp_val_cells_store with "[$Hbs $Hcb]");
-      [solve_ndisj|done|by rewrite Hlen (pctx_wty_bsize _ _ _ _ _ Hw)|].
+      [solve_lazyE|done|by rewrite Hlen (pctx_wty_bsize _ _ _ _ _ Hw)|].
     iIntros "!> Hbs".
     (* Close the place at the new value. *)
     iDestruct (cumulative_time_receipt_mono (pctx_dlev K) with "⧗k") as "⧗k"; [lia|].

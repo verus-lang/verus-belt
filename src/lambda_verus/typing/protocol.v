@@ -822,7 +822,7 @@ Section StorageProtocol_bytes.
       [rewrite /advance_credits; nia|].
     iApply wp_ghost_op2. iIntros "!> !>".
     iMod (uniq_payload_run _ _ _ _ _ _ _ (@[static]) with "[] [] Hgho1")
-      as "(_ & H⧖ & Hgho1 & H↦)"; [rewrite /uniq_util.lazyE; solve_ndisj|iApply guards_refl|
+      as "(_ & H⧖ & Hgho1 & H↦)"; [rewrite /gcont.lazyE; solve_ndisj|iApply guards_refl|
       iApply llftl_tok_unit|].
     iDestruct "Hgho1" as "(%Hγ1 & #Hsto1 & Hown1)".
     iDestruct (guards_transitive_right with "Incl2 Shr") as "Shr2".

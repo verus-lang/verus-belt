@@ -40,7 +40,7 @@ From lrust.lang Require Import proofmode.
 From lrust.lang.lib Require Import new_delete.
 From lrust.util Require Import update.
 From lrust.typing Require Export type ltype lpath place_own.
-From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own shr_bor bytes_layout value_ctx product uninit freeable_util.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own shr_bor bytes_layout value_ctx product uninit freeable_util gmb_cells.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -183,43 +183,60 @@ Section lty_mem.
   Definition own_freeb {𝔄} (n: nat) (lt: lty 𝔄) : bool :=
     lty_freeb lt && bool_decide (n = lty_size lt).
 
-  (** [n] bytes of memory at [l], which may be byte-cells (the memory of a leaf whose value
-      embeds cells: its cells are dropped when the memory is freed, [wp_delete_fbytes]). *)
+  (** [n] bytes of memory at [l], which may embed cells (the memory of a leaf whose value
+      embeds cells: the contents ([gcont]) of a value of size [n]); before the memory is
+      freed, the cells are dropped ([lty_omem_forget]), which gives plain bytes
+      ([mem_bytes]). *)
   Definition mem_cell (l: loc) (n: nat) : iProp Σ :=
-    ∃ fbs, heap_mapsto_fbytes l fbs ∗ ⌜length fbs = n⌝.
+    ∃ m fv, ⌜mty_wf m ∧ mty_size m = n⌝ ∗ gcont l m fv.
+  Definition mem_bytes (l: loc) (n: nat) : iProp Σ := ∃ bs, l ↦b bs ∗ ⌜length bs = n⌝.
+
+  Lemma mem_bytes_mem_cell l n : mem_bytes l n -∗ mem_cell l n.
+  Proof.
+    iIntros "(%bs & Hbs & %Hbs)". iExists (MTuple [] n), (fv_lift (VTuple [])).
+    iSplit; [iPureIntro; split; [by repeat constructor|done]|].
+    iApply (gcont_of_bytes with "Hbs"). rewrite decode_value_tuple decide_True //.
+  Qed.
 
   Lemma pad_cell_mem_cell l n : pad_cell l n -∗ mem_cell l n.
-  Proof.
-    iIntros "(%bs & Hbs & %Hbs)". iExists (inr <$> bs). rewrite -heap_mapsto_fbytes_bytes.
-    iFrame. by rewrite length_fmap.
-  Qed.
+  Proof. apply mem_bytes_mem_cell. Qed.
 
   (** The memory owned by a place in [Owned m] mode: the bytes of the place itself
       (unless a leaf is blocked or shared) and the memory of the pointees of its owned
       pointers that are freed by [drop_boxes]; the right to free a pointee is under [m]
       laters, as in [own_node]. *)
-  Fixpoint lty_omem {𝔄} (m: nat) (lt: lty 𝔄) : loc → iProp Σ :=
+  Fixpoint lty_omem_gen (M: loc → nat → iProp Σ) {𝔄} (m: nat) (lt: lty 𝔄) : loc → iProp Σ :=
     match lt in lty 𝔄 return loc → iProp Σ with
-    | OfTy _ | OfRes _ | UniqLty _ _ | ShrLty _ _ | ResUniqLty _ _ => λ l, mem_cell l (lty_size lt)
+    | OfTy _ | OfRes _ | UniqLty _ _ | ShrLty _ _ | ResUniqLty _ _ => λ l, M l (lty_size lt)
     | OwnPtrLty n lt' => λ l, ∃ l': loc, ptr_cell l l' ∗
         if own_freeb n lt' then
           ▷^m freeable_sz n (lty_size lt') l' ∗
-          lty_omem (m + 1) lt' l'
+          lty_omem_gen M (m + 1) lt' l'
         else True
     | ProdLty lt1 lt2 => λ l,
-        lty_omem m lt1 l ∗
-        lty_omem m lt2 (l +ₗ lty_size lt1)
+        lty_omem_gen M m lt1 l ∗
+        lty_omem_gen M m lt2 (l +ₗ lty_size lt1)
     | @SumLty _ _ 𝔄l tyl i lt' => λ l,
         tag_cell 𝔄l l i ∗
-        lty_omem m lt' (l +ₗ tag_size 𝔄l) ∗
+        lty_omem_gen M m lt' (l +ₗ tag_size 𝔄l) ∗
         pad_cell ((l +ₗ tag_size 𝔄l) +ₗ lty_size lt') (sum_max 𝔄l - lty_size lt')
     | Blocked _ _ | ShrBlocked _ _ => λ _, True
     end%I.
+  (** The memory, with leaves that may embed cells ([lty_omem]), or with plain bytes
+      ([lty_omemb]). *)
+  Local Notation lty_omem := (lty_omem_gen mem_cell).
+  Local Notation lty_omemb := (lty_omem_gen mem_bytes).
 
   Lemma cbytes_mem_cell {𝔄} (ty: type 𝔄) x l : cbytes ty x l -∗ mem_cell l (syn_bsize 𝔄).
   Proof.
-    iIntros "Bytes". iDestruct (bytes_own_length with "Bytes") as (fbs) "(Hfbs & %Hlen & _)".
-    iExists fbs. iFrame. iPureIntro. by rewrite Hlen ty_bsize_eq.
+    iIntros "Bytes". iDestruct (bytes_own_fval with "Bytes") as %[fv Hfv].
+    rewrite /cbytes (bytes_own_gcont _ _ _ fv) //. iExists _, fv. iFrame. iPureIntro.
+    split; [apply ty_mty_wf|]. by rewrite -(ty_bsize_eq ty).
+  Qed.
+
+  Lemma ptr_cell_mem_bytes l l' : ptr_cell l l' -∗ mem_bytes l PTR_SIZE.
+  Proof.
+    iIntros "(%bs & Hbs & %Hbs)". iExists bs. iFrame. iPureIntro. by eapply ptr_bytes_length.
   Qed.
 
   Lemma ptr_cell_pad_cell l l' : ptr_cell l l' -∗ pad_cell l PTR_SIZE.
@@ -258,6 +275,9 @@ Section lty_mem.
       iFrame "Tag Pad". by iApply IH.
   Qed.
 End lty_mem.
+
+Notation lty_omem := (lty_omem_gen mem_cell).
+Notation lty_omemb := (lty_omem_gen mem_bytes).
 
 Definition lty_resolve `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (lt: lty 𝔄)
     (Φ: ~~𝔄 → proph_asn → Prop) : Prop :=
@@ -395,19 +415,48 @@ Section drop_boxes.
   Lemma mem_cell_app (l: loc) n1 n2 :
     mem_cell l n1 ∗ mem_cell (l +ₗ n1) n2 ⊢ mem_cell l (n1 + n2).
   Proof.
-    iIntros "[(%fbs1 & B1 & %H1) (%fbs2 & B2 & %H2)]". iExists (fbs1 ++ fbs2).
-    rewrite heap_mapsto_fbytes_app H1 /=. iFrame. iPureIntro. rewrite length_app. lia.
+    iIntros "[(%m1 & %fv1 & [%Hw1 %H1] & C1) (%m2 & %fv2 & [%Hw2 %H2] & C2)]".
+    iExists (seq_tuple [m1; m2]), (FVTuple [fv1; fv2]). iSplit.
+    { iPureIntro. split; [apply seq_tuple_wf; by repeat constructor|].
+      rewrite mty_size_seq_tuple !seq_size_cons seq_size_nil. lia. }
+    rewrite !gcont_seq_tuple_cons gcont_seq_tuple_nil right_id H1. iFrame.
   Qed.
 
-  (** Freeing fancy bytes: their cells are dropped. *)
-  Lemma wp_delete_fbytes fbs (n: Z) l E :
-    ↑naN ⊆ E → n = length fbs →
-    {{{ heap_mapsto_fbytes l fbs ∗ (†l…(length fbs) ∨ ⌜n = 0⌝) }}} new_delete.delete [ #n; #l] @ E
-    {{{ RET #☠; True }}}.
+  Lemma mem_bytes_app (l: loc) n1 n2 :
+    mem_bytes l n1 ∗ mem_bytes (l +ₗ n1) n2 ⊢ mem_bytes l (n1 + n2).
   Proof.
-    iIntros (?? Φ) "(H↦ & H†) HΦ".
-    iApply (wp_fbytes_forget with "H↦"); [done..|]. iIntros (bs) "H↦ %Hlen".
-    iApply (wp_delete_bytes bs with "[$H↦ H†]"); [done|lia|by rewrite Hlen|done].
+    iIntros "[(%bs1 & B1 & %H1) (%bs2 & B2 & %H2)]". iExists (bs1 ++ bs2).
+    rewrite heap_mapsto_bytes_app H1. iFrame. iPureIntro. rewrite length_app. lia.
+  Qed.
+
+  (** Dropping the cells of the memory of a place, with the registry opened. *)
+  Lemma mem_cell_forget Reg l n :
+    greg_open Reg -∗ mem_cell l n ={lazyE}=∗ greg_open Reg ∗ mem_bytes l n.
+  Proof.
+    iIntros "O (%m & %fv & [%Hw <-] & C)".
+    iMod (gcont_forget_open with "O C") as "[$ (%bs & Hbs & %Hl)]"; [done|].
+    iModIntro. iExists bs. by iFrame.
+  Qed.
+
+  Lemma lty_omem_forget Reg {𝔄} m (lt: lty 𝔄) l :
+    greg_open Reg -∗ lty_omem m lt l ={lazyE}=∗ greg_open Reg ∗ lty_omemb m lt l.
+  Proof.
+    induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ']
+      in m, l |- *; iIntros "O M"; simpl; try (iModIntro; by iFrame).
+    all: try by iApply (mem_cell_forget with "O M").
+    - iDestruct "M" as (l') "[Pt M]". destruct (own_freeb n lt); [|iModIntro; iFrame; by iExists l'].
+      iDestruct "M" as "[Fr M]". iMod (IH with "O M") as "[$ M]". iModIntro.
+      iExists l'. iFrame.
+    - iDestruct "M" as "[M1 M2]". iMod (IH1 with "O M1") as "[O $]". by iApply (IH2 with "O M2").
+    - iDestruct "M" as "(Tag & M & Pad)". iFrame "Tag Pad". by iApply (IH with "O M").
+  Qed.
+
+  Lemma lty_omem_forget_gc E {𝔄} m (lt: lty 𝔄) l :
+    lazyE ∪ ↑gcellsN ⊆ E →
+    gcells_ctx -∗ £ 1 -∗ lty_omem m lt l ={E}=∗ lty_omemb m lt l.
+  Proof.
+    iIntros (?) "#GC Lc M". iApply (gcells_open_with with "GC Lc [] M"); [done|].
+    iIntros (Reg) "O M". by iApply (lty_omem_forget with "O M").
   Qed.
 
   (** [drop_boxes lt e] frees the pointees of the owned pointers of the place (those in
@@ -419,8 +468,8 @@ Section drop_boxes.
   Lemma wp_drop_boxes {𝔄} (lt: lty 𝔄) m k (l: loc) (e: expr) (R: iProp Σ) E Φ :
     ↑naN ⊆ E → lty_freeb lt = true → Closed [] e → m ≤ k + 1 →
     (⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^k P -∗ (R -∗ P -∗ Ψ #l) -∗ WP e @ E {{ Ψ }}) →
-    R -∗ lty_omem m lt l -∗
-    (R -∗ mem_cell l (lty_size lt) -∗ Φ #☠) -∗
+    R -∗ lty_omemb m lt l -∗
+    (R -∗ mem_bytes l (lty_size lt) -∗ Φ #☠) -∗
     WP drop_boxes lt e @ E {{ Φ }}.
   Proof.
     intros ?. induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ']
@@ -432,7 +481,7 @@ Section drop_boxes.
     - iApply wp_value. by iApply ("HΦ" with "R M").
     - iApply wp_value. by iApply ("HΦ" with "R M").
     - simpl. iDestruct "M" as (l') "[Pt M]". destruct (own_freeb n lt) eqn:Hfb; last first.
-      { iApply wp_value. iApply ("HΦ" with "R"). by iApply ptr_cell_mem_cell. }
+      { iApply wp_value. iApply ("HΦ" with "R"). by iApply ptr_cell_mem_bytes. }
       apply andb_true_iff in Hfb as [Hf' Hn%bool_decide_eq_true].
       have Hev': ⊢ ∀ Ψ (P: iProp Σ), (R ∗ ptr_cell l l') -∗
         ▷^(k + 1) P -∗ ((R ∗ ptr_cell l l') -∗ P -∗ Ψ #l') -∗
@@ -450,9 +499,9 @@ Section drop_boxes.
       wp_bind (ToLit _). iApply (Hev' with "[$R $Pt] [Fr]").
       { iApply (bi.laterN_le with "Fr"). lia. }
       iIntros "[R Pt] Fr". iEval (rewrite -Hn freeable_sz_full) in "Fr".
-      iApply (wp_delete_fbytes bs with "[Pt' Fr]"); [done|by rewrite Hl -Hn|..].
+      iApply (wp_delete_bytes bs with "[Pt' Fr]"); [done|by rewrite Hl -Hn|..].
       { iFrame "Pt'". rewrite Hl -Hn. iDestruct "Fr" as "[$|%]"; by iRight. }
-      iIntros "!> _". iApply ("HΦ" with "R"). by iApply ptr_cell_mem_cell.
+      iIntros "!> _". iApply ("HΦ" with "R"). by iApply ptr_cell_mem_bytes.
     - apply andb_true_iff in Hf as [Hf1 Hf2]. iDestruct "M" as "[M1 M2]".
       rewrite lty_size_prod.
       have Hev2: ⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^(k + 1) P -∗ (R -∗ P -∗ Ψ #(l +ₗ lty_size lt1)) -∗
@@ -466,10 +515,10 @@ Section drop_boxes.
       iApply (IH2 m (k + 1) (l +ₗ lty_size lt1) (e +ₗ #(lty_size lt1))%E R _ Hf2 _ ltac:(lia)
         Hev2 with "R M2 [Pt1 HΦ]").
       iIntros "R Pt2". iApply ("HΦ" with "R [Pt1 Pt2]").
-      iApply mem_cell_app. iFrame.
+      iApply mem_bytes_app. iFrame.
     - have Hsz: lty_size (SumLty tyl i lt) = (tag_size 𝔄l + (lty_size lt + (sum_max 𝔄l - lty_size lt)))%nat.
       { rewrite /lty_size syn_bsize_sum /tag_size. have := sum_max_ge 𝔄l i. lia. }
-      rewrite Hsz. cbn [lty_omem].
+      rewrite Hsz. cbn [lty_omem_gen].
       iDestruct "M" as "(Tag & M & Pad)".
       have Hev2: ⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^(k + 1) P -∗ (R -∗ P -∗ Ψ #(l +ₗ tag_size 𝔄l)) -∗
         WP (e +ₗ #(tag_size 𝔄l))%E @ E {{ Ψ }}.
@@ -478,11 +527,10 @@ Section drop_boxes.
         wp_op. by iApply ("HΨ" with "R P"). }
       iApply (IH m (k + 1) (l +ₗ tag_size 𝔄l) (e +ₗ #(tag_size 𝔄l))%E R _ Hf _ ltac:(lia) Hev2 with "R M [-]").
       iIntros "R Pt". iApply ("HΦ" with "R [-]").
-      iApply mem_cell_app.
-      iSplitL "Tag". { iDestruct "Tag" as (bt) "[Bt %Ht]". iApply pad_cell_mem_cell.
+      iApply mem_bytes_app.
+      iSplitL "Tag". { iDestruct "Tag" as (bt) "[Bt %Ht]".
         iExists bt. iFrame. iPureIntro. by apply decode_value_length in Ht. }
-      iApply mem_cell_app. iFrame.
-      by iApply pad_cell_mem_cell.
+      iApply mem_bytes_app. iFrame.
   Qed.
 End drop_boxes.
 
@@ -546,10 +594,14 @@ Section oplace.
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]";
       [solve_ndisj|].
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|]. iIntros "£ _".
+    iDestruct (lc_weaken (1 + (advance_credits D - 1)) with "£") as "[£1 £]";
+      [rewrite /advance_credits; lia|].
     iMod (Rslv _ (⊤∖↑advN) with "LFT PROPH UNIQ TIME E Ghalf H1 Own") as "[M Upd]";
       [solve_ndisj|].
     iMod (lc_step_fupdN_elim_later with "[£] Upd") as "Upd".
     { iApply (lc_weaken with "£"). rewrite /advance_credits. nia. }
+    iDestruct (invctx_interp_gcells with "I") as "[#GC I]".
+    iMod (lty_omem_forget_gc with "GC £1 M") as "M"; [solve_ndisj|].
     iMod "Upd" as "[Obs' H1]".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     have ?: Closed [] p by eapply eval_path_closed.
@@ -563,7 +615,7 @@ Section oplace.
     iIntros "_ (%bs & Pt & %Hl)". wp_seq.
     wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". wp_pure _.
     iEval (rewrite freeable_sz_full) in "Fr".
-    iApply (wp_delete_fbytes bs with "[Pt Fr]"); [solve_ndisj|by rewrite Hl|..].
+    iApply (wp_delete_bytes bs with "[Pt Fr]"); [solve_ndisj|by rewrite Hl|..].
     { iFrame "Pt". rewrite Hl. iDestruct "Fr" as "[$|%]"; by iRight. }
     iIntros "!> _". iExists -[]. iFrame "L I". iSplit; [done|].
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?]. by apply Imp.

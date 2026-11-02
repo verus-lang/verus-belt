@@ -257,6 +257,7 @@ Section local_invariants.
     iIntros (tid post mask iκs [[[ns [[γ γt] d0]] c] []]) "#LFT #TIME #PROPH #UNIQ #E L I [p _] #Obs ⧗ ⧗1".
     iDestruct (tctx_val_elim with "p") as (vp Hp w d [-> Hw]) "[_ (active & [%Hineq tok] & #inv)]".
     destruct I as [Il ϝ'].
+    iDestruct "I" as "[#GC I]".
     iDestruct "I" as (na_mask at_mask) "[%Hm [[cna_lft #ϝincl] Irest]]".
 
     iAssert (∀ κ : lft, ⌜κ ∈ invctx_to_multiset Il ⊎ list_to_set_disj iκs⌝ -∗ llctx_interp L &&{ ↑NllftG }&&> @[κ])%I as "#Alive". {
@@ -279,7 +280,7 @@ Section local_invariants.
     { iApply (lc_weaken with "£1"). unfold advance_credits. lia. }
     iMod (cumulative_persistent_time_receipt with "TIME ⧗ ⧖'") as "#⧖''". { set_solver. }
     iModIntro. iExists -[x'']. iFrame "L".
-    iSplitL "I Irest". { iExists na_mask, at_mask. iFrame "#∗". by iPureIntro. }
+    iSplitL "I Irest". { iFrame "GC". iExists na_mask, at_mask. iFrame "#∗". by iPureIntro. }
     iSplitL "gho".
     { iSplit; [|done]. rewrite tctx_val_val. iExists (S d' `max` g'). iSplit; [done|].
       iSplit; [iApply (persistent_time_receipt_mono with "⧖''"); lia|].
@@ -334,6 +335,7 @@ Section local_invariants.
     iMod (proph_obs_sat with "PROPH Obs") as "%Sat". { set_solver. }
     destruct Sat as [π [a b]].
 
+    iDestruct "I" as "[#GC I]".
     iDestruct "I" as (na_mask at_mask) "[%Hm [[Ilifetimes ϝIncl] [Iown Iat]]]".
     iMod (cna_inv_acc_with_lifetime_guard with "inv Iown Ilifetimes LguardsK £2 KguardsActive L") as "[Iown [Ilifetimes [L [P Closer]]]]". { set_solver. } { set_solver. }
 
@@ -344,7 +346,7 @@ Section local_invariants.
     iMod persistent_time_receipt_0 as "⧖0".
     iModIntro. iExists -[x''; (ns, (γ, γt, d1), c)], (mask ∖ ↑ns). iFrame "L".
     iSplitL "Iown Ilifetimes ϝIncl Iat".
-    { iExists (na_mask ∖ ↑ns), at_mask. iFrame "Iown Iat ϝIncl".
+    { iFrame "GC". iExists (na_mask ∖ ↑ns), at_mask. iFrame "Iown Iat ϝIncl".
       iSplit. { iPureIntro. split; last by set_solver. apply mask_lemma; set_solver. }
       unfold invctx_to_multiset. simpl. rewrite gmultiset_disj_union_assoc. iFrame. }
     iSplitL "gho tok2 ⧗'' £ Closer ⧖0".
@@ -383,6 +385,7 @@ Section local_invariants.
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗ ⧖") as "[#⧖S £d]";
       [solve_ndisj|].
     iMod (proph_obs_sat with "PROPH Obs") as "%Sat". { set_solver. }
+    iDestruct "I" as "[#GC I]".
     iDestruct "I" as (na_mask at_mask) "[%Hm [[Ilifetimes ϝIncl] [Iown Iat]]]".
     iMod (cna_close with "closer [gho1 ⧗big £d tok] Iown Ilifetimes") as (κs') "[[%LtsEq %Hdisj] [Iown Ilifetimes]]".
      { solve_ndisj. }
@@ -395,7 +398,7 @@ Section local_invariants.
     unfold invctx_to_multiset in LtsEq. simpl in LtsEq.
     assert (invctx_to_multiset Il ⊎ list_to_set_disj iκs = κs') as LtsEq2 by multiset_solver.
     rewrite <- LtsEq2.
-    iModIntro. iExists -[], (mask ∪ ↑ns). iFrame.
+    iModIntro. iExists -[], (mask ∪ ↑ns). iFrame "GC". iFrame.
     iSplit. { iPureIntro. split; set_solver. }
     iSplit; [done|].
     iApply (proph_obs_impl with "Obs"). intros π Ha. apply Ha.

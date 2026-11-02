@@ -882,14 +882,14 @@ Section gcells_wp.
     lazyE ∪ ↑gcellsN ∪ ↑naN ⊆ E → mty_wf m → length bs0 = mty_size m →
     {{{ gcells_ctx ∗ £ 1 ∗ gcont l m fv ∗ ▷ l' ↦b bs0 }}}
       MemCopy Na1Ord (mty_size m) (Lit $ LitLoc l') (Lit $ LitLoc l) @ E
-    {{{ bs, RET LitV LitPoison; l ↦b bs ∗ gcont l' m fv }}}.
+    {{{ bs, RET LitV LitPoison; l ↦b bs ∗ ⌜length bs = mty_size m⌝ ∗ gcont l' m fv }}}.
   Proof.
     iIntros (HE Hwf Hlen Φ) "(#GC & Lc & C & Hl') HΦ".
     iMod (gcont_open with "GC Lc C") as (bs v) "(Hbs & %Hd & Tr)"; [set_solver|done|].
     iApply wp_fupd. iApply (wp_memcopy with "[$Hl' $Hbs]"); [set_solver|done|by eapply decode_value_length|].
     iIntros "!> [Hl' Hbs]".
     iMod (gtransit_close with "Tr Hl'") as "C"; [set_solver|done|].
-    iModIntro. iApply "HΦ". iFrame.
+    iModIntro. iApply "HΦ". iFrame. iPureIntro. by eapply decode_value_length.
   Qed.
 
   (** *** Accesses to plain sub-values of owned contents (e.g. through a lend) *)

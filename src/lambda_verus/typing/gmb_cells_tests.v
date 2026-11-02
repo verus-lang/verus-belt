@@ -14,7 +14,7 @@ sibling cells, shared reads, a lend with a write, the end of its lifetime and a 
 compare-and-exchange. *)
 
 Section gmb_cells_tests.
-  Context `{!typeG Σ, !gcellsGS Σ, !ghost_varG Σ FValue}.
+  Context `{!typeG Σ, !ghost_varG Σ FValue}.
   Notation gca γ l := (gmb_a (S:=loc) (T:=FValue) γ l).
 
   Lemma int5_wf : val_wf (MInt i32) (VInt 5).
