@@ -64,8 +64,9 @@ Definition gmbΣ (S T : Type) : gFunctors := #[
 Global Instance subG_gmbΣ {Σ} S T : subG (gmbΣ S T) Σ → gmbG Σ S T.
 Proof. solve_inG. Qed.
 
-(** An instance has two ghost names, one per side. *)
-Record gmb_name := GmbName { gmb_a_name : gname; gmb_b_name : gname }.
+(** An instance has two ghost names, one per side, and a _depth_: the largest step-index of
+    the guards of [gmb_a] that (L3) accepts, fixed when the instance is created. *)
+Record gmb_name := GmbName { gmb_a_name : gname; gmb_b_name : gname; gmb_depth : nat }.
 
 (** ** Exclusive fragments with two half authorities *)
 
@@ -104,7 +105,7 @@ Section ExclAuthHalves.
     ●E (x : leibnizO X) ≡ ●{#1/2} (Excl' (x : leibnizO X)) ⋅ ●{#1/2} (Excl' (x : leibnizO X)).
   Proof. by rewrite -auth_auth_dfrac_op dfrac_op_own Qp.half_half. Qed.
 
-  Lemma xa_alloc (x : X) : ⊢ |==> ∃ γ, xa_half γ x ∗ xa_half γ x ∗ xa_frag γ x.
+  Local Lemma xa_alloc (x : X) : ⊢ |==> ∃ γ, xa_half γ x ∗ xa_half γ x ∗ xa_frag γ x.
   Proof.
     iMod (own_alloc (●E (x : leibnizO X) ⋅ ◯E (x : leibnizO X))) as (γ) "[H F]".
     { apply excl_auth_valid. }
@@ -112,33 +113,33 @@ Section ExclAuthHalves.
     iDestruct "H" as "[$ $]". by iFrame.
   Qed.
 
-  Lemma xa_half_agree γ x y : xa_half γ x -∗ xa_half γ y -∗ ⌜x = y⌝.
+  Local Lemma xa_half_agree γ x y : xa_half γ x -∗ xa_half γ y -∗ ⌜x = y⌝.
   Proof.
     iIntros "H1 H2". iDestruct (own_valid_2 with "H1 H2") as %Hv.
     apply auth_auth_dfrac_op_inv_L in Hv. by inversion Hv.
   Qed.
 
-  Lemma xa_half_frag_agree γ x y : xa_half γ x -∗ xa_frag γ y -∗ ⌜x = y⌝.
+  Local Lemma xa_half_frag_agree γ x y : xa_half γ x -∗ xa_frag γ y -∗ ⌜x = y⌝.
   Proof.
     iIntros "H F". iDestruct (own_valid_2 with "H F") as %Hv.
     apply auth_both_dfrac_valid_discrete in Hv as [_ [Hv _]].
     apply Excl_included in Hv. by inversion Hv.
   Qed.
 
-  Lemma xa_frag_excl γ x y : xa_frag γ x -∗ xa_frag γ y -∗ False.
+  Local Lemma xa_frag_excl γ x y : xa_frag γ x -∗ xa_frag γ y -∗ False.
   Proof.
     iIntros "F1 F2". iDestruct (own_valid_2 with "F1 F2") as %Hv.
     by apply excl_auth_frag_op_valid in Hv.
   Qed.
 
-  Lemma xa_frag_and_half γ x y : xa_frag γ y ∧ xa_half γ x ⊢ ⌜x = y⌝.
+  Local Lemma xa_frag_and_half γ x y : xa_frag γ y ∧ xa_half γ x ⊢ ⌜x = y⌝.
   Proof.
     iIntros "H". iDestruct (and_own_discrete_ucmra with "H") as (w) "[W [%Hf %Ha]]".
     iDestruct (own_valid with "W") as %Hv. iPureIntro.
     symmetry. by eapply excl_auth_and_eq.
   Qed.
 
-  Lemma xa_update γ x y :
+  Local Lemma xa_update γ x y :
     xa_half γ x -∗ xa_half γ x -∗ xa_frag γ x ==∗ xa_half γ y ∗ xa_half γ y ∗ xa_frag γ y.
   Proof.
     rewrite /xa_half /xa_frag. iIntros "H1 H2 F".
@@ -193,7 +194,8 @@ Section GuardedBor.
       the guard that refutes an owned [gmb_a γ s] while the token is not returned. *)
   Local Definition gmb_other_body γ (tb : gmb_tstate S T) : iProp Σ :=
     match tb with
-    | GmbOut s κ => special_open κ ∗ (special_open κ &&{↑NllftG ∪ ↑NllftO}&&> gmb_a γ s)
+    | GmbOut s κ =>
+        special_open κ ∗ (special_open κ &&{↑NllftG ∪ ↑NllftO; gmb_depth γ}&&> gmb_a γ s)
     | _ => True
     end.
 
@@ -235,8 +237,8 @@ Section GuardedBor.
     iDestruct (xa_half_agree with "B1 B2") as %->. done.
   Qed.
 
-  (* Open both invariants, with [other_inv] first (so that the [NllftG] part of the mask is
-     still available while it is open). *)
+  (* Open [guard_inv] (the state invariant) like an invariant. Callers open [other_inv] first:
+     it is in [NllftUsr], disjoint from the [NllftG ∪ NllftO] mask of the stored guard. *)
   Local Lemma gmb_state_open E γ :
     ↑NllftUsr2 ⊆ E →
     (True &&{↑NllftUsr2}&&> gmb_state_inv γ) ={E, E ∖ ↑NllftUsr2}=∗
@@ -252,19 +254,19 @@ Section GuardedBor.
   (* end hide *)
 
   (** (L0) Create. *)
-  Lemma gmb_create E s t :
-    c s t ={E}=∗ ∃ γ, gmb_inv γ ∗ gmb_a γ s ∗ gmb_b γ t.
+  Lemma gmb_create E d s t :
+    c s t ={E}=∗ ∃ γ, ⌜gmb_depth γ = d⌝ ∗ gmb_inv γ ∗ gmb_a γ s ∗ gmb_b γ t.
   Proof using c_timeless.
     iIntros "C".
     iMod (xa_alloc (GmbHere (T:=T) s)) as (γa) "(A1 & A2 & Fa)".
     iMod (xa_alloc (GmbIn (S:=S) t)) as (γb) "(B1 & B2 & Fb)".
-    set (γ := GmbName γa γb).
+    set (γ := GmbName γa γb d).
     iMod (guards_alloc E NllftUsr2 (gmb_state_inv γ) with "[A1 B1 C]") as "#G".
     { iNext. iExists (GmbHere s, GmbIn t). iFrame. }
     iDestruct (guards_remove_later_rhs with "G") as "#G'".
     iMod (inv_alloc NllftUsr E (gmb_other_inv γ) with "[A2 B2]") as "#I".
     { iNext. iExists (GmbHere s), (GmbIn t). iFrame. }
-    iModIntro. iExists γ. iFrame "Fa Fb". iSplit; done.
+    iModIntro. iExists γ. iFrame "Fa Fb". iSplit; first done. iSplit; done.
   Qed.
 
   (** (L0) Destroy. The instance moves to its terminal state. *)
@@ -288,11 +290,12 @@ Section GuardedBor.
   Qed.
 
   (** (L1) Exchange (move). The mover gets the contents at the current [t], and must put back
-      contents at the same [t], at any placement [s']. The credit pays for the later of the
-      guard stored in [other_inv], which refutes the lent-out state. *)
+      contents at the same [t], at any placement [s']. The credits pay for the later of
+      [other_inv] and the step-index of the guard stored there, which refutes the lent-out
+      state. *)
   Lemma gmb_move E γ s :
     ↑Nllft ⊆ E →
-    gmb_inv γ -∗ £ 1 -∗ gmb_a γ s ={E}=∗
+    gmb_inv γ -∗ £ (1 + gmb_depth γ) -∗ gmb_a γ s ={E}=∗
       ∃ t, c s t ∗ (∀ s', c s' t ={E}=∗ gmb_a γ s').
   Proof using c_timeless.
     iIntros (Hmask) "[#G #I] Lc Fa".
@@ -300,9 +303,11 @@ Section GuardedBor.
     iDestruct (xa_half_frag_agree with "A2 Fa") as %->.
     destruct tb2 as [t|s0 κ|].
     2: { (* lent out: the stored guard gives a second [gmb_a], a contradiction *)
-      iMod (lc_fupd_elim_later with "Lc Other") as "[Tok #SG]".
-      iMod (guards_open (special_open κ) (gmb_a γ s0) (E ∖ ↑NllftUsr) (↑NllftG ∪ ↑NllftO)
-              with "SG Tok") as "[Fa' _]"; first solve_ndisj.
+      iDestruct "Lc" as "[Lc1 Lc]".
+      iMod (lc_fupd_elim_later with "Lc1 Other") as "[Tok #SG]".
+      iMod (guards_open_later (special_open κ) (gmb_a γ s0) (E ∖ ↑NllftUsr) (↑NllftG ∪ ↑NllftO)
+              with "SG Tok") as "H"; first solve_ndisj.
+      iMod (lc_fupd_add_laterN with "Lc H") as "[Fa' _]".
       iDestruct (gmb_a_excl with "Fa Fa'") as %[]. }
     all: iMod (gmb_state_open with "G") as (sa tb) "([A1 B1] & Body & Hcl2)";
       first solve_ndisj.
@@ -364,29 +369,32 @@ Section GuardedBor.
 
   (* begin hide *)
   (* The core of (L3): the state moves from [In t] to [Out s κ], given the token. *)
-  Local Lemma gmb_lend_fwd E γ κ s t :
-    ↑Nllft ⊆ E →
-    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ s) -∗
+  Local Lemma gmb_lend_fwd E γ κ s t n :
+    ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
     special_open κ -∗ gmb_b γ t ={E}=∗ c s t ∗ gmb_b_out γ s κ.
   Proof using c_timeless.
-    iIntros (Hmask) "#LFT [#GI #I] #Ga Tok Fb".
+    iIntros (Hmask Hn) "#LFT [#GI #I] #Ga Lc Tok Fb".
     iDestruct (llftl_special_open_guard κ with "LFT") as "#SG".
     iDestruct (guards_weaken_mask _ (↑NllftG ∪ ↑NllftO) with "Ga") as "#Ga'"; first set_solver.
-    iDestruct (guards_transitive with "SG Ga'") as "#SA".
+    iDestruct (guards_transitive_right with "SG Ga'") as "#SA".
+    iDestruct (lguards_weaken_later _ _ _ n (gmb_depth γ) with "SA") as "#SA'"; first done.
     iDestruct (guards_weaken_mask _ (↑NllftG ∪ ↑NllftO) with "GI") as "#GI'"; first solve_ndisj.
     iDestruct (guards_transitive (↑NllftG ∪ ↑NllftO) (special_open κ) True%I
                  with "[] GI'") as "#GS".
     { iApply guards_true. }
+    iDestruct (lguards_weaken_later _ _ _ 0 n with "GS") as "#GS'"; first lia.
     iDestruct (guards_strengthen_exists _ (special_open κ) (gmb_a γ s)
                  (λ st, ⌜st.1 = GmbHere s⌝)%I
-                 (λ st, gmb_auth γ st.1 st.2 ∗ gmb_state_body st.1 st.2)%I _ 0
-                 with "SA GS") as "#G1".
+                 (λ st, gmb_auth γ st.1 st.2 ∗ gmb_state_body st.1 st.2)%I _ n
+                 with "SA GS'") as "#G1".
     { intros st. iIntros "H". iApply (xa_frag_and_half (X:=gmb_sstate S T) (gmb_a_name γ)). iSplit.
       - iDestruct "H" as "[$ _]".
       - iDestruct "H" as "[_ [[$ _] _]]". }
     iInv "I" as (sa2 tb2) "[>[A2 B2] _]" "Hcl".
     iDestruct (xa_half_frag_agree with "B2 Fb") as %->.
-    iMod (guards_open with "G1 Tok") as "[St Hcl2]"; first solve_ndisj.
+    iMod (guards_open_later with "G1 Tok") as "St"; first solve_ndisj.
+    iMod (lc_fupd_add_laterN with "Lc St") as "[St Hcl2]".
     iDestruct "St" as ([sa tb]) "[[[A1 B1] Body] %Hsa]". simpl in Hsa. subst sa.
     iSimpl in "A1 B1 Body".
     iDestruct (gmb_auth_agree with "[$A1 $B1] [$A2 $B2]") as %[<- ->].
@@ -394,7 +402,7 @@ Section GuardedBor.
     iMod ("Hcl2" with "[A1 B1]") as "Tok".
     { iExists (GmbHere s, GmbOut s κ). by iFrame. }
     iMod ("Hcl" with "[A2 B2 Tok]") as "_".
-    { iNext. iExists (GmbHere s), (GmbOut s κ). iFrame. iFrame "SA". }
+    { iNext. iExists (GmbHere s), (GmbOut s κ). iFrame. iFrame "SA'". }
     by iFrame.
   Qed.
 
@@ -420,17 +428,18 @@ Section GuardedBor.
   Qed.
   (* end hide *)
 
-  (** (L3) Mutable. The guard of [gmb_a γ s] comes from the owner's share; it must have
-      step-index 0, because it is stored in [other_inv] and used by (L1). *)
-  Lemma gmb_lend E γ κ s :
-    ↑Nllft ⊆ E →
-    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ s) -∗
+  (** (L3) Mutable. The guard of [gmb_a γ s] comes from the owner's share. Its step-index
+      [n] must be at most the depth of the instance (it is stored in [other_inv] for (L1));
+      the credits pay for it. *)
+  Lemma gmb_lend_later E γ κ s n :
+    ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
     &{κ} (∃ t, gmb_b γ t) -∗ @[κ] ={E}=∗ &{κ} (∃ t, c s t) ∗ @[κ].
   Proof using c_timeless.
-    iIntros (Hmask) "#LFT #GI #Ga Bor Alive".
+    iIntros (Hmask Hn) "#LFT #GI #Ga Lc Bor Alive".
     iMod (llftl_bor_acc_special with "LFT Bor Alive") as "(Fb & Tok & Close)"; first done.
     iDestruct "Fb" as ">[%t Fb]".
-    iMod (gmb_lend_fwd with "LFT GI Ga Tok Fb") as "[C Fout]"; first done.
+    iMod (gmb_lend_fwd with "LFT GI Ga Lc Tok Fb") as "[C Fout]"; [done..|].
     iApply (fupd_mask_mono (↑Nllft)); first done.
     iApply ("Close" $! (∃ t', c s t')%I with "[Fout C]").
     iSplitR "C"; last by iExists t.
@@ -440,21 +449,40 @@ Section GuardedBor.
   Qed.
 
   (** (L3), guarded: the lifetime is held through a guard [G &&> @[κ]]. *)
-  Lemma gmb_lend_guarded E G γ κ s :
-    Timeless G → ↑Nllft ⊆ E →
-    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ s) -∗
+  Lemma gmb_lend_guarded_later E G γ κ s n :
+    Timeless G → ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
     &{κ} (∃ t, gmb_b γ t) -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗ &{κ} (∃ t, c s t) ∗ G.
   Proof using c_timeless.
-    iIntros (HG Hmask) "#LFT #GI #Ga Bor #Gk G".
+    iIntros (HG Hmask Hn) "#LFT #GI #Ga Lc Bor #Gk G".
     iMod (llftl_bor_acc_special_guarded with "LFT Bor Gk G") as "(Fb & Tok & Close)"; first done.
     iDestruct "Fb" as ">[%t Fb]".
-    iMod (gmb_lend_fwd with "LFT GI Ga Tok Fb") as "[C Fout]"; first done.
+    iMod (gmb_lend_fwd with "LFT GI Ga Lc Tok Fb") as "[C Fout]"; [done..|].
     iApply (fupd_mask_mono (↑Nllft)); first done.
     iApply ("Close" $! (∃ t', c s t')%I with "[Fout C]").
     iSplitR "C"; last by iExists t.
     iNext. iIntros "C". iDestruct "C" as ">[%t' C]".
     iMod (gmb_lend_back with "GI Fout C") as "[Fb Tok]".
     iModIntro. iFrame "Tok". iNext. by iExists t'.
+  Qed.
+
+  (** (L3) with a guard at step-index 0 (any depth). *)
+  Lemma gmb_lend E γ κ s :
+    ↑Nllft ⊆ E →
+    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ s) -∗
+    &{κ} (∃ t, gmb_b γ t) -∗ @[κ] ={E}=∗ &{κ} (∃ t, c s t) ∗ @[κ].
+  Proof using c_timeless.
+    iIntros (Hmask) "#LFT #GI #Ga Bor Alive". iMod lc_zero as "Lc".
+    iApply (gmb_lend_later with "LFT GI Ga Lc Bor Alive"); [done|lia].
+  Qed.
+
+  Lemma gmb_lend_guarded E G γ κ s :
+    Timeless G → ↑Nllft ⊆ E →
+    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ s) -∗
+    &{κ} (∃ t, gmb_b γ t) -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗ &{κ} (∃ t, c s t) ∗ G.
+  Proof using c_timeless.
+    iIntros (HG Hmask) "#LFT #GI #Ga Bor #Gk G". iMod lc_zero as "Lc".
+    iApply (gmb_lend_guarded_later with "LFT GI Ga Lc Bor Gk G"); [done|lia].
   Qed.
 End GuardedBor.
 
