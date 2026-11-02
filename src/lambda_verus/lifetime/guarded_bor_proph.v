@@ -30,8 +30,10 @@ The payloads are arbitrary; the caller splits the permission off the old payload
 the new payload from the contents. The way back, run by the back-map of the borrow when [κ]
 ends (mask [↑NllftUsr ∪ ↑NllftUsr2]), must give back the contents _eagerly_ from the final
 new payload: the back-map returns the contents to the instance ([gmb_lend_stop]), so that
-the owner can move after [κ] without the lender (L4). This rules out the lazy payloads of
-the bodies of [&uniq] (a [guarded_upd lazyE]), see the plan. *)
+the owner can move after [κ] without the lender (L4). [gmb_lend_proph_map_lazy] instead
+stores the final contents lazily, with a settle law ([gmb_lend_stop_lazy]); this is the
+form for the bodies of [&uniq], whose bytes can be forced without a guard (see the plan,
+"Outcome: phase 2b"). *)
 
 Section GuardedBorProph.
   Context `{!invGS Σ, !prophG Σ, !uniqG Σ, !llft_logicGS Σ, !frac_logicG Σ}.
@@ -94,6 +96,41 @@ Section GuardedBorProph.
     iIntros (y' wζ') "Pc Q".
     iMod ("Back" with "Pc Q") as (t') "[>C ToP]".
     iMod (gmb_lend_stop with "GI Lent C") as "[B $]".
+    iModIntro. by iApply "ToP".
+  Qed.
+  (** Lazy (L3p): as [gmb_lend_proph_map], but the way back stores the final contents
+      lazily ([gmb_lend_stop_lazy]): it gets a dead token for an outer lifetime of [κ]
+      ([proph_idx_bor_gen_map_special_dead]) and splits the final new payload into a stored
+      part [QS], with a settle law that forces the contents with the bytes mask of the
+      instance, and a way to build the old payload from the lender's claim. The three
+      credits are stored for the settlement. *)
+  Lemma gmb_lend_proph_map_lazy E κ ξ x idx (P: pv_val ξ → pv_proph ξ → iProp Σ)
+      ζ y (Q: pv_val ζ → pv_proph ζ → iProp Σ)
+      (fπ: proj1_sig (pv_ty ζ) → proj1_sig (pv_ty ξ)) G γ s n :
+    Timeless G → ↑Nllft ∪ ↑prophN ⊆ E → n ≤ gmb_depth γ →
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ gmb_inv c γ -∗
+    (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗ £ 3 -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+    (∀ G' wπ, ⌜Timeless G'⌝ -∗ (G' &&{↑NllftG}&&> @[κ]) -∗ G' -∗ ▷ P x wπ ={E}=∗
+       G' ∗ ∃ t, gmb_b γ t ∗ (c s t ={E}=∗ ∃ wζ, ▷ Q y wζ ∗
+         (∀ y' wζ', ▷ .PC[ζ] y' wζ' -∗ ▷ Q y' wζ' -∗ gmb_bdead κ ={↑NllftUsr ∪ ↑NllftUsr2}=∗
+            ∃ (QS: iProp Σ) (R: T → iProp Σ), ▷ QS ∗
+              (QS -∗ gmb_bdead κ ={gmb_bmask γ}=∗ ∃ t', c s t' ∗ R t') ∗
+              (gmb_claim c γ R -∗ ▷ ∃ x', P x' (λ π, fπ (π ζ)))))) -∗
+    G -∗ proph_loan ζ y -∗ proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P ={E}=∗
+      ⟨π, π ξ = fπ (π ζ)⟩ ∗
+      (∃ idx', proph_bor_tok ζ y idx' ∗ proph_idx_bor_gen κ ζ idx' Q) ∗ G.
+  Proof using All.
+    iIntros (HG Hmask Hn) "#LFT #PROPH #UNIQ #GI #Ga Lc £3 #Gk Wand G Loan Tok IBor".
+    iApply (proph_idx_bor_gen_map_special_dead with "LFT PROPH UNIQ Gk [Wand Lc £3] G Loan Tok IBor");
+      [done..|].
+    iIntros (G' wπ ?) "#G'k G' Sp P".
+    iMod ("Wand" with "[//] G'k G' P") as "($ & %t & B & ToQ)".
+    iMod (gmb_lend_start_lazy with "LFT GI Ga Lc £3 Sp B") as "[C Lent]"; [solve_ndisj|done|].
+    iMod ("ToQ" with "C") as (wζ) "[Q Back]".
+    iModIntro. iExists wζ. iFrame "Q".
+    iIntros (y' wζ') "Pc Q #Dead".
+    iMod ("Back" with "Pc Q Dead") as (QS R) "(QS & Law & ToP)".
+    iMod (gmb_lend_stop_lazy with "GI Lent QS Dead Law") as "[Cl $]".
     iModIntro. by iApply "ToP".
   Qed.
 End GuardedBorProph.

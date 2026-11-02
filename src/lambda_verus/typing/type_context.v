@@ -136,7 +136,7 @@ Section lemmas.
 
   Definition resolve_tctx {𝔄l} (E: elctx) (L: llctx) (T: tctx 𝔄l)
     (Φ: plist indep_interp_of_syn_type 𝔄l → proph_asn → Prop → Prop) : Prop :=
-    ∀G F tid xl, Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑timeN ∪ ↑uniqN ⊆ F → llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗
+    ∀G F tid xl, Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ F → llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗
       elctx_interp E -∗ (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗ tctx_interp tid T xl ={F}=∗
         ∃d, ⧖d ∗ |={F}▷=>^(d*(d+1)) |={F}=>
           ⟨ π , ∀φ, Φ xl π φ → φ ⟩ ∗ G.

@@ -28,7 +28,7 @@ From lrust.util Require Import update.
 From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bor.
 From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own bytes_layout value_ctx product freeable_util sum place_shr place_resolve place_puniq place_sum place_pshr place_res place_res_view.
 From lrust.util Require Import proph_bor.
-From lrust.lifetime Require Import lifetime_full.
+From lrust.lifetime Require Import lifetime_full guarded_bor.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
 
@@ -44,7 +44,7 @@ Section resolve_share_rsv.
       whose tokens are guarded by the sharing of the contents ([Share]). *)
   Lemma proph_idx_bor_gen_resolve_share_rsv E κ κs ξ x idx ζl
       (P: pv_val ξ → pv_proph ξ → iProp Σ) (uπ: pv_proph ξ) (P0 S: iProp Σ) G n :
-    Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E →
+    Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ E →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ ⊓ κs]) -∗
     (∀ wπ, ▷ P x wπ -∗ ◇ (▷ P0 ∗ ▷ (P0 -∗ P x uπ))) -∗
     (∀ (H: iProp Σ), ⌜Timeless H⌝ -∗ (H &&{↑NllftG}&&> @[κ ⊓ κs]) -∗ H -∗ &{κ} P0 ={E}=∗

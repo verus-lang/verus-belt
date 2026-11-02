@@ -234,7 +234,7 @@ Section write.
     iIntros (lK dh gh [Hdh Hgh]) "Pt1 Gho1 Cl".
     wp_bind pb. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
     (* Resolve the old value. *)
-    iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN))
+    iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN ∖ ↑gmbN))
       with "LFT PROPH UNIQ TIME E Ghalf H2 Gho1") as "ToObs"; [set_solver|].
     iMod (lc_fupd_elim_later with "£r ToObs") as "ToObs".
     iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].

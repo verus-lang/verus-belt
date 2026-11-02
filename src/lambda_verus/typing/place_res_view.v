@@ -448,7 +448,7 @@ Section lty_share_view.
     rewrite /ltype_own /= /shr_blocked_owned.
     iDestruct (llftl_bor_iff _ _
       (((@[α] &&{↑NllftG; g+1}&&> cbytes ty x l) ∗ ty.(ty_shr) α x d g tid ∗
-        ty.(ty_gho_pers) x d g tid) ∗ ([†α] ={lazyE}=∗ ofty_owned m ty x d g tid l))%I
+        ty.(ty_gho_pers) x d g tid) ∗ ([†α] ={lazyB}=∗ ofty_owned m ty x d g tid l))%I
       with "[] Bor") as "Bor".
     { iIntros "!> !>". iSplit.
       - iIntros "(%x' & -> & $ & $ & $ & $)".
