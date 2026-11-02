@@ -548,6 +548,33 @@ Section GuardedBor.
     iModIntro. iExists t. iFrame "C". iIntros (s') "C". iApply ("Back" with "Tok C").
   Qed.
 
+  (** Access by the owner of both the move right and the permission: the contents can be
+      changed (and moved), and the instance takes them back at the new placement and
+      value. *)
+  Lemma gmb_acc E γ s t :
+    ↑NllftUsr ∪ ↑NllftUsr2 ⊆ E →
+    gmb_inv γ -∗ gmb_a γ s -∗ gmb_b γ t ={E}=∗
+      c s t ∗ (∀ s' t', c s' t' ={E}=∗ gmb_a γ s' ∗ gmb_b γ t').
+  Proof using c_timeless.
+    iIntros (Hmask) "(#G & #I & _) Fa Fb".
+    iInv "I" as (sa2 tb2) "[>[A2 B2] _]" "Hcl".
+    iDestruct (xa_half_frag_agree with "A2 Fa") as %->.
+    iDestruct (xa_half_frag_agree with "B2 Fb") as %->.
+    iMod (gmb_move_in with "G A2 B2 Fa") as "(A2 & B2 & Fout & C)"; first solve_ndisj.
+    iMod ("Hcl" with "[A2 B2]") as "_". { iNext. iExists (GmbMoving t), (GmbIn t). iFrame. }
+    iModIntro. iFrame "C". iIntros (s' t') "C".
+    iInv "I" as (sa2 tb2) "[>[A2 B2] _]" "Hcl".
+    iDestruct (xa_half_frag_agree with "A2 Fout") as %->.
+    iDestruct (xa_half_frag_agree with "B2 Fb") as %->.
+    iMod (gmb_state_open with "G") as (sa tb) "([A1 B1] & Body & Hcl2)"; first solve_ndisj.
+    iDestruct (gmb_auth_agree with "[$A1 $B1] [$A2 $B2]") as %[-> ->].
+    iMod (xa_update _ _ (GmbHere s') with "A1 A2 Fout") as "(A1 & A2 & Fa)".
+    iMod (xa_update _ _ (GmbIn t') with "B1 B2 Fb") as "(B1 & B2 & Fb)".
+    iMod ("Hcl2" $! (GmbHere s') (GmbIn t') with "[$A1 $B1 $C]") as "_".
+    iMod ("Hcl" with "[A2 B2]") as "_". { iNext. iExists (GmbHere s'), (GmbIn t'). iFrame. }
+    iModIntro. iFrame.
+  Qed.
+
   (** The token of a move in progress excludes the move right. *)
   Lemma gmb_a_moving_excl γ s t : gmb_a γ s -∗ gmb_moving γ t -∗ False.
   Proof. apply xa_frag_excl. Qed.
