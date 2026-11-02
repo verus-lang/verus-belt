@@ -681,3 +681,166 @@ Section gcells_open.
         rewrite (fb_mix_lookup _ _ _ _ _ Hfb0 Hb') in Hi. injection Hi as <-. by eexists.
   Qed.
 End gcells_open.
+
+(** ** Replacing a plain sub-value *)
+
+(** [fv_repl m fv o m' fvo fv' fvn]: [fvn] is [fv] with its sub-value [fvo] at [o] (of type
+    [m']) replaced by [fv'] (as [fv_upd], remembering the old sub-value). *)
+Inductive fv_repl : mty → FValue → nat → mty → FValue → FValue → FValue → Prop :=
+| fv_repl_here m fvo fv' : fv_repl m fvo 0 m fvo fv' fv'
+| fv_repl_field fs sz fvs k off fm fvk o m' fvo fv' fvk' :
+    fs !! k = Some (off, fm) → fvs !! k = Some fvk → fv_repl fm fvk o m' fvo fv' fvk' →
+    fv_repl (MTuple fs sz) (FVTuple fvs) (off + o) m' fvo fv' (FVTuple (<[k := fvk']> fvs))
+| fv_repl_payload vars tag sz t d vm o m' fvo fv' d' :
+    vars !! Z.to_nat t = Some vm → fv_repl vm d o m' fvo fv' d' →
+    fv_repl (MEnum vars tag sz) (FVVariant t d) (int_size tag + o) m' fvo fv' (FVVariant t d').
+
+Lemma fv_repl_upd m fv o m' fvo fv' fvn : fv_repl m fv o m' fvo fv' fvn → fv_upd m fv o m' fv' fvn.
+Proof. induction 1; econstructor; eauto. Qed.
+Lemma fv_repl_sub m fv o m' fvo fv' fvn : fv_repl m fv o m' fvo fv' fvn → fv_sub m fv o m' fvo.
+Proof. induction 1; econstructor; eauto. Qed.
+Lemma fv_sub_repl m fv o m' fvo fv' : fv_sub m fv o m' fvo → ∃ fvn, fv_repl m fv o m' fvo fv' fvn.
+Proof. induction 1; naive_solver eauto using fv_repl. Qed.
+Lemma fv_sub_repl_refl m fv o m' fvo : fv_sub m fv o m' fvo → fv_repl m fv o m' fvo fvo fv.
+Proof.
+  induction 1 as [|fs sz fvs k off fm fvk o m' fv' Hk Hfvk Hsub IH|]; [constructor| |by econstructor].
+  rewrite -{2}(list_insert_id fvs k fvk) //. by econstructor.
+Qed.
+
+Definition lazyE_gcellsN : lazyE ## ↑gcellsN.
+Proof. rewrite /lazyE /gcellsN /gmbN /uniqN /NllftUsr /prophN /Nllft. solve_ndisj. Qed.
+
+Section gcells_api.
+  Context `{!typeG Σ, !gcellsGS Σ}.
+  Implicit Types (l : loc) (m : mty) (fv : FValue) (fbs : list (positive + abyte)).
+  Notation gca γ l := (gmb_a (S:=loc) (T:=FValue) γ l).
+
+  (** *** Cells in transit
+
+  The cells of a value that has been loaded by a typed move ([gcont_open]), with the value
+  [v] that the move loaded: bytes at any location [l'] that decode to [v] give back the
+  contents at [l'] (with the cells at their new locations). *)
+  Definition gtransit m fv (v : Value) : iProp Σ :=
+    ⌜val_wf m v⌝ ∗ ∀ l' bs', ⌜decode_value m bs' = Some v⌝ -∗ l' ↦b bs' ={lazyE}=∗ gcont l' m fv.
+
+  (** The deep opening, with the registry: it moves all the cells of [fv] (and the cells
+      nested in them); the location [l] then holds plain bytes that decode at [m]. *)
+  Lemma gcont_open E l m fv :
+    lazyE ∪ ↑gcellsN ⊆ E → mty_wf m →
+    gcells_ctx -∗ £ 1 -∗ gcont l m fv ={E}=∗
+      ∃ bs v, l ↦b bs ∗ ⌜decode_value m bs = Some v⌝ ∗ gtransit m fv v.
+  Proof.
+    iIntros (HE Hwf) "#GC Lc (%R & %fbs & Hfb & [%Hrep %HR] & Hc)".
+    iInv "GC" as (Reg) "[>Auth Ctx]" "Hcl".
+    iMod (lc_fupd_elim_later with "Lc Ctx") as "#Ctx".
+    iMod (fupd_mask_subseteq lazyE) as "Hclm".
+    { have := lazyE_gcellsN. set_solver. }
+    iMod (gopen_rec Reg (size Reg) R m fbs fv HR Hrep [] l Hwf with "Ctx Auth [] Hfb Hc")
+      as (bs v) "(Auth & _ & Hbs & %Hd & Cl)".
+    { constructor. } { by intros ? ?%elem_of_nil. } { simpl. lia. } { by rewrite /gtoks. }
+    iMod "Hclm" as "_". iMod ("Hcl" with "[Auth]") as "_".
+    { iNext. iExists Reg. iFrame "Auth Ctx". }
+    iModIntro. iExists bs, v. iFrame "Hbs". iSplit; [done|]. iSplit.
+    { iPureIntro. by eapply decode_value_wf. }
+    iIntros (l' bs' Hd') "Hbs'". iMod ("Cl" with "[//] Hbs'") as "(Hfb & Hc & %Hrep')".
+    iModIntro. iExists R, _. by iFrame.
+  Qed.
+
+  Lemma gtransit_close E l' m fv v bs' :
+    lazyE ⊆ E → decode_value m bs' = Some v →
+    gtransit m fv v -∗ l' ↦b bs' ={E}=∗ gcont l' m fv.
+  Proof.
+    iIntros (HE Hd) "[_ Cl] Hbs". iApply (fupd_mask_mono lazyE); [done|]. by iApply ("Cl" with "[//] Hbs").
+  Qed.
+
+  (** *** Cells: create, destroy, access by the owner of both sides *)
+  Lemma gcont_cell l m g γ : gcell_reg g γ m -∗ gca γ l -∗ gcont l m (FVCell g).
+  Proof.
+    iIntros "#Hreg Ha". iExists {[g := (m, replicate (mty_size m) g)]}, (inl <$> replicate (mty_size m) g).
+    rewrite gfbytes_cells. iSplit; [done|]. iSplit.
+    - iPureIntro. split.
+      + constructor. by rewrite lookup_singleton.
+      + intros g' m' cs. rewrite lookup_singleton_Some. intros [<- [= <- <-]]. by rewrite length_replicate.
+    - iEval (simpl). iExists γ. by iFrame "Hreg Ha".
+  Qed.
+
+  Lemma gcont_cell_inv l m g : gcont l m (FVCell g) -∗ ∃ γ, gcell_reg g γ m ∗ gca γ l.
+  Proof. iIntros "(%R & %fbs & _ & _ & Hc)". by iEval (simpl) in "Hc". Qed.
+
+  Lemma gcell_reg_agree g γ γ' m m' : gcell_reg g γ m -∗ gcell_reg g γ' m' -∗ ⌜γ = γ' ∧ m = m'⌝.
+  Proof. iIntros "H1 H2". by iDestruct (ghost_map_elem_agree with "H1 H2") as %[= -> ->]. Qed.
+
+  (** (L0) Creation ([PCell::new]): the contents at [l] become a cell, an instance of depth
+      [0] and bytes mask [lazyB], registered as [g]. The location then holds the cell
+      itself ([gcont l m (FVCell g)], i.e. the move right). *)
+  Lemma gcell_create E l m fv :
+    ↑gcellsN ⊆ E →
+    gcells_ctx -∗ gcont l m fv ={E}=∗ ∃ g γ, ⌜gmb_depth γ = 0 ∧ gmb_bmask γ = lazyB⌝ ∗
+      gcell_reg g γ m ∗ gmb_inv (gcont_c m) γ ∗ gmb_b γ fv ∗ gcont l m (FVCell g).
+  Proof.
+    iIntros (HE) "#GC C".
+    iMod (gmb_create_mask (gcont_c m) E 0 lazyB l fv with "C") as (γ) "([%Hd %Hb] & #GI & Ha & Hb)".
+    { rewrite /lazyB /gmbN /uniqN /NllftUsr /prophN /Nllft. solve_ndisj. }
+    iInv "GC" as (Reg) "[>Auth Ctx]" "Hcl".
+    set g := fresh (dom Reg).
+    have Hg : Reg !! g = None by apply not_elem_of_dom, is_fresh.
+    iMod (ghost_map_insert_persist g (γ, m) with "Auth") as "[Auth #Hreg]"; [done|].
+    iMod ("Hcl" with "[Auth Ctx]") as "_".
+    { iNext. iExists (<[g := (γ, m)]> Reg). iFrame "Auth". rewrite /greg_ctx big_sepM_insert //.
+      iFrame "Ctx". by iFrame "GI". }
+    iModIntro. iExists g, γ. iSplit; [done|]. iSplitR; [iExact "Hreg"|]. iFrame "GI Hb".
+    by iApply (gcont_cell with "Hreg Ha").
+  Qed.
+
+  (** (L0) Destruction ([PCell::into_inner]). *)
+  Lemma gcell_destroy E l m g γ fv :
+    ↑Nllft ⊆ E →
+    gcell_reg g γ m -∗ gmb_inv (gcont_c m) γ -∗ gcont l m (FVCell g) -∗ gmb_b γ fv ={E}=∗
+      gcont l m fv.
+  Proof.
+    iIntros (HE) "#Hreg #GI C Hb". iDestruct (gcont_cell_inv with "C") as (γ') "[Hreg' Ha]".
+    iDestruct (gcell_reg_agree with "Hreg Hreg'") as %[<- _].
+    by iMod (gmb_destroy (gcont_c m) with "GI Ha Hb") as "C".
+  Qed.
+
+  (** Access by the owner of the cell and of its permission: the contents can be changed. *)
+  Lemma gcell_acc E l m g γ fv :
+    ↑NllftUsr ∪ ↑NllftUsr2 ⊆ E →
+    gcell_reg g γ m -∗ gmb_inv (gcont_c m) γ -∗ gcont l m (FVCell g) -∗ gmb_b γ fv ={E}=∗
+      gcont l m fv ∗ (∀ fv', gcont l m fv' ={E}=∗ gcont l m (FVCell g) ∗ gmb_b γ fv').
+  Proof.
+    iIntros (HE) "#Hreg #GI C Hb". iDestruct (gcont_cell_inv with "C") as (γ') "[Hreg' Ha]".
+    iDestruct (gcell_reg_agree with "Hreg Hreg'") as %[<- _].
+    iMod (gmb_acc (gcont_c m) with "GI Ha Hb") as "[$ Cl]"; [done|].
+    iIntros "!>" (fv') "C". iMod ("Cl" $! l fv' with "C") as "[Ha $]".
+    iModIntro. by iApply (gcont_cell with "Hreg Ha").
+  Qed.
+
+  (** (L2) Shared access: guards of the move right and of the permission. *)
+  Lemma gcell_share G F n γ l m fv :
+    ↑NllftUsr2 ⊆ F →
+    gmb_inv (gcont_c m) γ -∗ (G &&{F; n}&&> gca γ l) -∗ (G &&{F; n}&&> gmb_b γ fv) -∗
+      (G &&{F; n}&&> gcont l m fv).
+  Proof. iIntros (?) "GI Ga Gb". by iApply (gmb_share (gcont_c m) with "GI Ga Gb"). Qed.
+
+  (** (L3) Mutable access: a lend of the contents, for an instance of depth [0] (the lend
+      prepays a credit for the moves). *)
+  Lemma gcell_lend E γ κ l m :
+    ↑Nllft ⊆ E → gmb_depth γ = 0 →
+    llft_ctx -∗ gmb_inv (gcont_c m) γ -∗ (@[κ] &&{↑NllftG}&&> gca γ l) -∗ £ 1 -∗
+    &{κ} (∃ fv, gmb_b γ fv) -∗ @[κ] ={E}=∗ &{κ} (∃ fv, gcont l m fv) ∗ @[κ].
+  Proof.
+    iIntros (HE Hd) "#LFT #GI #Ga Lc Bor Alive".
+    iApply (gmb_lend (gcont_c m) with "LFT GI Ga [Lc] Bor Alive"); [done|by rewrite Hd].
+  Qed.
+
+  Lemma gcell_lend_guarded E G γ κ l m :
+    Timeless G → ↑Nllft ⊆ E → gmb_depth γ = 0 →
+    llft_ctx -∗ gmb_inv (gcont_c m) γ -∗ (@[κ] &&{↑NllftG}&&> gca γ l) -∗ £ 1 -∗
+    &{κ} (∃ fv, gmb_b γ fv) -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗
+      &{κ} (∃ fv, gcont l m fv) ∗ G.
+  Proof.
+    iIntros (HG HE Hd) "#LFT #GI #Ga Lc Bor #Gk G".
+    iApply (gmb_lend_guarded (gcont_c m) with "LFT GI Ga [Lc] Bor Gk G"); [done|by rewrite Hd].
+  Qed.
+End gcells_api.
