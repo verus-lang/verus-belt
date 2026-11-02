@@ -845,6 +845,27 @@ Section gcells_api.
     iIntros (HG HE Hd) "#LFT #GI #Ga Lc Bor #Gk G".
     iApply (gmb_lend_guarded (gcont_c m) with "LFT GI Ga [Lc] Bor Gk G"); [done|by rewrite Hd].
   Qed.
+
+  (** (L3) with a predicate [Φ] of the logical contents, carried by the borrow (e.g. the
+      ownership predicate of the type of the contents): the lender gets back the
+      permission at the final contents, with [Φ] of them. *)
+  Lemma gcell_lend_pred E γ κ l m (Φ : FValue → iProp Σ) :
+    ↑Nllft ⊆ E → gmb_depth γ = 0 →
+    llft_ctx -∗ gmb_inv (gcont_c m) γ -∗ (@[κ] &&{↑NllftG}&&> gca γ l) -∗ £ 1 -∗
+    &{κ} (∃ fv, gmb_b γ fv ∗ Φ fv) -∗ @[κ] ={E}=∗ &{κ} (∃ fv, gcont l m fv ∗ Φ fv) ∗ @[κ].
+  Proof.
+    iIntros (HE Hd) "#LFT #GI #Ga Lc Bor Alive". iMod lc_zero as "Lc0".
+    iMod (llftl_bor_acc_special with "LFT Bor Alive") as "(Fb & Tok & Close)"; first done.
+    iMod (bi.later_exist_except_0 with "Fb") as (fv) "[>Fb Φ]".
+    iMod (gmb_lend_start (gcont_c m) _ γ κ l fv 0 with "LFT GI Ga Lc0 [Lc] Tok Fb")
+      as "[C Lent]"; [done|lia|by rewrite Hd|].
+    iApply (fupd_mask_mono (↑Nllft)); first done.
+    iApply ("Close" $! (∃ fv', gcont l m fv' ∗ Φ fv')%I with "[Lent C Φ]").
+    iSplitR "C Φ"; last first. { iNext. iExists fv. iFrame. }
+    iNext. iIntros "[Q _]". iMod (bi.later_exist_except_0 with "Q") as (fv') "[>C Φ]".
+    iMod (gmb_lend_stop (gcont_c m) with "GI Lent C") as "[Fb $]".
+    iModIntro. iNext. iExists fv'. iFrame.
+  Qed.
 End gcells_api.
 
 (** ** Access to plain sub-values of owned contents (for borrows and owners) *)
