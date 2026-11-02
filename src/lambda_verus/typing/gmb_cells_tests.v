@@ -236,4 +236,82 @@ Section gmb_cells_tests.
     iDestruct (gcont_lift_bytes _ _ (VInt 9) with "C1") as (bs1') "[Hl1 %Hd1']".
     iApply (wp_load_na with "Hl1"); [done|]. iIntros "!> _". iApply "HΦ". by iExists _.
   Qed.
+  (** Shared reads (non-atomic and atomic) through guards of the move right and of the
+      permission ((L2)); here both are owned, and guarded by themselves. *)
+  Lemma test_gcell_shared_read E l bs :
+    ↑naN ∪ ↑gcellsN ∪ ↑Nllft ⊆ E → length bs = 4%nat →
+    {{{ gcells_ctx ∗ ▷ l ↦b bs }}}
+      Store Na1Ord (MInt i32) (#l) (MLit (VInt 5)) ;;
+      Load Na1Ord (MInt i32) (#l) ;; Load ScOrd (MInt i32) (#l) @ E
+    {{{ RET MLitV (VInt 5); ∃ g γ, gcell_reg g γ (MInt i32) ∗ gcont l (MInt i32) (FVCell g) ∗
+          gmb_b γ (FVInt 5) }}}.
+  Proof.
+    iIntros (HE Hlen Φ) "[#GC Hl] HΦ".
+    wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [set_solver|apply int5_wf|done|].
+    iIntros "!> Hl". wp_seq.
+    iMod (gcell_new_i32 _ _ (VInt 5) with "GC Hl") as (g γ) "(_ & #Hreg & #GI & B & C)";
+      [set_solver|apply dec5|].
+    iDestruct (gcont_cell_inv with "C") as (γ') "[Hreg' A]".
+    iDestruct (gcell_reg_agree with "Hreg Hreg'") as %[<- _].
+    iAssert ((gca γ l ∗ gmb_b γ (FVInt 5)) &&{↑naN; 0}&&> gca γ l)%I as "#Ga".
+    { iApply guards_weaken_sep_l. }
+    iAssert ((gca γ l ∗ gmb_b γ (FVInt 5)) &&{↑naN; 0}&&> gmb_b γ (FVInt 5))%I as "#Gb".
+    { iApply guards_weaken_sep_r. }
+    iMod lc_zero as "Lc".
+    wp_bind (Load _ _ _). rewrite {1}loc_0.
+    iApply (wp_gcell_load_na_shared _ γ l (MInt i32) (FVInt 5) 0 (MInt i32) (VInt 5) _ 0
+      with "[$GI $Ga $Gb $A $B $Lc]"); [set_solver|apply MInt_wf|apply fv_sub_here|].
+    iIntros "!> [A B]". wp_seq. iMod lc_zero as "Lc". rewrite loc_0.
+    iApply (wp_gcell_load_sc_shared _ γ l (MInt i32) (FVInt 5) 0 (MInt i32) (VInt 5) _ 0
+      with "[$GI $Ga $Gb $A $B $Lc]"); [set_solver|apply MInt_wf|apply fv_sub_here|].
+    iIntros "!> [A B]". iApply "HΦ". iExists g, γ. iSplitR; [done|].
+    iSplitL "A"; [by iApply (gcont_cell with "Hreg A")|done].
+  Qed.
+
+  Lemma int9_wf : val_wf (MInt i32) (VInt 9).
+  Proof. constructor. apply (bool_decide_unpack _); by vm_compute. Qed.
+
+  (** A compare-and-exchange of the contents of a cell (by the owner of the cell and of its
+      permission), a failing one, then an atomic shared read. *)
+  Lemma test_gcell_mcas E l bs :
+    ↑naN ∪ ↑gcellsN ∪ ↑Nllft ⊆ E → length bs = 4%nat →
+    {{{ gcells_ctx ∗ ▷ l ↦b bs }}}
+      Store Na1Ord (MInt i32) (#l) (MLit (VInt 5)) ;;
+      MCAS (MInt i32) (#l) (MLit (VInt 5)) (MLit (VInt 7)) ;;
+      MCAS (MInt i32) (#l) (MLit (VInt 5)) (MLit (VInt 9)) ;;
+      Load ScOrd (MInt i32) (#l) @ E
+    {{{ RET MLitV (VInt 7); ∃ g γ, gcell_reg g γ (MInt i32) ∗ gcont l (MInt i32) (FVCell g) ∗
+          gmb_b γ (FVInt 7) }}}.
+  Proof.
+    iIntros (HE Hlen Φ) "[#GC Hl] HΦ".
+    have HllftUsr : ↑NllftUsr ∪ ↑NllftUsr2 ⊆@{coPset} E.
+    { assert (↑NllftUsr ∪ ↑NllftUsr2 ⊆@{coPset} ↑Nllft) by solve_ndisj. set_solver. }
+    wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [set_solver|apply int5_wf|done|].
+    iIntros "!> Hl". wp_seq.
+    iMod (gcell_new_i32 _ _ (VInt 5) with "GC Hl") as (g γ) "(_ & #Hreg & #GI & B & C)";
+      [set_solver|apply dec5|].
+    iMod (gcell_acc with "Hreg GI C B") as "[C Cl]"; [done|].
+    wp_bind (MCAS _ _ _ _). rewrite {1}loc_0.
+    iApply (wp_gcont_mcas_sub _ _ _ _ _ _ (VInt 5) (VInt 5) (VInt 7) (FVInt 7) with "C");
+      [set_solver|apply MInt_wf|apply int7_wf|constructor|].
+    iIntros "!>" (b) "[[[-> _] C]|[[_ %Hne] _]]"; [|done].
+    iMod ("Cl" with "C") as "[C B]". wp_seq.
+    iMod (gcell_acc with "Hreg GI C B") as "[C Cl]"; [done|].
+    wp_bind (MCAS _ _ _ _). rewrite {1}loc_0.
+    iApply (wp_gcont_mcas_sub _ _ _ _ _ _ (VInt 7) (VInt 5) (VInt 9) (FVInt 9) with "C");
+      [set_solver|apply MInt_wf|apply int9_wf|constructor|].
+    iIntros "!>" (b) "[[[_ %Heq] _]|[[-> _] C]]"; [done|].
+    iMod ("Cl" with "C") as "[C B]". wp_seq.
+    iDestruct (gcont_cell_inv with "C") as (γ') "[Hreg' A]".
+    iDestruct (gcell_reg_agree with "Hreg Hreg'") as %[<- _].
+    iAssert ((gca γ l ∗ gmb_b γ (FVInt 7)) &&{↑naN; 0}&&> gca γ l)%I as "#Ga".
+    { iApply guards_weaken_sep_l. }
+    iAssert ((gca γ l ∗ gmb_b γ (FVInt 7)) &&{↑naN; 0}&&> gmb_b γ (FVInt 7))%I as "#Gb".
+    { iApply guards_weaken_sep_r. }
+    iMod lc_zero as "Lc". rewrite loc_0.
+    iApply (wp_gcell_load_sc_shared _ γ l (MInt i32) (FVInt 7) 0 (MInt i32) (VInt 7) _ 0
+      with "[$GI $Ga $Gb $A $B $Lc]"); [set_solver|apply MInt_wf|apply fv_sub_here|].
+    iIntros "!> [A B]". iApply "HΦ". iExists g, γ. iSplitR; [done|].
+    iSplitL "A"; [by iApply (gcont_cell with "Hreg A")|done].
+  Qed.
 End gmb_cells_tests.
