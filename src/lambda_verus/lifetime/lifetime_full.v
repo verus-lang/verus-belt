@@ -9,6 +9,7 @@ Require Import stdpp.namespaces.
 From iris.algebra Require Export cmra updates.
 From iris.algebra Require Import proofmode_classes.
 From iris.algebra Require Import excl.
+From iris.algebra Require Import auth gmultiset.
 From iris.prelude Require Import options.
 
 From iris.base_logic.lib Require Export own iprop.
@@ -25,7 +26,8 @@ Leaf's guarding operator to handle both shared borrows and lifetime inclusions. 
 
 Class llft_logicGpreS Σ := {
   llft_logic_inG : lifetime_internals.ra.llft_logicGS Σ ;
-  llft_boxG : boxG Σ
+  llft_boxG : boxG Σ ;
+  llft_specialG : inG Σ (authR (gmultisetUR (gset nat)))
 }.
 
 Class llft_logicGS Σ := LlftLogicG {
@@ -34,15 +36,19 @@ Class llft_logicGS Σ := LlftLogicG {
   llft_name: gname;
   o_name: gname;
   d_name: gname;
+  sp_name: gname;
+  lk_name: gname;
 }.
 Global Existing Instance llft_in_preG.
 
 Local Existing Instance llft_boxG.
 Local Existing Instance llft_logic_inG.
+Local Existing Instance llft_specialG.
 
 Definition llft_logicΣ : gFunctors := #[
   lifetime_internals.ra.llft_logicΣ ;
-  boxΣ
+  boxΣ ;
+  GFunctor (authR (gmultisetUR (gset nat)))
 ].
 
 Global Instance subG_lt_logicΣ Σ : subG llft_logicΣ Σ → llft_logicGpreS Σ.
@@ -63,6 +69,9 @@ Section LlftLogic.
   Definition NllftG := nroot .@ "leaf_lifetime_logic" .@ "guarding".
   Definition NllftUsr := nroot .@ "leaf_lifetime_logic" .@ "user".
   Definition NllftUsr2 := nroot .@ "leaf_lifetime_logic" .@ "guarding" .@ "user".
+  (** The namespace of the part of the model outside [NllftG]; it appears in the mask of
+      [llftl_special_open_guard]. *)
+  Definition NllftO := nroot .@ "leaf_lifetime_logic" .@ "other".
 
   (*** Lifetime logic ***)
 
@@ -82,6 +91,50 @@ Section LlftLogic.
   Local Definition llft_alive_def (κ : lft) : iProp Σ := [∗ set] k ∈ κ , Alive llft_name (LtAtomSwell k).
   Local Definition llft_dead_def (κ : lft) : iProp Σ := ∃ k , ⌜ k ∈ κ ⌝ ∗ Dead llft_name (LtAtomSwell k).
 
+  (* The tokens of special openings ([llftl_bor_acc_special]) are fragments of an
+     authoritative multiset of lifetimes, one element per token in circulation. *)
+  Local Definition special_open_def (κ : lft) : iProp Σ :=
+      own sp_name (◯ ({[+ κ +]} : gmultiset lft)).
+  Local Definition special_open_aux : seal (@special_open_def). Proof. by eexists. Qed.
+
+  (* end hide *)
+
+  (** The token of a special opening of a borrow at [κ] (see [llftl_bor_acc_special]).
+      It is timeless but not persistent. As long as it is held, [κ] is alive
+      ([llftl_special_open_guard]). *)
+  Definition special_open (κ : lft) : iProp Σ. exact (special_open_aux.(unseal) κ). Defined.
+
+  (* begin hide *)
+  Local Definition special_open_unseal :
+      @special_open = @special_open_def := special_open_aux.(seal_eq).
+
+  Global Instance timeless_special_open κ : Timeless (special_open κ).
+  Proof. rewrite special_open_unseal. apply _. Qed.
+
+  (* The registry of special tokens, stored in the [Nmain] invariant next to the
+     alive/dead registry [sa].
+
+     Each token in circulation has an entry [(κ, sn)]: a reverse borrow [Borrow ∅ κ] at [sn]
+     whose contents is a token [special_open κ]. When [κ] ends, the model's own invariant
+     guarantees that this slot is full: the token has been returned by the back-map chain.
+     The end procedure ([llftl_end_maybe_swell']) collects the tokens from these slots.
+
+     The certificate: either every registered [κ] is alive (and both halves of the lock
+     [lk_name] are here, at [None]), or an end of [k] is in progress: the end procedure
+     holds one half of the lock at [Some (k, alive')], and the other half is here together
+     with the [NllftO] half of [Delayed (Some (k, alive'))]; every registered [κ] is then
+     alive or contains [k]. Since the closed [NllftO] invariant holds [Delayed None], the
+     second state cannot be observed while [NllftO] is closed. *)
+  Local Definition spec_inv (sa : gset lt_atom) : iProp Σ :=
+      ∃ (E : list (lft * slice_name)),
+        own sp_name (● (list_to_set_disj E.*1 : gmultiset lft))
+        ∗ ([∗ list] e ∈ E, ▷ (OwnBorState llft_name e.2 (Borrow ∅ (set_map LtAtomSwell e.1))
+                            ∗ slice Nbox e.2 (special_open e.1)))
+        ∗ ((⌜∀ e, e ∈ E → set_map LtAtomSwell e.1 ⊆ sa⌝
+                ∗ Delayed lk_name None ∗ Delayed lk_name None)
+          ∨ (∃ k alive', Delayed lk_name (Some (k, alive')) ∗ Delayed d_name (Some (k, alive'))
+                ∗ ⌜∀ e, e ∈ E → set_map LtAtomSwell e.1 ⊆ alive' ∪ {[k]}⌝)).
+
   Local Definition llft_ctx_def : iProp Σ :=
     (inv NllftO (∃ outlives, £1 ∗ Delayed d_name None ∗ Outlives o_name outlives
         ∗ ∀ o, ⌜o ∈ outlives⌝ -∗ (llft_alive_def' o.1 &&{↑NllftG}&&> Alive llft_name o.2))) ∗
@@ -91,7 +144,11 @@ Section LlftLogic.
           ∗ llft_alive_def' sa
           ∗ (▷ outer_inv llft_name o_name d_name sa sd blocked)
           ∗ llft_alive_def' blocked
-    ).
+          ∗ spec_inv sa
+    ) ∗
+    (* a guard view of the [NllftO] invariant, used by [llftl_special_open_guard] *)
+    (True &&{↑NllftO}&&> ▷ (∃ outlives, £1 ∗ Delayed d_name None ∗ Outlives o_name outlives
+        ∗ ∀ o, ⌜o ∈ outlives⌝ -∗ (llft_alive_def' o.1 &&{↑NllftG}&&> Alive llft_name o.2))).
 
   Local Definition llft_alive_aux : seal (@llft_alive_def). Proof. by eexists. Qed.
   Local Definition llft_dead_aux : seal (@llft_dead_def). Proof. by eexists. Qed.
@@ -172,6 +229,36 @@ Section LlftLogic.
   Local Instance pers_dead2 γlt k : Persistent (Dead γlt k).
   Proof. apply own_core_persistent. unfold CoreId. trivial. Qed.
 
+  (* The form in which [spec_inv] is allocated (see [llft_alloc]). *)
+  Local Definition spec_inv_raw (sa : gset lt_atom) : iProp Σ :=
+      ∃ (E : list (lft * slice_name)),
+        own sp_name (● (list_to_set_disj E.*1 : gmultiset lft))
+        ∗ ([∗ list] e ∈ E, OwnBorState llft_name e.2 (Borrow ∅ (set_map LtAtomSwell e.1))
+                            ∗ slice Nbox e.2 (special_open e.1))
+        ∗ ((⌜∀ e, e ∈ E → set_map LtAtomSwell e.1 ⊆ sa⌝
+                ∗ Delayed lk_name None ∗ Delayed lk_name None)
+          ∨ (∃ k alive', Delayed lk_name (Some (k, alive')) ∗ Delayed d_name (Some (k, alive'))
+                ∗ ⌜∀ e, e ∈ E → set_map LtAtomSwell e.1 ⊆ alive' ∪ {[k]}⌝)).
+
+  Local Lemma spec_inv_raw_later sa : ▷ spec_inv_raw sa ⊢ ◇ spec_inv sa.
+  Proof.
+    iIntros "S". iDestruct "S" as (E) "(>A & B & >C)". iModIntro. iExists E. iFrame.
+    by rewrite big_sepL_later.
+  Qed.
+
+  Local Lemma spec_inv_to_raw sa : spec_inv sa ⊢ ▷ spec_inv_raw sa.
+  Proof.
+    iIntros "S". iDestruct "S" as (E) "(A & B & C)". iNext. iExists E. iFrame.
+  Qed.
+
+  Local Lemma spec_inv_mono sa sa' : sa ⊆ sa' → spec_inv sa ⊢ spec_inv sa'.
+  Proof.
+    intros Hsub. iIntros "S". iDestruct "S" as (E) "(Auth & Entries & C)".
+    iExists E. iFrame. iDestruct "C" as "[[%Hc Lk]|C]".
+    - iLeft. iFrame. iPureIntro. intros e He. specialize (Hc e He). set_solver.
+    - iRight. iFrame.
+  Qed.
+
   (* end hide *)
 
   Notation "@[ κ ]" := (llft_alive κ) (format "@[ κ ]") : bi_scope.
@@ -242,7 +329,7 @@ Section LlftLogic.
       ⊢ llft_ctx -∗ (llft_alive_def' κ &&{↑NllftG}&&> llft_alive_def' κ') -∗ llft_dead_def' κ' ={E}=∗ llft_dead_def' κ.
   Proof.
     intros Hmask. iIntros "#ctx #incl #dead". unseal.
-    iDestruct "ctx" as "[#other #ctx]".
+    iDestruct "ctx" as "(#other & #ctx & #octx)".
 
     unfold llft_incl.
 
@@ -251,8 +338,8 @@ Section LlftLogic.
       leaf_by_sep. iIntros "a". iExFalso.
       iApply (llftl_not_own_end_unswell κ' with "a"). unseal. iFrame "dead".
     }
-    leaf_hyp "ctx" rhs to ((∃ sa sd blocked : gset lt_atom, ⌜ κ ⊆ sa ⌝ ∗ LtState llft_name sa sd ∗ llft_alive_def' sa ∗ ▷ outer_inv llft_name o_name d_name sa sd blocked ∗ llft_alive_def' blocked)
-        ∨ (∃ sa sd blocked : gset lt_atom, ⌜ ¬(κ ⊆ sa) ⌝ ∗ LtState llft_name sa sd ∗ llft_alive_def' sa ∗ ▷ outer_inv llft_name o_name d_name sa sd blocked ∗ llft_alive_def' blocked) )%I
+    leaf_hyp "ctx" rhs to ((∃ sa sd blocked : gset lt_atom, ⌜ κ ⊆ sa ⌝ ∗ LtState llft_name sa sd ∗ llft_alive_def' sa ∗ ▷ outer_inv llft_name o_name d_name sa sd blocked ∗ llft_alive_def' blocked ∗ spec_inv sa)
+        ∨ (∃ sa sd blocked : gset lt_atom, ⌜ ¬(κ ⊆ sa) ⌝ ∗ LtState llft_name sa sd ∗ llft_alive_def' sa ∗ ▷ outer_inv llft_name o_name d_name sa sd blocked ∗ llft_alive_def' blocked ∗ spec_inv sa) )%I
         as "ctx'".
     {
       leaf_by_sep. iIntros "T". iSplitL.
@@ -266,7 +353,7 @@ Section LlftLogic.
       }
       leaf_hyp "ctx'" mask to (↑NllftG) as "ctx2". { solve_ndisj. }
 
-      iAssert (True &&{ ↑NllftG }&&> (∃ sa sd blocked : gset lt_atom, ⌜κ ⊈ sa⌝ ∗ LtState llft_name sa sd ∗ llft_alive_def' sa ∗ ▷ outer_inv llft_name o_name d_name sa sd blocked ∗ llft_alive_def' blocked)) as "G3".
+      iAssert (True &&{ ↑NllftG }&&> (∃ sa sd blocked : gset lt_atom, ⌜κ ⊈ sa⌝ ∗ LtState llft_name sa sd ∗ llft_alive_def' sa ∗ ▷ outer_inv llft_name o_name d_name sa sd blocked ∗ llft_alive_def' blocked ∗ spec_inv sa)) as "G3".
         { iApply (guards_cancel_or_by_chaining with "ctx2").
           leaf_goal rhs to (llft_alive_def' κ). { iFrame "G2". }
           leaf_by_sep.
@@ -446,9 +533,9 @@ Section LlftLogic.
       ↑Nllft ⊆ E →
       llft_ctx ⊢ |={E}=> ∃ k, Alive llft_name (if b then LtAtomSwell k else LtAtomNotSwell k).
   Proof.
-      intros Hmask. unseal. iIntros "[#other #ctx]".  unfold llft_ctx.
+      intros Hmask. unseal. iIntros "(#other & #ctx & #octx)".  unfold llft_ctx.
       iDestruct (guards_open (True)%I _ E (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
-      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [Ou Blo]]]".
+      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [Ou [Blo Spec]]]]".
       
       assert (∃ k , (if b then LtAtomSwell k else LtAtomNotSwell k) ∉ (sa ∪ sd)) as Fres. {
           exists (fresh (set_map atom_unwrap (sa ∪ sd) : gset nat)).
@@ -466,7 +553,8 @@ Section LlftLogic.
       iMod (new_lt llft_name (if b then LtAtomSwell k else LtAtomNotSwell k) sa sd with "[State]") as "T".
       { set_solver. } { set_solver. } { iFrame. }
       iDestruct "T" as "[State [A1 A2]]".
-      iMod ("back" with "[Alive State A1 Ou Blo]").
+      iDestruct (spec_inv_mono sa (sa ∪ {[ (if b then LtAtomSwell k else LtAtomNotSwell k) ]}) with "Spec") as "Spec". { set_solver. }
+      iMod ("back" with "[Alive State A1 Ou Blo Spec]").
       { iExists (sa ∪ {[ (if b then LtAtomSwell k else LtAtomNotSwell k) ]}). iExists sd. iExists blocked. iFrame.
         unfold llft_alive.
         replace ((sa ∪ {[ (if b then LtAtomSwell k else LtAtomNotSwell k) ]})) with (({[ (if b then LtAtomSwell k else LtAtomNotSwell k) ]} ∪ sa)).
@@ -501,11 +589,53 @@ Section LlftLogic.
          - iMod "J". iModIntro. iFrame. - replace (E2 ∖ E1 ∪ E1) with (E1 ∪ E2 ∖ E1) by set_solver. apply guard.copset_diff_union. trivial.
   Qed.
 
+  Local Lemma delayed_three_false γ a b c :
+      Delayed γ a -∗ Delayed γ b -∗ Delayed γ c -∗ False.
+  Proof.
+    unfold Delayed. iIntros "A B C".
+    iDestruct (own_valid_3 with "A B C") as %Hv.
+    destruct Hv as [Hq _]. simpl in Hq.
+    rewrite !dfrac_op_own in Hq. rewrite Qp.half_half in Hq.
+    apply dfrac_valid_own in Hq. exfalso. by apply (Qp.not_add_le_l 1 (1/2)).
+  Qed.
+
+  (* Collecting the special tokens of the registry entries [L], all of whose lifetimes
+     contain the dead atom [k]: the model guarantees that their reverse borrows are full. *)
+  Local Lemma spec_collect k sa sd blocked outlives (L : list (lft * slice_name)) (R : gmultiset lft) :
+    (∀ e, e ∈ L → set_map LtAtomSwell e.1 ⊆ sa ∪ sd ∧ k ∈ (set_map LtAtomSwell e.1 : gset lt_atom)) →
+    k ∈ sd →
+    Delayed d_name None
+    ∗ (▷ outer_inv llft_name o_name d_name sa sd blocked) ∗ Outlives o_name outlives
+    ∗ own sp_name (● (list_to_set_disj L.*1 ⊎ R))
+    ∗ ([∗ list] e ∈ L, OwnBorState llft_name e.2 (Borrow ∅ (set_map LtAtomSwell e.1))
+                            ∗ slice Nbox e.2 (special_open e.1))
+    ={↑Nbox}=∗
+    Delayed d_name None ∗ (▷ outer_inv llft_name o_name d_name sa sd blocked)
+      ∗ Outlives o_name outlives ∗ own sp_name (● R).
+  Proof.
+    intros HL Hk. iInduction L as [|[κ sn] L] "IH" forall (HL).
+    - iIntros "($ & $ & $ & Auth & _)". simpl. rewrite left_id_L. by iFrame.
+    - iIntros "(Delayed & Inv & Outlives & Auth & [[OwnBor #slice] Rest])".
+      have [Hsub Hkin] := HL (κ, sn) ltac:(set_solver).
+      iMod (outer_unborrow_start llft_name o_name d_name sa sd blocked outlives sn ∅ ∅ (set_map LtAtomSwell κ) (special_open κ)
+          with "[Delayed Inv Outlives OwnBor]") as "(Delayed & Inv & Outlives & _ & >Tok)".
+      { set_solver. } { done. } { simpl in *. set_solver. } { set_solver. } { set_solver. }
+      { intros ? Hin. set_solver. }
+      { iFrame. iFrame "slice". }
+      replace (blocked ∪ ∅) with blocked by set_solver.
+      rewrite special_open_unseal. simpl.
+      iMod (own_update_2 with "Auth Tok") as "Auth".
+      { apply auth_update_dealloc. apply (gmultiset_local_update _ _ (list_to_set_disj L.*1 ⊎ R)).
+        change (ε : gmultiset lft) with (∅ : gmultiset lft). multiset_solver. }
+      iApply ("IH" with "[%] [$Delayed $Inv $Outlives $Auth $Rest]").
+      intros e He. apply HL. set_solver.
+  Qed.
+
   Local Lemma llftl_end_maybe_swell' (k: lt_atom) b :
       (swell k → b = true) →
       llft_ctx -∗ Alive llft_name k ={↑Nllft,∅}=∗ ▷?b |={∅,↑Nllft}=> Dead llft_name k.
   Proof.
-      intros Hswell. unseal. iIntros "[#other #ctx] token".  unfold llft_ctx.
+      intros Hswell. unseal. iIntros "(#other & #ctx & #octx) token".  unfold llft_ctx.
   
       (* ending the lifetime *)
       iInv "other" as (outlives1) "[>£ [>Delayed [>O1 O2]]]" "Hclose".
@@ -519,36 +649,98 @@ Section LlftLogic.
       iDestruct (LtState_disjoint llft_name _ _ with "State") as "%Hdisj".
       
       unfold llft_alive_def'. rewrite (big_sepS_delete _ sa1 k); trivial.
-      iDestruct "Alive" as "[[token2 Alive] [Ou Blo]]".
+      iDestruct "Alive" as "[[token2 Alive] [Ou [Blo Spec]]]".
+      (* the special registry is unlocked, since we hold [Delayed None] *)
+      iDestruct "Spec" as (E1) "(SpAuth & SpEnt & SpC)".
+      iDestruct "SpC" as "[(%Hcert1 & Lk1 & Lk2)|SpC]"; last first.
+      { iDestruct "SpC" as (k' a') "(_ & D' & _)".
+        iDestruct (delayed_agree with "[Delayed D']") as %Hbad; [iFrame "Delayed D'"|done]. }
+      
       iMod (kill_lt llft_name k sa1 sd1 with "[State token token2]") as "[State #dead]". { iFrame. }
       
       iDestruct (outer_kill_lt_step1 llft_name o_name d_name sa1 sd1 blocked1 k with "[Ou Delayed]") as "X"; trivial. { set_solver. } { iFrame "Ou". iFrame "Delayed". }
       iMod (fupd_mask_mono with "X") as "[Ou Delayed]". { solve_ndisj. }
       
-      iMod ("back" with "[State Alive Ou Blo]") as "true".
-      { iExists (sa1 ∖ {[k]}). iExists (sd1 ∪ {[k]}). iExists blocked1. iFrame. }
+      (* lock the special registry: we keep one half of the lock, and park the
+         [NllftO] half of [Delayed] in the registry *)
+      iMod (delayed_update lk_name _ _ (Some (k, sa1 ∖ {[k]})) with "[Lk1 Lk2]") as "[Lk1 Lk2]". { iFrame "Lk1 Lk2". }
+      iMod ("back" with "[State Alive Ou Blo SpAuth SpEnt Lk2 Delayed]") as "true".
+      { iExists (sa1 ∖ {[k]}). iExists (sd1 ∪ {[k]}). iExists blocked1. iFrame "State Alive Ou Blo".
+        iExists E1. iFrame "SpAuth SpEnt". iRight. iExists k, (sa1 ∖ {[k]}). iFrame "Lk2 Delayed".
+        iPureIntro. intros e He x Hx. have Hc := Hcert1 e He x Hx.
+        rewrite elem_of_union elem_of_difference elem_of_singleton.
+        destruct (decide (x = k)); [by right|by left]. }
       
-      destruct (decide (filter (λ (o: (gset lt_atom * lt_atom)) , o.2 = k ∧ o.1 ⊆ sa1 ∖ {[k]}) outlives1 = ∅)).
+      destruct (decide (filter (λ (o: (gset lt_atom * lt_atom)) , o.2 = k ∧ o.1 ⊆ sa1 ∖ {[k]}) outlives1 = ∅)) as [Hnone|Hsome].
       { 
         assert (∀ other , (other, k) ∈ outlives1 → ¬(other ⊆ sa1 ∖ {[k]})) as Houtlives.
         { intros other. intros Hin Hdisj2. 
-          assert ((other,  k) ∈ filter (λ o : gset lt_atom * lt_atom, o.2 = k ∧ o.1 ⊆ sa1 ∖ {[k]}) outlives1) as X. { rewrite elem_of_filter. set_solver. } rewrite e in X. set_solver. }
+          assert ((other,  k) ∈ filter (λ o : gset lt_atom * lt_atom, o.2 = k ∧ o.1 ⊆ sa1 ∖ {[k]}) outlives1) as X. { rewrite elem_of_filter. set_solver. } rewrite Hnone in X. set_solver. }
           
        iDestruct (guards_open (True)%I _ (↑Nllft ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. }
       { done. }
-      iMod "J" as "[J back]". iDestruct "J" as (sa2 sd2 blocked2) "[State [Alive [Ou Blo]]]".
+      iMod "J" as "[J back]". iDestruct "J" as (sa2 sd2 blocked2) "[State [Alive [Ou [Blo Spec]]]]".
+      
+      (* unlock the registry *)
+      iDestruct "Spec" as (E2) "(SpAuth & SpEnt & SpC)".
+      iDestruct "SpC" as "[(_ & Lk2 & Lk3)|SpC]".
+      { iDestruct (delayed_three_false with "Lk1 Lk2 Lk3") as %[]. }
+      iDestruct "SpC" as (k2 a2) "(Lk2 & Delayed & %Hcert2)".
+      iDestruct (delayed_agree with "[Lk1 Lk2]") as %Heq. { iFrame "Lk1 Lk2". }
+      inversion Heq. subst k2 a2. clear Heq.
+      
+      (* the alive set is the one recorded by step 1 *)
+      iDestruct "Ou" as (opt_k) "[>Delayed2 OuX]".
+      iDestruct (delayed_agree with "[Delayed Delayed2]") as "%Dagree". { iFrame "Delayed". iFrame "Delayed2". }
+      subst opt_k. iDestruct "OuX" as "[OuX1 >%Hou]". destruct Hou as [Hk_sa2 [Hk_sd2 Hsa2eq]].
+      subst sa2.
+      iAssert (▷ outer_inv llft_name o_name d_name (sa1 ∖ {[k]}) sd2 blocked2)%I with "[Delayed2 OuX1]" as "Ou".
+      { iNext. iExists (Some (k, sa1 ∖ {[k]})). iFrame "Delayed2". iFrame "OuX1". iPureIntro. done. }
       
       destruct (decide (k ∈ blocked2)). {
         iDestruct (big_sepS_delete _ _ k with "Blo") as "[B Blo]"; trivial.
         iExFalso. iApply (lt_alive_dead_false llft_name k). iSplit. { iFrame. } iFrame "dead".
       }
       
-      iDestruct (outer_kill_lt_step2 llft_name o_name d_name sa2 sd2 blocked2 outlives1 k (sa1 ∖ {[k]}) b with "[Ou Delayed O1]") as "X"; trivial. { iFrame "Ou". iFrame "Delayed". iFrame "O1". iFrame "dead". }
+      (* split the registry into the entries to collect (those whose lifetime contains [k])
+         and the others *)
+      set L := filter (λ e : lft * slice_name, k ∈ (set_map LtAtomSwell e.1 : gset lt_atom)) E2.
+      set Rl := filter (λ e : lft * slice_name, ¬ k ∈ (set_map LtAtomSwell e.1 : gset lt_atom)) E2.
+      have HE2 : L ++ Rl ≡ₚ E2 by apply filter_app_complement.
+      rewrite -HE2. rewrite big_sepL_app. iDestruct "SpEnt" as "[EntL EntR]".
+      rewrite fmap_app list_to_set_disj_app.
+      iAssert (▷?b ([∗ list] e ∈ L, OwnBorState llft_name e.2 (Borrow ∅ (set_map LtAtomSwell e.1))
+                            ∗ slice Nbox e.2 (special_open e.1)))%I with "[EntL]" as "EntL".
+      { destruct b.
+        - iNext. iFrame "EntL".
+        - destruct L as [|e L'] eqn:HL; first done. exfalso.
+          assert (e ∈ L) as He by (rewrite HL; set_solver).
+          unfold L in He. rewrite elem_of_list_filter in He. destruct He as [He _].
+          rewrite elem_of_map in He. destruct He as [x [-> _]]. by specialize (Hswell I).
+      }
+      
+      iDestruct (outer_kill_lt_step2 llft_name o_name d_name (sa1 ∖ {[k]}) sd2 blocked2 outlives1 k (sa1 ∖ {[k]}) b with "[Ou Delayed O1]") as "X"; trivial. { iFrame "Ou". iFrame "Delayed". iFrame "O1". iFrame "dead". }
       iDestruct (step_opt_mono (↑Nbox ∪ ↑NllftUsr ∪ ↑NllftUsr2) (↑Nllft ∖ ↑NllftO ∖ ↑Nmain) with "X") as "X". { apply union_subseteq. split; solve_ndisj. }
       iMod "X". iModIntro. iNext. iMod "X". iDestruct "X" as "[Inv [Outlives Delayed]]".
+      
+      (* collect the returned tokens *)
+      iDestruct (spec_collect k (sa1 ∖ {[k]}) sd2 blocked2 outlives1 L with "[$Delayed $Inv $Outlives $SpAuth $EntL]") as "X".
+      { intros en Hen. unfold L in Hen. rewrite elem_of_list_filter in Hen. destruct Hen as [Hke Hen].
+        have Hc := Hcert2 en Hen. split; last done.
+        intros x Hx. have Hcx := Hc x Hx. rewrite elem_of_union in Hcx. rewrite elem_of_union.
+        destruct Hcx as [Hcx|Hcx]; [by left|right]. rewrite elem_of_singleton in Hcx. by subst x. }
+      { done. }
+      iMod (fupd_mask_mono with "X") as "(Delayed & Inv & Outlives & SpAuth)". { solve_ndisj. }
+      iMod (delayed_update lk_name _ _ None with "[Lk1 Lk2]") as "[Lk1 Lk2]". { iFrame "Lk1 Lk2". }
        
-      iMod ("back" with "[Alive State Blo Inv]") as "X". { iExists sa2. iExists sd2. iExists blocked2.
-        iFrame "State". iFrame "Alive". iFrame "Inv". iFrame "Blo". }
+      iMod ("back" with "[Alive State Blo Inv SpAuth EntR Lk1 Lk2]") as "X". { iExists (sa1 ∖ {[k]}). iExists sd2. iExists blocked2.
+        iFrame "State". iFrame "Alive". iFrame "Inv". iFrame "Blo".
+        iExists Rl. iFrame "SpAuth". iSplitL "EntR".
+        { iApply (big_sepL_mono with "EntR"). iIntros (? en ?) "X". by iNext. }
+        iLeft. iFrame "Lk1 Lk2". iPureIntro. intros en Hen.
+        unfold Rl in Hen. rewrite elem_of_list_filter in Hen. destruct Hen as [Hke Hen].
+        intros x Hx. have Hcx := Hcert2 en Hen x Hx. rewrite elem_of_union in Hcx.
+        destruct Hcx as [Hcx|Hcx]; first done. rewrite elem_of_singleton in Hcx. subst x. done. }
       iMod ("Hclose" with "[Outlives Delayed O2 £]") as "Y".
       { iNext. iExists outlives1. iFrame. }
       
@@ -574,7 +766,13 @@ Section LlftLogic.
      iMod (fupd_mask_mono with "OdeadUpd") as "#Odead". { solve_ndisj. }
      
      iDestruct (guards_open (True)%I _ (↑Nllft ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. }  { done. }
-     iMod "J" as "[J back]". iDestruct "J" as (sa2 sd2 blocked2) "[State [Alive [Ou Blo]]]".
+     iMod "J" as "[J back]". iDestruct "J" as (sa2 sd2 blocked2) "[State [Alive [Ou [Blo Spec]]]]".
+     iDestruct "Spec" as (E2) "(_ & _ & SpC)".
+     iDestruct "SpC" as "[(_ & Lk2 & Lk3)|SpC]".
+     { iDestruct (delayed_three_false with "Lk1 Lk2 Lk3") as %[]. }
+     iDestruct "SpC" as (k2 a2) "(Lk2 & Delayed & _)".
+     iDestruct (delayed_agree with "[Lk1 Lk2]") as %Heq. { iFrame "Lk1 Lk2". }
+     inversion Heq. subst k2 a2. clear Heq.
      iDestruct "Ou" as (opt_k) "[>Delayed2 X]".
      iDestruct (delayed_agree with "[Delayed Delayed2]") as "%Dagree". { iFrame "Delayed". iFrame "Delayed2". }
      subst opt_k. iDestruct "X" as "[X1 [X2 [X3 >X4]]]". iDestruct "X4" as "%Hsa2eq".
@@ -779,18 +977,20 @@ Section LlftLogic.
         -∗ llft_alive_def' sa
         -∗ ▷ outer_inv llft_name o_name d_name sa sd blocked
         -∗ Delayed d_name None
+        -∗ spec_inv sa
         -∗ |={E}=> ∃ sa' ,
         ⌜ new ⊆ sa' ∪ sd ⌝
         ∗ LtState llft_name sa' sd
         ∗ llft_alive_def' sa'
         ∗ ▷ outer_inv llft_name o_name d_name sa' sd blocked
-        ∗ Delayed d_name None.
+        ∗ Delayed d_name None
+        ∗ spec_inv sa'.
   Proof.
     intros Hmask. induction new as [|x T ? IH] using set_ind_L. 
-    - iIntros "State Alive OuInv Delayed". iModIntro. iExists sa. iFrame "OuInv".
+    - iIntros "State Alive OuInv Delayed Spec". iModIntro. iExists sa. iFrame "OuInv".
       iFrame. iPureIntro. set_solver.
-    - iIntros "State Alive OuInv Delayed". iMod (IH with "State Alive OuInv Delayed") as "X".
-      iDestruct "X" as (sa') "[%HTin [State [Alive [OuInv Delayed]]]]".
+    - iIntros "State Alive OuInv Delayed Spec". iMod (IH with "State Alive OuInv Delayed Spec") as "X".
+      iDestruct "X" as (sa') "[%HTin [State [Alive [OuInv [Delayed Spec]]]]]".
       destruct (decide (x ∈ sa' ∪ sd)) as [Hin|Hout].
       + iModIntro. iExists sa'. iFrame "OuInv". iFrame. iPureIntro. set_solver.
       + iDestruct (outer_new_lt llft_name o_name d_name sa' sd blocked x with "[OuInv Delayed]") as "X".
@@ -798,7 +998,8 @@ Section LlftLogic.
         iMod (fupd_mask_mono with "X") as "[OuInv Delayed]"; trivial.
         iMod (new_lt llft_name x sa' sd with "State") as "[State [Al1 Al2]]".
         { set_solver. } { set_solver. }
-        iModIntro. iExists (sa' ∪ {[x]}). iFrame "OuInv". iFrame.
+        iDestruct (spec_inv_mono sa' (sa' ∪ {[x]}) with "Spec") as "Spec". { set_solver. }
+        iModIntro. iExists (sa' ∪ {[x]}). iFrame "OuInv Spec". iFrame.
         iSplitR.
         { iPureIntro. set_solver. }
         unfold llft_alive_def'. rewrite big_sepS_union; last by set_solver.
@@ -905,13 +1106,13 @@ Section LlftLogic.
           ∗ OwnBorState llft_name (idx.1) (Unborrow κ (set_map LtAtomSwell idx.2) {[default_dead]}).
   Proof.
       unseal_bor. unseal. unfold idx_bor_def'. intros Hmask.
-      destruct idx as [sn κ']. iIntros "[[#other #ctx] [#Incl #Slice]] [OwnBor k]". unfold idx_bor_tok.
+      destruct idx as [sn κ']. iIntros "[(#other & #ctx & #octx) [#Incl #Slice]] [OwnBor k]". unfold idx_bor_tok.
       
       iInv "other" as (outlives) "[>£ [>Delayed O]]" "Hclose".
       
       iDestruct (guards_open (True)%I _ (E ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
-      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
-      iMod (make_everything_alive (κ ∪ (set_map LtAtomSwell κ') ∪ {[default_dead]}) with "State Alive OuInv Delayed") as (sa') "[%Hsa [State [Alive [OuInv Delayed]]]]". { solve_ndisj. }
+      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv [Blo Spec]]]]".
+      iMod (make_everything_alive (κ ∪ (set_map LtAtomSwell κ') ∪ {[default_dead]}) with "State Alive OuInv Delayed Spec") as (sa') "[%Hsa [State [Alive [OuInv [Delayed Spec]]]]]". { solve_ndisj. }
       
       
       iDestruct (outer_get_dead with "Delayed OuInv") as "#>%Hdd".
@@ -931,7 +1132,7 @@ Section LlftLogic.
       iDestruct (outer_unborrow_start llft_name o_name d_name sa' sd blocked outlives' sn κ (set_map LtAtomSwell κ') {[default_dead]} P' with "[Delayed OuInv OwnBor Ostate]") as "X"; trivial. { set_solver. } { set_solver. } { iFrame. iFrame "Slice". }
       iMod (fupd_mask_mono with "X") as "[Delayed [OuInv [Ostate [OwnBor P]]]]". { solve_ndisj. }
       
-      iMod ("back" with "[State Alive OuInv Blo k]"). {
+      iMod ("back" with "[State Alive OuInv Blo Spec k]"). {
         iExists sa'. iExists sd. iExists (blocked ∪ κ). iFrame "State".
         iFrame "Alive". iFrame "OuInv". unfold llft_alive_def'. rewrite big_sepS_union.
         { iFrame. } set_solver.
@@ -946,7 +1147,7 @@ Section LlftLogic.
       destruct Hex_x as [x Hex].
       iDestruct (LtState_entails_Dead llft_name x sa' sd with "State") as "#Deadx". { set_solver. }
       
-      iMod ("back" with "[State Alive OuInv Blo]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
+      iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
       
       iMod (llftl_incl_dead_implies_dead_unswell _ κ (set_map LtAtomSwell κ') with "[] [Incl] []") as "HdeadkUpd".
           { solve_ndisj. }
@@ -973,12 +1174,12 @@ Section LlftLogic.
         ={↑Nllft}=∗ ∃ sn, idx_bor_def' κ (sn, idx.2) Q ∗ idx_bor_tok (sn, idx.2) ∗ llft_alive_def' κ.
   Proof.
       unseal_bor. unseal.
-      iIntros "[[#other #ctx] #idxbor] [OwnBor [Q vs]]". destruct idx as [sn κ'].
+      iIntros "[(#other & #ctx & #octx) #idxbor] [OwnBor [Q vs]]". destruct idx as [sn κ'].
       unfold idx_bor. iDestruct "idxbor" as "[#incl #slice]".
       
       iInv "other" as (outlives) "[£ [>Delayed O]]" "Hclose".
       iDestruct (guards_open (True)%I _ (↑Nllft ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
-      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
+      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv [Blo Spec]]]]".
       
       iDestruct "slice" as (P') "[PEquiv slice]".
       iDestruct (outer_unborrow_end llft_name o_name d_name sa sd blocked sn κ (set_map LtAtomSwell κ') {[default_dead]} P' Q with "[Delayed OuInv OwnBor slice vs Q]") as "X". { apply swell_set_set_map. } { apply swell_set_default_dead. } { iFrame. iFrame "#". iNext. 
@@ -992,7 +1193,7 @@ Section LlftLogic.
         } set_solver.
       }
       
-      iMod ("back" with "[State Alive OuInv Blo]"). { iExists sa. iExists sd. iExists (blocked ∖ κ). iFrame. }
+      iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa. iExists sd. iExists (blocked ∖ κ). iFrame. }
       iMod ("Hclose" with "[Delayed O £]"). { iNext. iExists outlives. iFrame. }
       iModIntro. iFrame "Ret". iExists sn2. iFrame "OwnBor". iFrame "incl". iExists Q.
       iFrame "#". iModIntro. iModIntro. iSplit; iIntros; done.
@@ -1004,12 +1205,12 @@ Section LlftLogic.
         ={↑Nllft}=∗ idx_bor_tok idx ∗ llft_alive_def' κ.
   Proof.
       unseal_bor. unseal.
-      iIntros "[[#other #ctx] #idxbor] [OwnBor Q]". destruct idx as [sn κ'].
+      iIntros "[(#other & #ctx & #octx) #idxbor] [OwnBor Q]". destruct idx as [sn κ'].
       unfold idx_bor. iDestruct "idxbor" as "[#incl #slice]".
       
       iInv "other" as (outlives) "[£ [>Delayed O]]" "Hclose".
       iDestruct (guards_open (True)%I _ (↑Nllft ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
-      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
+      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv [Blo Spec]]]]".
       
       iDestruct "slice" as (P') "[PEquiv slice]".
       iDestruct (outer_unborrow_end_at_same_idx llft_name o_name d_name sa sd blocked sn κ (set_map LtAtomSwell κ') {[default_dead]} P' with "[Delayed OuInv OwnBor slice Q]") as "X".
@@ -1024,7 +1225,7 @@ Section LlftLogic.
         } set_solver.
       }
       
-      iMod ("back" with "[State Alive OuInv Blo]"). { iExists sa. iExists sd. iExists (blocked ∖ κ). iFrame. }
+      iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa. iExists sd. iExists (blocked ∖ κ). iFrame. }
       iMod ("Hclose" with "[Delayed O £]"). { iNext. iExists outlives. iFrame. }
       iModIntro. iFrame "Ret". iFrame "OwnBor".
   Qed.
@@ -1083,14 +1284,14 @@ Section LlftLogic.
           ∨ ([†κ] ∗ (|={∅, ↑Nllft}=> True)).
   Proof.
       unseal_bor. unseal.
-      iIntros "[#other #ctx] fb". unfold full_bor.
+      iIntros "(#other & #ctx & #octx) fb". unfold full_bor.
       iDestruct "fb" as (sn κ') "[#Incl [#slice OwnBor]]".
       
       iInv "other" as (outlives) "[£ [>Delayed O]]" "Hclose".
       
       iDestruct (guards_open (True)%I _ (↑Nllft ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
-      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
-      iMod (make_everything_alive (set_map LtAtomSwell κ ∪ set_map LtAtomSwell κ') with "State Alive OuInv Delayed") as (sa') "[%Hsa [State [Alive [OuInv Delayed]]]]". { solve_ndisj. }
+      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv [Blo Spec]]]]".
+      iMod (make_everything_alive (set_map LtAtomSwell κ ∪ set_map LtAtomSwell κ') with "State Alive OuInv Delayed Spec") as (sa') "[%Hsa [State [Alive [OuInv [Delayed Spec]]]]]". { solve_ndisj. }
       
       iDestruct (outer_get_dead with "Delayed OuInv") as "#>%Hdd".
       
@@ -1120,7 +1321,7 @@ Section LlftLogic.
         iMod "X" as (sn2) "[Delayed [OuInv [Ostate [OwnBor #slice2]]]]".
         iMod "Upd".
 
-        iMod ("back" with "[State Alive OuInv Blo]"). {
+        iMod ("back" with "[State Alive OuInv Blo Spec]"). {
           iExists sa'. iExists sd. iExists blocked. iFrame "State".
           iFrame "Alive". iFrame "OuInv". unfold llft_alive_def. { iFrame. } 
         }
@@ -1133,7 +1334,7 @@ Section LlftLogic.
         destruct Hex_x as [x Hex].
         iDestruct (LtState_entails_Dead llft_name x sa' sd with "State") as "#Deadx". { set_solver. }
 
-        iMod ("back" with "[State Alive OuInv Blo]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
+        iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
         iMod ("Hclose" with "[Delayed O £]"). { iNext. iExists outlives. iFrame. }
         
         iMod (llftl_incl_dead_implies_dead _ κ κ' with "[] Incl [Deadx]") as "HdeadkUpd". { solve_ndisj. } { iFrame "#". unseal. iFrame "#". } { unseal. rewrite dead_def_set_map. iFrame "#". iPureIntro. set_solver. }
@@ -1148,7 +1349,7 @@ Section LlftLogic.
         destruct Hex_x as [x Hex].
         iDestruct (LtState_entails_Dead llft_name x sa' sd with "State") as "#Deadx". { set_solver. }
 
-        iMod ("back" with "[State Alive OuInv Blo]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
+        iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
         iMod ("Hclose" with "[Delayed O £]"). { iNext. iExists outlives. iFrame. }
         
         iMod (fupd_mask_subseteq ∅) as "Upd". { solve_ndisj. }
@@ -1195,18 +1396,18 @@ Section LlftLogic.
           ∗ OwnBorState llft_name sn2 (Borrow ∅ (set_map LtAtomSwell κ : gset lt_atom)).
   Proof.
       unseal. intros Hmask.
-      iIntros "[#other #ctx] P".
+      iIntros "(#other & #ctx & #octx) P".
       
       iInv "other" as (outlives) "[£ [>Delayed O]]" "Hclose".
       iDestruct (guards_open (True)%I _ (E ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
-      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
-      iMod (make_everything_alive (set_map LtAtomSwell κ) with "State Alive OuInv Delayed") as (sa') "[%Hsa' [State [Alive [OuInv Delayed]]]]". { solve_ndisj. }
+      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv [Blo Spec]]]]".
+      iMod (make_everything_alive (set_map LtAtomSwell κ) with "State Alive OuInv Delayed Spec") as (sa') "[%Hsa' [State [Alive [OuInv [Delayed Spec]]]]]". { solve_ndisj. }
       
       iDestruct (outer_borrow_create llft_name o_name d_name sa' sd blocked (set_map LtAtomSwell κ) P with "[Delayed OuInv State P]") as "X"; trivial. { apply swell_set_set_map. } { iFrame. }
       iMod (fupd_mask_mono with "X") as "[Delayed X]". { solve_ndisj. }
       iDestruct "X" as (sn1 sn2) "[OuInv [State [OwnBor1 [OwnBor2 [#slice1 #slice2]]]]]".
       
-      iMod ("back" with "[State Alive OuInv Blo]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
+      iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
       iMod ("Hclose" with "[Delayed O £]"). { iNext. iExists outlives. iFrame. }
       iModIntro. iExists sn1. iExists sn2. iFrame. iFrame "#".
   Qed.
@@ -1216,12 +1417,12 @@ Section LlftLogic.
         |={↑Nllft}=> ▷ P.
   Proof.
       unseal.
-      iIntros "[#other #ctx] P OwnBor #Dead".
+      iIntros "(#other & #ctx & #octx) P OwnBor #Dead".
       
       iInv "other" as (outlives) "[£ [>Delayed O]]" "Hclose".
       iDestruct (guards_open (True)%I _ (↑Nllft ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
-      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
-      iMod (make_everything_alive (set_map LtAtomSwell κ) with "State Alive OuInv Delayed") as (sa') "[%Hsa' [State [Alive [OuInv Delayed]]]]". { solve_ndisj. }
+      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv [Blo Spec]]]]".
+      iMod (make_everything_alive (set_map LtAtomSwell κ) with "State Alive OuInv Delayed Spec") as (sa') "[%Hsa' [State [Alive [OuInv [Delayed Spec]]]]]". { solve_ndisj. }
       
       iDestruct "Dead" as (k) "[%Hkdead Deadkin]".
       iAssert (⌜ LtAtomSwell k ∈ sd ⌝)%I as "%Hksd". { iApply (lt_state_dead llft_name (LtAtomSwell k) sa' sd). iSplitL; iFrame. iFrame "#". }
@@ -1231,7 +1432,7 @@ Section LlftLogic.
       iDestruct (outer_unborrow_start llft_name o_name d_name sa' sd blocked outlives sn ∅ ∅ (set_map LtAtomSwell κ) P with "[Delayed OuInv P Ostate OwnBor]") as "X"; trivial. { set_solver. } { set_solver. } { set_solver. } { set_solver. } { intros k0. set_solver. } { iFrame "OuInv". iFrame. }
       iMod (fupd_mask_mono with "X") as "[Delayed [OuInv [Ostate [OwnBor P]]]]". { solve_ndisj. }
       
-      iMod ("back" with "[State Alive OuInv Blo]"). { iExists sa'. iExists sd. iExists blocked. replace (blocked ∪ ∅) with blocked by set_solver. iFrame "OuInv". iFrame. }
+      iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa'. iExists sd. iExists blocked. replace (blocked ∪ ∅) with blocked by set_solver. iFrame "OuInv". iFrame. }
       iMod ("Hclose" with "[Delayed Ostate £]"). { iNext. iExists outlives. iFrame. iFrame "Oguards". }
       iModIntro. iFrame "P".
   Qed.
@@ -1241,19 +1442,19 @@ Section LlftLogic.
       llft_ctx -∗ OwnBorState llft_name sn (Borrow (set_map LtAtomSwell κ) {[default_dead]}) -∗ slice Nbox sn P ={E}=∗
           ∃ sn' , OwnBorState llft_name sn' (Borrow (set_map LtAtomSwell κ ∪ set_map LtAtomSwell κ') {[default_dead]}) ∗ slice Nbox sn' P.
   Proof.
-    unseal. intros Hmask. iIntros "[#other #ctx] OwnBor #slice". unfold full_bor.
+    unseal. intros Hmask. iIntros "(#other & #ctx & #octx) OwnBor #slice". unfold full_bor.
     
     iInv "other" as (outlives) "[£ [>Delayed O]]" "Hclose".
     iDestruct (guards_open (True)%I _ (E ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
-    iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
-    iMod (make_everything_alive (set_map LtAtomSwell κ') with "State Alive OuInv Delayed") as (sa') "[%Hsa [State [Alive [OuInv Delayed]]]]". { solve_ndisj. }
+    iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv [Blo Spec]]]]".
+    iMod (make_everything_alive (set_map LtAtomSwell κ') with "State Alive OuInv Delayed Spec") as (sa') "[%Hsa [State [Alive [OuInv [Delayed Spec]]]]]". { solve_ndisj. }
     
     iDestruct (outer_reborrow llft_name o_name d_name sa' sd blocked P sn (set_map LtAtomSwell κ) (set_map LtAtomSwell κ') with "[Delayed OuInv OwnBor slice]") as "X".
     { apply swell_set_set_map. }
     { trivial. } { iFrame. iFrame "slice". }
     iMod (fupd_mask_mono with "X") as (sn1 sn2) "[Delayed [OuInv [OwnBor1 [OwnBor2 [#slice1 #slice2]]]]]". { solve_ndisj. }
 
-    iMod ("back" with "[State Alive OuInv Blo]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
+    iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
     iMod ("Hclose" with "[Delayed O £]"). { iNext. iExists outlives. iFrame. }
     iModIntro.
     iExists sn1. iFrame "OwnBor1". iFrame "slice1".
@@ -1274,12 +1475,12 @@ Section LlftLogic.
       ↑Nllft ⊆ E →
       llft_ctx -∗ &{κ} (P ∗ Q) ={E}=∗ &{κ} P ∗ &{κ} Q.
   Proof.
-      unseal_bor. unseal. intros Hmask. iIntros "[#other #ctx] fbPQ". unfold full_bor.
+      unseal_bor. unseal. intros Hmask. iIntros "(#other & #ctx & #octx) fbPQ". unfold full_bor.
       iDestruct "fbPQ" as (sn κ') "[#incl [#slice OwnBor]]".
       
       iInv "other" as (outlives) "[£ [>Delayed O]]" "Hclose".
       iDestruct (guards_open (True)%I _ (E ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
-      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
+      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv [Blo Spec]]]]".
       
       iDestruct "slice" as (PQ) "[PQEquiv slice]".
       iDestruct (outer_iff llft_name o_name d_name sa sd blocked sn (set_map LtAtomSwell κ') {[default_dead]} PQ (P ∗ Q)
@@ -1290,7 +1491,7 @@ Section LlftLogic.
         with "[Delayed OuInv OwnBor slice]") as "X". { iFrame. iFrame "slice0". }
       iMod (fupd_mask_mono with "X") as (sn1 sn2) "[Delayed [OuInv [OwnBor1 [OwnBor2 [#slice1 #slice2]]]]]". { solve_ndisj. }
       
-      iMod ("back" with "[State Alive OuInv Blo]"). { iExists sa. iExists sd. iExists blocked. iFrame. }
+      iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa. iExists sd. iExists blocked. iFrame. }
       iMod ("Hclose" with "[Delayed O £]"). { iNext. iExists outlives. iFrame. }
       iModIntro.
       
@@ -1306,7 +1507,7 @@ Section LlftLogic.
       ↑Nllft ⊆ E →
       llft_ctx -∗ &{κ} P -∗ &{κ} Q ={E}=∗ &{κ} (P ∗ Q).
   Proof.
-      unseal_bor. unseal. intros Hmask. iIntros "[#other #ctx] fbP fbQ". unfold full_bor.
+      unseal_bor. unseal. intros Hmask. iIntros "(#other & #ctx & #octx) fbP fbQ". unfold full_bor.
       iDestruct "fbP" as (sn1 κ1) "[#incl1 [#slice1 OwnBor1]]".
       iDestruct "fbQ" as (sn2 κ2) "[#incl2 [#slice2 OwnBor2]]".
       
@@ -1319,8 +1520,8 @@ Section LlftLogic.
       
       iInv "other" as (outlives) "[£ [>Delayed O]]" "Hclose".
       iDestruct (guards_open (True)%I _ (E ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
-      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
-      iMod (make_everything_alive ({[default_dead]}) with "State Alive OuInv Delayed") as (sa') "[%Hsa [State [Alive [OuInv Delayed]]]]". { solve_ndisj. }
+      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv [Blo Spec]]]]".
+      iMod (make_everything_alive ({[default_dead]}) with "State Alive OuInv Delayed Spec") as (sa') "[%Hsa [State [Alive [OuInv [Delayed Spec]]]]]". { solve_ndisj. }
       
       iDestruct (outer_join llft_name o_name d_name sa' sd blocked sn1' sn2' (set_map LtAtomSwell κ1 ∪ set_map LtAtomSwell κ2) {[default_dead]} P' Q'
         with "[Delayed OuInv OwnBor1 OwnBor2]") as "X". { apply swell_set_default_dead. } { set_solver. } { iFrame. iFrame "#".
@@ -1329,7 +1530,7 @@ Section LlftLogic.
         }
       iMod (fupd_mask_mono with "X") as (sn) "[Delayed [OuInv [OwnBor #slice]]]". { solve_ndisj. }
       
-      iMod ("back" with "[State Alive OuInv Blo]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
+      iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
       iMod ("Hclose" with "[Delayed O £]"). { iNext. iExists outlives. iFrame. }
       iModIntro.
       iExists sn. iExists (κ1 ∪ κ2). rewrite set_map_inter. iFrame. iFrame "#".
@@ -1345,12 +1546,12 @@ Section LlftLogic.
       llft_ctx -∗ &{κ, idx} P -∗ &{κ'} (idx_bor_tok idx) -∗ |={E}=> &{κ ⊓ κ'} P.
   Proof.
       unseal_bor. unseal. intros Hmask. unfold idx_bor. destruct idx as [sn κ2]. unfold full_bor.
-      iIntros "[#other #ctx] [#incl #slice] fb".
+      iIntros "(#other & #ctx & #octx) [#incl #slice] fb".
       iDestruct "fb" as (sn' κ2') "[#incl2 [#slice2 OwnBor2]]".
       
       iInv "other" as (outlives) "[£ [>Delayed O]]" "Hclose".
       iDestruct (guards_open (True)%I _ (E ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
-      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
+      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv [Blo Spec]]]]".
       
       iDestruct "slice" as (P') "[PEquiv slice]".
       iDestruct "slice2" as (Pibt) "[PibtEquiv slice2]".
@@ -1362,7 +1563,7 @@ Section LlftLogic.
       iDestruct (outer_unnest llft_name o_name d_name sa sd blocked sn sn0 (set_map LtAtomSwell κ2) (set_map LtAtomSwell κ2') P' with "[Delayed OuInv OwnBor2]") as "X"; trivial. { iFrame. iFrame "#". }
       iMod (fupd_mask_mono with "X") as (sn2) "[Delayed [OuInv [OwnBor #slice3]]]". { solve_ndisj. }
       
-      iMod ("back" with "[State Alive OuInv Blo]"). { iExists sa. iExists sd. iExists blocked. replace (blocked ∪ ∅) with blocked by set_solver. iFrame "OuInv". iFrame. }
+      iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa. iExists sd. iExists blocked. replace (blocked ∪ ∅) with blocked by set_solver. iFrame "OuInv". iFrame. }
       iMod ("Hclose" with "[Delayed O £]"). { iNext. iExists outlives. iFrame. }
       iModIntro. iExists sn2. iExists (κ2 ∪ κ2'). 
       iFrame "#". rewrite set_map_inter. iFrame. iApply llftl_incl_glb.
@@ -1375,16 +1576,16 @@ Section LlftLogic.
     llft_ctx -∗ [†κ] ={E}=∗ &{κ} P.
   Proof. 
       unseal_bor. unseal. unfold full_bor.
-      intros Hmask. iIntros "[#other #ctx] #dead".
+      intros Hmask. iIntros "(#other & #ctx & #octx) #dead".
       
       iInv "other" as (outlives) "[£ [>Delayed O]]" "Hclose".
       iDestruct (guards_open (True)%I _ (E ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
-      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv Blo]]]".
+      iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv [Blo Spec]]]]".
       iDestruct "dead" as (k) "[%HkK deadk]".
       iAssert (⌜LtAtomSwell k ∈ sd⌝)%I as "%Hksd". { iApply lt_state_dead. iSplit. { iFrame "State". } iFrame "deadk". }
       iDestruct (outer_fake llft_name o_name d_name sa sd blocked (set_map LtAtomSwell κ) {[default_dead]} P with "[Delayed OuInv]") as "X". { set_solver. } { iFrame. }
       iMod (fupd_mask_mono with "X") as (sn) "[Delayed [OuInv [OwnBor #slice]]]". { solve_ndisj. }
-      iMod ("back" with "[State Alive OuInv Blo]"). { iExists sa. iExists sd. iExists blocked. iFrame "OuInv". iFrame. }
+      iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa. iExists sd. iExists blocked. iFrame "OuInv". iFrame. }
       iMod ("Hclose" with "[Delayed O £]"). { iNext. iExists outlives. iFrame. }
       iModIntro. iExists sn. iExists κ. iFrame. iFrame "#". iSplit. { iApply guards_refl. }
       iModIntro. iModIntro. iSplit; iIntros; done.
@@ -1505,7 +1706,7 @@ Section LlftLogic.
       G &&{↑NllftG; n}&&> (@[κ] ∗ ▷ P).
   Proof.
     unseal_bor. unseal. destruct i as [sn κ']. 
-    iIntros "[_ #ctxG] [#Incl #Slice] #Galive #Gtok".
+    iIntros "(_ & #ctxG & _) [#Incl #Slice] #Galive #Gtok".
     iDestruct "Slice" as (P') "[PEquiv Slice]".
     unfold slice. iDestruct "Slice" as "[#BoxOwnProp #SliceGuard]".
     iDestruct (guards_true_sep_mask_disjoint with "ctxG SliceGuard") as "G". { solve_ndisj. }
@@ -1852,6 +2053,221 @@ Section LlftLogic.
     { iSplitR; [|by iNext]. iIntros "!> P !> !>". by iModIntro. }
     iMod (fupd_mask_mono with "Close") as "[$ $]"; done.
   Qed.
+  (** Special openings *)
+
+  (** A special opening of a full borrow is like [llftl_bor_acc], but it also hands out a
+      token [special_open κ], which the closer's back-map must return. While the token is
+      held, [κ] is alive: [special_open κ] guards [@[κ]] ([llftl_special_open_guard]).
+
+      Model: when the token is minted, it is put in a fresh borrow [&{κ} (special_open κ)],
+      whose reverse borrow (at [κ]) is recorded in the registry [spec_inv]. This borrow is
+      joined with the user's borrow and the result is opened normally. When [κ] ends, the
+      model's own invariant (the box of the reverse borrow) guarantees that the back-map
+      chain has returned a token into the reverse borrow; the end procedure collects it,
+      before re-establishing the certificate of the registry. Since this does not depend on
+      the shape of the chain, the closed borrow supports every operation of the logic. *)
+
+  (* begin hide *)
+  Local Notation llft_other_body := (∃ outlives, £1 ∗ Delayed d_name None ∗ Outlives o_name outlives
+        ∗ ∀ o, ⌜o ∈ outlives⌝ -∗ (llft_alive_def' o.1 &&{↑NllftG}&&> Alive llft_name o.2))%I.
+
+  Local Lemma auth_gmultiset_and_incl (T f : gmultiset lft) (w : authR (gmultisetUR lft)) :
+      ✓ w → ● T ≼ w → ◯ f ≼ w → f ⊆ T.
+  Proof.
+    intros Hv [c Hc] Hf. rewrite Hc in Hv Hf. clear Hc w.
+    destruct c as [[[dq ag]|] cb].
+    - exfalso. destruct Hv as [Hdq _]. simpl in Hdq.
+      apply dfrac_valid_own_l in Hdq. by apply (irreflexivity (<)%Qp 1%Qp).
+    - assert (View None cb ≡ ◯ cb) as Heq by done. rewrite Heq in Hv Hf.
+      rewrite auth_frag_included in Hf. apply auth_both_valid_discrete in Hv as [Hv _].
+      apply gmultiset_included. by trans cb.
+  Qed.
+
+  Local Lemma special_open_and_spec κ sa :
+      special_open κ ∧ (▷ llft_other_body ∗ spec_inv sa) ⊢ ▷ ⌜set_map LtAtomSwell κ ⊆ sa⌝.
+  Proof.
+    rewrite /spec_inv. rewrite bi.sep_exist_l bi.and_exist_l. iIntros "A". iDestruct "A" as (E) "A".
+    iAssert (⌜κ ∈ list_to_set_disj E.*1⌝ ∧ ▷ ⌜∀ e, e ∈ E → set_map LtAtomSwell e.1 ⊆ sa⌝)%I
+      with "[A]" as "[%Hin Hc]".
+    { iSplit.
+      - iAssert (own sp_name (◯ ({[+ κ +]} : gmultiset lft)) ∧ own sp_name (● (list_to_set_disj E.*1 : gmultiset lft)))%I
+          with "[A]" as "A".
+        { rewrite special_open_unseal. iSplit.
+          - iDestruct "A" as "[$ _]".
+          - iDestruct "A" as "[_ [_ [$ _]]]". }
+        iDestruct (and_own_discrete_ucmra with "A") as (w) "[Hw [%H1 %H2]]".
+        iDestruct (own_valid with "Hw") as %Hv. iPureIntro.
+        have Hsub := auth_gmultiset_and_incl _ _ _ Hv H2 H1.
+        by apply gmultiset_singleton_subseteq_l.
+      - iDestruct "A" as "[_ [X [_ [_ C]]]]". iNext. iDestruct "X" as (outl) "(_ & D & _)".
+        iDestruct "C" as "[[% _]|C]"; first done.
+        iDestruct "C" as (k a) "(_ & D' & _)".
+        iDestruct (delayed_agree with "[D D']") as %Hbad; first by iFrame "D D'". discriminate. }
+    iNext. iDestruct "Hc" as %Hc. iPureIntro.
+    apply elem_of_list_to_set_disj in Hin. apply elem_of_list_fmap in Hin as [e [-> He]]. by apply Hc.
+  Qed.
+  (* end hide *)
+
+  (** The guard law of special tokens. The mask contains [NllftO]: the end procedure keeps
+      [NllftO] open while the registry is out of sync with the alive/dead registry, so in
+      particular back-maps (which run during the end) cannot use this guard. *)
+  Lemma llftl_special_open_guard κ :
+    llft_ctx -∗ special_open κ &&{↑NllftG ∪ ↑NllftO}&&> @[κ].
+  Proof.
+    unseal. iIntros "(_ & #ctxM & #octx)".
+    iDestruct (guards_true_sep_mask_disjoint with "octx ctxM") as "G". { solve_ndisj. }
+    leaf_hyp "G" mask to (↑NllftG ∪ ↑NllftO) as "G1". { solve_ndisj. }
+    leaf_hyp "G1" lhs to (special_open κ) as "G2". { iApply guards_true. }
+    iClear "G G1".
+    leaf_hyp "G2" rhs to (∃ sa sd blocked : gset lt_atom, ▷ llft_other_body ∗
+        (LtState llft_name sa sd ∗ llft_alive_def' sa
+          ∗ (▷ outer_inv llft_name o_name d_name sa sd blocked)
+          ∗ llft_alive_def' blocked ∗ spec_inv sa))%I as "G3".
+    { leaf_by_sep. iIntros "[X M]". iDestruct "M" as (sa sd blocked) "M". iSplitL.
+      - iExists sa, sd, blocked. iFrame.
+      - iIntros "A". iDestruct "A" as (sa' sd' blocked') "[X M]". iFrame. }
+    iClear "G2".
+    iDestruct (guards_strengthen_exists3 (gset lt_atom) (gset lt_atom) (gset lt_atom)
+        (special_open κ) (special_open κ) (λ sa sd blocked, ▷ ⌜set_map LtAtomSwell κ ⊆ sa⌝)%I _ _ 0
+        with "[] G3") as "G4".
+    { intros sa sd blocked. iIntros "A". iApply special_open_and_spec. iSplit.
+      - iDestruct "A" as "[$ _]".
+      - iDestruct "A" as "[_ [X (_ & _ & _ & _ & S)]]". iFrame. }
+    { iApply guards_refl. }
+    iClear "G3".
+    iApply (guards_transitive_left with "G4 []").
+    leaf_by_sep_except0.
+    iIntros "A". iDestruct "A" as (sa sd blocked) "[[X (State & Alive & Rest)] #>%Hsub]".
+    assert (sa = set_map LtAtomSwell κ ∪ (sa ∖ set_map LtAtomSwell κ)) as Hunion.
+    { apply set_eq. intros x. destruct (decide (x ∈ (set_map LtAtomSwell κ : gset lt_atom))); set_solver. }
+    assert (llft_alive_def' sa ⊣⊢
+        ([∗ set] k ∈ κ, Alive llft_name (LtAtomSwell k)) ∗
+        ([∗ set] k ∈ (sa ∖ set_map LtAtomSwell κ), Alive llft_name k))%I as Hsep.
+    { unfold llft_alive_def'. rewrite <- big_sepS_set_map.
+      rewrite <- big_sepS_union; last by set_solver. setoid_rewrite <- Hunion. trivial. }
+    rewrite Hsep. iDestruct "Alive" as "[Alive1 Alive2]".
+    iModIntro. iFrame "Alive1". iIntros "Alive1".
+    iExists sa, sd, blocked. iFrame "X State Rest". iSplitL; last by iPureIntro.
+    rewrite Hsep. iFrame.
+  Qed.
+
+  (* begin hide *)
+  (* Mint a token for [κ] and its reverse borrow, given an alive witness [κ'] for [κ]. *)
+  Local Lemma llftl_special_register E κ' κ :
+      ↑Nllft ⊆ E →
+      llft_ctx -∗ (llft_alive_def' κ' &&{↑NllftG}&&> @[κ]) -∗ llft_alive_def' κ' ={E}=∗
+        &{κ} (special_open κ) ∗ llft_alive_def' κ'.
+  Proof.
+    intros Hmask. iIntros "#LFT #Incl Alive'".
+    unseal_bor. unseal. iDestruct "LFT" as "(#other & #ctx & #octx)".
+    iInv "other" as (outlives) "[£ [>Delayed O]]" "Hclose".
+    iDestruct (guards_open (True)%I _ (E ∖ ↑NllftO) (↑Nmain) with "ctx []") as "J". { solve_ndisj. } { done. }
+    iMod "J" as "[J back]". iDestruct "J" as (sa sd blocked) "[State [Alive [OuInv [Blo Spec]]]]".
+    iMod (make_everything_alive (set_map LtAtomSwell κ) with "State Alive OuInv Delayed Spec") as (sa') "[%Hsa [State [Alive [OuInv [Delayed Spec]]]]]". { solve_ndisj. }
+    destruct (decide (set_map LtAtomSwell κ ⊆ sa')) as [Hk|Hk].
+    - iDestruct "Spec" as (E1) "(SpAuth & SpEnt & SpC)".
+      iDestruct "SpC" as "[(%Hcert & Lk)|SpC]"; last first.
+      { iDestruct "SpC" as (k' a') "(_ & D' & _)".
+        iDestruct (delayed_agree with "[Delayed D']") as %Hbad; first by iFrame "Delayed D'". discriminate. }
+      iMod (own_update with "SpAuth") as "[SpAuth Tok]".
+      { apply auth_update_alloc.
+        apply (gmultiset_local_update _ _ ({[+ κ +]} ⊎ list_to_set_disj E1.*1) {[+ κ +]}).
+        change (ε : gmultiset lft) with (∅ : gmultiset lft). multiset_solver. }
+      iDestruct (outer_borrow_create llft_name o_name d_name sa' sd blocked (set_map LtAtomSwell κ) (special_open κ) with "[Delayed OuInv State Tok]") as "X".
+      { apply swell_set_set_map. } { set_solver. }
+      { iFrame "Delayed OuInv State". iNext. rewrite special_open_unseal. iFrame "Tok". }
+      iMod (fupd_mask_mono with "X") as "[Delayed X]". { solve_ndisj. }
+      iDestruct "X" as (sn1 sn2) "[OuInv [State [OwnBor1 [OwnBor2 [#slice1 #slice2]]]]]".
+      iMod ("back" with "[State Alive OuInv Blo SpAuth SpEnt Lk OwnBor2]").
+      { iExists sa', sd, blocked. iFrame "State Alive OuInv Blo". iExists ((κ, sn2) :: E1). simpl.
+        iFrame "SpAuth". iSplitL "SpEnt OwnBor2". { iFrame "SpEnt". iNext. iFrame "OwnBor2 slice2". }
+        iLeft. iFrame "Lk". iPureIntro. intros e He. rewrite elem_of_cons in He.
+        destruct He as [->|He]; [done|by apply Hcert]. }
+      iMod ("Hclose" with "[Delayed O £]"). { iNext. iExists outlives. iFrame. }
+      iModIntro. iFrame "Alive'". iExists sn1, κ. iFrame "OwnBor1". iSplit. { iApply guards_refl. }
+      iExists (special_open κ). iFrame "slice1". iModIntro. iModIntro. iSplit; iIntros; done.
+    - (* [κ] is dead: contradiction, since [κ'] is alive *)
+      iDestruct (lt_state_alive_set llft_name κ' sa' sd with "[State Alive']") as "%Hk'sa'". { iFrame. }
+      assert (∃ x , x ∈ (set_map LtAtomSwell κ : gset lt_atom) ∩ sd) as Hex_x. { apply set_choose_L. set_solver. }
+      destruct Hex_x as [x Hex].
+      iDestruct (LtState_entails_Dead llft_name x sa' sd with "State") as "#Deadx". { set_solver. }
+      iMod ("back" with "[State Alive OuInv Blo Spec]"). { iExists sa'. iExists sd. iExists blocked. iFrame. }
+      iMod ("Hclose" with "[Delayed O £]"). { iNext. iExists outlives. iFrame. }
+      iMod (llftl_incl_dead_implies_dead_unswell _ κ' (set_map LtAtomSwell κ) with "[] [Incl] []") as "HdeadkUpd".
+          { solve_ndisj. }
+          { unseal. iFrame "other ctx octx". }
+          { unseal. unfold llft_alive_def'. rewrite big_sepS_set_map. iFrame "Incl". }
+          { unseal. iFrame "Deadx". iPureIntro. set_solver. }
+      iExFalso. iApply (llftl_not_own_end_unswell κ' with "[Alive'] HdeadkUpd"). unseal. iFrame.
+  Qed.
+  (* end hide *)
+
+  (** LeLiLo-Bor-Acc-Special *)
+  Lemma llftl_bor_acc_special E P κ :
+    ↑Nllft ⊆ E →
+    llft_ctx -∗ &{κ} P -∗ @[κ] ={E}=∗ ▷ P ∗ special_open κ ∗
+      (∀ Q, ▷ (▷ Q ∗ [†κ] ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P ∗ special_open κ) ∗ ▷ Q
+            ={↑Nllft}=∗ &{κ} Q ∗ @[κ]).
+  Proof.
+    intros Hmask. iIntros "#ctx Bor Alive".
+    iMod (llftl_special_register E (set_map LtAtomSwell κ) κ with "ctx [] [Alive]") as "[SBor Alive]"; first done.
+    { unseal. unfold llft_alive_def'. rewrite big_sepS_set_map. iApply guards_refl. }
+    { unseal. unfold llft_alive_def'. by rewrite big_sepS_set_map. }
+    iAssert (@[κ])%I with "[Alive]" as "Alive".
+    { unseal. unfold llft_alive_def'. by rewrite big_sepS_set_map. }
+    iMod (llftl_sep_join with "ctx Bor SBor") as "Bor"; first done.
+    iMod (llftl_bor_acc with "ctx Bor Alive") as "[[P >Tok] Close]"; first done.
+    iModIntro. iFrame "P Tok". iIntros (Q) "[vs Q]".
+    iApply ("Close" $! Q with "[vs $Q]"). iNext. iIntros "QD".
+    iMod ("vs" with "QD") as "[P T]". iModIntro. iNext. iFrame.
+  Qed.
+
+  Lemma llftl_bor_acc_special_guarded E G κ P :
+    Timeless G →
+    ↑Nllft ⊆ E →
+    llft_ctx -∗ &{κ} P -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗
+      ▷ P ∗ special_open κ ∗
+      (∀ Q, ▷ (▷ Q ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P ∗ special_open κ) ∗ ▷ Q
+            ={↑Nllft}=∗ &{κ} Q ∗ G).
+  Proof.
+    intros TimelessG Hmask. iIntros "#ctx Bor #Gk G".
+    iMod (llftl_guarded_tok_to_tmp E G κ TimelessG Hmask with "ctx Gk G") as (κ') "(#Incl & Alive & #Kill & Back)".
+    iMod (llftl_special_register E κ' κ with "ctx Incl Alive") as "[SBor Alive]"; first done.
+    iMod (llftl_sep_join with "ctx Bor SBor") as "Bor"; first done.
+    iMod (llftl_bor_acc_maybe_swell' E (P ∗ special_open κ) κ' κ Hmask with "ctx Incl Bor Alive") as "[[P >Tok] Pback]".
+    iModIntro. iFrame "P Tok". iIntros (Q) "[vs Q]".
+    iMod ("Pback" $! Q with "[vs Q]") as "[Bor alive]".
+    { iFrame "Q". iNext. iIntros "Q". iMod ("vs" with "Q") as "[P T]". iModIntro. iNext. iFrame. }
+    iMod ("Kill" with "alive") as "X". iMod ("Back" with "X") as "G". iModIntro. iFrame.
+  Qed.
+
+  (** Indexed versions. The closer turns the indexed borrow into a full borrow of the new
+      contents. (A closer at the same index, returning [idx_bor_tok idx], is not offered:
+      the token's reverse borrow is attached to a borrow at [κ] that is joined with the
+      opened one, so the opened borrow cannot keep its index.) *)
+  Lemma llftl_bor_idx_acc_special E P κ idx :
+    ↑Nllft ⊆ E →
+    llft_ctx -∗ &{κ, idx} P -∗ idx_bor_tok idx -∗ @[κ] ={E}=∗ ▷ P ∗ special_open κ ∗
+      (∀ Q, ▷ (▷ Q ∗ [†κ] ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P ∗ special_open κ) ∗ ▷ Q
+            ={↑Nllft}=∗ &{κ} Q ∗ @[κ]).
+  Proof.
+    intros Hmask. iIntros "#ctx #Bor Tok Alive".
+    iApply (llftl_bor_acc_special with "ctx [Tok] Alive"); first done.
+    iApply (llftl_bor_idx_to_full with "Bor Tok").
+  Qed.
+
+  Lemma llftl_bor_idx_acc_special_guarded E G κ idx P :
+    Timeless G →
+    ↑Nllft ⊆ E →
+    llft_ctx -∗ &{κ, idx} P -∗ idx_bor_tok idx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗
+      ▷ P ∗ special_open κ ∗
+      (∀ Q, ▷ (▷ Q ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P ∗ special_open κ) ∗ ▷ Q
+            ={↑Nllft}=∗ &{κ} Q ∗ G).
+  Proof.
+    intros TimelessG Hmask. iIntros "#ctx #Bor Tok #Gk G".
+    iApply (llftl_bor_acc_special_guarded with "ctx [Tok] Gk G"); [done|].
+    iApply (llftl_bor_idx_to_full with "Bor Tok").
+  Qed.
 End LlftLogic.
 
 (** Initializing the [llft_ctx] *)
@@ -1863,6 +2279,9 @@ Proof.
   iMod lt_alloc as (γ) "[J [Ab Modulo]]".
   iMod (outlives_alloc ∅) as (γo) "[O1 O2]".
   iMod (delayed_alloc None) as (γd) "[D1 D2]".
+  iMod (own_alloc (● (∅ : gmultiset (gset nat)))) as (γsp) "Sp". { by apply auth_auth_valid. }
+  iMod (delayed_alloc None) as (γlk) "[Lk1 Lk2]".
+  pose (G := LlftLogicG _ _ γ γo γd γsp γlk).
   iMod (new_lt γ default_dead ∅ ∅ with "J") as "J". { set_solver. } { set_solver. }
   iMod (kill_lt γ default_dead with "J") as "[J dd]".
   iMod (modulo_dead_new γ default_dead ∅ with "[dd Modulo]") as "Modulo". { iFrame. }
@@ -1870,13 +2289,16 @@ Proof.
       (∃ sa sd blocked : gset lt_atom, LtState γ sa sd ∗ ([∗ set] k ∈ sa , Alive γ k)
           ∗ (outer_inv γ γo γd sa sd blocked)
           ∗ ([∗ set] k ∈ blocked , Alive γ k)
-      ) with "[J O1 D1 Ab Modulo]") as "[_ K]".
+          ∗ @spec_inv_raw Σ G _ sa
+      ) with "[J O1 D1 Ab Modulo Sp Lk1 Lk2]") as "[_ #K]".
    { iModIntro. iExists ∅. iExists {[default_dead]}. iExists ∅.
      replace ((∅ ∪ {[default_dead]}) ∖ {[default_dead]}) with (∅ : gset lt_atom); last by set_solver.
      replace (∅ ∪ {[default_dead]}) with ({[default_dead]} : gset lt_atom); last by set_solver.
      iFrame "J".
      rewrite big_sepS_empty.
-     iSplitR; first by done. iSplitL; last by done.
+     iSplitR; first by done. iSplitL "O1 D1 Ab Modulo".
+     2: { iSplitR; first by done. iExists []. simpl. iFrame "Sp". iSplitR; first done.
+          iLeft. iFrame "Lk1 Lk2". iPureIntro. set_solver. }
      iExists None. iFrame "D1". iExists ∅. iExists ∅. iExists True%I. iExists ∅.
      iFrame "Ab". iFrame "O1". iFrame "Modulo".
      iSplitL. { unfold boxmap. rewrite fmap_empty. iApply box_alloc. }
@@ -1894,22 +2316,25 @@ Proof.
      }
      rewrite big_sepM_empty. done.
   }
-  iMod (inv_alloc (NllftO) _ (∃ (outlives : outlives_set), £1 ∗ Delayed γd None ∗ Outlives γo outlives
-        ∗ ∀ (o : gset lt_atom * lt_atom), ⌜o ∈ outlives⌝ -∗ (([∗ set] k ∈ o.1, Alive γ k) &&{↑NllftG}&&> Alive γ o.2))%I with "[O2 D2 £]") as "Inv".
+  iMod (guards_alloc_with_inv (NllftO) E (∃ (outlives : outlives_set), £1 ∗ Delayed γd None ∗ Outlives γo outlives
+        ∗ ∀ (o : gset lt_atom * lt_atom), ⌜o ∈ outlives⌝ -∗ (([∗ set] k ∈ o.1, Alive γ k) &&{↑NllftG}&&> Alive γ o.2))%I with "[O2 D2 £]") as "[Inv #OG]".
   {
     iNext. iExists ∅. iFrame "O2". iFrame "D2". iFrame "£". iIntros (o) "%Ho". set_solver.
   }
   iModIntro.
-  iExists (LlftLogicG _ _ γ γo γd).
+  iExists G.
   rewrite llft_ctx_unseal /llft_ctx_def.
   iSplitL "Inv". { iFrame "Inv". }
+  iSplitR; last by iFrame "OG".
   leaf_goal rhs to _; last by iFrame "K".
   leaf_by_sep_except0.
-  iIntros "A". iDestruct "A" as (sa sd blocked) "[A [B [C D]]]". iMod "A". iMod "B". iMod "D".
+  iIntros "A". iDestruct "A" as (sa sd blocked) "[A [B [C [D S]]]]". iMod "A". iMod "B". iMod "D".
+  iMod (spec_inv_raw_later with "S") as "S".
   iModIntro. iSplitL. {
     iExists sa. iExists sd. iExists blocked. iFrame.
   }
-  iIntros "A". iDestruct "A" as (sa1 sd1 blocked1) "[A [B [C D]]]".
+  iIntros "A". iDestruct "A" as (sa1 sd1 blocked1) "[A [B [C [D S]]]]".
+  iDestruct (spec_inv_to_raw with "S") as "S".
   iNext. iExists sa1. iExists sd1. iExists blocked1. iFrame.
 Qed.
 

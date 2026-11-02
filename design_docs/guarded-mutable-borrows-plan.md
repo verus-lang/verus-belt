@@ -231,3 +231,88 @@ special_open κ &&{↑NllftG ∪ ↑NllftO}&&> @[κ]      (persistent law)
 2. P1 is solved by the special openings of §2.1, which extend the lifetime logic. No
    typing-rule changes are needed.
 3. The physical cell heap is deleted in phase 5 (user decision, 2026-11-02).
+
+## Outcome: phase 0
+
+Implemented in `lifetime/lifetime_full.v`; tests in `lifetime/lifetime_special_tests.v`.
+The internals (`lifetime_internals/*.v`) are unchanged, and so are the statements of all
+existing public lemmas.
+
+### Lemmas
+
+```
+special_open κ                       (* timeless, not persistent *)
+Lemma llftl_special_open_guard κ :
+  llft_ctx -∗ special_open κ &&{↑NllftG ∪ ↑NllftO}&&> @[κ].
+Lemma llftl_bor_acc_special E P κ :
+  ↑Nllft ⊆ E →
+  llft_ctx -∗ &{κ} P -∗ @[κ] ={E}=∗ ▷ P ∗ special_open κ ∗
+    (∀ Q, ▷ (▷ Q ∗ [†κ] ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P ∗ special_open κ) ∗ ▷ Q
+          ={↑Nllft}=∗ &{κ} Q ∗ @[κ]).
+Lemma llftl_bor_acc_special_guarded E G κ P :
+  Timeless G → ↑Nllft ⊆ E →
+  llft_ctx -∗ &{κ} P -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗ ▷ P ∗ special_open κ ∗
+    (∀ Q, ▷ (▷ Q ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P ∗ special_open κ) ∗ ▷ Q
+          ={↑Nllft}=∗ &{κ} Q ∗ G).
+Lemma llftl_bor_idx_acc_special E P κ idx :          (* closer as llftl_bor_acc_special *)
+  ↑Nllft ⊆ E → llft_ctx -∗ &{κ, idx} P -∗ idx_bor_tok idx -∗ @[κ] ={E}=∗ …
+Lemma llftl_bor_idx_acc_special_guarded E G κ idx P : (* closer as the guarded one *)
+  Timeless G → ↑Nllft ⊆ E →
+  llft_ctx -∗ &{κ, idx} P -∗ idx_bor_tok idx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗ …
+```
+
+`NllftO` is now exported by `lifetime_full.v` (same value as the internal one).
+
+### Model
+
+- **Ghost state.** `special_open κ := own sp_name (◯ {[+ κ +]})`, a fragment of an
+  authoritative multiset of the lifetimes of all tokens in circulation (new `inG` for
+  `authR (gmultisetUR lft)` in `llft_logicGpreS`, new ghost names `sp_name`, `lk_name`).
+- **Registry** (`spec_inv sa`, a new conjunct of the `Nmain` invariant, next to `sa`): the
+  `● T`, and one entry `(κ, sn)` per token, where `sn` is a reverse borrow `Borrow ∅ κ` whose
+  contents is a token `special_open κ`; `T` is the multiset of the entries' lifetimes.
+- **Minting** (`llftl_special_register`): mint a token, put it in a fresh borrow
+  `&{κ} (special_open κ)` (`outer_borrow_create`), and record its reverse borrow. The special
+  accessor joins this borrow with the user's borrow and opens the join normally, handing the
+  token out; its closer is the normal closer, with the back-map `▷ Q ∗ [†κ] ={…}=∗ ▷ P ∗
+  special_open κ` used as it is.
+- **The token comes back by the model's own invariant.** When the first atom of `κ` dies, the
+  reverse borrow at `κ` becomes valid, so the box invariant guarantees that it is full: the
+  back-map chain has returned a token into it. Nothing depends on the shape of the chain.
+- **Certificate.** Either every registered `κ` is alive (`set_map κ ⊆ sa`), and both halves of
+  a lock `Delayed lk_name None` are in the registry; or an end of `k` is in progress: the
+  registry holds one half of the lock at `Some (k, alive')` and the `NllftO` half of
+  `Delayed d_name (Some (k, alive'))`, and every registered `κ` is included in
+  `alive' ∪ {[k]}`.
+- **End procedure** (`llftl_end_maybe_swell'`). Step 1 (with `NllftO` open): kill `k`, put the
+  registry in the locked state, keeping the other half of the lock. Step 2: unlock (the
+  half we hold pins `k` and `alive'`), run the back-maps (`outer_kill_lt_step2`, unchanged),
+  then collect: for each entry whose lifetime contains `k`, take the token out of its
+  reverse borrow (`outer_unborrow_start`, as in `llftl_borrow_rev`) and deallocate it from
+  `● T` (`spec_collect`); re-establish the certificate for the other entries; close `Nmain`
+  and `NllftO`. Entries only contain swell atoms, so ending a temporary (non-swell) lifetime
+  collects nothing and needs no later.
+- **Guard law.** `llft_ctx` now also contains a guard view of `NllftO`,
+  `True &&{↑NllftO}&&> ▷ (…)` (the invariant is allocated with `guards_alloc_with_inv`).
+  The guard opens it and `Nmain`: `◯ {[+κ+]} ∧ ● T` gives `κ ∈ T`; the closed `NllftO` holds
+  `Delayed None`, which refutes the locked state; so `κ ⊆ sa`, and the guard returns the copy
+  of `@[κ]` kept in `sa`. With `NllftO` in the mask, back-maps (run while the end procedure
+  holds `NllftO`) cannot use the guard.
+
+### Supported operations after a special opening
+
+All of them. The closed borrow `&{κ} Q` is an ordinary full borrow, and the collection only
+uses the reverse borrow of the registry, whose fullness the model guarantees whatever
+happened to the closed borrow: normal, special, atomic or guarded reopening, reborrowing,
+splitting and joining, unnesting, conversion to and from indexed borrows, freezing, faking.
+The tests exercise reopening, reborrowing and split/join.
+
+### Deviations
+
+- The proposal's stray `∃ κ', @[κ']` is dropped, as requested.
+- The guarded accessor's back-map has no `[†κ]`, like `llftl_bor_acc_guarded`.
+- The indexed versions close to a full borrow `&{κ} Q`. A closer at the same index
+  (returning `idx_bor_tok idx`, like `llftl_bor_idx_acc`) is not provided: the token's borrow
+  is joined with the opened borrow, so the opened borrow cannot keep its index.
+- The prophetic version (for L3p) is not part of phase 0; it should follow the same pattern
+  (join the token borrow into the prophetic borrow's underlying full borrow).
