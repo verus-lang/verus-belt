@@ -111,9 +111,12 @@ Section uniq_util.
 
     ** The payload
 
-    The payload is lazy: the time receipt, the ownership predicate of the contents
-    and the points-to are under a guarded update ([guarded_upd]) with the mask
-    [lazyE], for the lifetime [ty_lft ty] of the referent type. The update can fire
+    The payload is lazy: the time receipt and the ownership predicate of the contents
+    are under a guarded update ([guarded_upd]) with the mask [lazyE], for the lifetime
+    [ty_lft ty] of the referent type. The bytes of the contents are outside the guarded
+    update (option 3 of the phase-2b plan of [design_docs/guarded-mutable-borrows-plan.md]):
+    in every state of the body, they can be forced with the mask [lazyB] and dead tokens
+    only ([leaf_contents_unblock]), without a guard for the lifetime of the type. The update can fire
     inheritances of the lifetime logic ([[†κ] ={↑Nllft}=∗ …]) and open borrows, which
     cannot be done in the closing view shift of a borrow (whose mask is
     [↑NllftUsr ∪ ↑NllftUsr2]). Since [↑NllftG ⊆ ↑Nllft ⊆ lazyE], it can never run
