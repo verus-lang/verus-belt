@@ -178,6 +178,54 @@ Section GmbProphTests.
     iModIntro. by iExists t'.
   Qed.
 
+  (** A lazy (L3p) whose lender abandons everything: the permission may be a claim
+      ([gmb_b_uniq], residue: the final value); the way back stores the final contents with
+      a settle law, and builds the old payload from the claim. After [κ] ends, the owner
+      moves; the move settles the pending lend. *)
+  Local Definition perm_pl_lz γ ξi : pv_val (PrVar pairi ξi) → pv_proph (PrVar pairi ξi) → iProp Σ :=
+    λ x _, gmb_b_uniq cc γ (λ t, ⌜t = x.2⌝%I).
+
+  Lemma test_proph_lazy_lend_abandoned s (g0 t : positive) :
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ cc s t -∗ £ 5 -∗
+    |={E0}=> |={↑Nllft}[∅]▷=> |={E0}=> ∃ t', cc s t'.
+  Proof.
+    iIntros "#LFT #PROPH #UNIQ C £".
+    iDestruct (lc_split 1 4 with "£") as "[Lc £]". iDestruct (lc_split 1 3 with "£") as "[£1 £3]".
+    have ? : ↑Nllft ⊆ E0 by rewrite /E0; solve_ndisj.
+    iMod (gmb_create_mask cc _ 0 (↑Nllft) with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)";
+      first solve_ndisj.
+    iMod (llftl_begin with "LFT") as (κ) "[Alive #End]"; first done.
+    iMod (share_timeless with "A") as "[#Ga InhA]"; [done|].
+    iMod (proph_loan_intro pairi E0 ((g0, t) : positive * positive) with "PROPH UNIQ")
+      as (ξi) "Loan"; first (rewrite /E0; solve_ndisj).
+    iMod (proph_loan_borrow_gen E0 κ (PrVar pairi ξi) (g0, t) (vπ (𝔄:=(positiveₛ * positiveₛ)%ST) (g0, t))
+            (perm_pl_lz γ ξi) with "LFT PROPH UNIQ Loan [B]") as (idx) "(Tok & #IBor & _)";
+      [done| |].
+    { iNext. by iApply (gmb_b_uniq_intro with "B"). }
+    iMod (proph_loan_intro posi E0 t with "PROPH UNIQ") as (ζi) "Loanζ";
+      first (rewrite /E0; solve_ndisj).
+    iMod lc_zero as "Lc0".
+    iMod (gmb_lend_proph_map_lazy cc E0 κ (PrVar pairi ξi) (g0, t) idx (perm_pl_lz γ ξi)
+            (PrVar posi ζi) t (cont_pl s ζi) (λ y, (g0, y)) (@[κ]) γ s 0
+            with "LFT PROPH UNIQ Inv Ga Lc0 £3 [] [£1] Alive Loanζ Tok IBor")
+      as "(_ & _ & Alive)"; [rewrite /E0; solve_ndisj|lia| | |].
+    { iApply guards_refl. }
+    { iIntros (G' wπ ?) "_ $ P".
+      iMod (lc_fupd_elim_later with "£1 P") as "P".
+      iMod (gmb_b_uniq_settle cc with "Inv P") as (t0) "[B %Ht0]".
+      { rewrite Hb /E0. solve_ndisj. }
+      simpl in Ht0. subst t0. iModIntro. iExists t. iFrame "B". iIntros "C".
+      iModIntro. iExists (vπ (𝔄:=positiveₛ) t). iSplitL "C"; [by iNext|].
+      iIntros (y' wζ') "_ C _". iModIntro. iExists (cc s y'), (λ t, ⌜t = y'⌝%I). iFrame "C".
+      iSplitR.
+      { iIntros "C _ !>". iExists y'. by iFrame. }
+      iIntros "Cl !>". iExists (g0, y'). by iApply gmb_b_uniq_claim. }
+    iModIntro. iMod ("End" with "Alive") as "Dead". iModIntro. iNext. iMod "Dead" as "#Dead".
+    iModIntro. iMod ("InhA" with "Dead") as ">A".
+    iMod (gmb_move cc with "Inv [Lc] A") as (t') "[C _]"; [rewrite Hb /E0; solve_ndisj|by rewrite Hd|].
+    iModIntro. by iExists t'.
+  Qed.
+
   (** (L3p) in place, (L4): the lend keeps the prophecy variable [ξ] of the lender's borrow
       (the payload changes from the permission to the contents). Write [t'], resolve [ξ]
       (to [t']), end [κ]; the lender gets back [gmb_b] at [t'], and the owner moves. *)

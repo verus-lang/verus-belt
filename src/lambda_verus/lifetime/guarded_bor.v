@@ -205,8 +205,6 @@ Section GuardedBor.
   (** The fragments. [gmb_a] and [gmb_b] are exclusive, in disjoint ghost names. *)
   Definition gmb_a γ s : iProp Σ := xa_frag (gmb_a_name γ) (GmbHere (T:=T) s).
   Definition gmb_b γ t : iProp Σ := xa_frag (gmb_b_name γ) (GmbIn (S:=S) t).
-  (** The permission with the contents held eagerly by the instance (L2 takes it). *)
-  Definition gmb_b_shr γ t : iProp Σ := gmb_b γ t.
   (* the mover's half of (L1), [a_out(t)] *)
   Local Definition gmb_a_out γ t : iProp Σ := xa_frag (gmb_a_name γ) (GmbMoving (S:=S) t).
   (** The lender's half of (L3) while the contents are lent out at placement [s] for [κ]
@@ -700,10 +698,15 @@ Section GuardedBor.
     - iDestruct (gmb_tok_excl with "Tc Tc'") as %[].
   Qed.
 
+  Lemma gmb_b_uniq_intro γ R t : gmb_b γ t -∗ R t -∗ gmb_b_uniq γ R.
+  Proof. iIntros "B R". iLeft. iExists t. iFrame. Qed.
+  Lemma gmb_b_uniq_claim γ R : gmb_claim γ R -∗ gmb_b_uniq γ R.
+  Proof. iIntros "C". by iRight. Qed.
+
   (** A permission that may still be a claim gives the eager permission. *)
   Lemma gmb_b_uniq_settle E γ R :
     ↑NllftUsr ∪ ↑NllftUsr2 ∪ ↑gmbN ∪ gmb_bmask γ ⊆ E →
-    gmb_inv γ -∗ gmb_b_uniq γ R ={E}=∗ ∃ t, gmb_b_shr γ t ∗ R t.
+    gmb_inv γ -∗ gmb_b_uniq γ R ={E}=∗ ∃ t, gmb_b γ t ∗ R t.
   Proof using c_timeless.
     iIntros (?) "#GI [$|C]"; [done|]. by iApply (gmb_claim_take with "GI C").
   Qed.
@@ -746,6 +749,32 @@ Section GuardedBor.
     iModIntro. iFrame "Tok". iNext. by iExists t'.
   Qed.
 
+  (** Lazy (L3), guarded: the permission may still be a claim (it is settled first), and the
+      back-map stores the final contents [Q] lazily, with the settle law [Law]
+      ([gmb_lend_stop_lazy]): the lender's inheritance is a claim. *)
+  Lemma gmb_lend_guarded_lazy E G γ κ s n (Q : iProp Σ) (R : T → iProp Σ) :
+    Timeless G → ↑Nllft ∪ ↑gmbN ∪ gmb_bmask γ ⊆ E → n ≤ gmb_depth γ →
+    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗ £ 1 -∗ £ 3 -∗
+    &{κ} (gmb_b_uniq γ R) -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
+    (∀ t, R t -∗ c s t ={E}=∗ ▷ Q) -∗
+    □ (Q -∗ gmb_bdead κ ={gmb_bmask γ}=∗ ∃ t, c s t ∗ R t) ={E}=∗ &{κ} Q ∗ G.
+  Proof using c_timeless.
+    iIntros (HG Hmask Hn) "#LFT #GI #Ga Lc £1 £3 Bor #Gk G ToQ #Law".
+    iMod (llftl_bor_acc_special_guarded_dead with "LFT Bor Gk G") as "(Fb & Tok & Close)";
+      first solve_ndisj.
+    iMod (lc_fupd_elim_later with "£1 Fb") as "Fb".
+    iMod (gmb_b_uniq_settle with "GI Fb") as (t) "[B Res]".
+    { assert (↑NllftUsr ∪ ↑NllftUsr2 ⊆@{coPset} ↑Nllft) by solve_ndisj. set_solver. }
+    iMod (gmb_lend_start_lazy with "LFT GI Ga Lc £3 Tok B") as "[C Lent]"; [solve_ndisj|done|].
+    iMod ("ToQ" with "Res C") as "Q".
+    iApply (fupd_mask_mono (↑Nllft)); first solve_ndisj.
+    iApply ("Close" $! Q with "[Lent $Q]").
+    iNext. iIntros "[Q #Dead]".
+    iMod (gmb_lend_stop_lazy with "GI Lent Q Dead [Law]") as "[Cl $]".
+    { iIntros "Q D". by iApply ("Law" with "Q D"). }
+    iModIntro. iNext. by iRight.
+  Qed.
+
   (** (L3) with a guard at step-index 0 (any depth). *)
   Lemma gmb_lend E γ κ s :
     ↑Nllft ⊆ E →
@@ -766,4 +795,8 @@ Section GuardedBor.
   Qed.
 End GuardedBor.
 
-Global Typeclasses Opaque gmb_a gmb_b gmb_b_shr gmb_lent gmb_lent_lz gmb_inv gmb_claim gmb_b_uniq.
+(** The permission with the contents held eagerly by the instance ((L2) takes it): it is
+    [gmb_b] itself; [gmb_b_uniq] may still be a claim. *)
+Notation gmb_b_shr := gmb_b (only parsing).
+
+Global Typeclasses Opaque gmb_a gmb_b gmb_lent gmb_lent_lz gmb_inv gmb_claim gmb_b_uniq.
