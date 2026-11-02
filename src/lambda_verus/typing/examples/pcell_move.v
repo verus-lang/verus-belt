@@ -6,8 +6,8 @@ Set Default Proof Using "Type".
 (** * Moves of values that contain cells
 
 Typed moves ([Load] of a place, [Store] of the loaded value) of values that contain
-[PCell]s, without [NoCell] (see "Outcome: moves of values with cells" in
-[design_docs/pcell-multibyte-cells.md]): a cell is moved out of its box into the second
+[PCell]s, without [NoCell]: the generic move rules move the cells (GMB instances,
+[typing/gmb_cells.v]) with the moved value. A cell is moved out of its box into the second
 field of a pair; the pair (whose fancy value is [FVTuple [FVInt 5; FVCell g]]) is moved
 into another box; its cell field is moved into a third box, and the contents of the cell
 are read back through [PCell::into_inner]. *)
@@ -83,7 +83,7 @@ Section pcell_move.
       iApply typed_body_tctx_incl. { apply tctx_oplace_to_own. }
       (* PCell::new *)
       iApply (type_let with "[]").
-      { apply (type_pcell_new_instr 4 i32t). rewrite /ty_bsize -ty_mty_eq /=. lia. }
+      { apply (type_pcell_new_instr 4 i32t). }
       { solve_typing. } { reflexivity. }
       iIntros (vperm). simpl_subst.
       (* q: a box of a pair, uninitialized *)

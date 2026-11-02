@@ -227,7 +227,7 @@ Section gmb_cells_tests.
     iDestruct (gcont_pair_cells with "C0 C1") as "C".
     wp_bind (MemCopy _ _ _ _).
     iApply (wp_gcont_memcopy _ _ _ pair_mty with "[$GC $Lc $C $Hl']"); [set_solver|apply pair_mty_wf|done|].
-    iIntros "!>" (bs) "[Hl C]". wp_seq.
+    iIntros "!>" (bs) "(Hl & _ & C)". wp_seq.
     iDestruct (gcont_pair_cells_inv with "C") as "[C0 C1]".
     iMod (gcell_destroy with "Hreg0 GI0 C0 B0") as "C0"; [done|].
     iDestruct (gcont_lift_bytes _ _ (VInt 5) with "C0") as (bs0') "[Hl0 %Hd0']".
@@ -380,7 +380,7 @@ Section gmb_cells_tests.
     iDestruct (gcont_cell with "Hreg A") as "C".
     wp_bind (MemCopy _ _ _ _).
     iApply (wp_gcont_memcopy _ _ _ (MInt i32) with "[$GC $Lc2 $C $Hl']"); [set_solver|apply MInt_wf|done|].
-    iIntros "!>" (bs1) "[Hl C]". wp_seq.
+    iIntros "!>" (bs1) "(Hl & _ & C)". wp_seq.
     iMod (gcell_destroy with "Hreg GI C B") as "C"; [done|].
     iDestruct (gcont_lift_bytes _ _ (VInt 7) with "C") as (bs2) "[Hl' %Hd2]".
     iApply (wp_load_na with "Hl'"); [done|]. iIntros "!> _". iApply "HΦ". by iExists _.

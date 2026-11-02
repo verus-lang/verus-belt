@@ -5,10 +5,10 @@ Set Default Proof Using "Type".
 
 (** * [PCell] on bytes
 
-The legacy [pcell_example] (deleted in stage 5) on the byte layer (§10 step 5 of
-[design_docs/pcell-multibyte-cells.md]): a box is initialized with [17], made into a cell
-([PCellFromOwn]: the box holds the pair of the cell and its permission), both fields are
-shared, the contents are borrowed through them ([PCellBorrow]) and read. The body is
+A box is initialized with [17], made into a cell ([PCellFromOwn]: the box holds the pair of
+the cell and its permission), both fields are shared, the contents are borrowed through them
+([PCellBorrow], which gives a shared reference [&shr{κ} i32] to the contents) and read with
+the generic rule for shared references ([type_load_shr_bytes_copy_instr]). The body is
 stated as a function body ([typed_body], with the return continuation [k]) that returns
 the value read, and its specification says that this value is [17] (instead of the call
 of [assert] of the legacy example). *)
@@ -71,7 +71,7 @@ Section pcell_example.
       iApply typed_body_tctx_incl. { apply tctx_oplace_to_own. }
       (* PCell::new *)
       iApply (type_let with "[]").
-      { apply (type_pcell_from_own_instr 4 i32t). rewrite /ty_bsize -ty_mty_eq /=. lia. }
+      { apply (type_pcell_from_own_instr 4 i32t). }
       { solve_typing. } { reflexivity. }
       iIntros (vpair). simpl_subst.
       iApply (type_newlft []). iIntros (κ).
@@ -98,9 +98,10 @@ Section pcell_example.
       { solve_typing. } { reflexivity. }
       iIntros (vi). simpl_subst.
       iApply (type_let with "[]").
-      { apply (type_cell_shr_load_instr κ i32t); [apply _|solve_typing]. }
+      { apply (type_load_shr_bytes_copy_instr κ i32t); [apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vx). simpl_subst.
+      iApply typed_body_tctx_incl. { apply tctx_incl_resolve_head. }
       (* end κ: unblock the pair; drop it *)
       iApply (type_endlft _ _ _ _ κ).
       { solve_typing. }
