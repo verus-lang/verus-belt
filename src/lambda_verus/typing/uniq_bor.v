@@ -158,10 +158,11 @@ Section uniq_bytes.
     { iIntros "!> !>" (wπ). rewrite uniq_gbody_triv_iff. iSplit; iIntros "$". }
     iMod (llftl_sep_split with "LFT PBor") as "[_ PBor]"; [solve_ndisj|].
     iMod (llftl_sep_split with "LFT PBor") as "[_ PBor]"; [solve_ndisj|].
-    iDestruct (llftl_bor_iff _ _ (guarded_upd lazyE @[ty_lft ty] (⧖(S d' `max` g') ∗
-      ty.(ty_gho_own) x0 d' g' tid ∗ cbytes ty x0 l)) with "[] PBor")
+    iDestruct (llftl_bor_iff _ _ (cbytes ty x0 l ∗ guarded_upd lazyE @[ty_lft ty]
+      (⧖(S d' `max` g') ∗ ty.(ty_gho_own) x0 d' g' tid)) with "[] PBor")
       as "PBor".
     { iIntros "!> !>". rewrite uniq_payload_cell. iSplit; iIntros "$". }
+    iMod (llftl_sep_split with "LFT PBor") as "[Pt PBor]"; [solve_ndisj|].
     (* Open the borrow of the lazy contents before the step (with half of [G]), run the
        lazy update after the step (with the other half, which also guards the lifetime
        of the type; this also gives the persistent predicate of the contents), and close
@@ -171,18 +172,17 @@ Section uniq_bytes.
     iMod (llftl_bor_acc_guarded with "LFT PBor Gh H1") as "[Upd Close]"; [solve_ndisj|].
     iModIntro. iApply (step_fupdN_nmono (S d')); [lia|]. simpl.
     iModIntro. iNext.
-    iMod (guarded_upd_run with "[] H2 Upd") as "(H2 & #⧖ & Gho & Pt)";
+    iMod (guarded_upd_run with "[] H2 Upd") as "(H2 & #⧖ & Gho)";
       [rewrite /lazyE; solve_ndisj| |].
     { iApply (guards_transitive with "Gh Incl'"). }
     iDestruct (ty_gho_pers_impl with "Gho") as "#InnerPers".
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [solve_ndisj|].
-    iMod ("Close" $! (ty.(ty_gho_own) x0 d' g' tid ∗ cbytes ty x0 l)%I
-      with "[Gho Pt]") as "[PBor H1]".
+    iMod ("Close" $! (ty.(ty_gho_own) x0 d' g' tid)%I
+      with "[Gho]") as "[Gho H1]".
     { iSplitR; [|iNext; iFrame]. iIntros "!> GP !> !>". iApply guarded_upd_intro.
       iModIntro. by iFrame "⧖ GP". }
     iMod "Upd" as "_".
     iMod (fupd_mask_mono with "(Back H1 H2)") as "G"; [solve_ndisj|].
-    iMod (llftl_sep_split with "LFT PBor") as "[Gho Pt]"; [solve_ndisj|].
     iMod (llftl_bor_guard with "LFT Pt") as "#Pt"; [solve_ndisj|].
     iMod (ty_share with "LFT Incl' InnerPers Gκ G Gho") as "Upd"; [solve_ndisj|].
     iModIntro. iApply (step_fupdN_wand with "Upd"). iIntros ">[$ Shr] !>".
