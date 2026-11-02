@@ -131,6 +131,7 @@ src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/pcell_borrow.v
 src/lambda_verus/typing/gmb_cells.v
+src/lambda_verus/typing/gmb_cells_tests.v
 src/lambda_verus/typing/tracked.v
 src/lambda_verus/typing/mod_ty.v
 src/lambda_verus/typing/sum.v

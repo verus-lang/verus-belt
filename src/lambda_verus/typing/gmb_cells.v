@@ -311,6 +311,13 @@ Section gcells_defs.
     by iApply big_sepL_intro.
   Qed.
 
+  Lemma gfbytes_app l fbs1 fbs2 :
+    gfbytes l (fbs1 ++ fbs2) ⊣⊢ gfbytes l fbs1 ∗ gfbytes (l +ₗ length fbs1) fbs2.
+  Proof.
+    rewrite /gfbytes big_sepL_app. f_equiv. apply big_sepL_proper=> j fb _.
+    by rewrite shift_loc_assoc_nat.
+  Qed.
+
   Lemma heap_mapsto_bytes_pos_shift l (o : nat) bs :
     (l +ₗ o) ↦b bs ⊣⊢ [∗ list] j ↦ b ∈ bs, (l +ₗ (o + j)%nat) ↦b [b].
   Proof. rewrite heap_mapsto_bytes_pos. apply big_sepL_proper=> j b _. by rewrite shift_loc_assoc_nat. Qed.
