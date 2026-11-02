@@ -42,7 +42,7 @@ ghost name, one in each invariant: the state invariant [guard_inv], a guard
 [NllftUsr] holding, while lent out for [κ], the token [special_open κ] and the guard
 [special_open κ &&> gmb_a γ s]. In (L1), an owned [gmb_a γ s] together with that guard
 refutes the lent-out state; this needs credits (one for the later of [other_inv],
-[gmb_depth γ] for the step-index of the stored guard), which the lend prepays: they are
+[n] for the step-index [n] of the stored guard), which the lend prepays: they are
 stored in [other_inv] with the token, so that (L1) itself needs no credits (a move of a value
 with cells moves all its nested cells, whose number is not known in advance).
 
@@ -100,12 +100,13 @@ Definition gmbΣ (S T : Type) : gFunctors := #[
 Global Instance subG_gmbΣ {Σ} S T : subG (gmbΣ S T) Σ → gmbG Σ S T.
 Proof. solve_inG. Qed.
 
-(** An instance has two ghost names, one per side, the ghost name of its settle lock, a
-    _depth_ (the largest step-index of the guards of [gmb_a] that (L3) accepts) and a _bytes
-    mask_ (the mask of the settle laws of its lazy lends), fixed when it is created. *)
+(** An instance has two ghost names, one per side, the ghost name of its settle lock, and a
+    _bytes mask_ (the mask of the settle laws of its lazy lends), fixed when it is created.
+    (L3) accepts share guards of [gmb_a] at any step-index [n]: the lend stores the guard
+    with the credits [£ (1 + n)] for its refutation in (L1). *)
 Record gmb_name := GmbName {
   gmb_a_name : gname; gmb_b_name : gname; gmb_k_name : gname;
-  gmb_depth : nat; gmb_bmask : coPset }.
+  gmb_bmask : coPset }.
 
 (** ** Exclusive fragments with two half authorities *)
 
@@ -279,8 +280,9 @@ Section GuardedBor.
   Local Definition gmb_other_body γ (tb : gmb_tstate S T) : iProp Σ :=
     match tb with
     | GmbOut s κ lz =>
-        special_open κ ∗ (special_open κ &&{↑NllftG ∪ ↑NllftO; gmb_depth γ}&&> gmb_a γ s) ∗
-        £ (1 + gmb_depth γ) ∗ (if lz then £ 4 else True)%I
+        special_open κ ∗
+        (∃ n, (special_open κ &&{↑NllftG ∪ ↑NllftO; n}&&> gmb_a γ s) ∗ £ (1 + n)) ∗
+        (if lz then £ 4 else True)%I
     | GmbPend s κ γc γp => gmb_tok γp ∗ £ 1 ∗ ∃ R, inv gmbCN (gmb_claim_inv γ γc γp R)
     | _ => True
     end%I.
@@ -396,15 +398,15 @@ Section GuardedBor.
   (* end hide *)
 
   (** (L0) Create, with a bytes mask [EB] for the settle laws of lazy lends. *)
-  Lemma gmb_create_mask E d EB s t :
+  Lemma gmb_create_mask E EB s t :
     EB ## ↑gmbN →
-    c s t ={E}=∗ ∃ γ, ⌜gmb_depth γ = d ∧ gmb_bmask γ = EB⌝ ∗ gmb_inv γ ∗ gmb_a γ s ∗ gmb_b γ t.
+    c s t ={E}=∗ ∃ γ, ⌜gmb_bmask γ = EB⌝ ∗ gmb_inv γ ∗ gmb_a γ s ∗ gmb_b γ t.
   Proof using c_timeless.
     iIntros (HEB) "C".
     iMod (xa_alloc (GmbHere (T:=T) s)) as (γa) "(A1 & A2 & Fa)".
     iMod (xa_alloc (GmbIn (S:=S) t)) as (γb) "(B1 & B2 & Fb)".
     iMod gmb_tok_alloc as (γk) "K".
-    set (γ := GmbName γa γb γk d EB).
+    set (γ := GmbName γa γb γk EB).
     iMod (guards_alloc E NllftUsr2 (gmb_state_inv γ) with "[A1 B1 C]") as "#G".
     { iNext. iExists (GmbHere s, GmbIn t). iFrame. }
     iDestruct (guards_remove_later_rhs with "G") as "#G'".
@@ -415,8 +417,8 @@ Section GuardedBor.
   Qed.
 
   (** (L0) Create (with the empty bytes mask). *)
-  Lemma gmb_create E d s t :
-    c s t ={E}=∗ ∃ γ, ⌜gmb_depth γ = d ∧ gmb_bmask γ = ∅⌝ ∗ gmb_inv γ ∗ gmb_a γ s ∗ gmb_b γ t.
+  Lemma gmb_create E s t :
+    c s t ={E}=∗ ∃ γ, ⌜gmb_bmask γ = ∅⌝ ∗ gmb_inv γ ∗ gmb_a γ s ∗ gmb_b γ t.
   Proof using c_timeless. iApply gmb_create_mask. set_solver. Qed.
 
   (** (L0) Destroy. The instance moves to its terminal state. *)
@@ -494,7 +496,8 @@ Section GuardedBor.
       iModIntro. iExists t. iFrame "C Fout". iIntros (s'). by iApply "Back".
     - (* lent out: the stored guard gives a second [gmb_a], a contradiction; the stored
          credits pay for it *)
-      iDestruct "Other" as "(>Tok & SG & >Lc & _)".
+      iDestruct "Other" as "(>Tok & SGn & _)".
+      iMod (bi.later_exist_except_0 with "SGn") as (n) "[SG >Lc]".
       iDestruct "Lc" as "[Lc1 Lc]".
       iMod (lc_fupd_elim_later with "Lc1 SG") as "#SG".
       iMod (guards_open_later (special_open κ) (gmb_a γ s0) _ (↑NllftG ∪ ↑NllftO)
@@ -627,19 +630,18 @@ Section GuardedBor.
       borrow of [gmb_b γ t] at [κ] gets the token [special_open κ]; [gmb_lend_start] takes
       it with the permission and gives the contents. The back-map of the borrow, which runs
       when [κ] ends, uses [gmb_lend_stop] to put back contents at any value and get the
-      permission at that value and the token. The lend prepays the credits [£ (1 + gmb_depth
-      γ)] that (L1) would need to refute the lent-out state (they are stored in [other_inv]). *)
+      permission at that value and the token. The lend prepays the credits [£ (1 + n)] that
+      (L1) would need to refute the lent-out state (they are stored in [other_inv]). *)
   Local Lemma gmb_lend_start_gen (lz : bool) E γ κ s t n :
-    ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+    ↑Nllft ⊆ E →
     llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
-    £ (1 + gmb_depth γ) -∗ (if lz then £ 4 else True)%I -∗
+    £ (1 + n) -∗ (if lz then £ 4 else True)%I -∗
     special_open κ -∗ gmb_b γ t ={E}=∗ c s t ∗ xa_frag (gmb_b_name γ) (GmbOut (T:=T) s κ lz).
   Proof using c_timeless.
-    iIntros (Hmask Hn) "#LFT (#GI & #I & _) #Ga Lc Pre Lz Tok Fb".
+    iIntros (Hmask) "#LFT (#GI & #I & _) #Ga Lc Pre Lz Tok Fb".
     iDestruct (llftl_special_open_guard κ with "LFT") as "#SG".
     iDestruct (guards_weaken_mask _ (↑NllftG ∪ ↑NllftO) with "Ga") as "#Ga'"; first set_solver.
     iDestruct (guards_transitive_right with "SG Ga'") as "#SA".
-    iDestruct (lguards_weaken_later _ _ _ n (gmb_depth γ) with "SA") as "#SA'"; first done.
     iDestruct (guards_weaken_mask _ (↑NllftG ∪ ↑NllftO) with "GI") as "#GI'"; first solve_ndisj.
     iDestruct (guards_transitive (↑NllftG ∪ ↑NllftO) (special_open κ) True%I
                  with "[] GI'") as "#GS".
@@ -663,16 +665,16 @@ Section GuardedBor.
     iMod ("Hcl2" with "[A1 B1]") as "Tok".
     { iExists (GmbHere s, GmbOut s κ lz). by iFrame. }
     iMod ("Hcl" with "[A2 B2 Tok Pre Lz]") as "_".
-    { iNext. iExists (GmbHere s), (GmbOut s κ lz). iFrame. iFrame "SA'". }
+    { iNext. iExists (GmbHere s), (GmbOut s κ lz). iFrame. iFrame "SA". }
     by iFrame.
   Qed.
 
   Lemma gmb_lend_start E γ κ s t n :
-    ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+    ↑Nllft ⊆ E →
     llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
-    £ (1 + gmb_depth γ) -∗ special_open κ -∗ gmb_b γ t ={E}=∗ c s t ∗ gmb_lent γ s κ.
+    £ (1 + n) -∗ special_open κ -∗ gmb_b γ t ={E}=∗ c s t ∗ gmb_lent γ s κ.
   Proof using c_timeless.
-    iIntros (Hmask Hn) "#LFT #GI #Ga Lc Pre Tok Fb".
+    iIntros (Hmask) "#LFT #GI #Ga Lc Pre Tok Fb".
     iApply (gmb_lend_start_gen false with "LFT GI Ga Lc Pre [//] Tok Fb"); done.
   Qed.
 
@@ -680,11 +682,11 @@ Section GuardedBor.
       (two for its laters, one for the deposit of the residue, one for the pending state
       while the mover settles). *)
   Lemma gmb_lend_start_lazy E γ κ s t n :
-    ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+    ↑Nllft ⊆ E →
     llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
-    £ (1 + gmb_depth γ) -∗ £ 4 -∗ special_open κ -∗ gmb_b γ t ={E}=∗ c s t ∗ gmb_lent_lz γ s κ.
+    £ (1 + n) -∗ £ 4 -∗ special_open κ -∗ gmb_b γ t ={E}=∗ c s t ∗ gmb_lent_lz γ s κ.
   Proof using c_timeless.
-    iIntros (Hmask Hn) "#LFT #GI #Ga Lc Pre £ Tok Fb".
+    iIntros (Hmask) "#LFT #GI #Ga Lc Pre £ Tok Fb".
     iApply (gmb_lend_start_gen true with "LFT GI Ga Lc Pre £ Tok Fb"); done.
   Qed.
 
@@ -720,7 +722,8 @@ Section GuardedBor.
     iMod gmb_tok_alloc as (γc) "Tc". iMod gmb_tok_alloc as (γp) "Tp".
     iInv "I" as (sa2 tb2) "[>[A2 B2] Other]" "Hcl".
     iDestruct (xa_half_frag_agree with "B2 Fout") as %->.
-    iDestruct "Other" as "(>Tok & _ & >Pre & >£)".
+    iDestruct "Other" as "(>Tok & SGn & >£)".
+    iMod (bi.later_exist_except_0 with "SGn") as (n) "[_ >Pre]".
     iDestruct "Pre" as "[Lc1 _]".
     iMod (gmb_state_open with "GI") as (sa tb) "([A1 B1] & Body & Hcl2)"; first solve_ndisj.
     iDestruct (gmb_auth_agree with "[$A1 $B1] [$A2 $B2]") as %[-> ->].
@@ -781,16 +784,15 @@ Section GuardedBor.
   Qed.
 
   (** (L3) Mutable. The guard of [gmb_a γ s] comes from the owner's share. Its step-index
-      [n] must be at most the depth of the instance (it is stored in [other_inv] for (L1));
-      the credits [£ n] pay for it, the credits [£ (1 + gmb_depth γ)] are prepaid for
-      (L1). *)
+      [n] is arbitrary (it is stored in [other_inv] for (L1)); the credits [£ n] pay for it,
+      the credits [£ (1 + n)] are prepaid for (L1). *)
   Lemma gmb_lend_later E γ κ s n :
-    ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+    ↑Nllft ⊆ E →
     llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
-    £ (1 + gmb_depth γ) -∗
+    £ (1 + n) -∗
     &{κ} (∃ t, gmb_b γ t) -∗ @[κ] ={E}=∗ &{κ} (∃ t, c s t) ∗ @[κ].
   Proof using c_timeless.
-    iIntros (Hmask Hn) "#LFT #GI #Ga Lc Pre Bor Alive".
+    iIntros (Hmask) "#LFT #GI #Ga Lc Pre Bor Alive".
     iMod (llftl_bor_acc_special with "LFT Bor Alive") as "(Fb & Tok & Close)"; first done.
     iDestruct "Fb" as ">[%t Fb]".
     iMod (gmb_lend_start with "LFT GI Ga Lc Pre Tok Fb") as "[C Fout]"; [done..|].
@@ -804,12 +806,12 @@ Section GuardedBor.
 
   (** (L3), guarded: the lifetime is held through a guard [G &&> @[κ]]. *)
   Lemma gmb_lend_guarded_later E G γ κ s n :
-    Timeless G → ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+    Timeless G → ↑Nllft ⊆ E →
     llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
-    £ (1 + gmb_depth γ) -∗
+    £ (1 + n) -∗
     &{κ} (∃ t, gmb_b γ t) -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗ &{κ} (∃ t, c s t) ∗ G.
   Proof using c_timeless.
-    iIntros (HG Hmask Hn) "#LFT #GI #Ga Lc Pre Bor #Gk G".
+    iIntros (HG Hmask) "#LFT #GI #Ga Lc Pre Bor #Gk G".
     iMod (llftl_bor_acc_special_guarded with "LFT Bor Gk G") as "(Fb & Tok & Close)"; first done.
     iDestruct "Fb" as ">[%t Fb]".
     iMod (gmb_lend_start with "LFT GI Ga Lc Pre Tok Fb") as "[C Fout]"; [done..|].
@@ -825,20 +827,20 @@ Section GuardedBor.
       back-map stores the final contents [Q] lazily, with the settle law [Law]
       ([gmb_lend_stop_lazy]): the lender's inheritance is a claim. *)
   Lemma gmb_lend_guarded_lazy E G γ κ s n (Q : iProp Σ) (R : T → iProp Σ) :
-    Timeless G → ↑Nllft ∪ ↑gmbN ∪ gmb_bmask γ ⊆ E → n ≤ gmb_depth γ →
+    Timeless G → ↑Nllft ∪ ↑gmbN ∪ gmb_bmask γ ⊆ E →
     llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
-    £ (1 + gmb_depth γ) -∗ £ 1 -∗ £ 4 -∗
+    £ (1 + n) -∗ £ 1 -∗ £ 4 -∗
     &{κ} (gmb_b_uniq γ R) -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
     (∀ t, R t -∗ c s t ={E}=∗ ▷ Q) -∗
     □ (Q -∗ gmb_bdead κ ={gmb_bmask γ}=∗ ∃ t, c s t ∗ R t) ={E}=∗ &{κ} Q ∗ G.
   Proof using c_timeless.
-    iIntros (HG Hmask Hn) "#LFT #GI #Ga Lc Pre £1 £3 Bor #Gk G ToQ #Law".
+    iIntros (HG Hmask) "#LFT #GI #Ga Lc Pre £1 £3 Bor #Gk G ToQ #Law".
     iMod (llftl_bor_acc_special_guarded_dead with "LFT Bor Gk G") as "(Fb & Tok & Close)";
       first solve_ndisj.
     iMod (lc_fupd_elim_later with "£1 Fb") as "Fb".
     iMod (gmb_b_uniq_settle with "GI Fb") as (t) "[B Res]".
     { assert (↑NllftUsr ∪ ↑NllftUsr2 ⊆@{coPset} ↑Nllft) by solve_ndisj. set_solver. }
-    iMod (gmb_lend_start_lazy with "LFT GI Ga Lc Pre £3 Tok B") as "[C Lent]"; [solve_ndisj|done|].
+    iMod (gmb_lend_start_lazy with "LFT GI Ga Lc Pre £3 Tok B") as "[C Lent]"; [solve_ndisj|].
     iMod ("ToQ" with "Res C") as "Q".
     iApply (fupd_mask_mono (↑Nllft)); first solve_ndisj.
     iApply ("Close" $! Q with "[Lent $Q]").
@@ -848,23 +850,23 @@ Section GuardedBor.
     iModIntro. iNext. by iRight.
   Qed.
 
-  (** (L3) with a guard at step-index 0 (any depth). *)
+  (** (L3) with a guard at step-index 0. *)
   Lemma gmb_lend E γ κ s :
     ↑Nllft ⊆ E →
-    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ s) -∗ £ (1 + gmb_depth γ) -∗
+    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ s) -∗ £ 1 -∗
     &{κ} (∃ t, gmb_b γ t) -∗ @[κ] ={E}=∗ &{κ} (∃ t, c s t) ∗ @[κ].
   Proof using c_timeless.
     iIntros (Hmask) "#LFT #GI #Ga Pre Bor Alive". iMod lc_zero as "Lc".
-    iApply (gmb_lend_later with "LFT GI Ga Lc Pre Bor Alive"); [done|lia].
+    iApply (gmb_lend_later with "LFT GI Ga Lc Pre Bor Alive"); done.
   Qed.
 
   Lemma gmb_lend_guarded E G γ κ s :
     Timeless G → ↑Nllft ⊆ E →
-    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ s) -∗ £ (1 + gmb_depth γ) -∗
+    llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ s) -∗ £ 1 -∗
     &{κ} (∃ t, gmb_b γ t) -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗ &{κ} (∃ t, c s t) ∗ G.
   Proof using c_timeless.
     iIntros (HG Hmask) "#LFT #GI #Ga Pre Bor #Gk G". iMod lc_zero as "Lc".
-    iApply (gmb_lend_guarded_later with "LFT GI Ga Lc Pre Bor Gk G"); [done|lia].
+    iApply (gmb_lend_guarded_later with "LFT GI Ga Lc Pre Bor Gk G"); done.
   Qed.
 End GuardedBor.
 

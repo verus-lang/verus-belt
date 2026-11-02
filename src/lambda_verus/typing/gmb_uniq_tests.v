@@ -25,7 +25,7 @@ Section gmb_uniq_tests.
   Context (Hinj: Inj eq eq fp) (Hcomm: ∀ y π, vπ (fv y) π = fp (vπ y π)).
   Context (Hpf: ∀ v, pty.(ty_fval) v = Some fvp) (Hpz: ∀ v, cbytes pty v lp ⊣⊢ True).
   Context (Hstatic: ∀ κ, ⊢ κ ⊑ ty_lft pty) (Hlft: ⊢ ty_lft pty ⊑ ty_lft ty).
-  Context (γ: gmb_name) (Hbm: gmb_bmask γ = lazyB) (Hd: gmb_depth γ = 0).
+  Context (γ: gmb_name) (Hbm: gmb_bmask γ = lazyB).
   Context (HGf: ∀ y' d' g', ty_gho_own pty (fv y') d' g' tid ⊢ |={lazyE}=>
      ∃ fv0, ⌜ty.(ty_fval) y' = Some fv0⌝ ∗ gmb_b γ fv0 ∗ ty_gho_own ty y' d' g' tid).
   Context (HGb: ∀ y' d' g' fv0, ty.(ty_fval) y' = Some fv0 →
@@ -40,7 +40,7 @@ Section gmb_uniq_tests.
   Lemma test_gmb_uniq_abandoned y d g fv0 :
     ty.(ty_fval) y = Some fv0 →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ gmb_inv cb γ -∗ gmb_a γ l -∗ gmb_b γ fv0 -∗
-    ⧖(S d `max` g) -∗ ▷ ty_gho_own ty y d g tid -∗ ⧗1 -∗ £ 5 -∗ £ (1 + gmb_depth γ) -∗
+    ⧖(S d `max` g) -∗ ▷ ty_gho_own ty y d g tid -∗ ⧗1 -∗ £ 5 -∗ £ 1 -∗
     |={⊤}=> |={↑Nllft}[∅]▷=> |={⊤}=> ∃ fv1, cb l fv1.
   Proof using All.
     iIntros (Hy) "#LFT #PROPH #UNIQ #Inv A B #⧖ Gho ⧗ £ Pre".
@@ -52,10 +52,13 @@ Section gmb_uniq_tests.
       as (ξi ζi idx) "(Body & _ & _)"; [solve_ndisj| |by rewrite Hpz|].
     { iNext. iApply (HGb with "[$B $Gho]"). done. }
     (* the lend *)
-    iMod (gmb_lend_uniq cb pty ty fv fp fvp γ l lp y ξi d g idx κ tid ⊤ (@[κ])
-      with "LFT PROPH UNIQ Inv Ga' [] [] [] Alive £ Pre Body") as (ζi' ζidx) "(_ & _ & Alive)";
+    iMod lc_zero as "Lc0".
+    iMod (gmb_lend_uniq cb pty ty fv fp fvp γ l lp y ξi d g idx κ tid ⊤ (@[κ]) 0
+      with "LFT PROPH UNIQ Inv [] [] Ga' [] [] [] Alive £ Lc0 Pre Body") as (ζi' ζidx) "(_ & _ & Alive)";
       [exact Hcomm|done|exact Hbm|intros ?? Hx; rewrite /cb; iIntros "B"; by iApply (fbytes_cbytes with "B")|
-       intros ?; by rewrite /cb|exact Hpf|exact Hpz|exact HGf|exact HGb| | | |].
+       intros ?; by rewrite /cb|exact Hpf|exact Hpz| | | | | |].
+    { iIntros "!>" (y' d' g') "H". by iApply HGf. }
+    { iIntros "!>" (y' d' g' fv' Hy') "H". by iApply HGb. }
     { iApply Hstatic. } { iApply Hlft. } { iApply guards_refl. }
     (* end [κ]; the owner moves *)
     iModIntro. iMod ("End" with "Alive") as "Dead". iModIntro. iNext. iMod "Dead" as "#Dead".
