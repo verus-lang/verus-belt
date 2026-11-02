@@ -34,7 +34,7 @@ Section GmbProphTests.
   Local Definition posi : syn_typei := exist _ positiveₛ I.
   Local Definition pairi : syn_typei := exist _ (positiveₛ * positiveₛ)%ST I.
 
-  Local Definition E0 : coPset := ↑Nllft ∪ ↑prophN ∪ ↑uniqN.
+  Local Definition E0 : coPset := ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN.
 
   (* a share of an owned (timeless) resource at [κ], as the typing layer makes it *)
   Local Lemma share_timeless E κ (P : iProp Σ) :
@@ -89,7 +89,7 @@ Section GmbProphTests.
   Proof.
     iIntros "#LFT #PROPH #UNIQ Auth C Lc".
     have ? : ↑Nllft ⊆ E0 by rewrite /E0; solve_ndisj.
-    iMod (gmb_create cc _ 0 with "C") as (γ) "(%Hd & #Inv & A & B)".
+    iMod (gmb_create cc _ 0 with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)".
     iMod (llftl_begin with "LFT") as (κ) "[Alive #End]"; first done.
     (* the owner shares [gmb_a] *)
     iMod (share_timeless with "A") as "[#Ga InhA]"; [done|].
@@ -135,7 +135,7 @@ Section GmbProphTests.
     simplify_eq.
     iMod ("Hcl" with "C") as "[A B]".
     (* (L4): the owner moves, without the lender *)
-    iMod (gmb_move cc with "Inv [Lc] A") as (t2) "[C Back]"; [done|by rewrite Hd|].
+    iMod (gmb_move cc with "Inv [Lc] A") as (t2) "[C Back]"; [rewrite Hb; solve_ndisj|by rewrite Hd|].
     iDestruct (ghost_map_lookup with "Auth C") as %Hs2. rewrite lookup_insert in Hs2.
     simplify_eq.
     iMod ("Back" with "C") as "A".
@@ -152,7 +152,7 @@ Section GmbProphTests.
   Proof.
     iIntros "#LFT #PROPH #UNIQ C Lc".
     have ? : ↑Nllft ⊆ E0 by rewrite /E0; solve_ndisj.
-    iMod (gmb_create cc _ 0 with "C") as (γ) "(%Hd & #Inv & A & B)".
+    iMod (gmb_create cc _ 0 with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)".
     iMod (llftl_begin with "LFT") as (κ) "[Alive #End]"; first done.
     iMod (share_timeless with "A") as "[#Ga InhA]"; [done|].
     iMod (proph_loan_intro pairi E0 ((g0, t) : positive * positive) with "PROPH UNIQ")
@@ -174,7 +174,7 @@ Section GmbProphTests.
       by iExists (g0, y'). }
     iModIntro. iMod ("End" with "Alive") as "Dead". iModIntro. iNext. iMod "Dead" as "#Dead".
     iModIntro. iMod ("InhA" with "Dead") as ">A".
-    iMod (gmb_move cc with "Inv [Lc] A") as (t') "[C _]"; [done|by rewrite Hd|].
+    iMod (gmb_move cc with "Inv [Lc] A") as (t') "[C _]"; [rewrite Hb; solve_ndisj|by rewrite Hd|].
     iModIntro. by iExists t'.
   Qed.
 
@@ -189,7 +189,7 @@ Section GmbProphTests.
   Proof.
     iIntros "#LFT #PROPH #UNIQ Auth C Lc".
     have ? : ↑Nllft ⊆ E0 by rewrite /E0; solve_ndisj.
-    iMod (gmb_create cc _ 0 with "C") as (γ) "(%Hd & #Inv & A & B)".
+    iMod (gmb_create cc _ 0 with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)".
     iMod (llftl_begin with "LFT") as (κ) "[Alive #End]"; first done.
     iMod (share_timeless with "A") as "[#Ga InhA]"; [done|].
     iMod (proph_loan_intro posi E0 t with "PROPH UNIQ") as (ξi) "Loan";
@@ -227,7 +227,7 @@ Section GmbProphTests.
     iDestruct (ghost_map_lookup with "Auth C") as %Hs. rewrite lookup_insert in Hs.
     simplify_eq.
     iMod ("Hcl" with "C") as "[A B]".
-    iMod (gmb_move cc with "Inv [Lc] A") as (t2) "[C Back]"; [done|by rewrite Hd|].
+    iMod (gmb_move cc with "Inv [Lc] A") as (t2) "[C Back]"; [rewrite Hb; solve_ndisj|by rewrite Hd|].
     iDestruct (ghost_map_lookup with "Auth C") as %Hs2. rewrite lookup_insert in Hs2.
     simplify_eq.
     iMod ("Back" with "C") as "A".
