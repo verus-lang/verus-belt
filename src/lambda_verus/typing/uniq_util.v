@@ -134,6 +134,21 @@ Section uniq_util.
   Lemma lazyE_NllftG : ↑NllftG ⊆ lazyE.
   Proof. rewrite /lazyE /NllftG. solve_ndisj. Qed.
 
+  (** The mask of the bytes layer of the bodies of unique borrows (the inheritances of
+      blocked leaves, see [blocked_owned]): the bytes can be forced with this mask and dead
+      tokens only, without a guard for the lifetime of the type. It is included in
+      [lazyE], the mask of the (guarded) ghost layer. *)
+  Definition lazyB : coPset := ↑Nllft ∪ ↑prophN ∪ ↑uniqN.
+
+  Lemma lazyB_lazyE : lazyB ⊆ lazyE.
+  Proof. rewrite /lazyB /lazyE. set_solver. Qed.
+
+  Lemma lazyB_Nllft : ↑Nllft ⊆ lazyB.
+  Proof. rewrite /lazyB. set_solver. Qed.
+
+  Lemma lazyB_NllftG : ↑NllftG ⊆ lazyB.
+  Proof. rewrite /lazyB /NllftG. solve_ndisj. Qed.
+
   (** ** Place refinements *)
 
   (** The relation between a place refinement and a value. *)
@@ -185,23 +200,6 @@ Section uniq_util.
     iDestruct "Ok" as "[Hα Ok]". iMod ("IH" with "Ok") as "$".
     iApply (llftl_incl_dead_implies_dead with "LFT Hα †κ"). done.
   Qed.
-
-  Definition cpd_body {𝔄} (κ α: lft)
-      (node: lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ)
-      (tid: thread_id) (l: loc)
-      (c: ~~ (uniq_cellₛ 𝔄)) (wπ: proph (uniq_cellₛ 𝔄)) : iProp Σ :=
-    ∃ (p: lpat) (r: prfn 𝔄), pat_ok κ p ∗ ⌜∀ π, (wπ π).1 = prfn_den r π⌝ ∗
-      ghost_var (cell_γ c) (1/2) (lstate p r) ∗
-      guarded_upd lazyE @[α] (⧖(S (cell_d c) `max` cell_g c) ∗
-        node p r (cell_d c) (cell_g c) tid l).
-
-  Lemma cpd_body_cell {𝔄} κ α (node: lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ)
-      tid l (x: ~~𝔄) d g γ wπ :
-    cpd_body κ α node tid l (uniq_cell x d g γ) wπ ⊣⊢
-    ∃ p r, pat_ok κ p ∗ ⌜∀ π, (wπ π).1 = prfn_den r π⌝ ∗
-      ghost_var γ (1/2) (lstate p r) ∗
-      guarded_upd lazyE @[α] (⧖(S d `max` g) ∗ node p r d g tid l).
-  Proof. by rewrite /cpd_body cell_d_uniq_cell cell_g_uniq_cell cell_γ_uniq_cell. Qed.
 
   Definition uniq_tokγ {𝔄} (x: ~~ 𝔄) (ξi: positive) (d g: nat) (idx: Idx) (γ: gname)
       : iProp Σ :=
@@ -302,13 +300,72 @@ Section uniq_util_bytes.
       setoid_rewrite syn_bytes_uniq_bor.
   Qed.
 
+  (** ** Fancy bytes at a fancy value
+
+    In the bodies of unique borrows, the bytes of the leaves are kept outside the guarded
+    update of their ghost ownership (option 3 of the phase-2b plan of
+    [design_docs/guarded-mutable-borrows-plan.md]), quantified over the fancy value that
+    they represent: [fbytes ty l fv] are the bytes at [l] of some value of [ty] whose fancy
+    value is [fv]. The ghost ownership is then that of a value of fancy value [fv]
+    ([ofty_gho]). Since the bytes only depend on the fancy value ([cbytes_fval]), the two
+    parts can be put back together ([ofty_split]). The bytes can be forced with the mask
+    [lazyB] and dead tokens, without a guard for the lifetime of the type
+    ([leaf_contents_unblock]). *)
+  Definition fbytes {𝔄} (ty: type 𝔄) (l: loc) (fv: FValue) : iProp Σ :=
+    ∃ x, ⌜ty.(ty_fval) x = Some fv⌝ ∗ cbytes ty x l.
+
+  Global Instance fbytes_timeless {𝔄} (ty: type 𝔄) l fv : Timeless (fbytes ty l fv).
+  Proof. apply _. Qed.
+
+  Lemma cbytes_fval {𝔄} (ty: type 𝔄) x x' l :
+    ty.(ty_fval) x = ty.(ty_fval) x' → cbytes ty x l ⊣⊢ cbytes ty x' l.
+  Proof. intros Hx. apply bytes_own_iff=> R fbs. by rewrite /ty_fbytes Hx. Qed.
+
+  Lemma cbytes_fval_some {𝔄} (ty: type 𝔄) x l :
+    cbytes ty x l -∗ ⌜is_Some (ty.(ty_fval) x)⌝.
+  Proof.
+    rewrite /cbytes bytes_own_brepr. iIntros "(%fbs & %fv & _ & %Hc & _)". iPureIntro.
+    destruct Hc as [_ Hfv]. by eexists.
+  Qed.
+
+  Lemma cbytes_fbytes {𝔄} (ty: type 𝔄) x l :
+    cbytes ty x l ⊣⊢ ∃ fv, ⌜ty.(ty_fval) x = Some fv⌝ ∗ fbytes ty l fv.
+  Proof.
+    iSplit.
+    - iIntros "B". iDestruct (cbytes_fval_some with "B") as %[fv Hfv].
+      iExists fv. iSplit; [done|]. iExists x. by iFrame.
+    - iIntros "(%fv & %Hfv & %x0 & %Hx0 & B)". rewrite (cbytes_fval ty x x0) //.
+      by rewrite Hfv Hx0.
+  Qed.
+
+  Lemma fbytes_cbytes {𝔄} (ty: type 𝔄) x l fv :
+    ty.(ty_fval) x = Some fv → fbytes ty l fv -∗ cbytes ty x l.
+  Proof. iIntros (Hx) "B". rewrite cbytes_fbytes. iExists fv. by iFrame. Qed.
+
+  Lemma fbytes_same {𝔄} (ty ty': type 𝔄) l fv : fbytes ty l fv ⊣⊢ fbytes ty' l fv.
+  Proof. rewrite /fbytes. setoid_rewrite (ty_fval_same ty ty'). by setoid_rewrite (cbytes_same ty ty'). Qed.
+
+  Lemma fbytes_loc {𝔄} (ty: type 𝔄) l l' fv :
+    (∀ x, cbytes ty x l ⊣⊢ cbytes ty x l') → fbytes ty l fv ⊣⊢ fbytes ty l' fv.
+  Proof. intros Hl. rewrite /fbytes. by setoid_rewrite Hl. Qed.
+
+  (** The refinement [lr] admits the fancy value [fv]: a value [PlaceIn x] must have the
+      fancy value [fv]. *)
+  Definition lr_fval {𝔄} (ty: type 𝔄) (lr: place_rfn 𝔄) (fv: FValue) : Prop :=
+    match lr with PlaceIn x => ty.(ty_fval) x = Some fv | PlaceProph _ _ => True end.
+
+  Lemma lr_fval_rel {𝔄} (ty: type 𝔄) (lr: place_rfn 𝔄) x fv :
+    ty.(ty_fval) x = Some fv → place_rfn_rel lr x -∗ ⌜lr_fval ty lr fv⌝.
+  Proof. iIntros (Hx) "Rel". destruct lr; [by iDestruct "Rel" as %->|done]. Qed.
+
   (** ** Leaves in [Owned] mode
 
     A leaf [OfTy ty] contains a value: its points-to and its ownership predicate
     (under [m] laters, one per enclosing owned pointer). A blocked leaf holds an
     inheritance that gives back pending ownership of the leaf (to be settled with a
     guard for the lifetime of the type, as the blocked entries of the type context);
-    the inheritance can be fired in a lazy update.
+    the inheritance can be fired with the mask [lazyB] and gives back the bytes at once
+    and the ghost ownership in a lazy update.
 
     The time receipt of the contents given back by a blocked leaf under [m] owned
     pointers is shifted by [m] ([⧖((m + S d') `max` g')]), so that the owned pointers
@@ -319,10 +376,46 @@ Section uniq_util_bytes.
       (tid: thread_id) (l: loc) : iProp Σ :=
     cbytes ty x l ∗ ▷^m ty.(ty_gho_own) x d g tid.
 
+  (** The ghost part of a leaf of fancy value [fv]. *)
+  Definition ofty_gho {𝔄} (m: nat) (ty: type 𝔄) (lr: place_rfn 𝔄) (fv: FValue) (d g: nat)
+      (tid: thread_id) : iProp Σ :=
+    ∃ x, ⌜ty.(ty_fval) x = Some fv⌝ ∗ place_rfn_rel lr x ∗ ▷^m ty.(ty_gho_own) x d g tid.
+
+  Lemma ofty_split {𝔄} m (ty: type 𝔄) lr d g tid l :
+    (∃ x, place_rfn_rel lr x ∗ ofty_owned m ty x d g tid l) ⊣⊢
+    ∃ fv, (fbytes ty l fv ∗ ⌜lr_fval ty lr fv⌝) ∗ ofty_gho m ty lr fv d g tid.
+  Proof.
+    iSplit.
+    - iIntros "(%x & Rel & B & Gho)". iDestruct (cbytes_fval_some with "B") as %[fv Hfv].
+      iDestruct (lr_fval_rel with "Rel") as %Hlr; [done|].
+      iExists fv. iSplitL "B"; [iSplit; [iExists x; by iFrame|done]|].
+      iExists x. by iFrame.
+    - iIntros "(%fv & [B _] & %x & %Hx & Rel & Gho)". iExists x. iFrame "Rel Gho".
+      by iApply (fbytes_cbytes with "B").
+  Qed.
+
   Definition blocked_owned {𝔄} (m: nat) (ty: type 𝔄) (α: lft) (lr: place_rfn 𝔄)
       (tid: thread_id) (l: loc) : iProp Σ :=
-    [†α] ={lazyE}=∗ guarded_upd lazyE @[ty_lft ty]
+    [†α] ={lazyB}=∗ ∃ fv, fbytes ty l fv ∗ guarded_upd lazyE @[ty_lft ty]
+      (∃ d' g', ⧖((m + S d') `max` g') ∗ ofty_gho m ty lr fv d' g' tid).
+
+  (** Firing the inheritance of a blocked leaf, with the bytes in the lazy update. *)
+  Lemma blocked_owned_fire {𝔄} m (ty: type 𝔄) α lr tid l :
+    blocked_owned m ty α lr tid l -∗ [†α] ={lazyB}=∗ guarded_upd lazyE @[ty_lft ty]
       (∃ x d' g', place_rfn_rel lr x ∗ ⧖((m + S d') `max` g') ∗ ofty_owned m ty x d' g' tid l).
+  Proof.
+    iIntros "Inh Dead". iMod ("Inh" with "Dead") as (fv) "[B Upd]". iModIntro.
+    iApply (guarded_upd_mono with "[B] Upd").
+    iIntros "(%d' & %g' & ⧖ & %x & %Hx & Rel & Gho) !>". iExists x, d', g'. iFrame "Rel ⧖ Gho".
+    by iApply (fbytes_cbytes with "B").
+  Qed.
+
+  (** A blocked leaf from contents that are already unblocked. *)
+  Lemma blocked_owned_intro {𝔄} m (ty: type 𝔄) α lr tid l :
+    (∃ fv, fbytes ty l fv ∗ guarded_upd lazyE @[ty_lft ty]
+      (∃ d' g', ⧖((m + S d') `max` g') ∗ ofty_gho m ty lr fv d' g' tid)) -∗
+    blocked_owned m ty α lr tid l.
+  Proof. iIntros "H _". by iModIntro. Qed.
 
   (** [c] selects the core interpretation, in which blocked leaves are unblocked. *)
   Definition leaf_owned {𝔄} (c: bool) (m: nat) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄)
@@ -344,6 +437,30 @@ Section uniq_util_bytes.
     rewrite /leaf_owned /=. iSplit; [iIntros "(%y & -> & $)"|iIntros "H"; iExists x; by iFrame].
   Qed.
 
+  (** The bytes and the ghost part of a (non-core) leaf: a blocked leaf is all bytes (its
+      inheritance). *)
+  Definition leaf_owned_b {𝔄} (m: nat) (ty: type 𝔄) (p: lpat) (lr: place_rfn 𝔄) (fv: FValue)
+      (tid: thread_id) (l: loc) : iProp Σ :=
+    match p with
+    | PatBlocked α => blocked_owned m ty α lr tid l
+    | _ => fbytes ty l fv ∗ ⌜lr_fval ty lr fv⌝
+    end%I.
+
+  Definition leaf_owned_g {𝔄} (m: nat) (ty: type 𝔄) (p: lpat) (lr: place_rfn 𝔄) (fv: FValue)
+      (d g: nat) (tid: thread_id) : iProp Σ :=
+    match p with
+    | PatBlocked α => True
+    | _ => ofty_gho m ty lr fv d g tid
+    end%I.
+
+  Lemma leaf_owned_bg {𝔄} m (ty: type 𝔄) p lr d g tid l :
+    leaf_owned false m ty p (inl lr) d g tid l ⊣⊢
+    ∃ fv, leaf_owned_b m ty p lr fv tid l ∗ leaf_owned_g m ty p lr fv d g tid.
+  Proof.
+    destruct p; rewrite /leaf_owned /leaf_owned_b /leaf_owned_g /=; try apply ofty_split.
+    iSplit; [iIntros "$"; by iExists inhabitant|iIntros "(%fv & $ & _)"].
+  Qed.
+
   (** Unblocking a leaf, inside a lazy update: the blocked lifetime is included in
       [κ], which has ended. *)
   Lemma leaf_owned_unblock {𝔄} κ m (ty: type 𝔄) p lr d g tid l G :
@@ -357,7 +474,8 @@ Section uniq_util_bytes.
     destruct p; try (iModIntro; iFrame "G"; iDestruct "L" as (x) "[Rel O]";
       iExists x, d, g; by iFrame "∗#").
     iMod (pat_ok_dead with "LFT Ok †κ") as "[Dead _]"; [apply lazyE_NllftG|].
-    iMod ("L" with "Dead") as "Upd".
+    iDestruct (blocked_owned_fire with "L Dead") as "Upd".
+    iMod (fupd_mask_mono with "Upd") as "Upd"; [apply lazyB_lazyE|].
     by iApply (guarded_upd_run with "Gty G Upd").
   Qed.
 
@@ -388,16 +506,84 @@ Section uniq_util_bytes.
     iApply (leaf_owned_unblock _ 0 with "LFT Gty Ok' †κ G ⧖ L").
   Qed.
 
-  (** ** The payload *)
+  (** ** The contents of the leaf body
 
+    The contents of the body of a unique borrow of [ty] at a state [(p, r)]: the bytes
+    part of the leaf node and, unless the leaf is blocked, its ghost part with the time
+    receipt in a lazy update for the lifetime of the type. (A blocked leaf is its
+    inheritance, which gives back both parts.) *)
+  Definition leaf_owned_lz {𝔄} (ty: type 𝔄) (p: lpat) (lr: place_rfn 𝔄) (fv: FValue)
+      (d g: nat) (tid: thread_id) : iProp Σ :=
+    match p with
+    | PatBlocked _ => True
+    | _ => guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗ ofty_gho 0 ty lr fv d g tid)
+    end%I.
+
+  Definition leaf_contents {𝔄} (κp: lft) (ty: type 𝔄) (p: lpat) (r: prfn 𝔄) (d g: nat)
+      (tid: thread_id) (l: loc) : iProp Σ :=
+    ∃ fv, leaf_owned_b 0 ty (norm_pat κp p r) (prfn_place r) fv tid l ∗
+      leaf_owned_lz ty (norm_pat κp p r) (prfn_place r) fv d g tid.
+
+  (** The time receipt of the contents, which only an unblocked leaf holds. *)
+  Definition leaf_rcpt (p: lpat) (d g: nat) : iProp Σ :=
+    match p with PatBlocked _ => True | _ => ⧖(S d `max` g) end%I.
+
+  (** The contents as a lazy update of the leaf node. *)
+  Lemma leaf_contents_guarded {𝔄} κp (ty: type 𝔄) p r d g tid l :
+    leaf_contents κp ty p r d g tid l -∗
+    guarded_upd lazyE @[ty_lft ty] (leaf_rcpt (norm_pat κp p r) d g ∗ leaf_node κp ty p r d g tid l).
+  Proof.
+    iIntros "(%fv & B & Upd)". rewrite /leaf_node leaf_owned_bg /leaf_owned_lz /leaf_rcpt.
+    destruct (norm_pat κp p r) eqn:Hn;
+      try (iApply (guarded_upd_mono with "[B] Upd"); iIntros "[$ G] !>"; iExists fv; by iFrame).
+    iApply guarded_upd_intro. iModIntro. iSplit; [done|]. iExists fv. by iFrame.
+  Qed.
+
+  (** Contents from an eager leaf node. *)
+  Lemma leaf_contents_intro {𝔄} κp (ty: type 𝔄) p r d g tid l :
+    ⧖(S d `max` g) -∗ leaf_node κp ty p r d g tid l -∗ leaf_contents κp ty p r d g tid l.
+  Proof.
+    iIntros "⧖ L". rewrite /leaf_node leaf_owned_bg. iDestruct "L" as (fv) "[B G]".
+    iExists fv. iFrame "B". rewrite /leaf_owned_lz /leaf_owned_g.
+    destruct (norm_pat κp p r); try done; iApply guarded_upd_intro; by iFrame.
+  Qed.
+
+  (** The contents at a state that only differs by the normalization of the pattern. *)
+  Lemma leaf_contents_norm {𝔄} κp κp' (ty: type 𝔄) p r d g tid l :
+    leaf_contents κp ty p r d g tid l ⊣⊢
+    leaf_contents κp' ty (norm_pat κp p r) (inl (prfn_place r)) d g tid l.
+  Proof. done. Qed.
+
+  (** Forcing the bytes of the contents, with the mask [lazyB] and the death of [κp],
+      without a guard for the lifetime of the type: all blocked lifetimes are included in
+      [κp] ([pat_ok]). The ghost part stays in a lazy update. *)
+  Lemma leaf_contents_unblock {𝔄} κp (ty: type 𝔄) p r d g tid l :
+    llft_ctx -∗ pat_ok κp p -∗ [†κp] -∗ leaf_contents κp ty p r d g tid l ={lazyB}=∗
+      ∃ fv, fbytes ty l fv ∗ guarded_upd lazyE @[ty_lft ty]
+        (∃ d' g', ⧖(S d' `max` g') ∗ ofty_gho 0 ty (prfn_place r) fv d' g' tid).
+  Proof.
+    iIntros "#LFT #Ok #†κ (%fv & B & Upd)".
+    iDestruct (pat_ok_norm _ _ r with "Ok") as "Ok'".
+    rewrite /leaf_owned_b /leaf_owned_lz.
+    destruct (norm_pat κp p r) as [| | | | |α|] eqn:Hn;
+      try (iModIntro; iDestruct "B" as "[B _]"; iExists fv; iFrame "B";
+        iApply (guarded_upd_mono with "[] Upd"); iIntros "[⧖ G] !>";
+        iExists d, g; by iFrame).
+    iMod (pat_ok_dead with "LFT Ok' †κ") as "[Dead _]"; [apply lazyB_NllftG|].
+    by iMod ("B" with "Dead").
+  Qed.
+
+  (** ** The payload
+
+    The bytes of the contents, and their ownership predicate with the time receipt in a
+    lazy update ([guarded_upd], with the mask [lazyE], for the lifetime [ty_lft ty] of
+    the referent type). *)
   Definition uniq_payload {𝔄} (ty: type 𝔄) (tid: thread_id) (l: loc)
       (x: ~~𝔄) (d g: nat) : iProp Σ :=
-    guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗
-      ty.(ty_gho_own) x d g tid ∗ cbytes ty x l).
+    cbytes ty x l ∗ guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid).
   Lemma uniq_payload_cell {𝔄} (ty: type 𝔄) tid l x d g :
     uniq_payload ty tid l x d g ⊣⊢
-      guarded_upd lazyE @[ty_lft ty]
-        (⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ cbytes ty x l).
+      cbytes ty x l ∗ guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid).
   Proof. done. Qed.
 
   (** A non-lazy payload. *)
@@ -405,7 +591,7 @@ Section uniq_util_bytes.
     ⧖(S d `max` g) -∗ ty.(ty_gho_own) x d g tid -∗ cbytes ty x l -∗
     uniq_payload ty tid l x d g.
   Proof.
-    rewrite uniq_payload_cell. iIntros "⧖ Gho Pt". iApply guarded_upd_intro.
+    rewrite uniq_payload_cell. iIntros "⧖ Gho Pt". iFrame "Pt". iApply guarded_upd_intro.
     iModIntro. iFrame.
   Qed.
 
@@ -421,8 +607,8 @@ Section uniq_util_bytes.
     (G &&{↑NllftG}&&> @[ty_lft ty]) -∗ G -∗ uniq_payload ty tid l x d g ={E}=∗
       G ∗ ⧖(S d `max` g) ∗ ty.(ty_gho_own) x d g tid ∗ cbytes ty x l.
   Proof.
-    iIntros (??) "Gk G P". rewrite uniq_payload_cell.
-    iApply (guarded_upd_run with "Gk G P"); done.
+    iIntros (??) "Gk G [Pt P]".
+    iMod (guarded_upd_run with "Gk G P") as "($ & $ & $)"; done.
   Qed.
 
   (** Running the lazy update of a payload that is under a later, with a later
@@ -438,27 +624,94 @@ Section uniq_util_bytes.
     by iApply (uniq_payload_run with "Gk G P").
   Qed.
 
-  (** Mapping the lazy part of a payload. *)
+  (** Mapping a payload: the bytes eagerly, the ghost part lazily. *)
   Lemma uniq_payload_map {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) tid tid' l l' x x' d g d' g' :
     ty_lft ty' ⊑ ty_lft ty -∗
     (⧖(S d `max` g) -∗ ⧖(S d' `max` g')) -∗
-    (ty.(ty_gho_own) x d g tid ∗ cbytes ty x l ={lazyE}=∗
-      ty'.(ty_gho_own) x' d' g' tid' ∗ cbytes ty' x' l') -∗
+    (cbytes ty x l -∗ cbytes ty' x' l') -∗
+    (ty.(ty_gho_own) x d g tid ={lazyE}=∗ ty'.(ty_gho_own) x' d' g' tid') -∗
     uniq_payload ty tid l x d g -∗ uniq_payload ty' tid' l' x' d' g'.
   Proof.
-    rewrite !uniq_payload_cell. iIntros "#Incl T W Upd".
+    rewrite !uniq_payload_cell. iIntros "#Incl T WB WG [Pt Upd]".
+    iSplitL "WB Pt"; [by iApply "WB"|].
     iApply (guarded_upd_weaken with "Incl").
-    iApply (guarded_upd_mono with "[T W] Upd"). iIntros "(⧖ & Upd)".
-    iDestruct ("T" with "⧖") as "$". by iApply "W".
+    iApply (guarded_upd_mono with "[T WG] Upd"). iIntros "(⧖ & Gho)".
+    iDestruct ("T" with "⧖") as "$". by iApply "WG".
   Qed.
 
+  (** ** Bodies of unique borrows
 
-  (** ** Bodies of unique borrows *)
-
-  (** The body: the pinned body with the leaf [OfTy ty] as core. *)
+    The pinned body of a borrow with the leaf [OfTy ty] as core: the state [(p, r)] (in
+    the ghost variable [cell_γ c]), and the contents of the leaf at that state. *)
   Definition uniq_gbody {𝔄} (κp: lft) (ty: type 𝔄) (tid: thread_id) (l: loc)
       (c: ~~ (uniq_cellₛ 𝔄)) (wπ: proph (uniq_cellₛ 𝔄)) : iProp Σ :=
-    cpd_body κp (ty_lft ty) (leaf_node κp ty) tid l c wπ.
+    ∃ (p: lpat) (r: prfn 𝔄), pat_ok κp p ∗ ⌜∀ π, (wπ π).1 = prfn_den r π⌝ ∗
+      ghost_var (cell_γ c) (1/2) (lstate p r) ∗
+      leaf_contents κp ty p r (cell_d c) (cell_g c) tid l.
+
+  Lemma uniq_gbody_cell {𝔄} κp (ty: type 𝔄) tid l (x: ~~𝔄) d g γ wπ :
+    uniq_gbody κp ty tid l (uniq_cell x d g γ) wπ ⊣⊢
+    ∃ p r, pat_ok κp p ∗ ⌜∀ π, (wπ π).1 = prfn_den r π⌝ ∗
+      ghost_var γ (1/2) (lstate p r) ∗ leaf_contents κp ty p r d g tid l.
+  Proof. by rewrite /uniq_gbody cell_d_uniq_cell cell_g_uniq_cell cell_γ_uniq_cell. Qed.
+
+  (** The pinned body of a borrow whose core is a compound place, with the node [node]
+      (see [typing/ltype.v]): the contents are both a lazy update of the node, and the
+      contents of the leaf [OfTy ty] of the folded type [ty] (at a structured refinement,
+      the leaf is blocked at [κp], see [leaf_node]). The second view is the one that the
+      closing view shift of the borrow, which goes back to the body of [&uniq], uses
+      ([cpd_body_leaf]): it needs no update. *)
+  Definition cpd_contents {𝔄} (κp: lft) (ty: type 𝔄)
+      (node: lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ) (p: lpat) (r: prfn 𝔄)
+      (d g: nat) (tid: thread_id) (l: loc) : iProp Σ :=
+    guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗ node p r d g tid l) ∧
+    leaf_contents κp ty p r d g tid l.
+
+  Definition cpd_body {𝔄} (κp: lft) (ty: type 𝔄)
+      (node: lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ)
+      (tid: thread_id) (l: loc)
+      (c: ~~ (uniq_cellₛ 𝔄)) (wπ: proph (uniq_cellₛ 𝔄)) : iProp Σ :=
+    ∃ (p: lpat) (r: prfn 𝔄), pat_ok κp p ∗ ⌜∀ π, (wπ π).1 = prfn_den r π⌝ ∗
+      ghost_var (cell_γ c) (1/2) (lstate p r) ∗
+      cpd_contents κp ty node p r (cell_d c) (cell_g c) tid l.
+
+  Lemma cpd_body_cell {𝔄} κp (ty: type 𝔄) (node: lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ)
+      tid l (x: ~~𝔄) d g γ wπ :
+    cpd_body κp ty node tid l (uniq_cell x d g γ) wπ ⊣⊢
+    ∃ p r, pat_ok κp p ∗ ⌜∀ π, (wπ π).1 = prfn_den r π⌝ ∗
+      ghost_var γ (1/2) (lstate p r) ∗ cpd_contents κp ty node p r d g tid l.
+  Proof. by rewrite /cpd_body cell_d_uniq_cell cell_g_uniq_cell cell_γ_uniq_cell. Qed.
+
+  Lemma cpd_body_leaf {𝔄} κp (ty: type 𝔄) node tid l c wπ :
+    cpd_body κp ty node tid l c wπ -∗ uniq_gbody κp ty tid l c wπ.
+  Proof.
+    iIntros "(%p & %r & $ & $ & $ & C)". by iDestruct "C" as "[_ $]".
+  Qed.
+
+  Lemma cpd_contents_guarded {𝔄} κp (ty: type 𝔄) node p r d g tid l :
+    cpd_contents κp ty node p r d g tid l -∗
+    guarded_upd lazyE @[ty_lft ty] (⧖(S d `max` g) ∗ node p r d g tid l).
+  Proof. by iIntros "[$ _]". Qed.
+
+  (** Contents of a compound body from the payload of the folded type, at a structured
+      refinement [r] of the same denotation, given a conversion of the payload into the
+      node. *)
+  Lemma cpd_contents_payload {𝔄} κp (ty: type 𝔄) node p (rs: prfn_struct 𝔄) x d g tid l :
+    (∀ π, prfn_den (inr rs) π = vπ x π) →
+    (∀ d g, ty.(ty_gho_own) x d g tid ∗ cbytes ty x l ⊢ |={lazyE}=> node p (inr rs) d g tid l) →
+    uniq_payload ty tid l x d g -∗ cpd_contents κp ty node p (inr rs) d g tid l.
+  Proof.
+    iIntros (Hden Hconv) "[Pt Upd]". iSplit.
+    - iApply (guarded_upd_mono with "[Pt] Upd"). iIntros "[$ Gho]".
+      iApply Hconv. iFrame.
+    - rewrite cbytes_fbytes. iDestruct "Pt" as (fv Hfv) "B". iExists inhabitant.
+      rewrite /leaf_owned_b /leaf_owned_lz /=. iSplitL; [|done].
+      iApply blocked_owned_intro. iExists fv. iFrame "B".
+      iApply (guarded_upd_mono with "[] Upd"). iIntros "[⧖ Gho] !>". iExists d, g. iFrame "⧖".
+      iExists x. iFrame "Gho". iSplit; [done|]. rewrite /place_rfn_rel /=. iNext.
+      iApply (proph_eqz_eq with "[]"); [done| |iApply proph_eqz_refl]. fun_ext=> π /=.
+      by rewrite Hden.
+  Qed.
 
   (** The persistent part of a unique borrow. *)
   Definition uniq_persγ {𝔄} (ty: type 𝔄) (x: ~~ 𝔄) (ξi: positive) (idx: Idx)
