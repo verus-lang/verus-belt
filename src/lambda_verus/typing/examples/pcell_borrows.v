@@ -263,6 +263,32 @@ Section pcell_borrows.
       { reflexivity. }
     }
     intros post [[lb [a b]] []] mask π Hspec. rewrite /trans_upper /trans_tail /ret_z /=.
-    admit.
-  Admitted.
+    intros g m1 Hm1.
+    destruct m1 as [[[[[l1 [g1 [a1 b1]]] ξ1] d1] gg1] idx1]. simpl in Hm1. injection Hm1 as <- <- <-.
+    rewrite /trans_lower /=. split; [done|].
+    intros [[[[[l2 [a2 b2]] ξ2] d2] gg2] idx2] Hc2 Hf2 Hg2 Hl2. simpl in Hc2, Hl2. injection Hc2 as <- <-. subst l2.
+    intros [[[[[l3 c3] ξ3] d3] gg3] idx3] Hc3 _ d4 g4 idx4 Hres3. simpl in Hc3, Hres3. subst c3.
+    intros [x5 [x6 []]] (Hx5 & Hb5 & Hv5 & Hx6 & _). simpl in Hx5, Hb5, Hv5, Hx6. subst x6.
+    destruct x5 as [[[[[[l5 [a5 b5]] ξ5] d5] gg5] idx5] bm5]. simpl in Hx5, Hb5, Hv5. injection Hx5 as -> <- -> -> -> ->.
+    intros d6 g6 idx6 Hres5. simpl in Hres5.
+    intros [x7 []] (Hx7a & Hx7b & Hx7c & Hx7d & _). simpl in Hx7a, Hx7b, Hx7c, Hx7d.
+    intros [x8 []] [-> _]. simpl.
+    (* the final value of the permission *)
+    have H7 : a5 = 7%Z.
+    { rewrite Hv5 (uniq_util.uniq_prvar_app_irrel (𝔄:=intₛ i32) a2 7%Z ξ3 π). exact Hres3. }
+    have Hp : (π (uniq_prvar (𝔄:=trackedₛ (pcellₛ pm * (intₛ i32 * intₛ i32))) (g1, (a2, b5)) ξ1)).1
+      = (g1, (7%Z, b5)).
+    { rewrite !uniq_bor_future_eq in Hf2 Hg2.
+      assert (∀ p : positive * (Z * Z), p.1 = g1 → p.2 = (7%Z, b5) → p = (g1, (7%Z, b5))) as Hpair.
+      { intros [??] ??. simpl in *. congruence. }
+      apply Hpair; [exact Hg2|]. rewrite -Hf2 -H7 -Hres5.
+      exact (uniq_util.uniq_prvar_app_irrel (𝔄:=intₛ i32 * intₛ i32) (a2, b5) (a5, b5) ξ2 π). }
+    destruct x7 as [[l7 [g7 [g7' [a7 b7]]]] bm7]. simpl in Hx7a, Hx7b, Hx7c, Hx7d.
+    injection Hx7b as ->. rewrite Hp in Hx7d. injection Hx7d as -> -> ->.
+    split; [done|].
+    intros [y [x9 []]] [Hy [-> _]] _ _. simpl in Hy. subst y.
+    intros _ _. split; [done|]. intros _. exact Hspec.
+  Qed.
 End pcell_borrows.
+
+Print Assumptions pcell_borrows_type.
