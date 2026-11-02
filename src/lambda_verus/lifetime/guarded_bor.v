@@ -18,9 +18,18 @@ together with a persistent instance invariant [gmb_inv c γ]. The laws (see
 - (L1) [gmb_move]: the owner of [gmb_a γ s] takes the contents out, and puts back contents
   at the same [t] but any placement;
 - (L2) [gmb_share]: guards of [gmb_a γ s] and [gmb_b γ t] give a guard of [c s t];
-- (L3) [gmb_lend], [gmb_lend_guarded]: a guard [@[κ] &&> gmb_a γ s] and a borrow
-  [&{κ} (∃ t, gmb_b γ t)] give a borrow [&{κ} (∃ t, c s t)];
+- (L3) [gmb_lend], [gmb_lend_guarded] (and [_later] variants for share guards with a
+  step-index): a guard [@[κ] &&> gmb_a γ s] and a borrow [&{κ} (∃ t, gmb_b γ t)] give a
+  borrow [&{κ} (∃ t, c s t)];
 - (L4) is automatic: when [κ] ends, the back-map of the lend puts the contents back.
+
+Model (plan §2.2): the state [(sa, tb)] is kept twice, as two halves of an authority per
+ghost name, one in each invariant: the state invariant [guard_inv], a guard
+[True &&{↑NllftUsr2}&&> …] holding the contents when idle, and [other_inv], an invariant in
+[NllftUsr] holding, while lent out for [κ], the token [special_open κ] and the guard
+[special_open κ &&> gmb_a γ s]. In (L1), an owned [gmb_a γ s] together with that guard
+refutes the lent-out state; this needs the credits of [gmb_move] (one for the later of
+[other_inv], [gmb_depth γ] for the step-index of the stored guard).
 
 We assume that [c] is timeless. This lets the state invariant be a guard without a later
 ([True &&{↑NllftUsr2}&&> …]), so that (L2) gives a guard of [c s t] at the step-index of its

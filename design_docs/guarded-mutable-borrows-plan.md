@@ -316,3 +316,129 @@ The tests exercise reopening, reborrowing and split/join.
   is joined with the opened borrow, so the opened borrow cannot keep its index.
 - The prophetic version (for L3p) is not part of phase 0; it should follow the same pattern
   (join the token borrow into the prophetic borrow's underlying full borrow).
+
+## Outcome: phase 1
+
+Implemented in `lifetime/guarded_bor.v`; tests in `lifetime/guarded_bor_tests.v`. Nothing
+else changed. No axioms (`Print Assumptions`: closed under the global context).
+
+### Interface
+
+Generic over `S` (placement), `T` (contents) and `c : S → T → iProp Σ`, with one
+assumption: **`∀ s t, Timeless (c s t)`**. It lets the state invariant be a guard without a
+later, so that (L2) keeps the step-index of its inputs, and (L0), (L1), (L3) move `c` in and
+out of the instance without laters. The phase-3 instance (`l ↦b[^fbs]`, pure facts, nested
+`gmb_a`) is timeless.
+
+- Ghost state: `gmbG Σ S T` (two `excl_authR (leibnizO _)`), `gmbΣ S T`.
+- An instance name `γ : gmb_name` has two ghost names and a **depth** `gmb_depth γ : nat`,
+  fixed at creation: the largest step-index of the share guards that (L3) accepts.
+- `gmb_a γ s`, `gmb_b γ t`: exclusive (`gmb_a_excl`, `gmb_b_excl`), timeless point props
+  (`gmb_a_point`, `gmb_b_point`), in disjoint ghost names.
+- `gmb_inv c γ`: persistent instance invariant (`guard_inv` and `other_inv`).
+
+### Laws
+
+```
+Lemma gmb_create E d s t :                                                     (* L0 *)
+  c s t ={E}=∗ ∃ γ, ⌜gmb_depth γ = d⌝ ∗ gmb_inv γ ∗ gmb_a γ s ∗ gmb_b γ t.
+Lemma gmb_destroy E γ s t :                                                    (* L0 *)
+  ↑Nllft ⊆ E →
+  gmb_inv γ -∗ gmb_a γ s -∗ gmb_b γ t ={E}=∗ c s t.
+Lemma gmb_move E γ s :                                                         (* L1 *)
+  ↑Nllft ⊆ E →
+  gmb_inv γ -∗ £ (1 + gmb_depth γ) -∗ gmb_a γ s ={E}=∗
+    ∃ t, c s t ∗ (∀ s', c s' t ={E}=∗ gmb_a γ s').
+Lemma gmb_share G F n γ s t :                                                  (* L2 *)
+  ↑NllftUsr2 ⊆ F →
+  gmb_inv γ -∗ (G &&{F; n}&&> gmb_a γ s) -∗ (G &&{F; n}&&> gmb_b γ t) -∗
+    (G &&{F; n}&&> c s t).
+Lemma gmb_lend_later E γ κ s n :                                               (* L3 *)
+  ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+  llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
+  &{κ} (∃ t, gmb_b γ t) -∗ @[κ] ={E}=∗ &{κ} (∃ t, c s t) ∗ @[κ].
+Lemma gmb_lend_guarded_later E G γ κ s n :                                     (* L3 *)
+  Timeless G → ↑Nllft ⊆ E → n ≤ gmb_depth γ →
+  llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
+  &{κ} (∃ t, gmb_b γ t) -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗ &{κ} (∃ t, c s t) ∗ G.
+Lemma gmb_lend E γ κ s :                                         (* L3, n = 0, any depth *)
+  ↑Nllft ⊆ E →
+  llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ s) -∗
+  &{κ} (∃ t, gmb_b γ t) -∗ @[κ] ={E}=∗ &{κ} (∃ t, c s t) ∗ @[κ].
+Lemma gmb_lend_guarded E G γ κ s :                               (* L3, n = 0, any depth *)
+  Timeless G → ↑Nllft ⊆ E →
+  llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG}&&> gmb_a γ s) -∗
+  &{κ} (∃ t, gmb_b γ t) -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗ &{κ} (∃ t, c s t) ∗ G.
+```
+
+(L4) is not a lemma: after `[†κ]`, the lender's inheritance of `&{κ}(∃ t, gmb_b γ t)` gives
+`gmb_b γ t'` at the final value, and the owner's `gmb_a γ s` works with `gmb_move` on its
+own (tests below).
+
+### Model
+
+As §2.2, with these refinements:
+- **Ghost state.** Per side, an `excl_auth` with the authority split in two halves
+  (`●{#1/2}`), one in each invariant (`Auth`, `Auth2`), and the exclusive fragment `◯`. The
+  `a` side is `Here s | Moving t | Destroyed` (`a(s)`, `a_out(t)`), the `b` side is
+  `In t | Out s κ | Gone` (`b(t)`, `b_out(s, κ)`). `a_out` remembers `t` (the mover's way
+  back must deposit at the state's `t`), and `Out` remembers `s` (the back-map must deposit
+  at the state's `s`); the proposal's `b_out(s, κ)` is one fragment of the `b` name.
+- **`guard_inv`** := `True &&{↑NllftUsr2}&&> ∃ st, Auth st ∗ body st`, with body
+  `(Here s, In t) ↦ c s t`, `(Here s, Out s' _) ↦ ⌜s = s'⌝`, `(Moving t, In t') ↦ ⌜t = t'⌝`,
+  `(Destroyed, Gone) ↦ True`, and `False` otherwise. It is allocated with `guards_alloc` and
+  its later removed by timelessness. It is opened like an invariant (`guards_open`, putting
+  back another witness).
+- **`other_inv`** := `inv NllftUsr (∃ sa tb, Auth2 sa tb ∗ …)`, holding in state `Out s κ`
+  the token `special_open κ` and the guard
+  `special_open κ &&{↑NllftG ∪ ↑NllftO; gmb_depth γ}&&> gmb_a γ s`.
+- **(L1)** opens `other_inv` first (`NllftUsr`). In state `Out s κ` it spends one credit on
+  the invariant's later and `gmb_depth γ` credits on the stored guard, opens it with the
+  token (mask `↑NllftG ∪ ↑NllftO`, still available) and gets a second `gmb_a`: `False`.
+  Otherwise it opens `guard_inv` (`NllftUsr2`).
+- **(L2)**: `guards_strengthen_exists` twice against `G &&> True &&> guard_inv`, with
+  `a ∧ Auth ⊢ ⌜…⌝` (`and_own_discrete_ucmra` and a lemma on `excl_auth` with fractional
+  authority), then `guards_weaken` projects out `c s t`.
+- **(L3)** opens the borrow with `llftl_bor_acc_special(_guarded)`. With the token it opens
+  the guard `special_open κ &&> guard_inv` strengthened by the owner's share (so the state
+  is `Here s`; this is what refutes `Moving`, and costs the `£ n`), moves the `b` side to
+  `Out s κ`, takes `c s t`, and stores the token and the guard in `other_inv`. The back-map
+  (`={↑NllftUsr ∪ ↑NllftUsr2}=∗`, no `[†κ]` needed) moves the `b` side back to `In t'`,
+  deposits `c s t'`, and returns the token from `other_inv`.
+
+### Tests (`guarded_bor_tests.v`)
+
+Toy instance: `c s t := s ↪[γm] t` (a ghost map `nat → nat`; the tests hold its authority
+to observe values).
+- `test_create_destroy` (L0).
+- `test_move` (L1 with a change of placement: delete `s`, insert `s'`, close at `s'`; destroy).
+- `test_share_read` (L2: shares of `gmb_a` and `gmb_b` at `κ`; read the contents).
+- `test_lend_write_end_move` (L3, L4): share `gmb_a` at `κ`, lend `gmb_b` at `κ`, write `t'`
+  through the borrow, end `κ`; the lender's inheritance is `gmb_b γ t'` (shown with (L2)
+  from the owned `gmb_a ∗ gmb_b`), then the owner moves.
+- `test_lend_abandoned` (L4, owner's side alone): the lender drops its borrow and its
+  inheritance; after `[†κ]` the owner moves.
+- `test_lend_later`: depth 1, the owner's share is a frozen full borrow
+  (`llftl_bor_guard`, step-index 1); lend with `£ 1`, move with `£ 2`.
+- `test_relend_sub_lifetime`: the typing-layer shape. The owner shares at `α`; two
+  successive lends at `α ⊓ β1`, `α ⊓ β2` through the guarded accessor
+  (`G := @[α] ∗ @[βi]`), each ended by its `βi`; then `α` ends and the owner moves. The
+  owner gets `gmb_a` back only from the inheritance of its share, i.e. after `[†α]`, when
+  every lend lifetime has ended and its back-map has run: the lent-out case of (L1) (refuted
+  in `gmb_move`) is unreachable for well-behaved clients.
+
+### Deviations from §2
+
+- `gmb_a`, `gmb_b` are plain fragments, and the persistent `gmb_inv c γ` is a separate
+  argument of the laws (created by `gmb_create`). Folding it into `a`/`b` does not work: the
+  guard stored in `other_inv` would mention `other_inv`, and (L2) needs the invariant
+  outside the guards.
+- (L1) needs `£ (1 + gmb_depth γ)`, not a fixed `▷`: the stored guard is under the later of
+  `other_inv`, and has the step-index of the owner's share.
+- Share guards with a step-index `n` are supported up to the depth of the instance, chosen
+  at creation; (L3) then needs `£ n`. Unbounded step-indices are not supported: (L1) would
+  not know how many credits to spend. The typing layer must fix a bound per cell (or share
+  `gmb_a` at index 0).
+- The (L2) mask must contain `↑NllftUsr2` (it does if it contains `↑NllftG`).
+- Not provided: an indexed-borrow version of (L3) (phase 0 closes indexed special openings
+  to full borrows anyway), and the prophetic (L3p) (phase 2).
