@@ -471,11 +471,9 @@ Section cpd_gen.
       (∀ (node': lpat → prfn 𝔄 → nat → nat → thread_id → loc → iProp Σ)
          p' (r': prfn 𝔄) d' g' ζl' q (R: iProp Σ),
          ⌜∀ ζl, prfn_rsv r ζl → prfn_rsv r' (ζl ++ ζl')⌝ -∗
-         □ (∀ p2 r2 d2 g2, pat_ok κp p2 -∗ ⧖(S d2 `max` g2) -∗ node' p2 r2 d2 g2 tid l -∗
-              leaf_node κp ty p2 r2 d2 g2 tid l) -∗
          q:+[ζl'] -∗
          (q:+[ζl'] ={E}=∗ ▷ pat_ok κp p' ∗
-           ▷ guarded_upd lazyE @[ty_lft ty] (⧖(S d' `max` g') ∗ node' p' r' d' g' tid l) ∗ R)
+           ▷ cpd_contents κp ty node' p' r' d' g' tid l ∗ R)
          ={E}=∗ cpd_own κ ξi ty p' node' r' d' g' tid l ∗ G ∗ R).
   Proof.
     iIntros (??) "#LFT #PROPH #UNIQ #Gk G".
@@ -488,18 +486,15 @@ Section cpd_gen.
     iMod (bi.later_exist_except_0 with "Body") as (p1) "Body".
     iMod (bi.later_exist_except_0 with "Body") as (r1) "(#Ok & _ & >Gh' & Upd)".
     iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
-    iModIntro. iExists κp. iFrame "Incl Ok Upd".
-    iIntros (node' p' r' d' g' ζl' q R Hr') "#Conv ζl' VS".
+    iModIntro. iExists κp. iFrame "Incl Ok". iSplitL "Upd"; [iNext; by iApply cpd_contents_guarded|].
+    iIntros (node' p' r' d' g' ζl' q R Hr') "ζl' VS".
     iMod (ghost_var_update_halves (lstate p' r') with "Gh Gh'") as "[Gh Gh']".
     iMod (ghost_var_alloc (lstate_triv (𝔄:=unitₛ) ())) as (γf') "Tf'".
     iMod ("Close" $! (uniq_cell x₀ d' g' γ) (λ π, (prfn_den r' π, (uniq_cell x₀ d' g' γ).2))
       ζl' q (cpd_gbody κp γf' ty node' tid l) R with "[Tf] ζl' [Gh' VS]")
       as (idx') "(Tok & #Bor' & $ & $)".
     { iIntros "!>" (c2 w2) "Q". iModIntro. iNext. iRight. iFrame "Tf".
-      iDestruct "Q" as "[Q|[_ $]]". rewrite /uniq_gbody /cpd_body.
-      iDestruct "Q" as (p2 r2) "(#Ok2 & % & Gh2 & Upd2)". iExists p2, r2. iFrame "Ok2 Gh2".
-      iSplit; [done|]. iApply (guarded_upd_mono with "[] Upd2").
-      iIntros "[#⧖ N] !>". iFrame "⧖". iApply ("Conv" with "Ok2 ⧖ N"). }
+      iDestruct "Q" as "[Q|[_ $]]". by iApply cpd_body_leaf. }
     { iIntros "ζl'". iMod ("VS" with "ζl'") as "(Ok' & Upd' & $)". iModIntro.
       iNext. iLeft. rewrite cpd_body_cell. iExists p', r'. by iFrame. }
     iModIntro. iExists x₀, κp, γ, γf', idx', (ζl ++ ζl'). iFrame "∗#". iPureIntro. by apply Hr'.
@@ -677,17 +672,16 @@ Section pctx_acc.
     have Hf': lty_fold (pctx_plug K lt') = lty_fold (pctx_plug K lt) by apply lty_fold_plug_eq'.
     iMod ("Close" $! (ltype_own_cp false (pctx_plug K lt') (Owned 0)) (pctx_pat K p')
       (pctx_rfn K (uniq_bor_current x) ζm (false :: q) r') (pred dn) gn ζl' qq
-      (fractional.half γh ∗ R)%I with "[%] [] toks [VS G' P Oks Cl]") as "(C' & H1 & H2 & $)".
+      (fractional.half γh ∗ R)%I with "[%] toks [VS G' P Oks Cl]") as "(C' & H1 & H2 & $)".
     { intros ζl. apply pctx_rfn_rsv_mono; [set_solver|]. apply Hr. }
-    { iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖2 N". rewrite -Hf'.
-      iApply (ltype_owned_leaf_node with "LFT PROPH UNIQ Ok2 ⧖2 N");
-        [by apply lty_is_cpd_plug_nonempty'|by apply lty_simple_plug]. }
     { iIntros "toks".
       iMod ("Cl" $! lt' p' r' dh' gh' (pred dn) gn ζl' qq R with "[//] [//] [//] [//] [%] Oks [] G' P toks VS")
         as "(N' & $ & $)"; [simpl in *; lia|..].
       { iApply (persistent_time_receipt_mono with "⧖"). lia. }
       iModIntro. iSplitR; [done|].
-      iNext. iApply guarded_upd_intro. iModIntro. iFrame "N'".
+      iNext. rewrite -Hf'.
+      iApply (cpd_contents_eager with "LFT PROPH UNIQ Ok' [] N'");
+        [by apply lty_is_cpd_plug_nonempty'|by apply lty_simple_plug|].
       iApply (persistent_time_receipt_mono with "⧖"). lia. }
     iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [done|].
     iModIntro. rewrite /= /uniq_node Hf'. iFrame "Pt ⧗ TIME". iApply bi.laterN_intro.
@@ -908,18 +902,17 @@ Section vroot.
     have Hf': lty_fold (pctx_plug K lt') = lty_fold (pctx_plug K lt) by apply lty_fold_plug_eq'.
     iMod ("Close" $! (ltype_own_cp false (pctx_plug K lt') (Owned 0)) (pctx_pat K (lty_pat lt'))
       (pctx_rfn K (uniq_bor_current x) ζm [] r') (pred D') D' ζl' qq
-      (fractional.half γh ∗ R)%I with "[%] [] toks [VS G' P Oks Cl]") as "(C' & H1 & H2 & $)".
+      (fractional.half γh ∗ R)%I with "[%] toks [VS G' P Oks Cl]") as "(C' & H1 & H2 & $)".
     { intros ζl. apply pctx_rfn_rsv_mono; [set_solver|]. apply Hr. }
-    { iIntros "!>" (p2 r2 d2 g2) "Ok2 ⧖2 N". rewrite -Hf'.
-      iApply (ltype_owned_leaf_node with "LFT PROPH UNIQ Ok2 ⧖2 N");
-        [by apply lty_is_cpd_plug_nonempty'|by apply lty_simple_plug]. }
     { iIntros "toks".
       iMod ("Cl" $! lt' (lty_pat lt') r' dh' gh' (pred D') D' ζl' qq R
         with "[//] [//] [//] [//] [%] Oks [] G' P toks VS") as "(N' & $ & $)";
         [simpl in *; lia|..].
       { iApply (persistent_time_receipt_mono with "⧖"). simpl in *. lia. }
       iModIntro. iSplitR; [done|].
-      iNext. iApply guarded_upd_intro. iModIntro. iFrame "N'".
+      iNext. rewrite -Hf'.
+      iApply (cpd_contents_eager with "LFT PROPH UNIQ Ok' [] N'");
+        [by apply lty_is_cpd_plug_nonempty'|by apply lty_simple_plug|].
       iApply (persistent_time_receipt_mono with "⧖"). simpl in *. lia. }
     iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [done|].
     iModIntro. iExists D', D'. iSplit; [iPureIntro; simpl in *; lia|]. rewrite /= Hf'.
