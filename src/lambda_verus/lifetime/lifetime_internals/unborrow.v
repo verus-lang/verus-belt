@@ -214,7 +214,8 @@ Section FullBorrows.
     swell_set al →
   future_vs γ alive dead outlives mbs mprops
     ∗ (∀ d, ⌜d ∈ dead⌝ -∗ ModuloDeadPers γ d)
-    ∗ (▷ Q ∗ (∃ k : lt_atom, ⌜k ∈ bl⌝ ∗ Dead γ k) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P)
+    ∗ (▷ Q ∗ (∃ k : lt_atom, ⌜k ∈ bl⌝ ∗ Dead γ k) ∗ (∃ k : lt_atom, ⌜k ∈ al⌝ ∗ Dead γ k)
+        ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P)
     ∗ (▷ (mprops !! sn ≡ Some P))
   ⊢
   future_vs γ alive dead outlives (<[sn2:=Borrow al de]> (delete sn mbs))
@@ -257,8 +258,11 @@ Section FullBorrows.
       assert (x ∈ (my_dead ∪ {[ k ]})) as Hex_d by set_solver.
       
       iMod ("qvs" with "[Q]") as "P".
-      { iFrame "Q". iExists x. iSplitL. { iPureIntro; trivial. }
-        iApply modulo_dead_pers_implies_dead. iApply "Halldead2". iPureIntro; trivial. }
+      { iFrame "Q". iSplitL.
+        - iExists x. iSplitL. { iPureIntro; trivial. }
+          iApply modulo_dead_pers_implies_dead. iApply "Halldead2". iPureIntro; trivial.
+        - iExists k. iSplitL. { iPureIntro; trivial. }
+          iApply modulo_dead_pers_implies_dead. iApply "Dead". }
         
       iDestruct (full_borrows_invalidated_via_delete my_alive my_dead k sn mbs mprops (Unborrow bl al de) P Hsn with "[Heq inval P]") as "inval".
         { iFrame. iFrame "Heq". }
@@ -492,7 +496,8 @@ Section FullBorrows.
     (▷ inner_inv γ γo alive dead blocked)
         ∗ OwnBorState γ sn (Unborrow bl al de)
         ∗ slice Nbox sn P
-        ∗ (▷ (▷ Q ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P))
+        ∗ (▷ (▷ Q ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ∗ (∃ k , ⌜ k ∈ al ⌝ ∗ Dead γ k)
+            ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P))
         ∗ (▷ Q)
         ={↑Nbox ∪ ↑NllftUsr}=∗ ∃ sn2,
           (▷ inner_inv γ γo alive dead (blocked ∖ bl))
@@ -817,7 +822,8 @@ Section FullBorrows.
         ∗ (▷ outer_inv γ γo γd alive dead blocked)
         ∗ OwnBorState γ sn (Unborrow bl al de)
         ∗ slice Nbox sn P
-        ∗ (▷ (▷ Q ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P))
+        ∗ (▷ (▷ Q ∗ (∃ k , ⌜ k ∈ bl ⌝ ∗ Dead γ k) ∗ (∃ k , ⌜ k ∈ al ⌝ ∗ Dead γ k)
+            ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P))
         ∗ (▷ Q)
         ={↑Nbox ∪ ↑NllftUsr}=∗ ∃ sn2,
       Delayed γd None

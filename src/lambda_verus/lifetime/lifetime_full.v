@@ -1170,7 +1170,8 @@ Section LlftLogic.
   Local Lemma llftl_idx_acc_back_vs κ idx P Q :
       llft_ctx ∗ idx_bor_def' κ idx P ⊢
         OwnBorState llft_name (idx.1) (Unborrow κ (set_map LtAtomSwell idx.2) {[default_dead]}) ∗ (▷ Q)
-          ∗ ▷ (▷ Q ∗ llft_dead_def' κ ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P)
+          ∗ ▷ (▷ Q ∗ llft_dead_def' κ ∗ llft_dead_def' (set_map LtAtomSwell idx.2)
+                ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P)
         ={↑Nllft}=∗ ∃ sn, idx_bor_def' κ (sn, idx.2) Q ∗ idx_bor_tok (sn, idx.2) ∗ llft_alive_def' κ.
   Proof.
       unseal_bor. unseal.
@@ -1246,6 +1247,30 @@ Section LlftLogic.
     iDestruct "bor2" as "[incl3 slice']". iFrame "slice'". iFrame "alive".
   Qed.
   
+  (* The same accessor, whose back-map also receives a dead token for an outer lifetime of
+     the borrow: [κ ⊑ κ''] and [[†κ'']], where [κ''] is the borrow's internal lifetime.
+     This is the dead token of the atom being killed when the back-map runs (in step 2 of
+     [llftl_end]). With [↑NllftG] one gets [[†κ]] from it ([llftl_incl_dead_implies_dead]);
+     the back-map's own mask does not include [↑NllftG]. *)
+  Lemma llftl_bor_acc_maybe_swell'_dead E P κ' κ :
+      ↑Nllft ⊆ E →
+      llft_ctx -∗ (llft_alive_def' κ' &&{↑NllftG}&&> @[κ]) -∗ &{κ} P -∗ llft_alive_def' κ' -∗ |={E}=> (▷ P) ∗
+          (∀ Q, ▷ (▷ Q ∗ (∃ κ'', κ ⊑ κ'' ∗ [†κ'']) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P) ∗ ▷ Q
+                ={↑Nllft}=∗ (&{κ} Q) ∗ llft_alive_def' κ').
+  Proof.
+    unseal_bor. intros Hmask.
+    iIntros "#ctx #incl1 fb alive". unfold full_bor. iDestruct "fb" as (sn κ'') "[#incl [#slice OwnBor]]". iDestruct (guards_transitive with "incl1 incl") as "incl2".
+    iMod (llftl_idx_acc_fwd E κ' (sn, κ'') P with "[] [OwnBor alive]") as "[P OwnBor]".
+      { trivial. } { iFrame "#". } { iFrame. }
+    iModIntro. iFrame "P". iIntros (Q) "[vs Q]".
+    iMod (llftl_idx_acc_back_vs κ' (sn, κ'') P Q with "[] [OwnBor Q vs]") as (sn2) "[#bor2 [tok2 alive]]".
+      { unseal_bor. iFrame "#". }
+      { iFrame "OwnBor Q". iNext. iIntros "[Q [_ D]]". iApply "vs". iFrame "Q". iExists κ''.
+        iFrame "incl". unseal. unfold llft_dead_def'. rewrite dead_def_set_map. iFrame "D". }
+    iModIntro. unseal_bor. iFrame "tok2". iFrame "incl".
+    iDestruct "bor2" as "[incl3 slice']". iFrame "slice'". iFrame "alive".
+  Qed.
+
   (* end hide *)
   
   Lemma llftl_bor_acc' E P κ' κ :
@@ -1273,7 +1298,9 @@ Section LlftLogic.
       { trivial. } { unseal_bor. iFrame "#". unfold llft_incl. unseal. unfold llft_alive_def'. rewrite big_sepS_set_map. iFrame "incl". } { iFrame. unseal. unfold llft_alive_def'. rewrite big_sepS_set_map. iFrame "alive". }
     iModIntro. iFrame "P". iIntros (Q) "[vs Q]".
     iMod (llftl_idx_acc_back_vs (set_map LtAtomSwell κ) (sn, κ') P Q with "[] [OwnBor Q vs]") as (sn2) "[#bor2 [fb alive]]".
-      { unseal_bor. iFrame "#". unfold llft_incl. unseal. unfold llft_alive_def'. rewrite big_sepS_set_map. iFrame "incl". } { iFrame. unseal. unfold llft_dead_def'. rewrite dead_def_set_map. iFrame "vs". }
+      { unseal_bor. iFrame "#". unfold llft_incl. unseal. unfold llft_alive_def'. rewrite big_sepS_set_map. iFrame "incl". }
+      { iFrame "OwnBor Q". iNext. iIntros "[Q [D _]]". iApply "vs". iFrame "Q".
+        unseal. unfold llft_dead_def'. rewrite dead_def_set_map. iFrame "D". }
     iModIntro. iSplitR "alive". { unfold idx_bor_def'. iDestruct "bor2" as "[a b]". iFrame. iFrame "#". }
     unseal. unfold llft_alive_def'. rewrite big_sepS_set_map. iFrame "alive".
   Qed.
@@ -2008,6 +2035,27 @@ Section LlftLogic.
     iMod ("Kill" with "alive") as "X". iMod ("Back" with "X") as "G". iModIntro. iFrame.
   Qed.
 
+  (** A variant whose back-map receives a dead token for an outer lifetime of the borrow
+      ([κ ⊑ κ''], [[†κ'']]). The back-map only runs when (an atom of) [κ] ends, at which
+      point the token is available. *)
+  Lemma llftl_bor_acc_guarded_dead
+    E G κ P :
+    Timeless G →
+    ↑Nllft ⊆ E →
+    llft_ctx -∗
+    &{κ} P -∗
+    (G &&{↑NllftG}&&> @[κ]) -∗
+    G ={E}=∗
+        (▷ P) ∗ (∀ Q, ▷ (▷ Q ∗ (∃ κ'', κ ⊑ κ'' ∗ [†κ'']) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P) ∗ ▷ Q
+                      ={↑Nllft}=∗ (&{κ} Q) ∗ G).
+  Proof.
+    intros TimelessG Hmask. iIntros "#ctx bor #Gk G".
+    iMod (llftl_guarded_tok_to_tmp E G κ TimelessG Hmask with "ctx Gk G") as (κ') "(#Incl & Alive & #Kill & Back)".
+    iMod (llftl_bor_acc_maybe_swell'_dead E P κ' κ Hmask with "ctx Incl bor Alive") as "[P Pback]".
+    iModIntro. iFrame "P". iIntros (Q) "[vs Q]". iMod ("Pback" $! (Q) with "[vs Q]") as "[tok alive]". { iFrame. }
+    iMod ("Kill" with "alive") as "X". iMod ("Back" with "X") as "G". iModIntro. iFrame.
+  Qed.
+
   (** Freezing a full borrow into a guard *)
 
   (** A full borrow can be given up for good in exchange for a (persistent) guard of its
@@ -2241,6 +2289,27 @@ Section LlftLogic.
     iMod ("Kill" with "alive") as "X". iMod ("Back" with "X") as "G". iModIntro. iFrame.
   Qed.
 
+  (** The guarded special accessor, whose back-map also receives a dead token for an outer
+      lifetime of the borrow ([κ ⊑ κ''], [[†κ'']]; cf. [llftl_bor_acc_guarded_dead]). *)
+  Lemma llftl_bor_acc_special_guarded_dead E G κ P :
+    Timeless G →
+    ↑Nllft ⊆ E →
+    llft_ctx -∗ &{κ} P -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗
+      ▷ P ∗ special_open κ ∗
+      (∀ Q, ▷ (▷ Q ∗ (∃ κ'', κ ⊑ κ'' ∗ [†κ'']) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P ∗ special_open κ) ∗ ▷ Q
+            ={↑Nllft}=∗ &{κ} Q ∗ G).
+  Proof.
+    intros TimelessG Hmask. iIntros "#ctx Bor #Gk G".
+    iMod (llftl_guarded_tok_to_tmp E G κ TimelessG Hmask with "ctx Gk G") as (κ') "(#Incl & Alive & #Kill & Back)".
+    iMod (llftl_special_register E κ' κ with "ctx Incl Alive") as "[SBor Alive]"; first done.
+    iMod (llftl_sep_join with "ctx Bor SBor") as "Bor"; first done.
+    iMod (llftl_bor_acc_maybe_swell'_dead E (P ∗ special_open κ) κ' κ Hmask with "ctx Incl Bor Alive") as "[[P >Tok] Pback]".
+    iModIntro. iFrame "P Tok". iIntros (Q) "[vs Q]".
+    iMod ("Pback" $! Q with "[vs Q]") as "[Bor alive]".
+    { iFrame "Q". iNext. iIntros "Q". iMod ("vs" with "Q") as "[P T]". iModIntro. iNext. iFrame. }
+    iMod ("Kill" with "alive") as "X". iMod ("Back" with "X") as "G". iModIntro. iFrame.
+  Qed.
+
   (** Indexed versions. The closer turns the indexed borrow into a full borrow of the new
       contents. (A closer at the same index, returning [idx_bor_tok idx], is not offered:
       the token's reverse borrow is attached to a borrow at [κ] that is joined with the
@@ -2266,6 +2335,19 @@ Section LlftLogic.
   Proof.
     intros TimelessG Hmask. iIntros "#ctx #Bor Tok #Gk G".
     iApply (llftl_bor_acc_special_guarded with "ctx [Tok] Gk G"); [done|].
+    iApply (llftl_bor_idx_to_full with "Bor Tok").
+  Qed.
+
+  Lemma llftl_bor_idx_acc_special_guarded_dead E G κ idx P :
+    Timeless G →
+    ↑Nllft ⊆ E →
+    llft_ctx -∗ &{κ, idx} P -∗ idx_bor_tok idx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G ={E}=∗
+      ▷ P ∗ special_open κ ∗
+      (∀ Q, ▷ (▷ Q ∗ (∃ κ'', κ ⊑ κ'' ∗ [†κ'']) ={↑NllftUsr ∪ ↑NllftUsr2}=∗ ▷ P ∗ special_open κ) ∗ ▷ Q
+            ={↑Nllft}=∗ &{κ} Q ∗ G).
+  Proof.
+    intros TimelessG Hmask. iIntros "#ctx #Bor Tok #Gk G".
+    iApply (llftl_bor_acc_special_guarded_dead with "ctx [Tok] Gk G"); [done|].
     iApply (llftl_bor_idx_to_full with "Bor Tok").
   Qed.
 End LlftLogic.
