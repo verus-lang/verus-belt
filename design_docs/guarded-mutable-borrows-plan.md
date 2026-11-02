@@ -640,3 +640,200 @@ All of the following stays within the current lifetime logic.
   prophecy map `fπ`, as in `proph_idx_bor_gen_map`, rather than a `syn_type` morphism.
 - The lend lemmas take the payload split as a client view shift, rather than fixing the
   payload to `gmb_b`/`c`.
+
+## Phase 2b audit (2026-11-02)
+
+Read-only audit of the approved phase 2b: **lazy c** (the b-side state `In` may hold the
+contents lazily; `gmb_b_shr` requires them eager, `gmb_b_uniq` allows lazy), and **option 3**
+(in the `&uniq` body model, the top-level bytes `cbytes ty x l` live outside the lifetime
+guard `guarded_upd lazyE @[ty_lft ty]`; blocked leaves keep an inheritance layer
+`[†α] ={…}=∗ cbytes … ∗ guarded_upd … (ghost…)`). The goal is that the mover can force the
+stored contents with mask `lazyE` and dead tokens only, without any lifetime guard. Line
+numbers refer to HEAD 1483f90.
+
+**Verdict: go, with changes.** No site in the typing layer needs the guard to produce or
+transform top-level bytes. Every site is either pure or eager (class a), or can be
+restructured (class b). There are two required changes outside option 3 itself:
+1. A small change to the lifetime-logic internals gives the guarded special back-map a
+   dead token (Q3). It has been checked in an experiment.
+2. On the GMB side, forcing has to happen with the GMB invariants closed. This needs a
+   settle lock, and a mask `lazyB` for the bytes layer that excludes the lock's namespace
+   (Q5).
+
+### Q1. Where bytes are produced or transformed under a guarded lazy update
+
+Classes: **(a)** pure or eager, no change beyond restating; **(b)** needs restructuring
+(how is given); **(c)** blocker. No site is in class (c).
+
+| Site | What happens to the bytes | Class |
+|---|---|---|
+| `uniq_payload` (uniq_util.v:396) and its API: `_intro(_later)`, `_run`, `_force` (404–438) | The payload becomes `cbytes ty x l ∗ guarded_upd(⧖ ∗ gho)`. The statements of `_run` and `_force` are unchanged. | a |
+| `uniq_payload_map` (442) | Its premise `gho ∗ cbytes ={lazyE}=∗ gho' ∗ cbytes'` splits into an eager bytes map and a lazy ghost map. Its only users are `uniq_body_mono_upd` (bytes unchanged) and `uniq_body_transform_lazy` (no users outside the file). | b, trivial |
+| `cpd_body` (166) and `uniq_gbody` (459) | The node parameter splits into a bytes part and a ghost part: `∃ v, nbytes p r v l ∗ guarded_upd(⧖ ∗ ngho p r v d g tid l)`. See "Shape" below. | b, central |
+| `ofty_owned` (343) | Unchanged. It is already `cbytes ∗ ▷^m gho`, with no later on the bytes. | a |
+| `blocked_owned` (346) and `leaf_owned`/`leaf_node` (351, 389) | The inheritance becomes `[†α] ={lazyB}=∗ ∃ x, cbytes ty x l ∗ guarded_upd lazyE @[ty_lft ty] (rel ∗ ⧖ ∗ ▷^m gho)`. Producers: (1) `place_puniq.v:681–697`: `Back1 †α` (at `↑Nllft`), the stored `£c`, and `uniq_lender_settle`, which now fires the lender body's bytes layer with `pat_ok α` and `[†α]`, no guard; (2) `uniq_gbody_map`, blocked case; (3) the leaf views of structured refinements (Conv, below). | b |
+| `shr_blocked_owned` (ltype.v:313), created by `ofty_owned_share` (place_shr.v:48) | Today the bytes and the ghost are borrowed together at `α`. Instead, borrow them separately (two `llftl_borrow`), so that there are two inheritances: `[†α] ={lazyB}=∗ cbytes`, which is timeless and needs no credit, and the ghost one. `PatShrBlocked α` is in `pat_blk_lfts` (lstate.v:355), so `pat_ok` covers it. | b, small |
+| `blocked_uniq` (ltype.v:286) | Not part of any `cpd` body: the children of a `cpd` node are always `Owned 0` (ltype.v:623–676). A Uniq-mode blocked leaf is a whole borrow, not top-level bytes. | a |
+| Conv in back-maps: `prod_node_leaf` (ltype.v:1479), `ltype_owned_leaf_node` (1983), `_uniq` (2097); used by the closing view shifts of `prod_ofty_unfold_uniq` (1559), `cpd_rebody` (1650), `cpd_rebody_ext` (1697), `cpd_rebody_gen` (pctx_acc.v:496) and `cpd_unfold_uniq` (2036) | At a structured refinement the leaf is blocked at `κp` (`norm_pat`). Today it is applied inside `guarded_upd_mono`. Under option 3 it packages the children's bytes parts into the `[†κp] ={lazyB}=∗` layer. This happens at the closing mask (`↑NllftUsr ∪ ↑NllftUsr2`), with no forcing. When it fires: unblock the children's bytes through `pat_ok_dead`, then combine them with pure layout lemmas (`cbytes_pair`, `cbytes_sum`, `cbytes_at_loc`, `cbytes_uniq_bor`). | b |
+| `ltype_owned_unblock_fold` (ltype.v:1876), `cpd_own_unblock_fold` (1806), `ltype_uniq_unblock_fold` (1855), `leaf_owned(_s)_unblock` (uniq_util.v:367, ltype.v:1461) | Split each into a bytes unblock (`lazyB` and dead tokens, no guard) and a ghost fold (`lazyE` and the guard). In the `UniqLty` case, the cumulative receipts and credits open the nested borrow. That is ghost: the top-level bytes are only `ptr_cell l l'`. In the `OwnPtrLty` case the pointee, bytes included, stays in the ghost part, because only the top-level bytes leave the guard. | b, largest proof |
+| `cpd_unfold_uniq` / `cpd_fold_uniq` (2002, 2045), `prod_ofty_unfold/fold_uniq` (1522, 1568) | Today the hypothesis `Hconv` (`gho ∗ cbytes ⊢ |={lazyE}=> node`, and the converse) is applied under the guard. Under option 3 it splits into a bytes part and a lazy ghost part. The bytes part is pure in every instance (the layout lemmas above), and for pointer nodes `l'` comes from the `PlaceIn` value. | b |
+| `cpd_acc`, `cpd_rebody`, `_ext` (ltype.v:1417, 1617, 1664) and `cpd_rebody_gen` (pctx_acc.v:463) | These statements expose `guarded_upd(⧖ ∗ node …)`. They are restated with the split node. Their callers (pctx_acc.v:662, 889) force at a program step and close eagerly (`guarded_upd_intro`). They now need the split lemma for an eager `Owned 0` interpretation. | b |
+| `uniq_gbody_map` (uniq_util.v:1175) | Unblocked case: the old body is built in the back-map of `proph_idx_bor_gen_map`, so the bytes part of `Back` must be pure, or at most `↑NllftUsr`. Blocked case: `Back` runs in the inheritance at `lazyB`. If a client's bytes map needs `lazyE`, block the old body at `κp` instead (`pat_ok κp (PatBlocked κp)` is trivial). This is the same trick as `norm_pat`. | b |
+| `uniq_body_transform_gen`, `_transform`, `_transform_lazy` (1249, 1303, 1345) | The forward direction is eager at a program step. The way back goes through `uniq_gbody_map`. Its only user outside the file, pptr.v:191 (`points_to_ty ty` ↔ `ty`), maps bytes purely: `points_to_ty`'s own bytes are zero-size, and the pointee bytes go into its ghost. | a / b |
+| `uniq_body_reborrow` (1397) and `uniq_restored(_settle)` (1386, 1455; place_puniq.v:882) | The reborrow's final body is copied wholesale, bytes part included. Settling is eager. | a |
+| `proph_idx_bor_gen_map(_special)` (proph_bor.v:1345) and `gmb_lend_proph(_map)` (guarded_bor_proph.v) | Generic in the payload. The phase-2 statements are restated for lazy c (the back-map stores a settle law). | b (GMB side) |
+| `resolve_uniq_body` (uniq_util.v:1007), the share of `&uniq` (uniq_bor.v:150–190), `uniq_body_acc*` / `settle*` (771–920) and `alloc_uniq_body` (952) | All eager: they force at program steps or with credits. Under option 3 they get simpler: the bytes are available without running `llftl_bor_guarded_upd`. | a |
+| Eager unblock rules: place_own.v:222, place_puniq.v:801 and 1119, place_res_ops.v:278, place_res_view.v:269/681 (`&{κ}(blocked_owned …)` in `view_leaf`), place_res_rslv.v:326 | They run the inheritance or update at a step. The outputs change shape (bytes outside). | a, mechanical |
+| own.v, shr_bor.v, subtype.v, place_read/write/deep/pshr/memcpy/xprod/sum.v, pcell.v, pcell_borrow.v | Eager, or pure retyping (`cbytes_same`, `bytes_own_iff`). `uniq_body_acc` together with `uniq_payload_run` keeps its statement. | a |
+
+**Shape.** Quantify the bytes part over the fancy value, as phase 3's `c_g` does: bytes
+`∃ fv, l ↦b[^fbs] ∗ ⌜frepr (ty_mty ty) fbs fv⌝ (∗ greg_map)`, and ghost
+`∃ x, ⌜ty_fval x = Some fv⌝ ∗ rel lr x ∗ ⧖ ∗ gho x`. Quantifying over `x` itself instead
+fails for pointer leaves whose value is only known inside the guard, e.g. a nested `&uniq`
+folded lazily in the `UniqLty` case of `ltype_owned_unblock_fold`: its bytes (`ptr_cell l l'`)
+depend only on `l'`, but `x = (l', x0, ξi, d, g, idx)` is chosen inside the guard. The `fv`
+form also makes the mover's `t' = fv` immediate. The fancy value of a pointer depends only
+on the pointer (`syn_fval`, prophecy/syn_type.v:594). The split needs a new pair of fixpoints
+(bytes and ghost) that mirrors `ltype_own_cp … (Owned m)`, with the lemma
+`ltype_own_cp false lt (Owned m) p r … ⊣⊢ ∃ fv, bytes ∗ ghost`. Locals in Owned mode see
+only the changed `blocked_owned`/`shr_blocked_owned`.
+
+### Q2. Are bytes ever obtained from ghost ownership?
+
+**Top-level bytes: never, in any lazy context.** Every lazy producer gets them from bytes by
+pure layout lemmas.
+
+Bytes do come from ghost ownership in these places, and none of them forces bytes under the
+guard:
+- **Owned pointers.** The pointee's bytes are in `ty_gho_own (own_bytes …)`
+  (`ownptr_ofty_unfold_own`, ltype.v:1335, and the `OwnPtrLty` cases of the unfold/fold
+  lemmas). They are not top-level for the `&uniq` place that contains the pointer, so they
+  stay in the ghost part.
+- **Nested `&uniq`.** The referent's bytes are in the nested body, which is ghost.
+- **`points_to_ty` (pptr.v).** Its bytes are zero-size, and the pointee goes into its ghost.
+- **`ty_share`.** It only shares the ghost part. It runs eagerly, with steps.
+- **The current cell model.** `cell_points_to`'s ghost owns the heap-cell contents. The
+  permission is zero-size, so this is not top-level bytes.
+- **`greg_map` fragments in `bytes_own_def` (own.v:65).** They are persistent and timeless:
+  no guard.
+
+**Phase 3 caveat.** `c_g`'s fancy bytes include `gmb_a γ' (l+o)` for nested cells. That is
+exclusive ghost, but timeless and owned, so it needs no guard. While a nested cell is shared
+(say for its own `borrow_mut`), the enclosing leaf is `ShrBlocked α` with `α ⊑ κp`, and its
+bytes come back through the split shr inheritance.
+
+### Q3. A dead token in the guarded special back-map
+
+**How the opening works.** `llftl_bor_acc_special_guarded` (lifetime_full.v:2225):
+1. It creates a temporary non-swell lifetime `κ'` (`llftl_guarded_tok_to_tmp`, 1944).
+2. It registers the token borrow at exactly `κ`, joins it with the user's borrow, and opens
+   the join with `llftl_bor_acc_maybe_swell'` (1233), with `κ'` as the opener.
+3. The closer is `llftl_idx_acc_back_vs` (1170), then `outer_unborrow_end` (unborrow.v:813)
+   with `bl = κ'` and `al = κ''`, the borrow's internal lifetime (`κ ⊑ κ''`, from
+   `full_bor`).
+4. The stored back-map receives only `∃ k ∈ bl, Dead k`, i.e. `[†κ']`. The wrapper discards
+   it (`"[Q _]"`, 1243).
+
+**What `[†κ']` is worth.** Nothing: `κ'` is killed when the accessor closes, and `κ' ⊑ κ`
+points the wrong way.
+
+**When the back-map runs.** In the `k ∈ al` branch of `llft_vs_for_unborrow_end`
+(unborrow.v:208, at 254–262), the atom `k` that is being killed is in `al`, and its dead
+token `#Dead` (a `ModuloDeadPers`) is in context. So a variant can also pass
+`∃ k ∈ al, Dead k`, i.e. `[†κ'']`.
+
+**Experiment.** I changed `llft_vs_for_unborrow_end`'s back-map hypothesis to
+`▷ Q ∗ (∃k∈bl, Dead k) ∗ (∃k∈al, Dead k) ={…}=∗ ▷ P`, in a /tmp copy, adding
+`iExists k; modulo_dead_pers_implies_dead`. It checks, `Qed` included. The other branches
+only pass the hypothesis to the IH.
+
+**Composed chains.** Later reopenings rebuild `future_vs` from the old one. The old
+back-map still runs only in its own `k ∈ al` branch, and `al` is preserved by close, split
+and join. So composed chains are fine.
+
+**Lemmas to change** (old statements derivable by weakening):
+- `llft_vs_for_unborrow_end` and `_atomic` (unborrow.v:384);
+- `inner_unborrow_end` and `outer_unborrow_end`;
+- `llftl_idx_acc_back_vs` and `llftl_bor_acc_maybe_swell'`;
+- new `llftl_bor(_idx)_acc_special_guarded_dead` variants, whose back-map gets
+  `basically_dead κ := ∃κ'', κ ⊑ κ'' ∗ [†κ'']` (built from `κ ⊑ κ''`, which is in scope);
+- the two special lemmas of proph_bor.v (1309, 1345).
+
+About 8 lemmas. The phase-0 note "internals unchanged" no longer holds.
+
+**Is `basically_dead` enough?** Yes. The back-map stores it, persistent, in the pending
+state. The mover, with mask `lazyE ⊇ ↑NllftG`, then gets:
+- `[†κ]`, by `llftl_incl_dead_implies_dead`;
+- `[†α]` for every blocked `α`, by `pat_ok_dead` (uniq_util.v:145).
+
+This assumes that the new borrow of the contents has pattern lifetime `κp := κ`, as item 5
+of the phase-2b proposal says. `uniq_body_transform_gen` keeps the *old* `κp`, so the GMB
+lend must build its body fresh. Then the old (permission) body is closed at `PatBlocked κ`,
+with `κ ⊑ κp_old`.
+
+### Q4. Size
+
+| Area | Files | Lemmas touched | Kind |
+|---|---|---|---|
+| Lifetime internals | unborrow.v, lifetime_full.v, proph_bor.v | about 8 | small |
+| `&uniq` body | uniq_util.v | 4 definitions, about 35 lemmas | mostly mechanical; `uniq_gbody_map`, `uniq_lender_settle` and `alloc` are real work |
+| Place types | ltype.v | about 25 lemmas, plus the new bytes/ghost fixpoints and the split lemma | the Uniq-mode section (1406–2101) is mostly rewritten |
+| Place accessors | pctx_acc.v; place_puniq.v; place_shr.v, place_own.v, place_res_ops.v, place_res_view.v, place_res_rslv.v; uniq_bor.v, pptr.v | `cpd_rebody_gen` and 2 `PUniq` cases; about 6; 1–3 each | |
+| GMB | guarded_bor.v, guarded_bor_proph.v (and tests) | | lazy-In state, settle lock, restated (L3p) |
+
+In total, about 12 files, about 90 lemmas of which about 15 are substantial, roughly
+2–2.5k lines touched. No typing-rule statement changes.
+
+**Riskiest spots:**
+1. `ltype_owned_unblock_fold` split, `UniqLty` case: values only known inside the guard,
+   hence the `fv` form.
+2. The new fixpoints and the split lemma: blocked and shr-blocked leaves, sums, and the
+   existential `fv` threaded through products.
+3. The unblocked case of `uniq_gbody_map`, whose bytes map runs at the back-map mask.
+4. pctx_acc's nested closers.
+5. Qed times of the large conversions.
+
+### Q5. Other blockers for the combined design
+
+1. **Forcing cannot happen with the GMB invariants open.** `lazyE ⊇ ↑NllftUsr ∪ ↑NllftUsr2`
+   (`lazyE_NllftUsr`, uniq_util.v:118), and lifetime inheritances need `↑Nllft`, so the
+   mover cannot force while `other_inv` or `guard_inv` is open. The pending payload must be
+   taken out, the invariants closed, the payload forced, the invariants reopened and the
+   result deposited.
+2. **The take-out needs a lock.** Both the mover (L1) and the lender's claim (the old body's
+   ghost) may settle, and so may `cell_points_to`'s `ty_share` (which needs `b_shr` eager).
+   An intermediate state must be ruled out for the others. Use the settle lock of the
+   phase-2b proposal (item 3): an exclusive token in `inv gmbN K`, held for the whole
+   settlement.
+3. **The lock needs a second mask.** It works only if:
+   - (a) the bytes layer is forced with a mask that excludes `gmbN`; and
+   - (b) the lender's claim and `ty_share` (whose law assumes only
+     `↑Nllft ∪ ↑prophN ∪ ↑uniqN ⊆ E`, type.v:453) can open `gmbN`.
+
+   Proposal:
+   - `lazyB := ↑Nllft ∪ ↑prophN ∪ ↑uniqN` (today's `lazyE`) is the mask of every
+     bytes-layer inheritance (blocked and shr-blocked leaves, the Conv packaging);
+   - `lazyE := lazyB ∪ ↑gmbN`, with `gmbN ## lazyB`, for the guarded ghost updates and for
+     `ty_share`.
+
+   No bytes-layer inheritance needs `gmbN`: the permission's bytes are zero-size, so the
+   claim lives in the ghost part, and nested cells' bytes are owned `gmb_a`. Changing the
+   definition of `lazyE` is mechanical (`solve_ndisj`), but it touches every file that
+   unfolds it.
+4. **`t'` is not known in the back-map.** The value of the final contents is only fixed when
+   the contents are forced (blocked leaves, and pointer leaves via `fv`). So the lazy b-state
+   cannot carry `t`: `gmb_b_uniq` is `∃ t` until settled. Whoever settles first fixes `t'`
+   and leaves `R t'` for the lender. This is consistent with (L1), where `t` is
+   existential.
+5. **Credits.** The back-map stores `▷ Q`, and `Q`'s bytes layer contains wands, so it is
+   not timeless. Forcing therefore costs one credit, on top of the one for `other_inv`'s
+   later. Have the lend (a program step) store `£2` in `other_inv`: credits are timeless, so
+   settlement then needs no step. This matters for `ty_share`, which may have `d = 0`.
+   - No time receipt `⧖` is needed to force the bytes: the receipts are only used by the
+     ghost folds.
+   - The nested inheritances carry their own credits (e.g. `£c` in place_puniq.v:691;
+     place_shr.v:69).
+6. **Masks at the mover's step.** At a typed move the mover has `⊤ ⊇ lazyE ∪ ↑gmbN`.
+   `gmb_move`'s side condition becomes `lazyE ⊆ E`. The back-map itself only stores, at
+   `↑NllftUsr ∪ ↑NllftUsr2`, and never meets the locked state: it holds its own b fragment
+   (state `Out`).
