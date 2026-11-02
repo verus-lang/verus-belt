@@ -43,13 +43,13 @@ Section GmbTests.
       the contents only from the contents themselves. *)
   Lemma test_move m s s' t :
     m !! s' = None →
-    ghost_map_auth γm 1 m -∗ £ 1 -∗ cc s t ={↑Nllft ∪ ↑gmbN}=∗
+    ghost_map_auth γm 1 m -∗ cc s t ={↑Nllft ∪ ↑gmbN}=∗
       ∃ m', ghost_map_auth γm 1 m' ∗ cc s' t.
   Proof.
-    iIntros (Hs') "Auth Lc C".
+    iIntros (Hs') "Auth C".
     iDestruct (ghost_map_lookup with "Auth C") as %Hs.
     iMod (gmb_create cc _ 0 with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)".
-    iMod (gmb_move cc with "Inv [Lc] A") as (t0) "[C Back]"; [rewrite Hb; solve_ndisj|by rewrite Hd|].
+    iMod (gmb_move cc with "Inv A") as (t0) "[C Back]"; first (rewrite Hb; solve_ndisj).
     iDestruct (ghost_map_lookup with "Auth C") as %Hs0. rewrite Hs in Hs0. simplify_eq.
     (* re-encode at the new placement *)
     iMod (ghost_map_delete with "Auth C") as "Auth".
@@ -93,7 +93,7 @@ Section GmbTests.
     iMod (llftl_borrow _ κ (∃ t, gmb_b γ t) with "LFT [B]") as "[Bor InhB]"; first done.
     { iNext. by iExists t. }
     (* (L3) *)
-    iMod (gmb_lend cc with "LFT Inv Ga Bor Alive") as "[Bor Alive]"; first done.
+    iMod (gmb_lend cc with "LFT Inv Ga [Lc] Bor Alive") as "[Bor Alive]"; [done|by rewrite Hd|].
     (* write through the borrow *)
     iMod (llftl_bor_acc with "LFT Bor Alive") as "[C Close]"; first done.
     iDestruct "C" as ">[%t0 C]".
@@ -112,7 +112,7 @@ Section GmbTests.
     simplify_eq.
     iMod ("Hcl" with "C") as "[A B]".
     (* (L4): the owner moves, without the lender *)
-    iModIntro. iMod (gmb_move cc with "Inv [Lc] A") as (t2) "[C Back]"; [rewrite Hb; solve_ndisj|by rewrite Hd|].
+    iModIntro. iMod (gmb_move cc with "Inv A") as (t2) "[C Back]"; first (rewrite Hb; solve_ndisj).
     iDestruct (ghost_map_lookup with "Auth C") as %Hs2. rewrite lookup_insert in Hs2.
     simplify_eq.
     iMod ("Back" with "C") as "A".
@@ -131,15 +131,16 @@ Section GmbTests.
     iMod (share_timeless κ with "A") as "[#Ga InhA]".
     iMod (llftl_borrow _ κ (∃ t, gmb_b γ t) with "LFT [B]") as "[Bor _]"; first done.
     { iNext. by iExists t. }
-    iMod (gmb_lend cc with "LFT Inv Ga Bor Alive") as "[_ Alive]"; first done.
+    iMod (gmb_lend cc with "LFT Inv Ga [Lc] Bor Alive") as "[_ Alive]"; [done|by rewrite Hd|].
     iModIntro. iMod ("End" with "Alive") as "Dead". iModIntro. iNext. iMod "Dead" as "#Dead".
     iMod ("InhA" with "Dead") as ">A".
-    iModIntro. iMod (gmb_move cc with "Inv [Lc] A") as (t') "[C _]"; [rewrite Hb; solve_ndisj|by rewrite Hd|].
+    iModIntro. iMod (gmb_move cc with "Inv A") as (t') "[C _]"; first (rewrite Hb; solve_ndisj).
     iModIntro. by iExists t'.
   Qed.
 
   (** (L3) with a share at step-index 1 (an instance of depth 1): the owner's share is a
-      frozen full borrow ([llftl_bor_guard]). The lend costs one credit, the move two. *)
+      frozen full borrow ([llftl_bor_guard]). The lend costs one credit, and prepays two
+      for the move. *)
   Lemma test_lend_later s t :
     llft_ctx -∗ cc s t -∗ £ 1 -∗ £ 2 -∗
     |={↑Nllft}=> |={↑Nllft}[∅]▷=> |={↑Nllft ∪ ↑gmbN}=> ∃ t', cc s t'.
@@ -151,11 +152,11 @@ Section GmbTests.
     iMod (llftl_bor_guard with "LFT BorA") as "#Ga"; first done.
     iMod (llftl_borrow _ κ (∃ t, gmb_b γ t) with "LFT [B]") as "[Bor _]"; first done.
     { iNext. by iExists t. }
-    iMod (gmb_lend_later cc _ _ _ _ 1 with "LFT Inv Ga Lc1 Bor Alive") as "[_ Alive]";
-      [done|lia|].
+    iMod (gmb_lend_later cc _ _ _ _ 1 with "LFT Inv Ga Lc1 [Lc2] Bor Alive") as "[_ Alive]";
+      [done|lia|by rewrite Hd|].
     iModIntro. iMod ("End" with "Alive") as "Dead". iModIntro. iNext. iMod "Dead" as "#Dead".
     iMod ("InhA" with "Dead") as ">A".
-    iModIntro. iMod (gmb_move cc with "Inv [Lc2] A") as (t') "[C _]"; [rewrite Hb; solve_ndisj|by rewrite Hd|].
+    iModIntro. iMod (gmb_move cc with "Inv A") as (t') "[C _]"; first (rewrite Hb; solve_ndisj).
     iModIntro. by iExists t'.
   Qed.
 
@@ -167,11 +168,11 @@ Section GmbTests.
       inside [gmb_move] with the guard stored by the lend, is never reached: the move below
       finds the state [In]. *)
   Lemma test_relend_sub_lifetime s t :
-    llft_ctx -∗ cc s t -∗ £ 1 -∗
+    llft_ctx -∗ cc s t -∗ £ 2 -∗
     |={↑Nllft}=> |={↑Nllft}[∅]▷=> |={↑Nllft}=> |={↑Nllft}[∅]▷=> |={↑Nllft}=>
     |={↑Nllft}[∅]▷=> |={↑Nllft ∪ ↑gmbN}=> ∃ t', cc s t'.
   Proof.
-    iIntros "#LFT C Lc".
+    iIntros "#LFT C Lc". iDestruct (lc_split 1 1 with "Lc") as "[Lc1 Lc2]".
     iMod (gmb_create cc _ 0 with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)".
     iMod (llftl_begin with "LFT") as (α) "[Alpha #EndA]"; first done.
     iMod (share_timeless α with "A") as "[#Ga InhA]".
@@ -187,8 +188,8 @@ Section GmbTests.
       - by rewrite llftl_tok_inter_and.
       - iApply guards_weaken_sep_l.
       - iApply guards_weaken_sep_r. }
-    iMod (gmb_lend_guarded cc with "LFT Inv Ga1 Bor Gk1 [$Alpha $Beta1]")
-      as "[_ [Alpha Beta1]]"; first done.
+    iMod (gmb_lend_guarded cc with "LFT Inv Ga1 [Lc1] Bor Gk1 [$Alpha $Beta1]")
+      as "[_ [Alpha Beta1]]"; [done|by rewrite Hd|].
     iModIntro. iMod ("EndB1" with "Beta1") as "Dead". iModIntro. iNext.
     iMod "Dead" as "#Dead1".
     iMod ("InhB" with "[]") as ">[%t1 B]". { rewrite llftl_end_inter. by iRight. }
@@ -204,15 +205,15 @@ Section GmbTests.
       - by rewrite llftl_tok_inter_and.
       - iApply guards_weaken_sep_l.
       - iApply guards_weaken_sep_r. }
-    iMod (gmb_lend_guarded cc with "LFT Inv Ga2 Bor Gk2 [$Alpha $Beta2]")
-      as "[_ [Alpha Beta2]]"; first done.
+    iMod (gmb_lend_guarded cc with "LFT Inv Ga2 [Lc2] Bor Gk2 [$Alpha $Beta2]")
+      as "[_ [Alpha Beta2]]"; [done|by rewrite Hd|].
     do 2 iModIntro. iMod ("EndB2" with "Beta2") as "Dead". iModIntro. iNext.
     iMod "Dead" as "#Dead2".
     (* end [α]; the owner moves *)
     do 2 iModIntro. iMod ("EndA" with "Alpha") as "Dead". iModIntro. iNext.
     iMod "Dead" as "#DeadA".
     iMod ("InhA" with "DeadA") as ">A".
-    iModIntro. iMod (gmb_move cc with "Inv [Lc] A") as (t') "[C _]"; [rewrite Hb; solve_ndisj|by rewrite Hd|].
+    iModIntro. iMod (gmb_move cc with "Inv A") as (t') "[C _]"; first (rewrite Hb; solve_ndisj).
     iModIntro. by iExists t'.
   Qed.
   (** A lazy lend (the back-map stores the final contents with a settle law), in an
@@ -220,12 +221,13 @@ Section GmbTests.
       inheritance is a claim, which it takes: it settles the lend, and gets the permission at
       the final value (observed with (L2)). *)
   Lemma test_lazy_lend_claim m s t t' :
-    llft_ctx -∗ ghost_map_auth γm 1 m -∗ cc s t -∗ £ 5 -∗
+    llft_ctx -∗ ghost_map_auth γm 1 m -∗ cc s t -∗ £ 7 -∗
     |={↑Nllft ∪ ↑gmbN}=> |={↑Nllft}[∅]▷=> |={↑Nllft ∪ ↑gmbN}=> ∃ m' γ,
       ghost_map_auth γm 1 m' ∗ gmb_inv cc γ ∗ gmb_a γ s ∗ gmb_b γ t' ∗ ⌜m' !! s = Some t'⌝.
   Proof.
     iIntros "#LFT Auth C £".
-    iDestruct (lc_split 1 4 with "£") as "[£i £]". iDestruct (lc_split 1 3 with "£") as "[£1 £3]".
+    iDestruct (lc_split 1 6 with "£") as "[£i £]". iDestruct (lc_split 1 5 with "£") as "[£1 £]".
+    iDestruct (lc_split 1 4 with "£") as "[Pre £3]".
     iMod (gmb_create_mask cc _ 0 (↑Nllft) with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)";
       first solve_ndisj.
     iMod (llftl_begin with "LFT") as (κ) "[Alive #End]"; first solve_ndisj.
@@ -236,8 +238,8 @@ Section GmbTests.
     { iNext. by iApply (gmb_b_uniq_intro with "B"). }
     iMod lc_zero as "Lc0".
     iMod (gmb_lend_guarded_lazy cc _ _ _ _ _ 0 (∃ t, cc s t)%I with
-      "LFT Inv Ga Lc0 £1 £3 Bor [] Alive [] []") as "[Bor Alive]".
-    { rewrite Hb. solve_ndisj. } { lia. } { iApply guards_refl. }
+      "LFT Inv Ga Lc0 [Pre] £1 £3 Bor [] Alive [] []") as "[Bor Alive]".
+    { rewrite Hb. solve_ndisj. } { lia. } { by rewrite Hd. } { iApply guards_refl. }
     { iIntros (t0) "_ C !> !>". by iExists t0. }
     { iIntros "!> [%t0 C] _ !>". iExists t0. by iFrame. }
     (* write through the borrow *)
@@ -268,11 +270,11 @@ Section GmbTests.
       owner moves; the move settles the pending lend (it forces the stored contents, with
       the bytes mask and the dead token, without the lender). *)
   Lemma test_lazy_lend_abandoned s t :
-    llft_ctx -∗ cc s t -∗ £ 5 -∗
+    llft_ctx -∗ cc s t -∗ £ 6 -∗
     |={↑Nllft ∪ ↑gmbN}=> |={↑Nllft}[∅]▷=> |={↑Nllft ∪ ↑gmbN}=> ∃ t', cc s t'.
   Proof.
     iIntros "#LFT C £".
-    iDestruct (lc_split 1 4 with "£") as "[Lc £]". iDestruct (lc_split 1 3 with "£") as "[£1 £3]".
+    iDestruct (lc_split 1 5 with "£") as "[Pre £]". iDestruct (lc_split 1 4 with "£") as "[£1 £3]".
     iMod (gmb_create_mask cc _ 0 (↑Nllft) with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)";
       first solve_ndisj.
     iMod (llftl_begin with "LFT") as (κ) "[Alive #End]"; first solve_ndisj.
@@ -283,14 +285,14 @@ Section GmbTests.
     { iNext. by iApply (gmb_b_uniq_intro with "B"). }
     iMod lc_zero as "Lc0".
     iMod (gmb_lend_guarded_lazy cc _ _ _ _ _ 0 (∃ t, cc s t)%I with
-      "LFT Inv Ga Lc0 £1 £3 Bor [] Alive [] []") as "[_ Alive]".
-    { rewrite Hb. solve_ndisj. } { lia. } { iApply guards_refl. }
+      "LFT Inv Ga Lc0 [Pre] £1 £3 Bor [] Alive [] []") as "[_ Alive]".
+    { rewrite Hb. solve_ndisj. } { lia. } { by rewrite Hd. } { iApply guards_refl. }
     { iIntros (t0) "_ C !> !>". by iExists t0. }
     { iIntros "!> [%t0 C] _ !>". iExists t0. by iFrame. }
     iModIntro. iMod ("End" with "Alive") as "Dead". iModIntro. iNext. iMod "Dead" as "#Dead".
     iMod ("InhA" with "Dead") as ">A".
     iModIntro.
-    iMod (gmb_move cc with "Inv [Lc] A") as (t') "[C _]"; [rewrite Hb; solve_ndisj|by rewrite Hd|].
+    iMod (gmb_move cc with "Inv A") as (t') "[C _]"; first (rewrite Hb; solve_ndisj).
     iModIntro. by iExists t'.
   Qed.
 End GmbTests.

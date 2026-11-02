@@ -51,16 +51,16 @@ Section gmb_uniq.
        gmb_b γ fv0 ∗ ty_gho_own ty y' d' g' tid ⊢ ty_gho_own pty (fv y') d' g' tid) →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ gmb_inv c γ -∗
     (@[κ] &&{↑NllftG}&&> gmb_a γ l) -∗ κ ⊑ ty_lft pty -∗ ty_lft pty ⊑ ty_lft ty -∗
-    (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £ 4 -∗
+    (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £ 5 -∗ £ (1 + gmb_depth γ) -∗
     uniq_body pty (fv y) ξi d g idx κ tid lp ={E}=∗ ∃ ζi ζidx,
       ⟨π, (π (uniq_prvar (fv y) ξi)).1 = fp ((π (uniq_prvar y ζi)).1)⟩ ∗
       uniq_body ty y ζi d g ζidx κ tid l ∗ G.
   Proof using All.
     iIntros (HT Hinj Hcomm HE Hbm Hc Hb Hfvp Hpz HGf HGb)
-      "#LFT #PROPH #UNIQ #GI #Ga #In #Incl #Gk G £".
+      "#LFT #PROPH #UNIQ #GI #Ga #In #Incl #Gk G £ Pre".
     iIntros "(%κp & %γo & #Inclp & (Gho & Tok) & ⧗ & #Bor)".
     have ?: ↑Nllft ∪ ↑prophN ⊆ E. { etrans; [|done]. rewrite /lazyE. set_solver. }
-    iDestruct (lc_split 1 3 with "£") as "[£1 £3]".
+    iDestruct (lc_split 1 4 with "£") as "[£1 £3]".
     iMod (ghost_var_alloc (lstate_triv y)) as (γn) "[Ghn Ghn']".
     iMod (proph_loan_intro (uniq_cell_tyi y) E (uniq_cell y d g γn) with "PROPH UNIQ")
       as (ζi) "Loan"; [solve_ndisj|].
@@ -71,7 +71,7 @@ Section gmb_uniq.
     iMod lc_zero as "Lc0".
     iMod (gmb_lend_proph_map_lazy c E κ (uniq_prvar (fv y) ξi) (uniq_cell (fv y) d g γo) idx
       (uniq_gbody κp pty tid lp) ζ (uniq_cell y d g γn) (uniq_gbody κ ty tid l) fπ G γ l 0
-      with "LFT PROPH UNIQ GI Ga Lc0 £3 Gk [Gho Ghn' £1] G Loan Tok Bor")
+      with "LFT PROPH UNIQ GI Ga Lc0 Pre £3 Gk [Gho Ghn' £1] G Loan Tok Bor")
       as "(#Obs & Bor' & G)"; [done|lia| |].
     { (* the forward direction: force the payload of the permission, split the permission
          off its ownership predicate, and build the new body from the contents *)

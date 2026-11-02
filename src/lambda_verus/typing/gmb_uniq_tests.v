@@ -40,11 +40,10 @@ Section gmb_uniq_tests.
   Lemma test_gmb_uniq_abandoned y d g fv0 :
     ty.(ty_fval) y = Some fv0 →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ gmb_inv cb γ -∗ gmb_a γ l -∗ gmb_b γ fv0 -∗
-    ⧖(S d `max` g) -∗ ▷ ty_gho_own ty y d g tid -∗ ⧗1 -∗ £ 5 -∗
+    ⧖(S d `max` g) -∗ ▷ ty_gho_own ty y d g tid -∗ ⧗1 -∗ £ 5 -∗ £ (1 + gmb_depth γ) -∗
     |={⊤}=> |={↑Nllft}[∅]▷=> |={⊤}=> ∃ fv1, cb l fv1.
   Proof using All.
-    iIntros (Hy) "#LFT #PROPH #UNIQ #Inv A B #⧖ Gho ⧗ £".
-    iDestruct (lc_split 1 4 with "£") as "[Lc £4]".
+    iIntros (Hy) "#LFT #PROPH #UNIQ #Inv A B #⧖ Gho ⧗ £ Pre".
     iMod (llftl_begin with "LFT") as (κ) "[Alive #End]"; first solve_ndisj.
     iMod (llftl_borrow_shared _ κ (gmb_a γ l) with "[A]") as "[#Ga InhA]"; [solve_ndisj|by iNext|].
     iDestruct (guards_remove_later_rhs with "Ga") as "#Ga'".
@@ -54,14 +53,14 @@ Section gmb_uniq_tests.
     { iNext. iApply (HGb with "[$B $Gho]"). done. }
     (* the lend *)
     iMod (gmb_lend_uniq cb pty ty fv fp fvp γ l lp y ξi d g idx κ tid ⊤ (@[κ])
-      with "LFT PROPH UNIQ Inv Ga' [] [] [] Alive £4 Body") as (ζi' ζidx) "(_ & _ & Alive)";
+      with "LFT PROPH UNIQ Inv Ga' [] [] [] Alive £ Pre Body") as (ζi' ζidx) "(_ & _ & Alive)";
       [exact Hcomm|done|exact Hbm|intros ?? Hx; rewrite /cb; iIntros "B"; by iApply (fbytes_cbytes with "B")|
        intros ?; by rewrite /cb|exact Hpf|exact Hpz|exact HGf|exact HGb| | | |].
     { iApply Hstatic. } { iApply Hlft. } { iApply guards_refl. }
     (* end [κ]; the owner moves *)
     iModIntro. iMod ("End" with "Alive") as "Dead". iModIntro. iNext. iMod "Dead" as "#Dead".
     iModIntro. iMod ("InhA" with "Dead") as ">A".
-    iMod (gmb_move cb with "Inv [Lc] A") as (fv1) "[C _]"; [rewrite Hbm /lazyB; solve_ndisj|by rewrite Hd|].
+    iMod (gmb_move cb with "Inv A") as (fv1) "[C _]"; first (rewrite Hbm /lazyB; solve_ndisj).
     iModIntro. by iExists fv1.
   Qed.
 End gmb_uniq_tests.

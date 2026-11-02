@@ -105,8 +105,8 @@ Section GmbProphTests.
     iMod lc_zero as "Lc0".
     iMod (gmb_lend_proph_map cc E0 κ (PrVar pairi ξi) (g0, t) idx (perm_pl γ ξi)
             (PrVar posi ζi) t (cont_pl s ζi) (λ y, (g0, y)) (@[κ]) γ s 0
-            with "LFT PROPH UNIQ Inv Ga Lc0 [] [] Alive Loanζ Tok IBor")
-      as "(#Obs & (%idx' & Tokζ & #IBorζ) & Alive)"; [rewrite /E0; solve_ndisj|lia| | |].
+            with "LFT PROPH UNIQ Inv Ga Lc0 [Lc] [] [] Alive Loanζ Tok IBor")
+      as "(#Obs & (%idx' & Tokζ & #IBorζ) & Alive)"; [rewrite /E0; solve_ndisj|lia|by rewrite Hd| | |].
     { iApply guards_refl. }
     { iIntros (G' wπ ?) "_ $ >B". iModIntro. iExists t. iFrame "B". iIntros "C".
       iModIntro. iExists (vπ (𝔄:=positiveₛ) t). iSplitL "C"; [by iNext|].
@@ -135,7 +135,7 @@ Section GmbProphTests.
     simplify_eq.
     iMod ("Hcl" with "C") as "[A B]".
     (* (L4): the owner moves, without the lender *)
-    iMod (gmb_move cc with "Inv [Lc] A") as (t2) "[C Back]"; [rewrite Hb; solve_ndisj|by rewrite Hd|].
+    iMod (gmb_move cc with "Inv A") as (t2) "[C Back]"; first (rewrite Hb; solve_ndisj).
     iDestruct (ghost_map_lookup with "Auth C") as %Hs2. rewrite lookup_insert in Hs2.
     simplify_eq.
     iMod ("Back" with "C") as "A".
@@ -165,8 +165,8 @@ Section GmbProphTests.
     iMod lc_zero as "Lc0".
     iMod (gmb_lend_proph_map cc E0 κ (PrVar pairi ξi) (g0, t) idx (perm_pl γ ξi)
             (PrVar posi ζi) t (cont_pl s ζi) (λ y, (g0, y)) (@[κ]) γ s 0
-            with "LFT PROPH UNIQ Inv Ga Lc0 [] [] Alive Loanζ Tok IBor")
-      as "(_ & _ & Alive)"; [rewrite /E0; solve_ndisj|lia| | |].
+            with "LFT PROPH UNIQ Inv Ga Lc0 [Lc] [] [] Alive Loanζ Tok IBor")
+      as "(_ & _ & Alive)"; [rewrite /E0; solve_ndisj|lia|by rewrite Hd| | |].
     { iApply guards_refl. }
     { iIntros (G' wπ ?) "_ $ >B". iModIntro. iExists t. iFrame "B". iIntros "C".
       iModIntro. iExists (vπ (𝔄:=positiveₛ) t). iSplitL "C"; [by iNext|].
@@ -174,7 +174,7 @@ Section GmbProphTests.
       by iExists (g0, y'). }
     iModIntro. iMod ("End" with "Alive") as "Dead". iModIntro. iNext. iMod "Dead" as "#Dead".
     iModIntro. iMod ("InhA" with "Dead") as ">A".
-    iMod (gmb_move cc with "Inv [Lc] A") as (t') "[C _]"; [rewrite Hb; solve_ndisj|by rewrite Hd|].
+    iMod (gmb_move cc with "Inv A") as (t') "[C _]"; first (rewrite Hb; solve_ndisj).
     iModIntro. by iExists t'.
   Qed.
 
@@ -186,11 +186,11 @@ Section GmbProphTests.
     λ x _, gmb_b_uniq cc γ (λ t, ⌜t = x.2⌝%I).
 
   Lemma test_proph_lazy_lend_abandoned s (g0 t : positive) :
-    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ cc s t -∗ £ 5 -∗
+    llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ cc s t -∗ £ 6 -∗
     |={E0}=> |={↑Nllft}[∅]▷=> |={E0}=> ∃ t', cc s t'.
   Proof.
     iIntros "#LFT #PROPH #UNIQ C £".
-    iDestruct (lc_split 1 4 with "£") as "[Lc £]". iDestruct (lc_split 1 3 with "£") as "[£1 £3]".
+    iDestruct (lc_split 1 5 with "£") as "[Pre £]". iDestruct (lc_split 1 4 with "£") as "[£1 £3]".
     have ? : ↑Nllft ⊆ E0 by rewrite /E0; solve_ndisj.
     iMod (gmb_create_mask cc _ 0 (↑Nllft) with "C") as (γ) "([%Hd %Hb] & #Inv & A & B)";
       first solve_ndisj.
@@ -207,8 +207,8 @@ Section GmbProphTests.
     iMod lc_zero as "Lc0".
     iMod (gmb_lend_proph_map_lazy cc E0 κ (PrVar pairi ξi) (g0, t) idx (perm_pl_lz γ ξi)
             (PrVar posi ζi) t (cont_pl s ζi) (λ y, (g0, y)) (@[κ]) γ s 0
-            with "LFT PROPH UNIQ Inv Ga Lc0 £3 [] [£1] Alive Loanζ Tok IBor")
-      as "(_ & _ & Alive)"; [rewrite /E0; solve_ndisj|lia| | |].
+            with "LFT PROPH UNIQ Inv Ga Lc0 [Pre] £3 [] [£1] Alive Loanζ Tok IBor")
+      as "(_ & _ & Alive)"; [rewrite /E0; solve_ndisj|lia|by rewrite Hd| | |].
     { iApply guards_refl. }
     { iIntros (G' wπ ?) "_ $ P".
       iMod (lc_fupd_elim_later with "£1 P") as "P".
@@ -222,7 +222,7 @@ Section GmbProphTests.
       iIntros "Cl !>". iExists (g0, y'). by iApply gmb_b_uniq_claim. }
     iModIntro. iMod ("End" with "Alive") as "Dead". iModIntro. iNext. iMod "Dead" as "#Dead".
     iModIntro. iMod ("InhA" with "Dead") as ">A".
-    iMod (gmb_move cc with "Inv [Lc] A") as (t') "[C _]"; [rewrite Hb /E0; solve_ndisj|by rewrite Hd|].
+    iMod (gmb_move cc with "Inv A") as (t') "[C _]"; first (rewrite Hb /E0; solve_ndisj).
     iModIntro. by iExists t'.
   Qed.
 
@@ -248,8 +248,8 @@ Section GmbProphTests.
     (* (L3p), in place *)
     iMod lc_zero as "Lc0".
     iMod (gmb_lend_proph cc E0 κ (PrVar posi ξi) t idx (perm_pl1 γ ξi) (cont_pl s ξi) (@[κ])
-            γ s 0 with "LFT UNIQ Inv Ga Lc0 [] [] Alive Tok IBor")
-      as (idx') "(Tok & #IBor' & Alive)"; [done|lia| | |].
+            γ s 0 with "LFT UNIQ Inv Ga Lc0 [Lc] [] [] Alive Tok IBor")
+      as (idx') "(Tok & #IBor' & Alive)"; [done|lia|by rewrite Hd| | |].
     { iApply guards_refl. }
     { iIntros (wπ) ">B". iModIntro. iExists t. iFrame "B". iIntros "C". iModIntro.
       iSplitL "C"; [by iNext|].
@@ -275,7 +275,7 @@ Section GmbProphTests.
     iDestruct (ghost_map_lookup with "Auth C") as %Hs. rewrite lookup_insert in Hs.
     simplify_eq.
     iMod ("Hcl" with "C") as "[A B]".
-    iMod (gmb_move cc with "Inv [Lc] A") as (t2) "[C Back]"; [rewrite Hb; solve_ndisj|by rewrite Hd|].
+    iMod (gmb_move cc with "Inv A") as (t2) "[C Back]"; first (rewrite Hb; solve_ndisj).
     iDestruct (ghost_map_lookup with "Auth C") as %Hs2. rewrite lookup_insert in Hs2.
     simplify_eq.
     iMod ("Back" with "C") as "A".

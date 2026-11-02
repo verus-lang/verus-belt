@@ -48,18 +48,19 @@ Section GuardedBorProph.
   Lemma gmb_lend_proph E κ ξ x idx (P Q: pv_val ξ → pv_proph ξ → iProp Σ) G γ s n :
     Timeless G → ↑Nllft ⊆ E → n ≤ gmb_depth γ →
     llft_ctx -∗ uniq_ctx -∗ gmb_inv c γ -∗
-    (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+    (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗ £ (1 + gmb_depth γ) -∗
+    (G &&{↑NllftG}&&> @[κ]) -∗
     (∀ wπ, ▷ P x wπ ={E}=∗ ∃ t, gmb_b γ t ∗ (c s t ={E}=∗ ▷ Q x wπ ∗
        (∀ x2 wπ2, ▷ Q x2 wπ2 ={↑NllftUsr ∪ ↑NllftUsr2}=∗
           ∃ t', ▷ c s t' ∗ (gmb_b γ t' -∗ ▷ P x2 wπ2)))) -∗
     G -∗ proph_bor_tok ξ x idx -∗ proph_idx_bor_gen κ ξ idx P ={E}=∗
       ∃ idx', proph_bor_tok ξ x idx' ∗ proph_idx_bor_gen κ ξ idx' Q ∗ G.
   Proof using c_timeless.
-    iIntros (HG Hmask Hn) "#LFT #UNIQ #GI #Ga Lc #Gk Wand G Tok IBor".
+    iIntros (HG Hmask Hn) "#LFT #UNIQ #GI #Ga Lc Pre #Gk Wand G Tok IBor".
     iMod (proph_idx_bor_gen_acc_rebody_special_guarded _ _ _ _ _ P Q
             with "LFT UNIQ Gk Tok IBor G") as (wπ) "(P & Sp & Close)"; [done|].
     iMod ("Wand" with "P") as (t) "[B ToQ]".
-    iMod (gmb_lend_start with "LFT GI Ga Lc Sp B") as "[C Lent]"; [done..|].
+    iMod (gmb_lend_start with "LFT GI Ga Lc Pre Sp B") as "[C Lent]"; [done..|].
     iMod ("ToQ" with "C") as "[Q Back]".
     iMod (fupd_mask_subseteq (↑Nllft)) as "Upd"; [done|].
     iMod ("Close" $! x wπ with "Q [Back Lent]") as "R".
@@ -76,7 +77,8 @@ Section GuardedBorProph.
       (fπ: proj1_sig (pv_ty ζ) → proj1_sig (pv_ty ξ)) G γ s n :
     Timeless G → ↑Nllft ∪ ↑prophN ⊆ E → n ≤ gmb_depth γ →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ gmb_inv c γ -∗
-    (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+    (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗ £ (1 + gmb_depth γ) -∗
+    (G &&{↑NllftG}&&> @[κ]) -∗
     (∀ G' wπ, ⌜Timeless G'⌝ -∗ (G' &&{↑NllftG}&&> @[κ]) -∗ G' -∗ ▷ P x wπ ={E}=∗
        G' ∗ ∃ t, gmb_b γ t ∗ (c s t ={E}=∗ ∃ wζ, ▷ Q y wζ ∗
          (∀ y' wζ', ▷ .PC[ζ] y' wζ' -∗ ▷ Q y' wζ' ={↑NllftUsr ∪ ↑NllftUsr2}=∗
@@ -85,12 +87,12 @@ Section GuardedBorProph.
       ⟨π, π ξ = fπ (π ζ)⟩ ∗
       (∃ idx', proph_bor_tok ζ y idx' ∗ proph_idx_bor_gen κ ζ idx' Q) ∗ G.
   Proof using All.
-    iIntros (HG Hmask Hn) "#LFT #PROPH #UNIQ #GI #Ga Lc #Gk Wand G Loan Tok IBor".
-    iApply (proph_idx_bor_gen_map_special with "LFT PROPH UNIQ Gk [Wand Lc] G Loan Tok IBor");
+    iIntros (HG Hmask Hn) "#LFT #PROPH #UNIQ #GI #Ga Lc Pre #Gk Wand G Loan Tok IBor".
+    iApply (proph_idx_bor_gen_map_special with "LFT PROPH UNIQ Gk [Wand Lc Pre] G Loan Tok IBor");
       [done..|].
     iIntros (G' wπ ?) "#G'k G' Sp P".
     iMod ("Wand" with "[//] G'k G' P") as "($ & %t & B & ToQ)".
-    iMod (gmb_lend_start with "LFT GI Ga Lc Sp B") as "[C Lent]"; [solve_ndisj|done|].
+    iMod (gmb_lend_start with "LFT GI Ga Lc Pre Sp B") as "[C Lent]"; [solve_ndisj|done|].
     iMod ("ToQ" with "C") as (wζ) "[Q Back]".
     iModIntro. iExists wζ. iFrame "Q".
     iIntros (y' wζ') "Pc Q".
@@ -102,14 +104,15 @@ Section GuardedBorProph.
       lazily ([gmb_lend_stop_lazy]): it gets a dead token for an outer lifetime of [κ]
       ([proph_idx_bor_gen_map_special_dead]) and splits the final new payload into a stored
       part [QS], with a settle law that forces the contents with the bytes mask of the
-      instance, and a way to build the old payload from the lender's claim. The three
+      instance, and a way to build the old payload from the lender's claim. The four
       credits are stored for the settlement. *)
   Lemma gmb_lend_proph_map_lazy E κ ξ x idx (P: pv_val ξ → pv_proph ξ → iProp Σ)
       ζ y (Q: pv_val ζ → pv_proph ζ → iProp Σ)
       (fπ: proj1_sig (pv_ty ζ) → proj1_sig (pv_ty ξ)) G γ s n :
     Timeless G → ↑Nllft ∪ ↑prophN ⊆ E → n ≤ gmb_depth γ →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ gmb_inv c γ -∗
-    (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗ £ 3 -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+    (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗ £ (1 + gmb_depth γ) -∗ £ 4 -∗
+    (G &&{↑NllftG}&&> @[κ]) -∗
     (∀ G' wπ, ⌜Timeless G'⌝ -∗ (G' &&{↑NllftG}&&> @[κ]) -∗ G' -∗ ▷ P x wπ ={E}=∗
        G' ∗ ∃ t, gmb_b γ t ∗ (c s t ={E}=∗ ∃ wζ, ▷ Q y wζ ∗
          (∀ y' wζ', ▷ .PC[ζ] y' wζ' -∗ ▷ Q y' wζ' -∗ gmb_bdead κ ={↑NllftUsr ∪ ↑NllftUsr2}=∗
@@ -120,12 +123,12 @@ Section GuardedBorProph.
       ⟨π, π ξ = fπ (π ζ)⟩ ∗
       (∃ idx', proph_bor_tok ζ y idx' ∗ proph_idx_bor_gen κ ζ idx' Q) ∗ G.
   Proof using All.
-    iIntros (HG Hmask Hn) "#LFT #PROPH #UNIQ #GI #Ga Lc £3 #Gk Wand G Loan Tok IBor".
-    iApply (proph_idx_bor_gen_map_special_dead with "LFT PROPH UNIQ Gk [Wand Lc £3] G Loan Tok IBor");
+    iIntros (HG Hmask Hn) "#LFT #PROPH #UNIQ #GI #Ga Lc Pre £3 #Gk Wand G Loan Tok IBor".
+    iApply (proph_idx_bor_gen_map_special_dead with "LFT PROPH UNIQ Gk [Wand Lc Pre £3] G Loan Tok IBor");
       [done..|].
     iIntros (G' wπ ?) "#G'k G' Sp P".
     iMod ("Wand" with "[//] G'k G' P") as "($ & %t & B & ToQ)".
-    iMod (gmb_lend_start_lazy with "LFT GI Ga Lc £3 Sp B") as "[C Lent]"; [solve_ndisj|done|].
+    iMod (gmb_lend_start_lazy with "LFT GI Ga Lc Pre £3 Sp B") as "[C Lent]"; [solve_ndisj|done|].
     iMod ("ToQ" with "C") as (wζ) "[Q Back]".
     iModIntro. iExists wζ. iFrame "Q".
     iIntros (y' wζ') "Pc Q #Dead".
