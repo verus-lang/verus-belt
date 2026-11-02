@@ -179,8 +179,10 @@ Section GuardedBor.
   Definition gmb_b γ t : iProp Σ := xa_frag (gmb_b_name γ) (GmbIn (S:=S) t).
   (* the mover's half of (L1), [a_out(t)] *)
   Local Definition gmb_a_out γ t : iProp Σ := xa_frag (gmb_a_name γ) (GmbMoving (S:=S) t).
-  (* the back-map's half of (L3), [b_out(s, κ)] *)
-  Local Definition gmb_b_out γ s κ : iProp Σ := xa_frag (gmb_b_name γ) (GmbOut (T:=T) s κ).
+  (** The lender's half of (L3) while the contents are lent out at placement [s] for [κ]
+      ([b_out(s, κ)] of the plan): it is held by the back-map of the lend, and given back
+      for [gmb_b] by [gmb_lend_stop]. *)
+  Definition gmb_lent γ s κ : iProp Σ := xa_frag (gmb_b_name γ) (GmbOut (T:=T) s κ).
 
   (** One authoritative copy of the state; the two invariants each hold one. *)
   Local Definition gmb_auth γ (sa : gmb_sstate S T) (tb : gmb_tstate S T) : iProp Σ :=
@@ -376,12 +378,20 @@ Section GuardedBor.
     iIntros "C". iExists (GmbHere s, GmbIn t). by iFrame.
   Qed.
 
-  (* begin hide *)
-  (* The core of (L3): the state moves from [In t] to [Out s κ], given the token. *)
-  Local Lemma gmb_lend_fwd E γ κ s t n :
+  Global Instance gmb_lent_timeless γ s κ : Timeless (gmb_lent γ s κ).
+  Proof. apply _. Qed.
+
+  (** (L3) at the level of special openings: [gmb_lend_start] and [gmb_lend_stop] are the
+      two halves of a lend, for any kind of borrow that has a special opening (full borrows
+      in [gmb_lend*] below, prophetic borrows in [guarded_bor_proph.v]). The opener of a
+      borrow of [gmb_b γ t] at [κ] gets the token [special_open κ]; [gmb_lend_start] takes
+      it with the permission and gives the contents. The back-map of the borrow, which runs
+      when [κ] ends, uses [gmb_lend_stop] to put back contents at any value and get the
+      permission at that value and the token. *)
+  Lemma gmb_lend_start E γ κ s t n :
     ↑Nllft ⊆ E → n ≤ gmb_depth γ →
     llft_ctx -∗ gmb_inv γ -∗ (@[κ] &&{↑NllftG; n}&&> gmb_a γ s) -∗ £ n -∗
-    special_open κ -∗ gmb_b γ t ={E}=∗ c s t ∗ gmb_b_out γ s κ.
+    special_open κ -∗ gmb_b γ t ={E}=∗ c s t ∗ gmb_lent γ s κ.
   Proof using c_timeless.
     iIntros (Hmask Hn) "#LFT [#GI #I] #Ga Lc Tok Fb".
     iDestruct (llftl_special_open_guard κ with "LFT") as "#SG".
@@ -415,10 +425,8 @@ Section GuardedBor.
     by iFrame.
   Qed.
 
-  (* The back-map of (L3): the state moves from [Out s κ] back to [In t'], and the token is
-     returned. *)
-  Local Lemma gmb_lend_back γ κ s t' :
-    gmb_inv γ -∗ gmb_b_out γ s κ -∗ c s t' ={↑NllftUsr ∪ ↑NllftUsr2}=∗
+  Lemma gmb_lend_stop γ κ s t' :
+    gmb_inv γ -∗ gmb_lent γ s κ -∗ c s t' ={↑NllftUsr ∪ ↑NllftUsr2}=∗
       gmb_b γ t' ∗ special_open κ.
   Proof using c_timeless.
     iIntros "[#GI #I] Fout C".
@@ -435,7 +443,6 @@ Section GuardedBor.
     { iNext. iExists (GmbHere s), (GmbIn t'). iFrame. }
     by iFrame.
   Qed.
-  (* end hide *)
 
   (** (L3) Mutable. The guard of [gmb_a γ s] comes from the owner's share. Its step-index
       [n] must be at most the depth of the instance (it is stored in [other_inv] for (L1));
@@ -448,12 +455,12 @@ Section GuardedBor.
     iIntros (Hmask Hn) "#LFT #GI #Ga Lc Bor Alive".
     iMod (llftl_bor_acc_special with "LFT Bor Alive") as "(Fb & Tok & Close)"; first done.
     iDestruct "Fb" as ">[%t Fb]".
-    iMod (gmb_lend_fwd with "LFT GI Ga Lc Tok Fb") as "[C Fout]"; [done..|].
+    iMod (gmb_lend_start with "LFT GI Ga Lc Tok Fb") as "[C Fout]"; [done..|].
     iApply (fupd_mask_mono (↑Nllft)); first done.
     iApply ("Close" $! (∃ t', c s t')%I with "[Fout C]").
     iSplitR "C"; last by iExists t.
     iNext. iIntros "[C _]". iDestruct "C" as ">[%t' C]".
-    iMod (gmb_lend_back with "GI Fout C") as "[Fb Tok]".
+    iMod (gmb_lend_stop with "GI Fout C") as "[Fb Tok]".
     iModIntro. iFrame "Tok". iNext. by iExists t'.
   Qed.
 
@@ -466,12 +473,12 @@ Section GuardedBor.
     iIntros (HG Hmask Hn) "#LFT #GI #Ga Lc Bor #Gk G".
     iMod (llftl_bor_acc_special_guarded with "LFT Bor Gk G") as "(Fb & Tok & Close)"; first done.
     iDestruct "Fb" as ">[%t Fb]".
-    iMod (gmb_lend_fwd with "LFT GI Ga Lc Tok Fb") as "[C Fout]"; [done..|].
+    iMod (gmb_lend_start with "LFT GI Ga Lc Tok Fb") as "[C Fout]"; [done..|].
     iApply (fupd_mask_mono (↑Nllft)); first done.
     iApply ("Close" $! (∃ t', c s t')%I with "[Fout C]").
     iSplitR "C"; last by iExists t.
     iNext. iIntros "C". iDestruct "C" as ">[%t' C]".
-    iMod (gmb_lend_back with "GI Fout C") as "[Fb Tok]".
+    iMod (gmb_lend_stop with "GI Fout C") as "[Fb Tok]".
     iModIntro. iFrame "Tok". iNext. by iExists t'.
   Qed.
 
@@ -495,4 +502,4 @@ Section GuardedBor.
   Qed.
 End GuardedBor.
 
-Global Typeclasses Opaque gmb_a gmb_b gmb_inv.
+Global Typeclasses Opaque gmb_a gmb_b gmb_lent gmb_inv.
