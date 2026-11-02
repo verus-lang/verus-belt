@@ -309,7 +309,226 @@ Section gcells_defs.
     by iApply big_sepL_intro.
   Qed.
 
-  Lemma big_sepL_shift_loc {A} (Φ : loc → A → iProp Σ) l (o : nat) (xs : list A) :
-    ([∗ list] j ↦ x ∈ xs, Φ (l +ₗ o +ₗ j) x) ⊣⊢ ([∗ list] j ↦ x ∈ xs, Φ (l +ₗ (o + j)%nat) x).
-  Proof. apply big_sepL_proper=> j x _. by rewrite shift_loc_assoc_nat. Qed.
+  Lemma heap_mapsto_bytes_pos_shift l (o : nat) bs :
+    (l +ₗ o) ↦b bs ⊣⊢ [∗ list] j ↦ b ∈ bs, (l +ₗ (o + j)%nat) ↦b [b].
+  Proof. rewrite heap_mapsto_bytes_pos. apply big_sepL_proper=> j b _. by rewrite shift_loc_assoc_nat. Qed.
+
+  Lemma gfbytes_shift l (o : nat) fbs :
+    gfbytes (l +ₗ o) fbs ⊣⊢ [∗ list] j ↦ fb ∈ fbs, gfb (l +ₗ (o + j)%nat) fb.
+  Proof. apply big_sepL_proper=> j b _. by rewrite shift_loc_assoc_nat. Qed.
 End gcells_defs.
+
+(** ** Moving all the cells of a value: the deep opening *)
+Section gcells_open.
+  Context `{!typeG Σ, !gcellsGS Σ}.
+  Implicit Types (l : loc) (m : mty) (fv : FValue) (fbs : list (positive + abyte)).
+  Notation gca γ l := (gmb_a (S:=loc) (T:=FValue) γ l).
+
+  Lemma big_sepL2_to_sepL_l {A B} (Φ : nat → A → B → iProp Σ) (Ψ : nat → A → iProp Σ)
+      (xs : list A) (ys : list B) :
+    (∀ k x y, xs !! k = Some x → ys !! k = Some y → Φ k x y ⊢ Ψ k x) →
+    ([∗ list] k ↦ x;y ∈ xs;ys, Φ k x y) ⊢ [∗ list] k ↦ x ∈ xs, Ψ k x.
+  Proof.
+    iIntros (HΦ) "H". iDestruct (big_sepL2_impl _ (λ k x y, Ψ k x) with "H []") as "H".
+    { iIntros "!>" (k x y Hx Hy) "H". by iApply HΦ. }
+    rewrite big_sepL2_const_sepL_l. by iDestruct "H" as "[_ $]".
+  Qed.
+
+  Lemma big_sepL_zip_fst {A B} (Φ : nat → A → iProp Σ) (xs : list A) (ys : list B) :
+    length xs ≤ length ys →
+    ([∗ list] k ↦ p ∈ zip xs ys, Φ k p.1) ⊣⊢ [∗ list] k ↦ x ∈ xs, Φ k x.
+  Proof. intros. by rewrite -(big_sepL_fmap fst) fst_zip. Qed.
+
+  Lemma big_sepL_zip_snd {A B} (Φ : nat → B → iProp Σ) (xs : list A) (ys : list B) :
+    length ys ≤ length xs →
+    ([∗ list] k ↦ p ∈ zip xs ys, Φ k p.2) ⊣⊢ [∗ list] k ↦ y ∈ ys, Φ k y.
+  Proof. intros. by rewrite -(big_sepL_fmap snd) snd_zip. Qed.
+
+  Lemma gcells_tuple_zip l fs sz fvs :
+    length fvs = length fs →
+    gcells l (MTuple fs sz) (FVTuple fvs) ⊣⊢
+    [∗ list] k ↦ p ∈ zip fs fvs, gcells (l +ₗ Z.of_nat p.1.1) p.1.2 p.2.
+  Proof.
+    intros Hlen. rewrite gcells_tuple. apply big_sepL_same_length.
+    { rewrite length_zip_with. lia. }
+    intros k fv p Hfv Hp. apply lookup_zip_with_Some in Hp as ([o fm] & fv' & -> & Hf & Hfv').
+    rewrite Hfv in Hfv'. injection Hfv' as <-. by rewrite Hf.
+  Qed.
+
+  (** The tokens of the cells that are being moved (the ancestors of the current one). *)
+  Definition gtoks (A : list (gmb_name * FValue)) : iProp Σ :=
+    [∗ list] a ∈ A, gmb_moving (S:=loc) a.1 a.2.
+
+  Lemma gtoks_excl A γ l : gtoks A -∗ gca γ l -∗ ⌜γ ∉ A.*1⌝.
+  Proof.
+    iIntros "Toks Ha %Hin". apply elem_of_list_fmap in Hin as ([γ' t] & -> & Hin).
+    iDestruct (big_sepL_elem_of with "Toks") as "T"; [done|].
+    iApply (gmb_a_moving_excl with "Ha T").
+  Qed.
+
+  (** The registered instance invariants. *)
+  Definition greg_ctx (Reg : gmap positive (gmb_name * mty)) : iProp Σ :=
+    [∗ map] g ↦ e ∈ Reg, gmb_inv (gcont_c e.2) e.1 ∗ ⌜gmb_bmask e.1 = lazyB⌝.
+  Global Instance greg_ctx_persistent Reg : Persistent (greg_ctx Reg).
+  Proof. apply _. Qed.
+
+  Lemma reg_count (Reg : gmap positive (gmb_name * mty)) (A : list (gmb_name * FValue)) :
+    NoDup A.*1 → (∀ a, a ∈ A → ∃ g m', Reg !! g = Some (a.1, m')) → length A ≤ size Reg.
+  Proof.
+    intros Hnd Hin. rewrite -length_map_to_list -(length_fmap fst A)
+      -(length_fmap (λ e : positive * (gmb_name * mty), e.2.1) (map_to_list Reg)).
+    apply submseteq_length, NoDup_submseteq; [done|].
+    intros γ (a & -> & Ha)%elem_of_list_fmap. destruct (Hin a Ha) as (g & m' & Hg).
+    apply elem_of_list_fmap. exists (g, (a.1, m')). split; [done|]. by apply elem_of_map_to_list.
+  Qed.
+
+  (** The closer of a deep opening: bytes at [l'] that decode to the same value give the
+      fancy bytes of [fv] at [l'] (with the plain bytes of [bs']), the cells at their new
+      locations, and the representation. *)
+  Definition gclose R m fbs fv (v : Value) : iProp Σ :=
+    ∀ l' bs', ⌜decode_value m bs' = Some v⌝ -∗ l' ↦b bs' ={lazyE}=∗
+      gfbytes l' (fb_mix fbs bs') ∗ gcells l' m fv ∗ ⌜frepr R m (fb_mix fbs bs') fv⌝.
+
+  (** The statement of the deep opening, with fuel [k] for the depth of the nesting of
+      cells. [A] are the cells being moved around the current value (with their tokens),
+      [Reg] is the registry. *)
+  Definition gopen_stmt Reg (k : nat) R m fbs fv : Prop :=
+    ∀ (A : list (gmb_name * FValue)) l, mty_wf m → NoDup A.*1 →
+      (∀ a, a ∈ A → ∃ g m', Reg !! g = Some (a.1, m')) → (size Reg ≤ length A + k)%nat →
+      ⊢ greg_ctx Reg -∗ ghost_map_auth gcells_name 1 Reg -∗ gtoks A -∗ gfbytes l fbs -∗
+        gcells l m fv ={lazyE}=∗ ∃ bs v, ghost_map_auth gcells_name 1 Reg ∗ gtoks A ∗
+          l ↦b bs ∗ ⌜decode_value m bs = Some v⌝ ∗ gclose R m fbs fv v.
+
+  (** The deep opening of the fields of a tuple (or of the payload of an enum). *)
+  Lemma gopen_fields Reg k R fs (fvs : list FValue) fbs A l :
+    fields_disjoint fs → Forall (λ f, f.1 + mty_size f.2 ≤ length fbs)%nat fs →
+    Forall (λ f, mty_wf f.2) fs → length fvs = length fs →
+    (∀ i fb, fbs !! i = Some fb → ¬ in_field fs i → is_plain fb) →
+    (∀ j f fvj, fs !! j = Some f → fvs !! j = Some fvj →
+       gopen_stmt Reg k R f.2 (list_slice f.1 (mty_size f.2) fbs) fvj) →
+    NoDup A.*1 → (∀ a, a ∈ A → ∃ g m', Reg !! g = Some (a.1, m')) →
+    (size Reg ≤ length A + k)%nat →
+    greg_ctx Reg -∗ ghost_map_auth gcells_name 1 Reg -∗ gtoks A -∗ gfbytes l fbs -∗
+    ([∗ list] j ↦ p ∈ zip fs fvs, gcells (l +ₗ Z.of_nat p.1.1) p.1.2 p.2) ={lazyE}=∗
+    ∃ bs vs, ghost_map_auth gcells_name 1 Reg ∗ gtoks A ∗ l ↦b bs ∗
+      ⌜length bs = length fbs ∧ length vs = length fs ∧
+       (∀ j f vj, fs !! j = Some f → vs !! j = Some vj →
+          decode_value f.2 (list_slice f.1 (mty_size f.2) bs) = Some vj) ∧
+       (∀ i, ¬ in_field fs i → bs !! i = fb_base fbs !! i)⌝ ∗
+      (∀ l' bs', ⌜length bs' = length fbs⌝ -∗
+         ⌜∀ j f vj, fs !! j = Some f → vs !! j = Some vj →
+            decode_value f.2 (list_slice f.1 (mty_size f.2) bs') = Some vj⌝ -∗
+         l' ↦b bs' ={lazyE}=∗
+         gfbytes l' (fb_mix fbs bs') ∗ ([∗ list] j ↦ p ∈ zip fs fvs, gcells (l' +ₗ Z.of_nat p.1.1) p.1.2 p.2) ∗
+         ⌜∀ j f fvj, fs !! j = Some f → fvs !! j = Some fvj →
+            frepr R f.2 (list_slice f.1 (mty_size f.2) (fb_mix fbs bs')) fvj⌝).
+  Proof.
+    iIntros (Hdisj Hin Hwf Hlenf Hpad IH HA Hrng Hsz) "#Ctx Auth Toks Hfb Hc".
+    have Hlz : length (zip fs fvs) = length fs by rewrite length_zip_with; lia.
+    have Hzip : ∀ j p, zip fs fvs !! j = Some p → fs !! j = Some p.1 ∧ fvs !! j = Some p.2.
+    { intros j p (f & fvj & -> & ? & ?)%lookup_zip_with_Some. done. }
+    rewrite /gfbytes (big_sepL_fields _ fbs fs) //. iDestruct "Hfb" as "[Hfbf Hpad]".
+    iAssert ([∗ list] j ↦ p ∈ zip fs fvs,
+      gfbytes (l +ₗ Z.of_nat p.1.1) (list_slice p.1.1 (mty_size p.1.2) fbs) ∗ gcells (l +ₗ Z.of_nat p.1.1) p.1.2 p.2)%I
+      with "[Hfbf Hc]" as "Hin".
+    { rewrite big_sepL_sep. iFrame "Hc".
+      rewrite (big_sepL_zip_fst (λ _ f, gfbytes (l +ₗ Z.of_nat f.1) (list_slice f.1 (mty_size f.2) fbs))); [|lia].
+      iApply (big_sepL_impl with "Hfbf"). iIntros "!>" (j f _) "H". by rewrite gfbytes_shift. }
+    iMod (big_sepL_fupd_thread lazyE (greg_ctx Reg ∗ ghost_map_auth gcells_name 1 Reg ∗ gtoks A)
+      _ (λ j p, ∃ y : list abyte * Value, (l +ₗ Z.of_nat p.1.1) ↦b y.1 ∗
+         ⌜decode_value p.1.2 y.1 = Some y.2⌝ ∗
+         gclose R p.1.2 (list_slice p.1.1 (mty_size p.1.2) fbs) p.2 y.2)%I
+      with "[$Ctx $Auth $Toks $Hin]") as "[(_ & Auth & Toks) Hout]".
+    { intros j p Hp. destruct (Hzip j p Hp) as [Hf Hfv].
+      iIntros "[(#Ctx' & Auth & Toks) [Hfb Hc]]".
+      iMod (IH j p.1 p.2 Hf Hfv A (l +ₗ Z.of_nat p.1.1) with "Ctx' Auth Toks Hfb Hc")
+        as (bs v) "(Auth & Toks & Hbs & %Hd & Cl)"; [|done..|].
+      { exact (Forall_lookup_1 _ _ _ _ Hwf Hf). }
+      iModIntro. iFrame "Ctx' Auth Toks". iExists (bs, v). by iFrame. }
+    iDestruct (big_sepL_exist_list with "Hout") as (ys) "[%Hlys Hout]".
+    rewrite Hlz in Hlys.
+    iDestruct (big_sepL2_sep with "Hout") as "[Hbs Hout]".
+    iDestruct (big_sepL2_sep with "Hout") as "[Hdec Hcl]".
+    iDestruct (big_sepL2_pure_1 with "Hdec") as %Hdec.
+    set ins := zip_with (λ (p : (nat * mty) * FValue) (y : list abyte * Value), (p.1.1, y.1)) (zip fs fvs) ys.
+    set bs := fill_fields ins (fb_base fbs).
+    have Hlenbs : length bs = length fbs by rewrite length_fill_fields length_fb_base.
+    have Hins : ∀ j p y, zip fs fvs !! j = Some p → ys !! j = Some y → ins !! j = Some (p.1.1, y.1).
+    { intros j p y Hp Hy. by rewrite /ins lookup_zip_with Hp /= Hy. }
+    have Hslice : ∀ j p y, zip fs fvs !! j = Some p → ys !! j = Some y →
+      list_slice p.1.1 (mty_size p.1.2) bs = y.1.
+    { intros j p y Hp Hy. have Hly := decode_value_length _ _ _ (Hdec j p y Hp Hy).
+      rewrite -Hly. apply (list_slice_fill_fields ins _ j); [by apply Hins| |].
+      - intros j' o' e' Hj' (p' & y' & [= -> ->] & Hp' & Hy')%lookup_zip_with_Some.
+        destruct (Hzip _ _ Hp) as [Hf _]. destruct (Hzip _ _ Hp') as [Hf' _].
+        rewrite (decode_value_length _ _ _ (Hdec j' p' y' Hp' Hy')) Hly.
+        destruct p as [[o fm] fvj], p' as [[o2 fm2] fvj']; simpl in *.
+        destruct (Hdisj j' j o2 fm2 o fm) as [?|?]; [done|done|done|lia|lia].
+      - rewrite Hly length_fb_base. destruct (Hzip _ _ Hp) as [Hf _].
+        exact (Forall_lookup_1 _ _ _ _ Hin Hf). }
+    have Hpadbs : ∀ i, ¬ in_field fs i → bs !! i = fb_base fbs !! i.
+    { intros i Hi. apply lookup_fill_fields_out.
+      intros j o e (p & y & [= -> ->] & Hp & Hy)%lookup_zip_with_Some.
+      destruct (Hzip _ _ Hp) as [Hf _].
+      rewrite (decode_value_length _ _ _ (Hdec j p y Hp Hy)).
+      destruct (decide (p.1.1 ≤ i < p.1.1 + mty_size p.1.2)%nat); [|lia].
+      exfalso. apply Hi. exists p.1. split; [by eapply elem_of_list_lookup_2|done]. }
+    iModIntro. iExists bs, ys.*2. iFrame "Auth Toks". iSplitL "Hbs Hpad"; [|iSplit].
+    - rewrite heap_mapsto_bytes_pos (big_sepL_fields _ bs fs) //; last by rewrite Hlenbs.
+      iSplitL "Hbs".
+      + rewrite -(big_sepL_zip_fst (λ _ f, [∗ list] j ↦ b ∈ list_slice f.1 (mty_size f.2) bs,
+          (l +ₗ (f.1 + j)%nat) ↦b [b])%I fs fvs); [|lia].
+        iApply (big_sepL2_to_sepL_l with "Hbs"). intros j p y Hp Hy. rewrite (Hslice j p y Hp Hy).
+        by rewrite heap_mapsto_bytes_pos_shift.
+      + iApply (big_sepL_same_length with "Hpad"); [done|]. intros i b fb Hb Hfb.
+        case_decide as Hi; [done|]. destruct (Hpad i fb Hfb Hi) as [b' ->].
+        rewrite Hpadbs // /fb_base list_lookup_fmap Hfb /= in Hb. by injection Hb as ->.
+    - iPureIntro. split_and!; [done|by rewrite length_fmap|..|done].
+      intros j f vj Hf Hvj. rewrite list_lookup_fmap in Hvj.
+      destruct (ys !! j) as [y|] eqn:Hy; [|done]. injection Hvj as <-.
+      destruct (fvs !! j) as [fvj|] eqn:Hfvj; [|apply lookup_ge_None in Hfvj; apply lookup_lt_Some in Hf; lia].
+      have Hp : zip fs fvs !! j = Some (f, fvj) by rewrite lookup_zip_with Hf /= Hfvj.
+      by rewrite (Hslice j _ y Hp Hy) (Hdec j _ y Hp Hy).
+    - iIntros (l' bs' Hlen' Hdec') "Hbs'".
+      rewrite heap_mapsto_bytes_pos (big_sepL_fields _ bs' fs) //; last by rewrite Hlen'.
+      iDestruct "Hbs'" as "[Hf' Hp']".
+      iAssert ([∗ list] j ↦ p;y ∈ zip fs fvs;ys,
+        (l' +ₗ Z.of_nat p.1.1) ↦b list_slice p.1.1 (mty_size p.1.2) bs')%I with "[Hf']" as "Hf'".
+      { rewrite big_sepL2_const_sepL_l. iSplit; [iPureIntro; lia|].
+        rewrite (big_sepL_zip_fst (λ _ f, (l' +ₗ Z.of_nat f.1) ↦b list_slice f.1 (mty_size f.2) bs')%I); [|lia].
+        iApply (big_sepL_impl with "Hf'"). iIntros "!>" (j f _) "H".
+        by rewrite heap_mapsto_bytes_pos_shift. }
+      iCombine "Hf' Hcl" as "H". rewrite -big_sepL2_sep.
+      iMod (big_sepL2_fupd _ (λ j p y, gfbytes (l' +ₗ Z.of_nat p.1.1)
+          (fb_mix (list_slice p.1.1 (mty_size p.1.2) fbs) (list_slice p.1.1 (mty_size p.1.2) bs')) ∗
+          gcells (l' +ₗ Z.of_nat p.1.1) p.1.2 p.2 ∗
+          ⌜frepr R p.1.2 (fb_mix (list_slice p.1.1 (mty_size p.1.2) fbs)
+             (list_slice p.1.1 (mty_size p.1.2) bs')) p.2⌝)%I with "[H]") as "H".
+      { iApply (big_sepL2_impl with "H"). iIntros "!>" (j p y Hp Hy) "[Hb Cl]".
+        destruct (Hzip _ _ Hp) as [Hf _].
+        iApply ("Cl" with "[] Hb"). iPureIntro. apply (Hdec' j p.1); [done|].
+        by rewrite list_lookup_fmap Hy. }
+      iDestruct (big_sepL2_sep with "H") as "[Hfb H]".
+      iDestruct (big_sepL2_sep with "H") as "[Hc Hrep]".
+      iDestruct (big_sepL2_pure_1 with "Hrep") as %Hrep.
+      iModIntro. iSplitL "Hfb Hp'"; [|iSplitL "Hc"].
+      + rewrite /gfbytes (big_sepL_fields _ (fb_mix fbs bs') fs) //; last first.
+        { rewrite fb_mix_length //. }
+        iSplitL "Hfb".
+        * rewrite -(big_sepL_zip_fst (λ _ f, [∗ list] j ↦ x ∈ list_slice f.1 (mty_size f.2)
+            (fb_mix fbs bs'), gfb (l' +ₗ (f.1 + j)%nat) x)%I fs fvs); [|lia].
+          iApply (big_sepL2_to_sepL_l with "Hfb"). intros j p y Hp Hy.
+          rewrite fb_mix_slice. apply big_sepL_mono=> ???. by rewrite shift_loc_assoc_nat.
+        * iApply (big_sepL_same_length with "Hp'"); [by rewrite fb_mix_length|].
+          intros i fb b Hfb Hb. case_decide as Hi; [done|].
+          destruct (lookup_lt_is_Some_2 fbs i) as [fb0 Hfb0].
+          { rewrite -Hlen'. by eapply lookup_lt_Some. }
+          destruct (Hpad i fb0 Hfb0 Hi) as [b0 ->].
+          rewrite (fb_mix_lookup _ _ _ _ _ Hfb0 Hb) in Hfb. by injection Hfb as <-.
+      + iApply (big_sepL2_to_sepL_l with "Hc"). by intros.
+      + iPureIntro. intros j f fvj Hf Hfvj.
+        have Hp : zip fs fvs !! j = Some (f, fvj) by rewrite lookup_zip_with Hf /= Hfvj.
+        destruct (lookup_lt_is_Some_2 ys j) as [y Hy]; [rewrite Hlys; by eapply lookup_lt_Some|].
+        rewrite fb_mix_slice. exact (Hrep j _ y Hp Hy).
+  Qed.
+End gcells_open.
