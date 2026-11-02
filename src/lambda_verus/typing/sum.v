@@ -329,13 +329,22 @@ Section typing.
       apply (IH _ fl). intros i. apply (Hb (FS i)). }
     have Htag : sum_tag 𝔄l = sum_tag 𝔅l by rewrite /sum_tag Hlen.
     have Hmax : sum_max 𝔄l = sum_max 𝔅l by rewrite /sum_max Hsz.
-    split; [by rewrite !syn_bsize_sum Htag Hmax|].
-    intros x R fbs.
-    replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'.
-    destruct (to_xsum x) as [i y]. simpl.
-    rewrite psum_map_p2lookup_pinj !syn_fbytes_sum.
-    destruct (Hb i) as [Hs Hf].
-    rewrite fin_to_nat_fin_renew -Htag -Hmax -Hs. by setoid_rewrite (Hf y).
+    split; [by rewrite !syn_bsize_sum Htag Hmax|]. split.
+    - intros x R fbs.
+      replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'.
+      destruct (to_xsum x) as [i y]. simpl.
+      rewrite psum_map_p2lookup_pinj !syn_fbytes_sum.
+      destruct (Hb i) as [Hs [Hf _]].
+      rewrite fin_to_nat_fin_renew -Htag -Hmax -Hs. by setoid_rewrite (Hf y).
+    - intros x.
+      replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'.
+      destruct (to_xsum x) as [i y]. intros R fbs fv fv' Hbx Hx Hx'.
+      have Hx'' : syn_fval (𝔄:=Σ! 𝔅l) (pinj (fin_renew_by_plist2 fl i) ((fl -2!! i) ~~$ₛ y)) = Some fv'.
+      { rewrite -psum_map_p2lookup_pinj. exact Hx'. }
+      apply (syn_fbytes_sum R i y) in Hbx as (bt & fp & bq & _ & _ & Hfp & _).
+      destruct (mcells_sum i y fv Hx) as (fy & Hfy & ->).
+      destruct (mcells_sum (fin_renew_by_plist2 fl i) ((fl -2!! i) ~~$ₛ y) fv' Hx'') as (fy' & Hfy' & ->).
+      destruct (Hb i) as [_ [_ Hc]]. rewrite -Htag (Hc y R fp fy fy') //.
   Qed.
 
   Lemma xsum_subtype {𝔄l 𝔅l} E L (tyl: typel 𝔄l) (tyl': typel 𝔅l) fl :

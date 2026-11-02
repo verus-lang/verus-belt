@@ -1,5 +1,5 @@
 From lrust.typing Require Export type type_context bytes_layout.
-From lrust.typing Require Import programs bool int own product sum.
+From lrust.typing Require Import programs bool int own product sum gmb_cells.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -24,15 +24,13 @@ Implicit Type 𝔄 𝔅: syn_type.
 Section value_ctx.
   Context `{!typeG Σ}.
 
-  (** The cells of a MiniRust value [w] in transit: [w] is the decoding (at [m]) of bytes
-      [bs] whose byte-cells, at the positions of the fancy bytes [fbs] that represent the
-      fancy value [fv], are in transit ([unt_fbytes]). This is what a typed [Load] of the
-      fancy bytes of [fv] gives ([wp_fbytes_load]), and what a typed [Store] of [w] needs to
-      retether the cells ([wp_fbytes_store]). The cells (and the cells nested in them) are
-      frozen while in transit: their final bytes are those of [bs]. For a value without
-      cells, this is just [w = ⌊fv⌋] ([val_cells_plain], [val_cells_intro]). *)
-  Definition val_cells (m: mty) (fv: FValue) (w: Value) : iProp Σ :=
-    ∃ fbs bs, ⌜decode_value m bs = Some w⌝ ∗ brepr m fbs fv ∗ unt_fbytes fbs bs.
+  (** The cells of a MiniRust value [w] in transit ([gtransit], [typing/gmb_cells.v]): a
+      typed [Load] of the contents of the fancy value [fv] moves the cells out
+      ([wp_gcont_load_move]), and they travel with the loaded value [w] as closers that put
+      them back at the location where bytes that decode to [w] are stored
+      ([wp_gtransit_store]). For a value without cells, this is just [w = ⌊fv⌋]
+      ([val_cells_plain], [val_cells_intro]). *)
+  Definition val_cells (m: mty) (fv: FValue) (w: Value) : iProp Σ := gtransit m fv w.
 
   Definition val_own {𝔄} (ty: type 𝔄) (x: ~~𝔄) (tid: thread_id) (v: val) : iProp Σ :=
     ∃ w d fv, ⌜v = MLitV w ∧ ty.(ty_fval) x = Some fv⌝ ∗ val_cells ty.(ty_mty) fv w ∗
@@ -45,34 +43,11 @@ Notation "p ◁ᵥ ty" := (TCtx_sem _ p (val_own ty%T)) (at level 55).
 Section value_plain.
   Context `{!typeG Σ}.
 
-  Lemma unt_fbytes_plain bs0 bs : unt_fbytes (inr <$> bs0) bs -∗ ⌜bs = bs0⌝.
-  Proof.
-    iIntros "H". iInduction bs0 as [|b0 bs0] "IH" forall (bs); destruct bs as [|b bs];
-      try by iDestruct (big_sepL2_length with "H") as %?.
-    rewrite /unt_fbytes fmap_cons big_sepL2_cons. iDestruct "H" as "[%Hb H]".
-    iDestruct ("IH" with "H") as %->. by subst.
-  Qed.
-
-  Lemma unt_fbytes_plain_intro bs : ⊢ unt_fbytes (inr <$> bs) bs.
-  Proof.
-    iInduction bs as [|b bs] "IH"; [by rewrite /unt_fbytes|].
-    rewrite /unt_fbytes fmap_cons big_sepL2_cons. iSplit; [done|]. iApply "IH".
-  Qed.
-
   Lemma val_cells_plain m w0 w : val_cells m (fv_lift w0) w -∗ ⌜w = w0⌝.
-  Proof.
-    iIntros "(%fbs & %bs & %Hd & Hrep & Hus)".
-    iDestruct (brepr_plain_inv with "Hrep") as %(bs0 & -> & Hd0).
-    iDestruct (unt_fbytes_plain with "Hus") as %->. iPureIntro. congruence.
-  Qed.
+  Proof. apply gtransit_lift_inv. Qed.
 
   Lemma val_cells_intro m w : mty_wf m → val_wf m w → ⊢ val_cells m (fv_lift w) w.
-  Proof.
-    iIntros (Hm Hw). iExists (inr <$> encode_value m w), (encode_value m w).
-    iSplit; [iPureIntro; by apply decode_encode_value|]. iSplit.
-    - iApply brepr_plain. by apply decode_encode_value.
-    - iApply unt_fbytes_plain_intro.
-  Qed.
+  Proof. intros _ Hw. by iApply gtransit_lift. Qed.
 
   Lemma ty_fval_val {𝔄} (ty: type 𝔄) x w : ty.(ty_val) x = Some w → ty.(ty_fval) x = Some (fv_lift w).
   Proof. rewrite -ty_val_eq -ty_fval_eq. apply syn_fval_val. Qed.
@@ -126,34 +101,31 @@ Section value_plain.
     ⧖d ∗ ty.(ty_gho_own) x d d tid ⊢ val_own ty x tid v.
   Proof. iIntros (-> Hw) "[⧖ Gho]". rewrite val_own_val //. iExists d. by iFrame. Qed.
 
-  (** A typed move out of the bytes of a value: a [Load] of the fancy bytes untethers their
-      cells. The location keeps plain bytes. *)
+  (** A typed move out of the bytes of a value: a [Load] of the contents moves their cells
+      out (which needs the registry of the cells and a credit). The location keeps plain
+      bytes. *)
   Lemma wp_bytes_own_move {𝔄} E (ty: type 𝔄) l y :
-    ↑naN ⊆ E →
-    {{{ bytes_own ty l y }}} Load Na1Ord ty.(ty_mty) #l @ E
+    lazyE ∪ ↑gcellsN ⊆ E →
+    {{{ gcells_ctx ∗ £ 1 ∗ bytes_own ty l y }}} Load Na1Ord ty.(ty_mty) #l @ E
     {{{ w fv bs, RET MLitV w; ⌜ty.(ty_fval) y = Some fv⌝ ∗ val_cells ty.(ty_mty) fv w ∗
         l ↦b bs ∗ ⌜length bs = ty_bsize ty⌝ }}}.
   Proof.
-    iIntros (? Φ) "Own HΦ". rewrite bytes_own_brepr.
-    iDestruct "Own" as (fbs fv) "(Hfbs & [%Hlenf %Hfv] & #Hrep)".
-    iApply (wp_fbytes_load with "[$Hfbs $Hrep]"); [done|].
-    iIntros "!>" (w bs) "(Hbs & %Hd & Hus)". iApply "HΦ". iFrame "Hbs". iSplit; [done|].
-    iSplitL; [iExists fbs, bs; by iFrame "Hrep Hus"|].
-    iPureIntro. by rewrite (decode_value_length _ _ _ Hd).
+    iIntros (? Φ) "(#GC & Lc & Own) HΦ". iDestruct (bytes_own_fval with "Own") as %[fv Hfv].
+    rewrite (bytes_own_gcont _ _ _ fv) //.
+    iApply (wp_gcont_load_move with "[$GC $Lc $Own]"); [done|apply ty_mty_wf|].
+    iIntros "!>" (w bs) "(Hbs & %Hlen & Tr)". iApply "HΦ". by iFrame.
   Qed.
 
-  (** A typed [Store] of a value whose cells are in transit retethers them. *)
+  (** A typed [Store] of a value whose cells are in transit puts them back at the new
+      location. *)
   Lemma wp_val_cells_store {𝔄} E (ty: type 𝔄) l bs0 e w y fv :
-    ↑naN ⊆ E → IntoVal e (MLitV w) → ty.(ty_fval) y = Some fv → length bs0 = ty_bsize ty →
+    lazyE ∪ ↑naN ⊆ E → IntoVal e (MLitV w) → ty.(ty_fval) y = Some fv → length bs0 = ty_bsize ty →
     {{{ ▷ l ↦b bs0 ∗ val_cells ty.(ty_mty) fv w }}} Store Na1Ord ty.(ty_mty) #l e @ E
     {{{ RET #☠; bytes_own ty l y }}}.
   Proof.
-    iIntros (? ? Hfv Hlen Φ) "[Hbs Hc] HΦ". iDestruct "Hc" as (fbs bs Hd) "[#Hrep Hus]".
-    iDestruct (big_sepL2_length with "Hus") as %Hlenu.
-    iApply (wp_fbytes_store with "[$Hbs $Hus $Hrep]"); [done|apply ty_mty_wf|done|done|].
-    iIntros "!>" (fbs') "(Hfbs & #Hrep' & %Hlen')". iApply "HΦ".
-    rewrite bytes_own_brepr. iExists fbs', fv. iFrame "Hfbs Hrep'". iPureIntro.
-    split; [|done]. rewrite Hlen' Hlenu (decode_value_length _ _ _ Hd) //.
+    iIntros (? <- Hfv Hlen Φ) "[Hbs Hc] HΦ".
+    iApply (wp_gtransit_store with "[$Hbs $Hc]"); [done|apply ty_mty_wf|done|].
+    iIntros "!> C". iApply "HΦ". by rewrite (bytes_own_gcont _ _ _ fv).
   Qed.
 End value_plain.
 

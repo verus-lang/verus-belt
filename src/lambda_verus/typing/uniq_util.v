@@ -301,13 +301,15 @@ Section uniq_util_bytes.
 
   Lemma cbytes_fval {𝔄} (ty: type 𝔄) x x' l :
     ty.(ty_fval) x = ty.(ty_fval) x' → cbytes ty x l ⊣⊢ cbytes ty x' l.
-  Proof. intros Hx. apply bytes_own_iff=> R fbs. by rewrite /ty_fbytes Hx. Qed.
+  Proof.
+    intros Hx. apply bytes_own_iff; [intros R fbs; by rewrite /ty_fbytes Hx|].
+    intros R fbs fv fv' _ Hfv Hfv'. rewrite Hx Hfv' in Hfv. by injection Hfv as ->.
+  Qed.
 
   Lemma cbytes_fval_some {𝔄} (ty: type 𝔄) x l :
     cbytes ty x l -∗ ⌜is_Some (ty.(ty_fval) x)⌝.
   Proof.
-    rewrite /cbytes bytes_own_brepr. iIntros "(%fbs & %fv & _ & %Hc & _)". iPureIntro.
-    destruct Hc as [_ Hfv]. by eexists.
+    rewrite /cbytes. iApply bytes_own_fval.
   Qed.
 
   Lemma cbytes_fbytes {𝔄} (ty: type 𝔄) x l :
