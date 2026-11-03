@@ -56,7 +56,8 @@ Inductive expr :=
 | MkVariant (t : Z) (e : expr)
 | VariantTag (e : expr)
 | VariantData (e : expr)
-| MCAS (m : mty) (e0 e1 e2 : expr).
+| MCAS (m : mty) (e0 e1 e2 : expr)
+| GetDiscr (m : mty) (e : expr).
 
 Arguments App _%E _%E.
 Arguments Case _%E _%E.
@@ -88,7 +89,7 @@ Fixpoint is_closed (X : list string) (e : expr) : bool :=
   | App e el | Case e el => is_closed X e && forallb (is_closed X) el
   | MkTuple el => forallb (is_closed X) el
   | Alloc e | Fork e | Load _ _ e | Proj _ e | MkVariant _ e
-  | VariantTag e | VariantData e => is_closed X e
+  | VariantTag e | VariantData e | GetDiscr _ e => is_closed X e
   | MCAS _ e0 e1 e2 => is_closed X e0 && is_closed X e1 && is_closed X e2
   end.
 
@@ -152,7 +153,8 @@ Inductive ectx_item :=
 | VariantDataCtx
 | MCasLCtx (m : mty) (e1 e2 : expr)
 | MCasMCtx (m : mty) (v0 : val) (e2 : expr)
-| MCasRCtx (m : mty) (v0 : val) (v1 : val).
+| MCasRCtx (m : mty) (v0 : val) (v1 : val)
+| GetDiscrCtx (m : mty).
 
 Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
   match Ki with
@@ -177,6 +179,7 @@ Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
   | MCasLCtx m e1 e2 => MCAS m e e1 e2
   | MCasMCtx m v0 e2 => MCAS m (of_val v0) e e2
   | MCasRCtx m v0 v1 => MCAS m (of_val v0) (of_val v1) e
+  | GetDiscrCtx m => GetDiscr m e
   end.
 
 (** Substitution *)
@@ -204,6 +207,7 @@ Fixpoint subst (x : string) (es : expr) (e : expr)  : expr :=
   | VariantTag e => VariantTag (subst x es e)
   | VariantData e => VariantData (subst x es e)
   | MCAS m e0 e1 e2 => MCAS m (subst x es e0) (subst x es e1) (subst x es e2)
+  | GetDiscr m e => GetDiscr m (subst x es e)
   end.
 
 Definition subst' (mx : binder) (es : expr) : expr → expr :=
@@ -326,6 +330,27 @@ Fixpoint mem_write (l : loc) (bs : list abyte) (σ : state') : state' :=
   | b :: bs => <[l:=(RSt 0, b)]>(mem_write (l +ₗ 1) bs σ)
   end.
 
+(** The expression that runs the discriminator [d] of an enum at [l] (MiniRust's
+    [GetDiscriminant], see [GetDiscrS]). Each branch is a non-atomic typed load of its
+    integer, bound to ["z"], followed by the tests of the ranges of its children, in order;
+    [DInvalid] is stuck. So only the bytes of the branches on the path are read. *)
+Definition discr_test (lo hi : Z) : expr :=
+  Case (BinOp LeOp (MLit (VInt lo)) (Var "z"))
+    [MLit (VBool false); BinOp LeOp (Var "z") (MLit (VInt (hi - 1)))].
+
+Fixpoint discr_expr (d : discr) (l : loc) : expr :=
+  match d with
+  | DKnown t => MLit (VInt t)
+  | DInvalid => Case (MLit (VInt (-1))) []
+  | DBranch off it fb ch =>
+      App (Rec BAnon [BNamed "z"]
+        ((fix go ch := match ch with
+          | [] => discr_expr fb l
+          | ((lo, hi), c) :: ch => Case (discr_test lo hi) [go ch; discr_expr c l]
+          end) ch))
+        [Load Na1Ord (MInt it) (MLit (VPtr (l +ₗ Z.of_nat off)))]
+  end.
+
 Inductive head_step : expr → state → list Empty_set → expr → state → list expr → Prop :=
 | BinOpS op l1 l2 l' σ :
     bin_op_eval σ op l1 l2 l' →
@@ -427,6 +452,9 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
               []
               (MLit unitV) (mem_write l1 bs2 (mem_alter ls_dec l2 n σ.1), σ.2)
               []
+(** [GetDiscr m l] reads the discriminant of the enum of type [m] at [l]. *)
+| GetDiscrS vars d sz al l σ :
+    head_step (GetDiscr (MEnum vars d sz al) (MLit $ VPtr l)) σ [] (discr_expr d l) σ []
 (** MiniRust layer: values *)
 | MkTupleS el vs σ :
     Forall2 (λ e v, to_val e = Some (MLitV v)) el vs →
@@ -515,8 +543,8 @@ Lemma fill_item_no_val_inj Ki1 Ki2 e1 e2 :
   to_val e1 = None → to_val e2 = None →
   fill_item Ki1 e1 = fill_item Ki2 e2 → Ki1 = Ki2.
 Proof.
-  destruct Ki1 as [| | |v1 vl1 el1| | | | | | | | | |vl1 el1| | | | | | |],
-           Ki2 as [| | |v2 vl2 el2| | | | | | | | | |vl2 el2| | | | | | |];
+  destruct Ki1 as [| | |v1 vl1 el1| | | | | | | | | |vl1 el1| | | | | | | |],
+           Ki2 as [| | |v2 vl2 el2| | | | | | | | | |vl2 el2| | | | | | | |];
   intros He1 He2 EQ; try discriminate; simplify_eq/=;
     repeat match goal with
     | H : to_val (of_val _) = None |- _ => by rewrite to_of_val in H
@@ -807,13 +835,14 @@ Fixpoint expr_beq (e : expr) (e' : expr) : bool :=
   | VariantTag e, VariantTag e' | VariantData e, VariantData e' => expr_beq e e'
   | MCAS m e0 e1 e2, MCAS m' e0' e1' e2' =>
     bool_decide (m = m') && expr_beq e0 e0' && expr_beq e1 e1' && expr_beq e2 e2'
+  | GetDiscr m e, GetDiscr m' e' => bool_decide (m = m') && expr_beq e e'
   | _, _ => false
   end.
 Lemma expr_beq_correct (e1 e2 : expr) : expr_beq e1 e2 ↔ e1 = e2.
 Proof.
   revert e1 e2; fix FIX 1.
-    destruct e1 as [ | | | |? el1 | | |? el1 | | | | | | | |el1 | | | | |],
-             e2 as [ | | | |? el2 | | |? el2 | | | | | | | |el2 | | | | |]; simpl; try done;
+    destruct e1 as [ | | | |? el1 | | |? el1 | | | | | | | |el1 | | | | | |],
+             e2 as [ | | | |? el2 | | |? el2 | | | | | | | |el2 | | | | | |]; simpl; try done;
   rewrite ?andb_True ?bool_decide_spec ?FIX;
   try (split; intro; [destruct_and?|split_and?]; congruence).
   - match goal with |- context [?F el1 el2] => assert (F el1 el2 ↔ el1 = el2) end.
