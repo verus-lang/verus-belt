@@ -77,7 +77,7 @@ Section pcell_move.
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_incl_swap|]. eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_own_to_oplace. }
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vc v17 (POwn 4 PHole) (↯ 4) i32t);
+      { eapply (type_write_place_instr _ _ _ vc v17 (POwn 4 PHole) (OfTy (↯ 4)) i32t);
           [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iApply typed_body_tctx_incl. { apply tctx_oplace_to_own. }
@@ -101,7 +101,7 @@ Section pcell_move.
       { solve_typing. } { reflexivity. }
       iIntros (v5). simpl_subst.
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vq v5 (POwn 8 (PFst PHole (OfTy (↯ 4)))) (↯ 4) i32t);
+      { eapply (type_write_place_instr _ _ _ vq v5 (POwn 8 (PFst PHole (OfTy (↯ 4)))) (OfTy (↯ 4)) i32t);
           [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* move *c out: the cell is in transit *)
@@ -114,12 +114,12 @@ Section pcell_move.
       iIntros (vv). simpl_subst.
       (* q.1 = v *)
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vq vv (POwn 8 (PSnd (OfTy i32t) PHole)) (↯ 4) cellt);
+      { eapply (type_write_place_instr _ _ _ vq vv (POwn 8 (PSnd (OfTy i32t) PHole)) (OfTy (↯ 4)) cellt);
           [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* drop c *)
       iApply type_seq.
-      { apply (type_drop_oplace_instr _ _ _ vc 4 4 (OfTy (↯ 4)) (const (const True)));
+      { apply (type_drop_oplace_instr _ _ _ vc 4 4 (Moved cellt) (const (const True)));
           [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
       (* r: a box, uninitialized; move the pair *q into it *)
@@ -136,12 +136,12 @@ Section pcell_move.
       { eapply (tctx_incl_frame_l _ _ +[_; _]). eapply (tctx_incl_frame_r +[_] +[_]).
         apply tctx_own_to_oplace. }
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vr vpair (POwn 8 PHole) (↯ 8) (i32t * cellt));
+      { eapply (type_write_place_instr _ _ _ vr vpair (POwn 8 PHole) (OfTy (↯ 8)) (i32t * cellt));
           [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* drop q *)
       iApply type_seq.
-      { apply (type_drop_oplace_instr _ _ _ vq 8 8 (OfTy (↯ 8)) (const (const True)));
+      { apply (type_drop_oplace_instr _ _ _ vq 8 8 (Moved (i32t * cellt)) (const (const True)));
           [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
       (* s: a box, uninitialized; move r.1 into it *)
@@ -158,12 +158,12 @@ Section pcell_move.
       { eapply (tctx_incl_frame_l _ _ +[_; _]). eapply (tctx_incl_frame_r +[_] +[_]).
         apply tctx_own_to_oplace. }
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vs vw (POwn 4 PHole) (↯ 4) cellt);
+      { eapply (type_write_place_instr _ _ _ vs vw (POwn 4 PHole) (OfTy (↯ 4)) cellt);
           [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* drop r *)
       iApply type_seq.
-      { apply (type_drop_oplace_instr _ _ _ vr 8 8 (ProdLty (OfTy i32t) (OfTy (↯ 4)))
+      { apply (type_drop_oplace_instr _ _ _ vr 8 8 (ProdLty (OfTy i32t) (Moved cellt))
           (const (const True))); [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
       (* s.into_inner(perm) *)

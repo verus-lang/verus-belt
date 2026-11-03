@@ -80,7 +80,7 @@ Section new_examples.
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_own_to_oplace. }
       iApply type_seq.
-      { eapply (type_memcpy_copy_place_instr _ _ _ vc vx (POwn 8 PHole) (↯ 8) _ _ _
+      { eapply (type_memcpy_copy_place_instr _ _ _ vc vx (POwn 8 PHole) (OfTy (↯ 8)) _ _ _
           (POwn PTR_SIZE (PUniq α (PUniq β (PSnd (OfTy i32t) PHole)))) (OfTy (i32t * i32t))
           (i32t * i32t) static);
           [by apply pctx_wty_strong|apply resolve_just|solve_typing|by constructor|apply _|
@@ -91,9 +91,9 @@ Section new_examples.
       { eapply (tctx_incl_frame_l _ _ +[_; _]). apply tctx_own_to_oplace. }
       iApply type_seq.
       { eapply (type_memcpy_move_place_instr _ _ _ vx vy
-          (POwn PTR_SIZE (PUniq α (PUniq β (PSnd (OfTy i32t) PHole)))) (i32t * i32t) _ _ _
+          (POwn PTR_SIZE (PUniq α (PUniq β (PSnd (OfTy i32t) PHole)))) (OfTy (i32t * i32t)) _ _ _
           (POwn 8 PHole) (i32t * i32t));
-          [apply pctx_wty_same|apply resolve_just|solve_typing|done]. }
+          [apply pctx_wty_same|apply resolve_just|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* fold back *)
       iApply type_seq.
@@ -116,7 +116,7 @@ Section new_examples.
       { solve_typing. } { reflexivity. }
       (* drop y *)
       iApply type_seq.
-      { apply (type_drop_oplace_instr _ _ _ vy 8 8 (OfTy (↯ 8)) (const (const True)));
+      { apply (type_drop_oplace_instr _ _ _ vy 8 8 (Moved (i32t * i32t)) (const (const True)));
           [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
       (* c as a box *)
