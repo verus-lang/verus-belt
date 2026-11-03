@@ -56,12 +56,7 @@ Section spawn.
   Qed.*)
 
   Global Instance join_handle_send {𝔄 ℭ} (spec: (~~ℭ) → pred' (~~𝔄)) (ty: type 𝔄) : Send (join_handle spec ty).
-  Proof.
-    intros. split.
-     iIntros. iApply step_fupdN_intro; first done. iNext.
-       iExists x, 0%nat. iModIntro. iFrame. simpl.
-       replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
-  Qed.
+  Proof. done. Qed.
   
   Global Instance join_handle_sync {𝔄 ℭ} (spec: (~~ℭ) → pred' (~~𝔄)) (ty: type 𝔄) : Sync (join_handle spec ty).
   Proof. apply sync_default; [done|]. done. Qed.
@@ -112,7 +107,7 @@ Section spawn.
   (** The argument and the result may contain cells: they travel to the new thread, and
       back to the join handle ([finish] stores the MiniRust value), in transit. *)
   Lemma spawn_type {𝔄 𝔅 ℭ} (c: ~~ℭ) (Φ: (~~ℭ) → pred' (~~𝔅)) call_once_val call_once_tr (fty: type 𝔄) (retty: type 𝔅)
-      call_once `{!Send fty, !Send retty} :
+      call_once `{!SendUpd fty, !SendUpd retty} :
     typed_val call_once ((fn<()>(∅; fty) → retty) call_once_tr) (call_once_val, c) →
     let E ϝ := ty_outlives_E fty static ++ ty_outlives_E retty static in
     typed_val (spawn (syn_mty 𝔅) call_once) ((fn(E; fty) → join_handle Φ retty)
@@ -176,7 +171,7 @@ Section spawn.
 
       (* send the argument over *)
       iDestruct "I" as (at_mask na_mask) "[I1 [[cna_lifetimes #fnincl] I2]]".
-      iDestruct (send_change_tid tid tid' a d2 d2 _ _ _ (S d2) with
+      iDestruct (send_upd_change_tid tid tid' a d2 d2 _ _ _ (S d2) with
           "LFT UNIQ TIME [] cna_lifetimes [] L Hgho2 []") as "X"; first lia.
         { iApply guards_refl. }
         { iIntros (κ) "%Hin". rewrite gmultiset_elem_of_disj_union in Hin.
@@ -268,7 +263,7 @@ Section spawn.
           clear at_mask. clear na_mask. iClear "fnincl".
           iDestruct "I" as "[_ I]".
           iDestruct "I" as (at_mask na_mask) "[I1 [[cna_lifetimes #fnincl] I2]]".
-          iDestruct (send_change_tid tid' tid'' w d d True%I _ _ (S d) with
+          iDestruct (send_upd_change_tid tid' tid'' w d d True%I _ _ (S d) with
             "LFT UNIQ TIME [] cna_lifetimes [] [] ret Hsd") as "X"; first lia.
           { iApply guards_refl. }
           { iIntros (κ) "%Hin". rewrite gmultiset_elem_of_disj_union in Hin.

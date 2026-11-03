@@ -34,12 +34,7 @@ Section ptr.
   Qed.
 
   Global Instance ptr_send: Send ptr_ty.
-  Proof.
-    intros. split.
-     iIntros. iApply step_fupdN_intro; first done. iNext.
-       iExists x, 0%nat. iModIntro. iFrame. simpl.
-       replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
-  Qed.
+  Proof. done. Qed.
 
   Lemma ptr_resolve E L : resolve E L ptr_ty (const (const True)).
   Proof. apply resolve_just. Qed.
@@ -57,6 +52,10 @@ Section points_to.
   Qed.
 
   Global Instance points_to_send {𝔄} (ty: type 𝔄) : Send ty → Send (points_to_ty ty).
+  Proof. exact _. Qed.
+
+  Global Instance points_to_send_upd {𝔄} (ty: type 𝔄) :
+    SendUpd ty → SendUpd (points_to_ty ty).
   Proof. exact _. Qed.
 
   Global Instance points_to_sync {𝔄} (ty: type 𝔄) : Sync ty → Sync (points_to_ty ty).

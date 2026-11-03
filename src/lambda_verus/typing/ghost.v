@@ -75,11 +75,7 @@ Section ghost.
   Proof. move=> ????. apply ty_of_st_ne. solve_ne_type. Qed.
 
   Global Instance ghost_send {𝔄} (ty : type 𝔄) : Send (ghost_ty ty).
-  Proof.
-    intros. split; trivial. iIntros. iApply step_fupdN_intro; first done. iNext.
-    iExists x, 0%nat. iModIntro. iFrame. simpl.
-    replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
-  Qed.
+  Proof. done. Qed.
   
   Global Instance ghost_sync {𝔄} (ty : type 𝔄) : Sync (ghost_ty ty).
   Proof. apply sync_default; [done|]. split; iSplit; done. Qed.

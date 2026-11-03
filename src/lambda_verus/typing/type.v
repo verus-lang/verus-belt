@@ -1457,8 +1457,22 @@ Global Hint Extern 10 (NoCellL ?Al) =>
   match goal with H : @TCHForall _ _ _ Al ?tyl |- _ => exact (list_copy_nocell tyl H) end
   : typeclass_instances.
 
-Class Send `{!typeG Σ} {𝔄} (ty: type 𝔄) := {
-  send_change_tid tid tid' x d g G H κs d0 :
+(** [Send]: the ownership predicate does not depend on the thread, as in RustBelt. *)
+Class Send `{!typeG Σ} {𝔄} (ty: type 𝔄) :=
+  send_change_tid tid tid' x d g :
+    ty.(ty_gho_own) x d g tid ⊣⊢ ty.(ty_gho_own) x d g tid'.
+Global Instance: Params (@Send) 3 := {}.
+
+Notation ListSend := (TCHForall (λ 𝔄, @Send _ _ 𝔄)).
+
+(** [SendUpd]: the ownership can be moved to another thread by an update, which takes [d]
+    steps and may change the value (to one of the same [syn_abstract]) and the depth, with
+    the [cna_lifetimes] of the thread and the guards of its lifetimes. Every [Send] type is
+    [SendUpd] ([send_send_upd]); the converse fails for local invariants
+    ([local_inv_ty_send_upd]), whose ownership is an invariant in the pool of the thread.
+    [spawn_type] and atomic invariants use [SendUpd]. *)
+Class SendUpd `{!typeG Σ} {𝔄} (ty: type 𝔄) := {
+  send_upd_change_tid tid tid' x d g G H κs d0 :
     d + 1 ≤ d0 →
     Timeless G →
     Timeless H →
@@ -1471,9 +1485,9 @@ Class Send `{!typeG Σ} {𝔄} (ty: type 𝔄) := {
       ty.(ty_gho_own) x' (d+off) g tid' ∗ ⧖(d0+off) ∗ ⌜@syn_abstract 𝔄 x' = @syn_abstract 𝔄 x⌝ ∗ G ∗ H
      )
 }.
-Global Instance: Params (@Send) 3 := {}.
+Global Instance: Params (@SendUpd) 3 := {}.
 
-Notation ListSend := (TCHForall (λ 𝔄, @Send _ _ 𝔄)).
+Notation ListSendUpd := (TCHForall (λ 𝔄, @SendUpd _ _ 𝔄)).
 
 Class Sync `{!typeG Σ} {𝔄} (ty: type 𝔄) :=
   sync_change_tid tid tid' x d g :
@@ -1508,6 +1522,9 @@ Section traits.
   (** Lemmas on Send and Sync *)
 
   Global Instance send_equiv {𝔄} : Proper ((≡) ==> impl) (Send (𝔄:=𝔄)).
+  Proof. move=> ?? [_ _ Eqv _ _] Hyp ?????. rewrite -!Eqv. apply Hyp. Qed.
+
+  Global Instance send_upd_equiv {𝔄} : Proper ((≡) ==> impl) (SendUpd (𝔄:=𝔄)).
   Proof.
     move=> ?? [_ _ Eqv Eqv2 _] Hyp. destruct Hyp as [Hgho].
     split. intros. setoid_rewrite <- Eqv. apply Hgho; trivial.
@@ -1534,16 +1551,20 @@ Section traits.
     move=> *. apply Hyp.
   Qed.
 
-  (** A [Sync] type is [Send]. [Sync] includes the thread-independence of [ty_gho_own], so
-      the ownership is sent unchanged (without a step). This is a consequence of the
-      definitions here (in RustBelt, [Sync] says nothing about the ownership of the type). *)
+  (** A [Sync] type is [Send]: [Sync] includes the thread-independence of [ty_gho_own]
+      (in RustBelt, [Sync] says nothing about the ownership of the type). *)
   Lemma sync_send {𝔄} (ty: type 𝔄) : Sync ty → Send ty.
+  Proof. move=> Hsync ?????. apply Hsync. Qed.
+
+  (** A [Send] type is [SendUpd]: the ownership is sent unchanged, without a step. The
+      priority is low, so that the structural instances of [SendUpd] are tried first. *)
+  Global Instance send_send_upd {𝔄} (ty: type 𝔄) : Send ty → SendUpd ty | 100.
   Proof.
-    move=> Hsync. split.
+    move=> Hsend. split.
     iIntros (tid tid' x d g G H κs d0 Hineq TG TH) "_ _ _ _ H _ G Own ⧖o".
     iApply step_fupdN_intro; first done. iNext. iModIntro.
     iExists x, 0%nat. rewrite !Nat.add_0_r.
-    iEval (rewrite (proj1 (Hsync tid tid' x d g))) in "Own". by iFrame.
+    iEval (rewrite (Hsend tid tid' x d g)) in "Own". by iFrame.
   Qed.
 
   (* VerusBelt: this doesn't work anymore; Sync is proved on a per-type basis

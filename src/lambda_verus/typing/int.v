@@ -41,12 +41,7 @@ Section int.
   Qed.
   
   Global Instance int_send: Send int.
-  Proof.
-    intros. split.
-     iIntros. iApply step_fupdN_intro; first done. iNext.
-       iExists x, 0%nat. iModIntro. iFrame. simpl.
-       replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
-  Qed.
+  Proof. done. Qed.
 
   Global Instance int_sync: Sync int.
   Proof. apply sync_default; [done|]. split; iSplit; done. Qed.

@@ -31,6 +31,9 @@ Section tracked.
   Proof. solve_ne_type. Qed.
 
   Global Instance tracked_send {𝔄} (ty : type 𝔄) : Send ty → Send (tracked_ty ty).
+  Proof. done. Qed.
+
+  Global Instance tracked_send_upd {𝔄} (ty : type 𝔄) : SendUpd ty → SendUpd (tracked_ty ty).
   Proof. intros [Hgho]. split; trivial. Qed.
   
   Global Instance tracked_sync {𝔄} (ty : type 𝔄) : Sync ty → Sync (tracked_ty ty).

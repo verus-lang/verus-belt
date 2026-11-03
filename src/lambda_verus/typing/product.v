@@ -40,11 +40,7 @@ Section product.
   Qed.
 
   Global Instance unit0_send : Send unit0.
-  Proof.
-    intros. split; trivial. iIntros. iApply step_fupdN_intro; first done. iNext.
-    iExists x, 0%nat. iModIntro. iFrame. simpl.
-    replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
-  Qed.
+  Proof. done. Qed.
   
   Global Instance unit0_sync : Sync unit0.
   Proof. intros. split; [|split]; trivial. Qed.
@@ -214,6 +210,10 @@ Section typing.
 
   Global Instance prod_send {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) :
     Send ty → Send ty' → Send (ty * ty').
+  Proof. move=> S1 S2 tid tid' x d g /=. f_equiv; [apply S1|apply S2]. Qed.
+
+  Global Instance prod_send_upd {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) :
+    SendUpd ty → SendUpd ty' → SendUpd (ty * ty').
   Proof.
     intros [Hgho1] [Hgho2]. split.
       intros tid tid' x d g G H κs d0 Hineq TG TH.
@@ -258,10 +258,13 @@ Section typing.
   Proof. elim; apply _. Qed.
   
   Global Instance xprod_send {𝔄l} (tyl: typel 𝔄l) : ListSend tyl → Send (Π! tyl).
+  Proof. elim; apply _. Qed.
+
+  Global Instance xprod_send_upd {𝔄l} (tyl: typel 𝔄l) : ListSendUpd tyl → SendUpd (Π! tyl).
   Proof. 
     elim.
      - apply _.
-     - intros. apply mod_ty_send; last by apply _.
+     - intros. apply mod_ty_send_upd; last by apply _.
        intros [x1 xs1] [x2 xs2]. simpl. intros Ha. inversion Ha. trivial.
   Qed.
   

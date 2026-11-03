@@ -161,8 +161,11 @@ Section local_invariants.
   Solve All Obligations with solve_default_shr.
   Next Obligation. intros. iIntros "H". iExact "H". Qed.
   
-  Lemma local_inv_ty_send {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop)
-      : Send ty → Send (local_inv_ty ty pred).
+  (** A local invariant is [SendUpd], not [Send]: its ownership is an invariant in the pool
+      of the thread ([cna_inv γ tid]), which is destroyed and allocated again in the pool of
+      the other thread (with a new name and a new depth). *)
+  Lemma local_inv_ty_send_upd {𝔄 ℭ} (ty: type 𝔄) (pred: (abstracted_syn_type 𝔄) → ~~ℭ → Prop)
+      : SendUpd ty → SendUpd (local_inv_ty ty pred).
   Proof.
     intros Hsend. split. intros tid tid' x d g G H κs d0 Hineq TG TH.
     destruct x as [[N [[γ γt] d1]] c].
@@ -176,7 +179,7 @@ Section local_invariants.
     iDestruct "P" as (x' d' g' d00) "[DgTok1 [⧖1 [⧗ [£ [gho %Hpred]]]]]".
     iDestruct (dg_tok_agree with "DgTok DgTok1") as "%Heqs". subst d00.
     iCombine "⧖o ⧖1" as "⧖max".
-    iDestruct (send_change_tid tid tid' _ _ _ G H κs _ _ TG TH with "LFT UNIQ TIME Hg H Gg G gho ⧖max") as "X". Unshelve. 2: { lia. }
+    iDestruct (send_upd_change_tid tid tid' _ _ _ G H κs _ _ TG TH with "LFT UNIQ TIME Hg H Gg G gho ⧖max") as "X". Unshelve. 2: { lia. }
     iDestruct (step_fupdN_nmono _ ((d' - d1) + d) with "X") as "X"; first lia.
     rewrite step_fupdN_add.
     iApply fupd_step_fupdN_front.

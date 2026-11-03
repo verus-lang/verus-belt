@@ -286,28 +286,15 @@ Section typing.
     by rewrite H'shr H'pers.
   Qed.
 
-  (** [&mut T: Send] when [T: Sync] (by [uniq_sync] and [sync_send]).
-
-      The RustBelt instance [uniq_send : Send ty → Send (&uniq{κ} ty)] is not provable with
-      the definitions here. In RustBelt, [Send] is an equivalence of the ownership at two
-      threads, and the borrowed ownership is rewritten under the borrow ([bor_iff]). Here
-      [send_change_tid] is a one-way update, which takes [d] steps and may change the value
-      ([x'] with the same [syn_abstract]) and the depth ([d + off]). The ownership of the
-      referent at [tid] is not owned by [&uniq{κ} ty]: it is the body of the prophetic
-      borrow at [κ] ([uniq_persγ], with the lazy payload [uniq_payload], guarded by
-      [@[ty_lft ty]]), whose value and depths are tied to the token of the borrow
-      ([uniq_tokγ x0 ξi d' g' idx γ]). So a send must open the borrow, which needs [κ]
-      alive (the hypotheses of [send_change_tid] only guard the lifetimes [κs] of the
-      thread, unrelated to [κ]), run the update of [ty], and close the borrow with the
-      ownership at [tid'] and the new value: the lender would then get back, at the end of
-      [κ], the ownership at [tid'] of the new value, not the ownership at [tid] that it
-      lent. What would be needed: either [Send] as (or implying) a thread-equivalence of
-      [ty_gho_own], as in RustBelt (then the proof is the one of [uniq_sync], by
-      [uniq_body_proper]); or [κ = static], whose borrows are never given back (the legacy
-      [uniq_send_static], deleted with the legacy layer, did this, through an access lemma
-      [uniq_body_acc_static_tid] of the body at another thread). *)
-  Global Instance uniq_send_sync {𝔄} κ (ty: type 𝔄) : Sync ty → Send (&uniq{κ} ty).
-  Proof. move=> ?. by apply sync_send, uniq_sync. Qed.
+  (** [&mut T: Send] when [T: Send], as in RustBelt: [Send] is the thread-independence of
+      [ty_gho_own], and the body of the borrow only depends on the thread through the
+      ownership of the referent ([uniq_body_proper]). *)
+  Global Instance uniq_send {𝔄} κ (ty: type 𝔄) : Send ty → Send (&uniq{κ} ty).
+  Proof.
+    intros Hsend tid tid' x d g. destruct x as [[[[[l x0] ξi] d'] g'] idx].
+    unfold uniq_bytes, ty_gho_own. do 2 f_equiv.
+    apply uniq_body_proper; [apply lft_equiv_refl|]. intros. apply Hsend.
+  Qed.
 
   Lemma uniq_resolve {𝔄} E L κ (ty: type 𝔄) :
     lctx_lft_alive E L κ → resolve E L (&uniq{κ} ty) (λ x π, snd (vπ x π) = fst (vπ x π)).
