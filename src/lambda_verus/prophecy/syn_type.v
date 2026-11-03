@@ -411,6 +411,10 @@ Fixpoint vπ {𝔄} : ~~𝔄 → proph_asn → 𝔄 :=
   
 Fixpoint plist_to_list {A: Type} {U: Type} {Xl} (xl: plist (λ (_ : A), U) Xl) : list U :=
   match Xl, xl with [], _ => [] | _::_, x -:: xl' => x :: (plist_to_list xl') end.
+
+Lemma length_plist_to_list {A: Type} {U: Type} {Xl} (xl: plist (λ (_ : A), U) Xl) :
+  length (plist_to_list xl) = length Xl.
+Proof. induction Xl as [|X Xl IH]; [done|]. destruct xl as [x xl]. by rewrite /= IH. Qed.
   
 Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   match 𝔄 return ~~𝔄 → list proph_var with
@@ -1315,6 +1319,28 @@ Fixpoint plist_mapₛ {𝔄l 𝔅l} :
   match 𝔄l, 𝔅l with
   | [], [] => λ _, idₛ
   | _::_, _::_ => λ '(f -:: fl'), cons_prodₛ f (plist_mapₛ fl')
+  | _, _ => absurd
+  end.
+
+(** The field-wise maps of structs (at the same layout parameter). *)
+Program Definition struct_consₛ {𝔄 𝔄l 𝔅 𝔅l} (L: struct_layout) (f: 𝔄 →ₛ 𝔅)
+    (fl: structₛ L 𝔄l →ₛ structₛ L 𝔅l) : (structₛ L (𝔄 :: 𝔄l) →ₛ structₛ L (𝔅 :: 𝔅l)) := {|
+    syn_type_morphism_fn := λ '(x -:: xl), (f ~~$ₛ x) -:: (fl ~~$ₛ xl) ;
+    syn_type_morphism_proph_fn := λ '(x -:: xl), (f $ₛ x) -:: (fl $ₛ xl) ;
+|}.
+Next Obligation.
+  intros 𝔄 𝔄l 𝔅 𝔅l L f fl [x xl] π. simpl. do 2 rewrite syn_type_morphism_commutes. trivial.
+Qed.
+Next Obligation.
+  intros 𝔄 𝔄l 𝔅 𝔅l L f fl [x xl]. simpl.
+    rewrite (syn_type_morphism_ξl _ _ f). by setoid_rewrite (syn_type_morphism_ξl _ _ fl).
+Qed.
+
+Fixpoint struct_mapₛ {𝔄l 𝔅l} (L: struct_layout) :
+  (plist2 (λ 𝔄 𝔅, 𝔄 →ₛ 𝔅) 𝔄l 𝔅l) → (structₛ L 𝔄l →ₛ structₛ L 𝔅l) :=
+  match 𝔄l, 𝔅l with
+  | [], [] => λ _, idₛ
+  | _::_, _::_ => λ '(f -:: fl'), struct_consₛ L f (struct_mapₛ L fl')
   | _, _ => absurd
   end.
 
