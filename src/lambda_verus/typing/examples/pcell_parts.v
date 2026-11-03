@@ -198,7 +198,7 @@ Section pcell_parts.
     let: "opt" := MkVariant 1 "cp" in                           (* Some(cp) *)
     let: "o" := (Alloc #5) in
     "o" <-{syn_mty optₛ} "opt";;                          (* *o = opt *)
-    case: (Load Na1Ord (MInt (sum_tag [unitₛ; pair'ₛ])) "o") of
+    case: (GetDiscr (syn_mty (Σ! [unitₛ; pair'ₛ])%ST) "o") of
     [ jump: "return" ["o"];                                     (* None: unreachable *)
       Newlft;;                                                  (* Some(r) *)
       let: "r" := &ˢ ("o" +ₗ #1) in                       (* r: &(PCell, PointsTo) *)

@@ -94,6 +94,10 @@ Section frepr.
 
   Definition is_plain (fb : positive + AbstractByte) : Prop := ∃ b, fb = inr b.
 
+  (** The plain bytes of fancy bytes, with the byte-cells as [Uninit]. *)
+  Definition fb_erase (fb : positive + AbstractByte) : AbstractByte :=
+    match fb with inl _ => Uninit | inr b => b end.
+
   (** The position [i] is in one of the fields [fs]. *)
   Definition in_field (fs : list (nat * mty)) (i : nat) : Prop :=
     ∃ f, f ∈ fs ∧ (f.1 ≤ i < f.1 + mty_size f.2)%nat.
@@ -109,19 +113,19 @@ Section frepr.
   Inductive frepr R : mty → list (positive + AbstractByte) → FValue → Prop :=
   | frepr_cell m g cs : R !! g = Some (m, cs) → frepr R m (inl <$> cs) (FVCell g)
   | frepr_plain m bs v : decode_value m bs = Some v → frepr R m (inr <$> bs) (fv_lift v)
-  | frepr_tuple fs sz fbs fvs :
+  | frepr_tuple fs sz al fbs fvs :
       length fbs = sz → length fvs = length fs →
       (∀ k f fv, fs !! k = Some f → fvs !! k = Some fv →
          frepr R f.2 (list_slice f.1 (mty_size f.2) fbs) fv) →
       (∀ i fb, fbs !! i = Some fb → ¬ in_field fs i → is_plain fb) →
-      frepr R (MTuple fs sz) fbs (FVTuple fvs)
-  | frepr_enum vars tag sz fbs t vm d bst :
+      frepr R (MTuple fs sz al) fbs (FVTuple fvs)
+  | frepr_enum vars d sz al fbs t vm o tg w :
       length fbs = sz →
-      take (int_size tag) fbs = inr <$> bst → decode_int tag bst = Some t → (0 ≤ t)%Z →
-      vars !! Z.to_nat t = Some vm →
-      frepr R vm (list_slice (int_size tag) (mty_size vm) fbs) d →
-      (∀ i fb, fbs !! i = Some fb → (int_size tag + mty_size vm ≤ i)%nat → is_plain fb) →
-      frepr R (MEnum vars tag sz) fbs (FVVariant t d).
+      decode_discr d (fb_erase <$> fbs) = Some t → (0 ≤ t)%Z →
+      vars !! Z.to_nat t = Some (vm, o, tg) →
+      frepr R vm (list_slice o (mty_size vm) fbs) w →
+      (∀ i fb, fbs !! i = Some fb → ¬ (o ≤ i < o + mty_size vm)%nat → is_plain fb) →
+      frepr R (MEnum vars d sz al) fbs (FVVariant t w).
 
   Lemma frepr_mono R R' m fbs fv : R ⊆ R' → frepr R m fbs fv → frepr R' m fbs fv.
   Proof.
@@ -137,34 +141,35 @@ payload (of the current variant) or the whole value, at a byte offset [o] and wi
 MiniRust type [m'] (alignment requirement A). *)
 Inductive fv_sub : mty → FValue → nat → mty → FValue → Prop :=
 | fv_sub_here m fv : fv_sub m fv 0 m fv
-| fv_sub_field fs sz fvs k off fm fvk o m' fv' :
+| fv_sub_field fs sz al fvs k off fm fvk o m' fv' :
     fs !! k = Some (off, fm) → fvs !! k = Some fvk → fv_sub fm fvk o m' fv' →
-    fv_sub (MTuple fs sz) (FVTuple fvs) (off + o) m' fv'
-| fv_sub_payload vars tag sz t d vm o m' fv' :
-    vars !! Z.to_nat t = Some vm → fv_sub vm d o m' fv' →
-    fv_sub (MEnum vars tag sz) (FVVariant t d) (int_size tag + o) m' fv'.
+    fv_sub (MTuple fs sz al) (FVTuple fvs) (off + o) m' fv'
+| fv_sub_payload vars d sz al t w vm off tg o m' fv' :
+    vars !! Z.to_nat t = Some (vm, off, tg) → fv_sub vm w o m' fv' →
+    fv_sub (MEnum vars d sz al) (FVVariant t w) (off + o) m' fv'.
 
 (** [fv_upd m fv o m' fv' fvn]: [fvn] is [fv] with the sub-value at [o] (of type [m'])
     replaced by [fv']. *)
 Inductive fv_upd : mty → FValue → nat → mty → FValue → FValue → Prop :=
 | fv_upd_here m fv fv' : fv_upd m fv 0 m fv' fv'
-| fv_upd_field fs sz fvs k off fm fvk o m' fv' fvk' :
+| fv_upd_field fs sz al fvs k off fm fvk o m' fv' fvk' :
     fs !! k = Some (off, fm) → fvs !! k = Some fvk → fv_upd fm fvk o m' fv' fvk' →
-    fv_upd (MTuple fs sz) (FVTuple fvs) (off + o) m' fv' (FVTuple (<[k := fvk']> fvs))
-| fv_upd_payload vars tag sz t d vm o m' fv' d' :
-    vars !! Z.to_nat t = Some vm → fv_upd vm d o m' fv' d' →
-    fv_upd (MEnum vars tag sz) (FVVariant t d) (int_size tag + o) m' fv' (FVVariant t d').
+    fv_upd (MTuple fs sz al) (FVTuple fvs) (off + o) m' fv' (FVTuple (<[k := fvk']> fvs))
+| fv_upd_payload vars d sz al t w vm off tg o m' fv' w' :
+    vars !! Z.to_nat t = Some (vm, off, tg) → fv_upd vm w o m' fv' w' →
+    fv_upd (MEnum vars d sz al) (FVVariant t w) (off + o) m' fv' (FVVariant t w').
 
 Lemma fv_sub_bound m fv o m' fv' :
   fv_sub m fv o m' fv' → mty_wf m → (o + mty_size m' ≤ mty_size m)%nat.
 Proof.
-  induction 1 as [|fs sz fvs k off fm fvk o m' fv' Hk Hfvk Hsub IH|vars tag sz t d vm o m' fv' Hvm Hsub IH];
-    intros Hwf; [lia| |].
-  - inversion Hwf as [| | |? ? Hdisj Hin Hwfs|]; simplify_eq.
+  induction 1 as [|fs sz al fvs k off fm fvk o m' fv' Hk Hfvk Hsub IH
+    |vars d sz al t w vm off tg o m' fv' Hvm Hsub IH]; intros Hwf; [lia| |].
+  - inversion Hwf as [| | |? ? ? Hdisj Hin Hwfs|]; simplify_eq.
     have := Forall_lookup_1 _ _ _ _ Hin Hk. have := IH (Forall_lookup_1 _ _ _ _ Hwfs Hk).
     simpl. lia.
-  - inversion Hwf as [| | | |? ? ? Hvars Htag]; simplify_eq.
-    destruct (Forall_lookup_1 _ _ _ _ Hvars Hvm) as [Hsz Hwfvm]. have := IH Hwfvm. simpl. lia.
+  - apply mty_wf_enum_inv in Hwf as [[Hvars _] Hwfs].
+    destruct (Forall_lookup_1 _ _ _ _ Hvars Hvm) as [Hsz _].
+    have := IH (Forall_lookup_1 _ _ _ _ Hwfs Hvm). simpl in *. lia.
 Qed.
 
 Lemma fv_upd_sub m fv o m' fv' fvn : fv_upd m fv o m' fv' fvn → ∃ fvo, fv_sub m fv o m' fvo.
@@ -232,7 +237,7 @@ Section frepr_ops.
 
   Lemma frepr_length R m fbs fv : reg_wf R → frepr R m fbs fv → length fbs = mty_size m.
   Proof.
-    intros HR. induction 1 as [m g cs Hg|m bs v Hdec|fs sz fbs fvs Hlen|vars tag sz fbs t vm d bst Hlen];
+    intros HR. induction 1 as [m g cs Hg|m bs v Hdec|fs sz al fbs fvs Hlen|vars d sz al fbs t vm o tg w Hlen];
       simpl; try done.
     - rewrite length_fmap. by eapply HR.
     - rewrite length_fmap. by eapply decode_value_length.
@@ -241,8 +246,8 @@ Section frepr_ops.
   Lemma frepr_plain_of_nocells R m fbs fv :
     frepr R m fbs fv → fv_cells fv = [] → ∀ fb, fb ∈ fbs → is_plain fb.
   Proof.
-    induction 1 as [m g cs Hg|m bs v Hdec|fs sz fbs fvs Hlen Hlenf Hfs IH Hpad
-      |vars tag sz fbs t vm d bst Hlen Htag Ht Ht0 Hvm Hd IH Hpad]; simpl; try done.
+    induction 1 as [m g cs Hg|m bs v Hdec|fs sz al fbs fvs Hlen Hlenf Hfs IH Hpad
+      |vars d sz al fbs t vm o tg w Hlen Hd Ht0 Hvm Hw IH Hpad]; simpl; try done.
     - intros _ fb (b & -> & _)%elem_of_list_fmap. by eexists.
     - intros Hc fb (i & Hi)%elem_of_list_lookup.
       destruct (decide (in_field fs i)) as [(f & Hf & Hfi)|]; [|by eapply Hpad].
@@ -254,13 +259,13 @@ Section frepr_ops.
       + apply elem_of_list_lookup. exists (i - f.1)%nat. rewrite lookup_list_slice decide_True; [|lia].
         rewrite -Hi. f_equal. lia.
     - intros Hc fb (i & Hi)%elem_of_list_lookup.
-      destruct (decide (i < int_size tag)%nat).
-      { have : take (int_size tag) fbs !! i = Some fb by rewrite lookup_take.
-        rewrite Htag list_lookup_fmap. destruct (bst !! i); simpl; [|done]. intros [= <-]. by eexists. }
-      destruct (decide (i < int_size tag + mty_size vm)%nat); [|by eapply Hpad; [done|lia]].
-      apply IH; [done|]. apply elem_of_list_lookup. exists (i - int_size tag)%nat.
+      destruct (decide (o ≤ i < o + mty_size vm)%nat); [|by eapply Hpad].
+      apply IH; [done|]. apply elem_of_list_lookup. exists (i - o)%nat.
       rewrite lookup_list_slice decide_True; [|lia]. rewrite -Hi. f_equal. lia.
   Qed.
+
+  Lemma fb_erase_plain (bs : list AbstractByte) : fb_erase <$> (inr <$> bs) = bs.
+  Proof. rewrite -list_fmap_compose. apply list_fmap_id. Qed.
 
   (** A representation of a value without cells is plain bytes that decode to it. *)
   Lemma frepr_lift R m fbs v :
@@ -276,8 +281,8 @@ Section frepr_ops.
     exists bs. split; [done|]. clear Hpl.
     remember (inr <$> bs) as fbs eqn:Hfbs. remember (fv_lift v) as fv eqn:Hfv.
     revert bs v Hfbs Hfv.
-    induction Hrep as [m g cs Hg|m bs0 v0 Hdec|fs sz fbs fvs Hlen Hlenf Hfs IH Hpad
-      |vars tag sz fbs t vm d bst Hlen Htag Ht Ht0 Hvm Hd IH Hpad]; intros bs v Hfbs Hfv.
+    induction Hrep as [m g cs Hg|m bs0 v0 Hdec|fs sz al fbs fvs Hlen Hlenf Hfs IH Hpad
+      |vars d sz al fbs t vm o tg w Hlen Hd Ht0 Hvm Hw IH Hpad]; intros bs v Hfbs Hfv.
     - by destruct v.
     - apply (inj (fmap inr)) in Hfbs as ->. by apply fv_lift_inj in Hfv as ->.
     - destruct (fv_lift_tuple_inv _ _ (eq_sym Hfv)) as (vs & -> & ->).
@@ -290,14 +295,13 @@ Section frepr_ops.
       + apply lookup_ge_None in Hf. apply lookup_lt_Some in Hvk. lia.
     - destruct (fv_lift_variant_inv _ _ _ (eq_sym Hfv)) as (dv & -> & ->).
       rewrite decode_value_enum -Hlen Hfbs length_fmap decide_True //.
-      rewrite Hfbs -fmap_take in Htag. apply (inj (fmap inr)) in Htag as ->.
-      rewrite Ht /= decide_True // Hvm /=.
+      rewrite Hfbs fb_erase_plain in Hd. rewrite Hd /= decide_True // Hvm /=.
       rewrite (IH _ dv) //. by rewrite Hfbs /list_slice fmap_take fmap_drop.
   Qed.
 
   (** The representation of a field, or of the payload of a variant. *)
-  Lemma frepr_field R fs sz fbs fvs k f fv :
-    frepr R (MTuple fs sz) fbs (FVTuple fvs) → fs !! k = Some f → fvs !! k = Some fv →
+  Lemma frepr_field R fs sz al fbs fvs k f fv :
+    frepr R (MTuple fs sz al) fbs (FVTuple fvs) → fs !! k = Some f → fvs !! k = Some fv →
     frepr R f.2 (list_slice f.1 (mty_size f.2) fbs) fv.
   Proof.
     intros Hrep Hf Hfv. inversion Hrep as [|m bs v Hdec Hm Hbs Hv| |]; simplify_eq; [|eauto].
@@ -310,18 +314,18 @@ Section frepr_ops.
     rewrite /list_slice -fmap_drop -fmap_take. by apply frepr_plain.
   Qed.
 
-  Lemma frepr_payload R vars tag sz fbs t d vm :
-    frepr R (MEnum vars tag sz) fbs (FVVariant t d) → vars !! Z.to_nat t = Some vm →
-    frepr R vm (list_slice (int_size tag) (mty_size vm) fbs) d.
+  Lemma frepr_payload R vars d sz al fbs t w vm o tg :
+    frepr R (MEnum vars d sz al) fbs (FVVariant t w) → vars !! Z.to_nat t = Some (vm, o, tg) →
+    frepr R vm (list_slice o (mty_size vm) fbs) w.
   Proof.
     intros Hrep Hvm. inversion Hrep as [|m bs v Hdec Hm Hbs Hv| |]; simplify_eq.
     - destruct (fv_lift_variant_inv _ _ _ Hv) as (dv & -> & ->).
       move: Hdec. rewrite decode_value_enum. case_decide; [|done].
-      destruct (decode_int tag (take (int_size tag) bs)) as [t'|]; simpl; [|done].
-      case_decide; [|done]. destruct (vars !! Z.to_nat t') as [vm'|] eqn:Hvm'; simpl; [|done].
-      intros (d' & Hd & [= <- <-])%fmap_Some_1. rewrite Hvm in Hvm'. simplify_eq.
+      destruct (decode_discr d bs) as [t'|]; simpl; [|done].
+      case_decide; [|done]. destruct (vars !! Z.to_nat t') as [vv|] eqn:Hvm'; simpl; [|done].
+      intros (d' & Hd & [= <- <-])%fmap_Some_1. rewrite Hvm in Hvm'. simplify_eq/=.
       rewrite /list_slice -fmap_drop -fmap_take. by apply frepr_plain.
-    - done.
+    - by simplify_eq.
   Qed.
 
   Lemma frepr_sub R m fbs fv o m' fv' :
@@ -329,27 +333,27 @@ Section frepr_ops.
     frepr R m' (list_slice o (mty_size m') fbs) fv'.
   Proof.
     intros HR Hrep Hsub. revert fbs Hrep.
-    induction Hsub as [m fv|fs sz fvs k off fm fvk o m' fv' Hk Hfvk Hsub IH
-      |vars tag sz t d vm o m' fv' Hvm Hsub IH]; intros fbs Hrep Hwf.
+    induction Hsub as [m fv|fs sz al fvs k off fm fvk o m' fv' Hk Hfvk Hsub IH
+      |vars d sz al t w vm off tg o m' fv' Hvm Hsub IH]; intros fbs Hrep Hwf.
     - rewrite /list_slice drop_0 take_ge //. by erewrite frepr_length.
-    - inversion Hwf as [| | |? ? Hdisj Hin Hwfs|]; simplify_eq.
-      have Hf := frepr_field _ _ _ _ _ k _ _ Hrep Hk Hfvk.
+    - inversion Hwf as [| | |? ? ? Hdisj Hin Hwfs|]; simplify_eq.
+      have Hf := frepr_field _ _ _ _ _ _ k _ _ Hrep Hk Hfvk.
       have Hwffm := Forall_lookup_1 _ _ _ _ Hwfs Hk. simpl in Hwffm.
       have Hb := fv_sub_bound _ _ _ _ _ Hsub Hwffm.
       rewrite -(list_slice_slice _ _ _ (mty_size fm)) //. by apply IH.
-    - inversion Hwf as [| | | |? ? ? Hvars Htag]; simplify_eq.
-      destruct (Forall_lookup_1 _ _ _ _ Hvars Hvm) as [Hsz Hwfvm].
-      have Hp := frepr_payload _ _ _ _ _ _ _ _ Hrep Hvm.
+    - apply mty_wf_enum_inv in Hwf as [_ Hwfs].
+      have Hwfvm := Forall_lookup_1 _ _ _ _ Hwfs Hvm.
+      have Hp := frepr_payload _ _ _ _ _ _ _ _ _ _ _ Hrep Hvm.
       have Hb := fv_sub_bound _ _ _ _ _ Hsub Hwfvm.
       rewrite -(list_slice_slice _ _ _ (mty_size vm)) //. by apply IH.
   Qed.
 
-  Lemma frepr_tuple_inv R fs sz fbs fvs :
-    frepr R (MTuple fs sz) fbs (FVTuple fvs) →
+  Lemma frepr_tuple_inv R fs sz al fbs fvs :
+    frepr R (MTuple fs sz al) fbs (FVTuple fvs) →
     length fbs = sz ∧ length fvs = length fs ∧
     (∀ i fb, fbs !! i = Some fb → ¬ in_field fs i → is_plain fb).
   Proof.
-    intros Hrep. inversion Hrep as [|m bs v Hdec Hm Hbs Hv|? ? ? ? Hlen Hlenf Hfs Hpad|]; simplify_eq; [|done].
+    intros Hrep. inversion Hrep as [|m bs v Hdec Hm Hbs Hv|? ? ? ? ? Hlen Hlenf Hfs Hpad|]; simplify_eq; [|done].
     destruct (fv_lift_tuple_inv _ _ Hv) as (vs & -> & ->).
     move: (Hdec). rewrite decode_value_tuple. case_decide as Hlen; [|done].
     intros (vs' & Hvs & [= <-])%fmap_Some_1. apply mapM_Some in Hvs.
@@ -359,22 +363,22 @@ Section frepr_ops.
     - intros i fb Hi _. rewrite list_lookup_fmap in Hi. destruct (bs !! i); simplify_eq/=. by eexists.
   Qed.
 
-  Lemma frepr_enum_inv R vars tag sz fbs t d :
-    frepr R (MEnum vars tag sz) fbs (FVVariant t d) →
-    length fbs = sz ∧ (∃ bst, take (int_size tag) fbs = inr <$> bst ∧ decode_int tag bst = Some t) ∧
-    (0 ≤ t)%Z ∧ ∃ vm, vars !! Z.to_nat t = Some vm ∧
-    (∀ i fb, fbs !! i = Some fb → (int_size tag + mty_size vm ≤ i)%nat → is_plain fb).
+  Lemma frepr_enum_inv R vars d sz al fbs t w :
+    frepr R (MEnum vars d sz al) fbs (FVVariant t w) →
+    length fbs = sz ∧ decode_discr d (fb_erase <$> fbs) = Some t ∧ (0 ≤ t)%Z ∧
+    ∃ vm o tg, vars !! Z.to_nat t = Some (vm, o, tg) ∧
+    (∀ i fb, fbs !! i = Some fb → ¬ (o ≤ i < o + mty_size vm)%nat → is_plain fb).
   Proof.
     intros Hrep. inversion Hrep as [|m bs v Hdec Hm Hbs Hv| |]; simplify_eq; [|naive_solver].
     destruct (fv_lift_variant_inv _ _ _ Hv) as (dv & -> & ->).
     move: (Hdec). rewrite decode_value_enum. case_decide as Hlen; [|done].
-    destruct (decode_int tag (take (int_size tag) bs)) as [t'|] eqn:Ht; simpl; [|done].
-    case_decide; [|done]. destruct (vars !! Z.to_nat t') as [vm|] eqn:Hvm; simpl; [|done].
+    destruct (decode_discr d bs) as [t'|] eqn:Ht; simpl; [|done].
+    case_decide; [|done]. destruct (vars !! Z.to_nat t') as [[[vm o] tg]|] eqn:Hvm; simpl; [|done].
     intros (d' & Hd & [= <- <-])%fmap_Some_1. split_and!.
     - by rewrite length_fmap.
-    - exists (take (int_size tag) bs). by rewrite fmap_take.
+    - by rewrite fb_erase_plain.
     - done.
-    - exists vm. split; [done|]. intros i fb Hi _. rewrite list_lookup_fmap in Hi.
+    - exists vm, o, tg. split; [done|]. intros i fb Hi _. rewrite list_lookup_fmap in Hi.
       destruct (bs !! i); simplify_eq/=. by eexists.
   Qed.
 
@@ -393,6 +397,43 @@ Section frepr_ops.
     - rewrite !lookup_take_ge //; lia.
   Qed.
 
+  Lemma fmap_list_inserts {A B} (f : A → B) o (e l : list A) :
+    f <$> list_inserts o e l = list_inserts o (f <$> e) (f <$> l).
+  Proof.
+    apply list_eq. intros i. rewrite list_lookup_fmap.
+    destruct (decide (i < o)%nat); [rewrite !list_lookup_inserts_lt // list_lookup_fmap //|].
+    destruct (decide (i < o + length e)%nat).
+    - destruct (decide (i < length l)%nat).
+      + rewrite !list_lookup_inserts; rewrite ?length_fmap; try lia. by rewrite list_lookup_fmap.
+      + rewrite !lookup_ge_None_2 //; rewrite ?length_inserts ?length_fmap; lia.
+    - rewrite !list_lookup_inserts_ge; rewrite ?length_fmap; try lia. by rewrite list_lookup_fmap.
+  Qed.
+
+  (** The discriminator of a well-formed enum reads no byte of the payload range of any
+      variant, so the bytes there do not matter for the discriminant. *)
+  Lemma decode_discr_agree_payload vars d sz al bs bs' k vm o tg :
+    mty_wf (MEnum vars d sz al) → vars !! k = Some (vm, o, tg) →
+    (∀ i, ¬ (o ≤ i < o + mty_size vm)%nat → bs !! i = bs' !! i) →
+    decode_discr d bs = decode_discr d bs'.
+  Proof.
+    intros Hwf Hvm Hag. apply mty_wf_enum_inv in Hwf as [(_ & Htag & _) _].
+    apply discr_eval_agree. intros off it Hr. rewrite /bytes_reader. f_equal.
+    rewrite /discr_tag_only Forall_forall in Htag. have [_ Hdisj] := Htag _ Hr. simpl in Hdisj.
+    have := Forall_lookup_1 _ _ _ _ Hdisj Hvm. simpl. intros Hor.
+    apply list_eq. intros i. rewrite !lookup_list_slice. case_decide; [|done]. apply Hag. lia.
+  Qed.
+
+  Lemma decode_discr_inserts_payload vars d sz al bs k vm o tg o' bs' :
+    mty_wf (MEnum vars d sz al) → vars !! k = Some (vm, o, tg) →
+    (o ≤ o')%nat → (o' + length bs' ≤ o + mty_size vm)%nat →
+    decode_discr d (list_inserts o' bs' bs) = decode_discr d bs.
+  Proof.
+    intros Hwf Hvm Ho1 Ho2. eapply decode_discr_agree_payload; [done|done|].
+    intros i Hi. destruct (decide (i < o')%nat).
+    - by rewrite list_lookup_inserts_lt.
+    - rewrite list_lookup_inserts_ge //. lia.
+  Qed.
+
   (** Replacing a plain sub-value with the plain bytes [bs] of a value [v]. *)
   Lemma frepr_upd R m fbs fv o m' fvn bs v :
     reg_wf R → frepr R m fbs fv → fv_upd m fv o m' (fv_lift v) fvn → mty_wf m →
@@ -400,12 +441,12 @@ Section frepr_ops.
     frepr R m (list_inserts o (inr <$> bs) fbs) fvn.
   Proof.
     intros HR Hrep Hupd. remember (fv_lift v) as fl eqn:Hfl. revert fbs Hrep.
-    induction Hupd as [m fv fv'|fs sz fvs k off fm fvk o m' fv' fvk' Hk Hfvk Hupd IH
-      |vars tag sz t d vm o m' fv' d' Hvm Hupd IH]; intros fbs Hrep Hwf Hdec.
+    induction Hupd as [m fv fv'|fs sz al fvs k off fm fvk o m' fv' fvk' Hk Hfvk Hupd IH
+      |vars d sz al t w vm off tg o m' fv' w' Hvm Hupd IH]; intros fbs Hrep Hwf Hdec.
     - subst. rewrite list_inserts_all; [by apply frepr_plain|].
       rewrite length_fmap (decode_value_length _ _ _ Hdec). by erewrite frepr_length.
-    - inversion Hwf as [| | |? ? Hdisj Hin Hwfs|]; simplify_eq.
-      destruct (frepr_tuple_inv _ _ _ _ _ Hrep) as (Hlen & Hlenf & Hpad).
+    - inversion Hwf as [| | |? ? ? Hdisj Hin Hwfs|]; simplify_eq.
+      destruct (frepr_tuple_inv _ _ _ _ _ _ Hrep) as (Hlen & Hlenf & Hpad).
       have Hwffm := Forall_lookup_1 _ _ _ _ Hwfs Hk. simpl in Hwffm.
       have Hb := fv_upd_bound _ _ _ _ _ _ Hupd Hwffm.
       have Hin_k := Forall_lookup_1 _ _ _ _ Hin Hk. simpl in Hin_k.
@@ -417,23 +458,25 @@ Section frepr_ops.
       + intros j f fvj Hf Hfvj. destruct (decide (j = k)) as [->|Hne].
         * rewrite Hk in Hf. simplify_eq. rewrite list_lookup_insert in Hfvj; [|by eapply lookup_lt_Some].
           simplify_eq/=. rewrite list_slice_inserts_in; [|lia|lia].
-          apply IH; [done| |done|done]. by eapply (frepr_field _ _ _ _ _ k (off, fm)).
+          apply IH; [done| |done|done]. by eapply (frepr_field _ _ _ _ _ _ k (off, fm)).
         * rewrite list_lookup_insert_ne in Hfvj; [|done].
           rewrite list_slice_inserts_out; [by eapply frepr_field|].
           destruct (Hdisj j k f.1 f.2 off fm) as [?|?]; [done|by destruct f|done|lia|lia].
       + intros i fb Hi Hnf. rewrite list_lookup_inserts_Some in Hi.
         destruct Hi as [[_ Hi]|(Hr & _ & _)]; [by eapply Hpad|].
         exfalso. apply Hnf. exists (off, fm). split; [by eapply elem_of_list_lookup_2|]. simpl. lia.
-    - inversion Hwf as [| | | |? ? ? Hvars Htag]; simplify_eq.
-      destruct (Forall_lookup_1 _ _ _ _ Hvars Hvm) as [Hsz Hwfvm].
-      destruct (frepr_enum_inv _ _ _ _ _ _ _ Hrep) as (Hlen & (bst & Htk & Ht) & Ht0 & vm' & Hvm' & Hpad).
+    - have Hwf' := Hwf. apply mty_wf_enum_inv in Hwf' as [[Hvars _] Hwfs].
+      have Hwfvm := Forall_lookup_1 _ _ _ _ Hwfs Hvm.
+      have [Hsz _] := Forall_lookup_1 _ _ _ _ Hvars Hvm. simpl in Hsz.
+      destruct (frepr_enum_inv _ _ _ _ _ _ _ _ Hrep) as (Hlen & Hd & Ht0 & vm' & o' & tg' & Hvm' & Hpad).
       rewrite Hvm in Hvm'. simplify_eq.
       have Hb := fv_upd_bound _ _ _ _ _ _ Hupd Hwfvm.
       have HlenX : length (inr <$> bs : list (positive + AbstractByte)) = mty_size m'.
       { by rewrite length_fmap (decode_value_length _ _ _ Hdec). }
-      eapply (frepr_enum R vars tag _ _ t vm' d' bst); try done.
+      eapply (frepr_enum R vars d _ al _ t vm' o' tg'); try done.
       + by rewrite length_inserts.
-      + rewrite take_inserts_ge //. lia.
+      + rewrite fmap_list_inserts. erewrite decode_discr_inserts_payload; [done|exact Hwf|exact Hvm| |];
+          rewrite ?length_fmap; rewrite ?length_fmap in HlenX; lia.
       + rewrite list_slice_inserts_in; [|lia|lia]. apply IH; [done| |done|done].
         by eapply frepr_payload.
       + intros i fb Hi Hge. rewrite list_lookup_inserts_Some in Hi.
@@ -460,8 +503,8 @@ Section frepr_ops.
     frepr R m fbs fv → g ∈ fv_cells fv →
     ∃ m' cs, R !! g = Some (m', cs) ∧ ∀ c, c ∈ cs → inl c ∈ fbs.
   Proof.
-    induction 1 as [m g' cs Hg'|m bs v Hdec|fs sz fbs fvs Hlen Hlenf Hfs IH Hpad
-      |vars tag sz fbs t vm d bst Hlen Htag Ht Ht0 Hvm Hd IH Hpad]; intros Hg.
+    induction 1 as [m g' cs Hg'|m bs v Hdec|fs sz al fbs fvs Hlen Hlenf Hfs IH Hpad
+      |vars d sz al fbs t vm o tg w Hlen Hd Ht0 Hvm Hw IH Hpad]; intros Hg.
     - apply elem_of_list_singleton in Hg as ->. exists m, cs. split; [done|].
       intros c Hc. apply elem_of_list_fmap. eauto.
     - rewrite fv_cells_lift in Hg. by apply not_elem_of_nil in Hg.
@@ -477,12 +520,12 @@ End frepr_ops.
 (** ** More on sub-values *)
 Lemma fv_sub_wf m fv o m' fv' : fv_sub m fv o m' fv' → mty_wf m → mty_wf m'.
 Proof.
-  induction 1 as [|fs sz fvs k off fm fvk o m' fv' Hk Hfvk Hsub IH
-    |vars tag sz t d vm o m' fv' Hvm Hsub IH]; intros Hwf; [done| |].
-  - inversion Hwf as [| | |? ? Hdisj Hin Hwfs|]; simplify_eq. apply IH.
+  induction 1 as [|fs sz al fvs k off fm fvk o m' fv' Hk Hfvk Hsub IH
+    |vars d sz al t w vm off tg o m' fv' Hvm Hsub IH]; intros Hwf; [done| |].
+  - inversion Hwf as [| | |? ? ? Hdisj Hin Hwfs|]; simplify_eq. apply IH.
     exact (Forall_lookup_1 _ _ _ _ Hwfs Hk).
-  - inversion Hwf as [| | | |? ? ? Hvars Htag]; simplify_eq. apply IH.
-    by destruct (Forall_lookup_1 _ _ _ _ Hvars Hvm).
+  - apply mty_wf_enum_inv in Hwf as [_ Hwfs]. apply IH.
+    exact (Forall_lookup_1 _ _ _ _ Hwfs Hvm).
 Qed.
 
 (** A fancy value without cells is a plain value. *)

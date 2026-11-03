@@ -505,6 +505,12 @@ Global Instance pure_mk_variant t v :
   PureExec True 1 (MkVariant t (MLit v)) (MLit (VVariant t v)).
 Proof. solve_pure_exec'. Qed.
 
+(** [GetDiscr] unfolds into the expression of the discriminator ([discr_expr]); its WP
+    rules are in [lang/proofmode.v]. *)
+Global Instance pure_get_discr vars d sz al l :
+  PureExec True 1 (GetDiscr (MEnum vars d sz al) (MLit (VPtr l))) (discr_expr d l).
+Proof. solve_pure_exec'. Qed.
+
 Global Instance pure_variant_tag t v :
   PureExec True 1 (VariantTag (MLit (VVariant t v))) (MLit (VInt t)).
 Proof. solve_pure_exec'. Qed.

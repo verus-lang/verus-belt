@@ -153,12 +153,6 @@ End big_fupd.
 Lemma fb_mix_slice fbs bs o n : list_slice o n (fb_mix fbs bs) = fb_mix (list_slice o n fbs) (list_slice o n bs).
 Proof. by rewrite /fb_mix /list_slice -zip_with_take -zip_with_drop. Qed.
 
-(** The plain bytes of fancy bytes (an arbitrary byte at the positions of cells). *)
-Definition fb_base (fbs : list (positive + abyte)) : list abyte :=
-  (λ fb, match fb with inl _ => Uninit | inr b => b end) <$> fbs.
-
-Lemma length_fb_base fbs : length (fb_base fbs) = length fbs.
-Proof. by rewrite /fb_base length_fmap. Qed.
 
 (** ** Moving all the cells of a value: the deep opening *)
 Section gcells_open.
@@ -186,9 +180,9 @@ Section gcells_open.
     ([∗ list] k ↦ p ∈ zip xs ys, Φ k p.2) ⊣⊢ [∗ list] k ↦ y ∈ ys, Φ k y.
   Proof. intros. by rewrite -(big_sepL_fmap snd) snd_zip. Qed.
 
-  Lemma gcells_tuple_zip l fs sz fvs :
+  Lemma gcells_tuple_zip l fs sz al fvs :
     length fvs = length fs →
-    gcells l (MTuple fs sz) (FVTuple fvs) ⊣⊢
+    gcells l (MTuple fs sz al) (FVTuple fvs) ⊣⊢
     [∗ list] k ↦ p ∈ zip fs fvs, gcells (l +ₗ Z.of_nat p.1.1) p.1.2 p.2.
   Proof.
     intros Hlen. rewrite gcells_tuple. apply big_sepL_same_length.
@@ -256,7 +250,7 @@ Section gcells_open.
       ⌜length bs = length fbs ∧ length vs = length fs ∧
        (∀ j f vj, fs !! j = Some f → vs !! j = Some vj →
           decode_value f.2 (list_slice f.1 (mty_size f.2) bs) = Some vj) ∧
-       (∀ i, ¬ in_field fs i → bs !! i = fb_base fbs !! i)⌝ ∗
+       (∀ i, ¬ in_field fs i → bs !! i = (fb_erase <$> fbs) !! i)⌝ ∗
       (∀ l' bs', ⌜length bs' = length fbs⌝ -∗
          ⌜∀ j f vj, fs !! j = Some f → vs !! j = Some vj →
             decode_value f.2 (list_slice f.1 (mty_size f.2) bs') = Some vj⌝ -∗
@@ -293,8 +287,8 @@ Section gcells_open.
     iDestruct (big_sepL2_sep with "Hout") as "[Hdec Hcl]".
     iDestruct (big_sepL2_pure_1 with "Hdec") as %Hdec.
     set ins := zip_with (λ (p : (nat * mty) * FValue) (y : list abyte * Value), (p.1.1, y.1)) (zip fs fvs) ys.
-    set bs := fill_fields ins (fb_base fbs).
-    have Hlenbs : length bs = length fbs by rewrite length_fill_fields length_fb_base.
+    set bs := fill_fields ins ((fb_erase <$> fbs)).
+    have Hlenbs : length bs = length fbs by rewrite length_fill_fields length_fmap.
     have Hins : ∀ j p y, zip fs fvs !! j = Some p → ys !! j = Some y → ins !! j = Some (p.1.1, y.1).
     { intros j p y Hp Hy. by rewrite /ins lookup_zip_with Hp /= Hy. }
     have Hslice : ∀ j p y, zip fs fvs !! j = Some p → ys !! j = Some y →
@@ -306,9 +300,9 @@ Section gcells_open.
         rewrite (decode_value_length _ _ _ (Hdec j' p' y' Hp' Hy')) Hly.
         destruct p as [[o fm] fvj], p' as [[o2 fm2] fvj']; simpl in *.
         destruct (Hdisj j' j o2 fm2 o fm) as [?|?]; [done|done|done|lia|lia].
-      - rewrite Hly length_fb_base. destruct (Hzip _ _ Hp) as [Hf _].
+      - rewrite Hly length_fmap. destruct (Hzip _ _ Hp) as [Hf _].
         exact (Forall_lookup_1 _ _ _ _ Hin Hf). }
-    have Hpadbs : ∀ i, ¬ in_field fs i → bs !! i = fb_base fbs !! i.
+    have Hpadbs : ∀ i, ¬ in_field fs i → bs !! i = (fb_erase <$> fbs) !! i.
     { intros i Hi. apply lookup_fill_fields_out.
       intros j o e (p & y & [= -> ->] & Hp & Hy)%lookup_zip_with_Some.
       destruct (Hzip _ _ Hp) as [Hf _].
@@ -324,7 +318,7 @@ Section gcells_open.
         by rewrite heap_mapsto_bytes_pos_shift.
       + iApply (big_sepL_same_length with "Hpad"); [done|]. intros i b fb Hb Hfb.
         case_decide as Hi; [done|]. destruct (Hpad i fb Hfb Hi) as [b' ->].
-        rewrite Hpadbs // /fb_base list_lookup_fmap Hfb /= in Hb. by injection Hb as ->.
+        rewrite Hpadbs // list_lookup_fmap Hfb /= in Hb. by injection Hb as ->.
     - iPureIntro. split_and!; [done|by rewrite length_fmap|..|done].
       intros j f vj Hf Hvj. rewrite list_lookup_fmap in Hvj.
       destruct (ys !! j) as [y|] eqn:Hy; [|done]. injection Hvj as <-.
@@ -385,21 +379,13 @@ Section gcells_open.
   Lemma fb_mix_take n fbs bs : take n (fb_mix fbs bs) = fb_mix (take n fbs) (take n bs).
   Proof. by rewrite /fb_mix -zip_with_take. Qed.
 
-  Lemma mty_wf_tuple_inv fs sz :
-    mty_wf (MTuple fs sz) → fields_disjoint fs ∧
-      Forall (λ f, f.1 + mty_size f.2 ≤ sz)%nat fs ∧ Forall (λ f, mty_wf f.2) fs.
-  Proof. by inversion 1. Qed.
-  Lemma mty_wf_enum_inv vars tag sz :
-    mty_wf (MEnum vars tag sz) →
-      Forall (λ vm, int_size tag + mty_size vm ≤ sz ∧ mty_wf vm)%nat vars ∧ (int_size tag ≤ sz)%nat.
-  Proof. by inversion 1. Qed.
 
   (** The deep opening: by induction on the fuel, and on the representation. *)
   Lemma gopen_rec Reg k R m fbs fv : reg_wf R → frepr R m fbs fv → gopen_stmt Reg k R m fbs fv.
   Proof.
     revert R m fbs fv. induction k as [k IHk] using lt_wf_ind. intros R m fbs fv HR Hrep.
-    induction Hrep as [m g cs Hg|m bs v Hdec|fs sz fbs fvs Hlen Hlenf Hfs IH Hpad
-      |vars tag sz fbs t vm d bst Hlen Htag Ht Ht0 Hvm Hd IH Hpad];
+    induction Hrep as [m g cs Hg|m bs v Hdec|fs sz al fbs fvs Hlen Hlenf Hfs IH Hpad
+      |vars dc sz al fbs t vm o tg d Hlen Hdc Ht0 Hvm Hd IH Hpad];
       intros A l Hwf HA Hrng Hsz; iIntros "#Ctx Auth Toks Hfb Hc".
     - (* a cell: move it, and open its contents with less fuel *)
       iEval (simpl) in "Hc". iDestruct "Hc" as (γ) "[#Hreg Ha]".
@@ -434,7 +420,7 @@ Section gcells_open.
       rewrite fb_mix_plain; [|lia]. rewrite gfbytes_bytes. iModIntro. iFrame.
       iSplit; [iApply gcells_lift|]. iPureIntro. by constructor.
     - (* a tuple: its fields *)
-      destruct (mty_wf_tuple_inv _ _ Hwf) as (Hdisj & Hin & Hwfs).
+      destruct (mty_wf_tuple_inv _ _ _ Hwf) as (Hdisj & Hin & Hwfs).
       rewrite gcells_tuple_zip; [|done].
       iMod (gopen_fields Reg k R fs fvs fbs A l with "Ctx Auth Toks Hfb Hc")
         as (bs vs) "(Auth & Toks & Hbs & %Hbsp & Cl)"; [done|by rewrite Hlen|done..|].
@@ -456,27 +442,18 @@ Section gcells_open.
       { rewrite Hlen'. rewrite -Hlen. by eapply lookup_lt_Some. }
       rewrite (fb_mix_lookup _ _ _ _ _ Hfb0 Hb') in Hi. injection Hi as <-. by eexists.
     - (* an enum: its payload, as a single field *)
-      destruct (mty_wf_enum_inv _ _ _ Hwf) as [Hvars Htagsz].
-      destruct (Forall_lookup_1 _ _ _ _ Hvars Hvm) as [Hszvm Hwfvm].
-      set fs := [(int_size tag, vm)].
+      have Hwf' := Hwf. apply mty_wf_enum_inv in Hwf' as [(Hvars & _ & _) Hwfs].
+      destruct (Forall_lookup_1 _ _ _ _ Hvars Hvm) as [Hszvm _]. simpl in Hszvm.
+      have Hwfvm := Forall_lookup_1 _ _ _ _ Hwfs Hvm. simpl in Hwfvm.
+      set fs := [(o, vm)].
       have Hdisj : fields_disjoint fs.
       { intros [|[]] [|[]] ??????; simpl; intros; simplify_eq; lia. }
-      have Hnf : ∀ i, ¬ in_field fs i ↔ (i < int_size tag ∨ int_size tag + mty_size vm ≤ i)%nat.
+      have Hnf : ∀ i, ¬ in_field fs i ↔ ¬ (o ≤ i < o + mty_size vm)%nat.
       { intros i. rewrite /fs /in_field. split.
-        - intros Hi. destruct (decide (i < int_size tag)%nat); [by left|]. right.
-          destruct (decide (int_size tag + mty_size vm ≤ i)%nat); [done|]. exfalso. apply Hi.
-          exists (int_size tag, vm). split; [by left|simpl; lia].
+        - intros Hi Hi'. apply Hi. exists (o, vm). split; [by left|done].
         - intros Hi (f & ->%elem_of_list_singleton & ?). simpl in *. lia. }
-      have Htk : ∀ i, (i < int_size tag)%nat → ∃ b, fbs !! i = Some (inr b) ∧ bst !! i = Some b.
-      { intros i Hi. have : take (int_size tag) fbs !! i = (inr <$> bst) !! i by rewrite Htag.
-        rewrite lookup_take // list_lookup_fmap.
-        destruct (fbs !! i) as [fbi|] eqn:Hfbi.
-        - destruct (bst !! i); simpl; intros; simplify_eq. eauto.
-        - exfalso. apply lookup_ge_None in Hfbi. lia. }
       have Hpad' : ∀ i fb, fbs !! i = Some fb → ¬ in_field fs i → is_plain fb.
-      { intros i fb Hi [Hi'|Hi']%Hnf.
-        - destruct (Htk i Hi') as (b & Hb & _). rewrite Hb in Hi. injection Hi as <-. by eexists.
-        - by eapply Hpad. }
+      { intros i fb Hi Hi'%Hnf. by eapply Hpad. }
       iEval (rewrite gcells_enum Hvm) in "Hc".
       iMod (gopen_fields Reg k R fs [d] fbs A l with "Ctx Auth Toks Hfb [Hc]")
         as (bs vs) "(Auth & Toks & Hbs & %Hbsp & Cl)"; [done| | |done|done| |done|done|done| |].
@@ -487,40 +464,41 @@ Section gcells_open.
       destruct Hbsp as (Hlenbs & Hlenvs & Hdecs & Hpadbs).
       destruct vs as [|vd [|]]; simpl in Hlenvs; try lia.
       have Hvd := Hdecs 0%nat _ vd eq_refl eq_refl. simpl in Hvd.
-      have Hbst : take (int_size tag) bs = bst.
-      { apply list_eq. intros i. destruct (decide (i < int_size tag)%nat).
-        - rewrite lookup_take // Hpadbs; [|apply Hnf; by left].
-          destruct (Htk i l0) as (b & Hb & Hbi). by rewrite /fb_base list_lookup_fmap Hb Hbi.
-        - rewrite lookup_take_ge; [|lia]. symmetry. apply lookup_ge_None.
-          have : length (take (int_size tag) fbs) = length (inr <$> bst : list (positive + abyte)) by rewrite Htag.
-          rewrite length_take length_fmap. lia. }
+      have Hdbs : decode_discr dc bs = Some t.
+      { rewrite -Hdc. eapply decode_discr_agree_payload; [done|exact Hvm|].
+        intros i Hi. apply Hpadbs, Hnf, Hi. }
       iModIntro. iExists bs, (VVariant t vd). iFrame "Auth Toks Hbs". iSplit.
-      { iPureIntro. rewrite decode_value_enum decide_True; [|lia]. rewrite Hbst Ht /=.
+      { iPureIntro. rewrite decode_value_enum decide_True; [|lia]. rewrite Hdbs /=.
         rewrite decide_True //. by rewrite Hvm /= Hvd. }
       iIntros (l' bs' Hd') "Hbs'".
       move: Hd'. rewrite decode_value_enum. case_decide as Hlen'; [|done].
-      destruct (decode_int tag (take (int_size tag) bs')) as [t'|] eqn:Ht'; simpl; [|done].
-      case_decide; [|done]. destruct (vars !! Z.to_nat t') as [vm'|] eqn:Hvm'; simpl; [|done].
+      destruct (decode_discr dc bs') as [t'|] eqn:Ht'; simpl; [|done].
+      case_decide; [|done]. destruct (vars !! Z.to_nat t') as [vv|] eqn:Hvm'; simpl; [|done].
       intros (vd' & Hvd' & [= <- <-])%fmap_Some_1. rewrite Hvm in Hvm'. injection Hvm' as <-.
       iMod ("Cl" with "[%] [%] Hbs'") as "(Hfb & Hc & %Hreps)"; [lia| |].
       { intros [|[]] f vj; simpl; intros; simplify_eq. done. }
       iModIntro. iFrame "Hfb". iSplitL "Hc".
       { rewrite Hvm. iDestruct "Hc" as "[$ _]". }
-      iPureIntro. eapply (frepr_enum R vars tag sz _ t vm d (take (int_size tag) bs')).
-      + rewrite fb_mix_length; lia.
-      + rewrite fb_mix_take Htag fb_mix_plain //. rewrite length_take.
-        have : length (take (int_size tag) fbs) = length (inr <$> bst : list (positive + abyte)) by rewrite Htag.
-        rewrite length_take length_fmap. lia.
-      + done.
-      + done.
-      + done.
-      + exact (Hreps 0%nat _ d eq_refl eq_refl).
-      + intros i fb Hi Hge. destruct (lookup_lt_is_Some_2 fbs i) as [fb0 Hfb0].
+      have Hplain : ∀ i fb, fb_mix fbs bs' !! i = Some fb → ¬ (o ≤ i < o + mty_size vm)%nat →
+        ∃ b, fb = inr b ∧ bs' !! i = Some b.
+      { intros i fb Hi Hge. destruct (lookup_lt_is_Some_2 fbs i) as [fb0 Hfb0].
         { rewrite -(fb_mix_length fbs bs'); [|lia]. by eapply lookup_lt_Some. }
         destruct (Hpad i fb0 Hfb0 Hge) as [b0 ->].
         destruct (lookup_lt_is_Some_2 bs' i) as [b' Hb'].
         { rewrite Hlen'. rewrite -Hlen. by eapply lookup_lt_Some. }
-        rewrite (fb_mix_lookup _ _ _ _ _ Hfb0 Hb') in Hi. injection Hi as <-. by eexists.
+        rewrite (fb_mix_lookup _ _ _ _ _ Hfb0 Hb') in Hi. injection Hi as <-. by eexists. }
+      iPureIntro. eapply (frepr_enum R vars dc sz al _ t vm o tg d).
+      + rewrite fb_mix_length; lia.
+      + rewrite -Ht'. eapply decode_discr_agree_payload; [done|exact Hvm|].
+        intros i Hi. rewrite list_lookup_fmap.
+        destruct (fb_mix fbs bs' !! i) as [fb|] eqn:Hfb; simpl.
+        * by destruct (Hplain i fb Hfb Hi) as (b & -> & ->).
+        * symmetry. apply lookup_ge_None. apply lookup_ge_None in Hfb.
+          rewrite fb_mix_length in Hfb; lia.
+      + done.
+      + done.
+      + exact (Hreps 0%nat _ d eq_refl eq_refl).
+      + intros i fb Hi Hge. destruct (Hplain i fb Hi Hge) as (b & -> & _). by eexists.
   Qed.
 End gcells_open.
 
@@ -530,12 +508,12 @@ End gcells_open.
     [m']) replaced by [fv'] (as [fv_upd], remembering the old sub-value). *)
 Inductive fv_repl : mty → FValue → nat → mty → FValue → FValue → FValue → Prop :=
 | fv_repl_here m fvo fv' : fv_repl m fvo 0 m fvo fv' fv'
-| fv_repl_field fs sz fvs k off fm fvk o m' fvo fv' fvk' :
+| fv_repl_field fs sz al fvs k off fm fvk o m' fvo fv' fvk' :
     fs !! k = Some (off, fm) → fvs !! k = Some fvk → fv_repl fm fvk o m' fvo fv' fvk' →
-    fv_repl (MTuple fs sz) (FVTuple fvs) (off + o) m' fvo fv' (FVTuple (<[k := fvk']> fvs))
-| fv_repl_payload vars tag sz t d vm o m' fvo fv' d' :
-    vars !! Z.to_nat t = Some vm → fv_repl vm d o m' fvo fv' d' →
-    fv_repl (MEnum vars tag sz) (FVVariant t d) (int_size tag + o) m' fvo fv' (FVVariant t d').
+    fv_repl (MTuple fs sz al) (FVTuple fvs) (off + o) m' fvo fv' (FVTuple (<[k := fvk']> fvs))
+| fv_repl_payload vars dc sz al t d vm off tg o m' fvo fv' d' :
+    vars !! Z.to_nat t = Some (vm, off, tg) → fv_repl vm d o m' fvo fv' d' →
+    fv_repl (MEnum vars dc sz al) (FVVariant t d) (off + o) m' fvo fv' (FVVariant t d').
 
 Lemma fv_repl_upd m fv o m' fvo fv' fvn : fv_repl m fv o m' fvo fv' fvn → fv_upd m fv o m' fv' fvn.
 Proof. induction 1; econstructor; eauto. Qed.
@@ -545,7 +523,7 @@ Lemma fv_sub_repl m fv o m' fvo fv' : fv_sub m fv o m' fvo → ∃ fvn, fv_repl 
 Proof. induction 1; naive_solver eauto using fv_repl. Qed.
 Lemma fv_sub_repl_refl m fv o m' fvo : fv_sub m fv o m' fvo → fv_repl m fv o m' fvo fvo fv.
 Proof.
-  induction 1 as [|fs sz fvs k off fm fvk o m' fv' Hk Hfvk Hsub IH|]; [constructor| |by econstructor].
+  induction 1 as [|fs sz al fvs k off fm fvk o m' fv' Hk Hfvk Hsub IH|]; [constructor| |by econstructor].
   rewrite -{2}(list_insert_id fvs k fvk) //. by econstructor.
 Qed.
 
@@ -770,8 +748,8 @@ Section gcells_sub.
     fv_repl m fv o m' (fv_lift vo) (fv_lift vn) fvn → gcells l m fvn ⊣⊢ gcells l m fv.
   Proof.
     intros Hr. remember (fv_lift vo) as fo eqn:Hfo. remember (fv_lift vn) as fnew eqn:Hfn.
-    revert l. induction Hr as [m fvo fv'|fs sz fvs k off fm fvk o m' fvo fv' fvk' Hk Hfvk Hr IH
-      |vars tag sz t d vm o m' fvo fv' d' Hvm Hr IH]; intros l; subst.
+    revert l. induction Hr as [m fvo fv'|fs sz al fvs k off fm fvk o m' fvo fv' fvk' Hk Hfvk Hr IH
+      |vars dc sz al t d vm off tg o m' fvo fv' d' Hvm Hr IH]; intros l; subst.
     - by rewrite !gcells_lift_iff.
     - rewrite !gcells_tuple. apply big_sepL_same_length; [by rewrite length_insert|].
       intros j fvj fvj' Hj Hj'. destruct (decide (j = k)) as [->|Hne].

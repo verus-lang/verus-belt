@@ -31,6 +31,7 @@ Inductive expr :=
 | VariantTag (e : expr)
 | VariantData (e : expr)
 | MCAS (m : mty) (e0 e1 e2 : expr)
+| GetDiscr (m : mty) (e : expr)
 .
 
 Fixpoint to_expr (e : expr) : lang.expr :=
@@ -58,6 +59,7 @@ Fixpoint to_expr (e : expr) : lang.expr :=
   | VariantTag e => lang.VariantTag (to_expr e)
   | VariantData e => lang.VariantData (to_expr e)
   | MCAS m e0 e1 e2 => lang.MCAS m (to_expr e0) (to_expr e1) (to_expr e2)
+  | GetDiscr m e => lang.GetDiscr m (to_expr e)
   end.
 
 Ltac of_expr e :=
@@ -106,6 +108,7 @@ Ltac of_expr e :=
   | lang.MCAS ?m ?e0 ?e1 ?e2 =>
      let e0 := of_expr e0 in let e1 := of_expr e1 in let e2 := of_expr e2 in
      constr:(MCAS m e0 e1 e2)
+  | lang.GetDiscr ?m ?e => let e := of_expr e in constr:(GetDiscr m e)
   | _ => match goal with
          | H : to_val e = Some ?v |- _ => constr:(Val v e H)
          | H : Closed [] e |- _ => constr:(@ClosedExpr e H)
@@ -123,7 +126,7 @@ Fixpoint is_closed (X : list string) (e : expr) : bool :=
   | App e el | Case e el => is_closed X e && forallb (is_closed X) el
   | MkTuple el => forallb (is_closed X) el
   | Alloc e | Fork e | Load _ _ e | Proj _ e | MkVariant _ e
-  | VariantTag e | VariantData e => is_closed X e
+  | VariantTag e | VariantData e | GetDiscr _ e => is_closed X e
   | MCAS _ e0 e1 e2 => is_closed X e0 && is_closed X e1 && is_closed X e2
   end.
 Lemma is_closed_correct X e : is_closed X e → lang.is_closed X (to_expr e).
@@ -186,6 +189,7 @@ Fixpoint subst (x : string) (es : expr) (e : expr)  : expr :=
   | VariantTag e => VariantTag (subst x es e)
   | VariantData e => VariantData (subst x es e)
   | MCAS m e0 e1 e2 => MCAS m (subst x es e0) (subst x es e1) (subst x es e2)
+  | GetDiscr m e => GetDiscr m (subst x es e)
   end.
 Lemma to_expr_subst x er e :
   to_expr (subst x er e) = lang.subst x (to_expr er) (to_expr e).
@@ -339,5 +343,6 @@ Ltac reshape_expr e tac :=
      [ reshape_val e1 ltac:(fun v1 => go (MCasRCtx m v0 v1 :: K) e2)
      | go (MCasMCtx m v0 e2 :: K) e1 ])
   | MCAS ?m ?e0 ?e1 ?e2 => go (MCasLCtx m e1 e2 :: K) e0
+  | GetDiscr ?m ?e => go (GetDiscrCtx m :: K) e
   end
   in go (@nil ectx_item) e.

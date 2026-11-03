@@ -65,7 +65,7 @@ Section gmb_cells_tests.
     iApply (wp_load_na with "Hl"); [done|]. iIntros "!> Hl". iApply "HΦ". by iExists _.
   Qed.
   (** ** A [PCell<(i32, PCell<i32>)>] *)
-  Definition pair_mty : mty := MTuple [(0%nat, MInt i32); (4%nat, MInt i32)] 8.
+  Definition pair_mty : mty := MTuple [(0%nat, MInt i32); (4%nat, MInt i32)] 8 1.
 
   Lemma pair_mty_wf : mty_wf pair_mty.
   Proof.
@@ -186,7 +186,7 @@ Section gmb_cells_tests.
     wp_bind (Store _ _ _ _). rewrite {1}loc_0.
     iApply (wp_gcont_store_na_sub _ _ _ _ _ _ (VInt 5) (VInt 7) (FVTuple [FVInt 7; FVCell g1])
       with "C"); [set_solver|apply pair_mty_wf|apply int7_wf| |].
-    { apply (fv_repl_field [(0%nat, MInt i32); (4%nat, MInt i32)] 8 [FVInt 5; FVCell g1] 0 0
+    { apply (fv_repl_field [(0%nat, MInt i32); (4%nat, MInt i32)] 8 1 [FVInt 5; FVCell g1] 0 0
         (MInt i32) (FVInt 5) 0 (MInt i32) (FVInt 5) (FVInt 7) (FVInt 7)); [done|done|constructor]. }
     iIntros "!> C". iMod ("Cl" with "C") as "[C0 B0]". wp_seq.
     (* move the outer cell *)
@@ -197,7 +197,7 @@ Section gmb_cells_tests.
     iMod (gcell_destroy with "Hreg0 GI0 C0 B0") as "C"; [done|].
     wp_bind (Load _ _ _). rewrite {1}loc_0.
     iApply (wp_gcont_load_na_sub _ _ _ _ _ (MInt i32) (VInt 7) with "C"); [apply pair_mty_wf| |].
-    { apply (fv_sub_field [(0%nat, MInt i32); (4%nat, MInt i32)] 8 [FVInt 7; FVCell g1] 0 0
+    { apply (fv_sub_field [(0%nat, MInt i32); (4%nat, MInt i32)] 8 1 [FVInt 7; FVCell g1] 0 0
         (MInt i32) (FVInt 7) 0 (MInt i32) (FVInt 7)); [done|done|constructor]. }
     iIntros "!> C". wp_seq.
     (* the inner cell is at its new location: destroy it, and read it *)

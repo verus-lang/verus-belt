@@ -196,7 +196,7 @@ Section lty_mem.
 
   Lemma mem_bytes_mem_cell l n : mem_bytes l n -∗ mem_cell l n.
   Proof.
-    iIntros "(%bs & Hbs & %Hbs)". iExists (MTuple [] n), (fv_lift (VTuple [])).
+    iIntros "(%bs & Hbs & %Hbs)". iExists (MTuple [] n 1), (fv_lift (VTuple [])).
     iSplit; [iPureIntro; split; [by repeat constructor|done]|].
     iApply (gcont_of_bytes with "Hbs"). rewrite decode_value_tuple decide_True //.
   Qed.

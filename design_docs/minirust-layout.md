@@ -875,3 +875,43 @@ Definition enum_mty EL ms := if decide (el_wf EL ms) then el_mty EL ms else el_m
   `enumₛ`, `enum_off`, `enum_rest`; enum alignment in `mty_wf`; `xsum_ty`, `seq_enum` and
   the sequential sum lemmas deleted; `xsumₛ` logical; examples ported.
 - **L4 — Niches** and **L5 — alignment UB**: as §6.
+
+## Outcome: L1 (branch `proto/layout-l1`)
+
+- **`mty`** (`lang/minirust.v`) as §7.1: `discr` (`DKnown`/`DInvalid`/`DBranch`), `tagger`,
+  `MTuple fs size align`, `MEnum (variants: list (mty * nat * tagger)) d size align`,
+  `mty_align`, `int_align it = max 1 (int_size it)`, sealed `PTR_ALIGN` (`PTR_ALIGN_pos`,
+  `PTR_ALIGN_divide`). `discr_eval rd d` with the laws `discr_eval_agree` (readers that agree
+  on `discr_reads d`) and `discr_eval_ext` (an extending reader); `decode_discr d bs`.
+- **Well-formedness** (decidable, `mty_wfb_correct`): `enum_layout_ok vars d sz` =
+  payloads in bounds, `tagger_wf` (entries in bounds, outside the payload, pairwise
+  disjoint, in range), `discr_tag_only` (no branch reads a payload byte), `discr_ok`
+  (symbolic evaluation on each tagger). No alignment checks yet. Concrete enums are checked
+  by computation (`opt_mty_wf : … := mty_wfb_correct; vm_compute` in `minirust_tests.v`).
+- **Laws**: `decode_encode_value` (round trip, via `decode_discr_encode`),
+  `decode_value_mono` (via `decode_discr_mono`), `decode_value_wf` (`val_wf` of a variant no
+  longer has the tag range), the length laws. `fvalue.v`: `frepr_enum` with
+  `decode_discr d (fb_erase <$> fbs) = Some t` and plain bytes outside the payload;
+  `fv_sub`/`fv_upd` at the payload offset; `decode_discr_agree_payload` (the
+  discriminant does not depend on payload bytes) gives `frepr_upd`. `fb_base` of
+  `gmb_cells.v` is now `fb_erase`.
+- **Cells**: `mcells`/`gcells` of a variant are shifted by its payload offset;
+  `gcont_enum_intro` and `val_cells_enum` (`value_ctx.v`) are generic in the layout (bytes
+  before and after the payload, from which the discriminator reads the variant);
+  `gopen_rec` (`gmb_cells.v`) likewise.
+- **`GetDiscr m e`** (`lang/lang.v`): head step `GetDiscrS` to `discr_expr d l` (pure;
+  per branch `let: "z" := Load Na1Ord (MInt it) #(l +ₗ off)` and range tests;
+  `DInvalid` is stuck), so no new race or adequacy case (noted in `races.v`). WP rules
+  (`lang/proofmode.v`): `wp_get_discr_gen` (a reader and a resource for each load),
+  `wp_get_discr` (owned chunks, `chunks_own`/`chunks_reader`), `wp_get_discr_guarded`
+  (guarded chunks, `£(2 * d * discr_depth)`); test `test_get_discr` in
+  `minirust_tests.v`.
+- **Sequential layouts** (`syn_type.v`) restated: `seq_tuple` (align 1), `seq_enum` (tagger
+  `[(0, enum_tag n, i)]`, payload at the tag size, `seq_discr n` one branch), with
+  `decode_seq_enum`/`decode_discr_seq`/`discr_depth_seq`; `frepr_seq_enum_iff`
+  (`bytes_layout.v`) has the former shape, so `syn_bytes_sum`, `syn_fbytes_sum`,
+  `cbytes_sum` keep their statements.
+- **Case rules** use `case: GetDiscr (syn_mty (Σ! 𝔄l)) p of …` (`place_sum.v`,
+  `place_deep.v`, `place_pshr.v`, `place_res.v`), through `wp_get_discr_sum`
+  (`bytes_layout.v`) and `wp_get_discr_sum_guarded` / `wp_get_discr_shr_view`
+  (`place_pshr.v`); examples `get_some_first.v`, `pcell_parts.v`, `place_pshr.v` updated.

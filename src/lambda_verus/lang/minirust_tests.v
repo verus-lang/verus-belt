@@ -5,9 +5,11 @@ From lrust.lang Require Import proofmode notation.
 Set Default Proof Using "Type".
 
 (** A pair [(i32, *const T)] with the pointer at offset 4. *)
-Definition pair_mty : mty := MTuple [(0%nat, MInt i32); (4%nat, MPtr)] (4 + PTR_SIZE).
-(** [Option<i32>], with a one-byte tag. *)
-Definition opt_mty : mty := MEnum [MTuple [] 0; MInt i32] (IntTy false 1) 5.
+Definition pair_mty : mty := MTuple [(0%nat, MInt i32); (4%nat, MPtr)] (4 + PTR_SIZE) 1.
+(** [Option<i32>], with a one-byte tag at offset 0 and the payload at offset 4. *)
+Definition opt_discr : discr := DBranch 0 u8 DInvalid [((0, 1), DKnown 0); ((1, 2), DKnown 1)].
+Definition opt_mty : mty :=
+  MEnum [(MTuple [] 0 1, 4%nat, [(0%nat, u8, 0)]); (MInt i32, 4%nat, [(0%nat, u8, 1)])] opt_discr 8 4.
 
 Lemma pair_mty_wf : mty_wf pair_mty.
 Proof.
@@ -17,12 +19,9 @@ Proof.
   - rewrite !Forall_cons /=. split_and!; [constructor|constructor|done].
 Qed.
 
+(** The well-formedness of an enum without pointers is checked by computation. *)
 Lemma opt_mty_wf : mty_wf opt_mty.
-Proof.
-  constructor; [|simpl; lia].
-  rewrite !Forall_cons /=. split_and!; [lia| |lia|constructor|done].
-  constructor; [|done..]. intros ???????. by rewrite lookup_nil.
-Qed.
+Proof. apply mty_wfb_correct. by vm_compute. Qed.
 
 Section tests.
   Context `{!lrustGS Σ}.
@@ -70,7 +69,7 @@ Section tests.
   Qed.
 
   Lemma test_enum E l bs :
-    ↑naN ⊆ E → length bs = 5%nat →
+    ↑naN ⊆ E → length bs = 8%nat →
     {{{ ▷ l ↦b bs }}}
       Store Na1Ord opt_mty (#l) (MLit (VVariant 1 (VInt 42))) ;;
       Load Na1Ord opt_mty (#l) @ E
@@ -78,9 +77,26 @@ Section tests.
         l ↦b encode_value opt_mty (VVariant 1 (VInt 42)) }}}.
   Proof.
     intros. apply wp_store_load; [done|apply opt_mty_wf| |done].
-    econstructor; [lia|done|..].
-    - apply (bool_decide_unpack _); by vm_compute.
-    - constructor. apply (bool_decide_unpack _); by vm_compute.
+    econstructor; [lia|done|]. constructor. apply (bool_decide_unpack _); by vm_compute.
+  Qed.
+
+  (** Store a variant, and read its discriminant ([GetDiscr] reads only the tag byte). *)
+  Lemma test_get_discr E l bs :
+    ↑naN ⊆ E → length bs = 8%nat →
+    {{{ ▷ l ↦b bs }}}
+      Store Na1Ord opt_mty (#l) (MLit (VVariant 1 (VInt 42))) ;;
+      GetDiscr opt_mty (#l) @ E
+    {{{ RET MLitV (VInt 1); l ↦b encode_value opt_mty (VVariant 1 (VInt 42)) }}}.
+  Proof.
+    iIntros (? Hlen Φ) "Hl HΦ".
+    have Hwf : val_wf opt_mty (VVariant 1 (VInt 42)).
+    { econstructor; [lia|done|]. constructor. apply (bool_decide_unpack _); by vm_compute. }
+    wp_bind (Store _ _ _ _). iApply (wp_store_na with "Hl"); [done..|].
+    iIntros "!> Hl". wp_seq.
+    iApply (wp_get_discr _ _ _ _ _ _ [(0%nat, encode_value opt_mty (VVariant 1 (VInt 42)))]
+      with "[Hl]"); [by vm_compute| |].
+    - by rewrite /chunks_own /= shift_loc_0 right_id.
+    - iIntros "Hl". iApply "HΦ". by rewrite /chunks_own /= shift_loc_0 right_id.
   Qed.
 
   (** Store a tuple at [l1], copy its bytes to [l2], and load it from [l2]. *)

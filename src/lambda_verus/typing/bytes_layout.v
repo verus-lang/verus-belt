@@ -105,7 +105,7 @@ Proof.
   have Hvi : (syn_mty <$> 𝔄l) !! fin_to_nat i = Some (syn_mty (𝔄l !!ₗ i)).
   { by rewrite list_lookup_fmap llookup_lookup. }
   rewrite /syn_bytes syn_val_pinj. change (syn_mty (Σ! 𝔄l)) with (seq_enum (syn_mty <$> 𝔄l)).
-  rewrite /seq_enum decode_value_enum length_fmap -/(sum_tag 𝔄l).
+  rewrite decode_seq_enum length_fmap -/(sum_tag 𝔄l).
   rewrite -list_fmap_compose -/(sum_max 𝔄l).
   change (mty_size ∘ syn_mty) with syn_bsize. rewrite -/(sum_max 𝔄l).
   split.
@@ -138,6 +138,39 @@ Proof.
     rewrite -Hlp take_app_length. by rewrite Hp.
 Qed.
 
+(** ** Reading the discriminant of a sum ([GetDiscr]): the discriminator of [Σ! 𝔄l] reads
+    the tag at offset 0. *)
+Lemma sum_tag_chunk 𝔄l (j: nat) bt :
+  decode_value (MInt (sum_tag 𝔄l)) bt = Some (VInt (Z.of_nat j)) →
+  chunks_reader [(0%nat, bt)] 0 (sum_tag 𝔄l) = Some (Z.of_nat j).
+Proof.
+  intros Hbt. have Hl := decode_value_length _ _ _ Hbt. simpl in Hl.
+  rewrite /= decide_True; [|lia]. rewrite ?Nat.sub_0_r /list_slice drop_0 take_ge; [|lia].
+  simpl in Hbt. by apply fmap_Some in Hbt as (z & Hz & [= ->]).
+Qed.
+
+Lemma sum_tag_chunk_discr 𝔄l (j: nat) bt :
+  decode_value (MInt (sum_tag 𝔄l)) bt = Some (VInt (Z.of_nat j)) → (j < length 𝔄l)%nat →
+  discr_eval (chunks_reader [(0%nat, bt)]) (seq_discr (length 𝔄l)) = Some (Z.of_nat j).
+Proof. intros. apply seq_discr_eval; [done|]. by apply sum_tag_chunk. Qed.
+
+Section get_discr_sum.
+  Context `{!lrustGS Σ}.
+
+  Lemma wp_get_discr_sum E 𝔄l (j: nat) l bt Φ :
+    decode_value (MInt (sum_tag 𝔄l)) bt = Some (VInt (Z.of_nat j)) → (j < length 𝔄l)%nat →
+    l ↦b bt -∗ (l ↦b bt -∗ Φ (MLitV (VInt (Z.of_nat j)))) -∗
+    WP GetDiscr (syn_mty (Σ! 𝔄l)) (MLit (VPtr l)) @ E {{ Φ }}.
+  Proof.
+    iIntros (Hbt Hj) "Hl HΦ".
+    iApply (wp_get_discr _ _ _ _ _ _ [(0%nat, bt)] with "[Hl]").
+    - rewrite length_fmap. by apply sum_tag_chunk_discr.
+    - by rewrite /chunks_own /= shift_loc_0 right_id.
+    - iIntros "H". iApply "HΦ". by rewrite /chunks_own /= shift_loc_0 right_id.
+  Qed.
+
+End get_discr_sum.
+
 (** * Fancy bytes (§10 step 4 of [design_docs/pcell-multibyte-cells.md])
 
 [syn_fbytes R x fbs]: the fancy bytes [fbs] (each a byte-cell or an abstract byte)
@@ -162,32 +195,69 @@ Section frepr_layout.
     by exists (b :: bs).
   Qed.
 
-  Lemma frepr_tuple_iff R fs sz fbs fvs :
-    frepr R (MTuple fs sz) fbs (FVTuple fvs) ↔
+  Lemma frepr_tuple_iff R fs sz al fbs fvs :
+    frepr R (MTuple fs sz al) fbs (FVTuple fvs) ↔
     length fbs = sz ∧ length fvs = length fs ∧
     (∀ k f fv, fs !! k = Some f → fvs !! k = Some fv →
        frepr R f.2 (list_slice f.1 (mty_size f.2) fbs) fv) ∧
     (∀ i fb, fbs !! i = Some fb → ¬ in_field fs i → is_plain fb).
   Proof.
     split.
-    - intros Hrep. destruct (frepr_tuple_inv _ _ _ _ _ Hrep) as (? & ? & ?).
+    - intros Hrep. destruct (frepr_tuple_inv _ _ _ _ _ _ Hrep) as (? & ? & ?).
       split_and!; [done|done| |done]. intros. by eapply frepr_field.
     - intros (? & ? & ? & ?). by apply frepr_tuple.
   Qed.
 
-  Lemma frepr_enum_iff R vars tag sz fbs t d :
-    frepr R (MEnum vars tag sz) fbs (FVVariant t d) ↔
-    length fbs = sz ∧ (∃ bst, take (int_size tag) fbs = inr <$> bst ∧ decode_int tag bst = Some t) ∧
-    (0 ≤ t)%Z ∧ ∃ vm, vars !! Z.to_nat t = Some vm ∧
-      frepr R vm (list_slice (int_size tag) (mty_size vm) fbs) d ∧
-      (∀ i fb, fbs !! i = Some fb → (int_size tag + mty_size vm ≤ i)%nat → is_plain fb).
+  Lemma frepr_enum_iff R vars dc sz al fbs t d :
+    frepr R (MEnum vars dc sz al) fbs (FVVariant t d) ↔
+    length fbs = sz ∧ decode_discr dc (fb_erase <$> fbs) = Some t ∧
+    (0 ≤ t)%Z ∧ ∃ vm o tg, vars !! Z.to_nat t = Some (vm, o, tg) ∧
+      frepr R vm (list_slice o (mty_size vm) fbs) d ∧
+      (∀ i fb, fbs !! i = Some fb → ¬ (o ≤ i < o + mty_size vm)%nat → is_plain fb).
   Proof.
     split.
-    - intros Hrep. destruct (frepr_enum_inv _ _ _ _ _ _ _ Hrep)
-        as (? & ? & ? & vm & Hvm & ?).
-      split_and!; [done|done|done|]. exists vm. split_and!; [done| |done].
+    - intros Hrep. destruct (frepr_enum_inv _ _ _ _ _ _ _ _ Hrep)
+        as (? & ? & ? & vm & o & tg & Hvm & ?).
+      split_and!; [done|done|done|]. exists vm, o, tg. split_and!; [done| |done].
       by eapply frepr_payload.
-    - intros (? & (bst & ? & ?) & ? & vm & ? & ? & ?). by eapply frepr_enum.
+    - intros (? & ? & ? & vm & o & tg & ? & ? & ?). by eapply frepr_enum.
+  Qed.
+
+  (** The representations at [seq_enum]: the tag (plain), the payload after it, and the
+      padding (plain). *)
+  Lemma frepr_seq_enum_iff R ms fbs t d :
+    frepr R (seq_enum ms) fbs (FVVariant t d) ↔
+    length fbs = (int_size (enum_tag (length ms)) + list_max (mty_size <$> ms))%nat ∧
+    (∃ bst, take (int_size (enum_tag (length ms))) fbs = inr <$> bst ∧
+      decode_int (enum_tag (length ms)) bst = Some t) ∧
+    (0 ≤ t)%Z ∧ ∃ vm, ms !! Z.to_nat t = Some vm ∧
+      frepr R vm (list_slice (int_size (enum_tag (length ms))) (mty_size vm) fbs) d ∧
+      (∀ i fb, fbs !! i = Some fb → (int_size (enum_tag (length ms)) + mty_size vm ≤ i)%nat →
+        is_plain fb).
+  Proof.
+    set tsz := int_size (enum_tag (length ms)).
+    rewrite /seq_enum frepr_enum_iff decode_discr_seq. split.
+    - intros (Hlen & Hd & Ht0 & vm & o & tg & Hvm & Hp & Hpad).
+      rewrite list_lookup_imap in Hvm. apply fmap_Some in Hvm as (vm' & Hvm & [= -> -> ->]).
+      change (if decide (length ms ≤ 256)%nat then 1%nat else length ms) with tsz in *.
+      apply bind_Some in Hd as (t' & Ht' & Hd).
+      destruct (decide ((0 ≤ t' < Z.of_nat (length ms))%Z)); simplify_eq.
+      destruct (plain_fbytes (take tsz fbs)) as [bst Hbst].
+      { intros j fb. rewrite lookup_take_Some. intros [Hj ?]. apply (Hpad _ fb Hj). lia. }
+      split; [done|]. split; [|split; [done|]].
+      + exists bst. split; [done|]. by rewrite -fmap_take Hbst fb_erase_plain in Ht'.
+      + exists vm'. split_and!; [done|done|]. intros j fb Hj ?. apply (Hpad _ _ Hj). lia.
+    - intros (Hlen & (bst & Hbst & Ht) & Ht0 & vm & Hvm & Hp & Hpad).
+      have Hlt : (Z.to_nat t < length ms)%nat by eapply lookup_lt_Some.
+      split; [done|]. split; [|split; [done|]].
+      + rewrite -fmap_take Hbst fb_erase_plain Ht /=.
+        destruct (decide ((0 ≤ t < Z.of_nat (length ms))%Z)); [done|lia].
+      + exists vm, tsz, [(0%nat, enum_tag (length ms), Z.of_nat (Z.to_nat t))].
+        rewrite list_lookup_imap Hvm /=. split_and!; [done|done|].
+        intros j fb Hj Hn. destruct (decide (j < tsz)%nat).
+        * have : take tsz fbs !! j = Some fb by rewrite lookup_take.
+          rewrite Hbst list_lookup_fmap. destruct (bst !! j); simpl; intros Hb; simplify_eq. by eexists.
+        * apply (Hpad _ _ Hj). lia.
   Qed.
 
   Lemma layout_fields_shift a o ms :
@@ -378,12 +448,11 @@ Proof.
   { by rewrite list_lookup_fmap llookup_lookup. }
   rewrite /syn_fbytes syn_fval_pinj syn_bsize_sum.
   change (syn_mty (Σ! 𝔄l)) with (seq_enum (syn_mty <$> 𝔄l)).
-  rewrite /seq_enum length_fmap -/(sum_tag 𝔄l) -list_fmap_compose.
-  change (mty_size ∘ syn_mty) with syn_bsize. rewrite -/(sum_max 𝔄l).
   split.
   - intros (Hlen & fv & Hfv & Hrep).
     destruct (syn_fval y) as [fy|] eqn:Hfy; [|done]. simpl in Hfv. injection Hfv as <-.
-    apply frepr_enum_iff in Hrep as (_ & (bst & Ht & Hdt) & Ht0 & vm & Hvm & Hp & Hpad).
+    apply frepr_seq_enum_iff in Hrep as (_ & (bst & Ht & Hdt) & Ht0 & vm & Hvm & Hp & Hpad).
+    rewrite length_fmap -/(sum_tag 𝔄l) in Ht Hdt Hp Hpad.
     rewrite Nat2Z.id Hvi in Hvm. injection Hvm as <-.
     change (mty_size (syn_mty (𝔄l !!ₗ i))) with (syn_bsize (𝔄l !!ₗ i)) in Hp. change (mty_size (syn_mty (𝔄l !!ₗ i))) with (syn_bsize (𝔄l !!ₗ i)) in Hpad.
     destruct (plain_fbytes (drop (int_size (sum_tag 𝔄l) + syn_bsize (𝔄l !!ₗ i)) fbs))
@@ -401,7 +470,9 @@ Proof.
     simpl in Ht. apply fmap_Some in Ht as (t & Hdt & [= <-]).
     split; [rewrite !length_app !length_fmap; lia|].
     rewrite Hfy. eexists. split; [done|].
-    apply frepr_enum_iff. split; [rewrite !length_app !length_fmap; lia|].
+    apply frepr_seq_enum_iff. rewrite length_fmap -/(sum_tag 𝔄l) -list_fmap_compose.
+    change (mty_size ∘ syn_mty) with syn_bsize. rewrite -/(sum_max 𝔄l).
+    split; [rewrite !length_app !length_fmap; lia|].
     split; [exists bt; split; [by rewrite -Hlt -(length_fmap (@inr positive abyte) bt) take_app_length|done]|].
     split; [lia|]. exists (syn_mty (𝔄l !!ₗ i)). rewrite Nat2Z.id Hvi. split; [done|]. split.
     + rewrite -Hlt -(length_fmap (@inr positive abyte) bt) /list_slice drop_app_length.

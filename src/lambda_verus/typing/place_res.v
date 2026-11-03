@@ -278,7 +278,7 @@ Section res_sum.
   Qed.
 
   (** Case analysis on a resolved sum at the hole of [K] (in the owned part of a place):
-      the tag is read from the bytes of the resolved leaf with a typed [Load], the leaf is
+      the discriminant is read from the bytes of the resolved leaf ([GetDiscr]), the leaf is
       unfolded into a sum place at the variant [i] of its value, with a resolved payload,
       and the program continues with branch [i]. *)
   Lemma type_case_oplace_res {𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (Σ! 𝔄l) 𝔄)
@@ -287,7 +287,7 @@ Section res_sum.
     ([∗ nat] i < length 𝔄l, typed_body E L I C
       (p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfRes (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfRes (Σ! tyl)) +:: T)
-      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K p)) of el)
+      (case: (GetDiscr (syn_mty (Σ! 𝔄l)) (pctx_expr K p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -315,11 +315,11 @@ Section res_sum.
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         iFrame; by iPureIntro. }
     iIntros (w) "(-> & _ & _ & Rest)".
-    (* Read the tag: a typed [Load]. *)
+    (* Read the discriminant ([GetDiscr] reads the tag). *)
     iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Tag & Pay & Pad)".
     iDestruct "Tag" as (bt) "[Bt %Hbt]".
-    wp_bind (Load _ _ _).
-    iApply (wp_load_na with "Bt"); [exact Hbt|]. iIntros "!> Bt".
+    wp_bind (GetDiscr _ _).
+    iApply (wp_get_discr_sum with "Bt"); [exact Hbt|apply fin_to_nat_lt|]. iIntros "Bt".
     wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
     iDestruct (big_sepN_lookup _ _ j with "el") as "el".
     iApply ("el" $! _ (((l, x₀), ζm) -:: xl)
