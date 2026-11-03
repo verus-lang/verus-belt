@@ -31,6 +31,120 @@ Implicit Type 𝔄 𝔅: syn_type.
 Section own_bytes.
   Context `{!typeG Σ}.
 
+  (** ** The contents of tuples, for any layout *)
+
+  (** The bytes of a tuple outside its fields (with any contents). *)
+  Definition pad_own (l : loc) (fs : list (nat * mty)) (sz : nat) : iProp Σ :=
+    ∃ bs : list abyte, ⌜length bs = sz⌝ ∗
+      [∗ list] i ↦ b ∈ bs, if decide (in_field fs i) then emp else (l +ₗ i) ↦b [b].
+
+  Global Instance pad_own_timeless l fs sz : Timeless (pad_own l fs sz).
+  Proof. apply bi.exist_timeless=> bs. apply _. Qed.
+
+  (** Separate contents at offsets of [l] have a common registry. *)
+  Lemma gconts_union l (ps : list ((nat * mty) * FValue)) :
+    ([∗ list] p ∈ ps, gcont (l +ₗ Z.of_nat p.1.1) p.1.2 p.2) ⊢
+    ∃ R (fbss : list (list (positive + abyte))), ⌜reg_wf R ∧ length fbss = length ps ∧
+      ∀ k p fbs, ps !! k = Some p → fbss !! k = Some fbs → frepr R p.1.2 fbs p.2⌝ ∗
+      ([∗ list] p; fbs ∈ ps; fbss, gfbytes (l +ₗ Z.of_nat p.1.1) fbs) ∗
+      ([∗ list] p ∈ ps, gcells (l +ₗ Z.of_nat p.1.1) p.1.2 p.2).
+  Proof.
+    induction ps as [|p ps IH].
+    - iIntros "_". iExists ∅, []. iSplit; [|by iSplit]. iPureIntro.
+      split_and!; [by intros ???|done|]. intros ???. by rewrite lookup_nil.
+    - rewrite big_sepL_cons. iIntros "[(%R1 & %fbs1 & F1 & [%H1 %HR1] & C1) Hs]".
+      iDestruct (IH with "Hs") as (R2 fbss) "([%HR2 [%Hlen %Hreps]] & Fs & Cs)".
+      iDestruct (gcells_disj_list R1 R2 with "C1 Cs") as %Hd; [done| |].
+      { intros k p' Hk. destruct (lookup_lt_is_Some_2 fbss k) as [fbs' Hfbs'].
+        { rewrite Hlen. by eapply lookup_lt_Some. }
+        exists fbs'. by eapply Hreps. }
+      destruct (frepr_union_l _ _ _ _ _ H1 HR1 HR2) as (R & H1' & HR & Htr).
+      iExists R, (fbs1 :: fbss). rewrite big_sepL2_cons big_sepL_cons. iFrame.
+      iPureIntro. split_and!; [done|simpl; lia|].
+      intros [|k] p' fbs; simpl; intros Hk Hf; simplify_eq; [done|].
+      apply Htr; [by eapply Hreps|]. intros g Hg. by eapply Hd.
+  Qed.
+
+  (** The contents of a tuple: those of its fields, at their offsets, and the bytes outside
+      the fields. *)
+  Lemma gcont_tuple l fs sz al fvs :
+    mty_wf (MTuple fs sz al) → length fvs = length fs →
+    gcont l (MTuple fs sz al) (FVTuple fvs) ⊣⊢
+      ([∗ list] p ∈ zip fs fvs, gcont (l +ₗ Z.of_nat p.1.1) p.1.2 p.2) ∗ pad_own l fs sz.
+  Proof.
+    intros Hwf Hlen. destruct (mty_wf_tuple_inv _ _ _ Hwf) as (Hdisj & Hin & Hwfs).
+    have Hlz : length (zip fs fvs) = length fs by rewrite length_zip_with; lia.
+    have Hzip : ∀ j p, zip fs fvs !! j = Some p → fs !! j = Some p.1 ∧ fvs !! j = Some p.2.
+    { intros j p (f & fvj & -> & ? & ?)%lookup_zip_with_Some. done. }
+    rewrite /gcont. iSplit.
+    - iIntros "(%R & %fbs & Hfb & [%Hrep %HR] & C)".
+      apply frepr_tuple_iff in Hrep as (Hlfbs & _ & Hfs & Hpad).
+      rewrite gcells_tuple_zip //.
+      rewrite /gfbytes (big_sepL_fields _ fbs fs) //; last first.
+      { eapply Forall_impl; [exact Hin|]. simpl. lia. }
+      iDestruct "Hfb" as "[Hf Hp]". iSplitR "Hp".
+      + rewrite -(big_sepL_zip_fst (λ _ f, [∗ list] j ↦ x ∈ list_slice f.1 (mty_size f.2) fbs,
+          gfb (l +ₗ (f.1 + j)%nat) x)%I fs fvs); [|lia].
+        iCombine "Hf C" as "H". rewrite -big_sepL_sep.
+        iApply (big_sepL_impl with "H"). iIntros "!>" (k p Hk) "[F C]".
+        destruct (Hzip _ _ Hk) as [Hf Hfv].
+        iExists R, (list_slice p.1.1 (mty_size p.1.2) fbs). iSplitL "F".
+        { iApply (big_sepL_impl with "F"). iIntros "!>" (j x _) "H". by rewrite shift_loc_assoc_nat. }
+        iFrame "C". iPureIntro. split; [by apply (Hfs k p.1 p.2)|done].
+      + iExists (fb_erase <$> fbs). rewrite length_fmap. iSplit; [done|].
+        rewrite big_sepL_fmap. iApply (big_sepL_impl with "Hp"). iIntros "!>" (i fb Hi) "H".
+        case_decide as Hc; [done|]. by destruct (Hpad i fb Hi Hc) as [b ->].
+    - iIntros "[Hs (%bs & %Hlbs & Hp)]".
+      iDestruct (gconts_union with "Hs") as (R fbss) "([%HR [%Hlf %Hreps]] & Fs & Cs)".
+      rewrite Hlz in Hlf.
+      set ins := zip_with (λ (p : (nat * mty) * FValue) fbs, (p.1.1, fbs)) (zip fs fvs) fbss.
+      set fbs := fill_fields ins (inr <$> bs).
+      have Hlfbs : length fbs = sz by rewrite length_fill_fields length_fmap.
+      have Hins : ∀ j p fbsj, zip fs fvs !! j = Some p → fbss !! j = Some fbsj →
+        ins !! j = Some (p.1.1, fbsj).
+      { intros j p fbsj Hp Hf. by rewrite /ins lookup_zip_with Hp /= Hf. }
+      have Hlj : ∀ j p fbsj, zip fs fvs !! j = Some p → fbss !! j = Some fbsj →
+        length fbsj = mty_size p.1.2.
+      { intros j p fbsj Hp Hf. eapply frepr_length; [done|]. by eapply Hreps. }
+      have Hslice : ∀ j p fbsj, zip fs fvs !! j = Some p → fbss !! j = Some fbsj →
+        list_slice p.1.1 (mty_size p.1.2) fbs = fbsj.
+      { intros j p fbsj Hp Hf. rewrite -(Hlj j p fbsj Hp Hf).
+        apply (list_slice_fill_fields ins _ j); [by apply Hins| |].
+        - intros j' o' e' Hj' (p' & fbsj' & [= -> ->] & Hp' & Hf')%lookup_zip_with_Some.
+          destruct (Hzip _ _ Hp) as [Hfj _]. destruct (Hzip _ _ Hp') as [Hfj' _].
+          rewrite (Hlj j' p' fbsj' Hp' Hf') (Hlj j p fbsj Hp Hf).
+          destruct p as [[o fm] fvj], p' as [[o2 fm2] fvj']; simpl in *.
+          destruct (Hdisj j' j o2 fm2 o fm) as [?|?]; [done|done|done|lia|lia].
+        - rewrite (Hlj j p fbsj Hp Hf) length_fmap Hlbs. destruct (Hzip _ _ Hp) as [Hfj _].
+          exact (Forall_lookup_1 _ _ _ _ Hin Hfj). }
+      have Hpadfbs : ∀ i, ¬ in_field fs i → fbs !! i = inr <$> bs !! i.
+      { intros i Hi. rewrite lookup_fill_fields_out ?list_lookup_fmap //.
+        intros j o e (p & fbsj & [= -> ->] & Hp & Hf)%lookup_zip_with_Some.
+        destruct (Hzip _ _ Hp) as [Hfj _]. rewrite (Hlj j p fbsj Hp Hf).
+        destruct (decide (p.1.1 ≤ i < p.1.1 + mty_size p.1.2)%nat); [|lia].
+        exfalso. apply Hi. exists p.1. split; [by eapply elem_of_list_lookup_2|done]. }
+      iExists R, fbs. iSplitL "Fs Hp"; [|iSplit].
+      + rewrite /gfbytes (big_sepL_fields _ fbs fs) //; last first.
+        { rewrite Hlfbs. eapply Forall_impl; [exact Hin|]. simpl. lia. }
+        iSplitL "Fs".
+        * rewrite -(big_sepL_zip_fst (λ _ f, [∗ list] j ↦ x ∈ list_slice f.1 (mty_size f.2) fbs,
+            gfb (l +ₗ (f.1 + j)%nat) x)%I fs fvs); [|lia].
+          iApply (big_sepL2_to_sepL_l with "Fs"). intros j p fbsj Hp Hf.
+          rewrite (Hslice j p fbsj Hp Hf). apply big_sepL_mono=> ?? _. by rewrite shift_loc_assoc_nat.
+        * iApply (big_sepL_same_length with "Hp"); [by rewrite Hlfbs|].
+          intros i b fb Hb Hfb. case_decide as Hi; [done|].
+          rewrite Hpadfbs // Hfb in Hb. by injection Hb as <-.
+      + iPureIntro. split; [|done]. apply frepr_tuple_iff. split_and!; [done|lia| |].
+        * intros k f fv Hf Hfv.
+          have Hp : zip fs fvs !! k = Some (f, fv) by rewrite lookup_zip_with Hf /= Hfv.
+          destruct (lookup_lt_is_Some_2 fbss k) as [fbsk Hfbsk].
+          { rewrite Hlf. by eapply lookup_lt_Some. }
+          rewrite (Hslice k _ fbsk Hp Hfbsk). by apply (Hreps k (f, fv)).
+        * intros i fb Hi Hnf. rewrite Hpadfbs // in Hi.
+          destruct (bs !! i); simplify_eq/=. by eexists.
+      + by rewrite gcells_tuple_zip.
+  Qed.
+
   (** The contents of a tuple laid out in sequence: those of its first field and those of
       the others (the cells of the two parts are distinct, so their local registries can be
       merged, [frepr_union]). *)
@@ -202,6 +316,62 @@ Section own_bytes.
     iIntros (?) "#GC Lc Bytes Hwp".
     iMod (bytes_own_forget with "GC Lc Bytes") as (bs) "[Hbs %Hlen]"; [done|].
     by iApply ("Hwp" with "Hbs").
+  Qed.
+
+  (** The bytes of the fields of a struct, at the offsets [offs]. *)
+  Fixpoint fields_bytes_own {𝔄l} (l: loc) (offs: list nat) (tyl: typel 𝔄l) :
+      plist (~~) 𝔄l → iProp Σ :=
+    match tyl in hlist _ 𝔄l return plist (~~) 𝔄l → iProp Σ with
+    | +[] => λ _, True
+    | ty +:: tyl' => λ xs,
+        match offs with
+        | [] => False
+        | o :: offs' => bytes_own ty (l +ₗ o) (phd xs) ∗ fields_bytes_own l offs' tyl' (ptl xs)
+        end
+    end%I.
+
+  Lemma fields_bytes_own_gcont {𝔄l} l offs (tyl: typel 𝔄l) (xs: plist (~~) 𝔄l) :
+    length offs = length 𝔄l →
+    fields_bytes_own l offs tyl xs ⊣⊢
+      ∃ fvs, ⌜mapM id (plist_to_list (pmap (λ _ x, syn_fval x) xs)) = Some fvs⌝ ∗
+        [∗ list] p ∈ zip (zip offs (syn_mty <$> 𝔄l)) fvs, gcont (l +ₗ Z.of_nat p.1.1) p.1.2 p.2.
+  Proof.
+    revert offs. induction tyl as [|𝔄 𝔄l ty tyl IH]; intros [|o offs] Hlen; simpl in *; try lia.
+    - iSplit; [iIntros "_"; iExists []; by iSplit|by iIntros].
+    - destruct xs as [x xs]. simpl. rewrite IH; [|lia]. iSplit.
+      + iIntros "[B (%fvs & %Hfvs & Hs)]". rewrite bytes_own_unseal.
+        iDestruct "B" as (fv Hfv) "C". rewrite -ty_fval_eq -ty_mty_eq in Hfv |- *.
+        iExists (fv :: fvs). rewrite Hfv Hfvs /=. iSplit; [done|]. iFrame.
+      + iIntros "(%fvs & %Hfvs & Hs)".
+        destruct (syn_fval x) as [fv|] eqn:Hfv; [|done]. simpl in Hfvs.
+        destruct (mapM id _) as [fvs'|] eqn:Hfvs'; [|done]. injection Hfvs as <-.
+        rewrite big_sepL_cons. iDestruct "Hs" as "[C Hs]". iSplitL "C".
+        * rewrite bytes_own_unseal. iExists fv. rewrite -ty_fval_eq -ty_mty_eq. by iFrame.
+        * iExists fvs'. by iFrame.
+  Qed.
+
+  (** The bytes of a struct: those of its fields, at their offsets, and the bytes outside the
+      fields. *)
+  Lemma bytes_own_struct {𝔄l} L (ty: type (structₛ L 𝔄l)) (tyl: typel 𝔄l) l xs :
+    bytes_own ty l xs ⊣⊢
+      fields_bytes_own l (struct_offs L 𝔄l) tyl xs ∗
+      pad_own l (struct_fields L 𝔄l) (struct_size L 𝔄l).
+  Proof.
+    rewrite fields_bytes_own_gcont; [|apply length_struct_offs].
+    rewrite bytes_own_unseal /bytes_own_def -!ty_fval_eq -!ty_mty_eq syn_mty_struct.
+    change (syn_fval (𝔄:=structₛ L 𝔄l) xs) with
+      (FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) xs))).
+    have Hwf := syn_mty_wf (structₛ L 𝔄l). rewrite syn_mty_struct in Hwf.
+    have Hlf : length (struct_fields L 𝔄l) = length 𝔄l.
+    { rewrite /struct_fields length_zip_with length_fmap length_struct_offs. lia. }
+    iSplit.
+    - iIntros "(%fv & %Hfv & C)". apply fmap_Some in Hfv as (fvs & Hfvs & ->).
+      rewrite gcont_tuple //; last first.
+      { rewrite Hlf. apply mapM_Some, Forall2_length in Hfvs. by rewrite -Hfvs length_plist_to_list. }
+      iDestruct "C" as "[Cs $]". iExists fvs. by iFrame.
+    - iIntros "[(%fvs & %Hfvs & Cs) Pad]". iExists (FVTuple fvs). rewrite Hfvs.
+      iSplit; [done|]. rewrite gcont_tuple //; [by iFrame|].
+      rewrite Hlf. apply mapM_Some, Forall2_length in Hfvs. by rewrite -Hfvs length_plist_to_list.
   Qed.
 
   (** The fancy bytes of a pair: those of its components, one after the other. *)

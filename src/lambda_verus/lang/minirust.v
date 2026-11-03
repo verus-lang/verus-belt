@@ -688,7 +688,7 @@ Section repr.
   (** *** Encoding and decoding *)
 
   (** Write the field encodings [ins] (offset, bytes) over [base]. *)
-  Definition fill_fields (ins : list (nat * list (AbstractByte))) base :=
+  Definition fill_fields {A} (ins : list (nat * list A)) (base : list A) : list A :=
     foldr (λ p acc, list_inserts p.1 p.2 acc) base ins.
 
   (** Write the integers of a tagger over [base]. *)
@@ -790,7 +790,8 @@ Section repr.
   Qed.
 
   (** *** The length law *)
-  Lemma length_fill_fields ins base : length (fill_fields ins base) = length base.
+  Lemma length_fill_fields {A} (ins : list (nat * list A)) (base : list A) :
+    length (fill_fields ins base) = length base.
   Proof. induction ins as [|[o e] ins IH]; simpl; [done|]. by rewrite length_inserts. Qed.
 
   Lemma length_encode_int it z : length (encode_int it z) = int_size it.
@@ -871,7 +872,7 @@ Section repr.
   Qed.
 
   (** *** Fields *)
-  Lemma lookup_fill_fields_out ins base j :
+  Lemma lookup_fill_fields_out {A} (ins : list (nat * list A)) (base : list A) j :
     (∀ k o e, ins !! k = Some (o, e) → (j < o ∨ o + length e ≤ j)%nat) →
     fill_fields ins base !! j = base !! j.
   Proof.
@@ -881,7 +882,7 @@ Section repr.
       apply IH; intros k; apply (Hout (S k)).
   Qed.
 
-  Lemma lookup_fill_fields_in ins base k o e j :
+  Lemma lookup_fill_fields_in {A} (ins : list (nat * list A)) (base : list A) k o e j :
     ins !! k = Some (o, e) →
     (∀ k' o' e', k' ≠ k → ins !! k' = Some (o', e') →
        (o' + length e' ≤ o ∨ o + length e ≤ o')%nat) →
@@ -899,7 +900,7 @@ Section repr.
         apply (IH k); [done| |done|done]. intros k' ???. apply (Hdisj (S k')). congruence.
   Qed.
 
-  Lemma list_slice_eq (l e : list (AbstractByte)) o :
+  Lemma list_slice_eq {A} (l e : list A) o :
     (o + length e ≤ length l)%nat →
     (∀ j, (o ≤ j < o + length e)%nat → l !! j = e !! (j - o)%nat) →
     list_slice o (length e) l = e.
@@ -910,7 +911,7 @@ Section repr.
     - rewrite lookup_take_ge; [|lia]. rewrite lookup_ge_None_2 //. lia.
   Qed.
 
-  Lemma list_slice_fill_fields ins base k o e :
+  Lemma list_slice_fill_fields {A} (ins : list (nat * list A)) (base : list A) k o e :
     ins !! k = Some (o, e) →
     (∀ k' o' e', k' ≠ k → ins !! k' = Some (o', e') →
        (o' + length e' ≤ o ∨ o + length e ≤ o')%nat) →
@@ -942,7 +943,7 @@ Section repr.
   Proof. intros. have := list_slice_inserts l e 0. rewrite /list_slice drop_0. auto. Qed.
 
   (** A slice outside all the insertions of [fill_fields]. *)
-  Lemma list_slice_fill_fields_out ins base o n :
+  Lemma list_slice_fill_fields_out {A} (ins : list (nat * list A)) (base : list A) o n :
     (∀ k o' e, ins !! k = Some (o', e) → (o' + length e ≤ o ∨ o + n ≤ o')%nat) →
     list_slice o n (fill_fields ins base) = list_slice o n base.
   Proof.
@@ -1164,3 +1165,222 @@ Section repr.
       by eapply (Forall_lookup_1 _ _ _ _ IH Hvm _ _ (Forall_lookup_1 _ _ _ _ Hwfs Hvm)).
   Qed.
 End repr.
+
+(** ** Struct layouts
+
+A struct layout gives the offsets of the fields, the size and the alignment of a struct
+(see [design_docs/minirust-layout.md], §7.2). [sl_mty L ms] is the MiniRust tuple type of a
+struct with fields of types [ms] laid out by [L]. A layout is well formed for [ms]
+([sl_wf]) if it has an offset per field and gives a well-formed tuple type. Ill-formed
+layouts are replaced by the packed layout [packed_layout ms] ([struct_lay]), so that
+[struct_mty L ms] is always well formed when the [ms] are ([struct_mty_wf]); the choice
+depends only on the sizes of the fields ([struct_lay_sizes]). The [repr(C)] layout
+[c_layout ms] is the computed layout for examples. *)
+Record struct_layout := SL { sl_offs : list nat; sl_size : nat; sl_align : nat }.
+
+Global Instance struct_layout_eq_dec : EqDecision struct_layout.
+Proof. solve_decision. Defined.
+
+Definition sl_mty (L : struct_layout) (ms : list mty) : mty :=
+  MTuple (zip L.(sl_offs) ms) L.(sl_size) L.(sl_align).
+Definition sl_wf (L : struct_layout) (ms : list mty) : Prop :=
+  length L.(sl_offs) = length ms ∧ mty_wf (sl_mty L ms).
+Global Instance sl_wf_dec L ms : Decision (sl_wf L ms).
+Proof. rewrite /sl_wf. apply _. Defined.
+
+(** [n] rounded up to a multiple of [a] (if [a ≠ 0]). *)
+Definition align_up (n a : nat) : nat :=
+  if decide (a = 0%nat) then n else (n + (a - n `mod` a) `mod` a)%nat.
+
+Lemma align_up_ge n a : (n ≤ align_up n a)%nat.
+Proof. rewrite /align_up. case_decide; lia. Qed.
+
+Lemma align_up_divide n a : (0 < a)%nat → Nat.divide a (align_up n a).
+Proof.
+  intros Ha. rewrite /align_up decide_False; [|lia].
+  have Hd := Nat.div_mod n a ltac:(lia). have Hm := Nat.mod_upper_bound n a ltac:(lia).
+  destruct (decide (n `mod` a = 0)%nat) as [H0|H0].
+  - rewrite H0 Nat.sub_0_r Nat.Div0.mod_same. exists (n `div` a)%nat. lia.
+  - rewrite Nat.mod_small; [|lia]. exists (n `div` a + 1)%nat. lia.
+Qed.
+
+(** The [repr(C)] layout: the fields in order, each at the next offset that is a multiple
+    of its alignment; the alignment is the least common multiple of those of the fields
+    (their maximum, for powers of two); the size is rounded up to the alignment. *)
+Fixpoint c_offs (o : nat) (ms : list mty) : list nat :=
+  match ms with
+  | [] => []
+  | m :: ms => align_up o (mty_align m) :: c_offs (align_up o (mty_align m) + mty_size m) ms
+  end.
+Fixpoint c_end (o : nat) (ms : list mty) : nat :=
+  match ms with
+  | [] => o
+  | m :: ms => c_end (align_up o (mty_align m) + mty_size m) ms
+  end.
+Definition c_align (ms : list mty) : nat := foldr (λ m a, Nat.lcm (mty_align m) a) 1%nat ms.
+Definition c_layout (ms : list mty) : struct_layout :=
+  SL (c_offs 0 ms) (align_up (c_end 0 ms) (c_align ms)) (c_align ms).
+
+Lemma length_c_offs o ms : length (c_offs o ms) = length ms.
+Proof. revert o. induction ms as [|m ms IH]; intros o; simpl; [done|]. by rewrite IH. Qed.
+
+Lemma c_end_ge o ms : (o ≤ c_end o ms)%nat.
+Proof.
+  revert o. induction ms as [|m ms IH]; intros o; simpl; [lia|].
+  have := IH (align_up o (mty_align m) + mty_size m)%nat. have := align_up_ge o (mty_align m). lia.
+Qed.
+
+Lemma c_offs_bounds o ms :
+  Forall (λ f, o ≤ f.1 ∧ f.1 + mty_size f.2 ≤ c_end o ms)%nat (zip (c_offs o ms) ms).
+Proof.
+  revert o. induction ms as [|m ms IH]; intros o; simpl; constructor.
+  - simpl. have := align_up_ge o (mty_align m).
+    have := c_end_ge (align_up o (mty_align m) + mty_size m)%nat ms. lia.
+  - eapply Forall_impl; [apply IH|]. simpl. intros f Hf. have := align_up_ge o (mty_align m). lia.
+Qed.
+
+Lemma c_offs_disjoint o ms : fields_disjoint (zip (c_offs o ms) ms).
+Proof.
+  revert o. induction ms as [|m ms IH]; intros o; simpl.
+  - intros ?????? _ Hi. by rewrite lookup_nil in Hi.
+  - apply fields_disjoint_cons. split; [|apply IH].
+    eapply Forall_impl; [apply c_offs_bounds|]. simpl. lia.
+Qed.
+
+Lemma Forall_zip_snd {A B} (P : B → Prop) (xs : list A) (ys : list B) :
+  Forall P ys → Forall (λ p, P p.2) (zip xs ys).
+Proof.
+  intros Hys. revert xs. induction Hys as [|y ys Hy _ IH]; intros [|x xs]; simpl; constructor; auto.
+Qed.
+
+Lemma c_layout_wf ms : Forall mty_wf ms → sl_wf (c_layout ms) ms.
+Proof.
+  intros Hms. split; [by rewrite /= length_c_offs|]. constructor.
+  - apply c_offs_disjoint.
+  - eapply Forall_impl; [apply c_offs_bounds|]. simpl. intros f Hf.
+    have := align_up_ge (c_end 0 ms) (c_align ms). lia.
+  - by apply Forall_zip_snd.
+Qed.
+
+(** The packed layout ([repr(packed)]): the fields one after the other, alignment 1. *)
+Fixpoint packed_offs (o : nat) (ms : list mty) : list nat :=
+  match ms with [] => [] | m :: ms => o :: packed_offs (o + mty_size m) ms end.
+Fixpoint packed_end (o : nat) (ms : list mty) : nat :=
+  match ms with [] => o | m :: ms => packed_end (o + mty_size m) ms end.
+Definition packed_layout (ms : list mty) : struct_layout :=
+  SL (packed_offs 0 ms) (packed_end 0 ms) 1.
+
+Lemma packed_end_ge o ms : (o ≤ packed_end o ms)%nat.
+Proof. revert o. induction ms as [|m ms IH]; intros o; simpl; [lia|]. have := IH (o + mty_size m)%nat. lia. Qed.
+
+Lemma length_packed_offs o ms : length (packed_offs o ms) = length ms.
+Proof. revert o. induction ms as [|m ms IH]; intros o; simpl; [done|]. by rewrite IH. Qed.
+
+Lemma packed_offs_bounds o ms :
+  Forall (λ f, o ≤ f.1 ∧ f.1 + mty_size f.2 ≤ packed_end o ms)%nat (zip (packed_offs o ms) ms).
+Proof.
+  revert o. induction ms as [|m ms IH]; intros o; simpl; constructor.
+  - simpl. have := packed_end_ge (o + mty_size m)%nat ms. lia.
+  - eapply Forall_impl; [apply IH|]. simpl. lia.
+Qed.
+
+Lemma packed_offs_disjoint o ms : fields_disjoint (zip (packed_offs o ms) ms).
+Proof.
+  revert o. induction ms as [|m ms IH]; intros o; simpl.
+  - intros ?????? _ Hi. by rewrite lookup_nil in Hi.
+  - apply fields_disjoint_cons. split; [|apply IH].
+    eapply Forall_impl; [apply packed_offs_bounds|]. simpl. lia.
+Qed.
+
+Lemma packed_layout_wf ms : Forall mty_wf ms → sl_wf (packed_layout ms) ms.
+Proof.
+  intros Hms. split; [by rewrite /= length_packed_offs|]. constructor.
+  - apply packed_offs_disjoint.
+  - eapply Forall_impl; [apply (packed_offs_bounds 0)|]. simpl. lia.
+  - by apply Forall_zip_snd.
+Qed.
+
+(** The effective layout of a struct: [L] if it is well formed, else [packed_layout ms]. *)
+Definition struct_lay (L : struct_layout) (ms : list mty) : struct_layout :=
+  if decide (sl_wf L ms) then L else packed_layout ms.
+Definition struct_mty (L : struct_layout) (ms : list mty) : mty := sl_mty (struct_lay L ms) ms.
+
+Lemma struct_lay_wf L ms : Forall mty_wf ms → sl_wf (struct_lay L ms) ms.
+Proof. intros. rewrite /struct_lay. case_decide; [done|by apply packed_layout_wf]. Qed.
+
+Lemma struct_mty_wf L ms : Forall mty_wf ms → mty_wf (struct_mty L ms).
+Proof. intros. by apply struct_lay_wf. Qed.
+
+Lemma length_struct_lay L ms : Forall mty_wf ms → length (struct_lay L ms).(sl_offs) = length ms.
+Proof. intros. by apply struct_lay_wf. Qed.
+
+(** For a well-formed layout, the effective layout is the layout itself. *)
+Lemma struct_lay_wf_eq L ms : sl_wf L ms → struct_lay L ms = L.
+Proof. intros. by rewrite /struct_lay decide_True. Qed.
+
+Lemma struct_lay_c ms : Forall mty_wf ms → struct_lay (c_layout ms) ms = c_layout ms.
+Proof. intros. by apply struct_lay_wf_eq, c_layout_wf. Qed.
+
+(** The effective layout depends only on the sizes of the (well-formed) fields. *)
+Definition field_ranges (fs : list (nat * mty)) : list (nat * nat) :=
+  (λ f, (f.1, mty_size f.2)) <$> fs.
+
+Lemma field_ranges_zip offs ms : field_ranges (zip offs ms) = zip offs (mty_size <$> ms).
+Proof.
+  revert ms. induction offs as [|o offs IH]; intros [|m ms]; simpl; [done..|]. by rewrite IH.
+Qed.
+
+Lemma fields_disjoint_ranges fs fs' :
+  field_ranges fs = field_ranges fs' → fields_disjoint fs → fields_disjoint fs'.
+Proof.
+  intros Heq H i j o1 m1 o2 m2 Hij Hi Hj.
+  have Hi' : field_ranges fs' !! i = Some (o1, mty_size m1) by rewrite /field_ranges list_lookup_fmap Hi.
+  have Hj' : field_ranges fs' !! j = Some (o2, mty_size m2) by rewrite /field_ranges list_lookup_fmap Hj.
+  rewrite -Heq /field_ranges !list_lookup_fmap in Hi' Hj'.
+  apply fmap_Some in Hi' as ([o1' m1'] & Hi'' & [= -> Hs1]).
+  apply fmap_Some in Hj' as ([o2' m2'] & Hj'' & [= -> Hs2]).
+  have := H i j _ _ _ _ Hij Hi'' Hj''. lia.
+Qed.
+
+Lemma fields_bounds_ranges fs fs' sz :
+  field_ranges fs = field_ranges fs' →
+  Forall (λ f, f.1 + mty_size f.2 ≤ sz)%nat fs → Forall (λ f, f.1 + mty_size f.2 ≤ sz)%nat fs'.
+Proof.
+  intros Heq H. apply Forall_lookup. intros k [o m] Hk.
+  have Hk' : field_ranges fs' !! k = Some (o, mty_size m) by rewrite /field_ranges list_lookup_fmap Hk.
+  rewrite -Heq /field_ranges list_lookup_fmap in Hk'.
+  apply fmap_Some in Hk' as ([o' m'] & Hk'' & [= -> Hs]). have := Forall_lookup_1 _ _ _ _ H Hk''.
+  simpl. lia.
+Qed.
+
+Lemma sl_wf_sizes L ms ms' :
+  Forall mty_wf ms' → mty_size <$> ms = mty_size <$> ms' → sl_wf L ms → sl_wf L ms'.
+Proof.
+  intros Hw' Hs [Hlen Hwf]. have Hl : length ms = length ms'.
+  { by rewrite -(length_fmap mty_size ms) Hs length_fmap. }
+  have Hr : field_ranges (zip L.(sl_offs) ms) = field_ranges (zip L.(sl_offs) ms').
+  { by rewrite !field_ranges_zip Hs. }
+  apply mty_wf_tuple_inv in Hwf as (Hd & Hb & _). split; [lia|]. constructor.
+  - by eapply fields_disjoint_ranges.
+  - by eapply fields_bounds_ranges.
+  - by apply Forall_zip_snd.
+Qed.
+
+Lemma packed_layout_sizes ms ms' :
+  mty_size <$> ms = mty_size <$> ms' → packed_layout ms = packed_layout ms'.
+Proof.
+  intros Hs. rewrite /packed_layout. generalize 0%nat.
+  revert ms' Hs. induction ms as [|m ms IH]; intros [|m' ms'] Hs o; simplify_eq/=; [done|].
+  rewrite H. have Heq := IH ms' H0 (o + mty_size m')%nat. injection Heq as -> ->. done.
+Qed.
+
+Lemma struct_lay_sizes L ms ms' :
+  Forall mty_wf ms → Forall mty_wf ms' → mty_size <$> ms = mty_size <$> ms' →
+  struct_lay L ms = struct_lay L ms'.
+Proof.
+  intros Hw Hw' Hs. rewrite /struct_lay.
+  destruct (decide (sl_wf L ms)) as [H|H], (decide (sl_wf L ms')) as [H'|H']; try done.
+  - exfalso. apply H'. by apply (sl_wf_sizes L ms ms').
+  - exfalso. apply H. by apply (sl_wf_sizes L ms' ms).
+  - by apply packed_layout_sizes.
+Qed.

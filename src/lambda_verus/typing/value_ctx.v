@@ -1,5 +1,5 @@
 From lrust.typing Require Export type type_context bytes_layout.
-From lrust.typing Require Import programs bool int own product sum gmb_cells.
+From lrust.typing Require Import programs bool int own product struct sum gmb_cells.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -174,6 +174,65 @@ Section value_parts.
       iModIntro. rewrite gcont_seq_tuple_cons. iFrame.
   Qed.
 
+  (** The cells in transit of a tuple (for any layout): those of its fields, which are put
+      back at their offsets. *)
+  Lemma val_cells_tuple fs sz al fvs ws :
+    mty_wf (MTuple fs sz al) → length fvs = length fs → length ws = length fs →
+    ([∗ list] p ∈ zip fs (zip fvs ws), val_cells p.1.2 p.2.1 p.2.2) -∗
+    val_cells (MTuple fs sz al) (FVTuple fvs) (VTuple ws).
+  Proof.
+    intros Hwf Hlf Hlw. destruct (mty_wf_tuple_inv _ _ _ Hwf) as (Hdisj & Hin & _).
+    have Hlz : length (zip fs (zip fvs ws)) = length fs.
+    { rewrite !length_zip_with. lia. }
+    have Hzip : ∀ k f fv w, fs !! k = Some f → fvs !! k = Some fv → ws !! k = Some w →
+      zip fs (zip fvs ws) !! k = Some (f, (fv, w)).
+    { intros k f fv w Hf Hfv Hw. by rewrite lookup_zip_with Hf /= lookup_zip_with Hfv /= Hw. }
+    rewrite /val_cells /gtransit. iIntros "Hs".
+    iDestruct (big_sepL_sep with "Hs") as "[Hpu Hs]".
+    iDestruct (big_sepL_pure_1 with "Hpu") as %Hpure.
+    iSplit.
+    - iPureIntro. split.
+      + constructor. apply Forall2_lookup. intros k.
+        destruct (fs !! k) as [f|] eqn:Hf, (ws !! k) as [w|] eqn:Hw; try constructor.
+        * destruct (lookup_lt_is_Some_2 fvs k) as [fv Hfv]; [rewrite Hlf; by eapply lookup_lt_Some|].
+          by destruct (Hpure k _ (Hzip k f fv w Hf Hfv Hw)).
+        * apply lookup_ge_None in Hw. apply lookup_lt_Some in Hf. lia.
+        * apply lookup_ge_None in Hf. apply lookup_lt_Some in Hw. lia.
+      + intros w0 Hw0. destruct (fv_lift_tuple_inv _ _ (eq_sym Hw0)) as (vs & -> & ->).
+        f_equal. apply list_eq. intros k.
+        destruct (fs !! k) as [f|] eqn:Hf; last first.
+        { rewrite !lookup_ge_None_2 //; apply lookup_ge_None in Hf;
+            rewrite ?length_map in Hlf; lia. }
+        destruct (lookup_lt_is_Some_2 ws k) as [w Hw]; [rewrite Hlw; by eapply lookup_lt_Some|].
+        destruct (vs !! k) as [v|] eqn:Hv; last first.
+        { apply lookup_ge_None in Hv. rewrite length_map in Hlf. apply lookup_lt_Some in Hf. lia. }
+        have Hfv : map fv_lift vs !! k = Some (fv_lift v) by rewrite list_lookup_map Hv.
+        destruct (Hpure k _ (Hzip k f _ w Hf Hfv Hw)) as [_ Heq]. rewrite Hw. f_equal. by apply Heq.
+    - iIntros (l' bs' Hd) "Hbs". move: Hd. rewrite decode_value_tuple. case_decide as Hlen; [|done].
+      intros (ws' & Hws' & [= <-])%fmap_Some_1. apply mapM_Some in Hws'.
+      rewrite heap_mapsto_bytes_pos (big_sepL_fields _ bs' fs) //; last first.
+      { eapply Forall_impl; [exact Hin|]. simpl. lia. }
+      iDestruct "Hbs" as "[Hf Hp]".
+      iAssert ([∗ list] p ∈ zip fs (zip fvs ws), |={lazyE}=> gcont (l' +ₗ Z.of_nat p.1.1) p.1.2 p.2.1)%I
+        with "[Hs Hf]" as "Hs".
+      { rewrite -(big_sepL_zip_fst (λ _ f, [∗ list] j ↦ x ∈ list_slice f.1 (mty_size f.2) bs',
+          (l' +ₗ (f.1 + j)%nat) ↦b [x])%I fs (zip fvs ws)); [|rewrite length_zip_with; lia].
+        iCombine "Hs Hf" as "H". rewrite -big_sepL_sep.
+        iApply (big_sepL_impl with "H"). iIntros "!>" (k p Hk) "[Cl Hb]".
+        apply lookup_zip_with_Some in Hk as (f & [fv w] & -> & Hf & Hfw).
+        apply lookup_zip_with_Some in Hfw as (fv' & w' & [= <- <-] & Hfv & Hw). simpl.
+        iApply ("Cl" with "[%] [Hb]").
+        - exact (Forall2_lookup_lr _ _ _ _ _ _ Hws' Hf Hw).
+        - by rewrite heap_mapsto_bytes_pos_shift. }
+      iMod (big_sepL_fupd with "Hs") as "Hs". iModIntro.
+      iApply gcont_tuple; [done|done|]. iSplitL "Hs".
+      + have -> : zip fs fvs = (λ p : (nat * mty) * (FValue * Value), (p.1, p.2.1)) <$> zip fs (zip fvs ws).
+        { clear -Hlf Hlw. revert fvs ws Hlf Hlw. induction fs as [|f fs IH]; intros [|fv fvs] [|w ws] ??;
+            simpl in *; try done; try lia. f_equal. apply IH; lia. }
+        by rewrite big_sepL_fmap.
+      + iExists bs'. iSplit; [done|]. done.
+  Qed.
+
   (** The contents of a variant: the bytes before its payload, the contents of its
       payload, and the bytes after it, from which the discriminator reads the variant. *)
   Lemma gcont_enum_intro l vars dc sz al t vm o tg fv bs1 bs2 :
@@ -248,6 +307,59 @@ Section value_parts.
       iApply (val_cells_enum with "Hc"); [apply (syn_mty_wf (Σ! 𝔄l))|lia|].
       rewrite /seq_enum Nat2Z.id list_lookup_imap list_lookup_fmap llookup_lookup //.
     - rewrite [ty_gho_own (Σ! tyl)]/ty_gho_own /xsum_ty /= to_xsum_pinj. done.
+  Qed.
+
+  (** The values of the fields of a struct. *)
+  Fixpoint fields_val_own {𝔄l} (tyl: typel 𝔄l) (tid: thread_id) :
+      plist (~~) 𝔄l → list Value → iProp Σ :=
+    match tyl in hlist _ 𝔄l return plist (~~) 𝔄l → list Value → iProp Σ with
+    | +[] => λ _ ws, ⌜ws = []⌝
+    | ty +:: tyl' => λ xs ws,
+        match ws with
+        | [] => False
+        | w :: ws' => val_own ty (phd xs) tid (MLitV w) ∗ fields_val_own tyl' tid (ptl xs) ws'
+        end
+    end%I.
+
+  Local Lemma fields_val_own_parts {𝔄l} L (tyl: typel 𝔄l) tid xs ws offs :
+    length offs = length 𝔄l →
+    fields_val_own tyl tid xs ws ==∗ ∃ fvs d,
+      ⌜mapM id (plist_to_list (pmap (λ _ x, syn_fval x) xs)) = Some fvs ∧
+       length fvs = length 𝔄l ∧ length ws = length 𝔄l⌝ ∗
+      ([∗ list] p ∈ zip (zip offs (syn_mty <$> 𝔄l)) (zip fvs ws),
+        val_cells (p : (nat * mty) * (FValue * Value)).1.2 p.2.1 p.2.2) ∗
+      ⧖d ∗ (struct_ty L tyl).(ty_gho_own) xs d d tid.
+  Proof.
+    revert ws offs. induction tyl as [|𝔄 𝔄l ty tyl IH]; intros ws [|o offs] Hlen; simpl in *;
+      try lia.
+    - iIntros (->). iMod persistent_time_receipt_0 as "⧖". iModIntro. iExists [], 0%nat. by iFrame.
+    - destruct ws as [|w ws]; [by iIntros|]. destruct xs as [x xs].
+      iIntros "[(%w' & %d1 & %fv1 & [%Hv1 %Hfv1] & Hc1 & ⧖1 & Gho1) Hs]". injection Hv1 as <-.
+      iMod (IH xs ws offs with "Hs") as (fvs d2) "([%Hfvs [%Hlf %Hlw]] & Hcs & ⧖2 & Gho2)"; [lia|].
+      rewrite -!ty_fval_eq in Hfv1. rewrite -ty_mty_eq.
+      iModIntro. iExists (fv1 :: fvs), (d1 `max` d2)%nat. rewrite /= Hfv1 Hfvs /=.
+      iSplit; [iPureIntro; split_and!; [done|simpl; lia|simpl; lia]|].
+      iFrame "Hc1 Hcs". iCombine "⧖1 ⧖2" as "$". iSplitL "Gho1".
+      + iDestruct (ty_gho_own_depth_mono _ d1 d1 (d1 `max` d2) (d1 `max` d2) with "Gho1") as "[$ _]"; lia.
+      + iDestruct (ty_gho_own_depth_mono _ d2 d2 (d1 `max` d2) (d1 `max` d2) with "Gho2") as "[$ _]"; lia.
+  Qed.
+
+  Lemma val_own_struct {𝔄l} L (tyl: typel 𝔄l) xs tid ws :
+    fields_val_own tyl tid xs ws ==∗ val_own (struct_ty L tyl) xs tid (MLitV (VTuple ws)).
+  Proof.
+    iIntros "Hs". iMod (fields_val_own_parts L _ _ _ _ (struct_offs L 𝔄l) with "Hs")
+      as (fvs d) "([%Hfvs [%Hlf %Hlw]] & Hcs & ⧖ & Gho)"; [apply length_struct_offs|].
+    iModIntro. iExists _, d, (FVTuple fvs). iSplit.
+    { iPureIntro. split; [done|]. rewrite -ty_fval_eq.
+      change (syn_fval (𝔄:=structₛ L 𝔄l) xs) with
+        (FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) xs))).
+      by rewrite Hfvs. }
+    iFrame "⧖ Gho". rewrite -ty_mty_eq syn_mty_struct.
+    have Hlo := length_struct_offs L 𝔄l.
+    iApply (val_cells_tuple with "Hcs").
+    - have := syn_mty_wf (structₛ L 𝔄l). by rewrite syn_mty_struct.
+    - rewrite length_zip_with length_fmap. lia.
+    - rewrite length_zip_with length_fmap. lia.
   Qed.
 
   (** The value of a pair, from the values of its components. *)
@@ -391,6 +503,38 @@ Section value_rules.
     wp_pure _. iExists -[pinj i a]. iSplitR "Obs".
     - iSplit; [|done]. iExists _. iSplit; [by rewrite eval_path_of_val|]. by iApply val_own_pinj.
     - iApply proph_obs_impl; [|done]=> π. by apply.
+  Qed.
+
+  Local Lemma wp_mk_struct_val {𝔄l} (tyl: typel 𝔄l) (pl: plistc path 𝔄l) ws al tid E Φ :
+    tctx_interp tid (hzip_with (λ _ ty q, q ◁ᵥ ty) tyl pl) al -∗
+    (∀ ws', fields_val_own tyl tid al ws' -∗ WP MkTuple (MLit <$> (ws ++ ws')) @ E {{ Φ }}) -∗
+    WP MkTuple ((MLit <$> ws) ++ pl) @ E {{ Φ }}.
+  Proof.
+    revert ws. induction tyl as [|𝔄 𝔄l ty tyl IH]; intros ws.
+    { iIntros "_ Wp". iSpecialize ("Wp" $! [] with "[//]"). by rewrite !app_nil_r. }
+    destruct pl as [p pl], al as [a al]. iIntros "[p pl] Wp".
+    have ->: MkTuple ((MLit <$> ws) ++ p :: pl) = fill_item (MkTupleCtx (MLitV <$> ws) pl) p.
+    { by rewrite /= -list_fmap_compose. }
+    iApply wp_bind. iApply (wp_val_own with "p"). iIntros (w) "Own".
+    have ->: fill_item (MkTupleCtx (MLitV <$> ws) pl) (MLitV w) =
+      MkTuple ((MLit <$> (ws ++ [w])) ++ pl).
+    { by rewrite /= -list_fmap_compose fmap_app -assoc. }
+    iApply (IH with "pl"). iIntros (ws') "Own'". rewrite -assoc /=.
+    iApply ("Wp" $! (w :: ws')). iFrame.
+  Qed.
+
+  (** A struct value, from its fields (which may contain cells). *)
+  Lemma type_mk_struct_val_instr {𝔄l} L (tyl: typel 𝔄l) (pl: plistc path 𝔄l) el E L' I :
+    IntoPlistc el pl →
+    typed_instr E L' I (hzip_with (λ _ ty q, q ◁ᵥ ty) tyl pl) (MkTuple el)
+      (λ v, +[v ◁ᵥ struct_ty L tyl]) (λ post al, post -[al]).
+  Proof.
+    move=> ->. iIntros (tid post mask iκs al) "_ _ _ _ _ $$ T Obs".
+    iApply (wp_mk_struct_val _ _ [] with "T"). iIntros (ws) "Own".
+    iMod (val_own_struct L with "Own") as "Own".
+    eapply (tac_wp_pure []); [apply (pure_mk_tuple ws)|done|tc_solve|simpl; iApply wp_value].
+    iExists -[al]. iFrame "Obs". iSplit; [|done]. iExists _. iSplit; [by rewrite eval_path_of_val|].
+    done.
   Qed.
 
   (** A pair value, from its components (which may contain cells). *)

@@ -836,19 +836,27 @@ Definition enum_mty EL ms := if decide (el_wf EL ms) then el_mty EL ms else el_m
 
 - `StructLty {𝔄l} (L: struct_layout) (lts: hlist lty 𝔄l) : lty (structₛ L 𝔄l)` replaces
   `ProdLty`. This is a nested inductive through `hlist` (Coq accepts it); the `Fixpoint`s
-  recurse on `lts` by an inner `fix`, and the proofs use a custom induction principle with
-  an `HForall` hypothesis.
-- Refinements: `prfn_struct (structₛ L 𝔄l) := plist (λ 𝔅, prfn 𝔅) 𝔄l`; patterns:
-  `PatStruct (ps: list lpat)`; paths: `list nat` (field `j`; `0` below pointers and sums).
+  recurse on `lts` through `hmap`-like functions or an inner `fix`, and the proofs use a
+  custom induction principle with an `HForall` hypothesis.
+- Refinements: `prfn_struct (structₛ L 𝔄l) := plist (λ 𝔅, prfn 𝔅) 𝔄l` (by a nested
+  recursion on the list); patterns: `PatStruct (ps: list lpat)`; paths: `list nat` (field
+  `j`; `0` below pointers and sums).
 - `struct_node L children r l := ([∗ hlist] child_j r_j (l +ₗ struct_off L 𝔄l j)) ∗
-  pad_own l (struct_mty …)`, where `pad_own l m` owns, byte by byte, the bytes of `m` that
-  are in no field. Mode-independent, as `prod_node`.
+  pad_own l (struct_fields L 𝔄l) (struct_size L 𝔄l)`. Mode-independent, as `prod_node`.
 - Context step `PField L (lts: hlist lty 𝔄l) (j: fin (length 𝔄l)) K`, at offset
   `struct_off L 𝔄l j`; `pctx_plug (PField L lts j K) lt = StructLty L (hlist_set lts j
   (pctx_plug K lt))` (the entry `j` of `lts` is ignored, as for `SumLty`).
 - Unfolding: `OfTy (struct_ty L tyl)` is `ltype_eq` to `StructLty L (hmap OfTy tyl)`
   (owned), and behind a unique borrow by the compound body (as `prod_ofty_unfold_uniq`).
   `Π!` below unique borrows comes for free.
+- Types (L2a): `struct_ty L tyl := struct_of L (fields_ty tyl)`, where `fields_ty tyl :
+  type (Π! 𝔄l)` carries the ghost parts of the fields (`Π!` becomes logical) and
+  `struct_of L` the bytes of `structₛ L 𝔄l`.
+- Rejected alternative: a cons-list of field places inside `lty` at the logical `Π!`
+  (`FieldsLty o lt lts`, under a `StructLty L` that owns the padding), which would keep the
+  binary `ProdLty` proofs. A chain node owns the bytes of its fields while its folded type
+  (at `Π!`) owns none, so the generic folding lemmas (by induction on `lt`, "a place gives the
+  leaf of its folded type") would be false on chain nodes.
 
 ### 7.5 Enums (L3)
 
@@ -915,3 +923,31 @@ Definition enum_mty EL ms := if decide (el_wf EL ms) then el_mty EL ms else el_m
   `place_deep.v`, `place_pshr.v`, `place_res.v`), through `wp_get_discr_sum`
   (`bytes_layout.v`) and `wp_get_discr_sum_guarded` / `wp_get_discr_shr_view`
   (`place_pshr.v`); examples `get_some_first.v`, `pcell_parts.v`, `place_pshr.v` updated.
+
+## Outcome: L2a (structs: layouts and types; branch `proto/layout-l2`)
+
+- **Layouts** (`lang/minirust.v`): `struct_layout` (`SL offs size align`), `sl_mty`,
+  `sl_wf` (decidable), `c_layout` (`repr(C)`, aligned offsets, `lcm` alignment, size rounded
+  up; `c_layout_wf`), `packed_layout` (`repr(packed)`), `struct_lay L ms` (the effective
+  layout: `L` if `sl_wf L ms`, else `packed_layout ms`), `struct_mty`. The fallback is the
+  packed layout, not `c_layout`: it depends only on the field *sizes*
+  (`struct_lay_sizes`), so `syn_bincl` needs no alignment conjunct. Alignment conditions in
+  `mty_wf` are left for L5 (with the alignment UB); `c_layout` computes aligned layouts
+  for the examples. Tests (`minirust_tests.v`): `c_layout [i32; u8; i32] = SL [0; 4; 8] 12
+  4`, and the well-formedness of `c_layout` and of a reordering layout, by computation.
+- **Syntactic type** `structₛ L 𝔄l` (`prophecy/syn_type.v`, last constructor): `plist`
+  interpretation, `syn_mty = struct_mty L (syn_mty <$> 𝔄l)`, structural `syn_val`/`syn_fval`;
+  `struct_consₛ`/`struct_mapₛ`. `bytes_layout.v`: `struct_offs`, `struct_size`,
+  `struct_fields`, `syn_fbytes_struct` (plain padding, `fields_fbytes` at the offsets),
+  `syn_bincl_struct_map`.
+- **Contents** (`own.v`): `pad_own`, `gconts_union`, `gcont_tuple` (the contents of a tuple
+  of any layout: its fields at their offsets and the padding; via `frepr_union_l` and
+  `gcells_disj_list` of `gcont.v`), `fields_bytes_own`, `bytes_own_struct`.
+  `value_ctx.v`: `val_cells_tuple`, `fields_val_own`, `val_own_struct`,
+  `type_mk_struct_val_instr`.
+- **Types** (`typing/struct.v`): `fields_nil_ty`, `fields_cons_ty`, `fields_ty`
+  (`type (Π! 𝔄l)`, ghost parts), `struct_of L`, `struct_ty L tyl := struct_of L (fields_ty
+  tyl)`, `cstructₛ`/`cstruct_ty`; `Copy`, `Send`, `SendUpd`, `Sync`, `ResOwn`, resolution,
+  `struct_subtype`/`struct_eqtype` (along `struct_mapₛ`), non-expansiveness and
+  contractiveness, outlives.
+- `prod`/`xprod` are untouched in L2a; L2b replaces them.

@@ -135,6 +135,8 @@ Proof.
      + apply (FIX 𝔄).
    - destruct x as [[??]?]. clear FIX; done.
    - apply (FIX 𝔄).
+   - induction l; first by (clear FIX; done). destruct x. apply proph_dep_constr2.
+      + apply FIX. + apply IHl.
 Qed.
 
 (** * Prophecy Log *)

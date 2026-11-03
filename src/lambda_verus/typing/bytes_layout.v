@@ -366,6 +366,17 @@ Proof.
     replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
     destruct (to_xsum x) as [i x0]. simpl. rewrite !psum_map1_pinj !to_xsum_pinj.
     intros (w & Hw & ->)%fmap_Some_1. by rewrite (Hall i x0 w Hw).
+  - intros (vs & Hvs & ->)%fmap_Some_1.
+    assert (∀ vs, mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) x)) = Some vs →
+      mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) x)) = Some (map fv_lift vs)) as Hall.
+    { clear Hvs vs. induction l as [|𝔄 l IH]; intros vs.
+      { simpl. by intros [= <-]. }
+      destruct x as [x xl]. simpl.
+      destruct (syn_val x) as [w|] eqn:Hw; [|done]. simpl.
+      destruct (mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) xl))) as [ws|] eqn:Hws;
+        [|done].
+      simpl. intros [= <-]. by rewrite (FIX _ _ _ Hw) (IH xl ws Hws). }
+    clear FIX. by rewrite (Hall vs Hvs).
 Qed.
 
 Lemma syn_fval_pinj {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) :
@@ -671,3 +682,198 @@ Proof.
   split; [apply _|apply _|apply syn_bytes_pres_prod_right_id|apply syn_bincl_prod_right_id].
 Qed.
 
+
+(** * Structs: the layout of [structₛ L 𝔄l] is [struct_lay L (syn_mty <$> 𝔄l)] *)
+
+Definition struct_offs (L: struct_layout) (𝔄l: syn_typel) : list nat :=
+  (struct_lay L (syn_mty <$> 𝔄l)).(sl_offs).
+Definition struct_size (L: struct_layout) (𝔄l: syn_typel) : nat :=
+  (struct_lay L (syn_mty <$> 𝔄l)).(sl_size).
+(** The fields of the MiniRust type, with their offsets. *)
+Definition struct_fields (L: struct_layout) (𝔄l: syn_typel) : list (nat * mty) :=
+  zip (struct_offs L 𝔄l) (syn_mty <$> 𝔄l).
+
+Lemma syn_mty_struct L 𝔄l :
+  syn_mty (structₛ L 𝔄l) =
+    MTuple (struct_fields L 𝔄l) (struct_size L 𝔄l) (struct_lay L (syn_mty <$> 𝔄l)).(sl_align).
+Proof. done. Qed.
+
+Lemma syn_bsize_struct L 𝔄l : syn_bsize (structₛ L 𝔄l) = struct_size L 𝔄l.
+Proof. done. Qed.
+
+Lemma length_struct_offs L 𝔄l : length (struct_offs L 𝔄l) = length 𝔄l.
+Proof. rewrite /struct_offs length_struct_lay ?length_fmap //. apply syn_mty_wf_list. Qed.
+
+Lemma struct_fields_bounds L 𝔄l :
+  Forall (λ f, f.1 + mty_size f.2 ≤ struct_size L 𝔄l)%nat (struct_fields L 𝔄l).
+Proof.
+  have Hwf := syn_mty_wf (structₛ L 𝔄l). rewrite syn_mty_struct in Hwf.
+  by apply mty_wf_tuple_inv in Hwf as (_ & ? & _).
+Qed.
+
+Lemma struct_fields_disjoint L 𝔄l : fields_disjoint (struct_fields L 𝔄l).
+Proof.
+  have Hwf := syn_mty_wf (structₛ L 𝔄l). rewrite syn_mty_struct in Hwf.
+  by apply mty_wf_tuple_inv in Hwf as (? & _ & _).
+Qed.
+
+(** The effective layout of a well-formed [L] is [L]. *)
+Lemma struct_offs_wf L 𝔄l : sl_wf L (syn_mty <$> 𝔄l) → struct_offs L 𝔄l = L.(sl_offs).
+Proof. intros. by rewrite /struct_offs struct_lay_wf_eq. Qed.
+
+(** Maps preserving the sizes of the fields preserve the layout. *)
+Lemma struct_lay_bsize L 𝔄l 𝔅l :
+  syn_bsize <$> 𝔄l = syn_bsize <$> 𝔅l →
+  struct_lay L (syn_mty <$> 𝔄l) = struct_lay L (syn_mty <$> 𝔅l).
+Proof.
+  intros Hs. apply struct_lay_sizes; [apply syn_mty_wf_list|apply syn_mty_wf_list|].
+  by rewrite -!list_fmap_compose.
+Qed.
+
+(** The fancy bytes of the fields of a struct at the offsets [offs]. *)
+Fixpoint fields_fbytes (R: gmap positive (mty * list positive)) (𝔄l: syn_typel) :
+    list nat → plist (~~) 𝔄l → list (positive + abyte) → Prop :=
+  match 𝔄l with
+  | [] => λ _ _ _, True
+  | 𝔄 :: 𝔄l' => λ offs xs fbs,
+      match offs with
+      | [] => False
+      | o :: offs' => syn_fbytes R (phd xs) (list_slice o (syn_bsize 𝔄) fbs) ∧
+          fields_fbytes R 𝔄l' offs' (ptl xs) fbs
+      end
+  end.
+
+Lemma fields_frepr_iff R 𝔄l offs (xs : plist (~~) 𝔄l) fbs :
+  length offs = length 𝔄l →
+  Forall (λ f, f.1 + mty_size f.2 ≤ length fbs)%nat (zip offs (syn_mty <$> 𝔄l)) →
+  (∃ fvs, mapM id (plist_to_list (pmap (λ _ x, syn_fval x) xs)) = Some fvs ∧
+     ∀ k f fv, zip offs (syn_mty <$> 𝔄l) !! k = Some f → fvs !! k = Some fv →
+       frepr R f.2 (list_slice f.1 (mty_size f.2) fbs) fv) ↔
+  fields_fbytes R 𝔄l offs xs fbs.
+Proof.
+  revert offs. induction 𝔄l as [|𝔄 𝔄l IH]; intros [|o offs] Hlen Hb; simpl in *; try lia.
+  - split; [done|]. intros _. exists []. split; [done|]. intros ???. by rewrite lookup_nil.
+  - destruct xs as [x xs]. simpl. inversion Hb as [|? ? Hb0 Hbs]; subst. simpl in Hb0.
+    rewrite -(IH xs offs); [|lia|done]. split.
+    + intros (fvs & Hfvs & Hfs).
+      destruct (syn_fval x) as [fv|] eqn:Hfv; [|done]. simpl in Hfvs.
+      destruct (mapM id _) as [fvs'|] eqn:Hfvs'; [|done]. simpl in Hfvs. injection Hfvs as <-.
+      split.
+      * split; [rewrite /list_slice length_take length_drop; rewrite /syn_bsize; lia|].
+        exists fv. split; [done|]. by apply (Hfs 0%nat (o, syn_mty 𝔄) fv).
+      * exists fvs'. split; [done|]. intros k f fv' Hk Hfv'. by apply (Hfs (S k)).
+    + intros [(_ & fv & Hfv & Hrep) (fvs & Hfvs & Hfs)].
+      exists (fv :: fvs). rewrite Hfv /= Hfvs /=. split; [done|].
+      intros [|k] f fv'; simpl; intros Hk Hfv'; simplify_eq; [done|]. by apply (Hfs k).
+Qed.
+
+(** The fancy bytes of a struct: the plain bytes outside its fields, and the fancy bytes of
+    the fields at their offsets. *)
+Lemma syn_fbytes_struct R L 𝔄l (xs : ~~(structₛ L 𝔄l)) fbs :
+  syn_fbytes R xs fbs ↔
+  length fbs = struct_size L 𝔄l ∧
+  (∀ i fb, fbs !! i = Some fb → ¬ in_field (struct_fields L 𝔄l) i → is_plain fb) ∧
+  fields_fbytes R 𝔄l (struct_offs L 𝔄l) xs fbs.
+Proof.
+  rewrite /syn_fbytes syn_bsize_struct syn_mty_struct.
+  change (syn_fval (𝔄:=structₛ L 𝔄l) xs) with
+    (FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) xs))).
+  have Hlo := length_struct_offs L 𝔄l. have Hb := struct_fields_bounds L 𝔄l.
+  have Hlf : length (struct_fields L 𝔄l) = length 𝔄l.
+  { rewrite /struct_fields length_zip_with length_fmap. lia. }
+  split.
+  - intros (Hlen & fv & Hfv & Hrep). apply fmap_Some in Hfv as (fvs & Hfvs & ->).
+    apply frepr_tuple_iff in Hrep as (_ & _ & Hfs & Hpad).
+    split_and!; [done|done|]. apply fields_frepr_iff; [done| |by exists fvs].
+    eapply Forall_impl; [exact Hb|]. simpl. lia.
+  - intros (Hlen & Hpad & Hfs). apply fields_frepr_iff in Hfs as (fvs & Hfvs & Hfs); [|done|];
+      last by (eapply Forall_impl; [exact Hb|]; simpl; lia).
+    split; [done|]. exists (FVTuple fvs). rewrite Hfvs. split; [done|].
+    apply frepr_tuple_iff. split_and!; [done| |done|done].
+    apply mapM_Some in Hfvs. apply Forall2_length in Hfvs.
+    by rewrite -Hfvs length_plist_to_list.
+Qed.
+
+Lemma in_field_ranges fs fs' i :
+  field_ranges fs = field_ranges fs' → in_field fs i ↔ in_field fs' i.
+Proof.
+  intros Heq. rewrite /in_field. split.
+  - intros ([o m] & (k & Hk)%elem_of_list_lookup & Hi).
+    have Hk' : field_ranges fs !! k = Some (o, mty_size m) by rewrite /field_ranges list_lookup_fmap Hk.
+    rewrite Heq /field_ranges list_lookup_fmap in Hk'.
+    apply fmap_Some in Hk' as ([o' m'] & Hk'' & [= -> Hs]).
+    exists (o', m'). split; [by eapply elem_of_list_lookup_2|]. simpl in *. lia.
+  - intros ([o m] & (k & Hk)%elem_of_list_lookup & Hi).
+    have Hk' : field_ranges fs' !! k = Some (o, mty_size m) by rewrite /field_ranges list_lookup_fmap Hk.
+    rewrite -Heq /field_ranges list_lookup_fmap in Hk'.
+    apply fmap_Some in Hk' as ([o' m'] & Hk'' & [= -> Hs]).
+    exists (o', m'). split; [by eapply elem_of_list_lookup_2|]. simpl in *. lia.
+Qed.
+
+Lemma bsize_plist2_bincl {𝔄l 𝔅l} (fl: plist2 (λ 𝔄 𝔅, 𝔄 →ₛ 𝔅) 𝔄l 𝔅l) :
+  (∀ i, syn_bincl (fl -2!! i)) → syn_bsize <$> 𝔄l = syn_bsize <$> 𝔅l.
+Proof.
+  revert 𝔅l fl. induction 𝔄l as [|𝔄 𝔄l IH]; intros [|𝔅 𝔅l] fl Hb; [done|done|done|].
+  destruct fl as [f fl]. simpl. f_equal; [apply (Hb 0%fin)|].
+  apply (IH _ fl). intros i. apply (Hb (FS i)).
+Qed.
+
+Lemma fields_fbytes_map R L {𝔄l 𝔅l} (fl: plist2 (λ 𝔄 𝔅, 𝔄 →ₛ 𝔅) 𝔄l 𝔅l) offs xs fbs :
+  (∀ i, syn_bincl (fl -2!! i)) →
+  fields_fbytes R 𝔄l offs xs fbs ↔ fields_fbytes R 𝔅l offs (struct_mapₛ L fl ~~$ₛ xs) fbs.
+Proof.
+  revert 𝔅l fl offs. induction 𝔄l as [|𝔄 𝔄l IH]; intros [|𝔅 𝔅l] fl offs Hb; [done|done|done|].
+  destruct fl as [f fl], xs as [x xs], offs as [|o offs]; [done|]. simpl.
+  have Hb0 : syn_bincl f := Hb 0%fin. destruct Hb0 as [Hs [Hf _]]. rewrite -Hs (Hf x).
+  f_equiv. apply IH. intros i. apply (Hb (FS i)).
+Qed.
+
+Lemma mcells_tuple_cons o m offs ms sz al fv fvs :
+  mcells (MTuple (zip (o :: offs) (m :: ms)) sz al) (FVTuple (fv :: fvs)) =
+  mshift o (mcells m fv) ++ mcells (MTuple (zip offs ms) sz al) (FVTuple fvs).
+Proof. by rewrite !mcells_tuple imap_cons. Qed.
+
+Lemma fields_mcells_map R L {𝔄l 𝔅l} (fl: plist2 (λ 𝔄 𝔅, 𝔄 →ₛ 𝔅) 𝔄l 𝔅l) offs xs fbs fvs fvs' sz al :
+  (∀ i, syn_bincl (fl -2!! i)) → fields_fbytes R 𝔄l offs xs fbs →
+  mapM id (plist_to_list (pmap (λ _ x, syn_fval x) xs)) = Some fvs →
+  mapM id (plist_to_list (pmap (λ _ x, syn_fval x) (struct_mapₛ L fl ~~$ₛ xs))) = Some fvs' →
+  mcells (MTuple (zip offs (syn_mty <$> 𝔄l)) sz al) (FVTuple fvs) =
+  mcells (MTuple (zip offs (syn_mty <$> 𝔅l)) sz al) (FVTuple fvs').
+Proof.
+  revert 𝔅l fl offs fvs fvs'. induction 𝔄l as [|𝔄 𝔄l IH];
+    intros [|𝔅 𝔅l] fl offs fvs fvs' Hb Hfb Hfvs Hfvs'; [|done|done|].
+  { simpl in Hfvs, Hfvs'. injection Hfvs as <-. injection Hfvs' as <-.
+    by rewrite !mcells_tuple. }
+  destruct fl as [f fl], xs as [x xs], offs as [|o offs]; [done|]. simpl in Hfb, Hfvs, Hfvs'.
+  destruct Hfb as [Hfb0 Hfb].
+  destruct (syn_fval x) as [fv|] eqn:Hfv; [|done]. simpl in Hfvs.
+  destruct (mapM id _) as [fvt|] eqn:Hfvt; [|done]. injection Hfvs as <-.
+  destruct (syn_fval (f ~~$ₛ x)) as [fv'|] eqn:Hfv'; [|done]. simpl in Hfvs'.
+  destruct (mapM id (plist_to_list (pmap _ (struct_mapₛ L fl ~~$ₛ xs)))) as [fvt'|] eqn:Hfvt';
+    [|done]. injection Hfvs' as <-.
+  rewrite !fmap_cons !mcells_tuple_cons. have Hb0 : syn_bincl f := Hb 0%fin. destruct Hb0 as [_ [_ Hc]].
+  rewrite (Hc x R _ fv fv' Hfb0) //. f_equal. eapply IH; [|done..]. intros i. apply (Hb (FS i)).
+Qed.
+
+Lemma syn_bincl_struct_map L {𝔄l 𝔅l} (fl: plist2 (λ 𝔄 𝔅, 𝔄 →ₛ 𝔅) 𝔄l 𝔅l) :
+  (∀ i, syn_bincl (fl -2!! i)) → syn_bincl (struct_mapₛ L fl).
+Proof.
+  intros Hb. have Hlay := struct_lay_bsize L _ _ (bsize_plist2_bincl fl Hb).
+  have Hoffs : struct_offs L 𝔄l = struct_offs L 𝔅l by rewrite /struct_offs Hlay.
+  have Hsz : struct_size L 𝔄l = struct_size L 𝔅l by rewrite /struct_size Hlay.
+  have Hrng : field_ranges (struct_fields L 𝔄l) = field_ranges (struct_fields L 𝔅l).
+  { rewrite /struct_fields !field_ranges_zip Hoffs -!list_fmap_compose.
+    by rewrite (bsize_plist2_bincl fl Hb). }
+  split; [by rewrite !syn_bsize_struct|]. split.
+  - intros xs R fbs. rewrite !syn_fbytes_struct -Hsz -Hoffs (fields_fbytes_map R L fl) //.
+    setoid_rewrite (in_field_ranges _ _ _ Hrng). done.
+  - intros xs R fbs fv fv' Hfb Hx Hx'. apply syn_fbytes_struct in Hfb as (_ & _ & Hfb).
+    change (syn_fval (𝔄:=structₛ L 𝔄l) xs) with
+      (FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) xs))) in Hx.
+    change (syn_fval (𝔄:=structₛ L 𝔅l) (struct_mapₛ L fl ~~$ₛ xs)) with
+      (FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) (struct_mapₛ L fl ~~$ₛ xs))))
+      in Hx'.
+    apply fmap_Some in Hx as (fvs & Hfvs & ->). apply fmap_Some in Hx' as (fvs' & Hfvs' & ->).
+    rewrite !syn_mty_struct /struct_fields -Hoffs -Hsz -Hlay.
+    by eapply fields_mcells_map.
+Qed.

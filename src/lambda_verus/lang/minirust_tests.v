@@ -124,3 +124,15 @@ Section tests.
     iIntros "!> Hl2". iApply "HΦ". iFrame.
   Qed.
 End tests.
+
+(** The [repr(C)] layout of [(i32, u8, i32)]: offsets 0, 4, 8, size 12, alignment 4; it is
+    well formed, so a struct with this layout has it ([struct_lay_wf_eq]). *)
+Lemma c_layout_test : c_layout [MInt i32; MInt u8; MInt i32] = SL [0; 4; 8]%nat 12 4.
+Proof. reflexivity. Qed.
+
+Lemma c_layout_test_wf : sl_wf (c_layout [MInt i32; MInt u8; MInt i32]) [MInt i32; MInt u8; MInt i32].
+Proof. split; [done|]. apply mty_wfb_correct. by vm_compute. Qed.
+
+(** An explicit layout that reorders the fields of [(u8, i32)]: the [i32] first. *)
+Lemma explicit_layout_wf : sl_wf (SL [4; 0]%nat 8 4) [MInt u8; MInt i32].
+Proof. split; [done|]. apply mty_wfb_correct. by vm_compute. Qed.
