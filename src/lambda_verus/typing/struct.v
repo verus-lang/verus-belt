@@ -350,6 +350,60 @@ Section typing.
     iModIntro. iApply proph_obs_eq; [|done]=>/= π. destruct x; trivial.
   Qed.
 
+  (** Subtyping, field-wise. *)
+  Local Lemma struct_gho_incl {𝔄l 𝔅l} E L' L (tyl: typel 𝔄l) (tyl': typel 𝔅l) fl :
+    subtypel E L' tyl tyl' fl →
+    llctx_interp L' -∗ □ (elctx_interp E -∗
+      (ty_lft (struct_ty L tyl') ⊑ ty_lft (struct_ty L tyl)) ∗
+      (□ ∀x d g tid, (struct_ty L tyl).(ty_gho_own) x d g tid -∗
+         (struct_ty L tyl').(ty_gho_own) (struct_mapₛ L fl ~~$ₛ x) d g tid ∗
+         ((struct_ty L tyl').(ty_gho_own) (struct_mapₛ L fl ~~$ₛ x) d g tid -∗
+           (struct_ty L tyl).(ty_gho_own) x d g tid)) ∗
+      (□ ∀x d g tid, (struct_ty L tyl).(ty_gho_pers) x d g tid -∗
+         (struct_ty L tyl').(ty_gho_pers) (struct_mapₛ L fl ~~$ₛ x) d g tid) ∗
+      (□ ∀κ x d g tid, (struct_ty L tyl).(ty_shr) κ x d g tid -∗
+         (struct_ty L tyl').(ty_shr) κ (struct_mapₛ L fl ~~$ₛ x) d g tid)).
+  Proof.
+    induction 1 as [|𝔄 𝔅 𝔄l 𝔅l ty ty' tyl tyl' f fl Sub _ IH].
+    - iIntros "_ !> _". iSplit; [by iApply lft_incl_refl|]. iSplit; [|iSplit].
+      + iIntros "!>" (x d g tid) "_". iSplit; [done|]. by iIntros.
+      + iIntros "!>" (x d g tid) "_". done.
+      + iIntros "!>" (κ x d g tid) "_". done.
+    - iIntros "L". iDestruct (Sub with "L") as "#Sub". iDestruct (IH with "L") as "#IH".
+      iIntros "!> #E".
+      iDestruct ("Sub" with "E") as "(_ & #Lft & #InOwn & #InOwnPers & #InShr)".
+      iDestruct ("IH" with "E") as "(#Lft' & #InOwn' & #InOwnPers' & #InShr')".
+      iSplit; [|iSplit; [|iSplit]]=>/=.
+      + rewrite !lft_intersect_list_app. by iApply lft_intersect_mono.
+      + iIntros "!>" ([x xs] d g tid) "[A B] /=".
+        iDestruct ("InOwn" with "A") as "[A1 A2]".
+        iDestruct ("InOwn'" with "B") as "[B1 B2]".
+        iFrame "A1 B1". iIntros "[A3 B3]".
+        iDestruct ("A2" with "A3") as "$". iApply ("B2" with "B3").
+      + iIntros "!>" ([x xs] d g tid) "[A B] /=".
+        iSplitL "A"; [by iApply "InOwnPers"|by iApply "InOwnPers'"].
+      + iIntros "!>" (κ [x xs] d g tid) "[A B] /=".
+        iSplitL "A"; [by iApply "InShr"|by iApply "InShr'"].
+  Qed.
+
+  Lemma struct_subtype {𝔄l 𝔅l} E L' L (tyl: typel 𝔄l) (tyl': typel 𝔅l) fl :
+    subtypel E L' tyl tyl' fl → subtype E L' (struct_ty L tyl) (struct_ty L tyl') (struct_mapₛ L fl).
+  Proof.
+    move=> Subs. iIntros "L".
+    iDestruct (struct_gho_incl E L' L with "L") as "#Gho"; [done|].
+    iDestruct (subtypel_llctx_lookup with "L") as "#InTyl"; [done|].
+    iIntros "!> #E".
+    iAssert ⌜∀ i, syn_bincl (fl -2!! i)⌝%I as %Hb.
+    { iSpecialize ("InTyl" with "E"). rewrite bi.pure_forall. iIntros (i).
+      by iDestruct ("InTyl" $! i) as "[$ _]". }
+    iSplit; [iPureIntro; by apply syn_bincl_struct_map|]. by iApply "Gho".
+  Qed.
+
+  Lemma struct_eqtype {𝔄l 𝔅l} E L' L (tyl: typel 𝔄l) (tyl': typel 𝔅l) fl gl :
+    eqtypel E L' tyl tyl' fl gl →
+    eqtype E L' (struct_ty L tyl) (struct_ty L tyl') (struct_mapₛ L fl) (struct_mapₛ L gl).
+  Proof. move=> /eqtypel_subtypel[??]. by split; apply struct_subtype. Qed.
+
   Lemma struct_outlives_E_elctx_sat {𝔄l} E L' L (tyl: typel 𝔄l) κ:
     elctx_sat E L' (tyl_outlives_E tyl κ) → elctx_sat E L' (ty_outlives_E (struct_ty L tyl) κ).
   Proof.
@@ -359,4 +413,5 @@ Section typing.
 End typing.
 
 Global Hint Resolve struct_resolve | 5 : lrust_typing.
-Global Hint Resolve struct_resolve_just struct_outlives_E_elctx_sat : lrust_typing.
+Global Hint Resolve struct_resolve_just struct_subtype struct_eqtype
+  struct_outlives_E_elctx_sat : lrust_typing.
