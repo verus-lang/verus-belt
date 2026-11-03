@@ -1158,8 +1158,9 @@ Section pctx.
       [pctx_retype K 𝔅'] is the context [K] with a hole of type [𝔅'] (the same
       siblings and owned pointers), a context for the root type [pctx_root K 𝔅'].
       [pctx_reset K x y] replaces the value of the hole of [x] by [y] (of the new
-      type). Used when the type of a subplace changes, e.g. when a value is moved out
-      of it (it becomes uninitialized) or written into it. *)
+      type). Used when the type of a subplace changes, by a strong write ([pctx_wty]
+      of [place_write.v]; a move leaves the moved-out leaf [Moved ty] instead, without
+      retyping). *)
   Fixpoint pctx_root {𝔅 𝔄} (K: pctx 𝔅 𝔄) (𝔅': syn_type) : syn_type :=
     match K with
     | PHole => 𝔅'
