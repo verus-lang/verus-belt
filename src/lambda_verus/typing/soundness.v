@@ -17,13 +17,14 @@ Class typePreG Σ := PreTypeG {
   #[global] type_preG_frac_logicG :: frac_logicG Σ;
   #[global] type_preG_ecInv_logicΣ :: ecInv_logicG Σ;
   #[global] type_preG_agree_pairΣ :: inG Σ (dfrac_agreeR (leibnizO nat));
-  #[global] type_preG_lstate_ghost_varG :: ghost_varG Σ ltype_state
+  #[global] type_preG_lstate_ghost_varG :: ghost_varG Σ ltype_state;
+  #[global] type_preG_gcellsGpreS :: gcellsGpreS Σ
 }.
 
 Definition typeΣ : gFunctors :=
   #[lrustΣ; llft_logicΣ; cancellable_na_invariants.na_invΣ;
     GFunctor (constRF fracR); uniqΣ; prophΣ; frac_logicΣ; ecInv_logicΣ;
-    GFunctor ((dfrac_agreeR (leibnizO (nat)))); ghost_varΣ ltype_state].
+    GFunctor ((dfrac_agreeR (leibnizO (nat)))); ghost_varΣ ltype_state; gcellsΣ].
 Global Instance subG_typePreG {Σ} : subG typeΣ Σ → typePreG Σ.
 Proof. solve_inG. Qed.
 
@@ -53,8 +54,10 @@ Section type_soundness.
     apply: lrust_adequacy=>?. iIntros "£ #TIME".
     iMod (llft_alloc with "£") as (?) "#LFT".
     iMod proph_init as (?) "#PROPH"; first done.
-    iMod uniq_init as (?) "#UNIQ"; first done. set (Htype := TypeG Σ _ _ _ _ _ _ _ _).
-    iMod (invctx_alloc ⊤) as (tid) "Hinvctx".
+    iMod uniq_init as (?) "#UNIQ"; first done.
+    iMod (gcells_ctx_alloc ⊤) as (?) "#GC".
+    set (Htype := TypeG Σ _ _ _ _ _ _ _ _ _).
+    iMod (invctx_alloc ⊤ with "GC") as (tid) "Hinvctx".
     wp_bind (of_val main). iApply (wp_wand with "[Hinvctx]").
     iApply (Hmain Htype [] [] (InvCtx [] static AtomicClosed)
         tid (λ xl mask π, True) ⊤ [] -[]

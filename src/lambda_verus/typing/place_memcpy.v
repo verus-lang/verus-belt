@@ -33,7 +33,7 @@ From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own place_write place_read.
-From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own shr_bor bytes_layout value_ctx product uninit freeable_util place_puniq.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own shr_bor bytes_layout value_ctx product uninit freeable_util place_puniq gmb_cells.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -96,8 +96,9 @@ Section memcpy.
     iDestruct (cumulative_time_receipt_sep 1 (S M) with "⧗") as "[⧗c ⧗k]".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗c ⧖m") as "[_ £]";
       [solve_ndisj|].
-    iDestruct (lc_weaken ((3 * Dd + 5) + (1 + (1 + Dd * (Dd + 1)))) with "£")
-      as "[£a [£r £s]]"; [rewrite /advance_credits; nia|].
+    iDestruct (lc_weaken ((3 * Dd + 5) + (1 + (1 + Dd * (Dd + 1))) + 1) with "£")
+      as "[[£a [£r £s]] £f]"; [rewrite /advance_credits; nia|].
+    iDestruct (invctx_interp_gcells with "I") as "[#GC I]".
     iApply (wp_vplace_wacc _ Kd tyd ty Kd' fd with "LFT PROPH UNIQ GAd A £a ⧖d ⧗d Ownd");
       [done|solve_ndisj|done|].
     iIntros (ld dh gh [Hdh Hgh]) "Ptd Ghod Cld".
@@ -121,7 +122,7 @@ Section memcpy.
     iIntros (ls G2 dd dhs ghs ([w Hw'] & ? & ?)) "#Guard G2 £dd #Ghos Cls".
     (* Copy the bytes. *)
     iApply wp_fupd.
-    iApply (wp_bytes_own_forget with "Ptd"); [solve_ndisj|]. iIntros (bsd) "Hbsd %Hlend".
+    iApply (wp_bytes_own_forget with "GC £f Ptd"); [solve_ndisj|]. iIntros (bsd) "Hbsd %Hlend".
     iApply (wp_memcopy_guarded_gen _ ld ls bsd (ty_bsize ty) G2 (cbytes ty (pctx_get Ks xs₀) ls)
       (ty_bytes ty (pctx_get Ks xs₀)) dd with "[$Hbsd $G2 $£dd]");
       [solve_ndisj|by rewrite Hlend (pctx_wty_bsize _ _ _ _ _ Hw)|intros ?; apply ty_bytes_length|..].
@@ -195,8 +196,9 @@ Section memcpy.
     iDestruct (cumulative_time_receipt_sep 1 (S M) with "⧗") as "[⧗c ⧗k]".
     iMod (cumulative_persistent_time_receipt_get_credits with "TIME ⧗c ⧖m") as "[_ £]";
       [solve_ndisj|].
-    iDestruct (lc_weaken ((3 * Dd + 5) + (1 + (1 + Dd * (Dd + 1)))) with "£")
-      as "[£a [£r £s]]"; [rewrite /advance_credits; nia|].
+    iDestruct (lc_weaken ((3 * Dd + 5) + (1 + (1 + Dd * (Dd + 1))) + 1) with "£")
+      as "[[£a [£r £s]] £f]"; [rewrite /advance_credits; nia|].
+    iDestruct (invctx_interp_gcells with "I") as "[#GC I]".
     iApply (wp_vplace_wacc _ Kd tyd ty Kd' fd with "LFT PROPH UNIQ GAd A £a ⧖d ⧗d Ownd");
       [done|solve_ndisj|done|].
     iIntros (ld dh gh [Hdh Hgh]) "Ptd Ghod Cld".
@@ -214,7 +216,7 @@ Section memcpy.
     have ?: TCEq (to_val (pctx_vexpr Ks ps)) None by rewrite pctx_vexpr_to_val; constructor.
     iApply (wp_persistent_time_receipt with "TIME ⧖s"); [solve_ndisj|].
     iIntros "£s _".
-    iDestruct (lc_weaken (3 * Ds + 5) with "£s") as "£s";
+    iDestruct (lc_weaken (3 * Ds + 5 + 1) with "£s") as "[£s £m]";
       [rewrite /advance_credits; nia|].
     iApply (wp_vplace_wacc _ Ks ty (↯ (ty_bsize ty)) (pctx_retype Ks (uninitₛ (ty_bsize ty)))
       (pctx_reset Ks) with "LFT PROPH UNIQ GBs B £s ⧖s ⧗s Owns");
@@ -222,12 +224,12 @@ Section memcpy.
     iIntros (ls dhs ghs [Hdhs Hghs]) "Pts Ghos Cls".
     (* Move the bytes. *)
     iApply wp_fupd.
-    iApply (wp_bytes_own_forget with "Ptd"); [solve_ndisj|]. iIntros (bsd) "Hbsd %Hlend".
-    iEval (rewrite /cbytes bytes_own_brepr) in "Pts".
-    iDestruct "Pts" as (fbs fv) "(Hfbs & [%Hlenf %Hfv] & #Hrep)".
-    iApply (wp_fbytes_memcopy with "[$Hbsd $Hfbs]");
-      [solve_ndisj|rewrite Hlend; by rewrite -(pctx_wty_bsize _ _ _ _ _ Hw)|done|].
-    iIntros "!>" (bs) "(Hfbsd & Hbs & %Hlen)".
+    iApply (wp_bytes_own_forget with "GC £f Ptd"); [solve_ndisj|]. iIntros (bsd) "Hbsd %Hlend".
+    iDestruct (bytes_own_fval with "Pts") as %[fv Hfv].
+    iEval (rewrite /cbytes (bytes_own_gcont _ _ _ fv) //) in "Pts".
+    iApply (wp_gcont_memcopy with "[$GC $£m $Pts $Hbsd]");
+      [solve_ndisj|apply ty_mty_wf|rewrite Hlend; by rewrite -(pctx_wty_bsize _ _ _ _ _ Hw)|].
+    iIntros "!>" (bs) "(Hbs & %Hlen & Cd)".
     iMod (fupd_mask_subseteq (⊤ ∖ ↑advN)) as "Hcl"; [solve_ndisj|].
     (* Close the source, uninitialized. *)
     rewrite /vplace_wcloser.
@@ -241,10 +243,10 @@ Section memcpy.
     iMod (cumulative_persistent_time_receipt with "TIME ⧗k ⧖s") as "#⧖k"; [solve_ndisj|].
     set Dn := Dd `max` (pctx_dlev Kd + Ds).
     iCombine "⧖d ⧖k" as "⧖D".
-    iMod ("Cld" $! (pctx_get Ks xs₀) dhs ghs Dn with "[%] [] [Hfbsd] Ghos") as "[Td A]".
+    iMod ("Cld" $! (pctx_get Ks xs₀) dhs ghs Dn with "[%] [] [Cd] Ghos") as "[Td A]".
     { rewrite /Dn. lia. }
     { iApply (persistent_time_receipt_mono with "⧖D"). rewrite /Dn. lia. }
-    { rewrite /cbytes bytes_own_brepr. iExists fbs, fv. by iFrame "Hfbsd Hrep". }
+    { by rewrite /cbytes (bytes_own_gcont _ _ _ fv). }
     iMod "Hcl" as "_".
     iMod (fupd_mask_mono with "(Back2 A B)") as "H1"; [solve_ndisj|].
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].

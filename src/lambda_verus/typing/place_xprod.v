@@ -88,8 +88,12 @@ Section xprod.
       cbytes ty y l ∗ cbytes (Π! tyl) ys (l +ₗ ty_bsize ty).
   Proof.
     rewrite -(cbytes_pair (ty * Π! tyl) ty (Π! tyl)).
-    rewrite /cbytes. apply bytes_own_iff=> R fbs. rewrite !ty_fbytes_syn.
-    apply syn_fbytes_xprod_cons.
+    rewrite /cbytes. apply bytes_own_iff.
+    - intros R fbs. rewrite !ty_fbytes_syn. apply syn_fbytes_xprod_cons.
+    - intros R fbs fv fv' _. rewrite -!ty_fval_eq -!ty_mty_eq. intros Hx Hx'.
+      destruct (mcells_xprod_cons y ys fv Hx) as (f0 & f1 & H0 & H1 & ->).
+      destruct (mcells_pair (𝔄:=𝔄) (𝔅:=Π! 𝔅l) y ys fv' Hx') as (f0' & f1' & H0' & H1' & ->).
+      rewrite H0 in H0'. rewrite H1 in H1'. by simplify_eq.
   Qed.
 
   Lemma lty_size_xprod_cons {𝔄 𝔅l} (lt: lty 𝔄) (lts: lty (Π! 𝔅l)) (lt': lty (Π! (𝔄 :: 𝔅l))) :

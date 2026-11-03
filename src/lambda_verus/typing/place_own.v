@@ -303,10 +303,11 @@ Section typing.
     iIntros (w) "(-> & _ & _ & Rest)".
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
     iIntros "£ #⧖S". iApply wp_fupd.
-    iDestruct (lc_weaken (pctx_mode K 1) with "£") as "£";
+    iDestruct (lc_weaken (pctx_mode K 1 + 1) with "£") as "[£ £1]";
       [rewrite /advance_credits pctx_mode_add; nia|].
     iMod (lc_fupd_elim_laterN with "£ Gho1") as "Gho1".
-    iApply (wp_bytes_own_move with "Pt1"); [solve_ndisj|].
+    iDestruct (invctx_interp_gcells with "I") as "[#GC I]".
+    iApply (wp_bytes_own_move with "[$GC $£1 $Pt1]"); [solve_ndisj|].
     iIntros "!>" (vw fv bs) "(%Hfv & Hc & Hbs & %Hlen)". iModIntro.
     iExists -[y; ((l, pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) K x₀ ()), ζm)]. iFrame "L I Obs".
     iSplitR "Hbs Rest ⧗p Fr".

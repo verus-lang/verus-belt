@@ -79,7 +79,10 @@ Section subtype.
   Lemma bytes_own_bincl {𝔄 𝔅} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) l x :
     syn_bincl f → bytes_own ty l x ⊣⊢ bytes_own ty' l (f ~~$ₛ x).
   Proof.
-    intros [_ Hb]. apply bytes_own_iff. intros. rewrite !ty_fbytes_syn. apply Hb.
+    intros [_ [Hb Hc]]. apply bytes_own_iff.
+    - intros. rewrite !ty_fbytes_syn. apply Hb.
+    - intros R fbs fv fv' Hfb Hx Hx'. rewrite -!ty_fval_eq in Hx Hx'. rewrite -!ty_mty_eq.
+      rewrite ty_fbytes_syn in Hfb. by eapply Hc.
   Qed.
 
   (** ** Boxes of bytes *)

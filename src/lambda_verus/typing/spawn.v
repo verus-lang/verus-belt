@@ -159,7 +159,8 @@ Section spawn.
       rewrite eval_path_of_val in Hp. simplify_eq.
       iCombine "Hd1 Hd2" as "Hd".
 
-      iMod (invctx_alloc ⊤) as (tid') "I'".
+      iDestruct "I" as "[#GC I]".
+      iMod (invctx_alloc ⊤ with "GC") as (tid') "I'".
 
       rewrite (proj1 (@sync_change_tid _ _ _ _ (fn_sync _ _) tid tid' _ _ _ )).
 
@@ -204,7 +205,7 @@ Section spawn.
 
       iModIntro. wp_bind (lib.spawn.spawn _ _).
       iApply (spawn_spec spawnN (syn_mty 𝔅) _ (join_future retty (Φ c')) with "[- L I1 I2 cna_lifetimes]"); [solve_ndisj|..]; last first.
-      { iIntros "!> %c0 join". wp_pure _. iExists -[(c0, c')]. iFrame "L I1 I2 cna_lifetimes fnincl".
+      { iIntros "!> %c0 join". wp_pure _. iExists -[(c0, c')]. iFrame "GC L I1 I2 cna_lifetimes fnincl".
         iSplit; last first.
         { iApply (proph_obs_impl with "Obs"). move => π Hpost.
           assert (syn_abstract a = syn_abstract a) as Heq by trivial.
@@ -263,6 +264,7 @@ Section spawn.
 
           (* send ret back to tid *)
           clear at_mask. clear na_mask. iClear "fnincl".
+          iDestruct "I" as "[_ I]".
           iDestruct "I" as (at_mask na_mask) "[I1 [[cna_lifetimes #fnincl] I2]]".
           iDestruct (send_change_tid tid' tid'' w d d True%I _ _ (S d) with
             "LFT UNIQ TIME [] cna_lifetimes [] [] ret Hsd") as "X"; first lia.

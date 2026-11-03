@@ -1395,10 +1395,14 @@ Section oplace_rslv.
     iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]";
       [solve_ndisj|].
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|]. iIntros "£ _".
+    iDestruct (lc_weaken (1 + (advance_credits D - 1)) with "£") as "[£1 £]";
+      [rewrite /advance_credits; lia|].
     iMod (Rslv _ (⊤∖↑advN) with "LFT PROPH UNIQ TIME E Ghalf H1 Own") as "[M Upd]";
       [solve_ndisj|].
     iMod (lc_step_fupdN_elim_later with "[£] Upd") as "Upd".
     { iApply (lc_weaken with "£"). rewrite /advance_credits. nia. }
+    iDestruct (invctx_interp_gcells with "I") as "[#GC I]".
+    iMod (lty_omem_forget_gc with "GC £1 M") as "M"; [solve_ndisj|].
     iMod "Upd" as "[Obs' H1]".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     have ?: Closed [] p by eapply eval_path_closed.
@@ -1412,7 +1416,7 @@ Section oplace_rslv.
     iIntros "_ (%bs & Pt & %Hl)". wp_seq.
     wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". wp_pure _.
     iEval (rewrite freeable_sz_full) in "Fr".
-    iApply (wp_delete_fbytes bs with "[Pt Fr]"); [solve_ndisj|by rewrite Hl|..].
+    iApply (wp_delete_bytes bs with "[Pt Fr]"); [solve_ndisj|by rewrite Hl|..].
     { iFrame "Pt". rewrite Hl. iDestruct "Fr" as "[$|%]"; by iRight. }
     iIntros "!> _". iExists -[]. iFrame "L I". iSplit; [done|].
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?]. by apply Imp.

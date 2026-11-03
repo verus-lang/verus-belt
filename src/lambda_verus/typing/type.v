@@ -8,6 +8,7 @@ From lrust.typing Require Export lft_contexts.
 From lrust.typing Require Export lifetime.
 From lrust.lifetime Require Import lifetime_full.
 From lrust.lifetime Require Export guarded_bor.
+From lrust.typing Require Export gcont.
 From guarding.lib Require Import fractional cancellable.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -23,7 +24,9 @@ Class typeG Σ := TypeG {
   #[global] type_ecInv_logicΣ :: ecInv_logicG Σ;
   #[global] type_agree_pairΣ :: inG Σ (dfrac_agreeR (leibnizO nat));
   (** The states of the pinned bodies of unique borrows (see [uniq_util.v]). *)
-  #[global] type_lstate_ghost_varG :: ghost_varG Σ ltype_state
+  #[global] type_lstate_ghost_varG :: ghost_varG Σ ltype_state;
+  (** The registry of the cells (see [gcont.v]). *)
+  #[global] type_gcellsGS :: gcellsGS Σ
 }.
 
 Definition lrustN := nroot .@ "lrust".
@@ -414,7 +417,7 @@ Record type `{!typeG Σ} 𝔄 := {
      [ty_val_eq]): a parent owns bytes that decode to [ty_val x] at [ty_mty] (see
      [ty_bytes]); the size in bytes is [ty_bsize = mty_size ty_mty].
      [ty_fval x] is the fancy value of [x] (see [syn_fval] and [lang/fvalue.v]): its
-     MiniRust value where the cells it embeds are their groups. It is determined by the
+     MiniRust value where the cells it embeds are their ids. It is determined by the
      syntactic type too ([ty_fval_eq]); for a type without cells it is
      [fv_lift <$> ty_val x] ([ty_fval_nocell]). *)
   ty_mty: mty;
@@ -543,8 +546,8 @@ Global Arguments ty_bsize {_ _ _} _ / : simpl nomatch.
 Definition ty_bytes `{!typeG Σ} {𝔄} (ty: type 𝔄) (x: ~~𝔄) (bs: list abyte) : Prop :=
   ∃ v, ty.(ty_val) x = Some v ∧ decode_value ty.(ty_mty) bs = Some v.
 
-(** [ty_fbytes R ty x fbs]: the fancy bytes [fbs] (byte-cells or bytes) represent the value
-    [x] of [ty], with the static registry [R] of cell groups: they have the size
+(** [ty_fbytes R ty x fbs]: the fancy bytes [fbs] (positions of cells or bytes) represent the
+    value [x] of [ty], with a local registry [R] of the cells: they have the size
     [ty_bsize ty], and represent the fancy value [ty_fval x] at [ty_mty] ([frepr]). This
     is what a parent owns for its pointee (see [bytes_own] in [typing/own.v]). For a
     value with a MiniRust value, and so for every value of a type without cells, the fancy
@@ -559,23 +562,41 @@ Definition syn_fbytes {𝔄} (R: gmap positive (mty * list positive)) (x: ~~𝔄
     (fbs: list (positive + abyte)) : Prop :=
   length fbs = syn_bsize 𝔄 ∧ ∃ fv, syn_fval x = Some fv ∧ frepr R (syn_mty 𝔄) fbs fv.
 
-(** [syn_bincl f]: the map [f] preserves the byte representation: the sizes agree, and
-    fancy bytes represent [x] iff they represent [f x]. A subtyping along [f] needs it,
-    since the parents of a value (boxes, borrows) own its bytes. *)
+(** [syn_cells_pres f]: the map [f] preserves the layout of the cells of the values that
+    have a representation ([mcells]: their offsets, ids and MiniRust types). *)
+Definition syn_cells_pres {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : Prop :=
+  ∀ x R fbs fv fv', syn_fbytes R x fbs → syn_fval x = Some fv → syn_fval (f ~~$ₛ x) = Some fv' →
+    mcells (syn_mty 𝔄) fv = mcells (syn_mty 𝔅) fv'.
+
+(** [syn_bincl f]: the map [f] preserves the byte representation: the sizes agree,
+    fancy bytes represent [x] iff they represent [f x], and the cells of [x] and [f x] are
+    at the same offsets. A subtyping along [f] needs it, since the parents of a value
+    (boxes, borrows) own its bytes and the move rights of its cells. *)
 Definition syn_bincl {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : Prop :=
-  syn_bsize 𝔄 = syn_bsize 𝔅 ∧ ∀ x R fbs, syn_fbytes R x fbs ↔ syn_fbytes R (f ~~$ₛ x) fbs.
+  syn_bsize 𝔄 = syn_bsize 𝔅 ∧ (∀ x R fbs, syn_fbytes R x fbs ↔ syn_fbytes R (f ~~$ₛ x) fbs) ∧
+  syn_cells_pres f.
 
 Lemma syn_bincl_id {𝔄} : syn_bincl (idₛ (𝔄:=𝔄)).
-Proof. done. Qed.
+Proof. split; [done|]. split; [done|]. intros x R fbs fv fv' _ Hx Hx'. simpl in Hx'. rewrite Hx in Hx'. by injection Hx' as ->. Qed.
+Global Hint Resolve syn_bincl_id : core.
 
 Lemma syn_bincl_compose {𝔄 𝔅 ℭ} (f: 𝔄 →ₛ 𝔅) (g: 𝔅 →ₛ ℭ) :
   syn_bincl f → syn_bincl g → syn_bincl (g ∘ₛ f).
-Proof. intros [Hs Hf] [Hs' Hg]. split; [lia|]. intros. by rewrite Hf Hg. Qed.
+Proof.
+  intros [Hs [Hf Hc]] [Hs' [Hg Hc']]. split; [lia|]. split; [intros; by rewrite Hf Hg|].
+  intros x R fbs fv fv'' Hb Hx Hx''. have Hb' := proj1 (Hf x R fbs) Hb.
+  destruct Hb' as [Hl (fv' & Hx' & Hrep)].
+  transitivity (mcells (syn_mty 𝔅) fv'); [by eapply Hc|].
+  apply (Hc' (f ~~$ₛ x) R fbs); [by apply Hf|done..].
+Qed.
 
 Lemma syn_bincl_iso {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) g `{!Isoₛ f g} : syn_bincl f → syn_bincl g.
 Proof.
-  intros [Hs Hf]. split; [done|]. intros y R fbs. rewrite (Hf (g ~~$ₛ y)).
-  destruct Isoₛ0. by rewrite semi_iso'.
+  intros [Hs [Hf Hc]]. split; [done|]. split.
+  - intros y R fbs. rewrite (Hf (g ~~$ₛ y)). destruct Isoₛ0. by rewrite semi_iso'.
+  - intros y R fbs fv fv' Hb Hy Hy'. symmetry. apply (Hc (g ~~$ₛ y) R fbs); [|done|].
+    + apply Hf. destruct Isoₛ0. by rewrite semi_iso'.
+    + destruct Isoₛ0. by rewrite semi_iso'.
 Qed.
 
 (** The syntactic types without cells ([syn_nocell]), as a class: for a syntactic type
@@ -1834,7 +1855,7 @@ Section subtyping.
 
   Lemma type_incl_refl {𝔄} (ty: type 𝔄) : ⊢ type_incl ty ty idₛ.
   Proof.
-    iIntros. iSplit; [done|].
+    iIntros. iSplit; [iPureIntro; apply syn_bincl_id|].
     iSplit; [by iApply lft_incl_refl|].
       iSplit. { iModIntro. iIntros. iFrame. iIntros. done. }
       iSplit. { iModIntro. iIntros. iIntros. iFrame "#". }

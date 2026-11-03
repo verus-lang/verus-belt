@@ -290,6 +290,7 @@ src/lambda_verus/typing/lifetime.v
 src/lambda_verus/typing/lft_contexts.v
 src/lambda_verus/typing/inv_context.v
 src/lambda_verus/typing/lstate.v
+src/lambda_verus/typing/gcont.v
 src/lambda_verus/typing/type.v
 src/lambda_verus/typing/type_context.v
 src/lambda_verus/typing/cont_context.v
@@ -354,6 +355,7 @@ src/lambda_verus/typing/examples/assert.v
 src/lambda_verus/typing/examples/list.v
 src/lambda_verus/typing/examples/pcell_example.v
 src/lambda_verus/typing/examples/pcell_move.v
+src/lambda_verus/typing/examples/pcell_borrows.v
 src/lambda_verus/typing/examples/own.v
 src/lambda_verus/typing/examples/place_own.v
 src/lambda_verus/typing/examples/get_first.v

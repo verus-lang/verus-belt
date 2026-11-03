@@ -171,18 +171,20 @@ Section typing.
           (∀ mask', invctx_interp tid mask' iκs' (InvCtx [] ϝ 𝛼) -∗
             invctx_interp tid mask' iκs (InvCtx Il ϝ' 𝛼)).
   Proof.
-      unfold invctx_interp.
+      unfold invctx_interp, invctx_interp_core.
       iIntros "#Incl1 #InclList".
-      iDestruct 1 as (na_mask at_mask) "[#masks [[cna_lifetimes #Incl] [cna_own ato]]]".
+      iDestruct 1 as "[#GC I]".
+      iDestruct "I" as (na_mask at_mask) "[#masks [[cna_lifetimes #Incl] [cna_own ato]]]".
       iExists (fmap invctx_elt_unwrap Il ++ iκs).
       iSplitL.
-       - iExists na_mask, at_mask. iFrame "masks cna_own ato".
+       - iFrame "GC". iExists na_mask, at_mask. iFrame "masks cna_own ato".
          unfold invctx_to_multiset. simpl. rewrite gmultiset_disj_union_left_id.
          rewrite list_to_set_disj_app. iFrame "cna_lifetimes".
          rewrite lft_intersect_list_app.
          iApply llftl_incl_glb; first by done.
          iApply (guards_transitive with "Incl1 Incl").
-       - iDestruct 1 as (na_mask' at_mask') "[#masks' [[cna_lifetimes #Incl'] [cna_own ato]]]".
+       - iDestruct 1 as "[_ I]".
+         iDestruct "I" as (na_mask' at_mask') "[#masks' [[cna_lifetimes #Incl'] [cna_own ato]]]".
          iFrame. iFrame "#".
          unfold invctx_to_multiset. simpl. rewrite gmultiset_disj_union_left_id.
          rewrite list_to_set_disj_app. iFrame "cna_lifetimes".
