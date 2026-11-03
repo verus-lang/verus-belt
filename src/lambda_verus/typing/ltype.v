@@ -1344,7 +1344,7 @@ Section unfold.
     { intros fv. rewrite -!ty_fval_eq -!ty_mty_eq syn_fval_pinj.
       destruct (syn_fval y) as [fv'|]; [|done]. intros [= <-]. exists fv'. split; [done|].
       intros l0. change (syn_mty (Σ! 𝔄l)) with (seq_enum (syn_mty <$> 𝔄l)).
-      rewrite /seq_enum gcells_enum Nat2Z.id list_lookup_fmap llookup_lookup /= length_fmap.
+      rewrite /seq_enum gcells_enum Nat2Z.id list_lookup_imap list_lookup_fmap llookup_lookup /= length_fmap.
       done. }
     iSplit.
     - iIntros "(%R & %fbs & %fv & Hfbs & (%Hfb & %HR & %Hfv) & C)". apply syn_fbytes_sum in Hfb.

@@ -17,7 +17,9 @@ The values are the MiniRust values [MLit v] (with [v : Value], see
 value [VTuple []] is the result of the instructions without a result. Memory holds
 [AbstractByte]s; it is accessed by typed loads and stores [Load o m e] and
 [Store o m e1 e2] of any [m : mty] (which decode_value and encode_value bytes), a
-byte-level [MemCopy] and a typed compare-and-exchange [MCAS m e0 e1 e2]. (The legacy
+byte-level [MemCopy], a typed compare-and-exchange [MCAS m e0 e1 e2], and [GetDiscr m e]
+(MiniRust's [GetDiscriminant]: it runs the discriminator of the enum type [m] on the bytes
+at [e], with a typed load per branch on the path, [discr_expr]). (The legacy
 one-word operations [Read], [Write] and [CAS] were deleted in stage 6.) *)
 Open Scope loc_scope.
 

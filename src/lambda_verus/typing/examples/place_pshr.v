@@ -142,8 +142,7 @@ Section place_pshr.
 
   Definition get_or_zero_pb : expr := (
     ReBor;;                                                    (* unfold *b *)
-    case: (Load Na1Ord (MInt (sum_tag [unitₛ; intₛ i32]))
-      (Load Na1Ord MPtr "b")) of
+    case: (GetDiscr (syn_mty opt_i32ₛ) (Load Na1Ord MPtr "b")) of
     [ (#☠;; delete [ #(Z.of_nat PTR_SIZE); "b"]);;       (* None: drop b *)
       let: "z" := MLit (VInt 0) in
       jump: "return" ["z"];

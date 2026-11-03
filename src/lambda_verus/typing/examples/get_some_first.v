@@ -29,7 +29,7 @@ Section get_some_first.
   *)
   Definition get_some_first : expr := (
     Skip;;                                          (* b as a place *)
-    case: (Load Na1Ord (MInt (sum_tag [unitₛ; (intₛ i32 * intₛ i32)%ST])) "b") of
+    case: (GetDiscr (syn_mty (Σ! [unitₛ; (intₛ i32 * intₛ i32)])%ST) "b") of
     [ ReBor;;                                       (* None: fold back *)
       Skip;;                                        (* resolve b *)
       let: "u" := MkTuple [] in

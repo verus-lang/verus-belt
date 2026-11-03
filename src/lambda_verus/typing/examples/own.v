@@ -11,7 +11,7 @@ Section own_bytes_tests.
   Notation pair_ty := (int_ty i32 * int_ty i32)%T.
 
   (** The layout: two [i32] fields at offsets 0 and 4. *)
-  Lemma pair_ty_mty : pair_ty.(ty_mty) = MTuple [(0%nat, MInt i32); (4%nat, MInt i32)] 8.
+  Lemma pair_ty_mty : pair_ty.(ty_mty) = MTuple [(0%nat, MInt i32); (4%nat, MInt i32)] 8 1.
   Proof. by rewrite -ty_mty_eq. Qed.
 
   Lemma pair_ty_val a b :
@@ -52,9 +52,10 @@ Section own_bytes_tests.
   (** ** [Box<Option<i32>>] *)
   Notation opt_ty := (Σ! +[(); int_ty i32])%T.
 
-  (** The layout: a one-byte tag at offset 0 and the [i32] at offset 1 (as [opt_mty]
-      in [lang/minirust_tests.v]). *)
-  Lemma opt_ty_mty : opt_ty.(ty_mty) = MEnum [MTuple [] 0; MInt i32] (IntTy false 1) 5.
+  (** The layout: a one-byte tag at offset 0 and the [i32] at offset 1. *)
+  Lemma opt_ty_mty : opt_ty.(ty_mty) =
+    MEnum [(MTuple [] 0 1, 1%nat, [(0%nat, u8, 0%Z)]); (MInt i32, 1%nat, [(0%nat, u8, 1%Z)])]
+      (DBranch 0 u8 DInvalid [((0, 1), DKnown 0); ((1, 2), DKnown 1)]%Z) 5 1.
   Proof. by rewrite -ty_mty_eq. Qed.
 
   Definition some_i32 (z: Z) : ~~(Σ! [unitₛ; intₛ i32]) := inr (inl z).

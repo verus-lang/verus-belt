@@ -410,17 +410,28 @@ Section frepr_ops.
   Qed.
 
   (** The discriminator of a well-formed enum reads no byte of the payload range of any
-      variant, so changing bytes there does not change the discriminant. *)
+      variant, so the bytes there do not matter for the discriminant. *)
+  Lemma decode_discr_agree_payload vars d sz al bs bs' k vm o tg :
+    mty_wf (MEnum vars d sz al) → vars !! k = Some (vm, o, tg) →
+    (∀ i, ¬ (o ≤ i < o + mty_size vm)%nat → bs !! i = bs' !! i) →
+    decode_discr d bs = decode_discr d bs'.
+  Proof.
+    intros Hwf Hvm Hag. apply mty_wf_enum_inv in Hwf as [(_ & Htag & _) _].
+    apply discr_eval_agree. intros off it Hr. rewrite /bytes_reader. f_equal.
+    rewrite /discr_tag_only Forall_forall in Htag. have [_ Hdisj] := Htag _ Hr. simpl in Hdisj.
+    have := Forall_lookup_1 _ _ _ _ Hdisj Hvm. simpl. intros Hor.
+    apply list_eq. intros i. rewrite !lookup_list_slice. case_decide; [|done]. apply Hag. lia.
+  Qed.
+
   Lemma decode_discr_inserts_payload vars d sz al bs k vm o tg o' bs' :
     mty_wf (MEnum vars d sz al) → vars !! k = Some (vm, o, tg) →
     (o ≤ o')%nat → (o' + length bs' ≤ o + mty_size vm)%nat →
     decode_discr d (list_inserts o' bs' bs) = decode_discr d bs.
   Proof.
-    intros Hwf Hvm Ho1 Ho2. apply mty_wf_enum_inv in Hwf as [(_ & Htag & _) _].
-    apply discr_eval_agree. intros off it Hr. rewrite /bytes_reader.
-    rewrite /discr_tag_only Forall_forall in Htag. have [_ Hdisj] := Htag _ Hr. simpl in Hdisj.
-    have := Forall_lookup_1 _ _ _ _ Hdisj Hvm. simpl. intros Hor.
-    rewrite list_slice_inserts_out //. lia.
+    intros Hwf Hvm Ho1 Ho2. eapply decode_discr_agree_payload; [done|done|].
+    intros i Hi. destruct (decide (i < o')%nat).
+    - by rewrite list_lookup_inserts_lt.
+    - rewrite list_lookup_inserts_ge //. lia.
   Qed.
 
   (** Replacing a plain sub-value with the plain bytes [bs] of a value [v]. *)

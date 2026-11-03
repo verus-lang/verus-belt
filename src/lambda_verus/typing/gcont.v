@@ -116,7 +116,7 @@ Section gcells_defs.
     | FVCell g => ∃ γ, gcell_reg g γ m ∗ gca γ l
     | FVTuple fvs =>
         match m with
-        | MTuple fs _ =>
+        | MTuple fs _ _ =>
             (fix go (k : nat) (fvs : list FValue) : iProp Σ :=
                match fvs with
                | [] => True
@@ -128,8 +128,8 @@ Section gcells_defs.
         end
     | FVVariant t d =>
         match m with
-        | MEnum vars tag _ =>
-            match vars !! Z.to_nat t with Some vm => gcells (l +ₗ Z.of_nat (int_size tag)) vm d | None => True end
+        | MEnum vars _ _ _ =>
+            match vars !! Z.to_nat t with Some (vm, o, _) => gcells (l +ₗ Z.of_nat o) vm d | None => True end
         | _ => True
         end
     | _ => True
@@ -159,8 +159,8 @@ Section gcells_defs.
   Global Instance gfbytes_timeless l fbs : Timeless (gfbytes l fbs).
   Proof. apply _. Qed.
 
-  Lemma gcells_tuple l fs sz fvs :
-    gcells l (MTuple fs sz) (FVTuple fvs) ⊣⊢
+  Lemma gcells_tuple l fs sz al fvs :
+    gcells l (MTuple fs sz al) (FVTuple fvs) ⊣⊢
     [∗ list] k ↦ fv ∈ fvs, match fs !! k with Some (o, fm) => gcells (l +ₗ Z.of_nat o) fm fv | None => True end.
   Proof.
     assert (∀ k1, (fix go (k : nat) (fvs : list FValue) : iProp Σ :=
@@ -177,16 +177,16 @@ Section gcells_defs.
     exact (Hgo 0%nat).
   Qed.
 
-  Lemma gcells_enum l vars tag sz t d :
-    gcells l (MEnum vars tag sz) (FVVariant t d) ⊣⊢
-    match vars !! Z.to_nat t with Some vm => gcells (l +ₗ Z.of_nat (int_size tag)) vm d | None => True end.
+  Lemma gcells_enum l vars dc sz al t d :
+    gcells l (MEnum vars dc sz al) (FVVariant t d) ⊣⊢
+    match vars !! Z.to_nat t with Some (vm, o, _) => gcells (l +ₗ Z.of_nat o) vm d | None => True end.
   Proof. done. Qed.
 
   Global Instance gcells_timeless l m fv : Timeless (gcells l m fv).
   Proof.
     revert l m. induction fv as [z|b|lp|fvs IH|t d IH|g] using FValue_ind'; intros l m; simpl;
       try apply _.
-    - destruct m as [| | |fs sz|]; try apply _. generalize 0%nat.
+    - destruct m as [| | |fs sz al|]; try apply _. generalize 0%nat.
       induction IH as [|fv fvs Hfv _ IH']; intros k; [apply _|].
       apply bi.sep_timeless; [|apply IH']. destruct (fs !! k) as [[o fm]|]; [apply Hfv|apply _].
   Qed.
@@ -201,13 +201,13 @@ Section gcells_defs.
   Proof.
     revert l m. induction v as [z|b|lp|vs IH|t d IH] using Value_ind'; intros l m;
       try (by rewrite /=).
-    - destruct m as [| | |fs sz|]; try (by rewrite /=).
+    - destruct m as [| | |fs sz al|]; try (by rewrite /=).
       rewrite /fv_lift -/fv_lift gcells_tuple. iApply big_sepL_intro. iIntros "!>" (k fv Hk).
       rewrite list_lookup_fmap in Hk. destruct (vs !! k) as [vk|] eqn:Hvk; [|done].
       simpl in Hk. injection Hk as <-.
       destruct (fs !! k) as [[o fm]|]; [|done]. iApply (Forall_lookup_1 _ _ _ _ IH Hvk).
-    - destruct m as [| | | |vars tag sz]; try (by rewrite /=). rewrite /fv_lift -/fv_lift gcells_enum.
-      destruct (vars !! _); [iApply IH|done].
+    - destruct m as [| | | |vars dc sz al]; try (by rewrite /=). rewrite /fv_lift -/fv_lift gcells_enum.
+      destruct (vars !! _) as [[[??]?]|]; [iApply IH|done].
   Qed.
 
   Lemma gcells_lift_iff l m v : gcells l m (fv_lift v) ⊣⊢ True.
@@ -231,14 +231,14 @@ Section gcells_defs.
   Proof.
     revert l m. induction fv as [z|b|lp|fvs IH|t d IH|g] using FValue_ind'; intros l m.
     1-3: simpl; rewrite ?big_sepL_nil; iSplit; by iIntros.
-    - destruct m as [| | |fs sz|]; try (simpl; rewrite ?big_sepL_nil; iSplit; by iIntros).
+    - destruct m as [| | |fs sz al|]; try (simpl; rewrite ?big_sepL_nil; iSplit; by iIntros).
       rewrite gcells_tuple mcells_tuple big_sepL_concat_imap.
       apply big_sepL_proper=> k fvk Hk. destruct (fs !! k) as [[o fm]|]; [|simpl; rewrite ?big_sepL_nil; iSplit; by iIntros].
       rewrite (Forall_lookup_1 _ _ _ _ IH Hk) /mshift big_sepL_fmap.
       apply big_sepL_proper=> j c _. by rewrite gcell_at_shift.
-    - destruct m as [| | | |vars tag sz]; try (simpl; rewrite ?big_sepL_nil; iSplit; by iIntros).
+    - destruct m as [| | | |vars dc sz al]; try (simpl; rewrite ?big_sepL_nil; iSplit; by iIntros).
       rewrite gcells_enum mcells_enum.
-      destruct (vars !! Z.to_nat t) as [vm|]; [|simpl; rewrite ?big_sepL_nil; iSplit; by iIntros].
+      destruct (vars !! Z.to_nat t) as [[[vm o] tg]|]; [|simpl; rewrite ?big_sepL_nil; iSplit; by iIntros].
       rewrite IH /mshift big_sepL_fmap. apply big_sepL_proper=> j c _. by rewrite gcell_at_shift.
     - rewrite /= /gcell_at /= shift_loc_0 right_id. done.
   Qed.
@@ -303,8 +303,8 @@ Section gcells_defs.
     frepr R m fbs fv → g ∈ fv_cells fv →
     gcells l m fv -∗ ∃ γ m' (o : nat), gcell_reg g γ m' ∗ gca γ (l +ₗ o).
   Proof.
-    intros Hrep. revert l. induction Hrep as [m g' cs Hg'|m bs v Hdec|fs sz fbs fvs Hlen Hlenf Hfs IH Hpad
-      |vars tag sz fbs t vm d bst Hlen Htag Ht Ht0 Hvm Hd IH Hpad]; intros l Hg.
+    intros Hrep. revert l. induction Hrep as [m g' cs Hg'|m bs v Hdec|fs sz al fbs fvs Hlen Hlenf Hfs IH Hpad
+      |vars dc sz al fbs t vm o tg d Hlen Hdc Ht0 Hvm Hd IH Hpad]; intros l Hg.
     - apply elem_of_list_singleton in Hg as ->. iIntros "(%γ & Hreg & Ha)". iExists γ, m, 0%nat.
       rewrite shift_loc_0_nat. iFrame.
     - rewrite fv_cells_lift in Hg. by apply not_elem_of_nil in Hg.
@@ -314,8 +314,8 @@ Section gcells_defs.
       rewrite Hf. iDestruct (IH k (o, fm) fvk Hf Hk (l +ₗ o) Hgk with "H") as (γ m' o') "[Hreg Ha]".
       iExists γ, m', (o + o')%nat. rewrite shift_loc_assoc_nat. iFrame.
     - rewrite gcells_enum Hvm. iIntros "H".
-      iDestruct (IH (l +ₗ int_size tag) Hg with "H") as (γ m' o') "[Hreg Ha]".
-      iExists γ, m', (int_size tag + o')%nat. rewrite shift_loc_assoc_nat. iFrame.
+      iDestruct (IH (l +ₗ o) Hg with "H") as (γ m' o') "[Hreg Ha]".
+      iExists γ, m', (o + o')%nat. rewrite shift_loc_assoc_nat. iFrame.
   Qed.
 
   Lemma gcell_reg_agree g γ γ' m m' : gcell_reg g γ m -∗ gcell_reg g γ' m' -∗ ⌜γ = γ' ∧ m = m'⌝.
@@ -339,13 +339,13 @@ Section gcells_defs.
   Lemma frepr_restrict R R' m fbs fv :
     frepr R m fbs fv → (∀ g, g ∈ fv_cells fv → R' !! g = R !! g) → frepr R' m fbs fv.
   Proof.
-    induction 1 as [m g cs Hg|m bs v Hdec|fs sz fbs fvs Hlen Hlenf Hfs IH Hpad
-      |vars tag sz fbs t vm d bst Hlen Htag Ht Ht0 Hvm Hd IH Hpad]; intros HR'.
+    induction 1 as [m g cs Hg|m bs v Hdec|fs sz al fbs fvs Hlen Hlenf Hfs IH Hpad
+      |vars dc sz al fbs t vm o tg d Hlen Hdc Ht0 Hvm Hd IH Hpad]; intros HR'.
     - constructor. rewrite HR' //. by left.
     - by constructor.
     - constructor; [done|done| |done]. intros k f fv Hf Hfv. apply (IH k f fv Hf Hfv).
       intros g Hg. apply HR'. by eapply fv_cells_tuple.
-    - econstructor; [done|done|done|done|done| |done]. by apply IH.
+    - econstructor; [done|done|done|done| |done]. by apply IH.
   Qed.
 
   (** Two representations with distinct cells have a common registry. *)

@@ -715,26 +715,47 @@ End typing.
 Section case.
   Context `{!typeG Σ}.
 
-  (** The guarded typed load of the tag of a sum from its shared view. *)
-  Lemma wp_load_tag_shr_view {𝔄l} E κ (tyl: typel 𝔄l) j a dh D tid (l: loc)
+  (** The bytes of the tag only guarded, by [G] (as [wp_load_na_guarded_gen]). *)
+  Lemma wp_get_discr_sum_guarded E 𝔄l (j: nat) l G P dg Φ :
+    ↑naN ⊆ E → (j < length 𝔄l)%nat →
+    (G &&{↑naN; dg}&&> P) -∗
+    □ (P -∗ ∃ bt, ⌜decode_value (MInt (sum_tag 𝔄l)) bt = Some (VInt (Z.of_nat j))⌝ ∗
+        l ↦b bt ∗ (l ↦b bt -∗ P)) -∗
+    G -∗ £(2 * dg) -∗ (G -∗ Φ (MLitV (VInt (Z.of_nat j)))) -∗
+    WP GetDiscr (syn_mty (Σ! 𝔄l)) (MLit (VPtr l)) @ E {{ Φ }}.
+  Proof.
+    iIntros (? Hj) "#Guard #HP G £ HΦ".
+    iApply (wp_get_discr_guarded _ _ _ _ _ l G P
+      (λ cs, ∃ bt, cs = [(0%nat, bt)] ∧
+        decode_value (MInt (sum_tag 𝔄l)) bt = Some (VInt (Z.of_nat j)))
+      (λ off it, if decide (off = 0%nat ∧ it = sum_tag 𝔄l) then Some (Z.of_nat j) else None)
+      dg 1 with "Guard [] G [£] HΦ"); [done| | | | |by rewrite Nat.mul_1_r].
+    - rewrite length_fmap. apply seq_discr_eval; [done|]. by rewrite decide_True.
+    - by rewrite discr_depth_seq.
+    - intros cs off it z (bt & -> & Hbt) Hz. case_decide as Hc; [|done].
+      destruct Hc as [-> ->]. injection Hz as <-. by apply sum_tag_chunk.
+    - iIntros "!> HPx". iDestruct ("HP" with "HPx") as (bt Hbt) "[Hl Cl]".
+      iExists [(0%nat, bt)]. iSplit; [by eauto|].
+      rewrite /chunks_own /= shift_loc_0 right_id. iFrame "Hl". done.
+  Qed.
+
+  (** Reading the discriminant of a sum from its shared view (guarded loads of its tag). *)
+  Lemma wp_get_discr_shr_view {𝔄l} E κ (tyl: typel 𝔄l) j a dh D tid (l: loc)
       (G: iProp Σ) (Φ: val → iProp Σ) :
     ↑NllftG ⊆ E →
     (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £(2 * (D + 1)) -∗
     shr_view κ (Σ! tyl)%T (pinj j a) dh D tid l -∗
     (G -∗ Φ (MLitV (VInt (Z.of_nat (fin_to_nat j))))) -∗
-    WP Load Na1Ord (MInt (sum_tag 𝔄l)) #(l) @ E {{ Φ }}.
+    WP GetDiscr (syn_mty (Σ! 𝔄l)) #(l) @ E {{ Φ }}.
   Proof.
     iIntros (?) "#Gκ G £ #(Pt & _ & _) HΦ".
     iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt".
     iDestruct (guards_weaken_rhs_sep_l with "Pt") as "Pt'".
-    iApply (wp_load_na_guarded_gen _ _ _ (VInt (Z.of_nat j)) G
-      (tag_cell 𝔄l l j)
-      (λ bs, decode_value (MInt (sum_tag 𝔄l)) bs = Some (VInt (Z.of_nat j))) (D + 1)
-      with "[$G $£]"); [done|done| |].
-    { iSplit; [iApply (guards_transitive_right with "Gκ Pt'")|].
-      iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
-      iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame. }
-    iIntros "!> G". by iApply "HΦ".
+    iApply (wp_get_discr_sum_guarded _ _ _ _ G (tag_cell 𝔄l l j) (D + 1)
+      with "[] [] G £ HΦ"); [done|apply fin_to_nat_lt| |].
+    { iApply (guards_transitive_right with "Gκ Pt'"). }
+    iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
+    iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame.
   Qed.
 
   (** At the root: case analysis on the sum at the hole of [K2], below the shared reference
@@ -748,7 +769,7 @@ Section case.
       (p ◁ₗ ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ +:: T)
       (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ +:: T)
-      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K2 p)) of el)
+      (case: (GetDiscr (syn_mty (Σ! 𝔄l)) (pctx_expr K2 p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -762,7 +783,7 @@ Section case.
     have Hz: pinj j a = pctx_get K2 x.2.
     { by rewrite -(semi_iso' to_xsum of_xsum (pctx_get K2 x.2)) Hj. }
     try rewrite -Hz.
-    wp_bind (Load Na1Ord (MInt (sum_tag 𝔄l)) _)%E.
+    wp_bind (GetDiscr _ _)%E.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
     iIntros "£ #⧖S". iApply wp_fupd.
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
@@ -782,7 +803,7 @@ Section case.
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
     { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
     rewrite -Hz.
-    iApply (wp_load_tag_shr_view with "Hsl H1 £r V"); [solve_ndisj|].
+    iApply (wp_get_discr_shr_view with "Hsl H1 £r V"); [solve_ndisj|].
     iIntros "H1".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro.
@@ -810,7 +831,7 @@ Section case.
       (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ) +:: T)
       (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
-      (case: (Load Na1Ord (MInt (sum_tag 𝔄l))
+      (case: (GetDiscr (syn_mty (Σ! 𝔄l))
         (pctx_expr K2 (Load Na1Ord MPtr (pctx_vexpr K p)))) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1).2) in
         (trl -!! i) post (x -:: cl))%type.
@@ -826,7 +847,7 @@ Section case.
     have Hz: pinj j a = pctx_get K2 y.2.
     { by rewrite -(semi_iso' to_xsum of_xsum (pctx_get K2 y.2)) Hj. }
     try rewrite -Hz.
-    wp_bind (Load Na1Ord (MInt (sum_tag 𝔄l)) _)%E.
+    wp_bind (GetDiscr _ _)%E.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
     iIntros "£ #⧖S". iApply wp_fupd.
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
@@ -849,7 +870,7 @@ Section case.
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
     { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
     rewrite -Hz.
-    iApply (wp_load_tag_shr_view with "Hsl H1 £r V"); [solve_ndisj|].
+    iApply (wp_get_discr_shr_view with "Hsl H1 £r V"); [solve_ndisj|].
     iIntros "H1".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro.
@@ -873,7 +894,7 @@ Section case.
       (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ) +:: T)
       (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
-      (case: (Load Na1Ord (MInt (sum_tag 𝔄l))
+      (case: (GetDiscr (syn_mty (Σ! 𝔄l))
         (pctx_expr K2 (Load Na1Ord MPtr (pctx_expr K p)))) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1.2).2) in
         (trl -!! i) post (x -:: cl))%type.

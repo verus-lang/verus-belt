@@ -529,8 +529,10 @@ Layouts (sizes are abstract and there is no alignment yet):
   [at_locₛ], [uniq_borₛ], [exec_funₛ]) are [MPtr];
 - a product is a tuple whose fields are laid out one after the other ([seq_tuple]);
 - [Σ! 𝔄l] is an enum with a tag of type [enum_tag (length 𝔄l)] at offset 0 and the
-  data of each variant right after the tag ([seq_enum]);
-- [uninitₛ n] is [n] bytes of padding ([MTuple [] n]);
+  data of each variant right after the tag ([seq_enum]): the tagger of variant [i] writes
+  [i] at offset 0, and the discriminator reads it;
+- these layouts have alignment 1;
+- [uninitₛ n] is [n] bytes of padding ([MTuple [] n 1]);
 - a cell [pcellₛ m] (a multi-byte cell, whose value [~~(pcellₛ m)] is its id, see
   [typing/pcell.v]) is its content's MiniRust type [`m] (a [wf_mty], so it is well
   formed);
@@ -543,16 +545,21 @@ out of the range of their [IntType], closures ([exec_funₛ]) and cells
 Fixpoint layout_fields (o : nat) (ms : list mty) : list (nat * mty) :=
   match ms with [] => [] | m :: ms => (o, m) :: layout_fields (o + mty_size m) ms end.
 Definition seq_size (ms : list mty) : nat := list_sum (mty_size <$> ms).
-Definition seq_tuple (ms : list mty) : mty := MTuple (layout_fields 0 ms) (seq_size ms).
+Definition seq_tuple (ms : list mty) : mty := MTuple (layout_fields 0 ms) (seq_size ms) 1.
 
 (** A one-byte tag for up to 256 variants. *)
 Definition enum_tag (n : nat) : IntType :=
   IntTy false (if decide (n ≤ 256)%nat then 1 else n).
+Definition seq_discr (n : nat) : discr :=
+  DBranch 0 (enum_tag n) DInvalid
+    ((λ i, ((Z.of_nat i, (Z.of_nat i + 1)%Z), DKnown (Z.of_nat i))) <$> seq 0 n).
 Definition seq_enum (ms : list mty) : mty :=
-  MEnum ms (enum_tag (length ms))
-    (int_size (enum_tag (length ms)) + list_max (mty_size <$> ms)).
+  MEnum (imap (λ i m, (m, int_size (enum_tag (length ms)),
+                       [(0%nat, enum_tag (length ms), Z.of_nat i)])) ms)
+    (seq_discr (length ms))
+    (int_size (enum_tag (length ms)) + list_max (mty_size <$> ms)) 1.
 
-Definition zst_mty : mty := MTuple [] 0.
+Definition zst_mty : mty := MTuple [] 0 1.
 
 Fixpoint syn_mty (𝔄: syn_type) : mty :=
   match 𝔄 with
@@ -562,7 +569,7 @@ Fixpoint syn_mty (𝔄: syn_type) : mty :=
   | prodₛ 𝔄₀ 𝔄₁ => seq_tuple [syn_mty 𝔄₀; syn_mty 𝔄₁]
   | xprodₛ 𝔄l => seq_tuple (syn_mty <$> 𝔄l)
   | xsumₛ 𝔄l => seq_enum (syn_mty <$> 𝔄l)
-  | uninitₛ n => MTuple [] n
+  | uninitₛ n => MTuple [] n 1
   | pcellₛ m => `m
   | _ => zst_mty
   end.
@@ -671,19 +678,98 @@ Proof.
   have := Hle (le_n _). rewrite Forall_lookup. intros H. by apply (H i).
 Qed.
 
-Lemma seq_enum_wf ms : Forall mty_wf ms → mty_wf (seq_enum ms).
-Proof.
-  intros Hms. constructor; [|lia]. rewrite Forall_lookup in Hms. apply Forall_lookup.
-  intros i m Hi. split; [|by eapply Hms].
-  pose proof (list_max_lookup (mty_size <$> ms) i (mty_size m)) as Hn.
-  rewrite list_lookup_fmap Hi in Hn. have := Hn eq_refl. lia.
-Qed.
-
 Lemma enum_tag_in_range n i : (i < n)%nat → int_in_range (enum_tag n) (Z.of_nat i).
 Proof.
   intros Hi. rewrite /int_in_range /int_modulus /=. case_decide.
   - rewrite Z.pow_1_r. lia.
   - split; [lia|]. have := Z.pow_gt_lin_r 256 (Z.of_nat n). lia.
+Qed.
+
+(** The discriminator of [seq_enum] reads [i] from the tagger of variant [i]. *)
+Lemma seq_discr_eval rd n i :
+  (i < n)%nat → rd 0%nat (enum_tag n) = Some (Z.of_nat i) →
+  discr_eval rd (seq_discr n) = Some (Z.of_nat i).
+Proof.
+  intros Hi Hrd. rewrite /seq_discr discr_eval_branch Hrd /=.
+  rewrite (_ : list_find _ _ = Some (i, ((Z.of_nat i, (Z.of_nat i + 1)%Z), DKnown (Z.of_nat i)))) //.
+  apply list_find_Some. split; [|split].
+  - rewrite list_lookup_fmap lookup_seq_lt //.
+  - simpl. lia.
+  - intros j y Hj Hji. rewrite list_lookup_fmap lookup_seq_lt in Hj; [|lia].
+    simplify_eq/=. lia.
+Qed.
+
+Lemma discr_reads_seq_discr n : discr_reads (seq_discr n) = [(0%nat, enum_tag n)].
+Proof.
+  rewrite /seq_discr /=. f_equal. generalize 0%nat. induction n as [|n IH]; intros k; [done|].
+  simpl. apply IH.
+Qed.
+
+Lemma discr_depth_seq n : discr_depth (seq_discr n) = 1%nat.
+Proof. rewrite /seq_discr /=. induction (seq 0 n) as [|i l IH]; simpl in *; [done|exact IH]. Qed.
+
+Lemma seq_enum_wf ms : Forall mty_wf ms → mty_wf (seq_enum ms).
+Proof.
+  intros Hms. set tag := enum_tag (length ms).
+  have Hmax : ∀ i m, ms !! i = Some m → (mty_size m ≤ list_max (mty_size <$> ms))%nat.
+  { intros i m Hi. apply (list_max_lookup _ i). by rewrite list_lookup_fmap Hi. }
+  constructor; [split_and!|].
+  - apply Forall_lookup. intros i v. rewrite list_lookup_imap.
+    destruct (ms !! i) as [m|] eqn:Hi; simpl; intros Hv; simplify_eq/=.
+    have := Hmax _ _ Hi. split; [lia|]. split.
+    + constructor; [|done]. simpl. split_and!; [lia|lia|].
+      apply enum_tag_in_range. by eapply lookup_lt_Some.
+    + rewrite /tagger_ranges /=. apply ranges_disjoint_cons. split; [done|].
+      intros ??????? Hk. by rewrite lookup_nil in Hk.
+  - rewrite /discr_tag_only discr_reads_seq_discr. constructor; [|done]. simpl. split; [lia|].
+    apply Forall_lookup. intros i v. rewrite list_lookup_imap.
+    destruct (ms !! i) as [m|]; simpl; intros Hv; simplify_eq/=. lia.
+  - rewrite /discr_ok length_imap. apply Forall2_lookup. intros i.
+    destruct (seq 0 (length ms) !! i) as [i'|] eqn:Hi'.
+    + apply lookup_seq in Hi' as [-> Hlt]. rewrite list_lookup_imap.
+      destruct (ms !! i) as [m|] eqn:Hi; [|apply lookup_ge_None in Hi; lia].
+      constructor. apply (seq_discr_eval _ (length ms) i); [done|].
+      by rewrite /= decide_True.
+    + rewrite list_lookup_imap. apply lookup_ge_None in Hi'. rewrite length_seq in Hi'.
+      rewrite lookup_ge_None_2; [constructor|lia].
+  - apply Forall_lookup. intros i v. rewrite list_lookup_imap.
+    destruct (ms !! i) as [m|] eqn:Hi; simpl; intros Hv; simplify_eq/=.
+    by apply (Forall_lookup_1 _ _ _ _ Hms Hi).
+Qed.
+
+(** The discriminator of [seq_enum] reads the tag at offset 0. *)
+Lemma decode_discr_seq n bs :
+  decode_discr (seq_discr n) bs =
+    t ← decode_int (enum_tag n) (take (int_size (enum_tag n)) bs);
+    if decide (0 ≤ t < Z.of_nat n)%Z then Some t else None.
+Proof.
+  rewrite /decode_discr /seq_discr discr_eval_branch /bytes_reader /list_slice drop_0.
+  destruct (decode_int _ _) as [z|]; simpl; [|done].
+  destruct (list_find _ _) as [[k [[lo hi] c]]|] eqn:Hf.
+  - apply list_find_Some in Hf as (Hk & Hz & _). rewrite list_lookup_fmap in Hk.
+    apply fmap_Some in Hk as (j & Hj & [= -> -> ->]). apply lookup_seq in Hj as [-> Hj].
+    simpl in *. rewrite decide_True; [|lia]. f_equal. lia.
+  - rewrite decide_False //. intros Hz. apply list_find_None in Hf.
+    rewrite Forall_lookup in Hf. apply (Hf (Z.to_nat z) ((z, (z + 1)%Z), DKnown z)); [|simpl; lia].
+    rewrite list_lookup_fmap lookup_seq_lt; [|lia]. simpl. by rewrite Z2Nat.id; [|lia].
+Qed.
+
+(** The decoding of [seq_enum]: the tag at offset 0, and the payload after it. *)
+Lemma decode_seq_enum ms bs :
+  decode_value (seq_enum ms) bs =
+  if decide (length bs = int_size (enum_tag (length ms)) + list_max (mty_size <$> ms))%nat then
+    t ← decode_int (enum_tag (length ms)) (take (int_size (enum_tag (length ms))) bs);
+    if decide (0 ≤ t)%Z then
+      m ← ms !! Z.to_nat t;
+      VVariant t <$> decode_value m (list_slice (int_size (enum_tag (length ms))) (mty_size m) bs)
+    else None
+  else None.
+Proof.
+  rewrite /seq_enum decode_value_enum. case_decide; [|done]. rewrite decode_discr_seq.
+  destruct (decode_int _ _) as [t|]; simpl; [|done].
+  destruct (decide ((0 ≤ t < Z.of_nat (length ms))%Z)) as [Ht|Ht]; simpl.
+  - destruct (decide (0 ≤ t)%Z); [|lia]. rewrite list_lookup_imap. by destruct (ms !! Z.to_nat t).
+  - destruct (decide (0 ≤ t)%Z); [|done]. rewrite lookup_ge_None_2 //. lia.
 Qed.
 
 Lemma llookup_lookup {A} (xl : list A) (i : fin (length xl)) : xl !! fin_to_nat i = Some (xl !!ₗ i).
@@ -728,9 +814,8 @@ Proof.
     clear FIX.
     replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
     destruct (to_xsum x) as [i x0]. simpl. rewrite psum_map1_pinj to_xsum_pinj.
-    intros (d&Hd&->)%fmap_Some_1. econstructor; [lia| | |by eapply Hall, Hd].
-    + rewrite Nat2Z.id list_lookup_fmap llookup_lookup //.
-    + rewrite length_fmap. apply enum_tag_in_range, fin_to_nat_lt.
+    intros (d&Hd&->)%fmap_Some_1. econstructor; [lia| |by eapply Hall, Hd].
+    rewrite Nat2Z.id list_lookup_imap list_lookup_fmap llookup_lookup //.
   - clear FIX. destruct x as [[[[[??]?]?]?]?]. intros; simplify_eq. constructor.
 Qed.
 
@@ -927,11 +1012,11 @@ Qed.
 
 (** [n + m] bytes of padding are a pair of [n] and [m] bytes of padding. *)
 Lemma decode_pad n (bs : list (AbstractByte)) :
-  decode_value (MTuple [] n) bs = if decide (length bs = n) then Some (VTuple []) else None.
+  decode_value (MTuple [] n 1) bs = if decide (length bs = n) then Some (VTuple []) else None.
 Proof. rewrite decode_value_tuple. by case_decide. Qed.
 
 Lemma decode_pad_pair n m (bs : list (AbstractByte)) :
-  decode_value (seq_tuple [MTuple [] n; MTuple [] m]) bs =
+  decode_value (seq_tuple [MTuple [] n 1; MTuple [] m 1]) bs =
   if decide (length bs = n + m)%nat then Some (VTuple [VTuple []; VTuple []]) else None.
 Proof.
   rewrite decode_seq_tuple !seq_size_cons seq_size_nil /=.
@@ -1260,7 +1345,7 @@ Fixpoint mcells (m : mty) (fv : FValue) {struct fv} : list (nat * positive * mty
   | FVCell g => [(0%nat, g, m)]
   | FVTuple fvs =>
       match m with
-      | MTuple fs _ =>
+      | MTuple fs _ _ =>
           (fix go (k : nat) (fvs : list FValue) : list (nat * positive * mty) :=
              match fvs with
              | [] => []
@@ -1272,9 +1357,9 @@ Fixpoint mcells (m : mty) (fv : FValue) {struct fv} : list (nat * positive * mty
       end
   | FVVariant t d =>
       match m with
-      | MEnum vars tag _ =>
+      | MEnum vars _ _ _ =>
           match vars !! Z.to_nat t with
-          | Some vm => mshift (int_size tag) (mcells vm d) | None => []
+          | Some (vm, o, _) => mshift o (mcells vm d) | None => []
           end
       | _ => []
       end
@@ -1292,8 +1377,8 @@ Qed.
 Lemma mshift_app o cl1 cl2 : mshift o (cl1 ++ cl2) = mshift o cl1 ++ mshift o cl2.
 Proof. by rewrite /mshift fmap_app. Qed.
 
-Lemma mcells_tuple fs sz fvs :
-  mcells (MTuple fs sz) (FVTuple fvs) =
+Lemma mcells_tuple fs sz al fvs :
+  mcells (MTuple fs sz al) (FVTuple fvs) =
   concat (imap (λ k fv, match fs !! k with Some (o, fm) => mshift o (mcells fm fv) | None => [] end) fvs).
 Proof.
   assert (∀ k1, (fix go (k : nat) (fvs : list FValue) : list (nat * positive * mty) :=
@@ -1310,9 +1395,9 @@ Proof.
   exact (Hgo 0%nat).
 Qed.
 
-Lemma mcells_enum vars tag sz t d :
-  mcells (MEnum vars tag sz) (FVVariant t d) =
-  match vars !! Z.to_nat t with Some vm => mshift (int_size tag) (mcells vm d) | None => [] end.
+Lemma mcells_enum vars dc sz al t d :
+  mcells (MEnum vars dc sz al) (FVVariant t d) =
+  match vars !! Z.to_nat t with Some (vm, o, _) => mshift o (mcells vm d) | None => [] end.
 Proof. done. Qed.
 
 Lemma concat_imap_nil {A B} (h : nat → A → list B) (xs : list A) :
@@ -1332,12 +1417,12 @@ Qed.
 Lemma mcells_lift m v : mcells m (fv_lift v) = [].
 Proof.
   revert m. induction v as [z|b|lp|vs IH|t d IH] using Value_ind'; intros m; try done.
-  - destruct m as [| | |fs sz|]; try done. rewrite /fv_lift -/fv_lift mcells_tuple.
+  - destruct m as [| | |fs sz al|]; try done. rewrite /fv_lift -/fv_lift mcells_tuple.
     apply concat_imap_nil=> k fv Hk. rewrite list_lookup_fmap in Hk.
     destruct (vs !! k) as [vk|] eqn:Hvk; [|done]. simpl in Hk. injection Hk as <-.
     destruct (fs !! k) as [[o fm]|]; [|done]. by rewrite (Forall_lookup_1 _ _ _ _ IH Hvk).
-  - destruct m as [| | | |vars tag sz]; try done. rewrite /fv_lift -/fv_lift mcells_enum.
-    destruct (vars !! _); [by rewrite IH|done].
+  - destruct m as [| | | |vars dc sz al]; try done. rewrite /fv_lift -/fv_lift mcells_enum.
+    destruct (vars !! _) as [[[??]?]|]; [by rewrite IH|done].
 Qed.
 
 (** The cells of a tuple laid out in sequence ([seq_tuple]), field by field. *)
@@ -1368,7 +1453,7 @@ Lemma mcells_seq_enum ms t d :
   match ms !! Z.to_nat t with
   | Some vm => mshift (int_size (enum_tag (length ms))) (mcells vm d) | None => []
   end.
-Proof. done. Qed.
+Proof. rewrite /seq_enum mcells_enum list_lookup_imap. by destruct (ms !! _). Qed.
 
 (** ** Byte-preserving maps *)
 

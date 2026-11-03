@@ -6,7 +6,9 @@ Set Default Proof Using "Type".
 Inductive access_kind : Type := ReadAcc | WriteAcc | FreeAcc.
 
 (* This is a crucial definition; if we forget to sync it with base_step,
-   the results proven here are worthless. *)
+   the results proven here are worthless. [GetDiscr] has no case: its head step
+   ([GetDiscrS]) is pure, and the reads of the discriminator are the typed [Load]s of
+   [discr_expr]. *)
 Inductive next_access_head : expr → state → access_kind * order → loc → Prop :=
 | Access_free n l σ i :
     0 ≤ i < n →

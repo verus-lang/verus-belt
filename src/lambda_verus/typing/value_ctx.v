@@ -153,7 +153,7 @@ Section value_parts.
   Proof.
     rewrite /val_cells /gtransit. iIntros "[[%Hw %Hl] Cl] [[%Hws %Hls] Cls]". iSplit.
     - iPureIntro. split.
-      + inversion Hws as [| | |? ? ? Hall|]; simplify_eq. constructor.
+      + inversion Hws as [| | |? ? ? ? Hall|]; simplify_eq. constructor.
         apply (Forall2_layout_fields (λ m v, val_wf m v)). constructor; [done|].
         by apply (Forall2_layout_fields (λ m v, val_wf m v)) in Hall.
       + intros w0 Hw0. destruct (fv_lift_tuple_inv _ _ (eq_sym Hw0)) as (vs & -> & Hvs).
@@ -174,49 +174,64 @@ Section value_parts.
       iModIntro. rewrite gcont_seq_tuple_cons. iFrame.
   Qed.
 
-  (** The contents of a variant: the bytes of its tag, the contents of its payload, and
-      padding bytes. *)
-  Lemma gcont_enum_intro l vars tag sz t vm fv bst bsp :
-    length bst = int_size tag → decode_int tag bst = Some t → (0 ≤ t)%Z →
-    vars !! Z.to_nat t = Some vm → (int_size tag + mty_size vm + length bsp = sz)%nat →
-    l ↦b bst -∗ gcont (l +ₗ int_size tag) vm fv -∗
-    (l +ₗ (int_size tag + mty_size vm)%nat) ↦b bsp -∗ gcont l (MEnum vars tag sz) (FVVariant t fv).
+  (** The contents of a variant: the bytes before its payload, the contents of its
+      payload, and the bytes after it, from which the discriminator reads the variant. *)
+  Lemma gcont_enum_intro l vars dc sz al t vm o tg fv bs1 bs2 :
+    mty_wf (MEnum vars dc sz al) → (0 ≤ t)%Z → vars !! Z.to_nat t = Some (vm, o, tg) →
+    length bs1 = o → (o + mty_size vm + length bs2 = sz)%nat →
+    decode_discr dc (bs1 ++ replicate (mty_size vm) Uninit ++ bs2) = Some t →
+    l ↦b bs1 -∗ gcont (l +ₗ o) vm fv -∗
+    (l +ₗ (o + mty_size vm)%nat) ↦b bs2 -∗ gcont l (MEnum vars dc sz al) (FVVariant t fv).
   Proof.
-    iIntros (Hlt Ht Ht0 Hvm Hsz) "Ht (%R & %fbs & Hfb & [%Hrep %HR] & Hc) Hp".
+    iIntros (Hwf Ht0 Hvm Hl1 Hsz Hd) "H1 (%R & %fbs & Hfb & [%Hrep %HR] & Hc) H2".
     have Hlf := frepr_length _ _ _ _ HR Hrep.
-    iExists R, ((inr <$> bst) ++ fbs ++ (inr <$> bsp)).
-    rewrite !gfbytes_app !gfbytes_bytes length_fmap Hlt Hlf shift_loc_assoc_nat. iFrame.
+    iExists R, ((inr <$> bs1) ++ fbs ++ (inr <$> bs2)).
+    rewrite !gfbytes_app !gfbytes_bytes length_fmap Hl1 Hlf shift_loc_assoc_nat. iFrame.
     iSplit.
-    - iPureIntro. split; [|done]. eapply (frepr_enum _ _ _ _ _ t vm fv bst); try done.
+    - iPureIntro. split; [|done]. eapply (frepr_enum _ _ _ _ _ _ t vm o tg fv); try done.
       + rewrite !length_app !length_fmap. lia.
-      + rewrite take_app_length' // length_fmap //.
+      + rewrite -Hd. eapply decode_discr_agree_payload; [done|exact Hvm|]. intros i Hi.
+        rewrite !fmap_app fb_erase_plain.
+        destruct (decide (i < o)%nat).
+        * rewrite !lookup_app_l //; rewrite ?length_fmap; lia.
+        * rewrite !lookup_app_r; rewrite ?length_fmap ?length_replicate; try lia.
+          by rewrite fb_erase_plain Hlf.
       + rewrite /list_slice drop_app_length' ?length_fmap // take_app_length' //.
-      + intros i fb Hi Hge. rewrite lookup_app_r in Hi; [|rewrite length_fmap; lia].
-        rewrite lookup_app_r in Hi; [|rewrite length_fmap; lia].
-        rewrite list_lookup_fmap in Hi. destruct (bsp !! _); simplify_eq/=. by eexists.
+      + intros i fb Hi Hn. destruct (decide (i < o)%nat).
+        * rewrite lookup_app_l in Hi; [|rewrite length_fmap; lia].
+          rewrite list_lookup_fmap in Hi. destruct (bs1 !! _); simplify_eq/=. by eexists.
+        * rewrite lookup_app_r in Hi; [|rewrite length_fmap; lia].
+          rewrite lookup_app_r in Hi; [|rewrite length_fmap; lia].
+          rewrite list_lookup_fmap in Hi. destruct (bs2 !! _); simplify_eq/=. by eexists.
     - rewrite gcells_enum Hvm. done.
   Qed.
 
-  Lemma val_cells_enum vars tag sz t vm fv w :
-    mty_wf (MEnum vars tag sz) → (0 ≤ t)%Z → vars !! Z.to_nat t = Some vm → int_in_range tag t →
-    val_cells vm fv w -∗ val_cells (MEnum vars tag sz) (FVVariant t fv) (VVariant t w).
+  Lemma val_cells_enum vars dc sz al t vm o tg fv w :
+    mty_wf (MEnum vars dc sz al) → (0 ≤ t)%Z → vars !! Z.to_nat t = Some (vm, o, tg) →
+    val_cells vm fv w -∗ val_cells (MEnum vars dc sz al) (FVVariant t fv) (VVariant t w).
   Proof.
-    rewrite /val_cells /gtransit. iIntros (Hwf Ht0 Hvm Hr) "[[%Hw %Hl] Cl]". iSplit.
+    rewrite /val_cells /gtransit. iIntros (Hwf Ht0 Hvm) "[[%Hw %Hl] Cl]". iSplit.
     - iPureIntro. split; [by econstructor|].
       intros w0 Hw0. destruct (fv_lift_variant_inv _ _ _ (eq_sym Hw0)) as (dv & -> & ->).
       by rewrite (Hl dv).
     - iIntros (l' bs' Hd) "Hbs". move: Hd. rewrite decode_value_enum. case_decide as Hlen; [|done].
-      destruct (decode_int tag (take (int_size tag) bs')) as [t'|] eqn:Ht; simpl; [|done].
-      case_decide; [|done]. destruct (vars !! Z.to_nat t') as [vm'|] eqn:Hvm'; simpl; [|done].
+      destruct (decode_discr dc bs') as [t'|] eqn:Ht; simpl; [|done].
+      case_decide; [|done]. destruct (vars !! Z.to_nat t') as [vv|] eqn:Hvm'; simpl; [|done].
       intros (d' & Hd & [= <- <-])%fmap_Some_1. rewrite Hvm in Hvm'. injection Hvm' as <-.
-      inversion Hwf as [| | | |? ? ? Hvars Htag]; simplify_eq.
-      destruct (Forall_lookup_1 _ _ _ _ Hvars Hvm) as [Hsz _].
-      rewrite -(take_drop (int_size tag) bs') -(take_drop (mty_size vm) (drop (int_size tag) bs')).
+      have Hwf' := Hwf. apply mty_wf_enum_inv in Hwf' as [(Hvars & _ & _) _].
+      destruct (Forall_lookup_1 _ _ _ _ Hvars Hvm) as [Hsz _]. simpl in Hsz.
+      rewrite -(take_drop o bs') -(take_drop (mty_size vm) (drop o bs')).
       rewrite !heap_mapsto_bytes_app. iDestruct "Hbs" as "(Ht & Hp & Hr)".
       rewrite !length_take length_drop !Nat.min_l; [|lia..].
       iMod ("Cl" with "[] Hp") as "C"; [done|].
-      iModIntro. iApply (gcont_enum_intro _ _ _ _ _ _ _ _ (drop (mty_size vm) (drop (int_size tag) bs')) with "Ht C [Hr]"); [by rewrite length_take; lia|done|done|done| |].
-      + rewrite !length_app !length_take !length_drop. lia.
+      iModIntro. iApply (gcont_enum_intro _ _ _ _ _ _ _ _ _ _ _ (drop (mty_size vm) (drop o bs')) with "Ht C [Hr]");
+        [done|done|done|by rewrite length_take; lia| | |].
+      + rewrite !length_drop. lia.
+      + rewrite -Ht. eapply decode_discr_agree_payload; [done|exact Hvm|]. intros i Hi.
+        destruct (decide (i < o)%nat).
+        * rewrite lookup_app_l ?length_take; [|lia]. rewrite !lookup_take //.
+        * rewrite lookup_app_r ?length_take; [|lia]. rewrite lookup_app_r ?length_replicate; [|lia].
+          rewrite !lookup_drop. f_equal. lia.
       + by rewrite shift_loc_assoc_nat.
   Qed.
 
@@ -230,9 +245,8 @@ Section value_parts.
     { iPureIntro. split; [done|]. rewrite -ty_fval_eq syn_fval_pinj (ty_fval_eq (tyl +!! i)) Hfv //. }
     iFrame "⧖". iSplitL "Hc".
     - rewrite -!ty_mty_eq. change (syn_mty (Σ! 𝔄l)) with (seq_enum (syn_mty <$> 𝔄l)).
-      iApply (val_cells_enum with "Hc"); [apply (syn_mty_wf (Σ! 𝔄l))|lia| |].
-      + rewrite Nat2Z.id list_lookup_fmap llookup_lookup //.
-      + rewrite length_fmap. apply enum_tag_in_range, fin_to_nat_lt.
+      iApply (val_cells_enum with "Hc"); [apply (syn_mty_wf (Σ! 𝔄l))|lia|].
+      rewrite /seq_enum Nat2Z.id list_lookup_imap list_lookup_fmap llookup_lookup //.
     - rewrite [ty_gho_own (Σ! tyl)]/ty_gho_own /xsum_ty /= to_xsum_pinj. done.
   Qed.
 

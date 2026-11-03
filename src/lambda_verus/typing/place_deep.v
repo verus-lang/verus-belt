@@ -11,8 +11,8 @@
     closer for a new value of the leaf (of the same type). It is the same-type case of the
     write access [wp_vplace_wacc] ([place_write.v]), used by the writes and the byte copies
     ([place_memcpy.v]).
-  - [type_case_vplace_deep]: case analysis on a sum leaf, which reads the tag with a typed
-    [Load] of the tag [IntType] at offset 0; the leaf becomes the sum place
+  - [type_case_vplace_deep]: case analysis on a sum leaf, which reads its discriminant with
+    [GetDiscr] (a typed load of the tag); the leaf becomes the sum place
     [SumLty tyl i (OfTy (tyl +!! i))] in branch [i]; [type_fold_vplace_sum_deep_instr]
     folds it back.
 
@@ -149,7 +149,7 @@ Section sum_deep.
     ([∗ nat] i < length 𝔄l, typed_body E L I C
       (p ◁ₗ pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ pctx_plug K (OfTy (Σ! tyl)) +:: T)
-      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_vexpr K p)) of el)
+      (case: (GetDiscr (syn_mty (Σ! 𝔄l)) (pctx_vexpr K p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -166,7 +166,7 @@ Section sum_deep.
     { by rewrite -(semi_iso' to_xsum of_xsum (pctx_get K x₀)) Hj. }
     try rewrite Hy.
     iDestruct (Alv with "L E") as "#Alv".
-    wp_bind (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_vexpr K p))%E.
+    wp_bind (GetDiscr _ (pctx_vexpr K p))%E.
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
     iIntros "£ #⧖S". iApply wp_fupd.
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
@@ -214,7 +214,7 @@ Section sum_deep.
       iMod (uniq_payload_run with "Aty B Pl") as "(B & #⧖' & Gho1 & Pt1)"; [solve_ndisj|].
       iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Tag & Pay & Pad)".
       iDestruct "Tag" as (bt) "[Bt %Hbt]".
-      iApply (wp_load_na with "Bt"); [exact Hbt|]. iIntros "!> Bt".
+      iApply (wp_get_discr_sum with "Bt"); [exact Hbt|apply fin_to_nat_lt|]. iIntros "Bt".
       iSpecialize ("CloseB" $! (pinj j a) dh gh with "[Bt Pay Pad Gho1] ⧗1").
       { iNext. iFrame "⧖' Gho1". rewrite (cbytes_sum _ j (tyl +!! j)). by iFrame. }
       iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [solve_ndisj|].
@@ -251,7 +251,7 @@ Section sum_deep.
       iDestruct "H" as (? ->) "[Pt1 Gho1]". rewrite ?Hy.
       iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Tag & Pay & Pad)".
       iDestruct "Tag" as (bt) "[Bt %Hbt]".
-      iApply (wp_load_na with "Bt"); [exact Hbt|]. iIntros "!> Bt".
+      iApply (wp_get_discr_sum with "Bt"); [exact Hbt|apply fin_to_nat_lt|]. iIntros "Bt".
       iMod ("Cl" $! lt' r' dh gh D [] 1%Qp True%I
         with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Bt Pay Pad Gho1]") as "(Own & H1 & _)".
       { exact Hr'. }
@@ -279,7 +279,7 @@ Section sum_deep.
     ([∗ nat] i < length 𝔄l, typed_body E L I C
       (p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)) +:: T)
-      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K p)) of el)
+      (case: (GetDiscr (syn_mty (Σ! 𝔄l)) (pctx_expr K p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
