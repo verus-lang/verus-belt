@@ -60,7 +60,7 @@ Section pctx_read.
   Fixpoint pctx_rleafb {𝔅 𝔄} (K: pctx 𝔅 𝔄) : bool → lty 𝔅 → type 𝔅 → lft → Prop :=
     match K in pctx 𝔅 𝔄 return bool → lty 𝔅 → type 𝔅 → lft → Prop with
     | PHole => λ b, lty_rleaf b
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_rleafb K
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K => pctx_rleafb K
     | PUniq _ K | PResUniq _ K => λ _, pctx_rleafb K false
     | PShr _ _ => λ _ lt ty κs, ty = lty_fold lt ∧ κs = static
     end.
@@ -71,7 +71,7 @@ Section pctx_read.
   Fixpoint pctx_read {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
     match K with
     | PHole | PShr _ _ => True
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PResUniq _ K => pctx_read K
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K | PResUniq _ K => pctx_read K
     | PUniq _ K => pctx_simple K ∧ pctx_read K
     end.
 
@@ -79,11 +79,9 @@ Section pctx_read.
 
   Global Instance pctx_read_hole {𝔅} : PctxRead (PHole (𝔅:=𝔅)).
   Proof. done. Qed.
-  Global Instance pctx_read_fst {𝔅 𝔄1 𝔄2} (K: pctx 𝔅 𝔄1) (lt2: lty 𝔄2) :
-    PctxRead K → PctxRead (PFst K lt2).
-  Proof. done. Qed.
-  Global Instance pctx_read_snd {𝔅 𝔄1 𝔄2} (lt1: lty 𝔄1) (K: pctx 𝔅 𝔄2) :
-    PctxRead K → PctxRead (PSnd lt1 K).
+  Global Instance pctx_read_field {𝔅 𝔄lb 𝔄 𝔄la} Lay (lb: hlist lty 𝔄lb) (K: pctx 𝔅 𝔄)
+      (la: hlist lty 𝔄la) :
+    PctxRead K → PctxRead (PField Lay lb K la).
   Proof. done. Qed.
   Global Instance pctx_read_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') : PctxRead K → PctxRead (POwn n K).
   Proof. done. Qed.
@@ -109,17 +107,13 @@ Section pctx_read.
     (∃ 𝔅' κ (K1: pctx (uniq_borₛ 𝔅') 𝔄) (K2: pctx 𝔅 𝔅'),
       K = pctx_app K1 (PResUniq κ K2) ∧ pctx_noshr K1 ∧ pctx_nouniq K1 ∧ pctx_read K2).
   Proof.
-    induction K as [|𝔅 𝔄1 𝔄2 K IH lt2|𝔅 𝔄1 𝔄2 lt1 K IH|𝔅 𝔄' n K IH|𝔅 𝔄l tyl i w K IH|
+    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IH la|𝔅 𝔄' n K IH|𝔅 𝔄l tyl i w K IH|
       𝔅 𝔄' κ K IH|𝔅 𝔄' κ K IH|𝔅 𝔄' κ K IH]; simpl.
     - by left.
     - intros H. destruct (IH H) as [?|[(𝔅' & κ & K1 & K2 & -> & ?)|(𝔅' & κ & K1 & K2 & -> & ?)]];
         [by left|right; left|right; right].
-      + by exists 𝔅', κ, (PFst K1 lt2), K2.
-      + by exists 𝔅', κ, (PFst K1 lt2), K2.
-    - intros H. destruct (IH H) as [?|[(𝔅' & κ & K1 & K2 & -> & ?)|(𝔅' & κ & K1 & K2 & -> & ?)]];
-        [by left|right; left|right; right].
-      + by exists 𝔅', κ, (PSnd lt1 K1), K2.
-      + by exists 𝔅', κ, (PSnd lt1 K1), K2.
+      + by exists 𝔅', κ, (PField Lay lb K1 la), K2.
+      + by exists 𝔅', κ, (PField Lay lb K1 la), K2.
     - intros H. destruct (IH H) as [?|[(𝔅' & κ & K1 & K2 & -> & ?)|(𝔅' & κ & K1 & K2 & -> & ?)]];
         [by left|right; left|right; right].
       + by exists 𝔅', κ, (POwn n K1), K2.
@@ -170,7 +164,7 @@ Section pctx_read.
     pctx_noshr K1 →
     ⊢ pctx_alv (pctx_app K1 K2) lt ⊑ pctx_ulft K1 (pctx_plug K2 lt) ⊓ pctx_alv K2 lt.
   Proof.
-    induction K1 as [|? ? ? K1 IH ?|? ? ? ? K1 IH|? ? ? K1 IH|? ? ? ? ? K1 IH|𝔅' 𝔄' κ' K1 IH| |]
+    induction K1 as [|? ? ? ? ? ? K1 IH ?|? ? ? K1 IH|? ? ? ? ? K1 IH|𝔅' 𝔄' κ' K1 IH| |]
       in K2 |- *;
       intros HK; [|exact (IH K2 HK)..| |done|done].
     - iApply llftl_incl_glb; [iApply lft_incl_static|iApply guards_refl].
