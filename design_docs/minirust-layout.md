@@ -834,21 +834,33 @@ Definition enum_mty EL ms := if decide (el_wf EL ms) then el_mty EL ms else el_m
 
 ### 7.4 Struct places (L2)
 
-- `StructLty {𝔄l} (L: struct_layout) (lts: hlist lty 𝔄l) : lty (structₛ L 𝔄l)` replaces
-  `ProdLty`. This is a nested inductive through `hlist` (Coq accepts it); the `Fixpoint`s
-  recurse on `lts` by an inner `fix`, and the proofs use a custom induction principle with
-  an `HForall` hypothesis.
-- Refinements: `prfn_struct (structₛ L 𝔄l) := plist (λ 𝔅, prfn 𝔅) 𝔄l`; patterns:
-  `PatStruct (ps: list lpat)`; paths: `list nat` (field `j`; `0` below pointers and sums).
-- `struct_node L children r l := ([∗ hlist] child_j r_j (l +ₗ struct_off L 𝔄l j)) ∗
-  pad_own l (struct_mty …)`, where `pad_own l m` owns, byte by byte, the bytes of `m` that
-  are in no field. Mode-independent, as `prod_node`.
-- Context step `PField L (lts: hlist lty 𝔄l) (j: fin (length 𝔄l)) K`, at offset
-  `struct_off L 𝔄l j`; `pctx_plug (PField L lts j K) lt = StructLty L (hlist_set lts j
-  (pctx_plug K lt))` (the entry `j` of `lts` is ignored, as for `SumLty`).
-- Unfolding: `OfTy (struct_ty L tyl)` is `ltype_eq` to `StructLty L (hmap OfTy tyl)`
-  (owned), and behind a unique borrow by the compound body (as `prod_ofty_unfold_uniq`).
-  `Π!` below unique borrows comes for free.
+(Revised during L2a; this replaces the `hlist` design first written here.) A struct place
+is its layout and the *list* of its field places, encoded as a cons-list inside `lty` at
+the logical type `Π! 𝔄l`, which avoids a nested inductive through `hlist` (every
+`Fixpoint` over `lty`/`pctx` and every induction would otherwise need a nested recursion and
+a custom induction principle):
+
+- `FieldsLty {𝔄 𝔄l} (o: nat) (lt: lty 𝔄) (lts: lty (Π! 𝔄l)) : lty (Π! (𝔄 :: 𝔄l))`: the
+  field at offset `o` of the struct base, and the other fields (at the same base). It
+  replaces `ProdLty`; its node is `prod_node` with the first child at `l +ₗ o` and the
+  second at `l`.
+- `StructLty {𝔄l} (L: struct_layout) (lts: lty (Π! 𝔄l)) : lty (structₛ L 𝔄l)`: the
+  fields, and the padding (`pad_own l (struct_fields L 𝔄l) (struct_size L 𝔄l)`).
+  Unfolding `OfTy (struct_ty L tyl)` gives `StructLty L (chain)`, where `chain` is the
+  `FieldsLty` chain of the `OfTy ty_j` at `struct_offs L 𝔄l`, ending with the leaf
+  `OfTy (fields_ty +[])`; folding needs such a complete chain.
+- Types: `struct_ty L tyl := struct_of L (fields_ty tyl)`, where `fields_ty tyl :
+  type (Π! 𝔄l)` is the list of the fields (ghost parts only: `Π!` is zero-sized,
+  logical) and `struct_of L` gives it the bytes of `structₛ L 𝔄l`. So `lty_fold` of a
+  complete chain is definitionally `struct_ty L tyl`.
+- Refinements: `prfn_struct (Π! (𝔄 :: 𝔄l)) := prfn 𝔄 * prfn (Π! 𝔄l)` and
+  `prfn_struct (structₛ L 𝔄l) := prfn (Π! 𝔄l)` (by nested recursion on the list);
+  patterns `PatProd` (for `FieldsLty`) and `PatStruct`; paths stay `list bool`.
+- Contexts: `PHead o K lts` (the field at `o`), `PTail o lt K` (the other fields), and
+  `PStruct L K`. The access to field `j` is a chain of `j` tail steps and a head step
+  (`PField`-style helper `pctx_field`), at offset `struct_off L 𝔄l j`.
+- `prod_ty`, `ProdLty`, `PFst`/`PSnd`, `place_xprod.v` go; `xprod_ty` is replaced by
+  `fields_ty` (logical); `prodₛ` and `Π!` become zero-sized.
 
 ### 7.5 Enums (L3)
 
