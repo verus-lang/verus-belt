@@ -301,6 +301,42 @@ Qed.
 Global Instance mty_wf_dec m : Decision (mty_wf m).
 Proof. refine (cast_if (decide (mty_wfb m))); by rewrite -mty_wfb_correct. Defined.
 
+(** ** Well-formed MiniRust types
+
+[wf_mty] packs a MiniRust type with a proof that it is well formed, as a boolean equality
+[mty_wfb m = true]. Two proofs of an equality of booleans are equal without axioms
+([eq_pi]), so [wf_mty] has decidable equality, and two [wf_mty]s are equal when their types
+are ([wf_mty_eq]). The type of the contents of a cell ([pcellₛ] in [prophecy/syn_type.v]) is
+a [wf_mty].
+
+The proofs are kept canonical ([wfb_canon]): a proof built from any proof [H] of
+[b = true] computes to [eq_refl] as soon as [b] computes to [true]. So for a concrete [m],
+every [wf_mty] built on [m] (with [wfm], [mk_wf_mty] or [mty_to_wf]) is _convertible_ to
+[wfm m], and cell types built by the typing rules match the ones written in examples. *)
+Definition wf_mty : Type := { m : mty | mty_wfb m = true }.
+
+Definition wfb_canon {b : bool} : b = true → b = true :=
+  match b with true => λ _, eq_refl | false => λ H, H end.
+
+Definition mk_wf_mty (m : mty) (H : mty_wfb m = true) : wf_mty := m ↾ wfb_canon H.
+
+(** A [wf_mty] from a proof of [mty_wf m]. *)
+Definition mty_to_wf (m : mty) (H : mty_wf m) : wf_mty :=
+  mk_wf_mty m (Is_true_true_1 _ (proj2 (mty_wfb_correct m) H)).
+
+(** The [wf_mty] of a concrete MiniRust type: [wfm (MInt i32)] checks [mty_wfb (MInt i32)]
+    by computation. *)
+Notation wfm m := (exist (λ m', mty_wfb m' = true) m eq_refl).
+
+Global Instance wf_mty_eq_dec : EqDecision wf_mty.
+Proof. apply _. Defined.
+
+Lemma wf_mty_wf (m : wf_mty) : mty_wf (`m).
+Proof. apply mty_wfb_correct, Is_true_true_2, (proj2_sig m). Qed.
+
+Lemma wf_mty_eq (m m' : wf_mty) : `m = `m' → m = m'.
+Proof. apply sig_eq_pi, _. Qed.
+
 (** Well-formed values of a MiniRust type (MiniRust's [check_wf]). *)
 Inductive val_wf : mty → Value → Prop :=
 | VInt_wf it z : int_in_range it z → val_wf (MInt it) (VInt z)

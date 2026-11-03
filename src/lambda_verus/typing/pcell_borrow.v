@@ -27,7 +27,7 @@ Section cell_borrow.
 
   Lemma type_pcell_borrow_instr {𝔄} κ (ty: type 𝔄) p q E L I :
     typed_instr E L I
-      +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &shr{κ} (cell_points_to_ty ty)]
+      +[p ◁ᵥ &shr{κ} (pcell_ty (ty_wmty ty)); q ◁ᵥ &shr{κ} (cell_points_to_ty ty)]
       (PCellBorrow [p; q]) (λ v, +[v ◁ᵥ &shr{κ} ty])
       (λ post '-[(l, g); (_, (g', x))], λ mask π, g = g' ∧ post -[(l, x)] mask π).
   Proof.
@@ -47,7 +47,7 @@ Section cell_borrow.
     { rewrite /D Nat.succ_max_distr persistent_time_receipt_sep. by iFrame "⧖p ⧖q". }
     (* (L2): the guards of the move right and of the permission give a guard of the
        contents *)
-    iDestruct (guard_pcell_gca with "Hp Gp") as "Ga"; [done|].
+    iDestruct (guard_pcell_gca _ _ (ty_wmty ty) with "Hp Gp") as "Ga".
     iDestruct (lguards_weaken_later _ _ _ _ (S D + 1) with "Ga") as "GaD"; [lia|].
     iDestruct (lguards_weaken_later _ _ _ _ (S D + 1) with "Gb") as "GbD"; [lia|].
     iDestruct "Hp" as "(_ & #GI & _)".
@@ -68,7 +68,7 @@ Section cell_borrow.
   Lemma type_pcell_borrow_mut_instr {𝔄} κ (ty: type 𝔄) p q E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I
-      +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &uniq{κ} (cell_points_to_ty ty)]
+      +[p ◁ᵥ &shr{κ} (pcell_ty (ty_wmty ty)); q ◁ᵥ &uniq{κ} (cell_points_to_ty ty)]
       (PCellBorrowMut [p; q]) (λ v, +[v ◁ᵥ &uniq{κ} ty])
       (λ post '-[(l, g); bor], λ mask π,
         let '(_, (g', x), _, _, _, _) := bor in g = g' ∧
@@ -103,7 +103,7 @@ Section cell_borrow.
       iMod ("back" with "InterpL") as "$". iModIntro.
       iApply (guards_transitive with "Gh Alv"). }
     iMod (lc_fupd_elim_laterN with "£p Pers") as "Pers'".
-    rewrite decide_True //. iDestruct "Pers'" as (γ) "#Hp".
+    iDestruct "Pers'" as (γ) "#Hp".
     (* (L3p): lend the contents *)
     iMod (pcell_lend_uniq ty κ l g γ (S dp + 1) l' x ξi di gi ξidx tid with
       "LFT PROPH UNIQ Hp Gp Incl Gκ H1 £l Body") as (ζi ζidx) "(#Obsl & Body & H1)";
