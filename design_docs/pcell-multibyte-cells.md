@@ -1357,3 +1357,6 @@ type. Those hypotheses are discharged by `ty_mty_wf` in the typing layer, as bef
 `pcell_ty (wfm (MInt i32))`, `pcellₛ (wfm (MInt i32))` and
 `pcellₛ (syn_wmty (intₛ i32))` replace `pcell_ty (MInt i32)` etc.; they are convertible to
 the cells produced by `type_pcell_new_instr` at `int_ty i32`.
+
+No `Admitted`; `wf_mty_eq_dec` and `wf_mty_eq` use no axiom; the axioms of the examples are
+unchanged (`functional_extensionality_dep`, and `eq_rect_eq` where `proph_obs_sat` is used).
