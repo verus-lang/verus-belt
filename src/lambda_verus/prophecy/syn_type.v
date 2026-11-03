@@ -940,7 +940,7 @@ Proof.
   rewrite length_take length_drop length_take. rewrite !decide_True //; lia.
 Qed.
 
-(** The MiniRust value only depends on the abstracted value; this is what the [Send]
+(** The MiniRust value only depends on the abstracted value; this is what the [SendUpd]
     arguments need. *)
 Lemma syn_abstract_val_eq 𝔄 x x' :
   @syn_abstract 𝔄 x = @syn_abstract 𝔄 x' → (@syn_val 𝔄 x = @syn_val 𝔄 x').

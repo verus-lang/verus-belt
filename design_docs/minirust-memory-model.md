@@ -1274,3 +1274,39 @@ Uses of `send_change_tid` (consumers of the update form):
 
 So a `Send` that is a thread-equivalence of `ty_gho_own` keeps every instance except
 `local_inv_ty_send`, and the update form is needed for local invariants only.
+
+### Design
+
+Two classes (`typing/type.v`):
+
+- `Send ty := ∀ tid tid' x d g, ty_gho_own x d g tid ⊣⊢ ty_gho_own x d g tid'` (RustBelt's
+  `Send`; a definitional class like `Sync`, with the field `send_change_tid`). The
+  equivalence is symmetric, so the one-directional `⊢` would be the same.
+- `SendUpd ty`: the former `Send` (the update, field `send_upd_change_tid`), unchanged.
+  `send_send_upd : Send ty → SendUpd ty` is an instance (priority 100, so that the
+  structural instances of `SendUpd` are tried first).
+
+`sync_send : Sync ty → Send ty` stays (now the first component of `Sync`).
+`spawn_type` takes `SendUpd fty, SendUpd retty`, and `atomic_inv_ty` cases on
+`SendUpd ty`, so both still accept local invariants. Every structural instance has a
+`Send` and a `SendUpd` version (`prod`, `xprod`, `xsum`, `own_bytes`, `mod_ty` — only
+the `SendUpd` version needs `f` to respect `syn_abstract` —, `fix`, `tracked`,
+`points_to`, `cell_points_to`).
+
+### Outcome
+
+- `uniq_send : Send ty → Send (&uniq{κ} ty)` (`uniq_bor.v`), by `uniq_body_proper`, as in
+  `uniq_sync`. `uniq_send_sync` is deleted (it is `uniq_send ∘ sync_send`).
+- `shr_send : Sync ty → Send (&shr{κ} ty)` and `sync_send` are kept.
+- `local_inv_ty_send` is now `local_inv_ty_send_upd : SendUpd ty → SendUpd (local_inv_ty
+  ty pred)`: a local invariant is not `Send`, only `SendUpd`. No other instance is lost.
+- `atomic_inv_ty_send : SendUpd ty → Send (atomic_inv_ty ty pred)` (the equivalence
+  `gho_equiv_of_send`), `atomic_inv_ty_sync : SendUpd ty → Sync …`.
+- The `Send` hypotheses that `Sync` already implies are dropped: `storable_ty_send : Sync
+  ty → Send (storable_ty ty)`, `storage_ty_sync : Sync tyC → …`, `storage_ty_send : Sync
+  tyC → …` (`protocol.v`).
+- The instances on thread-independent types (`int`, `bool`, `base`, `uninit`, `ptr`,
+  `pcell`, `ra`, `ghost`, `join_handle`, `fn`, `unit0`) are proved by `done`.
+- Tests (`typing/ref_send_sync_tests.v`): `Send ty → Send (&uniq{κ} ty)` and nested
+  references by instance search, and `SendUpd` of products of boxes of references, from
+  `Send` or from `SendUpd` of the components.
