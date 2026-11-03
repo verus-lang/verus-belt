@@ -315,6 +315,30 @@ Lemma prfn_wit_sum {𝔄l} i (r: prfn (𝔄l !!ₗ i)) :
   prfn_wit (prfn_sum i r) = pinj i (prfn_wit r).
 Proof. by rewrite /prfn_sum /= psum_map1_pinj. Qed.
 
+(** The refinement of an unfolded struct whose fields are the values [xs]. *)
+Definition prfn_fields_in {𝔄l} (L: struct_layout) (xs: plist (~~) 𝔄l) : prfn (structₛ L 𝔄l) :=
+  inr (pmap (G:=λ 𝔅, (place_rfn 𝔅 + prfn_struct 𝔅)%type) (λ _ x, inl (PlaceIn x)) xs).
+
+Lemma prfn_den_fields_in {𝔄l} L (xs: plist (~~) 𝔄l) :
+  prfn_den (prfn_fields_in L xs) = vπ (𝔄:=structₛ L 𝔄l) xs.
+Proof.
+  fun_ext=> π. rewrite /prfn_fields_in /=. induction 𝔄l as [|𝔄 𝔄l IH]; [done|].
+  destruct xs as [x xs]. by rewrite /= prfn_den_in IH.
+Qed.
+
+Lemma prfn_wit_fields_in {𝔄l} L (xs: plist (~~) 𝔄l) :
+  prfn_wit (prfn_fields_in L xs) = xs.
+Proof.
+  rewrite /prfn_fields_in /=. induction 𝔄l as [|𝔄 𝔄l IH]; [by destruct xs|].
+  destruct xs as [x xs]. by rewrite /= prfn_wit_in IH.
+Qed.
+
+Lemma prfn_rsv_fields_in {𝔄l} L (xs: plist (~~) 𝔄l) ζl : prfn_rsv (prfn_fields_in L xs) ζl.
+Proof.
+  rewrite /prfn_fields_in /=. induction 𝔄l as [|𝔄 𝔄l IH]; [done|].
+  destruct xs as [x xs]. split; [apply prfn_rsv_in|apply IH].
+Qed.
+
 Lemma prfn_rsv_sum {𝔄l} i (r: prfn (𝔄l !!ₗ i)) ζl :
   prfn_rsv (prfn_sum i r) ζl = prfn_rsv r ζl.
 Proof. rewrite /prfn_sum /=. apply (psum_all_pinj_eq (λ _ r', prfn_rsv r' ζl)). Qed.

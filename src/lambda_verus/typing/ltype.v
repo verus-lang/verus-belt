@@ -1424,36 +1424,54 @@ End ltype_incl.
 Section unfold.
   Context `{!typeG Σ}.
 
-  (** ** Products *)
+  (** ** Structs *)
 
-  Lemma prod_ofty_unfold_own m {𝔄 𝔅} (ty1: type 𝔄) (ty2: type 𝔅) x1 x2 d g tid l :
-    ltype_own (Owned m) (ProdLty (OfTy ty1) (OfTy ty2))
-      (inr (inl (PlaceIn x1), inl (PlaceIn x2))) d g tid l ⊣⊢
-    ltype_own (Owned m) (OfTy (prod_ty ty1 ty2)) (inl (PlaceIn (𝔄:=𝔄 * 𝔅) (x1, x2))) d g tid l.
+  Lemma fields_ofty_own c m {𝔄l} offs (tyl: typel 𝔄l) (xs: plist (~~) 𝔄l) d g tid l :
+    fields_node offs (hmap (λ _ lt, ltype_own_cp c lt (Owned m)) (hmap (λ _ ty, OfTy ty) tyl))
+      (hcmap (λ _ lt, lty_pat lt) (hmap (λ _ ty, OfTy ty) tyl))
+      (pmap (G:=λ 𝔅, (place_rfn 𝔅 + prfn_struct 𝔅)%type) (λ _ x, inl (PlaceIn x)) xs)
+      d g tid l ⊣⊢
+    fields_bytes_own l offs tyl xs ∗ ▷^m ty_gho_own (fields_ty tyl) xs d g tid.
   Proof.
-    rewrite /ltype_own /= /ofty_owned /=. iSplit.
-    - iIntros "[(%y1 & -> & Pt1 & Gho1) (%y2 & -> & Pt2 & Gho2)]". iExists (x1, x2).
-      iSplit; [done|]. rewrite (cbytes_pair _ ty1 ty2) (ty_bsize_eq ty1). by iFrame.
-    - iIntros "(%y & -> & Pt & Gho)". rewrite (cbytes_pair _ ty1 ty2) (ty_bsize_eq ty1).
-      iDestruct "Pt" as "[Pt1 Pt2]". iDestruct "Gho" as "[Gho1 Gho2]".
-      iSplitL "Pt1 Gho1"; [iExists x1|iExists x2]; by iFrame.
+    revert offs. induction tyl as [|𝔄 𝔄l ty tyl IH]; intros offs; simpl.
+    - iSplit; [iIntros "_"; iSplit; [done|by iApply bi.laterN_intro]|by iIntros].
+    - destruct offs as [|o offs]; simpl; [iSplit; [by iIntros "[]"|by iIntros "[[] _]"]|].
+      destruct xs as [x xs]. rewrite IH bi.laterN_sep /ofty_owned /=. iSplit.
+      + iIntros "[(%y & -> & B & G) [Bs Gs]]". iFrame.
+      + iIntros "[[B Bs] [G Gs]]". by iFrame.
   Qed.
 
-  Lemma prod_ofty_unfold_core m {𝔄 𝔅} (ty1: type 𝔄) (ty2: type 𝔅) x1 x2 d g tid l :
-    ltype_own_core (Owned m) (ProdLty (OfTy ty1) (OfTy ty2))
-      (inr (inl (PlaceIn x1), inl (PlaceIn x2))) d g tid l ⊣⊢
-    ltype_own_core (Owned m) (OfTy (prod_ty ty1 ty2)) (inl (PlaceIn (𝔄:=𝔄 * 𝔅) (x1, x2))) d g tid l.
-  Proof. apply (prod_ofty_unfold_own m). Qed.
-
-  Lemma prod_ofty_unfold m {𝔄 𝔅} (ty1: type 𝔄) (ty2: type 𝔅) (x1: ~~𝔄) (x2: ~~𝔅) :
-    ⊢ ltype_eq (Owned m) (inr (inl (PlaceIn x1), inl (PlaceIn x2)) : prfn (𝔄 * 𝔅))
-        (inl (PlaceIn (𝔄:=𝔄 * 𝔅) (x1, x2)))
-        (ProdLty (OfTy ty1) (OfTy ty2)) (OfTy (prod_ty ty1 ty2)).
+  Lemma struct_ofty_unfold_own m {𝔄l} L (tyl: typel 𝔄l) (xs: plist (~~) 𝔄l) d g tid l :
+    ltype_own (Owned m) (StructLty L (hmap (λ _ ty, OfTy ty) tyl)) (prfn_fields_in L xs)
+      d g tid l ⊣⊢
+    ltype_own (Owned m) (OfTy (struct_ty L tyl)) (inl (PlaceIn (𝔄:=structₛ L 𝔄l) xs)) d g tid l.
   Proof.
-    iSplit; (iSplit; [iPureIntro; split; [done|by rewrite /= !prfn_den_in]|]);
+    rewrite /ltype_own /prfn_fields_in /= fields_ofty_own /ofty_owned /cbytes. iSplit.
+    - iIntros "[[B G] P]". iExists xs. rewrite (bytes_own_struct L _ tyl). by iFrame.
+    - iIntros "(%y & -> & B & G)". iDestruct (bytes_own_struct L _ tyl with "B") as "[B P]".
+      iFrame.
+  Qed.
+
+  Lemma struct_ofty_unfold_core m {𝔄l} L (tyl: typel 𝔄l) (xs: plist (~~) 𝔄l) d g tid l :
+    ltype_own_core (Owned m) (StructLty L (hmap (λ _ ty, OfTy ty) tyl)) (prfn_fields_in L xs)
+      d g tid l ⊣⊢
+    ltype_own_core (Owned m) (OfTy (struct_ty L tyl)) (inl (PlaceIn (𝔄:=structₛ L 𝔄l) xs))
+      d g tid l.
+  Proof.
+    rewrite /ltype_own_core /prfn_fields_in /= fields_ofty_own /ofty_owned /cbytes. iSplit.
+    - iIntros "[[B G] P]". iExists xs. rewrite (bytes_own_struct L _ tyl). by iFrame.
+    - iIntros "(%y & -> & B & G)". iDestruct (bytes_own_struct L _ tyl with "B") as "[B P]".
+      iFrame.
+  Qed.
+
+  Lemma struct_ofty_unfold m {𝔄l} L (tyl: typel 𝔄l) (xs: plist (~~) 𝔄l) :
+    ⊢ ltype_eq (Owned m) (prfn_fields_in L xs) (inl (PlaceIn (𝔄:=structₛ L 𝔄l) xs))
+        (StructLty L (hmap (λ _ ty, OfTy ty) tyl)) (OfTy (struct_ty L tyl)).
+  Proof.
+    iSplit; (iSplit; [iPureIntro; split; [done|by rewrite prfn_den_fields_in prfn_den_in]|]);
       iSplit; iIntros "!>" (d g tid l) "H"; iModIntro;
-      by [iApply prod_ofty_unfold_own|iApply prod_ofty_unfold_core|
-          iApply (prod_ofty_unfold_own with "H")|iApply (prod_ofty_unfold_core with "H")].
+      by [iApply struct_ofty_unfold_own|iApply struct_ofty_unfold_core|
+          iApply (struct_ofty_unfold_own with "H")|iApply (struct_ofty_unfold_core with "H")].
   Qed.
 
   (** ** Sums *)
@@ -1664,13 +1682,22 @@ Section cpd.
     iModIntro. iExists x₀, κp, γ, γf, idx, (ζl ++ ζl'). iFrame "∗#". iPureIntro. by apply Hr'.
   Qed.
 
-  (** ** Products *)
+  (** ** Structs *)
 
-  Lemma pat_ok_prod κ p : pat_ok κ p -∗ pat_ok κ (pat_l p) ∗ pat_ok κ (pat_r p).
+  Lemma pat_ok_struct κ p : pat_ok κ p -∗ [∗ list] p' ∈ pat_struct p, pat_ok κ p'.
   Proof.
-    iIntros "Ok". destruct p; simpl; try (iSplit; iApply pat_ok_leaf).
-    rewrite /pat_ok /= big_sepL_app. done.
+    iIntros "Ok". destruct p as [| | | | |ps| |]; simpl; try done.
+    rewrite /pat_ok /=. iInduction ps as [|p ps] "IH"; simpl; [done|].
+    rewrite big_sepL_app. iDestruct "Ok" as "[$ Ok]". by iApply "IH".
   Qed.
+
+  Lemma lty_fold_ofty_fields {𝔄l} (tyl: typel 𝔄l) :
+    hmap (λ _ lt, lty_fold lt) (hmap (λ _ ty, OfTy ty) tyl) = tyl.
+  Proof. induction tyl as [|𝔄 𝔄l ty tyl IH]; [done|]. by rewrite /= IH. Qed.
+
+  Lemma pat_blk_lfts_ofty_fields {𝔄l} (tyl: typel 𝔄l) :
+    pat_blk_lfts (PatStruct (hcmap (λ _ lt, lty_pat lt) (hmap (λ _ ty, OfTy ty) tyl))) = [].
+  Proof. induction tyl as [|𝔄 𝔄l ty tyl IH]; [done|]. exact IH. Qed.
 
   (** Unblocking a leaf in [Owned] mode inside a lazy update, as [leaf_owned_unblock]; a
       shared-blocked leaf is unblocked by its inheritance (its value and depths do not
@@ -1714,67 +1741,68 @@ Section cpd.
       iApply ("Hub" with "⧖"). iExists x. iFrame.
   Qed.
 
-  (** Unfolding a product behind a unique borrow: the body of the borrow is switched
-      to the node of [ProdLty (OfTy ty1) (OfTy ty2)], keeping the prophecy variable,
+  (** Unfolding a struct behind a unique borrow: the body of the borrow is switched
+      to the node of [StructLty L (hmap OfTy tyl)], keeping the prophecy variable,
       the value and the depths. *)
-  Lemma prod_ofty_unfold_uniq {𝔄 𝔅} (ty1: type 𝔄) (ty2: type 𝔅) κ ξi x1 x2 d g tid l E G :
+  Lemma struct_ofty_unfold_uniq {𝔄l} L (tyl: typel 𝔄l) κ ξi (xs: plist (~~) 𝔄l) d g tid l E G :
     Timeless G → ↑Nllft ∪ ↑prophN ⊆ E →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗ G -∗
-    ltype_own (Uniq κ ξi) (OfTy (prod_ty ty1 ty2)) (inl (PlaceIn (𝔄:=𝔄 * 𝔅) (x1, x2))) d g tid l
-      ={E}=∗
-    ltype_own (Uniq κ ξi) (ProdLty (OfTy ty1) (OfTy ty2))
-      (inr (inl (PlaceIn x1), inl (PlaceIn x2))) d g tid l ∗ G.
+    ltype_own (Uniq κ ξi) (OfTy (struct_ty L tyl)) (inl (PlaceIn (𝔄:=structₛ L 𝔄l) xs))
+      d g tid l ={E}=∗
+    ltype_own (Uniq κ ξi) (StructLty L (hmap (λ _ ty, OfTy ty) tyl)) (prfn_fields_in L xs)
+      d g tid l ∗ G.
   Proof.
-    iIntros (??) "#LFT #PROPH #UNIQ #Gk G H". rewrite /ltype_own /=.
+    iIntros (??) "#LFT #PROPH #UNIQ #Gk G H". rewrite /ltype_own /= lty_fold_ofty_fields.
     iDestruct "H" as (x idx ->) "(%κp & %γ & #Incl & (Gh & Tok) & ⧗ & #Bor)".
     iMod (ghost_var_alloc (lstate_triv (𝔄:=unitₛ) ())) as (γf) "Tf".
-    set node := (λ p', prod_node (syn_bsize 𝔄)
-      (leaf_owned_s false 0 ty1 (pat_l p')) (leaf_owned_s false 0 ty2 (pat_r p'))).
-    set ty := prod_ty ty1 ty2.
-    iMod (proph_idx_bor_gen_acc_rebody_guarded E κ (uniq_prvar (𝔄:=𝔄 * 𝔅) (x1, x2) ξi)
-      (uniq_cell (𝔄:=𝔄 * 𝔅) (x1, x2) d g γ) idx (uniq_gbody κp ty tid l)
+    set node := (λ p', struct_node L
+      (hmap (λ _ lt, ltype_own_cp false lt (Owned 0)) (hmap (λ _ ty, OfTy ty) tyl))
+      (pat_struct p')).
+    set ty := struct_ty L tyl.
+    set p := PatStruct (hcmap (λ _ lt, lty_pat lt) (hmap (λ _ ty, OfTy ty) tyl)).
+    iMod (proph_idx_bor_gen_acc_rebody_guarded E κ (uniq_prvar (𝔄:=structₛ L 𝔄l) xs ξi)
+      (uniq_cell (𝔄:=structₛ L 𝔄l) xs d g γ) idx (uniq_gbody κp ty tid l)
       (cpd_gbody κp γf ty node tid l) with "LFT UNIQ Gk Tok Bor G") as (wπ) "[Body Close]";
       [solve_ndisj|].
     iMod (uniq_gbody_triv_open with "Gh Body") as "(%Hw & Gh & Gh' & Pl)".
-    set r : prfn (𝔄 * 𝔅) := inr (inl (PlaceIn x1), inl (PlaceIn x2)).
-    iMod (ghost_var_update_halves (lstate (PatProd PatLeaf PatLeaf) r) with "Gh Gh'")
-      as "[Gh Gh']".
-    iSpecialize ("Close" $! (uniq_cell (𝔄:=𝔄 * 𝔅) (x1, x2) d g γ) wπ).
+    set r : prfn (structₛ L 𝔄l) := prfn_fields_in L xs.
+    iMod (ghost_var_update_halves (lstate p r) with "Gh Gh'") as "[Gh Gh']".
+    iSpecialize ("Close" $! (uniq_cell (𝔄:=structₛ L 𝔄l) xs d g γ) wπ).
     iMod (fupd_mask_mono with "(Close [Gh' Pl] [])") as (idx') "(Tok & #Bor' & G)";
       [solve_ndisj| | |].
-    { iNext. iLeft. rewrite cpd_body_cell. iExists (PatProd PatLeaf PatLeaf), r.
-      iFrame "Gh'". iSplit; [by rewrite /pat_ok|]. iSplit.
-      { iPureIntro. intros π. by rewrite Hw /r /= !prfn_den_in. }
-      iApply (cpd_contents_payload with "Pl"); [by rewrite /r /= !prfn_den_in|].
-      iIntros (d' g') "[Gho Pt] !>". rewrite /= (cbytes_pair _ ty1 ty2) (ty_bsize_eq ty1).
-      iDestruct "Pt" as "[Pt1 Pt2]". iDestruct "Gho" as "[Gho1 Gho2]".
-      iSplitL "Pt1 Gho1"; [iExists x1|iExists x2]; by iFrame. }
+    { iNext. iLeft. rewrite cpd_body_cell. iExists p, r.
+      iFrame "Gh'". iSplit; [by rewrite /pat_ok /p pat_blk_lfts_ofty_fields|]. iSplit.
+      { iPureIntro. intros π. by rewrite Hw /r prfn_den_fields_in. }
+      iApply (cpd_contents_payload with "Pl"); [by rewrite /r prfn_den_fields_in|].
+      iIntros (d' g') "[Gho Pt] !>". rewrite /node /p /struct_node /= fields_ofty_own.
+      rewrite /cbytes (bytes_own_struct L _ tyl). iDestruct "Pt" as "[Pt Pad]". iFrame. }
     { (* Back to the body of [&uniq], at the same state. *)
       iIntros "!>" (c2 w2) "Q". iModIntro. iNext.
       iDestruct "Q" as "[Q|[_ $]]". by iApply cpd_body_leaf. }
     (* Reserve for no prophecy variable: the leaves are not prophetic. *)
     iMod (proph_idx_bor_gen_reserve E κ _ _ idx' [] 1%Qp with "LFT PROPH UNIQ Gk G [] Tok Bor'")
       as "(Tok & _ & $)"; [solve_ndisj|done|].
-    iModIntro. iExists (x1, x2), κp, γ, γf, idx', []. iFrame "∗#". iPureIntro.
-    split; apply prfn_rsv_in.
+    iModIntro. iExists xs, κp, γ, γf, idx', []. iFrame "∗#". iPureIntro.
+    apply prfn_rsv_fields_in.
   Qed.
 
   (** Folding back. The contents are forced (with a guard for the lifetime of the type and a
       later credit): the payload of the leaf holds its bytes eagerly. *)
-  Lemma prod_ofty_fold_uniq {𝔄 𝔅} (ty1: type 𝔄) (ty2: type 𝔅) κ ξi x1 x2 d g tid l E G :
+  Lemma struct_ofty_fold_uniq {𝔄l} L (tyl: typel 𝔄l) κ ξi (xs: plist (~~) 𝔄l) d g tid l E G :
     Timeless G → ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ E →
     llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
-    (G &&{↑NllftG}&&> @[ty_lft (prod_ty ty1 ty2)]) -∗ G -∗ £1 -∗
-    ltype_own (Uniq κ ξi) (ProdLty (OfTy ty1) (OfTy ty2))
-      (inr (inl (PlaceIn x1), inl (PlaceIn x2))) d g tid l ={E}=∗
-    ltype_own (Uniq κ ξi) (OfTy (prod_ty ty1 ty2)) (inl (PlaceIn (𝔄:=𝔄 * 𝔅) (x1, x2))) d g tid l ∗ G.
+    (G &&{↑NllftG}&&> @[ty_lft (struct_ty L tyl)]) -∗ G -∗ £1 -∗
+    ltype_own (Uniq κ ξi) (StructLty L (hmap (λ _ ty, OfTy ty) tyl)) (prfn_fields_in L xs)
+      d g tid l ={E}=∗
+    ltype_own (Uniq κ ξi) (OfTy (struct_ty L tyl)) (inl (PlaceIn (𝔄:=structₛ L 𝔄l) xs))
+      d g tid l ∗ G.
   Proof.
-    iIntros (??) "#LFT #PROPH #UNIQ #Gk #Gty G £ H". rewrite /ltype_own /=.
+    iIntros (??) "#LFT #PROPH #UNIQ #Gk #Gty G £ H". rewrite /ltype_own /= lty_fold_ofty_fields.
     iDestruct "H" as (x₀ κp γ γf idx ζl) "(#Incl & _ & Tok & Gh & Tf & ⧗ & #Bor)".
     iMod (proph_idx_bor_gen_unreserve with "LFT PROPH UNIQ Gk G Tok Bor") as "[Tok G]";
       [solve_ndisj|].
-    set ty := prod_ty ty1 ty2.
-    have ?: Inhabited (~~𝔄) := populate x1. have ?: Inhabited (~~𝔅) := populate x2.
+    set ty := struct_ty L tyl.
+    have ?: Inhabited (~~(structₛ L 𝔄l)) := populate xs.
     iMod (fractional.frac_split_guard_in_half NllftG G G with "G []")
       as (γh) "[H1 [H2 [#Ghh #Back]]]"; [solve_ndisj|iApply guards_refl|].
     iDestruct (guards_transitive with "Ghh Gk") as "#Gh2".
@@ -1790,20 +1818,21 @@ Section cpd.
     iDestruct (ghost_var_agree with "Gh Gh'") as %[<- <-]%lstate_inj.
     iMod (lc_fupd_elim_later with "£ C") as "C".
     iDestruct (cpd_contents_guarded with "C") as "C".
-    iMod (guarded_upd_run with "Hty H2 C") as "(H2 & #⧖ & (%y1 & -> & Pt1 & Gho1) &
-      (%y2 & -> & Pt2 & Gho2))"; [solve_ndisj|].
-    iMod (ghost_var_update_halves (lstate_triv (𝔄:=𝔄 * 𝔅) (x1, x2)) with "Gh Gh'")
+    iMod (guarded_upd_run with "Hty H2 C") as "(H2 & #⧖ & C)"; [solve_ndisj|].
+    rewrite /prfn_fields_in /struct_node /= fields_ofty_own.
+    iDestruct "C" as "[[Pt Gho] Pad]".
+    iMod (ghost_var_update_halves (lstate_triv (𝔄:=structₛ L 𝔄l) xs) with "Gh Gh'")
       as "[Gh Gh']".
-    iSpecialize ("Close" $! (uniq_cell (𝔄:=𝔄 * 𝔅) (x1, x2) d g γ)
-      (vπ (uniq_cell (𝔄:=𝔄 * 𝔅) (x1, x2) d g γ))).
-    iMod (fupd_mask_mono with "(Close [Gh' Pt1 Pt2 Gho1 Gho2] [Tf])") as (idx') "(Tok & #Bor' & H1)";
+    iSpecialize ("Close" $! (uniq_cell (𝔄:=structₛ L 𝔄l) xs d g γ)
+      (vπ (uniq_cell (𝔄:=structₛ L 𝔄l) xs d g γ))).
+    iMod (fupd_mask_mono with "(Close [Gh' Pt Pad Gho] [Tf])") as (idx') "(Tok & #Bor' & H1)";
       [solve_ndisj| | |].
     { iApply (uniq_gbody_triv_close with "Gh'"); [done|]. iNext.
-      iApply (uniq_payload_intro with "⧖ [Gho1 Gho2] [Pt1 Pt2]"); [by iFrame|].
-      rewrite /= (cbytes_pair _ ty1 ty2) (ty_bsize_eq ty1). iFrame. }
+      iApply (uniq_payload_intro ty with "⧖ Gho [Pt Pad]").
+      rewrite /cbytes (bytes_own_struct L _ tyl). iFrame. }
     { iIntros "!>" (c2 w2) "P". iModIntro. iNext. iRight. iFrame. }
     iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
-    iModIntro. iExists (x1, x2), idx'. iSplit; [done|].
+    iModIntro. iExists xs, idx'. iSplit; [done|].
     iApply (uniq_body_from_parts with "Incl [Gh Tok] ⧗ [Bor']").
     - rewrite /uniq_tokγ (uniq_bor_tok_retarget _ x₀). iFrame.
     - by rewrite /uniq_persγ (uniq_idx_bor_gen_retarget _ _ x₀).
@@ -1816,7 +1845,7 @@ Section cpd.
       is switched to the new node ([node']), keeping the prophecy variable, the
       value, the ghost variable of the state and the reservation. The closing view
       shift of the new body goes back to the body of [&uniq] at the folded type, at
-      the same state (as the closing view shift of [prod_ofty_unfold_uniq]): the contents
+      the same state (as the closing view shift of [struct_ofty_unfold_uniq]): the contents
       of every state of the new body are also the contents of the leaf ([cpd_contents]);
       the token of the old body is given up for this. *)
   Lemma cpd_rebody {𝔄} κ ξi (ty: type 𝔄) p

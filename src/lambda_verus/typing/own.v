@@ -319,7 +319,7 @@ Section own_bytes.
   Qed.
 
   (** The bytes of the fields of a struct, at the offsets [offs]. *)
-  Fixpoint fields_bytes_own {𝔄l} (l: loc) (offs: list nat) (tyl: typel 𝔄l) :
+  Fixpoint fields_bytes_own {𝔄l} (l: loc) (offs: list nat) (tyl: typel 𝔄l) {struct tyl} :
       plist (~~) 𝔄l → iProp Σ :=
     match tyl in hlist _ 𝔄l return plist (~~) 𝔄l → iProp Σ with
     | +[] => λ _, True
