@@ -53,22 +53,50 @@ Section res_leaf.
     iDestruct (ty_gho_own_depth_mono _ d' g' d g with "Gho") as "[$ _]"; lia.
   Qed.
 
-  (** The resolved ownership of a pair. *)
-  Lemma res_leaf_prod_unfold m {𝔄 𝔅} (ty1: type 𝔄) (ty2: type 𝔅) x1 x2 d g tid l :
-    ltype_own (Owned m) (OfRes (prod_ty ty1 ty2)) (inl (PlaceIn (𝔄:=𝔄 * 𝔅) (x1, x2))) d g tid l ⊢
-    ltype_own (Owned m) (ProdLty (OfRes ty1) (OfRes ty2))
-      (inr (inl (PlaceIn x1), inl (PlaceIn x2))) d g tid l.
+  (** The resolved ownership of a struct: its fields are resolved leaves. *)
+  Local Lemma fields_res_unfold m {𝔄l} offs (tyl: typel 𝔄l) (xs: plist (~~) 𝔄l) d g tid l :
+    fields_bytes_own l offs tyl xs ∗
+      ▷^m (∃ d' g', ⌜d' ≤ d ∧ g' ≤ g⌝ ∗ (fields_ty tyl).(ty_gho_res) xs d' g' tid) ⊢
+    fields_node offs (hmap (λ _ lt, ltype_own_cp false lt (Owned m))
+        (hmap (λ _ ty, OfRes ty) tyl))
+      (hcmap (λ _ lt, lty_pat lt) (hmap (λ _ ty, OfRes ty) tyl))
+      (pmap (G:=λ 𝔅, prfn 𝔅) (λ _ x, inl (PlaceIn x)) xs) d g tid l.
   Proof.
-    rewrite /ltype_own /= /res_leaf /prod_node /=.
-    iIntros "(%x & -> & Pt & Gho) /=".
-    rewrite (cbytes_pair _ ty1 ty2). iDestruct "Pt" as "[Pt1 Pt2]".
-    iAssert (▷^m (∃ d' g', ⌜d' ≤ d ∧ g' ≤ g⌝ ∗ ty_gho_res ty1 x1 d' g' tid) ∗
-      ▷^m (∃ d' g', ⌜d' ≤ d ∧ g' ≤ g⌝ ∗ ty_gho_res ty2 x2 d' g' tid))%I
+    revert offs. induction tyl as [|𝔄 𝔄l ty tyl IH]; intros offs; [by iIntros|].
+    destruct offs as [|o offs]; [by iIntros "[[] _]"|]. destruct xs as [x xs].
+    rewrite /= /res_leaf. iIntros "[[Pt Pts] Gho]".
+    iAssert (▷^m (∃ d' g', ⌜d' ≤ d ∧ g' ≤ g⌝ ∗ ty_gho_res ty x d' g' tid) ∗
+      ▷^m (∃ d' g', ⌜d' ≤ d ∧ g' ≤ g⌝ ∗ (fields_ty tyl).(ty_gho_res) xs d' g' tid))%I
       with "[Gho]" as "[G1 G2]".
     { rewrite -bi.laterN_sep. iNext. iDestruct "Gho" as (d' g' ?) "[G1 G2]".
       iSplitL "G1"; iExists d', g'; by iFrame. }
-    rewrite (lty_size_ty (OfRes ty1) ty1).
-    iSplitL "Pt1 G1"; [iExists x1|iExists x2]; iSplit; done || iFrame.
+    iSplitL "Pt G1"; [iExists x; by iFrame|]. iApply IH. iFrame.
+  Qed.
+
+  Lemma res_leaf_struct_unfold m {𝔄l} Lay (tyl: typel 𝔄l) (xs: plist (~~) 𝔄l) d g tid l :
+    ltype_own (Owned m) (OfRes (struct_ty Lay tyl)) (inl (PlaceIn (𝔄:=structₛ Lay 𝔄l) xs))
+      d g tid l ⊢
+    ltype_own (Owned m) (StructLty Lay (hmap (λ _ ty, OfRes ty) tyl)) (prfn_fields_in Lay xs)
+      d g tid l.
+  Proof.
+    rewrite /ltype_own /= /res_leaf /prfn_fields_in /struct_node /=.
+    iIntros "(%x & -> & Pt & Gho)". rewrite /cbytes (bytes_own_struct Lay _ tyl).
+    iDestruct "Pt" as "[Pt $]". iApply fields_res_unfold. iFrame.
+  Qed.
+
+  Lemma lty_rfn_struct_ofres {𝔄l} Lay (tyl: typel 𝔄l) y ζm q :
+    lty_rfn (StructLty Lay (hmap (λ _ ty, OfRes ty) tyl)) y ζm q = prfn_fields_in Lay y.
+  Proof.
+    rewrite lty_rfn_struct /prfn_fields_in. f_equal. generalize 0%nat.
+    induction tyl as [|𝔄 𝔄l ty tyl IH] in y |- *; intros j; [by destruct y|].
+    destruct y as [x y]. by rewrite /= IH.
+  Qed.
+
+  Lemma lty_nrc_struct_ofres {𝔄l} Lay (tyl: typel 𝔄l) :
+    lty_nrc (StructLty Lay (hmap (λ _ ty, OfRes ty) tyl)) = lty_nrc (OfRes (struct_ty Lay tyl)).
+  Proof.
+    fun_ext=> e. fun_ext=> mm. simpl. induction tyl as [|𝔄 𝔄l ty tyl IH]; [done|].
+    by rewrite /= IH.
   Qed.
 
   (** The resolved ownership of an owned pointer below one owned pointer (the root): its
@@ -143,14 +171,15 @@ Section res_conv.
     iIntros (y ζm q d g tid l) "H !>". by iApply res_leaf_to_ofty.
   Qed.
 
-  (** A resolved pair is a pair of resolved leaves. *)
-  Lemma tctx_unfold_oplace_res_prod {𝔅1 𝔅2 𝔄} E L p n (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoUniq K}
-      (ty1: type 𝔅1) (ty2: type 𝔅2) :
-    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (OfRes (ty1 * ty2))]
-      +[p ◁ₗown{n} pctx_plug K (ProdLty (OfRes ty1) (OfRes ty2))] (λ post '-[x], post -[x]).
+  (** A resolved struct is a struct of resolved leaves. *)
+  Lemma tctx_unfold_oplace_res_struct {𝔅l 𝔄} E L p n Lay (K: pctx (structₛ Lay 𝔅l) 𝔄)
+      `{!PctxNoUniq K} (tyl: typel 𝔅l) :
+    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (OfRes (struct_ty Lay tyl))]
+      +[p ◁ₗown{n} pctx_plug K (StructLty Lay (hmap (λ _ ty, OfRes ty) tyl))]
+      (λ post '-[x], post -[x]).
   Proof.
-    apply (tctx_oplace_change_hole _ _ _ _ K); [done|done|].
-    iIntros ([y1 y2] ??????) "H !>". by iApply res_leaf_prod_unfold.
+    apply (tctx_oplace_change_hole _ _ _ _ K); [done|by rewrite lty_nrc_struct_ofres|].
+    iIntros (y ??????) "H !>". rewrite lty_rfn_struct_ofres. by iApply res_leaf_struct_unfold.
   Qed.
 
   (** A resolved owned pointer (below the root only, as [tctx_unfold_oplace_own]): its
