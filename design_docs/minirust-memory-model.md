@@ -1225,3 +1225,52 @@ Branch `proto/lang-values`, merged into `memory-model` after a clean full build.
   body at another thread). The reason is also stated in `uniq_bor.v`.
 - Tests: `typing/ref_send_sync_tests.v` (instance search for `&shr`/`&uniq` of `int`, of
   boxes, of pairs, nested, and `&shr` of a cell).
+
+## Send as a thread-equivalence (branch `proto/send-equiv`)
+
+Goal: `uniq_send : Send ty → Send (&uniq{κ} ty)`, as in RustBelt. Its proof needs the
+thread-independence of the ownership of the referent (`uniq_body_proper`, as in
+`uniq_sync`), which the one-way update `send_change_tid` does not give (see the outcome
+section above).
+
+### Audit of the update form
+
+The update form of `Send` (`send_change_tid` at `typing/type.v`) takes `d` steps, may
+change the value (to an `x'` of the same `syn_abstract`) and the depth (`d + off`), and gets
+the thread's `cna_lifetimes` (through a guard at `SendN`) and the guards of its lifetimes.
+
+Instances, and what their proof uses:
+
+- Ownership independent of the thread; sent unchanged, without a step (each is also `Sync`):
+  `unit0_send` (`product.v`), `int_send`, `bool_send`, `base_send`, `uninit_send`,
+  `ptr_send` (`pptr.v`), `pcell_send`, `ra_send`, `ghost_send`, `join_handle_send`
+  (`spawn.v`), `fn_send` (`function.v`), `shr_send : Sync ty → Send (&shr{κ} ty)`,
+  `uniq_send_sync : Sync ty → Send (&uniq{κ} ty)`, `atomic_inv_ty_send` (its ownership
+  is an invariant of the atomic pool, which holds the contents at `null_tid` when the
+  contents are `Send`), `storable_ty_send` and `storage_ty_send` (`protocol.v`; they also
+  assume `Sync`, which already gives the equivalence).
+- Structural (the update of the components; steps and value changes only come from the
+  components): `prod_send`, `xprod_send` (`product.v`), `xsum_send` (`sum.v`),
+  `own_bytes_send` (`own.v`: one step for the later of the box, and the bytes follow the
+  new value through `syn_abstract_fval_eq`), `mod_ty_send` (needs that `f` respects
+  `syn_abstract`), `fix_send` (`fixpoint.v`), `tracked_send`, `points_to_send` (`pptr.v`),
+  `cell_points_to_send` (`pcell.v`).
+- **Genuinely needs the update:** `local_inv_ty_send : Send ty → Send (local_inv_ty ty
+  pred)` (`local_inv.v`). The ownership of a local invariant is a cancellable non-atomic
+  invariant in the pool of the thread, `cna_inv γ tid N (…)`, with the contents at `tid`.
+  Sending it destroys the invariant (`cna_destroy`, which needs the thread's
+  `cna_lifetimes` and the guards of its lifetimes), sends the contents (`d' - d1` more
+  steps, paid by the time receipts and credits stored in the invariant), and allocates a
+  new invariant at `tid'` (a new name `γ'` and a new depth, so a new value of the same
+  `syn_abstract`). No equivalence of `cna_inv γ tid N P` and `cna_inv γ tid' N P` holds.
+
+Uses of `send_change_tid` (consumers of the update form):
+
+- `spawn_type` (`spawn.v`): sends the argument to the new thread and the result back to
+  the joining thread (with the `cna_lifetimes` of the threads).
+- `atomic_inv.v`: `change_tid_in`/`change_tid_out` move the contents of an atomic invariant
+  to and from `null_tid`; `atomic_inv_ty` cases (by excluded middle) on `Send ty`.
+- `local_inv_ty_send`, `xsum_send`, `fix_send` (structural uses).
+
+So a `Send` that is a thread-equivalence of `ty_gho_own` keeps every instance except
+`local_inv_ty_send`, and the update form is needed for local invariants only.
