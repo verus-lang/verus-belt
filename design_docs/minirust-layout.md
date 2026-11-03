@@ -693,3 +693,185 @@ sequential).**
 the case rules. L2a+L2b are the bulk: most of the cost is n-ary struct places, which were
 already a known gap. L3/L4 are independent of L2b. A reasonable first milestone is
 L1 + L2a + L2c, with `Π!` places disabled or kept on a transitional law, then L2b.
+
+## 7. Revision (user decisions 2026-11-03): explicit layouts
+
+The user replaced D1/D2 (the sealed layout oracle, §3.1) by **explicit layouts as type
+parameters**: "operational semantics with typed operations (`mty`); typing rules with
+layouts; a well-typed program has these all in agreement". `prod`, `xprod` and `xsum` are
+replaced completely by `struct_ty` and `enum_ty`. The other recommendations stand: D4 (b)
+alignment in layouts now, misaligned-access UB later (L5, optional); D5 (c); D6 (b); D7
+later (L4); D9 (b) `GetDiscr` in L1; D11 (b) n-ary field places; D12 no unions. D8: with
+explicit layouts, interleaving can later be written as a variant payload that is itself a
+`struct_ty` at offset 0; contiguous payloads are fine for now. §3 (the oracle), §4.1 (the
+sealed offsets) and the L2/L3 parts of §6 are superseded by this section.
+
+### 7.1 The `mty` layer (L1)
+
+As §2.1, with these details:
+
+```coq
+Inductive discr : Set :=
+| DKnown (t : Z) | DInvalid
+| DBranch (off : nat) (it : IntType) (fallback : discr) (children : list ((Z * Z) * discr)).
+Definition tagger : Set := list (nat * IntType * Z).          (* offset, type, value *)
+
+Inductive mty : Set :=
+| MInt (it : IntType) | MBool | MPtr
+| MTuple (fields : list (nat * mty)) (size align : nat)
+| MEnum (variants : list (mty * nat * tagger))               (* payload, offset, tagger *)
+        (d : discr) (size align : nat).
+```
+
+- **Alignment.** `mty_align`: `int_align it` (concrete: `max 1 (int_size it)`), `1` for
+  `MBool`, `PTR_ALIGN` (sealed like `PTR_SIZE`, with `0 < PTR_ALIGN` and
+  `PTR_ALIGN ∣ PTR_SIZE` exported), the `align` field of tuples and enums. In L1 `mty_wf`
+  does not check alignment (the sequential layouts have `align = 1`); L2 adds the tuple
+  conditions (offsets aligned, field alignments divide `align`, `align ∣ size`) and L3 the
+  enum ones, when the sequential layouts are gone.
+- **Discriminators** are evaluated by `discr_eval (rd : nat → IntType → option Z) d`: a
+  branch reads `rd off it`, goes to the first child whose range `[lo, hi)` contains the
+  integer, else to the fallback; `None` is UB. `decode_discr d bs` is `discr_eval` with the
+  reader `decode_int it (list_slice off (int_size it) bs)`. Only integers are read: pointer
+  bytes are UB for now (D7a, pointers go to the fallback, comes with niches in L4).
+- **Well-formedness of an enum** (decidable, `mty_wfb`). For each variant `(vm, o, tg)`:
+  `o + size vm ≤ size`, `mty_wf vm`; the tagger entries are in bounds, pairwise disjoint,
+  disjoint from `[o, o + size vm)`, and in range of their `IntType`. Then:
+  - `discr_ok`: for each variant `t`, `discr_eval (tagger_reader tg_t) d = Some t`
+    (symbolic evaluation, §2.2);
+  - **tag-only** (new, replaces "each branch reads a tagger entry"): every range read by a
+    branch of `d` (static, `discr_reads d`) is in bounds and disjoint from the payload range
+    of every variant. Then no path of `d` reads a payload byte, whatever the bytes: a write
+    into the payload never changes the discriminant (needed by `frepr_upd`: the actual path
+    on arbitrary bytes need not be the symbolic one), and the discriminator never reads the
+    byte-cells of a payload. L4 relaxes this for niches.
+- **Decode/encode**: `decode`: `t ← decode_discr d bs; (vm, o, _) ← vars !! t;
+  VVariant t <$> decode vm (slice o (size vm) bs)`. `encode`: the payload inserted at `o`
+  into `replicate size Uninit`, then the tagger entries. `val_wf (MEnum …) (VVariant t v)`
+  is `vars !! t = Some (vm, _, _) ∧ val_wf vm v` (no tag range any more).
+- **`frepr_enum`**: `length fbs = size`, `decode_discr d (erase fbs) = Some t` (`erase` maps
+  a byte-cell to `Uninit`), the payload represented at `slice o (size vm) fbs`, and every
+  byte outside the payload range plain. `fv_sub`/`fv_upd`/`mcells`/`gcells` use `o`.
+- **`GetDiscr m e`** (MiniRust's `GetDiscriminant`). Deviation from §2.5: it does not read
+  `size m` bytes — that would read the byte-cells of a payload (owned by cell borrows, not
+  by `↦b`) and race with interior mutability. As in MiniRust, it reads only the bytes of the
+  branches on the path: once `e` is a location `l`, a pure head step unfolds it (for
+  `m = MEnum _ d _ _`) into `discr_expr d l`: per branch, `let: "z" := Load Na1Ord (MInt it)
+  #(l +ₗ off)` and comparisons on `"z"`; `DKnown t` is `#t`; `DInvalid` is stuck. So the
+  races and the adequacy are those of `Load` (the new head step is pure).
+  - `wp_get_discr`: for chunks `cs : list (nat * list abyte)` with
+    `discr_eval (chunks_reader cs) d = Some t`,
+    `{{{ [∗ list] c ∈ cs, (l +ₗ c.1) ↦b c.2 }}} GetDiscr m #l {{{ RET #t; same }}}`;
+  - `wp_get_discr_guarded`: the chunks guarded by `G`, with `£(2 * d * discr_depth)`.
+  - The case rules use `case: GetDiscr (ty_mty (Σ! tyl)) p of …`.
+
+### 7.2 Layouts
+
+```coq
+Record struct_layout := SL { sl_offs : list nat; sl_size : nat; sl_align : nat }.
+Record enum_layout := EL { el_vars : list (nat * tagger);    (* payload offset, tagger *)
+                           el_discr : discr; el_size : nat; el_align : nat }.
+
+Definition sl_mty L ms := MTuple (zip L.(sl_offs) ms) L.(sl_size) L.(sl_align).
+Definition sl_wf L ms : Prop := length L.(sl_offs) = length ms ∧ mty_wf (sl_mty L ms).
+Definition struct_mty L ms := if decide (sl_wf L ms) then sl_mty L ms else sl_mty (c_layout ms) ms.
+
+Definition el_mty EL ms := MEnum (zip_with (λ m '(o, tg), (m, o, tg)) ms EL.(el_vars))
+                                 EL.(el_discr) EL.(el_size) EL.(el_align).
+Definition el_wf EL ms : Prop := length EL.(el_vars) = length ms ∧ mty_wf (el_mty EL ms).
+Definition enum_mty EL ms := if decide (el_wf EL ms) then el_mty EL ms else el_mty (tagged_layout ms) ms.
+```
+
+- **Well-formedness** is decidable (`mty_wfb`), w.r.t. the sizes and alignments of the
+  field types. It is checked by computation when the fields have concrete sizes (integers),
+  and by a tactic (`lia` after unfolding) when they involve `PTR_SIZE`.
+- **Computed layouts are helpers**:
+  - `c_layout ms` (`repr(C)`): fields in order, each offset rounded up to the field's
+    alignment, `align` the `lcm` of the field alignments (their max, for powers of two; 1
+    for no field), `size` the end rounded up to `align`. `sl_wf (c_layout ms) ms` holds
+    when the `ms` are well formed.
+  - `tagged_layout ms` (`repr(C, u8)`-like): the tag `enum_tag n` at 0, every payload at
+    the tag size rounded up to the maximal payload alignment, one `DBranch` on the tag.
+- **Ill-formed layouts fall back to the computed layout.** So `syn_mty` stays total and
+  always well formed, and `ty_mty_wf` stays unconditional. The typing rules never need
+  `sl_wf`: every offset they use is read off the actual `mty`
+  (`struct_off L 𝔄l j`, `enum_off EL 𝔄l i`), so they are correct for every `L`; `sl_wf`
+  only tells that those numbers are `L`'s (`struct_off_wf : sl_wf L ms → struct_off L 𝔄l j
+  = sl_offs L !!! j`). For `c_layout` both branches coincide, so `struct_mty (c_layout ms)
+  ms = sl_mty (c_layout ms) ms` without any wf proof (generic code, e.g. `List<T>`).
+  (Rejected alternative: `struct_ty` takes a wf proof and `syn_mty_wf` becomes conditional,
+  which changes the type record and every use of `ty_mty_wf`.)
+
+### 7.3 Syntactic and semantic types
+
+- New syntactic types `structₛ (L: struct_layout) 𝔄l` (interpreted as `plist`, like `Π!`)
+  and `enumₛ (EL: enum_layout) 𝔄l` (interpreted as `psum`, like `Σ!`), with
+  `syn_mty (structₛ L 𝔄l) = struct_mty L (syn_mty <$> 𝔄l)`,
+  `syn_mty (enumₛ EL 𝔄l) = enum_mty EL (syn_mty <$> 𝔄l)`, and `syn_val`/`syn_fval`
+  structural (`VTuple`, `VVariant i`).
+- `prodₛ` (`*`), `xprodₛ` (`Π!`) and `xsumₛ` (`Σ!`) stay as **logical** syntactic types
+  (they are used for prophecy variables, e.g. `uniq_cellₛ`, for ghost and tracked contents,
+  and `Empty_setₛ`), like `sumₛ`, `optionₛ`: zero-sized, with `syn_val = VTuple []`. Their
+  memory cases in `syn_mty`/`syn_val`/`syn_fval`/`syn_nocell` are deleted.
+- `struct_ty L tyl : type (structₛ L 𝔄l)` and `enum_ty EL tyl : type (enumₛ EL 𝔄l)`: the
+  ghost parts are those of `xprod_ty` (the `[∗ hlist]` of the fields, without the cons iso)
+  and of `xsum_ty`; the bytes are generic (`syn_mty`). `unit_ty : type unitₛ` is defined
+  directly (zero-sized).
+- **Deleted**: `prod_ty`, `xprod_ty`, `unit0`, `xsum_ty`, `empty_ty`, `seq_tuple`,
+  `seq_enum`, `place_xprod.v`, `prod_assocₛ`, `prod_left/right_idₛ`, `to/of_cons_prodₛ`,
+  `cons_prodₛ`, `plist_mapₛ` at `Π!` (moved to `structₛ`), the `decode_prod_*`,
+  `decode_assoc_*` lemmas and all `seq_*`/sequential splitting lemmas.
+- **Byte-preserving maps**: `syn_bincl` gets the conjunct `mty_align (syn_mty 𝔄) =
+  mty_align (syn_mty 𝔅)` (with the size, it determines `sl_wf`), so `struct_map`/`enum_map`
+  of byte-preserving maps (same `L`) are byte-preserving. `uninit_split` becomes
+  `↯ (n + m) ≅ cstructₛ [↯ n; ↯ m]` (its `c_layout` is `[0; n]`, size `n + m`).
+- **Subtyping** `struct_subtype`/`enum_subtype`: same layout, field-wise (as `xprod`/`xsum`).
+- **Helpers for examples**: `cstructₛ 𝔄l := structₛ (c_layout (syn_mty <$> 𝔄l)) 𝔄l`,
+  `cenumₛ 𝔄l := enumₛ (tagged_layout (syn_mty <$> 𝔄l)) 𝔄l`, and the corresponding types
+  (`cstruct_ty tyl`, `cenum_ty tyl`). An explicit layout is written `SL [0; 4] 8 4`.
+  Programs use `#(struct_off L 𝔄l j)`, `Alloc #(syn_bsize …)`; for integer fields these
+  compute to numbers.
+
+### 7.4 Struct places (L2)
+
+- `StructLty {𝔄l} (L: struct_layout) (lts: hlist lty 𝔄l) : lty (structₛ L 𝔄l)` replaces
+  `ProdLty`. This is a nested inductive through `hlist` (Coq accepts it); the `Fixpoint`s
+  recurse on `lts` by an inner `fix`, and the proofs use a custom induction principle with
+  an `HForall` hypothesis.
+- Refinements: `prfn_struct (structₛ L 𝔄l) := plist (λ 𝔅, prfn 𝔅) 𝔄l`; patterns:
+  `PatStruct (ps: list lpat)`; paths: `list nat` (field `j`; `0` below pointers and sums).
+- `struct_node L children r l := ([∗ hlist] child_j r_j (l +ₗ struct_off L 𝔄l j)) ∗
+  pad_own l (struct_mty …)`, where `pad_own l m` owns, byte by byte, the bytes of `m` that
+  are in no field. Mode-independent, as `prod_node`.
+- Context step `PField L (lts: hlist lty 𝔄l) (j: fin (length 𝔄l)) K`, at offset
+  `struct_off L 𝔄l j`; `pctx_plug (PField L lts j K) lt = StructLty L (hlist_set lts j
+  (pctx_plug K lt))` (the entry `j` of `lts` is ignored, as for `SumLty`).
+- Unfolding: `OfTy (struct_ty L tyl)` is `ltype_eq` to `StructLty L (hmap OfTy tyl)`
+  (owned), and behind a unique borrow by the compound body (as `prod_ofty_unfold_uniq`).
+  `Π!` below unique borrows comes for free.
+
+### 7.5 Enums (L3)
+
+- `SumLty` is restated over `enumₛ EL 𝔄l` (`SumLty EL tyl i lt`, folded type
+  `enum_ty EL (hlist_set tyl i (lty_fold lt))`).
+- `PSum EL tyl i w K` at `enum_off EL 𝔄l i` (read off the actual `mty`).
+- `sum_node`/`view_sum`: the payload at `l +ₗ enum_off`, and `enum_rest l m i`: the bytes
+  outside the payload (tagger and padding), whose `decode_discr` (with the payload range
+  erased) is `i`. It replaces `tag_cell`/`pad_cell`, and is what `GetDiscr` reads.
+- `MkVariant` + typed `Store` of a whole variant are unchanged.
+
+### 7.6 Revised staged plan
+
+- **L1 — MiniRust-shaped `mty`, `GetDiscr`** (§7.1). `seq_tuple`/`seq_enum` (align 1) stay
+  as the layouts of `Π!`/`Σ!`/`*`; the typing layer keeps its statements; the case rules
+  switch to `GetDiscr`.
+- **L2 — Structs.** `struct_layout`, `c_layout`, `structₛ`, `struct_ty`, `StructLty`,
+  `PField`, `struct_node`, `pad_own`; the generic tuple splitting lemmas (bytes, fancy
+  bytes, cells, values); tuple alignment in `mty_wf`; examples ported to `struct_ty`;
+  `prod_ty`, `xprod_ty`, `place_xprod.v`, the product isomorphisms and the sequential
+  tuple lemmas deleted; `prodₛ`/`xprodₛ` logical. Possibly in several merges (layouts and
+  types; places; deletion).
+- **L3 — Enums.** `enum_layout`, `tagged_layout`, `enumₛ`, `enum_ty`, `SumLty` over
+  `enumₛ`, `enum_off`, `enum_rest`; enum alignment in `mty_wf`; `xsum_ty`, `seq_enum` and
+  the sequential sum lemmas deleted; `xsumₛ` logical; examples ported.
+- **L4 — Niches** and **L5 — alignment UB**: as §6.
