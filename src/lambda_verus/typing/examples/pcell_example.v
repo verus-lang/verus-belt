@@ -65,7 +65,7 @@ Section pcell_example.
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_incl_swap|]. eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_own_to_oplace. }
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vp v17 (POwn 4 PHole) (↯ 4) i32t);
+      { eapply (type_write_place_instr _ _ _ vp v17 (POwn 4 PHole) (OfTy (↯ 4)) i32t);
           [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iApply typed_body_tctx_incl. { apply tctx_oplace_to_own. }

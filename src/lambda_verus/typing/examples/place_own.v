@@ -70,7 +70,7 @@ Section place_own.
       iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vr β i32t). }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vr v5 (PUniq β PHole) i32t i32t);
+      { eapply (type_write_place_instr _ _ _ vr v5 (PUniq β PHole) (OfTy i32t) i32t);
           [apply pctx_wty_same|apply resolve_just|simpl; solve_typing]. }
       { solve_typing. } { simpl. reflexivity. }
       iApply typed_body_tctx_incl.
@@ -88,7 +88,7 @@ Section place_own.
       { solve_typing. } { reflexivity. }
       iIntros (v3). simpl_subst.
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vx v3 (POwn 8 (PFst PHole (OfTy i32t))) i32t i32t);
+      { eapply (type_write_place_instr _ _ _ vx v3 (POwn 8 (PFst PHole (OfTy i32t))) (OfTy i32t) i32t);
           [apply pctx_wty_same|apply resolve_just|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* x.1 *)
@@ -129,8 +129,9 @@ Section place_own.
   [&mut b.0] and a double dereference), on bytes: the inner box is unfolded in place
   ([tctx_unfold_oplace_own]) and its pointee borrowed through it (the path
   [PFst (POwn 4 PHole) _] loads the address of the inner box); the move out of [b.0] is
-  a typed [Load] of [MPtr] ([!ᵐ{MPtr}], [type_move_place_instr]), which leaves [↯ PTR_SIZE]; the re-assignment a typed
-  [Store]. *)
+  a typed [Load] of [MPtr] ([!ᵐ{MPtr}], [type_move_place_instr]), which leaves the moved-out leaf
+  [Moved (own_bytes 4 i32t)]; the re-assignment a typed [Store], which re-initializes it
+  ([pctx_wty_moved]). *)
   Definition box_pair : expr := (
     Newlft;;
     let: "r" := &ᵘ (Load Na1Ord MPtr "b") in            (* &mut *( *b).0 *)
@@ -178,7 +179,7 @@ Section place_own.
       iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vr β i32t). }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vr v7 (PUniq β PHole) i32t i32t);
+      { eapply (type_write_place_instr _ _ _ vr v7 (PUniq β PHole) (OfTy i32t) i32t);
           [apply pctx_wty_same|apply resolve_just|simpl; solve_typing]. }
       { solve_typing. } { simpl. reflexivity. }
       iApply typed_body_tctx_incl.
@@ -195,14 +196,14 @@ Section place_own.
       { apply (tctx_fold_oplace_own _ _ _ _ (PFst PHole (OfTy i32t)) 4 i32t). }
       iApply (type_let with "[]").
       { apply (type_move_place_instr _ _ _ vb (POwn (PTR_SIZE + 4) (PFst PHole (OfTy i32t)))
-          (own_bytes 4 i32t)). done. }
+          (own_bytes 4 i32t)). }
       { solve_typing. } { reflexivity. }
       iIntros (vc). simpl_subst.
       (* re-assign ( *b).0 *)
       iApply type_seq.
       { eapply (type_write_place_instr _ _ _ vb vc (POwn (PTR_SIZE + 4) (PFst PHole (OfTy i32t)))
-          (↯ (ty_bsize (own_bytes 4 i32t))) (own_bytes 4 i32t));
-          [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
+          (Moved (own_bytes 4 i32t)) (own_bytes 4 i32t));
+          [by apply pctx_wty_moved|apply lty_wres_moved|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* fold back, return b *)
       iApply typed_body_tctx_incl.

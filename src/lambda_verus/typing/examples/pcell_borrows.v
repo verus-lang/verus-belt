@@ -137,7 +137,7 @@ Section pcell_borrows.
       iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vm0 β i32t). }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vm0 v7 (PUniq β PHole) i32t i32t);
+      { eapply (type_write_place_instr _ _ _ vm0 v7 (PUniq β PHole) (OfTy i32t) i32t);
           [apply pctx_wty_same|apply resolve_just|simpl; solve_typing]. }
       { solve_typing. } { simpl. reflexivity. }
       iApply typed_body_tctx_incl.
@@ -221,24 +221,24 @@ Section pcell_borrows.
       { eapply (tctx_incl_frame_l _ _ +[_; _]).
         apply (tctx_unfold_oplace_prod _ _ _ _ PHole cellt permt). }
       iApply (type_let with "[]").
-      { apply (type_move_place_instr _ _ _ vc (POwn 8 (PFst PHole (OfTy permt))) cellt). done. }
+      { apply (type_move_place_instr _ _ _ vc (POwn 8 (PFst PHole (OfTy permt))) cellt). }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_l _ _ +[_; _]). eapply (tctx_incl_frame_r +[_] +[_]).
         apply tctx_own_to_oplace. }
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vd vv (POwn 8 PHole) (↯ 8) cellt);
+      { eapply (type_write_place_instr _ _ _ vd vv (POwn 8 PHole) (OfTy (↯ 8)) cellt);
           [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* move c.1 out; drop c *)
       iApply (type_let with "[]").
       { apply (type_move_place_instr _ _ _ vc
-          (POwn 8 (PSnd (OfTy (↯ (seq_size [MInt i32; MInt i32]))) PHole)) permt). done. }
+          (POwn 8 (PSnd (Moved cellt) PHole)) permt). }
       { solve_typing. } { reflexivity. }
       iIntros (vpt). simpl_subst.
       iApply type_seq.
-      { apply (type_drop_oplace_instr _ _ _ vc 8 8 (ProdLty (OfTy (↯ 8)) (OfTy (↯ 0)))
+      { apply (type_drop_oplace_instr _ _ _ vc 8 8 (ProdLty (Moved cellt) (Moved permt))
           (const (const True))); [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
       (* d.into_inner(pt) *)

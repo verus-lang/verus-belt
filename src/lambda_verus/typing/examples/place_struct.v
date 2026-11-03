@@ -60,7 +60,7 @@ Section place_struct.
       iApply type_seq.
       { eapply (type_write_place_instr _ _ _ vx v7
           (POwn 12 (PSnd (OfTy i32t) (PFst PHole (ProdLty (OfTy i32t) (OfTy (Π! +[]))))))
-          i32t i32t); [apply pctx_wty_same|apply resolve_just|solve_typing]. }
+          (OfTy i32t) i32t); [apply pctx_wty_same|apply resolve_just|solve_typing]. }
       { solve_typing. } { reflexivity. }
       simpl.
       (* x.c *)

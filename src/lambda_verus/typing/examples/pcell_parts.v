@@ -85,7 +85,7 @@ Section pcell_parts.
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_own_to_oplace. }
       iApply (type_let with "[]").
-      { apply (type_move_place_instr _ _ _ vc (POwn 4 PHole) cellt). done. }
+      { apply (type_move_place_instr _ _ _ vc (POwn 4 PHole) cellt). }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       (* drop c *)
@@ -116,7 +116,7 @@ Section pcell_parts.
       { eapply (tctx_incl_frame_l _ _ +[_]). eapply (tctx_incl_frame_r +[_] +[_]).
         apply (tctx_unfold_oplace_prod _ _ _ _ PHole i32t cellt). }
       iApply (type_let with "[]").
-      { apply (type_move_place_instr _ _ _ vr (POwn 8 (PSnd (OfTy i32t) PHole)) cellt). done. }
+      { apply (type_move_place_instr _ _ _ vr (POwn 8 (PSnd (OfTy i32t) PHole)) cellt). }
       { solve_typing. } { reflexivity. }
       iIntros (vw). simpl_subst.
       (* *s = w *)
@@ -240,7 +240,7 @@ Section pcell_parts.
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_own_to_oplace. }
       iApply (type_let with "[]").
-      { apply (type_move_place_instr _ _ _ vc (POwn 4 PHole) cellt). done. }
+      { apply (type_move_place_instr _ _ _ vc (POwn 4 PHole) cellt). }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       (* drop c *)
