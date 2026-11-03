@@ -328,7 +328,6 @@ src/lambda_verus/typing/place_memcpy.v
 src/lambda_verus/typing/place_share.v
 src/lambda_verus/typing/function.v
 src/lambda_verus/typing/subtype.v
-src/lambda_verus/typing/place_xprod.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/pcell_borrow.v
