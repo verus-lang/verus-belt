@@ -366,6 +366,17 @@ Proof.
     replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
     destruct (to_xsum x) as [i x0]. simpl. rewrite !psum_map1_pinj !to_xsum_pinj.
     intros (w & Hw & ->)%fmap_Some_1. by rewrite (Hall i x0 w Hw).
+  - intros (vs & Hvs & ->)%fmap_Some_1.
+    assert (∀ vs, mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) x)) = Some vs →
+      mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) x)) = Some (map fv_lift vs)) as Hall.
+    { clear Hvs vs. induction l as [|𝔄 l IH]; intros vs.
+      { simpl. by intros [= <-]. }
+      destruct x as [x xl]. simpl.
+      destruct (syn_val x) as [w|] eqn:Hw; [|done]. simpl.
+      destruct (mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) xl))) as [ws|] eqn:Hws;
+        [|done].
+      simpl. intros [= <-]. by rewrite (FIX _ _ _ Hw) (IH xl ws Hws). }
+    clear FIX. by rewrite (Hall vs Hvs).
 Qed.
 
 Lemma syn_fval_pinj {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) :

@@ -28,6 +28,7 @@ Inductive syn_type := intₛ (_: IntType) | boolₛ | unitₛ | Propₛ | positi
 | exec_funₛ (_: syn_type)
 | join_handleₛ (_: syn_type)
 | maskₛ
+| structₛ (_: struct_layout) (_: list syn_type)
 .
 
 (** The syntactic type of the integers of an [IntType]. [Zₛ] is the one of [isize]
@@ -76,6 +77,7 @@ Fixpoint indep_interp_of_syn_type (𝔄: syn_type) : Type :=
   | exec_funₛ 𝔄₀ => val * indep_interp_of_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
   | maskₛ => Mask
+  | structₛ _ 𝔄l => plist indep_interp_of_syn_type 𝔄l
   end.
 
 Notation "~~" := indep_interp_of_syn_type.
@@ -105,6 +107,7 @@ Fixpoint proph_interp_of_syn_type (𝔄: syn_type) : Type :=
   | exec_funₛ 𝔄₀ => val * indep_interp_of_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
   | maskₛ => Mask
+  | structₛ _ 𝔄l => plist proph_interp_of_syn_type 𝔄l
   end.
 Coercion proph_interp_of_syn_type: syn_type >-> Sortclass.
 
@@ -133,6 +136,7 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
   | exec_funₛ 𝔄₀ => val * abstracted_syn_type 𝔄₀
   | join_handleₛ 𝔄₀ => abstracted_syn_type 𝔄₀
   | maskₛ => Mask
+  | structₛ _ 𝔄l => plist abstracted_syn_type 𝔄l
   end.
   
 (** Decidable Equality *)
@@ -156,6 +160,7 @@ Fixpoint syn_type_beq 𝔄 𝔅 : bool :=
     => syn_type_beq 𝔄₀ 𝔅₀ && syn_type_beq 𝔄₁ 𝔅₁
   | vecₛ 𝔄₀ n, vecₛ 𝔅₀ m => syn_type_beq 𝔄₀ 𝔅₀ && bool_decide (n = m)
   | Π! 𝔄l, Π! 𝔅l | Σ! 𝔄l, Σ! 𝔅l => forall2b syn_type_beq 𝔄l 𝔅l
+  | structₛ L 𝔄l, structₛ L' 𝔅l => bool_decide (L = L') && forall2b syn_type_beq 𝔄l 𝔅l
   | _, _ => false
   end%ST.
 
@@ -184,7 +189,7 @@ Fixpoint inh_syn_type' 𝔄 : bool :=
   | prodₛ 𝔄₀ 𝔄₁ => inh_syn_type' 𝔄₀ && inh_syn_type' 𝔄₁
   | sumₛ 𝔄₀ 𝔄₁ => inh_syn_type' 𝔄₀ || inh_syn_type' 𝔄₁
   | funₛ 𝔄₀ 𝔄₁ => negb (inh_syn_type' 𝔄₀) || inh_syn_type' 𝔄₁
-  | xprodₛ 𝔄l => forallb inh_syn_type' 𝔄l
+  | xprodₛ 𝔄l | structₛ _ 𝔄l => forallb inh_syn_type' 𝔄l
   | xsumₛ 𝔄l => existsb inh_syn_type' 𝔄l
   | at_locₛ 𝔄₀ | uniq_borₛ 𝔄₀ | blockedₛ 𝔄₀ | exec_funₛ 𝔄₀ | ghostₛ 𝔄₀ | trackedₛ 𝔄₀
   | invₛ 𝔄₀ | local_invₛ 𝔄₀ | join_handleₛ 𝔄₀ | storableₛ 𝔄₀
@@ -198,7 +203,7 @@ Fixpoint inh_syn_type 𝔄 : bool :=
   | prodₛ 𝔄₀ 𝔄₁ => inh_syn_type 𝔄₀ && inh_syn_type 𝔄₁
   | sumₛ 𝔄₀ 𝔄₁ => inh_syn_type 𝔄₀ || inh_syn_type 𝔄₁
   | funₛ 𝔄₀ 𝔄₁ => negb (inh_syn_type' 𝔄₀) || inh_syn_type' 𝔄₁
-  | xprodₛ 𝔄l => forallb inh_syn_type 𝔄l
+  | xprodₛ 𝔄l | structₛ _ 𝔄l => forallb inh_syn_type 𝔄l
   | xsumₛ 𝔄l => existsb inh_syn_type 𝔄l
   | at_locₛ 𝔄₀ | uniq_borₛ 𝔄₀ | trackedₛ 𝔄₀ => inh_syn_type 𝔄₀
   | exec_funₛ 𝔄₀ | ghostₛ 𝔄₀ | storableₛ 𝔄₀ | invₛ 𝔄₀ | local_invₛ 𝔄₀ | join_handleₛ 𝔄₀ => inh_syn_type' 𝔄₀
@@ -236,6 +241,8 @@ Proof.
       apply (@absurd ∅ _). eapply FIX; [|done]. by rewrite Eq. 
     + move=> 𝔄 x. exact (inhabitant, fst (FIX 𝔄) x).
     + move=> 𝔄 x. exact (fst (FIX 𝔄) x).
+    + move=> _. elim; [move=> ?; exact -[]|]=> ?? IH /andb_True [??].
+      split; by [apply FIX|apply IH].
   - case: 𝔄=>//=.
     + move=> ?[|?]; rewrite negb_orb=> /andb_True[/negb_True/bool_decide_spec ??] v;
       [lia|]. by eapply FIX, vhd.
@@ -261,6 +268,8 @@ Proof.
       by apply f, FIX. 
     + move=> 𝔄 Hneg x. exact (snd (FIX 𝔄) Hneg (snd x)).
     + move=> 𝔄 Hneg x. exact (snd (FIX 𝔄) Hneg x).
+    + move=> _. elim; [done|]=> 𝔄 ? IH. rewrite negb_andb. case Eq: (inh_syn_type' 𝔄)
+      =>/= ?[??]; [by apply IH|]. eapply FIX; [|done]. by rewrite Eq.
 Qed.
 
 Local Lemma of_just_and_neg_inh_syn_type {𝔄} :
@@ -291,6 +300,8 @@ Proof.
       apply (@absurd ∅ _). eapply @of_just_and_neg_inh_syn_type'; [|done]. by rewrite Eq. 
     + move=> 𝔄 x. exact (inhabitant, fst (@of_just_and_neg_inh_syn_type' 𝔄) x).
     + move=> 𝔄 x. exact (fst (@of_just_and_neg_inh_syn_type' 𝔄) x).
+    + move=> _. elim; [move=> ?; exact -[]|]=> ?? IH /andb_True [??].
+      split; by [apply FIX|apply IH].
   - case: 𝔄=>//=.
     + move=> ?[|?]; rewrite negb_orb=> /andb_True[/negb_True/bool_decide_spec ??] v;
       [lia|]. by eapply FIX, vhd.
@@ -315,6 +326,8 @@ Proof.
       by apply f, @of_just_and_neg_inh_syn_type'.
     + move=> 𝔄 Hneg x. exact (snd (@of_just_and_neg_inh_syn_type' 𝔄) Hneg (snd x)).
     + move=> 𝔄 Hneg x. exact (snd (@of_just_and_neg_inh_syn_type' 𝔄) Hneg x).
+    + move=> _. elim; [done|]=> 𝔄 ? IH. rewrite negb_andb. case Eq: (inh_syn_type 𝔄)
+      =>/= ?[??]; [by apply IH|]. eapply FIX; [|done]. by rewrite Eq.
 Qed.
   
 Lemma of_inh_syn_type {𝔄} : inh_syn_type 𝔄 → 𝔄.
@@ -393,6 +406,7 @@ Fixpoint vπ {𝔄} : ~~𝔄 → proph_asn → 𝔄 :=
   | exec_funₛ 𝔄₀  => λ x π , x
   | maskₛ => λ x π, x
   | namespaceₛ => λ x π, x
+  | structₛ _ 𝔄l => λ x π , pmap (λ _ x0 , vπ x0 π) x
   end.
   
 Fixpoint plist_to_list {A: Type} {U: Type} {Xl} (xl: plist (λ (_ : A), U) Xl) : list U :=
@@ -438,6 +452,7 @@ Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   | exec_funₛ 𝔄₀  => λ x , []
   | maskₛ => λ x , []
   | namespaceₛ => λ x , []
+  | structₛ _ 𝔄l => λ x , List.concat (plist_to_list (pmap (λ _ x0 , ξl x0) x))
   end.
   
   
@@ -514,6 +529,7 @@ Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   | exec_funₛ 𝔄₀  => λ x  , (fst x, @syn_abstract 𝔄₀ (snd x))
   | maskₛ => λ x , x
   | namespaceₛ => λ x , x
+  | structₛ _ 𝔄l => λ x , pmap (λ _ x0 , syn_abstract x0) x
   end.
 
 (** * MiniRust types and values of syntactic types
@@ -568,6 +584,7 @@ Fixpoint syn_mty (𝔄: syn_type) : mty :=
   | locₛ | at_locₛ _ | uniq_borₛ _ | exec_funₛ _ => MPtr
   | prodₛ 𝔄₀ 𝔄₁ => seq_tuple [syn_mty 𝔄₀; syn_mty 𝔄₁]
   | xprodₛ 𝔄l => seq_tuple (syn_mty <$> 𝔄l)
+  | structₛ L 𝔄l => struct_mty L (syn_mty <$> 𝔄l)
   | xsumₛ 𝔄l => seq_enum (syn_mty <$> 𝔄l)
   | uninitₛ n => MTuple [] n 1
   | pcellₛ m => `m
@@ -585,7 +602,7 @@ Fixpoint syn_val {𝔄} : ~~𝔄 → option Value :=
   | pcellₛ _ => λ _, None
   | prodₛ 𝔄₀ 𝔄₁ => λ '(x₀, x₁),
       v₀ ← @syn_val 𝔄₀ x₀; v₁ ← @syn_val 𝔄₁ x₁; Some (VTuple [v₀; v₁])
-  | xprodₛ 𝔄l => λ x, VTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) x))
+  | xprodₛ 𝔄l | structₛ _ 𝔄l => λ x, VTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) x))
   | xsumₛ 𝔄l => λ x,
       match to_xsum (psum_map1 (λ _ x0, syn_val x0) x) return option Value with
         xinj i ov => VVariant (Z.of_nat (fin_to_nat i)) <$> ov
@@ -603,7 +620,7 @@ Fixpoint syn_fval {𝔄} : ~~𝔄 → option FValue :=
   | pcellₛ _ => λ g, Some (FVCell g)
   | prodₛ 𝔄₀ 𝔄₁ => λ '(x₀, x₁),
       fv₀ ← @syn_fval 𝔄₀ x₀; fv₁ ← @syn_fval 𝔄₁ x₁; Some (FVTuple [fv₀; fv₁])
-  | xprodₛ 𝔄l => λ x, FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) x))
+  | xprodₛ 𝔄l | structₛ _ 𝔄l => λ x, FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) x))
   | xsumₛ 𝔄l => λ x,
       match to_xsum (psum_map1 (λ _ x0, syn_fval x0) x) return option FValue with
         xinj i ofv => FVVariant (Z.of_nat (fin_to_nat i)) <$> ofv
@@ -618,7 +635,7 @@ Fixpoint syn_nocell (𝔄: syn_type) : bool :=
   match 𝔄 with
   | pcellₛ _ => false
   | prodₛ 𝔄₀ 𝔄₁ => syn_nocell 𝔄₀ && syn_nocell 𝔄₁
-  | xprodₛ 𝔄l | xsumₛ 𝔄l => forallb syn_nocell 𝔄l
+  | xprodₛ 𝔄l | xsumₛ 𝔄l | structₛ _ 𝔄l => forallb syn_nocell 𝔄l
   | _ => true
   end.
 
@@ -785,6 +802,17 @@ Proof.
   - apply seq_tuple_wf. induction l as [|𝔄 l IH]; constructor; [apply FIX|apply IH].
   - apply seq_enum_wf. induction l as [|𝔄 l IH]; constructor; [apply FIX|apply IH].
   - clear FIX. apply wf_mty_wf.
+  - apply struct_mty_wf. induction l as [|𝔄 l IH]; constructor; [apply FIX|apply IH].
+Qed.
+
+Lemma syn_mty_wf_list 𝔄l : Forall mty_wf (syn_mty <$> 𝔄l).
+Proof. apply Forall_fmap, Forall_true. intros. apply syn_mty_wf. Qed.
+
+Lemma Forall2_zip_snd {A B C} (P : B → C → Prop) (xs : list A) (ys : list B) (zs : list C) :
+  length xs = length ys → Forall2 (λ p z, P p.2 z) (zip xs ys) zs ↔ Forall2 P ys zs.
+Proof.
+  revert ys zs. induction xs as [|x xs IH]; intros [|y ys] [|z zs] Hlen; simpl in *;
+    try lia; split; inversion 1; try constructor; try done; apply IH; [lia|done|lia|done].
 Qed.
 
 (** The MiniRust type of a syntactic type, as a [wf_mty] (e.g. the type of the contents of
@@ -817,6 +845,13 @@ Proof.
     intros (d&Hd&->)%fmap_Some_1. econstructor; [lia| |by eapply Hall, Hd].
     rewrite Nat2Z.id list_lookup_imap list_lookup_fmap llookup_lookup //.
   - clear FIX. destruct x as [[[[[??]?]?]?]?]. intros; simplify_eq. constructor.
+  - intros (vs&Hvs&->)%fmap_Some_1. constructor. apply Forall2_zip_snd.
+    { rewrite length_struct_lay; [done|apply syn_mty_wf_list]. }
+    revert x vs Hvs. induction l as [|𝔄 l IH]; [intros []|intros [x xl]]; simpl.
+    + intros vs [= <-]. constructor.
+    + intros vs. destruct (syn_val x) as [w|] eqn:Hw; [|done]. simpl.
+      destruct (mapM _ _) as [ws|] eqn:Hws; [|done]. intros [= <-].
+      constructor; [by apply (FIX _ x w Hw)|]. by apply (IH xl).
 Qed.
 
 Lemma mapM_fmap_fv_lift (ovs : list (option Value)) :
@@ -846,6 +881,12 @@ Proof.
     replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
     destruct (to_xsum x) as [i x0]. simpl. rewrite !psum_map1_pinj !to_xsum_pinj Hall.
     by destruct (syn_val x0).
+  - move=> Hl. rewrite -option_fmap_compose.
+    assert (plist_to_list (pmap (λ _ x0, syn_fval x0) x) =
+      fmap fv_lift <$> plist_to_list (pmap (λ _ x0, syn_val x0) x)) as ->.
+    { induction l as [|𝔄 l IH]; [done|]. destruct x as [x xl].
+      move: Hl=> /= /andb_True[H Hl]. by rewrite (FIX _ x H) (IH xl Hl). }
+    clear FIX. rewrite mapM_fmap_fv_lift -option_fmap_compose. done.
 Qed.
 
 (** ** Decoding tuples laid out by [seq_tuple] *)
@@ -1065,6 +1106,11 @@ Proof.
   - destruct x as [[[[[[? ?] ?] ?] ?] ?] ?].
     destruct x' as [[[[[[? ?] ?] ?] ?] ?] ?].
     inversion Hab as [[Ha Hb]]. clear FIX. simpl. by subst.
+  - simpl. f_equal. f_equal. induction l; first by (clear FIX; destruct x, x'; trivial).
+    destruct x as [x xl]. destruct x' as [x' xl'].
+    simpl. inversion Hab. f_equal.
+      * apply FIX. clear FIX. trivial.
+      * apply IHl. clear FIX. trivial.
 Qed.
 
 (** So does the fancy value. *)
@@ -1104,6 +1150,11 @@ Proof.
     simpl. do 2 (rewrite psum_map1_pinj). do 2 (rewrite to_xsum_pinj).
     rewrite He. trivial.
   - clear FIX. simpl in Hab. by subst.
+  - simpl. f_equal. f_equal. induction l; first by (clear FIX; destruct x, x'; trivial).
+    destruct x as [x xl]. destruct x' as [x' xl'].
+    simpl. inversion Hab. f_equal.
+      * apply FIX. clear FIX. trivial.
+      * apply IHl. clear FIX. trivial.
 Qed.
 
 Record syn_type_morphism (𝔄 𝔅 : syn_type) := {

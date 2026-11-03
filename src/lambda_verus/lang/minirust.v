@@ -1164,3 +1164,119 @@ Section repr.
       by eapply (Forall_lookup_1 _ _ _ _ IH Hvm _ _ (Forall_lookup_1 _ _ _ _ Hwfs Hvm)).
   Qed.
 End repr.
+
+(** ** Struct layouts
+
+A struct layout gives the offsets of the fields, the size and the alignment of a struct
+(see [design_docs/minirust-layout.md], §7.2). [sl_mty L ms] is the MiniRust tuple type of a
+struct with fields of types [ms] laid out by [L]. A layout is well formed for [ms]
+([sl_wf]) if it has an offset per field and gives a well-formed tuple type. Ill-formed
+layouts are replaced by the [repr(C)] layout [c_layout ms] ([struct_lay]), so that
+[struct_mty L ms] is always well formed when the [ms] are ([struct_mty_wf]). *)
+Record struct_layout := SL { sl_offs : list nat; sl_size : nat; sl_align : nat }.
+
+Global Instance struct_layout_eq_dec : EqDecision struct_layout.
+Proof. solve_decision. Defined.
+
+Definition sl_mty (L : struct_layout) (ms : list mty) : mty :=
+  MTuple (zip L.(sl_offs) ms) L.(sl_size) L.(sl_align).
+Definition sl_wf (L : struct_layout) (ms : list mty) : Prop :=
+  length L.(sl_offs) = length ms ∧ mty_wf (sl_mty L ms).
+Global Instance sl_wf_dec L ms : Decision (sl_wf L ms).
+Proof. rewrite /sl_wf. apply _. Defined.
+
+(** [n] rounded up to a multiple of [a] (if [a ≠ 0]). *)
+Definition align_up (n a : nat) : nat :=
+  if decide (a = 0%nat) then n else (n + (a - n `mod` a) `mod` a)%nat.
+
+Lemma align_up_ge n a : (n ≤ align_up n a)%nat.
+Proof. rewrite /align_up. case_decide; lia. Qed.
+
+Lemma align_up_divide n a : (0 < a)%nat → Nat.divide a (align_up n a).
+Proof.
+  intros Ha. rewrite /align_up decide_False; [|lia].
+  have Hd := Nat.div_mod n a ltac:(lia). have Hm := Nat.mod_upper_bound n a ltac:(lia).
+  destruct (decide (n `mod` a = 0)%nat) as [H0|H0].
+  - rewrite H0 Nat.sub_0_r Nat.Div0.mod_same. exists (n `div` a)%nat. lia.
+  - rewrite Nat.mod_small; [|lia]. exists (n `div` a + 1)%nat. lia.
+Qed.
+
+(** The [repr(C)] layout: the fields in order, each at the next offset that is a multiple
+    of its alignment; the alignment is the least common multiple of those of the fields
+    (their maximum, for powers of two); the size is rounded up to the alignment. *)
+Fixpoint c_offs (o : nat) (ms : list mty) : list nat :=
+  match ms with
+  | [] => []
+  | m :: ms => align_up o (mty_align m) :: c_offs (align_up o (mty_align m) + mty_size m) ms
+  end.
+Fixpoint c_end (o : nat) (ms : list mty) : nat :=
+  match ms with
+  | [] => o
+  | m :: ms => c_end (align_up o (mty_align m) + mty_size m) ms
+  end.
+Definition c_align (ms : list mty) : nat := foldr (λ m a, Nat.lcm (mty_align m) a) 1%nat ms.
+Definition c_layout (ms : list mty) : struct_layout :=
+  SL (c_offs 0 ms) (align_up (c_end 0 ms) (c_align ms)) (c_align ms).
+
+Lemma length_c_offs o ms : length (c_offs o ms) = length ms.
+Proof. revert o. induction ms as [|m ms IH]; intros o; simpl; [done|]. by rewrite IH. Qed.
+
+Lemma c_end_ge o ms : (o ≤ c_end o ms)%nat.
+Proof.
+  revert o. induction ms as [|m ms IH]; intros o; simpl; [lia|].
+  have := IH (align_up o (mty_align m) + mty_size m)%nat. have := align_up_ge o (mty_align m). lia.
+Qed.
+
+Lemma c_offs_bounds o ms :
+  Forall (λ f, o ≤ f.1 ∧ f.1 + mty_size f.2 ≤ c_end o ms)%nat (zip (c_offs o ms) ms).
+Proof.
+  revert o. induction ms as [|m ms IH]; intros o; simpl; constructor.
+  - simpl. have := align_up_ge o (mty_align m).
+    have := c_end_ge (align_up o (mty_align m) + mty_size m)%nat ms. lia.
+  - eapply Forall_impl; [apply IH|]. simpl. intros f Hf. have := align_up_ge o (mty_align m). lia.
+Qed.
+
+Lemma c_offs_disjoint o ms : fields_disjoint (zip (c_offs o ms) ms).
+Proof.
+  revert o. induction ms as [|m ms IH]; intros o; simpl.
+  - intros ?????? _ Hi. by rewrite lookup_nil in Hi.
+  - apply fields_disjoint_cons. split; [|apply IH].
+    eapply Forall_impl; [apply c_offs_bounds|]. simpl. lia.
+Qed.
+
+Lemma Forall_zip_snd {A B} (P : B → Prop) (xs : list A) (ys : list B) :
+  Forall P ys → Forall (λ p, P p.2) (zip xs ys).
+Proof.
+  intros Hys. revert xs. induction Hys as [|y ys Hy _ IH]; intros [|x xs]; simpl; constructor; auto.
+Qed.
+
+Lemma c_layout_wf ms : Forall mty_wf ms → sl_wf (c_layout ms) ms.
+Proof.
+  intros Hms. split; [by rewrite /= length_c_offs|]. constructor.
+  - apply c_offs_disjoint.
+  - eapply Forall_impl; [apply c_offs_bounds|]. simpl. intros f Hf.
+    have := align_up_ge (c_end 0 ms) (c_align ms). lia.
+  - by apply Forall_zip_snd.
+Qed.
+
+(** The effective layout of a struct: [L] if it is well formed, else [c_layout ms]. *)
+Definition struct_lay (L : struct_layout) (ms : list mty) : struct_layout :=
+  if decide (sl_wf L ms) then L else c_layout ms.
+Definition struct_mty (L : struct_layout) (ms : list mty) : mty := sl_mty (struct_lay L ms) ms.
+
+Lemma struct_lay_wf L ms : Forall mty_wf ms → sl_wf (struct_lay L ms) ms.
+Proof. intros. rewrite /struct_lay. case_decide; [done|by apply c_layout_wf]. Qed.
+
+Lemma struct_mty_wf L ms : Forall mty_wf ms → mty_wf (struct_mty L ms).
+Proof. intros. by apply struct_lay_wf. Qed.
+
+Lemma length_struct_lay L ms : Forall mty_wf ms → length (struct_lay L ms).(sl_offs) = length ms.
+Proof. intros. by apply struct_lay_wf. Qed.
+
+(** For a well-formed layout, the effective layout is the layout itself. *)
+Lemma struct_lay_wf_eq L ms : sl_wf L ms → struct_lay L ms = L.
+Proof. intros. by rewrite /struct_lay decide_True. Qed.
+
+(** For [c_layout], both branches coincide: no well-formedness proof is needed. *)
+Lemma struct_lay_c ms : struct_lay (c_layout ms) ms = c_layout ms.
+Proof. rewrite /struct_lay. by case_decide. Qed.
