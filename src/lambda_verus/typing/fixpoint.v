@@ -383,6 +383,12 @@ Section fix_subtyping.
   Local Lemma entails_dist_True (P Q: iProp Σ) : (P ⊢ Q) ↔ ∀n, (P → Q)%I ≡{n}≡ True%I.
   Proof. by rewrite entails_eq_True equiv_dist. Qed.
 
+  (** The hypothesis [syn_bincl f] is needed: a subtyping implies it ([type_incl]; with
+      [E = L = []], [subtype E L ty ty' f] gives [syn_bincl f]), and the step hypothesis
+      cannot give it, since it holds vacuously when no subtyping along [f] exists. It is
+      also what the limit needs at every step ([base_subtype]). It is syntactic, so for a
+      fixpoint through a pointer (a box of the node, as [list_ty]) it holds whatever the
+      map does to the elements ([syn_bincl_same]). *)
   Lemma fix_subtype {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅)
     (T : type 𝔄 → type 𝔄) `{!TypeContractive T}
     (T' : type 𝔅 → type 𝔅) `{!TypeContractive T'} E L :

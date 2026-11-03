@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import fixpoint product sum mod_ty own bytes_layout.
+From lrust.typing Require Import fixpoint product sum mod_ty own subtype bytes_layout.
 From lrust.prophecy Require Import syn_type.
 Set Default Proof Using "Type".
 
@@ -88,8 +88,8 @@ Proof.
     - split.
       + fun_ext. intros [loc0 [[]|[[elem [loc l]]|[]]]]; trivial.
       + fun_ext. intros [loc0 [|[a c] xl]]; trivial.
-    - done.
     - intros x bs. destruct x as [loc0 [[]|[[elem [loc l]]|[]]]]; done.
+    - apply syn_bincl_sum_to_list.
 Qed.
 
 Definition list_map1 {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) :
@@ -118,6 +118,11 @@ Next Obligation. fold indep_interp_of_syn_type. fold proph_interp_of_syn_type. i
    - rewrite <- syn_type_morphism_ξl. trivial.
    - apply IHxl.
 Qed.
+
+(** A list is a pointer to its first node, which [list_mapₛ] keeps: its bytes are
+    preserved (whatever [f] does). *)
+Lemma syn_bincl_list_map {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : syn_bincl (list_mapₛ f).
+Proof. apply syn_bincl_same; [done|]. by intros [??]. Qed.
 
 (** The box of a list node owns the bytes of the sum; its size is syntactic. *)
 Definition list_node_size 𝔄 : nat := syn_bsize (Σ! [unitₛ ; prodₛ 𝔄 (rlistₛ 𝔄)]).
@@ -148,7 +153,7 @@ Section typing.
     eapply eqtype_eq.
     - eapply eqtype_trans.
       + apply fix_unfold_fold.
-      + apply mod_ty_outin, syn_bincl_sum_to_list.
+      + apply mod_ty_outin.
     - apply extensₛ; trivial.
     - apply extensₛ; trivial.
   Qed.
@@ -167,7 +172,31 @@ Section typing.
   Proof. move=> ?. apply resolve_just. Qed.
 
   
+  (** The size of a node depends on the element type, so the subtyping of the nodes needs
+      [syn_bsize 𝔄 = syn_bsize 𝔅]; it is part of the subtyping of the elements
+      ([subtype_bincl_elim]). The fixpoint map [list_mapₛ f] preserves the bytes for any
+      [f] ([syn_bincl_list_map]). *)
+  Lemma list_subtype {𝔄 𝔅} E L (f: 𝔄 →ₛ 𝔅) ty ty' :
+    subtype E L ty ty' f → subtype E L (list_ty ty) (list_ty ty') (list_mapₛ f).
+  Proof.
+    move=> Sub. apply (subtype_bincl_elim _ _ _ _ _ _ _ _ Sub)=> Hb.
+    have [Hsz _]: syn_bincl (psum_mapₛ (𝔄l:=[unitₛ; prodₛ 𝔄 (rlistₛ 𝔄)])
+      (𝔅l:=[unitₛ; prodₛ 𝔅 (rlistₛ 𝔅)]) -[idₛ; prod_mapₛ f (list_mapₛ f)]).
+    { apply syn_bincl_psum_map. intros i. inv_fin i; [done|]. intros i. inv_fin i.
+      - apply syn_bincl_prod_map; [done|apply syn_bincl_list_map].
+      - intros i. inv_fin i. }
+    apply fix_subtype.
+    - apply syn_bincl_list_map.
+    - intros. rewrite <- syn_type_morphism_ξl. trivial.
+    - intros ?? Sub'. rewrite /list_map /list_node_size Hsz. eapply subtype_eq.
+      { apply mod_ty_subtype, own_bytes_subtype. solve_typing. }
+      apply extensₛ; fun_ext; intros [loc0 [|[x loc] xl]]; done.
+  Qed.
+
+  Lemma list_eqtype {𝔄 𝔅} E L (f: 𝔄 →ₛ 𝔅) (g: 𝔅 →ₛ 𝔄) ty ty' :
+    eqtype E L ty ty' f g → eqtype E L (list_ty ty) (list_ty ty') (list_mapₛ f) (list_mapₛ g).
+  Proof. move=> [??]. by split; apply list_subtype. Qed.
 End typing.
 
 Global Hint Resolve list_resolve | 5 : lrust_typing.
-Global Hint Resolve list_resolve_just : lrust_typing.
+Global Hint Resolve list_resolve_just list_subtype list_eqtype : lrust_typing.

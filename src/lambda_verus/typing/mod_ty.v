@@ -112,12 +112,12 @@ Section typing.
     ]).
   Qed.
 
-  (** The subtypings along an isomorphism need it to preserve the byte representation
-      ([syn_bincl]), which [Isoₛ] gives only for plain bytes. *)
+  (** The subtypings along an isomorphism need no hypothesis: an [Isoₛ] preserves the
+      byte representation ([syn_iso_bincl]). *)
   Lemma mod_ty_in {𝔄 𝔅} E L `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty :
-    syn_bincl f → subtype E L ty (<{f;fⁱ}> ty) f.
+    subtype E L ty (<{f;fⁱ}> ty) f.
   Proof.
-    iIntros (Hb) "*_!>_". iSplit; [done|]. iSplit; [by iApply lft_incl_refl|].
+    iIntros "*_!>_". iSplit; [iPureIntro; apply syn_iso_bincl|]. iSplit; [by iApply lft_incl_refl|].
     unfold mod_ty; simpl.
     iSplit. { iModIntro. iIntros. rewrite semi_iso'. iFrame. iIntros. done. }
     iSplit. { iModIntro. iIntros. rewrite semi_iso'. done. }
@@ -125,9 +125,9 @@ Section typing.
   Qed.
 
   Lemma mod_ty_out {𝔄 𝔅} E L f fⁱ `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty :
-    syn_bincl f → subtype E L (<{f;fⁱ}> ty) ty fⁱ.
+    subtype E L (<{f;fⁱ}> ty) ty fⁱ.
   Proof.
-    iIntros (Hb) "*_!>_". iSplit; [iPureIntro; by eapply syn_bincl_iso|].
+    iIntros "*_!>_". iSplit; [iPureIntro; by eapply syn_bincl_iso|].
     iSplit; [by iApply lft_incl_refl|].
     unfold mod_ty; simpl.
     iSplit. { iModIntro. iIntros. iFrame. iIntros. done. }
@@ -136,28 +136,27 @@ Section typing.
   Qed.
 
   Lemma mod_ty_inout {𝔄 𝔅} E L f fⁱ `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty :
-    syn_bincl f → eqtype E L ty (<{f;fⁱ}> ty) f fⁱ.
+    eqtype E L ty (<{f;fⁱ}> ty) f fⁱ.
   Proof. by split; [apply mod_ty_in|apply mod_ty_out]. Qed.
   
   Lemma mod_ty_outin {𝔄 𝔅} E L f fⁱ `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty :
-    syn_bincl f → eqtype E L (<{f;fⁱ}> ty) ty fⁱ f.
-  Proof. by intros; apply eqtype_symm, mod_ty_inout. Qed.
+    eqtype E L (<{f;fⁱ}> ty) ty fⁱ f.
+  Proof. by apply eqtype_symm, mod_ty_inout. Qed.
   
   Lemma mod_ty_subtype {𝔄 𝔅 𝔄' 𝔅'} E L (h: 𝔄 →ₛ 𝔄')
       `{!@Isoₛ 𝔄 𝔅 f fⁱ} `{!@Isoₛ 𝔄' 𝔅' g gⁱ} (ty : type 𝔄) (ty' : type 𝔄') :
-    syn_bincl f → syn_bincl g →
     subtype E L ty ty' h → subtype E L (<{f;fⁱ}> ty) (<{g;gⁱ}> ty') (g ∘ₛ h ∘ₛ fⁱ).
   Proof.
-    move=> ???. eapply subtype_trans; [by apply mod_ty_out|].
+    move=> ?. eapply subtype_trans; [by apply mod_ty_out|].
     eapply subtype_trans; by [|apply mod_ty_in].
   Qed.
   
   Lemma mod_ty_eqtype {𝔄 𝔅 𝔄' 𝔅'} E L (h: 𝔄 →ₛ 𝔄') (h': 𝔄' →ₛ 𝔄) f fⁱ g gⁱ
       `{!@Isoₛ 𝔄 𝔅 f fⁱ} `{!@Isoₛ 𝔄' 𝔅' g gⁱ} (ty : type 𝔄) (ty' : type 𝔄') :
-    syn_bincl f → syn_bincl g → eqtype E L ty ty' h h' →
+    eqtype E L ty ty' h h' →
     eqtype E L (<{f;fⁱ}> ty) (<{g;gⁱ}> ty') (g ∘ₛ h ∘ₛ fⁱ) (f ∘ₛ h' ∘ₛ gⁱ).
   Proof.
-    move=> ?? [??]. split; by apply mod_ty_subtype.
+    move=> [??]. split; by apply mod_ty_subtype.
   Qed.
 End typing.
 

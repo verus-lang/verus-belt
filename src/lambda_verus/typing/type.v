@@ -556,48 +556,8 @@ Definition ty_fbytes `{!typeG Σ} {𝔄} (R: gmap positive (mty * list positive)
     (x: ~~𝔄) (fbs: list (positive + abyte)) : Prop :=
   length fbs = ty_bsize ty ∧ ∃ fv, ty.(ty_fval) x = Some fv ∧ frepr R ty.(ty_mty) fbs fv.
 
-(** [syn_fbytes R x fbs]: the fancy bytes [fbs] represent the value [x] of the syntactic
-    type [𝔄] (so [ty_fbytes R ty x fbs ↔ syn_fbytes R x fbs], [typing/bytes_layout.v]). *)
-Definition syn_fbytes {𝔄} (R: gmap positive (mty * list positive)) (x: ~~𝔄)
-    (fbs: list (positive + abyte)) : Prop :=
-  length fbs = syn_bsize 𝔄 ∧ ∃ fv, syn_fval x = Some fv ∧ frepr R (syn_mty 𝔄) fbs fv.
-
-(** [syn_cells_pres f]: the map [f] preserves the layout of the cells of the values that
-    have a representation ([mcells]: their offsets, ids and MiniRust types). *)
-Definition syn_cells_pres {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : Prop :=
-  ∀ x R fbs fv fv', syn_fbytes R x fbs → syn_fval x = Some fv → syn_fval (f ~~$ₛ x) = Some fv' →
-    mcells (syn_mty 𝔄) fv = mcells (syn_mty 𝔅) fv'.
-
-(** [syn_bincl f]: the map [f] preserves the byte representation: the sizes agree,
-    fancy bytes represent [x] iff they represent [f x], and the cells of [x] and [f x] are
-    at the same offsets. A subtyping along [f] needs it, since the parents of a value
-    (boxes, borrows) own its bytes and the move rights of its cells. *)
-Definition syn_bincl {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : Prop :=
-  syn_bsize 𝔄 = syn_bsize 𝔅 ∧ (∀ x R fbs, syn_fbytes R x fbs ↔ syn_fbytes R (f ~~$ₛ x) fbs) ∧
-  syn_cells_pres f.
-
-Lemma syn_bincl_id {𝔄} : syn_bincl (idₛ (𝔄:=𝔄)).
-Proof. split; [done|]. split; [done|]. intros x R fbs fv fv' _ Hx Hx'. simpl in Hx'. rewrite Hx in Hx'. by injection Hx' as ->. Qed.
-Global Hint Resolve syn_bincl_id : core.
-
-Lemma syn_bincl_compose {𝔄 𝔅 ℭ} (f: 𝔄 →ₛ 𝔅) (g: 𝔅 →ₛ ℭ) :
-  syn_bincl f → syn_bincl g → syn_bincl (g ∘ₛ f).
-Proof.
-  intros [Hs [Hf Hc]] [Hs' [Hg Hc']]. split; [lia|]. split; [intros; by rewrite Hf Hg|].
-  intros x R fbs fv fv'' Hb Hx Hx''. have Hb' := proj1 (Hf x R fbs) Hb.
-  destruct Hb' as [Hl (fv' & Hx' & Hrep)].
-  transitivity (mcells (syn_mty 𝔅) fv'); [by eapply Hc|].
-  apply (Hc' (f ~~$ₛ x) R fbs); [by apply Hf|done..].
-Qed.
-
-Lemma syn_bincl_iso {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) g `{!Isoₛ f g} : syn_bincl f → syn_bincl g.
-Proof.
-  intros [Hs [Hf Hc]]. split; [done|]. split.
-  - intros y R fbs. rewrite (Hf (g ~~$ₛ y)). destruct Isoₛ0. by rewrite semi_iso'.
-  - intros y R fbs fv fv' Hb Hy Hy'. symmetry. apply (Hc (g ~~$ₛ y) R fbs); [|done|].
-    + apply Hf. destruct Isoₛ0. by rewrite semi_iso'.
-    + destruct Isoₛ0. by rewrite semi_iso'.
-Qed.
+(** The byte-preserving maps ([syn_fbytes], [syn_bincl], [syn_bincl_iso]) are in
+    [prophecy/syn_type.v], with [Isoₛ]. *)
 
 (** The syntactic types without cells ([syn_nocell]), as a class: for a syntactic type
     whose head constructor is known, it is solved by computation (or by the instances for
@@ -1725,7 +1685,6 @@ Section subtyping.
   (** Subtyping *)
 
   Lemma eqtype_unfold {𝔄 𝔅} E L f g `{!Isoₛ f g} (ty : type 𝔄) (ty' : type 𝔅) :
-    syn_bincl f →
     (llctx_interp L -∗ □ (elctx_interp E -∗
       ty_lft ty ≡ₗ ty_lft ty' ∗
       (□ ∀x d g tid, ty.(ty_gho_own) x d g tid ↔ ty'.(ty_gho_own) (f ~~$ₛ x) d g tid) ∗
@@ -1733,11 +1692,11 @@ Section subtyping.
       (□ ∀κ x d g tid, ty.(ty_shr) κ x d g tid ↔ ty'.(ty_shr) κ (f ~~$ₛ x) d g tid)))
     ↔ eqtype E L ty ty' f g.
   Proof.
-    intros Hb. split.
+    split.
     - move=> Eqt. split; iIntros "L".
       + iDestruct (Eqt with "L") as "#Eqt". iIntros "!> #E".
         iDestruct ("Eqt" with "E") as "([#EqLft1 #EqLft2] & EqOwn & EqOwnPers & EqShr)".
-        iSplit; [done|]. iSplit; [done|]. iSplit.
+        iSplit; [iPureIntro; apply syn_iso_bincl|]. iSplit; [done|]. iSplit.
         * iIntros "!>". iIntros. iSplitL.
           { iApply "EqOwn". iFrame. }
           { iIntros. iApply "EqOwn". iFrame. }
@@ -1778,7 +1737,6 @@ Section subtyping.
   (** A variant of [eqtype_unfold] for types whose sharing predicate is (equivalent to)
       the default one: the equivalence of the sharing predicates is derived. *)
   Lemma eqtype_unfold_default {𝔄 𝔅} E L f g `{!Isoₛ f g} (ty : type 𝔄) (ty' : type 𝔅) :
-    syn_bincl f →
     (∀κ x d g tid, ty.(ty_shr) κ x d g tid ⊣⊢ default_shr ty.(ty_gho_own) κ x d g tid) →
     (∀κ x d g tid, ty'.(ty_shr) κ x d g tid ⊣⊢ default_shr ty'.(ty_gho_own) κ x d g tid) →
     (llctx_interp L -∗ □ (elctx_interp E -∗
@@ -1787,7 +1745,7 @@ Section subtyping.
       (□ ∀x d g tid, ty.(ty_gho_pers) x d g tid ↔ ty'.(ty_gho_pers) (f ~~$ₛ x) d g tid))) →
     eqtype E L ty ty' f g.
   Proof.
-    move=> Hb Def Def' Eqt. apply (eqtype_unfold E L f g); [done|]. iIntros "L".
+    move=> Def Def' Eqt. apply (eqtype_unfold E L f g). iIntros "L".
     iDestruct (Eqt with "L") as "#Eqt". iIntros "!> #E".
     iDestruct ("Eqt" with "E") as "($ & #EqOwn & $)". iFrame "EqOwn".
     iIntros "!>" (κ x d g' tid). rewrite Def Def' /default_shr. iSplit.
@@ -1809,11 +1767,11 @@ Section subtyping.
       (□ ∀κ vπ d g tid, ty.(ty_shr) κ vπ d g tid ↔ ty'.(ty_shr) κ vπ d g tid))) ↔
     eqtype E L ty ty' idₛ idₛ.
   Proof. split.
-    + intros X. apply (eqtype_unfold E L idₛ idₛ); [apply syn_bincl_id|].
+    + intros X. apply (eqtype_unfold E L idₛ idₛ).
         - iIntros "L". iDestruct (X with "L") as "#Q".
           iModIntro. iIntros "E". iDestruct ("Q" with "E") as "[C [D [E F]]]".
           iFrame.
-    + intros X. rewrite <- (eqtype_unfold E L idₛ idₛ) in X; [apply X|apply syn_bincl_id].
+    + intros X. rewrite <- (eqtype_unfold E L idₛ idₛ) in X. apply X.
   Qed.
 
   Global Instance type_incl_ne {𝔄 𝔅} n :
@@ -1913,6 +1871,18 @@ Section subtyping.
     move=> Sub Sub'. iIntros "L". iDestruct (Sub with "L") as "#Incl".
     iDestruct (Sub' with "L") as "#Incl'". iIntros "!> #E".
     iApply type_incl_trans; by [iApply "Incl"|iApply "Incl'"].
+  Qed.
+
+  (** Every subtyping preserves the bytes ([syn_bincl], part of [type_incl]), so another
+      subtyping may assume it (e.g. to equate sizes that depend on the syntactic types). *)
+  Lemma subtype_bincl_elim {𝔄 𝔅 ℭ 𝔇} E L (ty1: type 𝔄) (ty1': type 𝔅) (f: 𝔄 →ₛ 𝔅)
+      (ty: type ℭ) (ty': type 𝔇) (g: ℭ →ₛ 𝔇) :
+    subtype E L ty1 ty1' f → (syn_bincl f → subtype E L ty ty' g) → subtype E L ty ty' g.
+  Proof.
+    move=> Sub Sub'. iIntros "L". iDestruct (Sub with "L") as "#Incl".
+    iAssert (∀ _: syn_bincl f, □ (elctx_interp E -∗ type_incl ty ty' g))%I
+      with "[L]" as "#Incl'"; [iIntros (Hb); by iApply (Sub' Hb with "L")|].
+    iIntros "!> #E". iDestruct ("Incl" with "E") as "[%Hb _]". by iApply "Incl'".
   Qed.
 
   Lemma eqtype_trans {𝔄 𝔅 ℭ} ty ty' ty'' (f: 𝔄 →ₛ 𝔅) f' (g: 𝔅 →ₛ ℭ) g' E L :

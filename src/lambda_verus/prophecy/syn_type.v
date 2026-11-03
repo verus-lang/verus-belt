@@ -1243,19 +1243,212 @@ Qed.
 
 Infix "∘ₛ" := (composeₛ) (at level 50).
 
-(** An isomorphism of syntactic types. It preserves the byte size and the byte representations: bytes that decode to the
-    MiniRust value of [x] at [𝔄] are exactly those that decode to the value of [f x] at
-    [𝔅] (the MiniRust types and values themselves may differ, e.g. [() * 𝔄] and [𝔄]). *)
+(** ** The layout of the cells of a fancy value
+
+[mcells m fv]: the cells embedded in [fv] at the MiniRust type [m], with their offsets and
+their MiniRust types (following the structure of [m], as [gcells]). *)
+Definition mshift (o : nat) (cl : list (nat * positive * mty)) : list (nat * positive * mty) :=
+  (λ c, ((o + c.1.1)%nat, c.1.2, c.2)) <$> cl.
+
+Fixpoint mcells (m : mty) (fv : FValue) {struct fv} : list (nat * positive * mty) :=
+  match fv with
+  | FVCell g => [(0%nat, g, m)]
+  | FVTuple fvs =>
+      match m with
+      | MTuple fs _ =>
+          (fix go (k : nat) (fvs : list FValue) : list (nat * positive * mty) :=
+             match fvs with
+             | [] => []
+             | fv :: fvs =>
+                 match fs !! k with Some (o, fm) => mshift o (mcells fm fv) | None => [] end ++
+                 go (S k) fvs
+             end) 0%nat fvs
+      | _ => []
+      end
+  | FVVariant t d =>
+      match m with
+      | MEnum vars tag _ =>
+          match vars !! Z.to_nat t with
+          | Some vm => mshift (int_size tag) (mcells vm d) | None => []
+          end
+      | _ => []
+      end
+  | _ => []
+  end.
+
+Lemma mshift_0 cl : mshift 0 cl = cl.
+Proof. rewrite /mshift -{2}(list_fmap_id cl). apply list_fmap_ext=> ? [[??]?] _. done. Qed.
+
+Lemma mshift_mshift o o' cl : mshift o (mshift o' cl) = mshift (o + o') cl.
+Proof.
+  rewrite /mshift -list_fmap_compose. apply list_fmap_ext=> ? [[??]?] _ /=. f_equal. f_equal. lia.
+Qed.
+
+Lemma mshift_app o cl1 cl2 : mshift o (cl1 ++ cl2) = mshift o cl1 ++ mshift o cl2.
+Proof. by rewrite /mshift fmap_app. Qed.
+
+Lemma mcells_tuple fs sz fvs :
+  mcells (MTuple fs sz) (FVTuple fvs) =
+  concat (imap (λ k fv, match fs !! k with Some (o, fm) => mshift o (mcells fm fv) | None => [] end) fvs).
+Proof.
+  assert (∀ k1, (fix go (k : nat) (fvs : list FValue) : list (nat * positive * mty) :=
+             match fvs with
+             | [] => []
+             | fv :: fvs =>
+                 match fs !! k with Some (o, fm) => mshift o (mcells fm fv) | None => [] end ++
+                 go (S k) fvs
+             end) k1 fvs =
+    concat (imap (λ k fv, match fs !! (k1 + k)%nat with
+      Some (o, fm) => mshift o (mcells fm fv) | None => [] end) fvs)) as Hgo.
+  { induction fvs as [|fv fvs IH]; intros k1; simpl; [done|].
+    rewrite Nat.add_0_r IH. do 2 f_equal. apply imap_ext=> ? ? _ /=. by rewrite Nat.add_succ_r. }
+  exact (Hgo 0%nat).
+Qed.
+
+Lemma mcells_enum vars tag sz t d :
+  mcells (MEnum vars tag sz) (FVVariant t d) =
+  match vars !! Z.to_nat t with Some vm => mshift (int_size tag) (mcells vm d) | None => [] end.
+Proof. done. Qed.
+
+Lemma concat_imap_nil {A B} (h : nat → A → list B) (xs : list A) :
+  (∀ k x, xs !! k = Some x → h k x = []) → concat (imap h xs) = [].
+Proof.
+  revert h. induction xs as [|x xs IH]; intros h Hh; [done|]. rewrite imap_cons /= Hh //.
+  apply (IH (h ∘ S)). intros k y Hy. by apply (Hh (S k)).
+Qed.
+
+Lemma concat_imap_mshift {A} n (h : nat → A → list (nat * positive * mty)) (xs : list A) :
+  concat (imap (λ k x, mshift n (h k x)) xs) = mshift n (concat (imap h xs)).
+Proof.
+  revert h. induction xs as [|x xs IH]; intros h; [done|]. rewrite !imap_cons /= mshift_app.
+  f_equal. apply (IH (h ∘ S)).
+Qed.
+
+Lemma mcells_lift m v : mcells m (fv_lift v) = [].
+Proof.
+  revert m. induction v as [z|b|lp|vs IH|t d IH] using Value_ind'; intros m; try done.
+  - destruct m as [| | |fs sz|]; try done. rewrite /fv_lift -/fv_lift mcells_tuple.
+    apply concat_imap_nil=> k fv Hk. rewrite list_lookup_fmap in Hk.
+    destruct (vs !! k) as [vk|] eqn:Hvk; [|done]. simpl in Hk. injection Hk as <-.
+    destruct (fs !! k) as [[o fm]|]; [|done]. by rewrite (Forall_lookup_1 _ _ _ _ IH Hvk).
+  - destruct m as [| | | |vars tag sz]; try done. rewrite /fv_lift -/fv_lift mcells_enum.
+    destruct (vars !! _); [by rewrite IH|done].
+Qed.
+
+(** The cells of a tuple laid out in sequence ([seq_tuple]), field by field. *)
+Lemma layout_fields_shift0 o ms : layout_fields o ms = (λ f, ((o + f.1)%nat, f.2)) <$> layout_fields 0 ms.
+Proof.
+  revert o. induction ms as [|m ms IH]; intros o; [done|]. simpl. f_equal; [by rewrite Nat.add_0_r|].
+  rewrite (IH (o + mty_size m)%nat) (IH (0 + mty_size m)%nat).
+  change (list_fmap _ _ ?f ?l) with (fmap f l). rewrite -list_fmap_compose.
+  apply list_fmap_ext=> ? [??] _ /=. f_equal. lia.
+Qed.
+
+Lemma mcells_seq_tuple_cons m ms fv fvs :
+  mcells (seq_tuple (m :: ms)) (FVTuple (fv :: fvs)) =
+  mcells m fv ++ mshift (mty_size m) (mcells (seq_tuple ms) (FVTuple fvs)).
+Proof.
+  rewrite /seq_tuple !mcells_tuple imap_cons /= mshift_0. f_equal.
+  rewrite -concat_imap_mshift. f_equal. apply imap_ext=> k fvk _.
+  rewrite /= layout_fields_shift0 list_lookup_fmap.
+  destruct (layout_fields 0 ms !! k) as [[o fm]|]; simpl; [|done].
+  by rewrite mshift_mshift.
+Qed.
+
+Lemma mcells_seq_tuple_nil fvs : mcells (seq_tuple []) (FVTuple fvs) = [].
+Proof. rewrite /seq_tuple mcells_tuple /=. by apply concat_imap_nil. Qed.
+
+Lemma mcells_seq_enum ms t d :
+  mcells (seq_enum ms) (FVVariant t d) =
+  match ms !! Z.to_nat t with
+  | Some vm => mshift (int_size (enum_tag (length ms))) (mcells vm d) | None => []
+  end.
+Proof. done. Qed.
+
+(** ** Byte-preserving maps *)
+
+(** [syn_fbytes R x fbs]: the fancy bytes [fbs] represent the value [x] of the syntactic
+    type [𝔄] (so [ty_fbytes R ty x fbs ↔ syn_fbytes R x fbs], [typing/bytes_layout.v]). *)
+Definition syn_fbytes {𝔄} (R: gmap positive (mty * list positive)) (x: ~~𝔄)
+    (fbs: list (positive + abyte)) : Prop :=
+  length fbs = syn_bsize 𝔄 ∧ ∃ fv, syn_fval x = Some fv ∧ frepr R (syn_mty 𝔄) fbs fv.
+
+(** [syn_cells_pres f]: the map [f] preserves the layout of the cells of the values that
+    have a representation ([mcells]: their offsets, ids and MiniRust types). *)
+Definition syn_cells_pres {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : Prop :=
+  ∀ x R fbs fv fv', syn_fbytes R x fbs → syn_fval x = Some fv → syn_fval (f ~~$ₛ x) = Some fv' →
+    mcells (syn_mty 𝔄) fv = mcells (syn_mty 𝔅) fv'.
+
+(** [syn_bincl f]: the map [f] preserves the byte representation: the sizes agree,
+    fancy bytes represent [x] iff they represent [f x], and the cells of [x] and [f x] are
+    at the same offsets. A subtyping along [f] needs it, since the parents of a value
+    (boxes, borrows) own its bytes and the move rights of its cells. *)
+Definition syn_bincl {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : Prop :=
+  syn_bsize 𝔄 = syn_bsize 𝔅 ∧ (∀ x R fbs, syn_fbytes R x fbs ↔ syn_fbytes R (f ~~$ₛ x) fbs) ∧
+  syn_cells_pres f.
+
+Lemma syn_bincl_id {𝔄} : syn_bincl (idₛ (𝔄:=𝔄)).
+Proof. split; [done|]. split; [done|]. intros x R fbs fv fv' _ Hx Hx'. simpl in Hx'. rewrite Hx in Hx'. by injection Hx' as ->. Qed.
+Global Hint Resolve syn_bincl_id : core.
+
+Lemma syn_bincl_compose {𝔄 𝔅 ℭ} (f: 𝔄 →ₛ 𝔅) (g: 𝔅 →ₛ ℭ) :
+  syn_bincl f → syn_bincl g → syn_bincl (g ∘ₛ f).
+Proof.
+  intros [Hs [Hf Hc]] [Hs' [Hg Hc']]. split; [lia|]. split; [intros; by rewrite Hf Hg|].
+  intros x R fbs fv fv'' Hb Hx Hx''. have Hb' := proj1 (Hf x R fbs) Hb.
+  destruct Hb' as [Hl (fv' & Hx' & Hrep)].
+  transitivity (mcells (syn_mty 𝔅) fv'); [by eapply Hc|].
+  apply (Hc' (f ~~$ₛ x) R fbs); [by apply Hf|done..].
+Qed.
+
+(** A map between two syntactic types of the same MiniRust type that preserves the fancy
+    value preserves the bytes (e.g. on pointers, on zero-sized types). *)
+Lemma syn_bincl_same {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) :
+  syn_mty 𝔄 = syn_mty 𝔅 → (∀ x, syn_fval (f ~~$ₛ x) = syn_fval x) → syn_bincl f.
+Proof.
+  intros Hm Hv. split; [by rewrite /syn_bsize Hm|]. split.
+  - intros x R fbs. by rewrite /syn_fbytes /syn_bsize Hm Hv.
+  - intros x R fbs fv fv' _ Hx Hx'. rewrite Hv Hx in Hx'. injection Hx' as <-. by rewrite Hm.
+Qed.
+
+(** The inverse of a byte-preserving bijection preserves the bytes. *)
+Lemma syn_bincl_inv {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) (g: 𝔅 →ₛ 𝔄) :
+  (∀ y, f ~~$ₛ (g ~~$ₛ y) = y) → syn_bincl f → syn_bincl g.
+Proof.
+  intros Hfg [Hs [Hf Hc]]. split; [done|]. split.
+  - intros y R fbs. by rewrite (Hf (g ~~$ₛ y)) Hfg.
+  - intros y R fbs fv fv' Hb Hy Hy'. symmetry. apply (Hc (g ~~$ₛ y) R fbs); [|done|].
+    + apply Hf. by rewrite Hfg.
+    + by rewrite Hfg.
+Qed.
+
+(** [syn_bytes_pres f]: the plain bytes that decode to the MiniRust value of [x] at [𝔄]
+    are exactly those that decode to the value of [f x] at [𝔅]. *)
+Definition syn_bytes_pres {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : Prop :=
+  ∀ (x: ~~𝔄) (bs: list abyte),
+    decode_value (syn_mty 𝔄) bs = syn_val x ↔
+    decode_value (syn_mty 𝔅) bs = syn_val (syn_type_morphism_fn f x).
+
+(** An isomorphism of syntactic types. It preserves the byte representations: bytes that
+    decode to the MiniRust value of [x] at [𝔄] are exactly those that decode to the value
+    of [f x] at [𝔅] ([syn_iso_bytes]; the MiniRust types and values themselves may differ,
+    e.g. [() * 𝔄] and [𝔄]), and so do the fancy bytes, with the cells at the same offsets
+    ([syn_iso_bincl]; so the sizes agree, [syn_iso_bsize_eq]). Hence a subtyping along an
+    isomorphism needs no extra hypothesis ([mod_ty_in], [eqtype_unfold]). *)
 Class Isoₛ {𝔄 𝔅 : syn_type} (f : 𝔄 →ₛ 𝔅) (g : 𝔅 →ₛ 𝔄) := {
     syn_iso : Iso (syn_type_morphism_fn f) (syn_type_morphism_fn g) ;
     syn_iso_proph : Iso (syn_type_morphism_proph_fn f) (syn_type_morphism_proph_fn g) ;
-    syn_iso_bsize_eq : syn_bsize 𝔄 = syn_bsize 𝔅 ;
-    syn_iso_bytes : ∀ (x: ~~𝔄) (bs: list abyte),
-      decode_value (syn_mty 𝔄) bs = syn_val x ↔
-      decode_value (syn_mty 𝔅) bs = syn_val (syn_type_morphism_fn f x) ;
+    syn_iso_bytes : syn_bytes_pres f ;
+    syn_iso_bincl : syn_bincl f ;
 }.
 Global Existing Instance syn_iso.
 Global Existing Instance syn_iso_proph.
+
+Lemma syn_iso_bsize_eq {𝔄 𝔅} {f: 𝔄 →ₛ 𝔅} {g} `{!Isoₛ f g} : syn_bsize 𝔄 = syn_bsize 𝔅.
+Proof. apply syn_iso_bincl. Qed.
+
+Lemma syn_bincl_iso {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) g `{!Isoₛ f g} : syn_bincl g.
+Proof. apply (syn_bincl_inv f g); [|apply syn_iso_bincl]. intros y. destruct Isoₛ0. by rewrite semi_iso'. Qed.
 
 Global Instance isoₛ_id_id {𝔄} : @Isoₛ 𝔄 𝔄 idₛ idₛ.
 Proof. split; try apply _; done. Qed.
@@ -1265,8 +1458,8 @@ Global Instance isoₛ_compose {𝔄 𝔅 ℭ} `{!@Isoₛ 𝔄 𝔅 f f'} `{!@Is
 Proof.
   inversion H. inversion H0. split.
     - typeclasses eauto. - typeclasses eauto.
-    - congruence.
     - intros x bs. simpl. by rewrite syn_iso_bytes0 syn_iso_bytes1.
+    - by apply syn_bincl_compose.
 Qed.
 
 Local Definition cons_to_pair (v : Value) : Value :=
@@ -1276,57 +1469,50 @@ Proof.
   intros [| | |[|??]|] [| | |[|??]|]; simpl; intros; simplify_eq; done.
 Qed.
 
-Global Instance isoₛ_cons_prod {𝔄 𝔅l} : @Isoₛ (𝔄 * Π! 𝔅l) (Π! (𝔄 :: 𝔅l)) to_cons_prodₛ of_cons_prodₛ.
+(** The plain bytes of the isomorphisms of products (their [Isoₛ] instances are in
+    [typing/bytes_layout.v], with the fancy bytes, [syn_bincl]). *)
+Lemma syn_bytes_pres_to_cons_prod {𝔄 𝔅l} : syn_bytes_pres (to_cons_prodₛ (𝔄:=𝔄) (𝔅l:=𝔅l)).
 Proof.
-  split; [apply _|apply _| |].
-  - change (seq_size [syn_mty 𝔄; seq_tuple (syn_mty <$> 𝔅l)] =
-      seq_size (syn_mty 𝔄 :: (syn_mty <$> 𝔅l))).
-    rewrite !seq_size_cons seq_size_nil mty_size_seq_tuple. lia.
-  - intros [a xs] bs.
-    set M := mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) xs)).
-    change (decode_value (seq_tuple [syn_mty 𝔄; seq_tuple (syn_mty <$> 𝔅l)]) bs =
-        (v₀ ← syn_val a; v₁ ← VTuple <$> M; Some (VTuple [v₀; v₁])) ↔
-      decode_value (seq_tuple (syn_mty 𝔄 :: (syn_mty <$> 𝔅l))) bs =
-        VTuple <$> (v ← syn_val a; vs ← M; Some (v :: vs))).
-    rewrite (decode_prod_cons ) -/(cons_to_pair).
-    rewrite (_: (v₀ ← syn_val a; v₁ ← VTuple <$> M; Some (VTuple [v₀; v₁])) =
-      cons_to_pair <$> (VTuple <$> (v ← syn_val a; vs ← M; Some (v :: vs)))).
-    + apply fmap_eq_iff, _.
-    + destruct (syn_val a); [|done]. simpl. by destruct M.
+  intros [a xs] bs.
+  set M := mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) xs)).
+  change (decode_value (seq_tuple [syn_mty 𝔄; seq_tuple (syn_mty <$> 𝔅l)]) bs =
+      (v₀ ← syn_val a; v₁ ← VTuple <$> M; Some (VTuple [v₀; v₁])) ↔
+    decode_value (seq_tuple (syn_mty 𝔄 :: (syn_mty <$> 𝔅l))) bs =
+      VTuple <$> (v ← syn_val a; vs ← M; Some (v :: vs))).
+  rewrite (decode_prod_cons ) -/(cons_to_pair).
+  rewrite (_: (v₀ ← syn_val a; v₁ ← VTuple <$> M; Some (VTuple [v₀; v₁])) =
+    cons_to_pair <$> (VTuple <$> (v ← syn_val a; vs ← M; Some (v :: vs)))).
+  + apply fmap_eq_iff, _.
+  + destruct (syn_val a); [|done]. simpl. by destruct M.
 Qed.
 
 Global Instance isoₛ_empty_prod_unit : @Isoₛ (Π! []) unitₛ empty_prod_to_unitₛ empty_prod_of_unitₛ.
 Proof.
-  split; [split; fun_ext; destruct x; done|split; fun_ext; destruct x; done|done|].
-  intros [] bs. done.
+  split; [split; fun_ext; destruct x; done|split; fun_ext; destruct x; done| |].
+  - intros [] bs. done.
+  - apply syn_bincl_same; [done|]. by intros [].
 Qed.
 
-Global Instance Isoₛ_prod_left_id {𝔄} : @Isoₛ (() * 𝔄) 𝔄 prod_left_idₛ prod_left_id'ₛ.
+Lemma syn_bytes_pres_prod_left_id {𝔄} : syn_bytes_pres (prod_left_idₛ (𝔄:=𝔄)).
 Proof.
-  split; [apply _|apply _| |].
-  - change (seq_size [zst_mty; syn_mty 𝔄] = syn_bsize 𝔄).
-    rewrite !seq_size_cons seq_size_nil /= /syn_bsize. lia.
-  - intros [[] a] bs.
-    change (decode_value (seq_tuple [zst_mty; syn_mty 𝔄]) bs =
-        (v₀ ← Some (VTuple []); v₁ ← syn_val a; Some (VTuple [v₀; v₁])) ↔
-      decode_value (syn_mty 𝔄) bs = syn_val a).
-    rewrite (decode_prod_unit_l ).
-    rewrite (_: (v₀ ← Some (VTuple []); v₁ ← syn_val a; Some (VTuple [v₀; v₁])) =
-      (λ v, VTuple [VTuple []; v]) <$> syn_val a); [|by destruct (syn_val a)].
-    apply fmap_eq_iff. intros ???. by simplify_eq.
+  intros [[] a] bs.
+  change (decode_value (seq_tuple [zst_mty; syn_mty 𝔄]) bs =
+      (v₀ ← Some (VTuple []); v₁ ← syn_val a; Some (VTuple [v₀; v₁])) ↔
+    decode_value (syn_mty 𝔄) bs = syn_val a).
+  rewrite (decode_prod_unit_l ).
+  rewrite (_: (v₀ ← Some (VTuple []); v₁ ← syn_val a; Some (VTuple [v₀; v₁])) =
+    (λ v, VTuple [VTuple []; v]) <$> syn_val a); [|by destruct (syn_val a)].
+  apply fmap_eq_iff. intros ???. by simplify_eq.
 Qed.
 
-Global Instance Isoₛ_prod_right_id {𝔄} : @Isoₛ (𝔄 * ()) 𝔄 prod_right_idₛ prod_right_id'ₛ.
+Lemma syn_bytes_pres_prod_right_id {𝔄} : syn_bytes_pres (prod_right_idₛ (𝔄:=𝔄)).
 Proof.
-  split; [apply _|apply _| |].
-  - change (seq_size [syn_mty 𝔄; zst_mty] = syn_bsize 𝔄).
-    rewrite !seq_size_cons seq_size_nil /=. rewrite /syn_bsize. lia.
-  - intros [a []] bs.
-    change (decode_value (seq_tuple [syn_mty 𝔄; zst_mty]) bs =
-        (v₀ ← syn_val a; v₁ ← Some (VTuple []); Some (VTuple [v₀; v₁])) ↔
-      decode_value (syn_mty 𝔄) bs = syn_val a).
-    rewrite (decode_prod_unit_r ).
-    rewrite (_: (v₀ ← syn_val a; v₁ ← Some (VTuple []); Some (VTuple [v₀; v₁])) =
-      (λ v, VTuple [v; VTuple []]) <$> syn_val a); [|by destruct (syn_val a)].
-    apply fmap_eq_iff. intros ???. by simplify_eq.
+  intros [a []] bs.
+  change (decode_value (seq_tuple [syn_mty 𝔄; zst_mty]) bs =
+      (v₀ ← syn_val a; v₁ ← Some (VTuple []); Some (VTuple [v₀; v₁])) ↔
+    decode_value (syn_mty 𝔄) bs = syn_val a).
+  rewrite (decode_prod_unit_r ).
+  rewrite (_: (v₀ ← syn_val a; v₁ ← Some (VTuple []); Some (VTuple [v₀; v₁])) =
+    (λ v, VTuple [v; VTuple []]) <$> syn_val a); [|by destruct (syn_val a)].
+  apply fmap_eq_iff. intros ???. by simplify_eq.
 Qed.

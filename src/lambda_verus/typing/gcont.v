@@ -28,8 +28,8 @@ fragments, and the instance invariants of all cells) is global; its ghost state 
 The definitions of this file are those of phase 3 ([typing/gmb_cells.v], which has the
 moves and the cell laws); they are here because [typeG] and the bytes of the types depend
 on them. This file also has the masks of the bytes and ghost layers of the bodies of unique
-borrows ([lazyB], [lazyE]), and the layout of the cells of a fancy value ([mcells]), which
-the byte-preserving maps of subtyping preserve ([syn_bincl] in [typing/type.v]). *)
+borrows ([lazyB], [lazyE]). The layout of the cells of a fancy value ([mcells]), which
+the byte-preserving maps of subtyping preserve ([syn_bincl]), is in [prophecy/syn_type.v]. *)
 
 (** ** The registry *)
 Definition gcellsN : namespace := nroot .@ "gcells".
@@ -90,127 +90,8 @@ Proof. rewrite /lazyE /gcellsN /gmbN /uniqN /NllftUsr /prophN /Nllft. solve_ndis
 Lemma lazyB_gmbN : lazyB ## ↑gmbN.
 Proof. rewrite /lazyB /gmbN /uniqN /NllftUsr /prophN /Nllft. solve_ndisj. Qed.
 
-(** ** The layout of the cells of a fancy value
-
-[mcells m fv]: the cells embedded in [fv] at the MiniRust type [m], with their offsets and
-their MiniRust types (following the structure of [m], as [gcells]). *)
-Definition mshift (o : nat) (cl : list (nat * positive * mty)) : list (nat * positive * mty) :=
-  (λ c, ((o + c.1.1)%nat, c.1.2, c.2)) <$> cl.
-
-Fixpoint mcells (m : mty) (fv : FValue) {struct fv} : list (nat * positive * mty) :=
-  match fv with
-  | FVCell g => [(0%nat, g, m)]
-  | FVTuple fvs =>
-      match m with
-      | MTuple fs _ =>
-          (fix go (k : nat) (fvs : list FValue) : list (nat * positive * mty) :=
-             match fvs with
-             | [] => []
-             | fv :: fvs =>
-                 match fs !! k with Some (o, fm) => mshift o (mcells fm fv) | None => [] end ++
-                 go (S k) fvs
-             end) 0%nat fvs
-      | _ => []
-      end
-  | FVVariant t d =>
-      match m with
-      | MEnum vars tag _ =>
-          match vars !! Z.to_nat t with
-          | Some vm => mshift (int_size tag) (mcells vm d) | None => []
-          end
-      | _ => []
-      end
-  | _ => []
-  end.
-
-Lemma mshift_0 cl : mshift 0 cl = cl.
-Proof. rewrite /mshift -{2}(list_fmap_id cl). apply list_fmap_ext=> ? [[??]?] _. done. Qed.
-
-Lemma mshift_mshift o o' cl : mshift o (mshift o' cl) = mshift (o + o') cl.
-Proof.
-  rewrite /mshift -list_fmap_compose. apply list_fmap_ext=> ? [[??]?] _ /=. f_equal. f_equal. lia.
-Qed.
-
-Lemma mshift_app o cl1 cl2 : mshift o (cl1 ++ cl2) = mshift o cl1 ++ mshift o cl2.
-Proof. by rewrite /mshift fmap_app. Qed.
-
-Lemma mcells_tuple fs sz fvs :
-  mcells (MTuple fs sz) (FVTuple fvs) =
-  concat (imap (λ k fv, match fs !! k with Some (o, fm) => mshift o (mcells fm fv) | None => [] end) fvs).
-Proof.
-  assert (∀ k1, (fix go (k : nat) (fvs : list FValue) : list (nat * positive * mty) :=
-             match fvs with
-             | [] => []
-             | fv :: fvs =>
-                 match fs !! k with Some (o, fm) => mshift o (mcells fm fv) | None => [] end ++
-                 go (S k) fvs
-             end) k1 fvs =
-    concat (imap (λ k fv, match fs !! (k1 + k)%nat with
-      Some (o, fm) => mshift o (mcells fm fv) | None => [] end) fvs)) as Hgo.
-  { induction fvs as [|fv fvs IH]; intros k1; simpl; [done|].
-    rewrite Nat.add_0_r IH. do 2 f_equal. apply imap_ext=> ? ? _ /=. by rewrite Nat.add_succ_r. }
-  exact (Hgo 0%nat).
-Qed.
-
-Lemma mcells_enum vars tag sz t d :
-  mcells (MEnum vars tag sz) (FVVariant t d) =
-  match vars !! Z.to_nat t with Some vm => mshift (int_size tag) (mcells vm d) | None => [] end.
-Proof. done. Qed.
-
-Lemma concat_imap_nil {A B} (h : nat → A → list B) (xs : list A) :
-  (∀ k x, xs !! k = Some x → h k x = []) → concat (imap h xs) = [].
-Proof.
-  revert h. induction xs as [|x xs IH]; intros h Hh; [done|]. rewrite imap_cons /= Hh //.
-  apply (IH (h ∘ S)). intros k y Hy. by apply (Hh (S k)).
-Qed.
-
-Lemma concat_imap_mshift {A} n (h : nat → A → list (nat * positive * mty)) (xs : list A) :
-  concat (imap (λ k x, mshift n (h k x)) xs) = mshift n (concat (imap h xs)).
-Proof.
-  revert h. induction xs as [|x xs IH]; intros h; [done|]. rewrite !imap_cons /= mshift_app.
-  f_equal. apply (IH (h ∘ S)).
-Qed.
-
-Lemma mcells_lift m v : mcells m (fv_lift v) = [].
-Proof.
-  revert m. induction v as [z|b|lp|vs IH|t d IH] using Value_ind'; intros m; try done.
-  - destruct m as [| | |fs sz|]; try done. rewrite /fv_lift -/fv_lift mcells_tuple.
-    apply concat_imap_nil=> k fv Hk. rewrite list_lookup_fmap in Hk.
-    destruct (vs !! k) as [vk|] eqn:Hvk; [|done]. simpl in Hk. injection Hk as <-.
-    destruct (fs !! k) as [[o fm]|]; [|done]. by rewrite (Forall_lookup_1 _ _ _ _ IH Hvk).
-  - destruct m as [| | | |vars tag sz]; try done. rewrite /fv_lift -/fv_lift mcells_enum.
-    destruct (vars !! _); [by rewrite IH|done].
-Qed.
-
-(** The cells of a tuple laid out in sequence ([seq_tuple]), field by field. *)
-Lemma layout_fields_shift0 o ms : layout_fields o ms = (λ f, ((o + f.1)%nat, f.2)) <$> layout_fields 0 ms.
-Proof.
-  revert o. induction ms as [|m ms IH]; intros o; [done|]. simpl. f_equal; [by rewrite Nat.add_0_r|].
-  rewrite (IH (o + mty_size m)%nat) (IH (0 + mty_size m)%nat).
-  change (list_fmap _ _ ?f ?l) with (fmap f l). rewrite -list_fmap_compose.
-  apply list_fmap_ext=> ? [??] _ /=. f_equal. lia.
-Qed.
-
-Lemma mcells_seq_tuple_cons m ms fv fvs :
-  mcells (seq_tuple (m :: ms)) (FVTuple (fv :: fvs)) =
-  mcells m fv ++ mshift (mty_size m) (mcells (seq_tuple ms) (FVTuple fvs)).
-Proof.
-  rewrite /seq_tuple !mcells_tuple imap_cons /= mshift_0. f_equal.
-  rewrite -concat_imap_mshift. f_equal. apply imap_ext=> k fvk _.
-  rewrite /= layout_fields_shift0 list_lookup_fmap.
-  destruct (layout_fields 0 ms !! k) as [[o fm]|]; simpl; [|done].
-  by rewrite mshift_mshift.
-Qed.
-
-Lemma mcells_seq_tuple_nil fvs : mcells (seq_tuple []) (FVTuple fvs) = [].
-Proof. rewrite /seq_tuple mcells_tuple /=. by apply concat_imap_nil. Qed.
-
-Lemma mcells_seq_enum ms t d :
-  mcells (seq_enum ms) (FVVariant t d) =
-  match ms !! Z.to_nat t with
-  | Some vm => mshift (int_size (enum_tag (length ms))) (mcells vm d) | None => []
-  end.
-Proof. done. Qed.
+(** The layout of the cells of a fancy value ([mcells], [mshift]) is in
+    [prophecy/syn_type.v], next to the byte-preserving maps ([syn_bincl]). *)
 
 Section gcells_defs.
   Context `{!lrustGS Σ, !llft_logicGS Σ, !gcellsGS Σ}.

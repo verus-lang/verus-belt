@@ -302,7 +302,7 @@ Lemma syn_fval_pinj {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) :
   syn_fval (𝔄:=Σ! 𝔄l) (pinj i y) = FVVariant (Z.of_nat (fin_to_nat i)) <$> syn_fval y.
 Proof. by rewrite /= psum_map1_pinj to_xsum_pinj. Qed.
 
-(** ** Fancy bytes of syntactic types ([syn_fbytes], [typing/type.v]) *)
+(** ** Fancy bytes of syntactic types ([syn_fbytes], [prophecy/syn_type.v]) *)
 
 Lemma ty_fbytes_syn `{!typeG Σ} {𝔄} (ty: type 𝔄) R x fbs :
   ty_fbytes R ty x fbs ↔ syn_fbytes R x fbs.
@@ -524,17 +524,10 @@ Proof.
   rewrite mcells_seq_enum Nat2Z.id list_lookup_fmap llookup_lookup /= length_fmap. done.
 Qed.
 
-(** ** Byte-preserving maps ([syn_bincl], [typing/type.v]) *)
+(** ** Byte-preserving maps ([syn_bincl], [prophecy/syn_type.v]) *)
 
-(** A map between two syntactic types of the same MiniRust type that preserves the fancy
-    value preserves the bytes (e.g. on pointers, on zero-sized types). *)
-Lemma syn_bincl_same {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) :
-  syn_mty 𝔄 = syn_mty 𝔅 → (∀ x, syn_fval (f ~~$ₛ x) = syn_fval x) → syn_bincl f.
-Proof.
-  intros Hm Hv. split; [by rewrite /syn_bsize Hm|]. split.
-  - intros x R fbs. by rewrite /syn_fbytes /syn_bsize Hm Hv.
-  - intros x R fbs fv fv' _ Hx Hx'. rewrite Hv Hx in Hx'. injection Hx' as <-. by rewrite Hm.
-Qed.
+(** [syn_bincl_same] (same MiniRust type and fancy value, e.g. pointers and zero-sized
+    types) is in [prophecy/syn_type.v]. *)
 
 Lemma syn_bincl_at_loc_map {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : syn_bincl (at_loc_mapₛ f).
 Proof. apply syn_bincl_same; [done|]. by intros [??]. Qed.
@@ -562,5 +555,48 @@ Proof.
     rewrite Hfx in Hfx'. rewrite Hfy in Hfy'. by simplify_eq.
 Qed.
 
+Global Instance isoₛ_cons_prod {𝔄 𝔅l} :
+  @Isoₛ (𝔄 * Π! 𝔅l) (Π! (𝔄 :: 𝔅l)) to_cons_prodₛ of_cons_prodₛ.
+Proof.
+  split; [apply _|apply _|apply syn_bytes_pres_to_cons_prod|apply syn_bincl_to_cons_prod].
+Qed.
+
 Lemma syn_bincl_of_cons_prod {𝔄 𝔅l} : syn_bincl (of_cons_prodₛ (𝔄:=𝔄) (𝔅l:=𝔅l)).
-Proof. apply (syn_bincl_iso to_cons_prodₛ); [apply _|apply syn_bincl_to_cons_prod]. Qed.
+Proof. apply (syn_bincl_iso to_cons_prodₛ), _. Qed.
+
+Lemma syn_bincl_prod_left_id {𝔄} : syn_bincl (prod_left_idₛ (𝔄:=𝔄)).
+Proof.
+  split; [by rewrite syn_bsize_prod|]. split; last first.
+  { intros [[] x] R fbs fv fv' _ Hx Hx'.
+    destruct (mcells_pair (𝔄:=()) (𝔅:=𝔄) () x fv Hx) as (fu & fx & Hfu & Hfx & ->).
+    simpl in Hx'. rewrite Hfx in Hx'. injection Hx' as <-. simpl in Hfu. injection Hfu as <-.
+    rewrite /= mshift_0. done. }
+  intros [[] x] R fbs. rewrite /= syn_fbytes_pair.
+  split.
+  - intros (f1 & f2 & -> & H1 & H2). by apply syn_fbytes_zst in H1 as ->.
+  - intros H. exists [], fbs. split; [done|]. split; [by apply syn_fbytes_zst|done].
+Qed.
+
+Lemma syn_bincl_prod_right_id {𝔄} : syn_bincl (prod_right_idₛ (𝔄:=𝔄)).
+Proof.
+  split; [rewrite syn_bsize_prod; change (syn_bsize ()) with 0%nat; lia|]. split; last first.
+  { intros [x []] R fbs fv fv' _ Hx Hx'.
+    destruct (mcells_pair (𝔄:=𝔄) (𝔅:=()) x () fv Hx) as (fx & fu & Hfx & Hfu & ->).
+    simpl in Hx'. rewrite Hfx in Hx'. injection Hx' as <-. simpl in Hfu. injection Hfu as <-.
+    by rewrite /= app_nil_r. }
+  intros [x []] R fbs. rewrite /= syn_fbytes_pair.
+  split.
+  - intros (f1 & f2 & -> & H1 & H2). apply syn_fbytes_zst in H2 as ->; [|done..].
+    by rewrite app_nil_r.
+  - intros H. exists fbs, []. rewrite app_nil_r. split; [done|].
+    split; [done|by apply syn_fbytes_zst].
+Qed.
+
+Global Instance Isoₛ_prod_left_id {𝔄} : @Isoₛ (() * 𝔄) 𝔄 prod_left_idₛ prod_left_id'ₛ.
+Proof. split; [apply _|apply _|apply syn_bytes_pres_prod_left_id|apply syn_bincl_prod_left_id]. Qed.
+
+Global Instance Isoₛ_prod_right_id {𝔄} : @Isoₛ (𝔄 * ()) 𝔄 prod_right_idₛ prod_right_id'ₛ.
+Proof.
+  split; [apply _|apply _|apply syn_bytes_pres_prod_right_id|apply syn_bincl_prod_right_id].
+Qed.
+

@@ -376,7 +376,7 @@ Section typing.
   Proof.
     move=> Subs. elim Subs. { solve_typing. }
     intros. eapply subtype_eq.
-    { apply mod_ty_subtype; [apply syn_bincl_to_cons_prod..|]. by apply prod_subtype. }
+    { apply mod_ty_subtype. by apply prod_subtype. }
     { simpl. unfold cons_prodₛ, to_cons_prodₛ, of_cons_prodₛ, "∘ₛ". simpl.
       unfold to_cons_prod, of_cons_prod, "∘".
       apply extensₛ; simpl; fun_ext; by case.
@@ -410,40 +410,11 @@ Section typing.
       apply syn_fbytes_pair. by exists f2, f3.
   Qed.
 
-  Lemma syn_bincl_prod_left_id {𝔄} : syn_bincl (prod_left_idₛ (𝔄:=𝔄)).
-  Proof.
-    split; [by rewrite syn_bsize_prod|]. split; last first.
-    { intros [[] x] R fbs fv fv' _ Hx Hx'.
-      destruct (mcells_pair (𝔄:=()) (𝔅:=𝔄) () x fv Hx) as (fu & fx & Hfu & Hfx & ->).
-      simpl in Hx'. rewrite Hfx in Hx'. injection Hx' as <-. simpl in Hfu. injection Hfu as <-.
-      rewrite /= mshift_0. done. }
-    intros [[] x] R fbs. rewrite /= syn_fbytes_pair.
-    split.
-    - intros (f1 & f2 & -> & H1 & H2). by apply syn_fbytes_zst in H1 as ->.
-    - intros H. exists [], fbs. split; [done|]. split; [by apply syn_fbytes_zst|done].
-  Qed.
-
-  Lemma syn_bincl_prod_right_id {𝔄} : syn_bincl (prod_right_idₛ (𝔄:=𝔄)).
-  Proof.
-    split; [rewrite syn_bsize_prod; change (syn_bsize ()) with 0%nat; lia|]. split; last first.
-    { intros [x []] R fbs fv fv' _ Hx Hx'.
-      destruct (mcells_pair (𝔄:=𝔄) (𝔅:=()) x () fv Hx) as (fx & fu & Hfx & Hfu & ->).
-      simpl in Hx'. rewrite Hfx in Hx'. injection Hx' as <-. simpl in Hfu. injection Hfu as <-.
-      by rewrite /= app_nil_r. }
-    intros [x []] R fbs. rewrite /= syn_fbytes_pair.
-    split.
-    - intros (f1 & f2 & -> & H1 & H2). apply syn_fbytes_zst in H2 as ->; [|done..].
-      by rewrite app_nil_r.
-    - intros H. exists fbs, []. rewrite app_nil_r. split; [done|].
-      split; [done|by apply syn_fbytes_zst].
-  Qed.
-
   Lemma prod_ty_assoc {𝔄 𝔅 ℭ} E L (ty1: type 𝔄) (ty2: type 𝔅) (ty3: type ℭ) :
     eqtype E L (ty1 * (ty2 * ty3)) ((ty1 * ty2) * ty3) prod_assocₛ prod_assoc'ₛ.
   Proof.
     apply eqtype_unfold.
-      { split. apply _. apply _. apply prod_assoc_bsize. apply prod_assoc_bytes. }
-      { apply syn_bincl_prod_assoc. }
+      { split; [apply _|apply _|intros ??; apply prod_assoc_bytes|apply syn_bincl_prod_assoc]. }
     iIntros "*_!>_/=".
     iSplit; [rewrite (assoc (++)); by iApply lft_equiv_refl|].
     iSplit; [|iSplit].
@@ -461,7 +432,7 @@ Section typing.
   Lemma prod_ty_left_id {𝔄} E L (ty: type 𝔄) :
     eqtype E L (() * ty) ty prod_left_idₛ prod_left_id'ₛ.
   Proof.
-    apply eqtype_unfold; [apply _|apply syn_bincl_prod_left_id|].
+    apply eqtype_unfold; [apply _|].
     iIntros "*_!>_/=".
     iSplit; [by iApply lft_equiv_refl|].
     iSplit. { iModIntro. iIntros (x d g tid). destruct x as [[]x]. iSplit.
@@ -475,7 +446,7 @@ Section typing.
   Lemma prod_ty_right_id {𝔄} E L (ty: type 𝔄) :
     eqtype E L (ty * ()) ty prod_right_idₛ prod_right_id'ₛ.
   Proof.
-    apply eqtype_unfold; [apply _|apply syn_bincl_prod_right_id|].
+    apply eqtype_unfold; [apply _|].
     iIntros "*_!>_/=".
     rewrite !right_id. iSplit; [by iApply lft_equiv_refl|].
     iSplit. { iModIntro. iIntros (x d g tid). destruct x as [x[]]. iSplit.
