@@ -32,7 +32,7 @@ From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath.
-From lrust.typing Require Import uniq_util uniq_bor own shr_bor bytes_layout value_ctx freeable_util.
+From lrust.typing Require Import uniq_util uniq_bor own shr_bor bytes_layout value_ctx freeable_util struct.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
@@ -52,8 +52,7 @@ Section pctx_fun.
   Fixpoint pctx_kind {𝔅 𝔄} (K: pctx 𝔅 𝔄) : bor_kind → ~~𝔄 → bor_kind :=
     match K in pctx 𝔅 𝔄 return bor_kind → ~~𝔄 → bor_kind with
     | PHole => λ k _, k
-    | PFst K _ => λ k x, pctx_kind K (Owned (kind_laters k)) x.1
-    | PSnd _ K => λ k x, pctx_kind K (Owned (kind_laters k)) x.2
+    | PField _ _ K _ => λ k x, pctx_kind K (Owned (kind_laters k)) (phd (psepr x))
     | POwn _ K => λ k x, pctx_kind K (Owned (kind_laters k + 1)) x.2
     | PSum _ i w K => λ k x, pctx_kind K (Owned (kind_laters k)) (psum_proj_or i x w)
     | PUniq κ K => λ _ x, pctx_kind K (Uniq κ (uniq_bor_ξi x)) (uniq_bor_current x)
@@ -69,7 +68,7 @@ Section pctx_fun.
   Fixpoint pctx_ulft {𝔅 𝔄} (K: pctx 𝔅 𝔄) : lty 𝔅 → lft :=
     match K in pctx 𝔅 𝔄 return lty 𝔅 → lft with
     | PHole => λ _, static
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K | PResUniq _ K => pctx_ulft K
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K | PShr _ K | PResUniq _ K => pctx_ulft K
     | PUniq κ K => λ lt, ty_lft (lty_fold (UniqLty (pctx_plug K lt) κ))
     end.
 
@@ -77,7 +76,7 @@ Section pctx_fun.
   Fixpoint pctx_ulfts {𝔅 𝔄} (K: pctx 𝔅 𝔄) : list lft :=
     match K with
     | PHole => []
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K | PResUniq _ K => pctx_ulfts K
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K | PShr _ K | PResUniq _ K => pctx_ulfts K
     | PUniq κ K => κ :: pctx_ulfts K
     end.
 
@@ -88,7 +87,7 @@ Section pctx_fun.
   Fixpoint pctx_slft {𝔅 𝔄} (K: pctx 𝔅 𝔄) (κ: lft) : lft :=
     match K with
     | PHole => κ
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_slft K κ
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K => pctx_slft K κ
     | PUniq κ' K | PResUniq κ' K => pctx_slft K (κ ⊓ κ')
     | PShr κ' K => pctx_slft K κ'
     end.
@@ -98,7 +97,7 @@ Section pctx_fun.
   Fixpoint pctx_salv {𝔅 𝔄} (K: pctx 𝔅 𝔄) (κ: lft) : lft :=
     match K with
     | PHole => κ
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_salv K κ
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K => pctx_salv K κ
     | PUniq κ' K | PResUniq κ' K => pctx_salv K (κ ⊓ κ')
     | PShr κ' K => κ ⊓ pctx_salv K κ'
     end.
@@ -111,7 +110,7 @@ Section pctx_fun.
   Fixpoint pctx_alv {𝔅 𝔄} (K: pctx 𝔅 𝔄) : lty 𝔅 → lft :=
     match K in pctx 𝔅 𝔄 return lty 𝔅 → lft with
     | PHole => λ _, static
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_alv K
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K => pctx_alv K
     | PUniq κ K => λ lt, ty_lft (lty_fold (UniqLty (pctx_plug K lt) κ)) ⊓ pctx_alv K lt
     | PShr κ K | PResUniq κ K => λ _, pctx_salv K κ
     end.
@@ -121,7 +120,7 @@ Section pctx_fun.
   Fixpoint pctx_vlft {𝔅 𝔄} (K: pctx 𝔅 𝔄) : option lft :=
     match K with
     | PHole => None
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_vlft K
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_vlft K
     | PShr κ K | PResUniq κ K => Some (pctx_slft K κ)
     end.
 
@@ -133,7 +132,7 @@ Section pctx_fun.
   Fixpoint pctx_blft {𝔅 𝔄} (K: pctx 𝔅 𝔄) : lft :=
     match K with
     | PHole => static
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_blft K
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K => pctx_blft K
     | PUniq κ K => match pctx_vlft K with Some β => β | None => κ ⊓ pctx_blft K end
     | PShr κ K | PResUniq κ K => pctx_slft K κ
     end.
@@ -143,7 +142,7 @@ Section pctx_fun.
   Fixpoint pctx_dlev {𝔅 𝔄} (K: pctx 𝔅 𝔄) : nat :=
     match K with
     | PHole => 0
-    | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_dlev K
+    | PField _ _ K _ | PSum _ _ _ K => pctx_dlev K
     | POwn _ K | PUniq _ K | PShr _ K | PResUniq _ K => S (pctx_dlev K)
     end.
 
@@ -161,7 +160,7 @@ Section pctx_fun.
   Fixpoint pctx_uend {𝔅 𝔄} (K: pctx 𝔅 𝔄) : option lft :=
     match K with
     | PHole => None
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PShr _ K | PResUniq _ K => pctx_uend K
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K | PShr _ K | PResUniq _ K => pctx_uend K
     | PUniq κ K => match K with PHole => Some κ | _ => pctx_uend K end
     end.
 
@@ -169,7 +168,7 @@ Section pctx_fun.
   Fixpoint pctx_hmode {𝔅 𝔄} (K: pctx 𝔅 𝔄) (m: nat) : nat :=
     match K with
     | PHole => m
-    | PFst K _ | PSnd _ K | PSum _ _ _ K => pctx_hmode K m
+    | PField _ _ K _ | PSum _ _ _ K => pctx_hmode K m
     | POwn _ K | PShr _ K | PResUniq _ K => pctx_hmode K (m + 1)
     | PUniq _ K => pctx_hmode K 0
     end.
@@ -178,8 +177,8 @@ Section pctx_fun.
   Fixpoint pctx_hξi {𝔅 𝔄} (K: pctx 𝔅 𝔄) : ~~𝔄 → positive :=
     match K in pctx 𝔅 𝔄 return ~~𝔄 → positive with
     | PHole => λ _, 1%positive
-    | PFst K _ => λ x, pctx_hξi K x.1
-    | PSnd _ K | POwn _ K | PShr _ K => λ x, pctx_hξi K x.2
+    | PField _ _ K _ => λ x, pctx_hξi K (phd (psepr x))
+    | POwn _ K | PShr _ K => λ x, pctx_hξi K x.2
     | PResUniq _ K => λ x, pctx_hξi K (uniq_bor_current x)
     | PSum _ i w K => λ x, pctx_hξi K (psum_proj_or i x w)
     | PUniq _ K => λ x, match K with
@@ -192,8 +191,8 @@ Section pctx_fun.
   Fixpoint pctx_ptrs {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n: nat) : ~~𝔄 → loc → iProp Σ :=
     match K in pctx 𝔅 𝔄 return ~~𝔄 → loc → iProp Σ with
     | PHole => λ _ _, True
-    | PFst K _ => λ x l, pctx_ptrs K n x.1 l
-    | PSnd lt1 K => λ x l, pctx_ptrs K n x.2 (l +ₗ lty_size lt1)
+    | @PField _ _ _ 𝔄lb 𝔄 𝔄la L _ K _ => λ x l,
+        pctx_ptrs K n (phd (psepr x)) (l +ₗ struct_off L (𝔄lb ++ 𝔄 :: 𝔄la) (length 𝔄lb))
     | POwn _ K => λ x l, ptr_cell l x.1 ∗
         pctx_ptrs K n x.2 x.1
     | @PSum _ _ _ 𝔄l _ i w K => λ x l,
@@ -218,16 +217,16 @@ Section pctx_fun.
   Lemma pctx_kind_owned {𝔅 𝔄} (K: pctx 𝔅 𝔄) m x :
     pctx_uend K = None → pctx_kind K (Owned m) x = Owned (pctx_hmode K m).
   Proof.
-    induction K in m, x |- *; simpl; [done|auto|auto|auto|auto| |auto|auto].
-    destruct K; [done| | | | | |intros H; exact (IHK 0 _ H)|intros H; exact (IHK 0 _ H)];
+    induction K in m, x |- *; simpl; [done|auto|auto|auto| |auto|auto].
+    destruct K; [done| | | | |intros H; exact (IHK 0 _ H)|intros H; exact (IHK 0 _ H)];
       intros; rewrite pctx_kind_nonempty //; by apply IHK.
   Qed.
 
   Lemma pctx_kind_uniq {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ m x :
     pctx_uend K = Some κ → pctx_kind K (Owned m) x = Uniq κ (pctx_hξi K x).
   Proof.
-    induction K in m, x |- *; simpl; [done|auto|auto|auto|auto| |auto|auto].
-    destruct K; [by intros [= ->]| | | | | |intros H; exact (IHK 0 _ H)|
+    induction K in m, x |- *; simpl; [done|auto|auto|auto| |auto|auto].
+    destruct K; [by intros [= ->]| | | | |intros H; exact (IHK 0 _ H)|
       intros H; exact (IHK 0 _ H)];
       intros; rewrite pctx_kind_nonempty //; by apply IHK.
   Qed.
@@ -242,7 +241,7 @@ Section pctx_fun.
   Lemma pctx_kind_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) k x y :
     pctx_in K x → pctx_kind K k (pctx_set K x y) = pctx_kind K k x.
   Proof.
-    induction K in k, x, y |- *; simpl; try (intros; by rewrite ?IHK).
+    induction K in k, x, y |- *; simpl; try (intros; by rewrite ?papp_sepr /= ?IHK).
     - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x); [|done].
       intros. by rewrite IHK.
     - intros. by rewrite uniq_bor_current_set uniq_bor_ξi_set IHK.
@@ -252,7 +251,7 @@ Section pctx_fun.
   Lemma pctx_hξi_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) x y :
     pctx_in K x → pctx_hξi K (pctx_set K x y) = pctx_hξi K x.
   Proof.
-    induction K in x, y |- *; simpl; try (intros; by rewrite ?IHK).
+    induction K in x, y |- *; simpl; try (intros; by rewrite ?papp_sepr /= ?IHK).
     - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x); [|done].
       intros. by rewrite IHK.
     - destruct K; intros; by rewrite ?uniq_bor_current_set ?uniq_bor_ξi_set ?IHK.
@@ -262,11 +261,11 @@ Section pctx_fun.
   Lemma pctx_ulft_incl {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
     ⊢ ty_lft (lty_fold (pctx_plug K lt)) ⊑ pctx_ulft K lt.
   Proof.
-    induction K; simpl; [iApply lft_incl_static| | | | |iApply guards_refl|
+    induction K; simpl; [iApply lft_incl_static| | | |iApply guards_refl|
       iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply IHK]..];
       (iApply llftl_incl_trans; [|iApply IHK]).
-    - rewrite lft_intersect_list_app. iApply llftl_intersect_incl_l.
-    - rewrite lft_intersect_list_app. iApply llftl_intersect_incl_r.
+    - rewrite fields_ty_lfts hmap_app /tyl_lfts hcmap_app concat_app /= !lft_intersect_list_app.
+      iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply llftl_intersect_incl_l].
     - iApply guards_refl.
     - iApply (lty_lft_sum _ _ (pctx_plug K lt)).
   Qed.
@@ -288,7 +287,7 @@ Section pctx_fun.
     κ ∈ pctx_ulfts K → ⊢ pctx_ulft K lt ⊑ κ.
   Proof.
     induction K in lt |- *; simpl; intros Hκ; [by apply not_elem_of_nil in Hκ|by auto|by auto|
-      by auto|by auto| |by auto|by auto].
+      by auto| |by auto|by auto].
     apply elem_of_cons in Hκ as [->|Hκ].
     - iApply llftl_intersect_incl_l.
     - iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|].
@@ -297,7 +296,7 @@ Section pctx_fun.
 
   Lemma pctx_salv_incl {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ : ⊢ pctx_salv K κ ⊑ κ.
   Proof.
-    induction K in κ |- *; simpl; [iApply guards_refl|by iApply IHK|by iApply IHK|by iApply IHK|
+    induction K in κ |- *; simpl; [iApply guards_refl|by iApply IHK|by iApply IHK|
       by iApply IHK| | |].
     - iApply llftl_incl_trans; [iApply IHK|]. iApply llftl_intersect_incl_l.
     - iApply llftl_intersect_incl_l.
@@ -306,7 +305,7 @@ Section pctx_fun.
 
   Lemma pctx_salv_slft {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ : ⊢ pctx_salv K κ ⊑ pctx_slft K κ.
   Proof.
-    induction K in κ |- *; simpl; [iApply guards_refl|by iApply IHK|by iApply IHK|by iApply IHK|
+    induction K in κ |- *; simpl; [iApply guards_refl|by iApply IHK|by iApply IHK|
       by iApply IHK|by iApply IHK| |by iApply IHK].
     iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply IHK.
   Qed.
@@ -314,7 +313,7 @@ Section pctx_fun.
   Lemma pctx_alv_noshr {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
     pctx_noshr K → ⊢ pctx_alv K lt ⊑ pctx_ulft K lt.
   Proof.
-    induction K; simpl; [iIntros; iApply guards_refl|auto|auto|auto|auto| |done|done]. intros _.
+    induction K; simpl; [iIntros; iApply guards_refl|auto|auto|auto| |done|done]. intros _.
     iApply llftl_intersect_incl_l.
   Qed.
 
@@ -325,12 +324,12 @@ Section pctx_fun.
   Qed.
 
   Lemma pctx_vlft_noshr {𝔅 𝔄} (K: pctx 𝔅 𝔄) : pctx_noshr K → pctx_vlft K = None.
-  Proof. induction K; simpl; [done|auto|auto|auto|auto| |done|done]. intros [_ HK]. auto. Qed.
+  Proof. induction K; simpl; [done|auto|auto|auto| |done|done]. intros [_ HK]. auto. Qed.
 
   Lemma pctx_vlft_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) :
     pctx_noshr K1 → pctx_vlft (pctx_app K1 K2) = pctx_vlft K2.
   Proof.
-    induction K1 in K2 |- *; simpl; [done|auto|auto|auto|auto| |done|done]. intros [_ HK]. auto.
+    induction K1 in K2 |- *; simpl; [done|auto|auto|auto| |done|done]. intros [_ HK]. auto.
   Qed.
 
   (** Below a shared reference or a resolved unique borrow, [pctx_blft] is the lifetime of
@@ -339,7 +338,7 @@ Section pctx_fun.
     pctx_noshr K1 → pctx_vlft K2 = Some β → pctx_blft K2 = β →
     pctx_blft (pctx_app K1 K2) = β.
   Proof.
-    induction K1 in K2 |- *; simpl; [done|auto|auto|auto|auto| |done|done].
+    induction K1 in K2 |- *; simpl; [done|auto|auto|auto| |done|done].
     intros [_ HK] Hv Hb. rewrite pctx_vlft_app // Hv. done.
   Qed.
 
@@ -348,7 +347,7 @@ Section pctx_fun.
   Lemma pctx_blft_incl {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ :
     pctx_noshr K → κ ∈ pctx_ulfts K → ⊢ pctx_blft K ⊑ κ.
   Proof.
-    induction K; simpl; intros HK Hκ; [by apply not_elem_of_nil in Hκ|by auto|by auto|by auto|
+    induction K; simpl; intros HK Hκ; [by apply not_elem_of_nil in Hκ|by auto|by auto|
       by auto| |done|done].
     destruct HK as [_ HK]. rewrite pctx_vlft_noshr //. apply elem_of_cons in Hκ as [->|Hκ].
     - iApply llftl_intersect_incl_l.
@@ -380,7 +379,7 @@ Section pctx_fun.
   Lemma pctx_ptrs_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) n x y l :
     pctx_in K x → pctx_ptrs K n (pctx_set K x y) l = pctx_ptrs K n x l.
   Proof.
-    induction K in x, y, l |- *; simpl; try (intros; by rewrite ?IHK).
+    induction K in x, y, l |- *; simpl; try (intros; by rewrite ?papp_sepr /= ?IHK).
     - rewrite psum_proj_or_pinj /psum_proj_or. destruct (psum_proj i x); [|done].
       intros. by rewrite IHK.
     - intros. by rewrite uniq_bor_current_set uniq_bor_loc_set IHK.
@@ -406,9 +405,8 @@ Section wp_pctx.
   Proof.
     induction K in x, l, e, R |- *; simpl.
     - iIntros "WP $". iApply (wp_wand with "WP"). iIntros (v) "($ & $ & $)".
-    - iIntros "WP Ptrs". iApply (IHK x.1 l with "WP Ptrs").
     - iIntros "WP Ptrs".
-      iApply (IHK x.2 (l +ₗ lty_size lt1) _ R with "[WP] Ptrs").
+      iApply (IHK _ _ _ R with "[WP] Ptrs").
       wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
       iFrame. done.
     - iIntros "WP (Pt & Ptrs)".
@@ -549,35 +547,24 @@ Section pctx_acc.
     iApply (ltype_own_cp_owned_depth_mono with "Own"); lia.
   Qed.
 
-  Lemma pctx_acc_fst {𝔅 𝔄1 𝔄2} (K: pctx 𝔅 𝔄1) (lt2: lty 𝔄2) (lt: lty 𝔅) :
-    pctx_acc_stmt K lt → pctx_acc_stmt (PFst K lt2) lt.
+  Lemma pctx_acc_field {𝔅 𝔄lb 𝔄 𝔄la} L (lb: hlist lty 𝔄lb) (K: pctx 𝔅 𝔄) (la: hlist lty 𝔄la)
+      (lt: lty 𝔅) :
+    pctx_acc_stmt K lt → pctx_acc_stmt (PField L lb K la) lt.
   Proof.
-    iIntros (IH m p r x ζm q d g tid l E G ??) "#LFT #PROPH #UNIQ #Gk G £ /= [Own1 Own2]".
-    rewrite lty_size_plug.
-    iMod (IH with "LFT PROPH UNIQ Gk G £ Own1") as (G' dh gh) "(% & G' & #G'G & % & H & P & Cl)";
+    iIntros (IH m p r x ζm q d g tid l E G ??) "#LFT #PROPH #UNIQ #Gk G £ Own".
+    cbn [pctx_plug pctx_pat pctx_rfn]. rewrite ltype_own_struct_field.
+    iDestruct "Own" as "(A & Own & B & Pad)".
+    iMod (IH with "LFT PROPH UNIQ Gk G £ Own") as (G' dh gh) "(% & G' & #G'G & % & H & P & Cl)";
       [done..|].
     iModIntro. iExists G', dh, gh. iSplitR; [done|]. iSplitL "G'"; [done|]. iSplitR; [done|].
-    iSplitR; [iPureIntro; simpl in *; destruct_and!; split_and!; try lia; done|]. iSplitL "H"; [done|]. iSplitL "P"; [done|].
+    iSplitR; [iPureIntro; simpl in *; destruct_and!; split_and!; try lia; done|].
+    iSplitL "H"; [done|]. iSplitL "P"; [done|].
     iIntros (lt' p' r' dh' gh' dn gn ζl' qq R Hs Hf Hsz Hr (? & ? & ? & ?)) "Oks ⧖ G' P toks VS".
     iMod ("Cl" $! lt' p' r' dh' gh' dn gn ζl' qq R with "[//] [//] [//] [//] [%] Oks ⧖ G' P toks VS")
-      as "(Own1 & $ & $)"; [done|].
-    iModIntro. rewrite /= /prod_node lty_size_plug Hsz. iFrame "Own1".
-    iApply (ltype_own_cp_owned_depth_mono with "Own2"); lia.
-  Qed.
-
-  Lemma pctx_acc_snd {𝔅 𝔄1 𝔄2} (lt1: lty 𝔄1) (K: pctx 𝔅 𝔄2) (lt: lty 𝔅) :
-    pctx_acc_stmt K lt → pctx_acc_stmt (PSnd lt1 K) lt.
-  Proof.
-    iIntros (IH m p r x ζm q d g tid l E G ??) "#LFT #PROPH #UNIQ #Gk G £ /= [Own1 Own2]".
-    iMod (IH with "LFT PROPH UNIQ Gk G £ Own2") as (G' dh gh) "(% & G' & #G'G & % & H & P & Cl)";
-      [done..|].
-    iModIntro. iExists G', dh, gh. iSplitR; [done|]. iSplitL "G'"; [done|]. iSplitR; [done|].
-    iSplitR; [iPureIntro; simpl in *; destruct_and!; split_and!; try lia; done|]. iSplitL "H"; [done|]. iSplitL "P"; [done|].
-    iIntros (lt' p' r' dh' gh' dn gn ζl' qq R Hs Hf Hsz Hr (? & ? & ? & ?)) "Oks ⧖ G' P toks VS".
-    iMod ("Cl" $! lt' p' r' dh' gh' dn gn ζl' qq R with "[//] [//] [//] [//] [%] Oks ⧖ G' P toks VS")
-      as "(Own2 & $ & $)"; [done|].
-    iModIntro. rewrite /= /prod_node. iFrame "Own2".
-    iApply (ltype_own_cp_owned_depth_mono with "Own1"); lia.
+      as "(Own & $ & $)"; [done|].
+    iModIntro. cbn [pctx_plug pctx_pat pctx_rfn]. rewrite ltype_own_struct_field. iFrame "Own Pad".
+    iSplitL "A"; [iApply (fields_own_depth_mono with "A"); lia|].
+    iApply (fields_own_depth_mono with "B"); lia.
   Qed.
 
   Lemma pctx_acc_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') (lt: lty 𝔅) :
@@ -693,8 +680,8 @@ Section pctx_acc.
   Lemma pctx_acc {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxNoShr K} (lt: lty 𝔅) : pctx_acc_stmt K lt.
   Proof.
     rename select (PctxNoShr K) into HK. rewrite /PctxNoShr in HK.
-    induction K; simpl in HK; [apply pctx_acc_hole|apply pctx_acc_fst; by apply IHK|
-      apply pctx_acc_snd; by apply IHK|apply pctx_acc_own; by apply IHK|
+    induction K; simpl in HK; [apply pctx_acc_hole|apply pctx_acc_field; by apply IHK|
+      apply pctx_acc_own; by apply IHK|
       apply pctx_acc_sum; by apply IHK| |done|done].
     destruct HK as [HKs HK].
     destruct K; [apply pctx_acc_uniq_hole|apply pctx_acc_uniq_cpd; [done|done|by apply IHK]..|
@@ -758,7 +745,7 @@ Section vroot.
     WP pctx_vexpr K e @ E {{ v, ⌜v = #(pctx_vloc K n x)⌝ ∗ R ∗ G ∗ pctx_vptrs K n x }}.
   Proof.
     rename select (PctxVRoot K) into HR.
-    destruct K as [| | |𝔅 𝔄' n' K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K|𝔅 𝔄' κ K]; try done; simpl.
+    destruct K as [| |𝔅 𝔄' n' K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K|𝔅 𝔄' κ K]; try done; simpl.
     - iIntros "WP P".
       iApply (wp_pctx_ptrs E K n G x.2 x.1 _ R with "WP P").
     - iIntros "WP P".
@@ -927,7 +914,7 @@ Section vroot.
     pctx_vacc_res K lt r x ζm D tid v E G.
   Proof.
     rename select (PctxVRoot K) into HR. rename select (PctxNoShr K) into HK.
-    destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K| |]; try done.
+    destruct K as [| |𝔅 𝔄' n K| |𝔅 𝔄' κ K| |]; try done.
     - apply vroot_acc_own. done.
     - destruct HK as [HKs HK]. destruct K; [apply vroot_acc_uniq_hole|
         apply vroot_acc_uniq_cpd; done..|done|done].

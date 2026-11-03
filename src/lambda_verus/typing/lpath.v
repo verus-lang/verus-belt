@@ -955,6 +955,25 @@ Section pctx.
     by apply ltype_own_cp_owned_depth_mono.
   Qed.
 
+  (** The ownership of a struct with a distinguished field (in the middle of [lb] and
+      [la]). *)
+  Lemma ltype_own_struct_field m {𝔄lb 𝔄 𝔄la} L (lb: hlist lty 𝔄lb) (lt: lty 𝔄)
+      (la: hlist lty 𝔄la) p r rsb rsa d g tid l :
+    ltype_own_cp false (StructLty L (lb h++ lt +:: la)) (Owned m)
+      (PatStruct (hcmap (λ _ lt, lty_pat lt) lb ++ p :: hcmap (λ _ lt, lty_pat lt) la))
+      (inr (papp (Yl:=𝔄 :: 𝔄la) rsb (r -:: rsa))) d g tid l ⊣⊢
+    fields_own m (take (length 𝔄lb) (struct_offs L (𝔄lb ++ 𝔄 :: 𝔄la))) lb rsb d g tid l ∗
+    ltype_own_cp false lt (Owned m) p r d g tid
+      (l +ₗ struct_off L (𝔄lb ++ 𝔄 :: 𝔄la) (length 𝔄lb)) ∗
+    fields_own m (drop (S (length 𝔄lb)) (struct_offs L (𝔄lb ++ 𝔄 :: 𝔄la))) la rsa d g tid l ∗
+    pad_own l (struct_fields L (𝔄lb ++ 𝔄 :: 𝔄la)) (struct_size L (𝔄lb ++ 𝔄 :: 𝔄la)).
+  Proof.
+    rewrite /= /struct_node hmap_app fields_node_app; [|by rewrite length_hcmap].
+    rewrite (drop_S _ (struct_off L (𝔄lb ++ 𝔄 :: 𝔄la) (length 𝔄lb)));
+      [|apply struct_off_lookup; rewrite length_app /=; lia].
+    rewrite /= /fields_own. iSplit; [iIntros "[(A & H & B) P]"|iIntros "(A & H & B & P)"]; iFrame.
+  Qed.
+
   (** The ownership of the rest of the place (at path [q], with current value [x] and
       blocking map [ζm]), for a hole of size [n]. *)
   Fixpoint pctx_own {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n m: nat) :
