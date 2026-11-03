@@ -94,7 +94,7 @@ Section pctx_share.
     pctx_noshr K → pctx_sleaf E L K α lt ty lt' →
     lty_sleaf E L α true lt ty lt' ∧ pctx_uend K = None.
   Proof.
-    induction K; simpl; [tauto|auto|auto|auto|auto| |done|done].
+    induction K; simpl; [tauto|auto|auto|auto| |done|done].
     intros [_ HK] H. destruct (pctx_sleaf_uniq E L κ K _ _ _ _ H) as [H' Hu].
     cbn [pctx_uend] in Hu. rewrite Hu. by apply IHK.
   Qed.
@@ -103,20 +103,20 @@ Section pctx_share.
     pctx_noshr K1 → pctx_sleaf E L (pctx_app K1 K2) α lt ty lt' → pctx_sleaf E L K2 α lt ty lt'.
   Proof.
     induction K1 as [| | | |? ? κ K1 IHK1| |] in K2 |- *; simpl;
-      [done|auto|auto|auto|auto| |done|done].
+      [done|auto|auto|auto| |done|done].
     intros [_ HK] H. destruct (pctx_sleaf_uniq E L κ _ _ _ _ _ H) as [H' _]. by apply IHK1.
   Qed.
 
   Lemma pctx_vsleaf_noshr {𝔅 𝔄} E L (K: pctx 𝔅 𝔄) α lt ty :
     pctx_noshr K → pctx_vsleaf E L K α lt ty → lty_sleaf E L α false lt ty lt.
   Proof.
-    induction K; simpl; [done|auto|auto|auto|auto| |done|done]. intros [_ HK]. auto.
+    induction K; simpl; [done|auto|auto|auto| |done|done]. intros [_ HK]. auto.
   Qed.
 
   Lemma pctx_vsleaf_app {ℭ 𝔅 𝔄} E L (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) α lt ty :
     pctx_noshr K1 → pctx_vsleaf E L (pctx_app K1 K2) α lt ty → pctx_vsleaf E L K2 α lt ty.
   Proof.
-    induction K1 in K2 |- *; simpl; [done|auto|auto|auto|auto| |done|done]. intros [_ HK]. auto.
+    induction K1 in K2 |- *; simpl; [done|auto|auto|auto| |done|done]. intros [_ HK]. auto.
   Qed.
 
   (** The lifetime of the shared view of the hole of [K] in a view at [κ] (below a resolved
@@ -136,13 +136,13 @@ Section pctx_share.
   Lemma pctx_vslft_noshr {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ lt :
     pctx_noshr K → pctx_vslft K κ lt = lty_vslft (pctx_slft K κ) lt.
   Proof.
-    induction K in κ, lt |- *; simpl; [done|auto|auto|auto|auto| |done|done]. intros [_ HK]. auto.
+    induction K in κ, lt |- *; simpl; [done|auto|auto|auto| |done|done]. intros [_ HK]. auto.
   Qed.
 
   Lemma pctx_vslft_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) κ lt :
     pctx_noshr K1 → pctx_vslft (pctx_app K1 K2) κ lt = pctx_vslft K2 (pctx_slft K1 κ) lt.
   Proof.
-    induction K1 in K2, κ, lt |- *; simpl; [done|auto|auto|auto|auto| |done|done].
+    induction K1 in K2, κ, lt |- *; simpl; [done|auto|auto|auto| |done|done].
     intros [_ HK]. auto.
   Qed.
 

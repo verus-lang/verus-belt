@@ -354,14 +354,13 @@ Section pctx_vin.
   Lemma lty_vin_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt y :
     lty_vin (pctx_plug K lt) y ↔ pctx_vin K y ∧ lty_vin lt (pctx_get K y).
   Proof.
-    induction K in y, lt |- *; simpl; [naive_solver|rewrite IHK; naive_solver|
-      rewrite IHK; naive_solver|by rewrite IHK| |by rewrite IHK|by rewrite IHK|by rewrite IHK].
+    induction K in y, lt |- *; simpl; [naive_solver|rewrite IHK; naive_solver|by rewrite IHK| |by rewrite IHK|by rewrite IHK|by rewrite IHK].
     rewrite /psum_proj_or. destruct (psum_proj i y); [by rewrite IHK|naive_solver].
   Qed.
 
   Lemma pctx_vin_in {𝔅 𝔄} (K: pctx 𝔅 𝔄) y : pctx_vin K y → pctx_in K y.
   Proof.
-    induction K in y |- *; simpl; [done|naive_solver|naive_solver|auto| |auto|auto|auto].
+    induction K in y |- *; simpl; [done|naive_solver|auto| |auto|auto|auto].
     destruct (psum_proj i y); [auto|done].
   Qed.
 End pctx_vin.

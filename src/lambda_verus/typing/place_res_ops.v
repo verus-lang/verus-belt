@@ -39,7 +39,7 @@ Section view_acc.
   Lemma pctx_sguards_mono {𝔅 𝔄} (K: pctx 𝔅 𝔄) n k k' G x l :
     k ≤ k' → pctx_sguards K n k G x l ⊢ pctx_sguards K n k' G x l.
   Proof.
-    intros ?. induction K in x, l |- *; simpl; [done|auto|auto| |auto| | |];
+    intros ?. induction K in x, l |- *; simpl; [done|auto| |auto| | |];
       iIntros "[#G R]"; (iSplit; [iApply (lguards_weaken_later with "G"); lia|]);
       by iApply IHK.
   Qed.

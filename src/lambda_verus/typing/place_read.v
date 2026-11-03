@@ -146,7 +146,7 @@ Section pctx_read.
     pctx_noshr K → pctx_rleafb K b lt ty κs →
     (pctx_nouniq K ∧ lty_rleaf b lt ty κs) ∨ lty_rleaf false lt ty κs.
   Proof.
-    induction K in b, lt, ty, κs |- *; simpl; [by left|auto|auto|auto|auto| |done|done].
+    induction K in b, lt, ty, κs |- *; simpl; [by left|auto|auto|auto| |done|done].
     intros [_ HK] Hl. right. by destruct (IHK false lt ty κs HK Hl) as [[_ ?]|?].
   Qed.
 
@@ -162,7 +162,7 @@ Section pctx_read.
   Lemma pctx_rleafb_app_noshr {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) b lt ty κs :
     pctx_noshr K1 → pctx_rleafb (pctx_app K1 K2) b lt ty κs → ∃ b', pctx_rleafb K2 b' lt ty κs.
   Proof.
-    induction K1 in K2, b |- *; simpl; [eauto|eauto|eauto|eauto|eauto| |done|done].
+    induction K1 in K2, b |- *; simpl; [eauto|eauto|eauto|eauto| |done|done].
     intros [_ HK]. eauto.
   Qed.
 
@@ -189,21 +189,21 @@ Section pctx_read.
   Lemma pctx_salv_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) κ :
     pctx_noshr K1 → pctx_salv (pctx_app K1 K2) κ = pctx_salv K2 (pctx_slft K1 κ).
   Proof.
-    induction K1 in K2, κ |- *; simpl; [done|auto|auto|auto|auto| |done|done].
+    induction K1 in K2, κ |- *; simpl; [done|auto|auto|auto| |done|done].
     intros [_ HK]. auto.
   Qed.
 
   Lemma pctx_salv_slft_noshr {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ :
     pctx_noshr K → pctx_salv K κ = pctx_slft K κ.
   Proof.
-    induction K in κ |- *; simpl; [done|auto|auto|auto|auto| |done|done].
+    induction K in κ |- *; simpl; [done|auto|auto|auto| |done|done].
     intros [_ HK]. auto.
   Qed.
 
   Lemma pctx_slft_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) κ :
     pctx_noshr K1 → pctx_slft (pctx_app K1 K2) κ = pctx_slft K2 (pctx_slft K1 κ).
   Proof.
-    induction K1 in K2, κ |- *; simpl; [done|auto|auto|auto|auto| |done|done].
+    induction K1 in K2, κ |- *; simpl; [done|auto|auto|auto| |done|done].
     intros [_ HK]. auto.
   Qed.
   (** The refinement below a root pointer of a context whose hole is a leaf of the

@@ -52,7 +52,7 @@ Section puniq.
 
   Lemma pctx_hmode_le {𝔅 𝔄} (K: pctx 𝔅 𝔄) m : pctx_hmode K m ≤ m + pctx_dlev K.
   Proof.
-    induction K in m |- *; simpl; [lia|apply IHK|apply IHK| |apply IHK| | |];
+    induction K in m |- *; simpl; [lia|apply IHK| |apply IHK| | |];
       [specialize (IHK (m + 1))|specialize (IHK 0)|specialize (IHK (m + 1))|
        specialize (IHK (m + 1))]; lia.
   Qed.
@@ -168,85 +168,97 @@ Section puniq.
     simpl in *. injection Hx as -> ->. apply Hπ; [done..|]. by eexists.
   Qed.
 
-  (** ** Pairs *)
+  (** ** Structs *)
 
-  Lemma vplace_conv_prod_unfold {𝔅1 𝔅2 𝔄} (K: pctx (𝔅1 * 𝔅2) 𝔄) (ty1: type 𝔅1) (ty2: type 𝔅2) :
-    vplace_conv K (OfTy (ty1 * ty2)) (ProdLty (OfTy ty1) (OfTy ty2)) (=).
+  Lemma lty_simple_struct_ofty {𝔅l} Lay (tyl: typel 𝔅l) :
+    lty_simple (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl)).
   Proof.
-    iIntros (x ζm dh gh D tid lh G E ? HE ??) "#LFT #PROPH #UNIQ _ #Gk G _ _ _ H".
-    destruct (pctx_get K x) as [y1 y2] eqn:Hy.
-    iModIntro. iExists (y1, y2), [], 1%Qp. iSplit; [done|]. iSplit.
-    { iPureIntro. intros ??. split; apply prfn_rsv_in. }
-    iSplitR; [done|]. iIntros "_".
-    destruct (pctx_uend K) as [κ|] eqn:Hu.
-    - rewrite (pctx_kind_uniq K κ) //.
-      iApply (prod_ofty_unfold_uniq with "LFT PROPH UNIQ [] G H"); [trans lazyE; [|set_solver];
-        rewrite /lazyE; solve_ndisj|].
-      iApply (guards_transitive with "Gk"). iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
-      iApply pctx_ulft_ulfts. by apply pctx_uend_ulfts.
-    - rewrite (pctx_kind_owned K) //. iModIntro. iFrame "G". by iApply prod_ofty_unfold_own.
+    apply lty_simple_struct, HForall_hmap, HForall_forall=> *. done.
   Qed.
 
-  Lemma vplace_conv_prod_fold {𝔅1 𝔅2 𝔄} (K: pctx (𝔅1 * 𝔅2) 𝔄) (ty1: type 𝔅1) (ty2: type 𝔅2) :
-    vplace_conv K (ProdLty (OfTy ty1) (OfTy ty2)) (OfTy (ty1 * ty2)) (=).
+  Lemma vplace_conv_struct_unfold {𝔅l 𝔄} Lay (K: pctx (structₛ Lay 𝔅l) 𝔄) (tyl: typel 𝔅l) :
+    vplace_conv K (OfTy (struct_ty Lay tyl)) (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl)) (=).
+  Proof.
+    iIntros (x ζm dh gh D tid lh G E ? HE ??) "#LFT #PROPH #UNIQ _ #Gk G _ _ _ H".
+    iModIntro. iExists (pctx_get K x), [], 1%Qp. iSplit; [done|]. iSplit.
+    { iPureIntro. intros ??. rewrite lty_rfn_struct_ofty. apply prfn_rsv_fields_in. }
+    iSplitR; [done|]. iIntros "_". rewrite lty_rfn_struct_ofty.
+    destruct (pctx_uend K) as [κ|] eqn:Hu.
+    - rewrite (pctx_kind_uniq K κ) //.
+      iApply (struct_ofty_unfold_uniq with "LFT PROPH UNIQ [] G H");
+        [trans lazyE; [|set_solver]; rewrite /lazyE; solve_ndisj|].
+      iApply (guards_transitive with "Gk"). iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
+      iApply pctx_ulft_ulfts. by apply pctx_uend_ulfts.
+    - rewrite (pctx_kind_owned K) //. iModIntro. iFrame "G". by iApply struct_ofty_unfold_own.
+  Qed.
+
+  Lemma vplace_conv_struct_fold {𝔅l 𝔄} Lay (K: pctx (structₛ Lay 𝔅l) 𝔄) (tyl: typel 𝔅l) :
+    vplace_conv K (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl)) (OfTy (struct_ty Lay tyl)) (=).
   Proof.
     iIntros (x ζm dh gh D tid lh G E ? HE ??) "#LFT #PROPH #UNIQ _ #Gk G _ £ _ H".
     iDestruct (lc_weaken 1 with "£") as "£"; [lia|].
-    destruct (pctx_get K x) as [y1 y2] eqn:Hy.
-    iModIntro. iExists (y1, y2), [], 1%Qp. iSplit; [done|]. iSplit.
+    iModIntro. iExists (pctx_get K x), [], 1%Qp. iSplit; [done|]. iSplit.
     { iPureIntro. intros ??. apply prfn_rsv_in. }
-    iSplitR; [done|]. iIntros "_".
+    iSplitR; [done|]. iIntros "_". rewrite lty_rfn_struct_ofty.
+    iEval (rewrite /= lty_fold_ofty_fields) in "Gk".
     destruct (pctx_uend K) as [κ|] eqn:Hu.
     - rewrite (pctx_kind_uniq K κ) //.
-      iApply (prod_ofty_fold_uniq with "LFT PROPH UNIQ [] [] G £ H"); [trans lazyE; [|set_solver];
-        rewrite /lazyE; solve_ndisj| |].
+      iApply (struct_ofty_fold_uniq with "LFT PROPH UNIQ [] [] G £ H");
+        [trans lazyE; [|set_solver]; rewrite /lazyE; solve_ndisj| |].
       { iApply (guards_transitive with "Gk"). iApply llftl_incl_trans; [iApply llftl_intersect_incl_l|].
         iApply pctx_ulft_ulfts. by apply pctx_uend_ulfts. }
       iApply (guards_transitive with "Gk"). iApply llftl_intersect_incl_r.
-    - rewrite (pctx_kind_owned K) //. iModIntro. iFrame "G". by iApply prod_ofty_unfold_own.
+    - rewrite (pctx_kind_owned K) //. iModIntro. iFrame "G". by iApply struct_ofty_unfold_own.
   Qed.
 
-  Lemma type_unfold_vplace_prod_instr {𝔅1 𝔅2 𝔄} E L I p (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoShr K} `{!PctxVRoot K}
-      (ty1: type 𝔅1) (ty2: type 𝔅2) :
-    lctx_lft_alive E L (pctx_ulft K (OfTy (ty1 * ty2)) ⊓ ty_lft (prod_ty ty1 ty2)) →
-    typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy (ty1 * ty2))] (Seq Skip Skip)
-      (const +[p ◁ₗ pctx_plug K (ProdLty (OfTy ty1) (OfTy ty2))])
+  Lemma type_unfold_vplace_struct_instr {𝔅l 𝔄} E L I p Lay (K: pctx (structₛ Lay 𝔅l) 𝔄)
+      `{!PctxNoShr K} `{!PctxVRoot K} (tyl: typel 𝔅l) :
+    lctx_lft_alive E L (pctx_ulft K (OfTy (struct_ty Lay tyl)) ⊓ ty_lft (struct_ty Lay tyl)) →
+    typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy (struct_ty Lay tyl))] (Seq Skip Skip)
+      (const +[p ◁ₗ pctx_plug K (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl))])
       (λ post '-[x], post -[x]).
   Proof.
     intros Alv. eapply typed_instr_tr_impl;
-      [|apply (type_change_vplace_instr _ _ _ _ K _ _ (=)); [done..|apply vplace_conv_prod_unfold]].
+      [|apply (type_change_vplace_instr _ _ _ _ K _ _ (=)); [done|by rewrite /= lty_fold_ofty_fields|
+        done|by rewrite lty_nrc_struct_ofty|apply pat_blk_lfts_ofty_fields|
+        apply lty_simple_struct_ofty|apply vplace_conv_struct_unfold]].
     intros post [[x₀ ζm] []] mask π Hπ [x₀' ζm'] Hζ Hin (y' & <- & Hx).
     simpl in *. subst. by rewrite pctx_set_get.
   Qed.
 
-  Lemma type_unfold_oplace_prod_instr {𝔅1 𝔅2 𝔄} E L I p n (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoShr K}
-      (ty1: type 𝔅1) (ty2: type 𝔅2) :
-    lctx_lft_alive E L (pctx_ulft K (OfTy (ty1 * ty2)) ⊓ ty_lft (prod_ty ty1 ty2)) →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (ty1 * ty2))] (Seq Skip Skip)
-      (const +[p ◁ₗown{n} pctx_plug K (ProdLty (OfTy ty1) (OfTy ty2))])
+  Lemma type_unfold_oplace_struct_instr {𝔅l 𝔄} E L I p n Lay (K: pctx (structₛ Lay 𝔅l) 𝔄)
+      `{!PctxNoShr K} (tyl: typel 𝔅l) :
+    lctx_lft_alive E L (pctx_ulft K (OfTy (struct_ty Lay tyl)) ⊓ ty_lft (struct_ty Lay tyl)) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (OfTy (struct_ty Lay tyl))] (Seq Skip Skip)
+      (const +[p ◁ₗown{n} pctx_plug K (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl))])
       (λ post '-[x], post -[x]).
-  Proof. intros. by apply (type_unfold_vplace_prod_instr _ _ _ _ (POwn n K)). Qed.
+  Proof. intros. by apply (type_unfold_vplace_struct_instr _ _ _ _ _ (POwn n K)). Qed.
 
-  Lemma type_fold_vplace_prod_instr {𝔅1 𝔅2 𝔄} E L I p (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoShr K} `{!PctxVRoot K}
-      (ty1: type 𝔅1) (ty2: type 𝔅2) :
-    lctx_lft_alive E L (pctx_ulft K (ProdLty (OfTy ty1) (OfTy ty2)) ⊓ ty_lft (prod_ty ty1 ty2)) →
-    typed_instr E L I +[p ◁ₗ pctx_plug K (ProdLty (OfTy ty1) (OfTy ty2))] (Seq Skip Skip)
-      (const +[p ◁ₗ pctx_plug K (OfTy (ty1 * ty2))])
+  Lemma type_fold_vplace_struct_instr {𝔅l 𝔄} E L I p Lay (K: pctx (structₛ Lay 𝔅l) 𝔄)
+      `{!PctxNoShr K} `{!PctxVRoot K} (tyl: typel 𝔅l) :
+    lctx_lft_alive E L (pctx_ulft K (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl)) ⊓
+      ty_lft (struct_ty Lay tyl)) →
+    typed_instr E L I +[p ◁ₗ pctx_plug K (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl))]
+      (Seq Skip Skip) (const +[p ◁ₗ pctx_plug K (OfTy (struct_ty Lay tyl))])
       (λ post '-[x], post -[x]).
   Proof.
     intros Alv. eapply typed_instr_tr_impl;
-      [|apply (type_change_vplace_instr _ _ _ _ K _ _ (=)); [done..|apply vplace_conv_prod_fold]].
+      [|apply (type_change_vplace_instr _ _ _ _ K _ _ (=));
+        [by rewrite /= lty_fold_ofty_fields|by rewrite /= lty_fold_ofty_fields|done|
+         by rewrite lty_nrc_struct_ofty|done|done|apply vplace_conv_struct_fold]].
     intros post [[x₀ ζm] []] mask π Hπ [x₀' ζm'] Hζ Hin (y' & <- & Hx).
     simpl in *. subst. by rewrite pctx_set_get.
   Qed.
 
-  Lemma type_fold_oplace_prod_instr {𝔅1 𝔅2 𝔄} E L I p n (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoShr K}
-      (ty1: type 𝔅1) (ty2: type 𝔅2) :
-    lctx_lft_alive E L (pctx_ulft K (ProdLty (OfTy ty1) (OfTy ty2)) ⊓ ty_lft (prod_ty ty1 ty2)) →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (ProdLty (OfTy ty1) (OfTy ty2))] (Seq Skip Skip)
-      (const +[p ◁ₗown{n} pctx_plug K (OfTy (ty1 * ty2))])
+  Lemma type_fold_oplace_struct_instr {𝔅l 𝔄} E L I p n Lay (K: pctx (structₛ Lay 𝔅l) 𝔄)
+      `{!PctxNoShr K} (tyl: typel 𝔅l) :
+    lctx_lft_alive E L (pctx_ulft K (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl)) ⊓
+      ty_lft (struct_ty Lay tyl)) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl))]
+      (Seq Skip Skip) (const +[p ◁ₗown{n} pctx_plug K (OfTy (struct_ty Lay tyl))])
       (λ post '-[x], post -[x]).
-  Proof. intros. by apply (type_fold_vplace_prod_instr _ _ _ _ (POwn n K)). Qed.
+  Proof. intros. by apply (type_fold_vplace_struct_instr _ _ _ _ _ (POwn n K)). Qed.
+
   (** ** Unique borrows *)
 
   Lemma prfn_rsv_uniq_leaf {𝔄} l' (y: ~~𝔄) ξi ζl :
@@ -572,7 +584,7 @@ Section puniq.
       pctx_dlev K + e + (match pctx_ulfts K with [] => m | _ => mm end).
   Proof.
     rename select (PctxNoShr K) into HK. rewrite /PctxNoShr in HK.
-    induction K in HK, m, e, mm |- *; simpl; simpl in HK; [lia|auto|auto| |auto| |done|done].
+    induction K in HK, m, e, mm |- *; simpl; simpl in HK; [lia|auto| |auto| |done|done].
     - rewrite IHK //. destruct (pctx_ulfts K); lia.
     - rewrite IHK; [|by destruct HK]. destruct (pctx_ulfts K); lia.
   Qed.
@@ -721,13 +733,13 @@ Section puniq.
 
   Lemma pctx_ne_ge {𝔅 𝔄} (K: pctx 𝔅 𝔄) e mm : e ≤ pctx_ne K e mm.
   Proof.
-    induction K in e, mm |- *; simpl; [lia|auto|auto|auto|auto| |auto| ];
+    induction K in e, mm |- *; simpl; [lia|auto|auto|auto| |auto| ];
       specialize (IHK (e + mm + 1) 0); lia.
   Qed.
 
   Lemma pctx_ne_ulfts {𝔅 𝔄} (K: pctx 𝔅 𝔄) e mm : pctx_ne K e mm = e → pctx_ulfts K = [].
   Proof.
-    induction K in e, mm |- *; simpl; [done|eauto|eauto|eauto|eauto| |eauto| ];
+    induction K in e, mm |- *; simpl; [done|eauto|eauto|eauto| |eauto| ];
       have := pctx_ne_ge K (e + mm + 1) 0; lia.
   Qed.
 
@@ -859,7 +871,7 @@ Section puniq.
   Lemma pctx_ulft_fold {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt :
     pctx_ulfts K ≠ [] → ⊢ pctx_ulft K lt ⊑ ty_lft (lty_fold lt).
   Proof.
-    induction K in lt |- *; simpl; try done; [auto|auto|auto|auto| |auto|auto]. intros _.
+    induction K in lt |- *; simpl; try done; [auto|auto|auto| |auto|auto]. intros _.
     iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|]. iApply lty_lft_plug.
   Qed.
 
@@ -875,7 +887,7 @@ Section puniq.
 
   Lemma pctx_hmode_uend {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ m : pctx_uend K = Some κ → pctx_hmode K m = 0%nat.
   Proof.
-    induction K in m |- *; simpl; [done|auto|auto|auto|auto| |auto|auto].
+    induction K in m |- *; simpl; [done|auto|auto|auto| |auto|auto].
     destruct K; [done|..]; intros; by apply IHK.
   Qed.
 
@@ -1276,22 +1288,50 @@ Section lty_rslv.
     lty_resolve E L lt Φ → lty_rslv E L lt (λ x _ _, Φ x).
   Proof. intros Rslv ??????????. apply Rslv. Qed.
 
-  Lemma lty_rslv_prod {𝔄1 𝔄2} E L (lt1: lty 𝔄1) (lt2: lty 𝔄2) Φ1 Φ2 :
-    lty_rslv E L lt1 Φ1 → lty_rslv E L lt2 Φ2 →
-    lty_rslv E L (ProdLty lt1 lt2)
-      (λ x ζm q π, Φ1 x.1 ζm (false :: q) π ∧ Φ2 x.2 ζm (true :: q) π).
+  (** The resolution of the fields of a struct (field [j] at the path [fcode j ++ q]). *)
+  Fixpoint fields_rslv_pred' {𝔄l} :
+      plist (λ 𝔄, ~~𝔄 → blk_map → lpath → proph_asn → Prop) 𝔄l →
+      plist (~~) 𝔄l → blk_map → lpath → nat → proph_asn → Prop :=
+    match 𝔄l with
+    | [] => λ _ _ _ _ _ _, True
+    | _ :: _ => λ '(Φ -:: Φl) '(x -:: xl) ζm q j π,
+        Φ x ζm (fcode j ++ q) π ∧ fields_rslv_pred' Φl xl ζm q (S j) π
+    end.
+
+  Local Lemma fields_rslv {𝔄l} E L (lts: hlist lty 𝔄l) Φl G F m offs xs ζm q j d g tid l :
+    HForall_1 (λ _ lt Φ, lty_rslv E L lt Φ) lts Φl → Timeless G →
+    ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ F →
+    ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
+      (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗
+      fields_node offs (hmap (λ _ lt, ltype_own_cp false lt (Owned m)) lts)
+        (hcmap (λ _ lt, lty_pat lt) lts) (fields_rfn ζm q lts j xs) d g tid l ={F}=∗
+      fields_omem mem_cell m l offs lts ∗
+        |={F}▷=>^(m + d*(g+1)) |={F}=> ⟨π, fields_rslv_pred' Φl xs ζm q j π⟩ ∗ G.
   Proof.
-    iIntros (Rslv1 Rslv2 G F m x ζm q d g tid l ??) "#LFT #PROPH #UNIQ #TIME #E #L G Own".
-    rewrite /ltype_own /=. iDestruct "Own" as "[Own1 Own2]".
-    iMod (fractional.frac_split_guard_in_half with "G L") as (γ) "[H1 [H2 [#Gh #Back]]]";
-      [solve_ndisj|].
-    iMod (Rslv1 with "LFT PROPH UNIQ TIME E Gh H1 Own1") as "[M1 Upd1]"; [done..|].
-    iMod (Rslv2 with "LFT PROPH UNIQ TIME E Gh H2 Own2") as "[M2 Upd2]"; [done..|].
-    iSplitL "M1 M2". { iModIntro. iFrame. }
-    iCombine "Upd1 Upd2" as "Upd". iModIntro.
-    iApply (step_fupdN_wand with "Upd"). iIntros "[>[Obs1 H1] >[Obs2 H2]]".
-    iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
-    iModIntro. by iCombine "Obs1 Obs2" as "?".
+    intros Hall. induction Hall as [|𝔅 𝔅l lt Φ lts Φl Hlt _ IH] in offs, xs, j, G |- *;
+      intros ??.
+    - iIntros "_ _ _ _ _ _ G _ !>". iSplit; [done|]. iApply step_fupdN_full_intro.
+      iFrame "G". by iApply proph_obs_true.
+    - destruct offs as [|o offs]; [by iIntros "_ _ _ _ _ _ _ []"|]. destruct xs as [x xs].
+      iIntros "#LFT #PROPH #UNIQ #TIME #E #L G [Own1 Own2]".
+      iMod (fractional.frac_split_guard_in_half with "G L") as (γ) "[H1 [H2 [#Gh #Back]]]";
+        [solve_ndisj|].
+      iMod (Hlt with "LFT PROPH UNIQ TIME E Gh H1 Own1") as "[M1 Upd1]"; [done..|].
+      iMod (IH with "LFT PROPH UNIQ TIME E Gh H2 Own2") as "[M2 Upd2]"; [done..|].
+      iSplitL "M1 M2". { iModIntro. iFrame. }
+      iCombine "Upd1 Upd2" as "Upd". iModIntro.
+      iApply (step_fupdN_wand with "Upd"). iIntros "[>[Obs1 H1] >[Obs2 H2]]".
+      iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
+      iModIntro. by iCombine "Obs1 Obs2" as "?".
+  Qed.
+
+  Lemma lty_rslv_struct {𝔄l} E L Lay (lts: hlist lty 𝔄l) Φl :
+    HForall_1 (λ _ lt Φ, lty_rslv E L lt Φ) lts Φl →
+    lty_rslv E L (StructLty Lay lts) (λ x ζm q π, fields_rslv_pred' Φl x ζm q 0 π).
+  Proof.
+    iIntros (Rslv G F m x ζm q d g tid l ??) "LFT PROPH UNIQ TIME E L G Own".
+    rewrite lty_rfn_struct lty_omem_struct /ltype_own /=. iDestruct "Own" as "[Own $]".
+    iApply (fields_rslv with "LFT PROPH UNIQ TIME E L G Own"); done.
   Qed.
 
   Lemma lty_rslv_own {𝔄} E L n (lt: lty 𝔄) Φ :
