@@ -1454,3 +1454,75 @@ says that the value read through `borrow` is `7`.
   `lang/pcell_tests.v`. Nothing in `typing/` uses them; `typing/` still imports `lang/heap.v`
   (for `l ↦b bs`), which exports `util/cellmap.v`.
 - `FValue`, `FVCell`, `frepr` and `fv_cells` (`lang/fvalue.v`) stay.
+
+## Outcome: phases 5–6
+
+Phase 5 is the merge of `proto/cellheap-delete` (`9edae9c`); phase 6 (these notes, the
+superseded markers in `pcell-multibyte-cells.md`, `minirust-memory-model.md` and
+`verus-belt-place-types-summary.md`, and the file headers) is the merge of `proto/gmb-docs`. No typing-rule statement changed, no `Admitted`, no
+new axioms: `Print Assumptions` of the examples is as after phase 4 (`functional_extensionality_dep`, and
+`Eqdep.Eq_rect_eq.eq_rect_eq` for the results that use `proph_obs_sat`, e.g.
+`pcell_borrows_type`, `pcell_example_type`, `pcell_move_type`); `lrust_adequacy` and the WP
+rules of `lang/lifting.v` are closed under the global context, `type_soundness` uses
+`functional_extensionality_dep`.
+
+### Phase 5: the physical cell heap is deleted
+
+Deleted files (5 771 lines):
+- `lang/heap_cells.v` (2 667): chains of byte-cells, untether/retether, cell groups and
+  their updates of the byte context (`bytes_ctx_pcell_*`, `bytes_ctx_fbytes_*`, `bytes_ctx_cell_*`, `bytes_ctx_untethered_*`);
+- `util/cellmap.v` (2 520): the full cell map `fcmap` (`fheap`, `fpt`, `funt`, `𝜙`);
+- `lang/pcell_tests.v` (584): its WP-level tests (mirrored on GMB by
+  `typing/gmb_cells_tests.v` since phase 3).
+
+`lang/heap.v` (1 362 → 1 060 lines):
+- The byte region is a plain ghost map `loc ↦ (lock_state * abyte)` (`ghost_mapG Σ loc bval`):
+  `heap_mapsto_st st l b := l ↪[heap_bytes_name] (st, b)`, `bheap σA` its authority. The
+  byte points-to `l ↦b bs` and all `bytes_ctx_*` lemmas keep their statements (except
+  `bytes_ctx_empty`, which lost the registries).
+- The bank of guarded reads is unchanged, except that an entry's witness is a list of
+  points-to's (`bbank_entry`) instead of edges with a cell witness (`cells_wit`).
+- Deleted: the cell registries and their ghost names (`greg`, `gdyn`, `gnocell`, `gnest`,
+  `gpath`, the bank of cell writes `cwbank_auth`/`cwrite_tok`/`cwentry`), `loc_side`,
+  `untethered`, `unt_fb(ytes)`, `heap_mapsto_fbytes`, `brepr`, D3 (`gcontents`,
+  `gc_pure`, `cells_wf`, `cells_live`, `cells_ctx`), `rows_cells_eq`, `fb_strip`/`fb_rst`,
+  `nest_path`, `row_has`, `cw_ls`, and the export of `util/cellmap.v`. `heapGS` has five
+  ghost names instead of ten (the bytes, the bank of guarded reads, the freeable map, the
+  atomic pool and lock counter), and no longer needs `heap_bytes_gdyn_ne`.
+
+`lang/lifting.v` (1 672 → 919 lines): deleted the cell WP rules (`wp_pcell_*`, including the
+sub-position, guarded and `MCAS` variants, `wp_fbytes_*`, `wp_greg_length`,
+`wp_pcell_gnest`), and the updates of the byte context around steps that only they used
+(`wp_bytes_ctx_pre`, `wp_{load,store}_{sc,na}_post`, `wp_memcopy_post`). `fv_lift_inj`
+(used by `typing/gmb_cells.v`) moved to `lang/fvalue.v`. `lang/adequacy.v` allocates only
+the byte map, the bank and the freeable map (`lrustGpreS`, `lrustΣ`).
+
+**Kept**, because the GMB layer and the typing use them: `lang/fvalue.v` (`FValue`,
+`FVCell`, `frepr`, `fv_cells`, `reg_wf`: the decodability of the contents `gcont` is
+stated with `frepr` over a registry of cell positions, which no longer has physical
+byte-cells behind it), `l ↦b bs` with the bank of guarded reads, and the typed accesses
+`wp_load_*`, `wp_store_*`, `wp_memcopy(_guarded)`, `wp_mcas`.
+
+In total the phase removes about 6 960 lines and adds about 110.
+
+### Final architecture
+
+1. **Lifetime logic with special openings** (`lifetime/`, phase 0): plain, guarded and
+   indexed special openings of a lifetime, with the guard law
+   `special_open κ &&{↑NllftG ∪ ↑NllftO}&&> @[κ]`.
+2. **GMB** (`lifetime/guarded_bor.v`, phases 1, 2, 2b, 4.1): an instance `γ` of a predicate
+   `c s t`, split into the move right `gmb_a γ s` (placement) and the permission
+   `gmb_b γ t` (logical contents), with the laws (L0) create/destroy, (L1) move, (L2)
+   share, (L3) lend and (L3p) the prophetic lend for `&uniq` bodies (`typing/gmb_uniq.v`),
+   share guards at any step-index.
+3. **Decodability layer** (`typing/gcont.v`, `typing/gmb_cells.v`, phase 3): the instance
+   `gcont_c m` over ordinary memory, `gcont l m fv` (exact fancy bytes of `fv` at `l`,
+   plain bytes `↦b` plus the move rights of the nested cells), the global registry
+   `gcells_ctx`, moves through (L1) (`gtransit`), accesses and atomics through (L2)/(L3).
+4. **Typing** (`typing/own.v`, `typing/pcell.v`, `typing/pcell_borrow.v`, phase 4):
+   `bytes_own ty l x` is `gcont`; `pcell_ty m` owns the move right, `cell_points_to_ty ty`
+   the permission; `borrow` is (L2), `borrow_mut` is (L3p); the generic place rules apply
+   below them.
+
+The memory model of the language is plain bytes (`lang/heap.v`); cells exist only in the
+ghost layers 2–4.
