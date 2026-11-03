@@ -10,11 +10,11 @@
 
   The places below a shared reference are of two forms:
   - [p ◁ₗ ShrLty (K2[lt]) κ]: the root is the shared reference itself, a value (e.g. a
-    function argument [x: &T]); the address of the hole is [pctx_expr K2 (ToLit p)];
+    function argument [x: &T]); the address of the hole is [pctx_expr K2 p];
   - [p ◁ₗ K1[ShrLty (K2[lt]) κ]], with [PctxNoShr K1] and [PctxVRoot K1] (the first
     [PShr] step, below an owned pointer or a unique borrow at the root, e.g.
     [p ◁ₗown{n} …] or [x: &mut &T]); the address of the hole is
-    [pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K1 p)))].
+    [pctx_expr K2 (Load Na1Ord MPtr (pctx_vexpr K1 p))].
 
   - Phase 1 (only for the second form, [wp_vpshr_root]): the access of [pctx_acc.v] to
     the [ShrLty] leaf (in [Owned] or [Uniq] mode, below any number of unique borrows), the
@@ -214,7 +214,7 @@ Section pctx_shr.
       iDestruct (lc_weaken (2 * k + 2 * k * pctx_dlev K) with "£") as "[£1 £]"; [lia|].
       wp_bind (Load _ _ _).
       iApply (wp_load_ptr_guarded _ l y.1 G k with "[$Gp $G $£1]"); [done|].
-      iIntros "!> G". wp_pure _. by iFrame.
+      iIntros "!> G". by iFrame.
     - iIntros "WP". iApply (IHK (psum_proj_or i y w)
         (l +ₗ tag_size 𝔄l)).
       wp_bind e. iApply (wp_wand with "WP").
@@ -225,20 +225,20 @@ Section pctx_shr.
       iDestruct (lc_weaken (2 * k + 2 * k * pctx_dlev K) with "£") as "[£1 £]"; [lia|].
       wp_bind (Load _ _ _).
       iApply (wp_load_ptr_guarded _ l (uniq_bor_loc y) G k with "[$Gp $G $£1]"); [done|].
-      iIntros "!> G". wp_pure _. by iFrame.
+      iIntros "!> G". by iFrame.
     - iIntros "WP". iApply (IHK y.2 y.1). wp_bind e. iApply (wp_wand with "WP").
       iIntros (v) "(-> & [#Gp Gs] & £ & G & HΦ)".
       iDestruct (lc_weaken (2 * k + 2 * k * pctx_dlev K) with "£") as "[£1 £]"; [lia|].
       wp_bind (Load _ _ _).
       iApply (wp_load_ptr_guarded _ l y.1 G k with "[$Gp $G $£1]"); [done|].
-      iIntros "!> G". wp_pure _. by iFrame.
+      iIntros "!> G". by iFrame.
     - iIntros "WP". iApply (IHK (uniq_bor_current y) (uniq_bor_loc y)).
       wp_bind e. iApply (wp_wand with "WP").
       iIntros (v) "(-> & [#Gp Gs] & £ & G & HΦ)".
       iDestruct (lc_weaken (2 * k + 2 * k * pctx_dlev K) with "£") as "[£1 £]"; [lia|].
       wp_bind (Load _ _ _).
       iApply (wp_load_ptr_guarded _ l (uniq_bor_loc y) G k with "[$Gp $G $£1]"); [done|].
-      iIntros "!> G". wp_pure _. by iFrame.
+      iIntros "!> G". by iFrame.
   Qed.
 
   (** The shared view of a place gives the shared view of the hole of [K] (and the guards
@@ -424,7 +424,7 @@ Section pshr_addr.
       shr_view (pctx_slft K2 κ) (lty_fold lt) (pctx_get K2 x.2) dh D tid
         (pctx_loc K2 (lty_size lt) x.2 x.1) -∗
       Φ #(pctx_loc K2 (lty_size lt) x.2 x.1)) -∗
-    WP pctx_expr K2 (ToLit e) @ E {{ Φ }}.
+    WP pctx_expr K2 e @ E {{ Φ }}.
   Proof.
     iIntros (? Hfold Hv) "#Gs G £ WPe Own HΦ".
     iDestruct "Own" as (d g Hle) "[Leaf %Hvin]".
@@ -437,7 +437,7 @@ Section pshr_addr.
     iMod (lc_fupd_elim_laterN with "£g V0") as "#V".
     iDestruct (shr_view_depth_mono _ _ _ _ _ (pred d) D with "V") as "#V'"; [lia|lia|].
     iApply (wp_pshr_hole E κ K2 lt x D tid with "Gs"); [done|].
-    wp_bind e. iApply (wp_wand with "WPe"). iIntros (?) "->". wp_pure _.
+    wp_bind e. iApply (wp_wand with "WPe"). iIntros (?) "->".
     iSplit; [done|]. iExists (pred d). iFrame "G £ V'".
     iSplit; [iPureIntro; lia|]. iSplit; [iPureIntro; by apply pctx_vin_in|].
     iIntros (dh' Hdh') "G Vh". iApply ("HΦ" with "[%] [%] G [] Vh"); [lia|done|].
@@ -468,7 +468,7 @@ Section pshr_addr.
       shr_view (pctx_slft K2 κ) (lty_fold lt) (pctx_get K2 y.2) dh D tid
         (pctx_loc K2 (lty_size lt) y.2 y.1) -∗
       Φ #(pctx_loc K2 (lty_size lt) y.2 y.1)) -∗
-    WP pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K1 e))) @ E {{ Φ }}.
+    WP pctx_expr K2 (Load Na1Ord MPtr (pctx_vexpr K1 e)) @ E {{ Φ }}.
   Proof.
     iIntros (? HE Hfold lt1 lt1' y Hv) "#LFT #PROPH #UNIQ #Gu #Gs G £ #⧖ WPe Own HΦ".
     have Hdl: 1 ≤ pctx_dlev K1 by apply pctx_vroot_dlev.
@@ -553,13 +553,14 @@ Section pshr_addr.
           rewrite /= Hfold. iExists y. iSplit; [done|].
           rewrite /ofty_owned cbytes_at_loc. iFrame "Gho1". iExists bs. by iFrame. }
         iModIntro. iSplit; [done|]. by iFrame "G Own Gho1'". }
-    wp_bind (Load _ _ _). iApply (wp_wand with "WPr"). iIntros (v) "(-> & G & Own & %Hvin & #Gho)".
+    wp_bind (Load _ _ _). iApply wp_fupd.
+    iApply (wp_wand with "WPr"). iIntros (v) "(-> & G & Own & %Hvin & #Gho)".
     apply lty_vin_plug in Hvin as [Hvin2 Hvin].
     iDestruct (shr_bor_gho_view with "Gho") as "[%Hdh1' V0]".
     iDestruct (lc_weaken (gh1 + 1) with "£g") as "£g"; [lia|].
     iMod (lc_fupd_elim_laterN with "£g V0") as "#V".
     iDestruct (shr_view_depth_mono _ _ _ _ _ (pred dh1) D with "V") as "#V'"; [lia|lia|].
-    wp_pure _. iSplit; [done|]. iExists (pred dh1). iFrame "G £r V'".
+    iModIntro. iSplit; [done|]. iExists (pred dh1). iFrame "G £r V'".
     iSplit; [iPureIntro; lia|]. iSplit; [iPureIntro; by apply pctx_vin_in|].
     iIntros (dh' Hdh') "G Vh". iApply ("HΦ" with "[%] [%] G Own Vh"); [lia|done].
   Qed.
@@ -747,7 +748,7 @@ Section case.
       (p ◁ₗ ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ +:: T)
       (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ +:: T)
-      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K2 (ToLit p))) of el)
+      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K2 p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -771,7 +772,7 @@ Section case.
     iDestruct (lc_weaken (pshr_cred D + 2 * (D + 1)) with "£") as "[£a £r]";
       [have := pshr_cred_step D; lia|].
     set lt'' := pctx_plug K2 (SumLty tyl j (OfTy (tyl +!! j))).
-    wp_bind (pctx_expr K2 (ToLit p)).
+    wp_bind (pctx_expr K2 p).
     iApply (wp_pshr_open_root _ κ K2 (OfTy (Σ! tyl)) lt'' x D tid v p (fractional.half γh)
       with "Hs H1 £a [] Own"); [solve_ndisj| |..].
     { apply lty_fold_plug_eq'. by rewrite lty_fold_sum_ofty. }
@@ -784,7 +785,7 @@ Section case.
     iApply (wp_load_tag_shr_view with "Hsl H1 £r V"); [solve_ndisj|].
     iIntros "H1".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    iModIntro. wp_pure _.
+    iModIntro.
     wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
     iDestruct (big_sepN_lookup _ _ j with "el") as "el".
     iApply ("el" $! _ ((x, ζm) -:: xl)
@@ -809,8 +810,8 @@ Section case.
       (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ) +:: T)
       (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
-      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l))
-        (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K p))))) of el)
+      (case: (Load Na1Ord (MInt (sum_tag 𝔄l))
+        (pctx_expr K2 (Load Na1Ord MPtr (pctx_vexpr K p)))) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1).2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -851,7 +852,7 @@ Section case.
     iApply (wp_load_tag_shr_view with "Hsl H1 £r V"); [solve_ndisj|].
     iIntros "H1".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
-    iModIntro. wp_pure _.
+    iModIntro.
     wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
     iDestruct (big_sepN_lookup _ _ j with "el") as "el".
     iApply ("el" $! _ ((x₀, ζm) -:: xl)
@@ -872,8 +873,8 @@ Section case.
       (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ) +:: T)
       (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
-      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l))
-        (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p)))))) of el)
+      (case: (Load Na1Ord (MInt (sum_tag 𝔄l))
+        (pctx_expr K2 (Load Na1Ord MPtr (pctx_expr K p)))) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1.2).2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.

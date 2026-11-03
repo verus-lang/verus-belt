@@ -30,18 +30,18 @@ Section pcell_example.
   ```
   *)
   Definition pcell_example_b : expr := (
-    let: "p" := OfLit (Alloc #4) in                         (* a box of 4 bytes *)
+    let: "p" := (Alloc #4) in                         (* a box of 4 bytes *)
     let: "seventeen" := MLit (VInt 17) in
-    ToLit "p" <-{MInt i32} "seventeen";;                    (* *p = 17 *)
+    "p" <-{MInt i32} "seventeen";;                    (* *p = 17 *)
     let: "pair" := PCellFromOwn ["p"] in                    (* (PCell, PointsTo) *)
     Newlft;;
-    let: "r" := &ˢ (ToLit "pair") in                         (* &pair *)
-    let: "pcell_ref" := OfLit (ToLit "r") in                 (* &pair.0 *)
-    let: "perm_ref" := OfLit (ToLit "r" +ₗ #4) in            (* &pair.1 *)
+    let: "r" := &ˢ "pair" in                         (* &pair *)
+    let: "pcell_ref" := "r" in                 (* &pair.0 *)
+    let: "perm_ref" := ("r" +ₗ #4) in            (* &pair.1 *)
     let: "intref" := PCellBorrow ["pcell_ref"; "perm_ref"] in
-    let: "x" := Load Na1Ord (MInt i32) (ToLit "intref") in   (* *intref *)
+    let: "x" := Load Na1Ord (MInt i32) "intref" in   (* *intref *)
     Endlft;;
-    (#☠;; delete [ #4; ToLit "pair"]);;                      (* drop the pair *)
+    (#☠;; delete [ #4; "pair"]);;                      (* drop the pair *)
     jump: "return" ["x"])%E.
 
   Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.

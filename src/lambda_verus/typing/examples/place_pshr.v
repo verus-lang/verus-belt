@@ -30,7 +30,7 @@ Section place_pshr.
   reference, a field offset, and a guarded typed load of [i32].
   *)
   Definition get_snd_pb : expr := (
-    let: "v" := !ᶜ{MInt i32} (ToLit (Load Na1Ord MPtr (ToLit "x")) +ₗ #4) in
+    let: "v" := !ᶜ{MInt i32} ((Load Na1Ord MPtr "x") +ₗ #4) in
     jump: "return" ["v"])%E.
 
   Lemma get_snd_pb_type ϝ α β (k vx: val) :
@@ -79,8 +79,8 @@ Section place_pshr.
     ReBor;;                                                    (* unfold *b *)
     ReBor;;                                                    (* view **b as a pair *)
     let: "v" := !ᶜ{MInt i32}
-      (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "b")) +ₗ #4))) in  (* *( **b).1 *)
-    (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "b"]);;         (* drop b *)
+      (Load Na1Ord MPtr ((Load Na1Ord MPtr "b") +ₗ #4)) in  (* *( **b).1 *)
+    (#☠;; delete [ #(Z.of_nat PTR_SIZE); "b"]);;         (* drop b *)
     jump: "return" ["v"])%E.
 
   Lemma get_boxed_pb_type ϝ α (k vb: val) :
@@ -142,13 +142,13 @@ Section place_pshr.
 
   Definition get_or_zero_pb : expr := (
     ReBor;;                                                    (* unfold *b *)
-    case: ToLit (Load Na1Ord (MInt (sum_tag [unitₛ; intₛ i32]))
-      (ToLit (Load Na1Ord MPtr (ToLit "b")))) of
-    [ (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "b"]);;       (* None: drop b *)
+    case: (Load Na1Ord (MInt (sum_tag [unitₛ; intₛ i32]))
+      (Load Na1Ord MPtr "b")) of
+    [ (#☠;; delete [ #(Z.of_nat PTR_SIZE); "b"]);;       (* None: drop b *)
       let: "z" := MLit (VInt 0) in
       jump: "return" ["z"];
-      let: "v" := !ᶜ{MInt i32} (ToLit (Load Na1Ord MPtr (ToLit "b")) +ₗ #1) in
-      (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "b"]);;       (* Some(v): drop b *)
+      let: "v" := !ᶜ{MInt i32} ((Load Na1Ord MPtr "b") +ₗ #1) in
+      (#☠;; delete [ #(Z.of_nat PTR_SIZE); "b"]);;       (* Some(v): drop b *)
       jump: "return" ["v"]])%E.
 
   Definition get_or_zero_pb_spec : predl_trans' [at_locₛ (at_locₛ opt_i32ₛ)] (intₛ i32) :=
@@ -226,7 +226,7 @@ Section place_pshr.
     Skip;;                                                     (* x as a place *)
     ReBor;;                                                    (* unfold **x *)
     ReBor;;                                                    (* view ***x as a pair *)
-    let: "r" := &ˢ (ToLit (Load Na1Ord MPtr (ToLit "x"))) in (* &( **x).0 *)
+    let: "r" := &ˢ (Load Na1Ord MPtr "x") in (* &( **x).0 *)
     ReBor;; ReBor;;                                            (* fold back *)
     Skip;;                                                     (* resolve x *)
     jump: "return" ["r"])%E.

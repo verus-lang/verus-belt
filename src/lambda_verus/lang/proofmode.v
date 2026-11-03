@@ -43,8 +43,8 @@ Lemma tac_wp_eq_loc `{!lrustGS Σ} K Δ Δ' E i1 i2 l1 l2 b1 b2 Φ :
   MaybeIntoLaterNEnvs 1 Δ Δ' →
   envs_lookup i1 Δ' = Some (false, l1 ↦b [b1])%I →
   envs_lookup i2 Δ' = Some (false, l2 ↦b [b2])%I →
-  envs_entails Δ' (WP fill K (Lit (bool_decide (l1 = l2))) @ E {{ Φ }}) →
-  envs_entails Δ (WP fill K (BinOp EqOp (Lit (LitLoc l1)) (Lit (LitLoc l2))) @ E {{ Φ }}).
+  envs_entails Δ' (WP fill K (MLit (VBool (bool_decide (l1 = l2)))) @ E {{ Φ }}) →
+  envs_entails Δ (WP fill K (BinOp EqOp (MLit (VPtr l1)) (MLit (VPtr l2))) @ E {{ Φ }}).
 Proof.
   rewrite envs_entails_unseal=> ? /envs_lookup_sound /=. rewrite sep_elim_l=> ?.
   move /envs_lookup_sound; rewrite sep_elim_l=> ? HΔ. rewrite -wp_bind.
@@ -83,10 +83,12 @@ Ltac wp_bind_core K :=
 Tactic Notation "wp_bind" open_constr(efoc) :=
   iStartProof;
   lazymatch goal with
-  | |- envs_entails _ (wp ?s ?E ?e ?Q) => reshape_expr e ltac:(fun K e' =>
-    match e' with
-    | efoc => unify e' efoc; wp_bind_core K
-    end) || fail "wp_bind: cannot find" efoc "in" e
+  | |- envs_entails _ (wp ?s ?E ?e ?Q) => first
+    [ reshape_expr e ltac:(fun K e' =>
+        match e' with
+        | efoc => unify e' efoc; wp_bind_core K
+        end)
+    | fail "wp_bind: cannot find" efoc "in" e ]
   | _ => fail "wp_bind: not a 'wp'"
   end.
 
@@ -98,7 +100,7 @@ Implicit Types Δ : envs (uPredI (iResUR Σ)).
 
 Lemma tac_wp_nd_int `{!lrustGS Σ} K Δ Δ' E Φ :
   MaybeIntoLaterNEnvs 1 Δ Δ' →
-  (∀z, envs_entails Δ' (WP fill K (Lit (LitInt z)) @ E {{ Φ }})) →
+  (∀z, envs_entails Δ' (WP fill K (MLit (VInt z)) @ E {{ Φ }})) →
   envs_entails Δ (WP fill K NdInt @ E {{ Φ }}).
 Proof.
   rewrite envs_entails_unseal=> ? HΔ'. rewrite into_laterN_env_sound /=.

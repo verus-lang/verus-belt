@@ -282,7 +282,7 @@ Section typing.
     destruct x as [[l x₀] ζm]. rewrite /read_move /=.
     rewrite /tctx_elt_interp.
     iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
-    have ?: Closed [] (pctx_expr K (ToLit p)).
+    have ?: Closed [] (pctx_expr K p).
     { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
     iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
@@ -294,12 +294,12 @@ Section typing.
     set dh := pctx_depth K d.
     have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
     (* The address of the hole. *)
-    wp_bind (pctx_expr K (ToLit p)).
+    wp_bind (pctx_expr K p).
     iApply (wp_wand with "[Rest]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr p True True
         with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-        by wp_pure _. }
+        iFrame; by iPureIntro. }
     iIntros (w) "(-> & _ & _ & Rest)".
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
     iIntros "£ #⧖S". iApply wp_fupd.

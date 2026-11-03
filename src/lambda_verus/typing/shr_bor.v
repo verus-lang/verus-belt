@@ -134,13 +134,13 @@ Section shr_bytes_rules.
       [Load]. *)
   Lemma type_load_shr_bytes_copy_instr {𝔄} κ (ty: type 𝔄) p E L I :
     Copy ty → lctx_lft_alive E L κ →
-    typed_instr E L I +[p ◁ᵥ &shr{κ} ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
+    typed_instr E L I +[p ◁ᵥ &shr{κ} ty] (Load Na1Ord ty.(ty_mty) p)
       (λ v, +[p ◁ᵥ &shr{κ} ty; v ◁ᵥ ty]) (λ post '-[a], post -[a; a.2]).
   Proof.
     intros Hcopy0. assert (NoCell 𝔄) by exact (copy_nocell ty). revert Hcopy0.
     iIntros (? Alv tid post mask iκs [[l x] []]) "#LFT #TIME _ _ #E L $ [p _] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
-    simpl in Hw. simplify_eq. wp_pure _.
+    simpl in Hw. simplify_eq. cbn [of_val].
     destruct d as [|d]; [done|]. rewrite /= /by_succ.
     iDestruct "Own" as "(#Pt & #Shr & #Pers)".
     iDestruct (copy_shr with "Shr") as "#GOwn".

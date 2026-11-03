@@ -841,7 +841,7 @@ Section gcells_wp.
       location keeps plain bytes, and the cells travel with the loaded value. *)
   Lemma wp_gcont_load_move E l m fv :
     lazyE ∪ ↑gcellsN ⊆ E → mty_wf m →
-    {{{ gcells_ctx ∗ £ 1 ∗ gcont l m fv }}} Load Na1Ord m (Lit $ LitLoc l) @ E
+    {{{ gcells_ctx ∗ £ 1 ∗ gcont l m fv }}} Load Na1Ord m (MLit $ VPtr l) @ E
     {{{ v bs, RET MLitV v; l ↦b bs ∗ ⌜length bs = mty_size m⌝ ∗ gtransit m fv v }}}.
   Proof.
     iIntros (HE Hwf Φ) "(#GC & Lc & C) HΦ".
@@ -854,8 +854,8 @@ Section gcells_wp.
       the bytes there are [encode_value m v], which decode to [v] (re-encoding). *)
   Lemma wp_gtransit_store E l' m fv v bs0 :
     lazyE ∪ ↑naN ⊆ E → mty_wf m → length bs0 = mty_size m →
-    {{{ ▷ l' ↦b bs0 ∗ gtransit m fv v }}} Store Na1Ord m (Lit $ LitLoc l') (MLit v) @ E
-    {{{ RET LitV LitPoison; gcont l' m fv }}}.
+    {{{ ▷ l' ↦b bs0 ∗ gtransit m fv v }}} Store Na1Ord m (MLit $ VPtr l') (MLit v) @ E
+    {{{ RET #☠; gcont l' m fv }}}.
   Proof.
     iIntros (HE Hwf Hlen Φ) "[Hbs [[%Hvwf _] Cl]] HΦ". iApply wp_fupd.
     iApply (wp_store_na with "Hbs"); [set_solver|done|done|]. iIntros "!> Hbs".
@@ -868,8 +868,8 @@ Section gcells_wp.
   Lemma wp_gcont_move E l l' m fv bs0 :
     lazyE ∪ ↑gcellsN ∪ ↑naN ⊆ E → mty_wf m → length bs0 = mty_size m →
     {{{ gcells_ctx ∗ £ 1 ∗ gcont l m fv ∗ ▷ l' ↦b bs0 }}}
-      Store Na1Ord m (Lit $ LitLoc l') (Load Na1Ord m (Lit $ LitLoc l)) @ E
-    {{{ bs, RET LitV LitPoison; l ↦b bs ∗ gcont l' m fv }}}.
+      Store Na1Ord m (MLit $ VPtr l') (Load Na1Ord m (MLit $ VPtr l)) @ E
+    {{{ bs, RET #☠; l ↦b bs ∗ gcont l' m fv }}}.
   Proof.
     iIntros (HE Hwf Hlen Φ) "(#GC & Lc & C & Hl') HΦ".
     wp_bind (Load _ _ _). iApply (wp_gcont_load_move with "[$GC $Lc $C]"); [set_solver|done|].
@@ -882,8 +882,8 @@ Section gcells_wp.
   Lemma wp_gcont_memcopy E l l' m fv bs0 :
     lazyE ∪ ↑gcellsN ∪ ↑naN ⊆ E → mty_wf m → length bs0 = mty_size m →
     {{{ gcells_ctx ∗ £ 1 ∗ gcont l m fv ∗ ▷ l' ↦b bs0 }}}
-      MemCopy Na1Ord (mty_size m) (Lit $ LitLoc l') (Lit $ LitLoc l) @ E
-    {{{ bs, RET LitV LitPoison; l ↦b bs ∗ ⌜length bs = mty_size m⌝ ∗ gcont l' m fv }}}.
+      MemCopy Na1Ord (mty_size m) (MLit $ VPtr l') (MLit $ VPtr l) @ E
+    {{{ bs, RET #☠; l ↦b bs ∗ ⌜length bs = mty_size m⌝ ∗ gcont l' m fv }}}.
   Proof.
     iIntros (HE Hwf Hlen Φ) "(#GC & Lc & C & Hl') HΦ".
     iMod (gcont_open with "GC Lc C") as (bs v) "(Hbs & %Hd & Tr)"; [set_solver|done|].
@@ -896,7 +896,7 @@ Section gcells_wp.
   (** *** Accesses to plain sub-values of owned contents (e.g. through a lend) *)
   Lemma wp_gcont_load_na_sub E l m fv o m' vo :
     mty_wf m → fv_sub m fv o m' (fv_lift vo) →
-    {{{ gcont l m fv }}} Load Na1Ord m' (Lit $ LitLoc (l +ₗ o)) @ E
+    {{{ gcont l m fv }}} Load Na1Ord m' (MLit $ VPtr (l +ₗ o)) @ E
     {{{ RET MLitV vo; gcont l m fv }}}.
   Proof.
     iIntros (Hwf Hsub Φ) "C HΦ". iDestruct (gcont_sub_view with "C") as (bs Hd) "[Hbs Cl]"; [done..|].
@@ -905,7 +905,7 @@ Section gcells_wp.
 
   Lemma wp_gcont_load_sc_sub E l m fv o m' vo :
     mty_wf m → fv_sub m fv o m' (fv_lift vo) →
-    {{{ gcont l m fv }}} Load ScOrd m' (Lit $ LitLoc (l +ₗ o)) @ E
+    {{{ gcont l m fv }}} Load ScOrd m' (MLit $ VPtr (l +ₗ o)) @ E
     {{{ RET MLitV vo; gcont l m fv }}}.
   Proof.
     iIntros (Hwf Hsub Φ) "C HΦ". iDestruct (gcont_sub_view with "C") as (bs Hd) "[Hbs Cl]"; [done..|].
@@ -914,8 +914,8 @@ Section gcells_wp.
 
   Lemma wp_gcont_store_na_sub E l m fv o m' vo vn fvn :
     ↑naN ⊆ E → mty_wf m → val_wf m' vn → fv_repl m fv o m' (fv_lift vo) (fv_lift vn) fvn →
-    {{{ gcont l m fv }}} Store Na1Ord m' (Lit $ LitLoc (l +ₗ o)) (MLit vn) @ E
-    {{{ RET LitV LitPoison; gcont l m fvn }}}.
+    {{{ gcont l m fv }}} Store Na1Ord m' (MLit $ VPtr (l +ₗ o)) (MLit vn) @ E
+    {{{ RET #☠; gcont l m fvn }}}.
   Proof.
     iIntros (HE Hwf Hvn Hr Φ) "C HΦ". have Hsub := fv_repl_sub _ _ _ _ _ _ _ Hr.
     have Hwf' := fv_sub_wf _ _ _ _ _ Hsub Hwf.
@@ -926,8 +926,8 @@ Section gcells_wp.
 
   Lemma wp_gcont_store_sc_sub E l m fv o m' vo vn fvn :
     ↑naN ⊆ E → mty_wf m → val_wf m' vn → fv_repl m fv o m' (fv_lift vo) (fv_lift vn) fvn →
-    {{{ gcont l m fv }}} Store ScOrd m' (Lit $ LitLoc (l +ₗ o)) (MLit vn) @ E
-    {{{ RET LitV LitPoison; gcont l m fvn }}}.
+    {{{ gcont l m fv }}} Store ScOrd m' (MLit $ VPtr (l +ₗ o)) (MLit vn) @ E
+    {{{ RET #☠; gcont l m fvn }}}.
   Proof.
     iIntros (HE Hwf Hvn Hr Φ) "C HΦ". have Hsub := fv_repl_sub _ _ _ _ _ _ _ Hr.
     have Hwf' := fv_sub_wf _ _ _ _ _ Hsub Hwf.
@@ -939,7 +939,7 @@ Section gcells_wp.
   (** Compare-and-exchange of a plain sub-value. *)
   Lemma wp_gcont_mcas_sub E l m fv o m' vo v1 v2 fvn :
     ↑naN ⊆ E → mty_wf m → val_wf m' v2 → fv_repl m fv o m' (fv_lift vo) (fv_lift v2) fvn →
-    {{{ gcont l m fv }}} MCAS m' (Lit $ LitLoc (l +ₗ o)) (MLit v1) (MLit v2) @ E
+    {{{ gcont l m fv }}} MCAS m' (MLit $ VPtr (l +ₗ o)) (MLit v1) (MLit v2) @ E
     {{{ b, RET MLitV (VBool b);
         (⌜b = true ∧ vo = v1⌝ ∗ gcont l m fvn) ∨ (⌜b = false ∧ vo ≠ v1⌝ ∗ gcont l m fv) }}}.
   Proof.
@@ -956,7 +956,7 @@ Section gcells_wp.
   Lemma wp_gcont_load_na_guarded E l m fv o m' vo G d :
     ↑naN ⊆ E → mty_wf m → fv_sub m fv o m' (fv_lift vo) →
     {{{ (G &&{↑naN; d}&&> gcont l m fv) ∗ G ∗ £ (2*d) }}}
-      Load Na1Ord m' (Lit $ LitLoc (l +ₗ o)) @ E
+      Load Na1Ord m' (MLit $ VPtr (l +ₗ o)) @ E
     {{{ RET MLitV vo; G }}}.
   Proof.
     iIntros (HE Hwf Hsub Φ) "(#Guard & G & £) HΦ".
@@ -971,7 +971,7 @@ Section gcells_wp.
   Lemma wp_load_sc_guarded_gen E l m v G P (Ψ : list abyte → Prop) d :
     ↑naN ⊆ E → (∀ bs, Ψ bs → decode_value m bs = Some v) →
     {{{ (G &&{↑naN; d}&&> P) ∗ □ (P -∗ ∃ bs, ⌜Ψ bs⌝ ∗ l ↦b bs ∗ (l ↦b bs -∗ P)) ∗ G ∗ £ d }}}
-      Load ScOrd m (Lit $ LitLoc l) @ E
+      Load ScOrd m (MLit $ VPtr l) @ E
     {{{ RET MLitV v; G }}}.
   Proof.
     iIntros (? HΨ Φ) "(#Guard & #HP & G & £) HΦ".
@@ -996,7 +996,7 @@ Section gcells_wp.
   Lemma wp_gcont_load_sc_guarded E l m fv o m' vo G d :
     ↑naN ⊆ E → mty_wf m → fv_sub m fv o m' (fv_lift vo) →
     {{{ (G &&{↑naN; d}&&> gcont l m fv) ∗ G ∗ £ d }}}
-      Load ScOrd m' (Lit $ LitLoc (l +ₗ o)) @ E
+      Load ScOrd m' (MLit $ VPtr (l +ₗ o)) @ E
     {{{ RET MLitV vo; G }}}.
   Proof.
     iIntros (HE Hwf Hsub Φ) "(#Guard & G & £) HΦ".
@@ -1011,7 +1011,7 @@ Section gcells_wp.
     ↑naN ⊆ E → mty_wf m → fv_sub m fv o m' (fv_lift vo) →
     {{{ gmb_inv (gcont_c m) γ ∗ (G &&{↑naN; d}&&> gca γ l) ∗ (G &&{↑naN; d}&&> gmb_b γ fv) ∗
         G ∗ £ (2*d) }}}
-      Load Na1Ord m' (Lit $ LitLoc (l +ₗ o)) @ E
+      Load Na1Ord m' (MLit $ VPtr (l +ₗ o)) @ E
     {{{ RET MLitV vo; G }}}.
   Proof.
     iIntros (HE Hwf Hsub Φ) "(#GI & #Ga & #Gb & G & £) HΦ".
@@ -1024,7 +1024,7 @@ Section gcells_wp.
     ↑naN ⊆ E → mty_wf m → fv_sub m fv o m' (fv_lift vo) →
     {{{ gmb_inv (gcont_c m) γ ∗ (G &&{↑naN; d}&&> gca γ l) ∗ (G &&{↑naN; d}&&> gmb_b γ fv) ∗
         G ∗ £ d }}}
-      Load ScOrd m' (Lit $ LitLoc (l +ₗ o)) @ E
+      Load ScOrd m' (MLit $ VPtr (l +ₗ o)) @ E
     {{{ RET MLitV vo; G }}}.
   Proof.
     iIntros (HE Hwf Hsub Φ) "(#GI & #Ga & #Gb & G & £) HΦ".

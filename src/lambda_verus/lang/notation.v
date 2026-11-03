@@ -1,8 +1,11 @@
 From lrust.lang Require Export lang.
 Set Default Proof Using "Type".
 
-Coercion LitInt : Z >-> base_lit.
-Coercion LitLoc : loc >-> base_lit.
+(** The MiniRust values of the integers, booleans and pointers, so that [#4], [#true] and
+    [#l] are [VInt 4], [VBool true] and [VPtr l]. *)
+Coercion VInt : Z >-> Value.
+Coercion VBool : bool >-> Value.
+Coercion VPtr : loc >-> Value.
 
 Coercion App : expr >-> Funclass.
 Coercion of_val : val >-> expr.
@@ -17,8 +20,8 @@ Notation "[ x1 ; x2 ; .. ; xn ]" :=
 
 (* No scope for the values, does not conflict and scope is often not inferred
 properly. *)
-Notation "# l" := (LitV l%Z%V%L) (at level 8, format "# l").
-Notation "# l" := (Lit l%Z%V%L) (at level 8, format "# l") : expr_scope.
+Notation "# l" := (MLitV l%Z%V%L) (at level 8, format "# l").
+Notation "# l" := (MLit l%Z%V%L) (at level 8, format "# l") : expr_scope.
 
 (** Syntax inspired by Coq/Ocaml. Constructions with higher precedence come
     first. *)
@@ -26,7 +29,8 @@ Notation "case: e0 'of' el" := (Case e0%E el%E)
   (at level 102, e0, el at level 150) : expr_scope.
 Notation "if: e1 'then' e2 'else' e3" := (If e1%E e2%E e3%E)
   (at level 102, e1, e2, e3 at level 150) : expr_scope.
-Notation "☠" := LitPoison : val_scope.
+(** The unit value (MiniRust's [()]): the result of the instructions without a result. *)
+Notation "☠" := (VTuple []) : val_scope.
 Notation "e1 + e2" := (BinOp PlusOp e1%E e2%E)
   (at level 50, left associativity) : expr_scope.
 Notation "e1 - e2" := (BinOp MinusOp e1%E e2%E)
@@ -37,7 +41,7 @@ Notation "e1 ≤ e2" := (BinOp LeOp e1%E e2%E)
   (at level 70) : expr_scope.
 Notation "e1 = e2" := (BinOp EqOp e1%E e2%E)
   (at level 70) : expr_scope.
-Notation NdBool := (#(LitInt 0) ≤ NdInt)%E.
+Notation NdBool := (#(VInt 0) ≤ NdInt)%E.
 Notation "rec: f xl := e" := (Rec f%binder xl%binder e%E)
   (at level 102, f, xl at level 1, e at level 200) : expr_scope.
 Notation "rec: f xl := e" := (locked (RecV f%binder xl%binder e%E))

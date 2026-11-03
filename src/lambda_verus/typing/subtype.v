@@ -8,7 +8,7 @@ Set Default Proof Using "Type".
 
 (** * Allocation and subtyping on bytes (stage 4f of the MiniRust memory model)
 
-  - [type_new_bytes_instr], [type_new_bytes]: [OfLit (Alloc #n)] gives a box of bytes of
+  - [type_new_bytes_instr], [type_new_bytes]: [(Alloc #n)] gives a box of bytes of
     [n] uninitialized bytes, [v ◁ᵥ own_bytes n (↯ n)] (a pointer value); it is then
     initialized with a typed [Store] (a strong update of the leaf [↯ n],
     [type_write_place_instr] of [typing/place_write.v]).
@@ -36,7 +36,7 @@ Section bnew.
 
   Lemma type_new_bytes_instr (n: nat) E L I :
     (0 < n)%nat →
-    typed_instr E L I +[] (OfLit (Alloc #n)) (λ v, +[v ◁ᵥ own_bytes n (↯ n)])
+    typed_instr E L I +[] (Alloc #n) (λ v, +[v ◁ᵥ own_bytes n (↯ n)])
       (λ post _ mask π, ∀ l junk, post -[(l, junk)] mask π).
   Proof.
     iIntros (Hn tid post mask iκs []) "_ #TIME _ _ _ $$ _ Obs".
@@ -46,7 +46,7 @@ Section bnew.
     iIntros "_ #⧖1".
     wp_bind (Alloc _). iApply (wp_alloc_bytes with "[//]"); [lia|].
     iIntros "!>" (l sz) "(%Hsz & Fr & Hbs)". have ?: sz = n by lia. subst sz.
-    wp_pure _. iModIntro.
+    iModIntro.
     set junk := (() : ~~ (uninitₛ n)).
     iExists -[(l, junk)]. iSplitR "Obs".
     - iSplit; [|done]. rewrite tctx_val_val. iExists 1%nat. iSplit; [done|]. iFrame "⧖1".
@@ -60,7 +60,7 @@ Section bnew.
   Lemma type_new_bytes {𝔄l 𝔅} (n: nat) x e tr E L (I: invctx) (C: cctx 𝔅) (T: tctx 𝔄l) :
     Closed (x :b: []) e → (0 < n)%nat →
     (∀v: val, typed_body E L I C (v ◁ᵥ own_bytes n (↯ n) +:: T) (subst' x v e) tr) -∗
-    typed_body E L I C T (let: x := OfLit (Alloc #n) in e)
+    typed_body E L I C T (let: x := (Alloc #n) in e)
       (λ post al mask π, forall l junk, tr post ((l, junk) -:: al) mask π).
   Proof.
     iIntros. iApply type_let.

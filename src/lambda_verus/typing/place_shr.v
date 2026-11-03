@@ -136,13 +136,13 @@ Section shr_bytes_fields.
   Context `{!typeG Σ}.
 
   Lemma type_shr_bytes_snd_instr {𝔄 𝔅} κ (ty1: type 𝔄) (ty2: type 𝔅) p E L I :
-    typed_instr E L I +[p ◁ᵥ &shr{κ} (ty1 * ty2)] (OfLit (ToLit p +ₗ #(ty_bsize ty1)))%E
+    typed_instr E L I +[p ◁ᵥ &shr{κ} (ty1 * ty2)] (p +ₗ #(ty_bsize ty1))%E
       (λ v, +[v ◁ᵥ &shr{κ} ty2])
       (λ post '-[a], post -[((a.1 +ₗ ty_bsize ty1), a.2.2)]).
   Proof.
     iIntros (tid post mask iκs [[l [x1 x2]] []]) "_ _ _ _ _ $ $ [p _] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
-    simpl in Hw. simplify_eq. wp_pure _. wp_op. wp_pure _.
+    simpl in Hw. simplify_eq. wp_op.
     iExists -[((l +ₗ ty_bsize ty1), x2)]. iFrame "Obs". iSplit; [|done].
     rewrite tctx_val_val. iExists d. iFrame "⧖". iSplit; [done|].
     destruct d as [|d]; [done|]. rewrite /= /by_succ.
@@ -151,13 +151,13 @@ Section shr_bytes_fields.
   Qed.
 
   Lemma type_shr_bytes_fst_instr {𝔄 𝔅} κ (ty1: type 𝔄) (ty2: type 𝔅) p E L I :
-    typed_instr E L I +[p ◁ᵥ &shr{κ} (ty1 * ty2)] (OfLit (ToLit p))
+    typed_instr E L I +[p ◁ᵥ &shr{κ} (ty1 * ty2)] (p)
       (λ v, +[v ◁ᵥ &shr{κ} ty1])
       (λ post '-[a], post -[(a.1, a.2.1)]).
   Proof.
     iIntros (tid post mask iκs [[l [x1 x2]] []]) "_ _ _ _ _ $ $ [p _] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
-    simpl in Hw. simplify_eq. wp_pure _. wp_pure _.
+    simpl in Hw. simplify_eq.
     iExists -[(l, x1)]. iFrame "Obs". iSplit; [|done].
     rewrite tctx_val_val. iExists d. iFrame "⧖". iSplit; [done|].
     destruct d as [|d]; [done|]. rewrite /= /by_succ.

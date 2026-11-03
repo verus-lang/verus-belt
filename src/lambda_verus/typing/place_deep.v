@@ -149,7 +149,7 @@ Section sum_deep.
     ([∗ nat] i < length 𝔄l, typed_body E L I C
       (p ◁ₗ pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ pctx_plug K (OfTy (Σ! tyl)) +:: T)
-      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_vexpr K p)) of el)
+      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_vexpr K p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -235,7 +235,7 @@ Section sum_deep.
       { done. }
       { iIntros "_ !>". by iFrame "Own". }
       iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|]. iModIntro.
-      wp_pure _. wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
+      wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
       iDestruct (big_sepN_lookup _ _ j with "el") as "el".
       iApply ("el" $! _ ((x₀, ζm) -:: xl)
         with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
@@ -262,7 +262,7 @@ Section sum_deep.
         iExists (pinj j a). iSplit; [done|].
         rewrite /ofty_owned (cbytes_sum _ j (tyl +!! j)). by iFrame. }
       iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|]. iModIntro.
-      wp_pure _. wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
+      wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
       iDestruct (big_sepN_lookup _ _ j with "el") as "el".
       iApply ("el" $! _ ((x₀, ζm) -:: xl)
         with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
@@ -279,7 +279,7 @@ Section sum_deep.
     ([∗ nat] i < length 𝔄l, typed_body E L I C
       (p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)) +:: T)
-      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K (ToLit p))) of el)
+      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.

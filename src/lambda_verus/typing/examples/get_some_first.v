@@ -29,15 +29,15 @@ Section get_some_first.
   *)
   Definition get_some_first : expr := (
     Skip;;                                          (* b as a place *)
-    case: ToLit (Load Na1Ord (MInt (sum_tag [unitₛ; (intₛ i32 * intₛ i32)%ST])) (ToLit "b")) of
+    case: (Load Na1Ord (MInt (sum_tag [unitₛ; (intₛ i32 * intₛ i32)%ST])) "b") of
     [ ReBor;;                                       (* None: fold back *)
       Skip;;                                        (* resolve b *)
       let: "u" := MkTuple [] in
       let: "r" := MkVariant 0 "u" in
       jump: "return" ["r"];
       ReBor;;                                       (* Some(p): unfold p *)
-      let: "r0" := &ᵘ (ToLit "b" +ₗ #1) in                    (* &mut p.0 *)
-      let: "r1" := &ᵘ (ToLit "b" +ₗ #1 +ₗ #4) in              (* &mut p.1, to drop b *)
+      let: "r0" := &ᵘ ("b" +ₗ #1) in                    (* &mut p.0 *)
+      let: "r1" := &ᵘ ("b" +ₗ #1 +ₗ #4) in              (* &mut p.1, to drop b *)
       Skip;;                                        (* resolve r1 *)
       let: "r" := MkVariant 1 "r0" in
       jump: "return" ["r"]])%E.

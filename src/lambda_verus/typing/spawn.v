@@ -103,7 +103,7 @@ Section spawn.
   Definition spawn (m: mty) (call_once: val) : val :=
     fn: ["f"] :=
       let: "call_once" := call_once in
-      let: "j" := OfLit (spawn m
+      let: "j" := (spawn m
         [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish m ["c"; "r"]]) in
       return: ["j"].
       
@@ -123,7 +123,7 @@ Section spawn.
     move=> Tcall_once E.
     unfold spawn.
     unlock.
-    opose proof (@type_fn _ _ _ [𝔄] (at_locₛ (join_handleₛ ℭ)) ℭ c (λ y: (), FP E +[fty] (join_handle Φ retty) AtomicClosed) (λ c, (λ post '-[a], λ Mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ b mask' π', Φ c b mask' π') -[a'] ⊤ π ∧ ∀ li : loc, post (li, c) Mask π)) (let: "call_once" := call_once in let: "j" := OfLit (lib.spawn.spawn (syn_mty 𝔅) [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish (syn_mty 𝔅) ["c"; "r"]]) in return: ["j"])%E [BNamed "f"] _ _ _ ).
+    opose proof (@type_fn _ _ _ [𝔄] (at_locₛ (join_handleₛ ℭ)) ℭ c (λ y: (), FP E +[fty] (join_handle Φ retty) AtomicClosed) (λ c, (λ post '-[a], λ Mask π, ∀ a', syn_abstract a = syn_abstract a' → call_once_tr c (λ b mask' π', Φ c b mask' π') -[a'] ⊤ π ∧ ∀ li : loc, post (li, c) Mask π)) (let: "call_once" := call_once in let: "j" := (lib.spawn.spawn (syn_mty 𝔅) [λ: ["c"], letcall: "r" := "call_once" ["f"] in finish (syn_mty 𝔅) ["c"; "r"]]) in return: ["j"])%E [BNamed "f"] _ _ _ ).
     unlock in H.
     apply H.
     move => _.
@@ -206,7 +206,7 @@ Section spawn.
 
       iModIntro. wp_bind (lib.spawn.spawn _ _).
       iApply (spawn_spec spawnN (syn_mty 𝔅) _ (join_future retty (Φ c')) with "[- L I1 I2 cna_lifetimes]"); [solve_ndisj|..]; last first.
-      { iIntros "!> %c0 join". wp_pure _. iExists -[(c0, c')]. iFrame "GC L I1 I2 cna_lifetimes fnincl".
+      { iIntros "!> %c0 join". iExists -[(c0, c')]. iFrame "GC L I1 I2 cna_lifetimes fnincl".
         iSplit; last first.
         { iApply (proph_obs_impl with "Obs"). move => π Hpost.
           assert (syn_abstract a = syn_abstract a) as Heq by trivial.

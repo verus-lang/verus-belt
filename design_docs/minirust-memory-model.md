@@ -1019,6 +1019,9 @@ lemmas `tctx_fun_val`, `wp_fun`) instead of a value-based `◁ᵥ`. `typed_val`,
   model.
 - **Function values** (`◁ᶠ`, C1) carry a λRust closure for the same reason.
 
+(Superseded by stage 7 below: the λRust literals and `ToLit`/`OfLit` are gone; closures
+remain non-MiniRust values of the expression language.)
+
 **Axioms.** See the final report: `Print Assumptions` of the examples is unchanged from
 the baseline (`functional_extensionality_dep`, and `Eqdep.Eq_rect_eq.eq_rect_eq` for the
 rules with a pure verification condition).
@@ -1059,3 +1062,139 @@ added to the subtyping rules were revisited, and `list_subtype`/`list_eqtype` ar
 - **Ported** (`typing/examples/list.v`, hints restored):
   `list_subtype : subtype E L ty ty' f → subtype E L (list_ty ty) (list_ty ty') (list_mapₛ f)`
   and `list_eqtype`, with no hypothesis beyond the subtyping of the elements.
+
+## Stage 7: MiniRust values in the expression language
+
+Known gap 17: the expression language still has the λRust literals (`base_lit`:
+`LitInt`, `LitLoc`, `LitPoison`) next to the MiniRust values `MLit v`, with the conversions
+`ToLit`/`OfLit` between them (stage 6, "Still word-based"). Stage 7 removes the λRust
+literals; the memory model does not change.
+
+### The values of the expression language
+
+```
+Inductive val :=
+| MLitV (v : Value)                         (* a MiniRust value *)
+| RecV (f : binder) (xl : list binder) (e : expr) `{!Closed (f :b: xl +b+ []) e}.
+```
+
+- **MiniRust values.** Every first-order value of a program is a MiniRust `Value`
+  (`VInt`, `VBool`, `VPtr`, `VTuple`, `VVariant`). The expression constructor `Lit`,
+  `base_lit`, `LitV`, `ToLit`, `OfLit`, `value_to_lit`, `lit_to_value` and the coercion
+  `lit_of_bool` are deleted. The notation `#v` is `MLitV v` (in `expr_scope`: `MLit v`),
+  with the coercions `VInt : Z >-> Value`, `VPtr : loc >-> Value` and
+  `VBool : bool >-> Value` (`notation.v`), so `#4`, `#l`, `#true` keep their syntax and
+  mean `VInt 4`, `VPtr l`, `VBool true`.
+- **Closures stay non-MiniRust values** (decision 3 of the plan, and C1 of stage 6): `RecV`
+  is a value of the expression language, not a `Value`, so it cannot be stored in memory
+  (it has no bytes). This is what the typing layer already assumes: function values are
+  typed by `p ◁ᶠ ty` (`fun_own`), not by `◁ᵥ`. Function pointers in memory (MiniRust's
+  `Ptr` to a function) are a separate extension. Continuations are closures too; their
+  arguments are `vec val n` as before (now MiniRust values or closures).
+- **`LitPoison` becomes the unit value** `VTuple []` (MiniRust's `()`); the notation `☠`
+  is kept for it (`val_scope`), so `#☠` is the result of the instructions without a
+  result (`Store`, `MemCopy`, `Free`, `Fork`, `GlobalUnlock`, `delete`) and the operand
+  of the ghost instructions (`Newlft`, `Skip`, `Endlft`, …). Poison was "stuck except for
+  memory accesses", but nothing relies on that: a stored value is a `Value` already, and
+  `#☠` is only ever sequenced away.
+
+### Operations on values
+
+- **Pointer arithmetic** `e1 +ₗ e2` (`BinOp OffsetOp`): `VPtr l`, `VInt z` ↦ `VPtr (l +ₗ z)`.
+- **Integer operations** `+`, `-`, `*` on `VInt`; `≤` gives a `VBool`.
+- **Equality** `=` (`EqOp`) on two `VInt`s, two `VBool`s or two `VPtr`s gives a `VBool`;
+  the comparison of dangling pointers stays nondeterministic (`lit_eq` → `val_eq`, on
+  `Value`s). The comparisons of a pointer with the integer `0` (λRust's null) are deleted:
+  MiniRust compares pointers with pointers.
+- **`Case e el`** takes a `VInt i` (the tag of an enum, as loaded by a typed `Load` of
+  `MInt (sum_tag _)` or given by `VariantTag`) and goes to `el !! i`. **`If`** stays the
+  derived form `Case e [e2; e1]`, and `Case` also takes a `VBool b` (index
+  `Z_of_bool b`), so `if: Load ScOrd MBool "c" then …` needs no conversion.
+- **Memory operations** take their addresses as `VPtr l` values: `Load o m #l`,
+  `Store o m #l e`, `MemCopy o n #l1 #l2`, `MCAS m #l e1 e2`; `Alloc #n` (a `VInt`)
+  returns `#l` (a `VPtr`), `Free #n #l`. So `ToLit p` disappears from every address and
+  `OfLit (Alloc #n)` is `Alloc #n`.
+- `NdInt` gives a `VInt`; `GlobalLock` gives a `VBool` (whether the lock was held).
+- `MkTuple`, `Proj`, `MkVariant`, `VariantTag`, `VariantData` are unchanged (they were
+  already on `Value`s).
+- `Fork e` gives `#☠`; spawn (`lang/lib/spawn.v`) only loses its `ToLit`.
+
+### Instructions of the typing rules
+
+The typing rules keep their shapes (contexts, transformers, side conditions); their
+instruction expressions change syntactically:
+- `ToLit p` ↦ `p`, `ToLit (Load Na1Ord MPtr e)` ↦ `Load Na1Ord MPtr e` (`pctx_expr`,
+  `pctx_vexpr`, `drop_boxes`, the place rules and the examples), `OfLit (ToLit p +ₗ #n)`
+  ↦ `p +ₗ #n` (`place_shr.v`).
+- **`&ˢ e` (`share`) keeps one step.** `share e := OfLit e` took a step after the address,
+  and the shared-borrow rules use the first step of the instruction for credits and a time
+  receipt (`wp_cumulative_time_receipt_linear` needs a non-value), while the address
+  `pctx_vexpr K p` may now be a value (for `K = POwn _ PHole`). `share e` becomes
+  `place_addr e := let: "_v" := e in "_v"` (a derived form, evaluating `e` and then one β
+  step), so the rules keep their step structure and no constructor is added. `&ᵘ e`
+  (`borrow_uniq`) has its two `Skip` steps and becomes `Seq (Seq Skip Skip) e`.
+- **`e1 <-ᵇ{n} e2` (`memcpy`) takes both addresses with `place_addr`** for the same reason:
+  the memcpy rules take the credits and time receipts of the destination and of the source
+  from the first step of each address (`pctx_vexpr_to_val`, which no longer holds, is
+  deleted). `memcpy n e1 e2 := MemCopy Na1Ord n (place_addr e1) (place_addr e2)`.
+- Proofs lose the `wp_pure` steps of `ToLit`/`OfLit`; where a proof used such a step to
+  strip a later, a `Skip` or credit of the surrounding instruction is used instead (none is
+  expected: the loads give their own later).
+- `eval_path` (`type_context.v`) computes `p +ₗ #n` on `VPtr`s.
+
+### Adequacy, races, reification
+
+- `adequacy.v` and `soundness.v` do not depend on the value type (only on `to_of_val`); the
+  `exit_cont` returns `#☠`.
+- `races.v`: `next_access_head` matches `MLit (VPtr l)`, `MLit (VInt n)` instead of the
+  literals; the proof is otherwise unchanged. The stuck term is `App (MLit (VInt 0)) []`.
+- `tactics.v` (`W.expr`, `W.of_expr`, `W.to_val`, `W.subst`, `reshape_expr`): the cases
+  `Lit`, `ToLit`, `OfLit` are deleted; `lang.share` is unfolded like `lang.borrow_uniq`.
+
+### Migration order and estimate
+
+Each layer below depends on the previous, and the language change breaks every file
+downstream, so the stage is one branch (`proto/lang-values`) with a WIP commit per layer,
+merged once after a clean full build (a compatibility layer with both kinds of literals
+would double the work for no intermediate gain):
+1. language: `lang.v`, `notation.v`, `tactics.v`, `proofmode.v`;
+2. lifting and adequacy: `lifting.v`, `races.v`, `adequacy.v`, `lang/lib/*`, `minirust_tests.v`;
+3. typing core: `type_context.v`, `value_ctx.v`, `programs*.v`, `function.v`, `lpath.v`,
+   `pctx_acc.v`, `soundness.v`;
+4. place rules: `place_*.v`, `pcell.v`, `gmb_*` tests, `spawn.v`;
+5. examples (`typing/examples/*.v`: the programs change syntactically).
+
+Size: about 40 files, mostly mechanical (about 200 `ToLit`, 50 `OfLit`, 150 `LitV`, 70
+`LitLoc` occurrences); the deleted language code is about 150 lines. Risk: low to medium.
+The proofs that stepped over a `ToLit`/`OfLit` change locally; `share` keeps its step,
+so the shared-borrow proofs should not change. No new axioms are expected.
+
+## Outcome: stage 7 (MiniRust values in the expression language)
+
+Branch `proto/lang-values`, merged into `memory-model` after a clean full build. No
+`Admitted`, no new axioms (`Print Assumptions` of the examples unchanged).
+
+- **Language** (`lang/lang.v`): `val := RecV … | MLitV (v : Value)`; deleted: the
+  expression `Lit`, `base_lit` (`LitPoison`, `LitLoc`, `LitInt`), `LitV`, `ToLit`,
+  `OfLit` (with their evaluation contexts and head steps), `value_to_lit`,
+  `lit_to_value`, `lit_of_bool` (and its coercion), `lit_eq`/`lit_neq` (now
+  `val_eq`/`val_neq` on `Value`s, with booleans; the comparisons of a pointer with the
+  integer `0` are deleted), `pure_eq_loc_0_l/r`, `pure_to_lit`, `pure_of_lit`. New:
+  `IfS` (`Case` on a `VBool`), `pure_eq_bool`, the notation `unitV` (`VTuple []`, the result
+  of `Store`, `MemCopy`, `Free`, `Fork`, `GlobalUnlock`), and `place_addr` (see above).
+  `GlobalLock` returns a `VBool`.
+- **Notation** (`lang/notation.v`): `#v` is `MLitV v`, with the coercions `VInt`, `VBool`,
+  `VPtr`; `☠` is the unit value.
+- **Tactics**: `W.expr` lost `Lit`, `ToLit`, `OfLit`; `share` and `memcpy` are unfolded
+  by `W.of_expr`. `wp_bind` now also succeeds when the focused expression is the whole
+  expression (it used `||`, which needs progress, and the empty context makes none).
+- **Typing**: `ToLit p` ↦ `p`, `OfLit (Alloc #n)` ↦ `Alloc #n` everywhere (`pctx_expr`,
+  `pctx_vexpr`, `drop_boxes`, `eval_path` on `VPtr`/`VInt`, the place rules, `pcell.v`,
+  `shr_bor.v`, `value_ctx.v`, `subtype.v`, `spawn.v`); the proofs lost the `ToLit`/`OfLit`
+  steps (where the next goal is no longer a `WP`, `iApply wp_fupd` keeps the update
+  modality: `wp_pshr_open`). `type_shr_bytes_fst_instr` is now the identity instruction
+  `p`. `wp_global_try_atomic_lock` returns a boolean.
+- **Examples**: the programs lost `ToLit`/`OfLit` (e.g. `!ᶜ{MInt i32} ("x" +ₗ #4)`,
+  `"c" <-ᵇ{8} …`, `let: "c" := Alloc #8 in`, `case: Load Na1Ord (MInt …) "b" of …`,
+  `if: "b" then …`); their proofs are unchanged.
+

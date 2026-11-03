@@ -30,13 +30,13 @@ Section place_deep.
   *)
   Definition swap_snd : expr := (
     ReBor;; ReBor;; ReBor;;                         (* unfold *x, **x, **x as a pair *)
-    ToLit "c" <-ᵇ{8}
-      (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x")))) +ₗ #4);;  (* c = ( **x).1 *)
-    (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x")))) +ₗ #4) <-ᵇ{8}
-      ToLit "y";;                                   (* ( **x).1 = y *)
+    "c" <-ᵇ{8}
+      ((Load Na1Ord MPtr (Load Na1Ord MPtr "x")) +ₗ #4);;  (* c = ( **x).1 *)
+    ((Load Na1Ord MPtr (Load Na1Ord MPtr "x")) +ₗ #4) <-ᵇ{8}
+      "y";;                                   (* ( **x).1 = y *)
     ReBor;; ReBor;; ReBor;;                         (* fold back *)
-    (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "x"]);;  (* drop x, resolving it *)
-    (#☠;; delete [ #8; ToLit "y"]);;                (* drop y (moved out) *)
+    (#☠;; delete [ #(Z.of_nat PTR_SIZE); "x"]);;  (* drop x, resolving it *)
+    (#☠;; delete [ #8; "y"]);;                (* drop y (moved out) *)
     jump: "return" ["c"])%E.
 
   Definition ret_pair : predl_trans' [at_locₛ (intₛ i32 * intₛ i32)] (at_locₛ (intₛ i32 * intₛ i32)) :=

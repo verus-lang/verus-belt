@@ -11,17 +11,16 @@ Open Scope Z_scope.
 [block], [loc], the MiniRust values [Value], the MiniRust types [mty] and the
 abstract bytes [AbstractByte] are defined in [minirust.v].
 
-The values are the lambda-Rust literals [base_lit] (integers, locations and poison, used
-for addresses, arithmetic and control flow) and closures, and the MiniRust values
-[MLit v] (with [v : Value], see [design_docs/minirust-memory-model.md]). Memory holds
+The values are the MiniRust values [MLit v] (with [v : Value], see
+[design_docs/minirust-memory-model.md], stage 7) and closures, which are not MiniRust values
+(they have no bytes). Pointers are [VPtr l], integers [VInt z], booleans [VBool b]; the unit
+value [VTuple []] is the result of the instructions without a result. Memory holds
 [AbstractByte]s; it is accessed by typed loads and stores [Load o m e] and
 [Store o m e1 e2] of any [m : mty] (which decode_value and encode_value bytes), a
 byte-level [MemCopy] and a typed compare-and-exchange [MCAS m e0 e1 e2]. (The legacy
 one-word operations [Read], [Write] and [CAS] were deleted in stage 6.) *)
 Open Scope loc_scope.
 
-Inductive base_lit : Set :=
-| LitPoison | LitLoc (l : loc) | LitInt (n : Z).
 Inductive bin_op : Set :=
 | PlusOp | MinusOp | MultOp | LeOp | EqOp | OffsetOp.
 Inductive order : Set :=
@@ -37,7 +36,6 @@ Notation "[ x ]" := (@cons binder x%binder (@nil binder)) : binder_scope.
 
 Inductive expr :=
 | Var (x : string)
-| Lit (l : base_lit)
 | Rec (f : binder) (xl : list binder) (e : expr)
 | BinOp (op : bin_op) (e1 e2 : expr)
 | NdInt
@@ -58,8 +56,6 @@ Inductive expr :=
 | MkVariant (t : Z) (e : expr)
 | VariantTag (e : expr)
 | VariantData (e : expr)
-| ToLit (e : expr)
-| OfLit (e : expr)
 | MCAS (m : mty) (e0 e1 e2 : expr).
 
 Arguments App _%E _%E.
@@ -82,28 +78,17 @@ Definition read_move (m : mty) (e : expr) : expr := Load Na1Ord m e.
     ([type_write_place_instr] of [typing/place_write.v]); notation [e1 <-{m} e2]. *)
 Definition write (m : mty) (e1 e2 : expr) : expr := Store Na1Ord m e1 e2.
 
-(** A byte copy of [n] bytes from the place at the address [e2] to the place at the address
-    [e1]: a non-atomic [MemCopy] (byte-preserving). It is the instruction of the unified
-    place copies ([type_memcpy_copy_place_instr], [type_memcpy_move_place_instr] of
-    [typing/place_memcpy.v]); notation [e1 <-ᵇ{n} e2]. *)
-Definition memcpy (n : nat) (e1 e2 : expr) : expr := MemCopy Na1Ord n e1 e2.
-
-(** A shared borrow of the place at the address [e]: the pointer value of the address
-    ([OfLit]). It is the instruction of the unified shared borrow ([type_share_place_instr]
-    of [typing/place_share.v]); notation [&ˢ e]. *)
-Definition share (e : expr) : expr := OfLit e.
-
 Fixpoint is_closed (X : list string) (e : expr) : bool :=
   match e with
   | Var x => bool_decide (x ∈ X)
-  | Lit _ | NdInt | GlobalLock | GlobalUnlock | MLit _ => true
+  | NdInt | GlobalLock | GlobalUnlock | MLit _ => true
   | Rec f xl e => is_closed (f :b: xl +b+ X) e
   | BinOp _ e1 e2 | Free e1 e2 | Store _ _ e1 e2 | MemCopy _ _ e1 e2 =>
     is_closed X e1 && is_closed X e2
   | App e el | Case e el => is_closed X e && forallb (is_closed X) el
   | MkTuple el => forallb (is_closed X) el
   | Alloc e | Fork e | Load _ _ e | Proj _ e | MkVariant _ e
-  | VariantTag e | VariantData e | ToLit e | OfLit e => is_closed X e
+  | VariantTag e | VariantData e => is_closed X e
   | MCAS _ e0 e1 e2 => is_closed X e0 && is_closed X e1 && is_closed X e2
   end.
 
@@ -114,7 +99,6 @@ Global Instance closed_decision env e : Decision (Closed env e).
 Proof. rewrite /Closed. apply _. Qed.
 
 Inductive val :=
-| LitV (l : base_lit)
 | RecV (f : binder) (xl : list binder) (e : expr) `{!Closed (f :b: xl +b+ []) e}
 | MLitV (v : Value).
 
@@ -123,7 +107,6 @@ Bind Scope val_scope with val.
 Definition of_val (v : val) : expr :=
   match v with
   | RecV f x e => Rec f x e
-  | LitV l => Lit l
   | MLitV v => MLit v
   end.
 
@@ -131,7 +114,6 @@ Definition to_val (e : expr) : option val :=
   match e with
   | Rec f xl e =>
     if decide (Closed (f :b: xl +b+ []) e) then Some (RecV f xl e) else None
-  | Lit l => Some (LitV l)
   | MLit v => Some (MLitV v)
   | _ => None
   end.
@@ -168,8 +150,6 @@ Inductive ectx_item :=
 | MkVariantCtx (t : Z)
 | VariantTagCtx
 | VariantDataCtx
-| ToLitCtx
-| OfLitCtx
 | MCasLCtx (m : mty) (e1 e2 : expr)
 | MCasMCtx (m : mty) (v0 : val) (e2 : expr)
 | MCasRCtx (m : mty) (v0 : val) (v1 : val).
@@ -194,8 +174,6 @@ Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
   | MkVariantCtx t => MkVariant t e
   | VariantTagCtx => VariantTag e
   | VariantDataCtx => VariantData e
-  | ToLitCtx => ToLit e
-  | OfLitCtx => OfLit e
   | MCasLCtx m e1 e2 => MCAS m e e1 e2
   | MCasMCtx m v0 e2 => MCAS m (of_val v0) e e2
   | MCasRCtx m v0 v1 => MCAS m (of_val v0) (of_val v1) e
@@ -205,7 +183,6 @@ Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
 Fixpoint subst (x : string) (es : expr) (e : expr)  : expr :=
   match e with
   | Var y => if bool_decide (y = x) then es else Var y
-  | Lit l => Lit l
   | Rec f xl e =>
     Rec f xl $ if bool_decide (BNamed x ≠ f ∧ BNamed x ∉ xl) then subst x es e else e
   | BinOp op e1 e2 => BinOp op (subst x es e1) (subst x es e2)
@@ -226,8 +203,6 @@ Fixpoint subst (x : string) (es : expr) (e : expr)  : expr :=
   | MkVariant t e => MkVariant t (subst x es e)
   | VariantTag e => VariantTag (subst x es e)
   | VariantData e => VariantData (subst x es e)
-  | ToLit e => ToLit (subst x es e)
-  | OfLit e => OfLit (subst x es e)
   | MCAS m e0 e1 e2 => MCAS m (subst x es e0) (subst x es e1) (subst x es e2)
   end.
 
@@ -254,13 +229,8 @@ Proof.
 Qed.
 
 (** The stepping relation *)
-(* Be careful to make sure that poison is always stuck when used for anything
-   except for reading from or writing to memory! *)
 Definition Z_of_bool (b : bool) : Z :=
   if b then 1 else 0.
-
-Definition lit_of_bool (b : bool) : base_lit :=
-  LitInt $ Z_of_bool b.
 
 Definition shift_loc (l : loc) (z : Z) : loc := (l.1, l.2 + z).
 
@@ -279,10 +249,11 @@ Fixpoint free_mem (l:loc) (n:nat) (σ:state') : state' :=
   | S n => delete l (free_mem (l +ₗ 1) n σ)
   end.
 
-Inductive lit_eq (σ : state) : base_lit → base_lit → Prop :=
-(* No refl case for poison *)
-| IntRefl z : lit_eq σ (LitInt z) (LitInt z)
-| LocRefl l : lit_eq σ (LitLoc l) (LitLoc l)
+(** The equality of integers, booleans and pointers. *)
+Inductive val_eq (σ : state) : Value → Value → Prop :=
+| IntRefl z : val_eq σ (VInt z) (VInt z)
+| BoolRefl b : val_eq σ (VBool b) (VBool b)
+| LocRefl l : val_eq σ (VPtr l) (VPtr l)
 (* Comparing unallocated pointers can non-deterministically say they are equal
    even if they are not.  Given that our `free` actually makes addresses
    re-usable, this may not be strictly necessary, but it is the most
@@ -292,38 +263,39 @@ Inductive lit_eq (σ : state) : base_lit → base_lit → Prop :=
    more background. *)
 | LocUnallocL l1 l2 :
     σ.1 !! l1 = None →
-    lit_eq σ (LitLoc l1) (LitLoc l2)
+    val_eq σ (VPtr l1) (VPtr l2)
 | LocUnallocR l1 l2 :
     σ.1 !! l2 = None →
-    lit_eq σ (LitLoc l1) (LitLoc l2).
+    val_eq σ (VPtr l1) (VPtr l2).
 
-Inductive lit_neq : base_lit → base_lit → Prop :=
+Inductive val_neq : Value → Value → Prop :=
 | IntNeq z1 z2 :
-    z1 ≠ z2 → lit_neq (LitInt z1) (LitInt z2)
+    z1 ≠ z2 → val_neq (VInt z1) (VInt z2)
+| BoolNeq b1 b2 :
+    b1 ≠ b2 → val_neq (VBool b1) (VBool b2)
 | LocNeq l1 l2 :
-    l1 ≠ l2 → lit_neq (LitLoc l1) (LitLoc l2)
-| LocNeqNullR l :
-    lit_neq (LitLoc l) (LitInt 0)
-| LocNeqNullL l :
-    lit_neq (LitInt 0) (LitLoc l).
+    l1 ≠ l2 → val_neq (VPtr l1) (VPtr l2).
 
-Inductive bin_op_eval (σ : state) : bin_op → base_lit → base_lit → base_lit → Prop :=
+Inductive bin_op_eval (σ : state) : bin_op → Value → Value → Value → Prop :=
 | BinOpPlus z1 z2 :
-    bin_op_eval σ PlusOp (LitInt z1) (LitInt z2) (LitInt (z1 + z2))
+    bin_op_eval σ PlusOp (VInt z1) (VInt z2) (VInt (z1 + z2))
 | BinOpMinus z1 z2 :
-    bin_op_eval σ MinusOp (LitInt z1) (LitInt z2) (LitInt (z1 - z2))
+    bin_op_eval σ MinusOp (VInt z1) (VInt z2) (VInt (z1 - z2))
 | BinOpMult z1 z2 :
-    bin_op_eval σ MultOp (LitInt z1) (LitInt z2) (LitInt (z1 * z2))
+    bin_op_eval σ MultOp (VInt z1) (VInt z2) (VInt (z1 * z2))
 | BinOpLe z1 z2 :
-    bin_op_eval σ LeOp (LitInt z1) (LitInt z2) (lit_of_bool $ bool_decide (z1 ≤ z2))
-| BinOpEqTrue l1 l2 :
-    lit_eq σ l1 l2 → bin_op_eval σ EqOp l1 l2 (lit_of_bool true)
-| BinOpEqFalse l1 l2 :
-    lit_neq l1 l2 → bin_op_eval σ EqOp l1 l2 (lit_of_bool false)
+    bin_op_eval σ LeOp (VInt z1) (VInt z2) (VBool $ bool_decide (z1 ≤ z2))
+| BinOpEqTrue v1 v2 :
+    val_eq σ v1 v2 → bin_op_eval σ EqOp v1 v2 (VBool true)
+| BinOpEqFalse v1 v2 :
+    val_neq v1 v2 → bin_op_eval σ EqOp v1 v2 (VBool false)
 | BinOpOffset l z :
-    bin_op_eval σ OffsetOp (LitLoc l) (LitInt z) (LitLoc $ l +ₗ z).
+    bin_op_eval σ OffsetOp (VPtr l) (VInt z) (VPtr $ l +ₗ z).
 
-Notation stuck_term := (App (Lit (LitInt 0)) []).
+(** The unit value: the result of the instructions without a result. *)
+Notation unitV := (VTuple []) (only parsing).
+
+Notation stuck_term := (App (MLit (VInt 0)) []).
 
 (** Memory ranges, for the MiniRust layer. *)
 Definition ls_inc (ls : lock_state) : lock_state :=
@@ -354,26 +326,12 @@ Fixpoint mem_write (l : loc) (bs : list abyte) (σ : state') : state' :=
   | b :: bs => <[l:=(RSt 0, b)]>(mem_write (l +ₗ 1) bs σ)
   end.
 
-Definition value_to_lit (v : Value) : option base_lit :=
-  match v with
-  | VInt z => Some (LitInt z)
-  | VBool b => Some (lit_of_bool b)
-  | VPtr l => Some (LitLoc l)
-  | _ => None
-  end.
-Definition lit_to_value (l : base_lit) : option Value :=
-  match l with
-  | LitInt z => Some (VInt z)
-  | LitLoc l => Some (VPtr l)
-  | LitPoison => None
-  end.
-
 Inductive head_step : expr → state → list Empty_set → expr → state → list expr → Prop :=
 | BinOpS op l1 l2 l' σ :
     bin_op_eval σ op l1 l2 l' →
-    head_step (BinOp op (Lit l1) (Lit l2)) σ [] (Lit l') σ []
+    head_step (BinOp op (MLit l1) (MLit l2)) σ [] (MLit l') σ []
 | NdIntS z σ :
-    head_step NdInt σ [] (Lit (LitInt z)) σ []
+    head_step NdInt σ [] (MLit (VInt z)) σ []
 | BetaS f xl e e' el σ:
     Forall (λ ei, is_Some (to_val ei)) el →
     Closed (f :b: xl +b+ []) e →
@@ -382,71 +340,74 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
 | AllocS n l σ :
     0 < n →
     (∀ m, σ.1 !! (l +ₗ m) = None) →
-    head_step (Alloc $ Lit $ LitInt n) σ
+    head_step (Alloc $ MLit $ VInt n) σ
               []
-              (Lit $ LitLoc l) (init_mem l (Z.to_nat n) $σ σ)
+              (MLit $ VPtr l) (init_mem l (Z.to_nat n) $σ σ)
               []
 | FreeS n l σ :
     0 < n →
     (∀ m, is_Some (σ.1 !! (l +ₗ m)) ↔ 0 ≤ m < n) →
-    head_step (Free (Lit $ LitInt n) (Lit $ LitLoc l)) σ
+    head_step (Free (MLit $ VInt n) (MLit $ VPtr l)) σ
               []
-              (Lit LitPoison) (free_mem l (Z.to_nat n) $σ σ)
+              (MLit unitV) (free_mem l (Z.to_nat n) $σ σ)
               []
-              | GlobalLockS σ:
+| GlobalLockS σ:
     head_step (GlobalLock) σ
               []
-              (Lit (LitInt (if σ.2 then 1 else 0))) (σ.1, true)
+              (MLit (VBool σ.2)) (σ.1, true)
               []
 | GlobalUnlockS σ:
     σ.2 = true →
     head_step (GlobalUnlock) σ
               []
-              (Lit LitPoison) (σ.1, false)
+              (MLit unitV) (σ.1, false)
               []
 | CaseS i el e σ :
     0 ≤ i →
     el !! (Z.to_nat i) = Some e →
-    head_step (Case (Lit $ LitInt i) el) σ [] e σ []
+    head_step (Case (MLit $ VInt i) el) σ [] e σ []
+| IfS (b : bool) (el : list expr) e σ :
+    el !! (if b then 1 else 0)%nat = Some e →
+    head_step (Case (MLit $ VBool b) el) σ [] e σ []
 | ForkS e σ:
-    head_step (Fork e) σ [] (Lit LitPoison) σ [e]
+    head_step (Fork e) σ [] (MLit unitV) σ [e]
 (** Typed loads and stores of any size, with a two-phase race detection (as in
     lambda-Rust), over the whole byte range. *)
 | LoadScS l m bs v σ :
     mem_range is_reading σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v →
-    head_step (Load ScOrd m (Lit $ LitLoc l)) σ [] (MLit v) σ []
+    head_step (Load ScOrd m (MLit $ VPtr l)) σ [] (MLit v) σ []
 | LoadNa1S l m bs σ :
     mem_range is_reading σ.1 l bs → length bs = mty_size m →
-    head_step (Load Na1Ord m (Lit $ LitLoc l)) σ
+    head_step (Load Na1Ord m (MLit $ VPtr l)) σ
               []
-              (Load Na2Ord m (Lit $ LitLoc l)) (mem_alter ls_inc l (mty_size m) σ.1, σ.2)
+              (Load Na2Ord m (MLit $ VPtr l)) (mem_alter ls_inc l (mty_size m) σ.1, σ.2)
               []
 | LoadNa2S l m bs v σ :
     mem_range is_reading_S σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v →
-    head_step (Load Na2Ord m (Lit $ LitLoc l)) σ
+    head_step (Load Na2Ord m (MLit $ VPtr l)) σ
               []
               (MLit v) (mem_alter ls_dec l (mty_size m) σ.1, σ.2)
               []
 | StoreScS l m e v bs σ :
     to_val e = Some (MLitV v) → val_wf m v →
     mem_range (.= RSt 0) σ.1 l bs → length bs = mty_size m →
-    head_step (Store ScOrd m (Lit $ LitLoc l) e) σ
+    head_step (Store ScOrd m (MLit $ VPtr l) e) σ
               []
-              (Lit LitPoison) (mem_write l (encode_value m v) σ.1, σ.2)
+              (MLit unitV) (mem_write l (encode_value m v) σ.1, σ.2)
               []
 | StoreNa1S l m e v bs σ :
     to_val e = Some (MLitV v) → val_wf m v →
     mem_range (.= RSt 0) σ.1 l bs → length bs = mty_size m →
-    head_step (Store Na1Ord m (Lit $ LitLoc l) e) σ
+    head_step (Store Na1Ord m (MLit $ VPtr l) e) σ
               []
-              (Store Na2Ord m (Lit $ LitLoc l) e) (mem_alter (λ _, WSt) l (mty_size m) σ.1, σ.2)
+              (Store Na2Ord m (MLit $ VPtr l) e) (mem_alter (λ _, WSt) l (mty_size m) σ.1, σ.2)
               []
 | StoreNa2S l m e v bs σ :
     to_val e = Some (MLitV v) → val_wf m v →
     mem_range (.= WSt) σ.1 l bs → length bs = mty_size m →
-    head_step (Store Na2Ord m (Lit $ LitLoc l) e) σ
+    head_step (Store Na2Ord m (MLit $ VPtr l) e) σ
               []
-              (Lit LitPoison) (mem_write l (encode_value m v) σ.1, σ.2)
+              (MLit unitV) (mem_write l (encode_value m v) σ.1, σ.2)
               []
 (** [MemCopy Na1Ord n l1 l2] copies the [n] bytes at [l2] to [l1], verbatim. It is
     non-atomic: it reads [l2] and writes [l1] in two phases. Overlapping ranges
@@ -454,17 +415,17 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
 | MemCopyNa1S l1 l2 n bs1 bs2 σ :
     mem_range (.= RSt 0) σ.1 l1 bs1 → length bs1 = n →
     mem_range is_reading σ.1 l2 bs2 → length bs2 = n →
-    head_step (MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2)) σ
+    head_step (MemCopy Na1Ord n (MLit $ VPtr l1) (MLit $ VPtr l2)) σ
               []
-              (MemCopy Na2Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2))
+              (MemCopy Na2Ord n (MLit $ VPtr l1) (MLit $ VPtr l2))
               (mem_alter (λ _, WSt) l1 n (mem_alter ls_inc l2 n σ.1), σ.2)
               []
 | MemCopyNa2S l1 l2 n bs1 bs2 σ :
     mem_range (.= WSt) σ.1 l1 bs1 → length bs1 = n →
     mem_range is_reading_S σ.1 l2 bs2 → length bs2 = n →
-    head_step (MemCopy Na2Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2)) σ
+    head_step (MemCopy Na2Ord n (MLit $ VPtr l1) (MLit $ VPtr l2)) σ
               []
-              (Lit LitPoison) (mem_write l1 bs2 (mem_alter ls_dec l2 n σ.1), σ.2)
+              (MLit unitV) (mem_write l1 bs2 (mem_alter ls_dec l2 n σ.1), σ.2)
               []
 (** MiniRust layer: values *)
 | MkTupleS el vs σ :
@@ -479,12 +440,6 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
     head_step (VariantTag (MLit (VVariant t v))) σ [] (MLit (VInt t)) σ []
 | VariantDataS t v σ :
     head_step (VariantData (MLit (VVariant t v))) σ [] (MLit v) σ []
-| ToLitS v l σ :
-    value_to_lit v = Some l →
-    head_step (ToLit (MLit v)) σ [] (Lit l) σ []
-| OfLitS l v σ :
-    lit_to_value l = Some v →
-    head_step (OfLit (Lit l)) σ [] (MLit v) σ []
 (** A typed compare-and-exchange [MCAS m l e1 e2]. It compares the value
     decoded at [m] from the bytes at [l] with the expected value [e1] (by equality of
     [Value]s, for any [m]; padding is not compared), and if they are equal, writes the
@@ -497,11 +452,11 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
     to_val e1 = Some (MLitV v1) → to_val e2 = Some (MLitV v2) →
     mem_range is_reading σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v →
     v ≠ v1 →
-    head_step (MCAS m (Lit $ LitLoc l) e1 e2) σ [] (MLit (VBool false)) σ []
+    head_step (MCAS m (MLit $ VPtr l) e1 e2) σ [] (MLit (VBool false)) σ []
 | MCasSucS l m e1 v1 e2 v2 bs σ :
     to_val e1 = Some (MLitV v1) → to_val e2 = Some (MLitV v2) → val_wf m v2 →
     mem_range (.= RSt 0) σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v1 →
-    head_step (MCAS m (Lit $ LitLoc l) e1 e2) σ
+    head_step (MCAS m (MLit $ VPtr l) e1 e2) σ
               []
               (MLit (VBool true)) (mem_write l (encode_value m v2) σ.1, σ.2)
               []
@@ -509,7 +464,7 @@ Inductive head_step : expr → state → list Empty_set → expr → state → l
     to_val e1 = Some (MLitV v1) → to_val e2 = Some (MLitV v2) → val_wf m v2 →
     mem_range is_reading σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v1 →
     ¬ mem_range (.= RSt 0) σ.1 l bs →
-    head_step (MCAS m (Lit $ LitLoc l) e1 e2) σ [] stuck_term σ []
+    head_step (MCAS m (MLit $ VPtr l) e1 e2) σ [] stuck_term σ []
     .
 
 (** Basic properties about the language *)
@@ -560,8 +515,8 @@ Lemma fill_item_no_val_inj Ki1 Ki2 e1 e2 :
   to_val e1 = None → to_val e2 = None →
   fill_item Ki1 e1 = fill_item Ki2 e2 → Ki1 = Ki2.
 Proof.
-  destruct Ki1 as [| | |v1 vl1 el1| | | | | | | | | |vl1 el1| | | | | | | | |],
-           Ki2 as [| | |v2 vl2 el2| | | | | | | | | |vl2 el2| | | | | | | | |];
+  destruct Ki1 as [| | |v1 vl1 el1| | | | | | | | | |vl1 el1| | | | | | |],
+           Ki2 as [| | |v2 vl2 el2| | | | | | | | | |vl2 el2| | | | | | |];
   intros He1 He2 EQ; try discriminate; simplify_eq/=;
     repeat match goal with
     | H : to_val (of_val _) = None |- _ => by rewrite to_of_val in H
@@ -719,11 +674,10 @@ Qed.
 
 Lemma alloc_fresh n σ :
   let l := (fresh_block σ.1, 0) in
-  let init := repeat (LitV $ LitInt 0) (Z.to_nat n) in
   0 < n →
-  head_step (Alloc $ Lit $ LitInt n) σ [] (Lit $ LitLoc l) (init_mem l (Z.to_nat n) $σ σ) [].
+  head_step (Alloc $ MLit $ VInt n) σ [] (MLit $ VPtr l) (init_mem l (Z.to_nat n) $σ σ) [].
 Proof.
-  intros l init Hn. apply AllocS. auto.
+  intros l Hn. apply AllocS. auto.
   - intros i. apply (is_fresh_block _ i).
 Qed.
 
@@ -795,17 +749,17 @@ Lemma subst'_is_closed X b es e :
   is_closed X es → is_closed (b:b:X) e → is_closed X (subst' b es e).
 Proof. destruct b; first done. apply subst_is_closed. Qed.
 
-(* Operations on literals *)
-Lemma lit_eq_state (σ1 σ2 : state) l1 l2 :
+(* Operations on values *)
+Lemma val_eq_state (σ1 σ2 : state) l1 l2 :
   (∀ l, σ1.1 !! l = None ↔ σ2.1 !! l = None) →
-  lit_eq σ1 l1 l2 → lit_eq σ2 l1 l2.
+  val_eq σ1 l1 l2 → val_eq σ2 l1 l2.
 Proof. intros Heq. inversion 1; econstructor; eauto; eapply Heq; done. Qed.
 
 Lemma bin_op_eval_state σ1 σ2 op l1 l2 l' :
   (∀ l, σ1.1 !! l = None ↔ σ2.1 !! l = None) →
   bin_op_eval σ1 op l1 l2 l' → bin_op_eval σ2 op l1 l2 l'.
 Proof.
-  intros Heq. inversion 1; econstructor; eauto using lit_eq_state.
+  intros Heq. inversion 1; econstructor; eauto using val_eq_state.
 Qed.
 
 (* Misc *)
@@ -814,8 +768,6 @@ Lemma stuck_not_head_step σ e' κ σ' ef :
 Proof. inversion 1. Qed.
 
 (** Equality and other typeclass stuff *)
-Global Instance base_lit_dec_eq : EqDecision base_lit.
-Proof. solve_decision. Defined.
 Global Instance bin_op_dec_eq : EqDecision bin_op.
 Proof. solve_decision. Defined.
 Global Instance un_op_dec_eq : EqDecision order.
@@ -831,7 +783,6 @@ Fixpoint expr_beq (e : expr) (e' : expr) : bool :=
   in
   match e, e' with
   | Var x, Var x' => bool_decide (x = x')
-  | Lit l, Lit l' => bool_decide (l = l')
   | Rec f xl e, Rec f' xl' e' =>
     bool_decide (f = f') && bool_decide (xl = xl') && expr_beq e e'
   | BinOp op e1 e2, BinOp op' e1' e2' =>
@@ -853,8 +804,7 @@ Fixpoint expr_beq (e : expr) (e' : expr) : bool :=
   | MkTuple el, MkTuple el' => expr_list_beq el el'
   | Proj i e, Proj i' e' => bool_decide (i = i') && expr_beq e e'
   | MkVariant t e, MkVariant t' e' => bool_decide (t = t') && expr_beq e e'
-  | VariantTag e, VariantTag e' | VariantData e, VariantData e'
-  | ToLit e, ToLit e' | OfLit e, OfLit e' => expr_beq e e'
+  | VariantTag e, VariantTag e' | VariantData e, VariantData e' => expr_beq e e'
   | MCAS m e0 e1 e2, MCAS m' e0' e1' e2' =>
     bool_decide (m = m') && expr_beq e0 e0' && expr_beq e1 e1' && expr_beq e2 e2'
   | _, _ => false
@@ -862,8 +812,8 @@ Fixpoint expr_beq (e : expr) (e' : expr) : bool :=
 Lemma expr_beq_correct (e1 e2 : expr) : expr_beq e1 e2 ↔ e1 = e2.
 Proof.
   revert e1 e2; fix FIX 1.
-    destruct e1 as [ | | | | |? el1 | | |? el1 | | | | | | | |el1 | | | | | | |],
-             e2 as [ | | | | |? el2 | | |? el2 | | | | | | | |el2 | | | | | | |]; simpl; try done;
+    destruct e1 as [ | | | |? el1 | | |? el1 | | | | | | | |el1 | | | | |],
+             e2 as [ | | | |? el2 | | |? el2 | | | | | | | |el2 | | | | |]; simpl; try done;
   rewrite ?andb_True ?bool_decide_spec ?FIX;
   try (split; intro; [destruct_and?|split_and?]; congruence).
   - match goal with |- context [?F el1 el2] => assert (F el1 el2 ↔ el1 = el2) end.
@@ -888,8 +838,8 @@ Proof.
  refine (λ v1 v2, cast_if (decide (of_val v1 = of_val v2))); abstract naive_solver.
 Defined.
 
-Global Instance expr_inhabited : Inhabited expr := populate (Lit LitPoison).
-Global Instance val_inhabited : Inhabited val := populate (LitV LitPoison).
+Global Instance expr_inhabited : Inhabited expr := populate (MLit unitV).
+Global Instance val_inhabited : Inhabited val := populate (MLitV unitV).
 
 Canonical Structure stateO := leibnizO state.
 Canonical Structure valO := leibnizO val.
@@ -922,19 +872,37 @@ Notation Seq e1 e2 := (Let BAnon e1 e2) (only parsing).
 Notation LamV xl e := (RecV BAnon xl e) (only parsing).
 Notation LetCtx x e2 := (AppRCtx (LamV [x] e2) [] []).
 Notation SeqCtx e2 := (LetCtx BAnon e2).
-Notation Skip := (Seq (Lit LitPoison) (Lit LitPoison)).
-Coercion lit_of_bool : bool >-> base_lit.
+Notation Skip := (Seq (MLit unitV) (MLit unitV)).
 Notation If e0 e1 e2 := (Case e0 (@cons expr e2 (@cons expr e1 (@nil expr))))
   (only parsing).
-Notation Newlft := (Lit LitPoison) (only parsing).
+Notation Newlft := (MLit unitV) (only parsing).
 Notation Endlft := (Seq Skip (Seq Skip Skip)) (only parsing).
 Notation Share := (Seq Skip Skip) (only parsing).
 Notation UniqBor := (Seq Skip Skip) (only parsing).
 Notation ReBor := (Seq Skip Skip) (only parsing).
 Notation SplitBor := (Seq Skip Skip) (only parsing).
 
+(** The address of a place as a pointer value: the value of the address [e], after one
+    step. The instructions on places that need a step before they access the place (for
+    later credits and time receipts) take their addresses with it: [share] and [memcpy]. *)
+Notation place_addr e := (Let (BNamed "_v") e (Var "_v")) (only parsing).
+
+(** A shared borrow of the place at the address [e]: the pointer value of the address, after
+    one step (for the credits and the time receipt of the new reference). It is the
+    instruction of the unified shared borrow ([type_share_place_instr] of
+    [typing/place_share.v]); notation [&ˢ e]. *)
+Definition share (e : expr) : expr := place_addr e.
+
+(** A byte copy of [n] bytes from the place at the address [e2] to the place at the address
+    [e1]: a non-atomic [MemCopy] (byte-preserving), each address taken in one step
+    ([place_addr]). It is the instruction of the unified place copies
+    ([type_memcpy_copy_place_instr], [type_memcpy_move_place_instr] of
+    [typing/place_memcpy.v]); notation [e1 <-ᵇ{n} e2]. *)
+Definition memcpy (n : nat) (e1 e2 : expr) : expr :=
+  MemCopy Na1Ord n (place_addr e1) (place_addr e2).
+
 (** A mutable (unique) borrow of the place at the address [e]: two steps (for the credits
-    and the time receipts of the new borrow), then the pointer value of the address
-    ([OfLit]). It is the instruction of the unified mutable borrow ([type_borrow_place_instr]
-    of [typing/place_puniq.v]); notation [&ᵘ e]. *)
-Definition borrow_uniq (e : expr) : expr := Seq (Seq Skip Skip) (OfLit e).
+    and the time receipts of the new borrow), then the pointer value of the address. It is
+    the instruction of the unified mutable borrow ([type_borrow_place_instr] of
+    [typing/place_puniq.v]); notation [&ᵘ e]. *)
+Definition borrow_uniq (e : expr) : expr := Seq (Seq Skip Skip) e.

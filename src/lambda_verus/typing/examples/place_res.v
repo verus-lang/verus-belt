@@ -44,13 +44,13 @@ Section place_res.
   *)
   Definition res_pair : expr := (
     (Skip;; Skip;; #☠);;                                         (* resolve x *)
-    let: "a" := !ᶜ{MInt i32} (ToLit (Load Na1Ord MPtr (ToLit "x"))) in  (* *x.0 *)
+    let: "a" := !ᶜ{MInt i32} (Load Na1Ord MPtr "x") in  (* *x.0 *)
     (Skip;; #☠);;                                                (* *x.1 as a shared reference *)
     ReBor;;                                                      (* view *x.1 as a pair *)
     let: "b" := !ᶜ{MInt i32}
-      (ToLit (Load Na1Ord MPtr (ToLit "x" +ₗ #PTR_SIZE))) in      (* ( *x.1).0 *)
-    (((#☠;; delete [ #4; ToLit (Load Na1Ord MPtr (ToLit "x"))]);; #☠);;
-      delete [ #(Z.of_nat (PTR_SIZE + PTR_SIZE)); ToLit "x"]);;   (* drop x *)
+      (Load Na1Ord MPtr ("x" +ₗ #PTR_SIZE)) in      (* ( *x.1).0 *)
+    (((#☠;; delete [ #4; (Load Na1Ord MPtr "x")]);; #☠);;
+      delete [ #(Z.of_nat (PTR_SIZE + PTR_SIZE)); "x"]);;   (* drop x *)
     jump: "return" ["a"; "b"])%E.
 
   Definition res_pair_spec :
@@ -156,18 +156,18 @@ Section place_res.
     ReBor;; ReBor;; ReBor;;                                      (* unfold *x, **x, **x as a pair *)
     Newlft;;
     let: "r" :=
-      &ᵘ (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x"))))) in      (* &mut ( **x).0 *)
+      &ᵘ (Load Na1Ord MPtr (Load Na1Ord MPtr "x")) in      (* &mut ( **x).0 *)
     (Skip;; #☠);;                                                (* resolve x *)
     let: "b" := !ᶜ{MInt i32}
-      (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x")))) +ₗ #4) in  (* ( **x).1 *)
+      ((Load Na1Ord MPtr (Load Na1Ord MPtr "x")) +ₗ #4) in  (* ( **x).1 *)
     let: "three" := MLit (VInt 3) in
     Skip;;                                                       (* r as a place *)
-    ToLit "r" <-{MInt i32} "three";;                             (* *r = 3 *)
+    "r" <-{MInt i32} "three";;                             (* *r = 3 *)
     Skip;;                                                       (* resolve r *)
     Endlft;;                                                     (* unblock ( **x).0 *)
     let: "a" := !ᶜ{MInt i32}
-      (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x"))))) in  (* ( **x).0 *)
-    (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "x"]);;           (* drop x *)
+      (Load Na1Ord MPtr (Load Na1Ord MPtr "x")) in  (* ( **x).0 *)
+    (#☠;; delete [ #(Z.of_nat PTR_SIZE); "x"]);;           (* drop x *)
     jump: "return" ["a"; "b"])%E.
 
   Notation pairₛ := (intₛ i32 * intₛ i32)%ST.
