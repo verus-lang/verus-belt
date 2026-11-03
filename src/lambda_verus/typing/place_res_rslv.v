@@ -162,28 +162,60 @@ Section lty_res.
     iModIntro. iFrame "Obs". iExists x. iSplit; [done|]. by iFrame "Pt Gho".
   Qed.
 
-  Lemma lty_res_prod {𝔄1 𝔄2} E L (lt1 lt1': lty 𝔄1) (lt2 lt2': lty 𝔄2) k1 k2 Φ1 Φ2 :
-    lty_res E L lt1 lt1' k1 Φ1 → lty_res E L lt2 lt2' k2 Φ2 →
-    lty_res E L (ProdLty lt1 lt2) (ProdLty lt1' lt2') (k1 + k2)
-      (λ x ζm q π, Φ1 x.1 ζm (false :: q) π ∧ Φ2 x.2 ζm (true :: q) π).
+  (** The resolution of the fields of a struct, field by field. *)
+  Inductive fields_res (E: elctx) (L: llctx) : ∀ {𝔄l}, hlist lty 𝔄l → hlist lty 𝔄l → nat →
+      plist (λ 𝔄, ~~𝔄 → blk_map → lpath → proph_asn → Prop) 𝔄l → Prop :=
+  | fields_res_nil : fields_res E L +[] +[] 0 -[]
+  | fields_res_cons {𝔄 𝔄l} (lt lt': lty 𝔄) (lts lts': hlist lty 𝔄l) k ks Φ Φl :
+      lty_res E L lt lt' k Φ → fields_res E L lts lts' ks Φl →
+      fields_res E L (lt +:: lts) (lt' +:: lts') (k + ks) (Φ -:: Φl).
+
+  Local Lemma fields_res_nrc E L {𝔄l} (lts lts': hlist lty 𝔄l) k Φl e mm :
+    fields_res E L lts lts' k Φl →
+    hsum (λ _ lt, lty_nrc lt e mm) lts' = hsum (λ _ lt, lty_nrc lt e mm) lts.
+  Proof. induction 1 as [|?????????? [_ Hn _] _ IH]; [done|]. by rewrite /= Hn IH. Qed.
+
+  Local Lemma fields_res_upd E L {𝔄l} (lts lts': hlist lty 𝔄l) k Φl G m xs ζm q j offs
+      d g D tid l :
+    fields_res E L lts lts' k Φl → Timeless G → m + d ≤ D → g ≤ D →
+    ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
+      (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗ ⧖D -∗
+      fields_node offs (hmap (λ _ lt, ltype_own_cp false lt (Owned m)) lts)
+        (hcmap (λ _ lt, lty_pat lt) lts) (fields_rfn ζm q lts j xs) d g tid l -∗
+      ctask (advance_credits D) k
+        (⟨π, fields_rslv_pred' Φl xs ζm q j π⟩ ∗ G ∗
+         fields_node offs (hmap (λ _ lt, ltype_own_cp false lt (Owned m)) lts')
+           (hcmap (λ _ lt, lty_pat lt) lts') (fields_rfn ζm q lts' j xs) d g tid l).
   Proof.
-    intros [Hs1 Hn1 Rslv1] [Hs2 Hn2 Rslv2].
-    split; [done|by rewrite /= Hn1 Hn2|].
+    intros Hall. induction Hall as [|𝔄 𝔄l lt lt' lts lts' k ks Φ Φl [Hs Hn Rslv] _ IH]
+      in G, xs, j, offs |- *; intros ???.
+    - iIntros "_ _ _ _ _ _ $ _ _ /=". iModIntro. by iApply proph_obs_true.
+    - destruct offs as [|o offs]; [by iIntros "_ _ _ _ _ _ _ _ []"|]. destruct xs as [x xs].
+      iIntros "#LFT #PROPH #UNIQ #TIME #E #L G #⧖ [Own1 Own2]".
+      iApply ctask_fupd.
+      iMod (fractional.frac_split_guard_in_half with "G L") as (γ) "[H1 [H2 [#Gh #Back]]]";
+        [solve_ndisj|].
+      iDestruct (Rslv _ m x ζm (fcode j ++ q) d g D tid _ with
+        "LFT PROPH UNIQ TIME E Gh H1 ⧖ Own1") as "T1"; [done..|].
+      iDestruct (IH with "LFT PROPH UNIQ TIME E Gh H2 ⧖ Own2") as "T2"; [done..|].
+      iModIntro. iDestruct (ctask_sep with "T1 T2") as "T".
+      iApply (ctask_mono with "[] T").
+      iIntros "[(#Obs1 & H1 & Own1) (#Obs2 & H2 & Own2)]".
+      iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
+      iModIntro. iFrame "Own1 Own2".
+      iCombine "Obs1 Obs2" as "Obs". iApply (proph_obs_impl with "Obs")=> π [??]. done.
+  Qed.
+
+  Lemma lty_res_struct {𝔄l} E L Lay (lts lts': hlist lty 𝔄l) k Φl :
+    fields_res E L lts lts' k Φl →
+    lty_res E L (StructLty Lay lts) (StructLty Lay lts') k
+      (λ x ζm q π, fields_rslv_pred' Φl x ζm q 0 π).
+  Proof.
+    intros Hall. split; [done|by fun_ext=> e; fun_ext=> mm; apply (fields_res_nrc E L _ _ k Φl)|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "#LFT #PROPH #UNIQ #TIME #E #L G #⧖ Own".
-    rewrite /ltype_own /= /prod_node. iDestruct "Own" as "[Own1 Own2]".
-    iApply ctask_fupd.
-    iMod (fractional.frac_split_guard_in_half with "G L") as (γ) "[H1 [H2 [#Gh #Back]]]";
-      [solve_ndisj|].
-    iDestruct (Rslv1 _ m x.1 ζm (false :: q) d g D tid _ with
-      "LFT PROPH UNIQ TIME E Gh H1 ⧖ Own1") as "T1"; [done..|].
-    iDestruct (Rslv2 _ m x.2 ζm (true :: q) d g D tid _ with
-      "LFT PROPH UNIQ TIME E Gh H2 ⧖ Own2") as "T2"; [done..|].
-    iModIntro. iDestruct (ctask_sep with "T1 T2") as "T".
-    iApply (ctask_mono with "[] T").
-    iIntros "[(#Obs1 & H1 & Own1) (#Obs2 & H2 & Own2)]".
-    iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
-    iModIntro. iFrame "Own1 Own2".
-    iCombine "Obs1 Obs2" as "Obs". iApply (proph_obs_impl with "Obs")=> π [??]. done.
+    rewrite /ltype_own !lty_rfn_struct /= /struct_node. iDestruct "Own" as "[Own Pad]".
+    iDestruct (fields_res_upd with "LFT PROPH UNIQ TIME E L G ⧖ Own") as "T"; [done..|].
+    iApply (ctask_mono with "[Pad] T"). iIntros "($ & $ & $) !>". done.
   Qed.
 
   Lemma lty_res_own {𝔄} E L n (lt lt': lty 𝔄) k Φ :
