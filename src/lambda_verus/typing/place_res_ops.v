@@ -64,24 +64,28 @@ Section view_acc.
          lty_view (pctx_plug K lt') κ m (pctx_pat K p') (pctx_rfn K x ζm q r') dn gn tid l).
   Proof.
     rename select (PctxNoShr K) into HK. rewrite /PctxNoShr in HK.
-    induction K as [|𝔅 𝔄1 𝔄2 K IH lt2|𝔅 𝔄1 𝔄2 lt1 K IH|𝔅 𝔄' n' K IH|𝔅 𝔄l tyl i w K IH|
+    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IH la|𝔅 𝔄' n' K IH|𝔅 𝔄l tyl i w K IH|
       𝔅 𝔄' κ' K IH|𝔅 𝔄' κ' K IH|] in HK, κ, lt, m, p, r, x, q, d, g, l |- *;
       simpl; simpl in HK; try done; iIntros "#GR V".
     - iExists d, g. iSplit; [iPureIntro; lia|]. iFrame "V". iSplit; [done|].
       iIntros (lt' p' r' dh' gh' dn gn ??? (?&?&?&?)) "V'".
       iApply (lty_view_depth_mono with "V'"); lia.
-    - rewrite /prod_node lty_size_plug. iDestruct "V" as "[V1 V2]".
-      iDestruct (IH with "GR V1") as (dh gh) "(% & Vh & Gs & Cl)"; [done|].
+    - have Ho : struct_offs Lay (𝔄lb ++ 𝔄f :: 𝔄la) !! length 𝔄lb =
+          Some (struct_off Lay (𝔄lb ++ 𝔄f :: 𝔄la) (length 𝔄lb)).
+      { apply struct_off_lookup. rewrite length_app /=. lia. }
+      rewrite /view_struct hmap_app fields_node_field; [|by rewrite length_hcmap|done].
+      iDestruct "V" as "[(Vb & V & Va) #Gpad]".
+      iDestruct (IH with "GR V") as (dh gh) "(% & Vh & Gs & Cl)"; [done|].
       iExists dh, gh. iFrame "Vh". iSplit; [done|]. iFrame "Gs".
-      iIntros (lt' p' r' dh' gh' dn gn Hsz Hf Hb Hle) "V'". rewrite /prod_node lty_size_plug Hsz.
-      iSplitL "Cl V'"; [iApply ("Cl" with "[//] [//] [//] [//] V'")|].
-      iApply (lty_view_depth_mono with "V2"); lia.
-    - rewrite /prod_node. iDestruct "V" as "[V1 V2]".
-      iDestruct (IH with "GR V2") as (dh gh) "(% & Vh & Gs & Cl)"; [done|].
-      iExists dh, gh. iFrame "Vh Gs". iSplit; [done|].
-      iIntros (lt' p' r' dh' gh' dn gn Hsz Hf Hb Hle) "V'". rewrite /prod_node.
-      iSplitL "V1"; [iApply (lty_view_depth_mono with "V1"); lia|].
-      iApply ("Cl" with "[//] [//] [//] [//] V'").
+      iIntros (lt' p' r' dh' gh' dn gn Hsz Hf Hb Hle) "V'".
+      rewrite /view_struct hmap_app fields_node_field; [|by rewrite length_hcmap|done].
+      iSplitR "Gpad"; [iSplitL "Vb"; [|iSplitL "Cl V'"]|].
+      + iApply (fields_node_hmap_mono with "Vb"). apply HForall_forall=> ??????.
+        apply lty_view_depth_mono; lia.
+      + iApply ("Cl" with "[//] [//] [//] [//] V'").
+      + iApply (fields_node_hmap_mono with "Va"). apply HForall_forall=> ??????.
+        apply lty_view_depth_mono; lia.
+      + iApply (lguards_weaken_later with "Gpad"). lia.
     - rewrite /view_own. iDestruct "V" as "(#Gp & %Hd & V)".
       iDestruct (IH with "GR V") as (dh gh) "(% & Vh & Gs & Cl)"; [done|].
       iExists dh, gh. iFrame "Vh". iSplit; [iPureIntro; destruct_and!; split_and!; try lia; done|].

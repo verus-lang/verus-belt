@@ -951,6 +951,22 @@ Section ltype_lemmas.
       rewrite IH; [|simpl in Hlen; lia]. by rewrite assoc.
   Qed.
 
+  (** A distinguished field [c] (after the fields [cb], at the offset [o]). *)
+  Lemma fields_node_field {𝔅lb 𝔅 𝔅la} offs (o: nat)
+      (cb: hlist (λ 𝔅, lpat → prfn 𝔅 → nat → nat → thread_id → loc → iProp Σ) 𝔅lb)
+      (c: lpat → prfn 𝔅 → nat → nat → thread_id → loc → iProp Σ)
+      (ca: hlist (λ 𝔅, lpat → prfn 𝔅 → nat → nat → thread_id → loc → iProp Σ) 𝔅la)
+      psb p psa rsb r rsa d g tid l :
+    length psb = length 𝔅lb → offs !! length 𝔅lb = Some o →
+    fields_node offs (cb h++ c +:: ca) (psb ++ p :: psa) (papp (Yl:=𝔅 :: 𝔅la) rsb (r -:: rsa))
+      d g tid l ⊣⊢
+      fields_node (take (length 𝔅lb) offs) cb psb rsb d g tid l ∗
+      c p r d g tid (l +ₗ o) ∗
+      fields_node (drop (S (length 𝔅lb)) offs) ca psa rsa d g tid l.
+  Proof.
+    intros ? Ho. rewrite fields_node_app //. rewrite (drop_S _ o) //.
+  Qed.
+
   Lemma struct_node_hmap_mono {𝔅l} L (lts: hlist lty 𝔅l)
       (f f': ∀ 𝔅, lty 𝔅 → lpat → prfn 𝔅 → nat → nat → thread_id → loc → iProp Σ)
       ps r d g d' g' tid l :
