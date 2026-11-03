@@ -113,19 +113,19 @@ Section conv.
 
   (** * Leaves *)
 
-  (** The leaf of a place rooted at a value holds a MiniRust value, so the value has no
-      cells. *)
-  Lemma tctx_ty_to_vplace {𝔄} `{!NoCell 𝔄} E L p (ty: type 𝔄) :
+  (** The leaf of a place rooted at a value holds the value, with its cells (if any) in
+      transit. *)
+  Lemma tctx_ty_to_vplace {𝔄} E L p (ty: type 𝔄) :
     tctx_incl E L +[p ◁ᵥ ty] +[p ◁ₗ OfTy ty] (λ post '-[a], post -[(a, [])]).
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [x []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
-    iDestruct (tctx_val_elim with "T") as (v Hp w d [-> Hw]) "(⧖ & Gho)".
+    iDestruct "T" as (v Hp w d fv [-> Hfv]) "(Hc & ⧖ & Gho)".
     iMod cumulative_time_receipt_0 as "⧗".
     iModIntro. iExists -[(x, [])]. iFrame "Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists _. iSplit; [done|].
-    iExists d. iFrame "⧖ ⧗". iExists d, d. iSplit; [done|]. iExists x. iFrame.
-    iPureIntro. split; [done|]. by exists w.
+    iExists d. iFrame "⧖ ⧗". iExists d, d. iSplit; [done|]. iExists x. iFrame "Gho".
+    iSplit; [done|]. iExists w, fv. by iFrame.
   Qed.
 
   Lemma tctx_vplace_to_ty {𝔄} E L p (ty: type 𝔄) :
@@ -133,10 +133,9 @@ Section conv.
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[x ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
-    iDestruct "T" as (v Hp D) "(⧖ & _ & %d & %g & %Hle & %y & -> & %Phys & Gho)".
-    destruct Phys as (w & -> & Hw).
+    iDestruct "T" as (v Hp D) "(⧖ & _ & %d & %g & %Hle & %y & -> & (%w & %fv & [-> %Hfv] & Hc) & Gho)".
     iModIntro. iExists -[x]. iFrame "Obs". iSplit; [|done].
-    iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ w D); [|done|done]. iFrame "⧖".
+    iExists _. iSplit; [done|]. iExists w, D, fv. iFrame "⧖ Hc". iSplit; [done|].
     iDestruct (ty_gho_own_depth_mono _ d g D D with "Gho") as "[$ _]"; lia.
   Qed.
 
@@ -147,12 +146,13 @@ Section conv.
   Proof.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[[l x] ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
-    iDestruct "T" as (v Hp D) "(⧖ & ⧗ & %d & %g & %Hle & %y & -> & %Phys & Gho)".
+    iDestruct "T" as (v Hp D) "(⧖ & ⧗ & %d & %g & %Hle & %y & -> & (%w & %fv & [-> %Hfv] & Hc) & Gho)".
+    iDestruct (vleaf_own_elim_val (own_bytes n ty) (l, x) (VPtr l) _ _ eq_refl Hfv with "Hc") as %->.
     destruct d as [|d]; [done|]. iDestruct "Gho" as "(Pt & Fr & Gho)".
     iModIntro. iExists -[((l, x), ζm)]. iFrame "Obs". iSplit; [|done].
-    rewrite /tctx_elt_interp. iExists v. iSplit; [done|].
+    rewrite /tctx_elt_interp. iExists _. iSplit; [done|].
     iExists D, d, g. rewrite /lty_size -(ty_bsize_eq ty). iFrame "⧖ ⧗ Fr".
-    iSplit; [by destruct Phys as (w & -> & [= <-])|].
+    iSplit; [done|].
     iSplit; [iPureIntro; lia|].
     rewrite /ltype_own /= /ofty_owned. iExists x. iSplit; [done|].
     iDestruct (ty_gho_own_depth_mono _ d g d g with "Gho") as "[$ _]"; [lia..|]. done.
@@ -169,7 +169,7 @@ Section conv.
     iModIntro. iExists -[((l, x), ζm)]. iFrame "Obs". iSplit; [|done].
     rewrite /tctx_elt_interp. iExists _. iSplit; [done|].
     iExists D. iFrame "⧖ ⧗". iExists (S d), g. iSplit; [iPureIntro; lia|].
-    iExists (l, x). iSplit; [done|]. iSplit; [iPureIntro; by eexists|].
+    iExists (l, x). iSplit; [done|]. iSplitR; [by iApply (vleaf_own_intro_val _ _ (VPtr l))|].
     rewrite /lty_size -(ty_bsize_eq ty). iFrame "Fr". iFrame.
   Qed.
 
@@ -181,6 +181,7 @@ Section conv.
     split; [by intros ??? [? []]|].
     iIntros (G tid [[x ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
     iDestruct "T" as (v Hp D) "(⧖ & ⧗ & %d & %g & %Hle & Leaf)".
+    iDestruct (vleaf_own_vleaf with "Leaf") as "Leaf"; [by intros [??]|].
     iModIntro. iExists -[(x, ζm)]. iFrame "Obs". iSplit; [|done].
     iExists v. iSplit; [done|]. iExists D. iFrame "⧖ ⧗". iExists d, g. by iFrame.
   Qed.
@@ -192,7 +193,8 @@ Section conv.
     iIntros (G tid [[x ζm] []] mask post ?) "_ _ _ _ _ $ [T _] Obs".
     iDestruct "T" as (v Hp D) "(⧖ & ⧗ & %d & %g & %Hle & Leaf & _)".
     iModIntro. iExists -[(x, ζm)]. iFrame "Obs". iSplit; [|done].
-    iExists v. iSplit; [done|]. iExists D. iFrame "⧖ ⧗". iExists d, g. by iFrame.
+    iExists v. iSplit; [done|]. iExists D. iFrame "⧖ ⧗". iExists d, g. iSplit; [done|].
+    iApply vleaf_own_vleaf; [by intros [??]|done].
   Qed.
 
   (** * Unique borrows
@@ -205,15 +207,17 @@ Section conv.
       (λ _, +[p ◁ₗ UniqLty (OfTy ty) κ]) (λ post '-[x], post -[x]).
   Proof.
     iIntros (tid post mask iκs [[m ζm] []]) "#LFT #TIME #PROPH #UNIQ #E L I [T _] Obs".
-    iDestruct "T" as (v Hp D) "(#⧖ & _ & %d & %g & %Hle & %y & -> & %Phys & Gho)".
+    iDestruct "T" as (v Hp D) "(#⧖ & _ & %d & %g & %Hle & %y & -> & (%w & %fv & [-> %Hfv] & Hc) & Gho)".
     destruct m as [[[[[l' x] ξi] d'] g'] idx].
+    iDestruct (vleaf_own_elim_val (&uniq{κ} ty) (l', x, ξi, d', g', idx) (VPtr l') _ _ eq_refl Hfv
+      with "Hc") as %->.
     iMod cumulative_time_receipt_0 as "⧗0".
     iApply (wp_cumulative_time_receipt_linear with "TIME ⧖"); [solve_ndisj|].
     iIntros "⧗". wp_seq.
     iDestruct "Gho" as "(#Incl & %Hle' & Body)".
     iExists -[((l', x, ξi, d', g', idx), ζm)]. iFrame "L I Obs". iSplit; [|done].
-    iExists v. iSplit; [done|]. iExists D. iFrame "⧖ ⧗0". iExists d, g. iSplit; [done|].
-    iSplit; [by destruct Phys as (w & -> & [= <-])|]. iSplitL "⧗".
+    iExists _. iSplit; [done|]. iExists D. iFrame "⧖ ⧗0". iExists d, g. iSplit; [done|].
+    iSplit; [done|]. iSplitL "⧗".
     { iApply (cumulative_time_receipt_mono with "⧗"). lia. }
     iFrame "TIME Incl". iExists d', g'. iSplit; [done|]. iExists x, idx. by iFrame.
   Qed.
@@ -232,8 +236,8 @@ Section conv.
     iModIntro. iExists -[((l', x, ξi, d', g', idx), ζm)].
     iSplitR "Obs"; [|iApply (proph_obs_impl with "Obs")=> π Hπ; apply (Hπ d' g' idx)].
     iSplit; [|done]. iExists _. iSplit; [done|]. iExists D. iFrame "⧖ ⧗0".
-    iExists d, g. iSplit; [done|]. iExists _. iSplit; [done|]. iSplit; [iPureIntro; by eexists|].
-    by iFrame "Incl Body".
+    iExists d, g. iSplit; [done|]. iExists _. iSplit; [done|].
+    iSplitR; [by iApply (vleaf_own_intro_val _ _ (VPtr l'))|]. by iFrame "Incl Body".
   Qed.
 
   (** Directly from and to a [&uniq] value. *)

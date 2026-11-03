@@ -14,11 +14,12 @@ Definition spawnN := lrustN .@ "spawn".
 Section spawn.
   Context `{!typeG Σ, !spawnG Σ}.
 
-  (** The result of the thread: a MiniRust value of [ty] ([syn_val] is [ty_val],
-      [ty_val_eq]), whose ownership can be moved to any thread. *)
+  (** The result of the thread: a MiniRust value of [ty] (whose cells, if any, are in
+      transit, [val_cells]; [syn_fval] is [ty_fval], [ty_fval_eq]), whose ownership can be
+      moved to any thread. *)
   Definition join_future {𝔄} (ty: type 𝔄) (Φ: pred' (~~𝔄)) v : iProp Σ :=
     ∀tid, |={ ⊤ }=> ∃ x x' mask d g,
-     ⌜∃ w, v = MLitV w ∧ syn_val x' = Some w⌝
+     (∃ w fv, ⌜v = MLitV w ∧ syn_fval x' = Some fv⌝ ∗ val_cells (syn_mty 𝔄) fv w)
     ∗ ⌜syn_abstract x = syn_abstract x'⌝
     ∗ ⟨π, Φ x mask π⟩
     ∗ ⧖d ∗ |={ ⊤ }=> ty.(ty_gho_own) x' d g tid.
@@ -108,10 +109,10 @@ Section spawn.
       
   Arguments ty_gho_own {_ _ _} _ _ _ _ : simpl never.
   
-  (** The argument may contain cells (they travel to the new thread in transit); the result
-      has none ([NoCell 𝔅]): [finish] stores it as a MiniRust value in the join handle. *)
+  (** The argument and the result may contain cells: they travel to the new thread, and
+      back to the join handle ([finish] stores the MiniRust value), in transit. *)
   Lemma spawn_type {𝔄 𝔅 ℭ} (c: ~~ℭ) (Φ: (~~ℭ) → pred' (~~𝔅)) call_once_val call_once_tr (fty: type 𝔄) (retty: type 𝔅)
-      call_once `{!Send fty, !Send retty, !NoCell 𝔅} :
+      call_once `{!Send fty, !Send retty} :
     typed_val call_once ((fn<()>(∅; fty) → retty) call_once_tr) (call_once_val, c) →
     let E ϝ := ty_outlives_E fty static ++ ty_outlives_E retty static in
     typed_val (spawn (syn_mty 𝔅) call_once) ((fn(E; fty) → join_handle Φ retty)
@@ -251,13 +252,14 @@ Section spawn.
          * done.
          * apply Hpost1.
       + iClear "Obs Hd Hsd". iIntros (ret ? w) "_ I ret #Obs". wp_rec.
-        iDestruct (tctx_val_elim with "ret") as (vr Hvr w' d [-> Hw']) "[#Hd ret]".
+        iDestruct "ret" as (vr Hvr w' d fvr [-> Hw']) "(Hc & #Hd & ret)".
         rewrite eval_path_of_val in Hvr. simplify_eq.
         iApply (wp_persistent_time_receipt with "TIME Hd"); [trivial|].
         iIntros "£ #Hsd".
 
-        iApply (finish_spec with "[$fin ret Obs £ I]"); [solve_ndisj..| | | ].
-        { apply (syn_val_wf _ w). by rewrite (ty_val_eq retty). }
+        iDestruct (val_cells_wf with "Hc") as %Hwf.
+        iApply (finish_spec with "[$fin ret Hc Obs £ I]"); [solve_ndisj..| | | ].
+        { by rewrite -ty_mty_eq in Hwf. }
         { iDestruct "£" as "[£ [£1 £']]".
           iFrame. unfold join_future.
           iIntros (tid'').
@@ -280,9 +282,9 @@ Section spawn.
           iDestruct "X" as (x2 off2) "[ret [#⧖off2 [%Habs2 [_ cna_lifetimes]]]]".
 
           iModIntro. iFrame. iExists w, mask'.
-          iSplit.
-           - iPureIntro. exists w'. split; [done|]. rewrite -Hw' -ty_val_eq.
-             by apply syn_abstract_val_eq.
+          iSplitL "Hc".
+           - iExists w', fvr. rewrite -ty_mty_eq. iFrame "Hc". iPureIntro. split; [done|].
+             rewrite -Hw' -ty_fval_eq. by apply syn_abstract_fval_eq.
            - iDestruct (persistent_time_receipt_mono with "⧖off2") as "$"; first lia.
              iSplit. { iPureIntro. done. }
              iSplit; last by done.
