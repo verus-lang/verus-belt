@@ -173,8 +173,8 @@ Section pctx_shr.
   Fixpoint pctx_sguards {𝔅 𝔄} (K: pctx 𝔅 𝔄) (n k: nat) (G: iProp Σ) : ~~𝔄 → loc → iProp Σ :=
     match K in pctx 𝔅 𝔄 return ~~𝔄 → loc → iProp Σ with
     | PHole => λ _ _, True
-    | PFst K _ => λ y l, pctx_sguards K n k G y.1 l
-    | PSnd lt1 K => λ y l, pctx_sguards K n k G y.2 (l +ₗ lty_size lt1)
+    | @PField _ _ _ 𝔄lb 𝔄 𝔄la Lay _ K _ => λ y l,
+        pctx_sguards K n k G (phd (psepr y)) (l +ₗ struct_off Lay (𝔄lb ++ 𝔄 :: 𝔄la) (length 𝔄lb))
     | POwn _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l y.1) ∗
         pctx_sguards K n k G y.2 y.1
     | @PSum _ _ _ 𝔄l _ i w K => λ y l,
@@ -201,12 +201,14 @@ Section pctx_shr.
       (G -∗ Φ #(pctx_loc K n y l)) }} -∗
     WP pctx_expr K e @ E {{ Φ }}.
   Proof.
-    intros HE. induction K in y, l, e, Φ |- *; simpl.
+    intros HE.
+    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IHK la|𝔅 𝔄' n' K IHK|𝔅 𝔄l tyl i w K IHK|
+      𝔅 𝔄' κ' K IHK|𝔅 𝔄' κ' K IHK|𝔅 𝔄' κ' K IHK] in y, l, e, Φ |- *; simpl.
     - iIntros "WP". iApply (wp_wand with "WP"). iIntros (v) "(-> & _ & _ & G & HΦ)".
       by iApply "HΦ".
-    - iIntros "WP". iApply (IHK y.1 l). iApply (wp_wand with "WP").
-      iIntros (v) "($ & $ & $ & $ & $)".
-    - iIntros "WP". iApply (IHK y.2 (l +ₗ lty_size lt1)). wp_bind e. iApply (wp_wand with "WP").
+    - iIntros "WP".
+      iApply (IHK (phd (psepr y)) (l +ₗ struct_off Lay (𝔄lb ++ 𝔄f :: 𝔄la) (length 𝔄lb))).
+      wp_bind e. iApply (wp_wand with "WP").
       iIntros (v) "(-> & Gs & £ & G & HΦ)". wp_op. by iFrame.
     - iIntros "WP". iApply (IHK y.2 y.1).
       wp_bind e. iApply (wp_wand with "WP").
@@ -252,19 +254,21 @@ Section pctx_shr.
         shr_view (pctx_slft K κ) (lty_fold lt) (pctx_get K y) dh g tid
           (pctx_loc K (lty_size lt) y l).
   Proof.
-    induction K as [|𝔅 𝔄1 𝔄2 K IH lt2|𝔅 𝔄1 𝔄2 lt1 K IH|𝔅 𝔄' n' K IH|𝔅 𝔄l tyl i w K IH|
+    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IH la|𝔅 𝔄' n' K IH|𝔅 𝔄l tyl i w K IH|
       𝔅 𝔄' κ' K IH|𝔅 𝔄' κ' K IH|𝔅 𝔄' κ' K IH] in κ, y, d, l, lt |- *; simpl; intros Hin.
     - iIntros "_ _ #V !>". iSplit; [done|]. iExists d. iFrame "V". iPureIntro. lia.
-    - iIntros "#Gs £ #(Pt & [Shr _] & [Pers _])". destruct y as [y1 y2].
+    - iIntros "#Gs £ #(Pt & Shr & Pers)".
+      iEval (rewrite /= hmap_app fields_ty_shr_app) in "Shr".
+      iEval (rewrite /= hmap_app fields_ty_gho_pers_app) in "Pers".
+      iDestruct "Shr" as "[_ [Shr _]]". iDestruct "Pers" as "[_ [Pers _]]".
       iApply (IH with "Gs £"); [done|]. iFrame "Shr Pers".
-      iEval (rewrite (cbytes_pair _ (lty_fold (pctx_plug K lt)) (lty_fold lt2))) in "Pt".
-      rewrite -lty_size_fold lty_size_plug.
-      by iApply (guards_weaken_rhs_sep_l with "Pt").
-    - iIntros "#Gs £ #(Pt & [_ Shr] & [_ Pers])". destruct y as [y1 y2].
-      iApply (IH with "Gs £"); [done|]. iFrame "Shr Pers".
-      iEval (rewrite (cbytes_pair _ (lty_fold lt1) (lty_fold (pctx_plug K lt)))) in "Pt".
-      rewrite -lty_size_fold.
-      by iApply (guards_weaken_rhs_sep_r with "Pt").
+      iEval (rewrite /cbytes (bytes_own_struct Lay _ (hmap (λ _ lt, lty_fold lt)
+        (lb h++ pctx_plug K lt +:: la))) hmap_app fields_bytes_own_app) in "Pt".
+      rewrite (drop_S _ (struct_off Lay (𝔄lb ++ 𝔄f :: 𝔄la) (length 𝔄lb)));
+        [|apply struct_off_lookup; rewrite length_app /=; lia].
+      iDestruct (guards_weaken_rhs_sep_l with "Pt") as "Pt'".
+      iDestruct (guards_weaken_rhs_sep_r with "Pt'") as "Pt''".
+      by iDestruct (guards_weaken_rhs_sep_l with "Pt''") as "$".
     - iIntros "#Gs £ #(Pt & Shr & Pers)". destruct y as [l' z].
       destruct d as [|d']; [by iDestruct "Pers" as "[]"|].
       iDestruct (lc_weaken (1 + (1 + d' * (g + 3))) with "£") as "(£a & £b & £)"; [lia|].
@@ -341,11 +345,30 @@ Section pctx_vin.
 
   (** The value [y] of the root is of the variants of the sums of the siblings and of the
       path of [K]. *)
+  (** The variants of the fields [lts]. *)
+  Definition ltys_vin : ∀ {𝔅l}, hlist lty 𝔅l → plist (~~) 𝔅l → Prop :=
+    fix go {𝔅l} (lts: hlist lty 𝔅l) : plist (~~) 𝔅l → Prop :=
+      match lts with
+      | +[] => λ _, True
+      | lt +:: lts' => λ xs, lty_vin lt (phd xs) ∧ go lts' (ptl xs)
+      end.
+
+  Lemma lty_vin_struct {𝔄l} Lay (lts: hlist lty 𝔄l) x :
+    lty_vin (StructLty Lay lts) x = ltys_vin lts x.
+  Proof. done. Qed.
+
+  Lemma ltys_vin_app {𝔄lb 𝔄la} (lb: hlist lty 𝔄lb) (la: hlist lty 𝔄la) x :
+    ltys_vin (lb h++ la) x ↔ ltys_vin lb (psepl x) ∧ ltys_vin la (psepr x).
+  Proof.
+    induction lb as [|𝔄 𝔄lb lt lb IH] in x |- *; simpl; [naive_solver|].
+    destruct x as [x0 x]. simpl. rewrite IH. naive_solver.
+  Qed.
+
   Fixpoint pctx_vin {𝔅 𝔄} (K: pctx 𝔅 𝔄) : ~~𝔄 → Prop :=
     match K in pctx 𝔅 𝔄 return ~~𝔄 → Prop with
     | PHole => λ _, True
-    | PFst K lt2 => λ y, pctx_vin K y.1 ∧ lty_vin lt2 y.2
-    | PSnd lt1 K => λ y, lty_vin lt1 y.1 ∧ pctx_vin K y.2
+    | PField _ lb K la => λ y,
+        ltys_vin lb (psepl y) ∧ pctx_vin K (phd (psepr y)) ∧ ltys_vin la (ptl (psepr y))
     | POwn _ K | PShr _ K => λ y, pctx_vin K y.2
     | PSum _ i _ K => λ y, match psum_proj i y with Some z => pctx_vin K z | None => False end
     | PUniq _ K | PResUniq _ K => λ y, pctx_vin K (uniq_bor_current y)
@@ -354,8 +377,10 @@ Section pctx_vin.
   Lemma lty_vin_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt y :
     lty_vin (pctx_plug K lt) y ↔ pctx_vin K y ∧ lty_vin lt (pctx_get K y).
   Proof.
-    induction K in y, lt |- *; simpl; [naive_solver|rewrite IHK; naive_solver|by rewrite IHK| |by rewrite IHK|by rewrite IHK|by rewrite IHK].
-    rewrite /psum_proj_or. destruct (psum_proj i y); [by rewrite IHK|naive_solver].
+    induction K in y, lt |- *; [simpl; naive_solver| |simpl; try by rewrite IHK..].
+    - cbn [pctx_plug pctx_vin pctx_get]. rewrite lty_vin_struct ltys_vin_app /= IHK.
+      naive_solver.
+    - rewrite /psum_proj_or. destruct (psum_proj i y); [by rewrite IHK|naive_solver].
   Qed.
 
   Lemma pctx_vin_in {𝔅 𝔄} (K: pctx 𝔅 𝔄) y : pctx_vin K y → pctx_in K y.

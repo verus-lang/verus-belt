@@ -399,6 +399,17 @@ Section own_bytes.
         end
     end%I.
 
+  Lemma fields_bytes_own_app {𝔄lb 𝔄la} l offs (tb: typel 𝔄lb) (ta: typel 𝔄la) xs :
+    fields_bytes_own l offs (tb h++ ta) xs ⊣⊢
+      fields_bytes_own l (take (length 𝔄lb) offs) tb (psepl xs) ∗
+      fields_bytes_own l (drop (length 𝔄lb) offs) ta (psepr xs).
+  Proof.
+    revert offs. induction tb as [|𝔄 𝔄lb ty tb IH] in xs |- *; intros offs; simpl;
+      [by rewrite left_id|].
+    destruct offs as [|o offs]; simpl; [iSplit; [by iIntros "[]"|by iIntros "[[] _]"]|].
+    destruct xs as [x xs]. by rewrite /= IH assoc.
+  Qed.
+
   Lemma fields_bytes_own_gcont {𝔄l} l offs (tyl: typel 𝔄l) (xs: plist (~~) 𝔄l) :
     length offs = length 𝔄l →
     fields_bytes_own l offs tyl xs ⊣⊢

@@ -132,6 +132,34 @@ Section struct.
     rewrite /tyl_E. induction tyl as [|𝔄 𝔄l ty tyl IH]; [done|]. by rewrite /= IH.
   Qed.
 
+  (** The parts of the fields [tb h++ ta]: those of [tb] and those of [ta]. *)
+  Lemma fields_ty_gho_own_app {𝔄lb 𝔄la} (tb: typel 𝔄lb) (ta: typel 𝔄la) x d g tid :
+    (fields_ty (tb h++ ta)).(ty_gho_own) x d g tid ⊣⊢
+      (fields_ty tb).(ty_gho_own) (psepl x) d g tid ∗
+      (fields_ty ta).(ty_gho_own) (psepr x) d g tid.
+  Proof.
+    induction tb as [|𝔄 𝔄lb ty tb IH] in x |- *; simpl; [by rewrite left_id|].
+    destruct x as [x0 x]. by rewrite /= IH assoc.
+  Qed.
+
+  Lemma fields_ty_gho_pers_app {𝔄lb 𝔄la} (tb: typel 𝔄lb) (ta: typel 𝔄la) x d g tid :
+    (fields_ty (tb h++ ta)).(ty_gho_pers) x d g tid ⊣⊢
+      (fields_ty tb).(ty_gho_pers) (psepl x) d g tid ∗
+      (fields_ty ta).(ty_gho_pers) (psepr x) d g tid.
+  Proof.
+    induction tb as [|𝔄 𝔄lb ty tb IH] in x |- *; simpl; [by rewrite left_id|].
+    destruct x as [x0 x]. by rewrite /= IH assoc.
+  Qed.
+
+  Lemma fields_ty_shr_app {𝔄lb 𝔄la} (tb: typel 𝔄lb) (ta: typel 𝔄la) κ x d g tid :
+    (fields_ty (tb h++ ta)).(ty_shr) κ x d g tid ⊣⊢
+      (fields_ty tb).(ty_shr) κ (psepl x) d g tid ∗
+      (fields_ty ta).(ty_shr) κ (psepr x) d g tid.
+  Proof.
+    induction tb as [|𝔄 𝔄lb ty tb IH] in x |- *; simpl; [by rewrite left_id|].
+    destruct x as [x0 x]. by rewrite /= IH assoc.
+  Qed.
+
   (** A type of fields as a struct of layout [L]. *)
   Program Definition struct_of {𝔄l} (L: struct_layout) (ty: type (Π! 𝔄l)) : type (structₛ L 𝔄l) := {|
     ty_lfts := ty.(ty_lfts);
