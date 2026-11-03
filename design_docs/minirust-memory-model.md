@@ -1022,3 +1022,40 @@ lemmas `tctx_fun_val`, `wp_fun`) instead of a value-based `◁ᵥ`. `typed_val`,
 **Axioms.** See the final report: `Print Assumptions` of the examples is unchanged from
 the baseline (`functional_extensionality_dep`, and `Eqdep.Eq_rect_eq.eq_rect_eq` for the
 rules with a pure verification condition).
+
+## Outcome: subtyping for fixpoint types
+
+Known gap 11 (branch `proto/fix-subtype`): the `syn_bincl` hypotheses that stage 6 (C4)
+added to the subtyping rules were revisited, and `list_subtype`/`list_eqtype` are ported.
+
+- **`Isoₛ` preserves the fancy bytes.** `Isoₛ f g` (`prophecy/syn_type.v`) has the new
+  field `syn_iso_bincl : syn_bincl f`; the field `syn_iso_bsize_eq` became a lemma (it is
+  the first component of `syn_bincl`), and `syn_iso_bytes` is stated with the new
+  `syn_bytes_pres f`. For this, `syn_fbytes`, `syn_cells_pres`, `syn_bincl`,
+  `syn_bincl_id/compose/same` and `mcells`/`mshift` (with their lemmas) moved from
+  `typing/type.v`, `typing/bytes_layout.v` and `typing/gcont.v` to `prophecy/syn_type.v`.
+  `syn_bincl_iso` is now `Isoₛ f g → syn_bincl g` (via the new `syn_bincl_inv`). The
+  instances whose fancy bytes need the layout lemmas moved after them:
+  `isoₛ_cons_prod`, `Isoₛ_prod_left_id`, `Isoₛ_prod_right_id` (with
+  `syn_bincl_prod_left_id/right_id`) are in `typing/bytes_layout.v`; their plain-byte
+  parts stayed in `syn_type.v` as `syn_bytes_pres_to_cons_prod`,
+  `syn_bytes_pres_prod_left_id/right_id`.
+- **Hypotheses removed** (an `Isoₛ` now gives them): `syn_bincl f` (and `syn_bincl g`) of
+  `mod_ty_in/out/inout/outin/subtype/eqtype` and of `eqtype_unfold`,
+  `eqtype_unfold_default`. Callers updated: `xprod_subtype`, `prod_ty_assoc/left_id/
+  right_id`, `uninit_unit`, `uninit_plus_prod`, `list_unfold_fold`, `sum_list_isoₛ`.
+- **Hypotheses kept, because they are semantically required:** `syn_bincl f` of
+  `fix_subtype` (`syn_bincl f`, `syn_bincl g` of `fix_eqtype_subtype`, `fix_eqtype`),
+  `base_subtype`/`base_eqtype`, `type_incl_default` and the `simple`/`plain`/`ghost`
+  helpers. These rules have an arbitrary map `f`, and their conclusion implies
+  `syn_bincl f` (it is the first component of `type_incl`; with `E = L = []` a subtyping
+  proves it outright). For the fixpoint, the step hypothesis cannot provide it: when no
+  subtyping along `f` exists it holds vacuously. The hypothesis is syntactic, though, and
+  for a fixpoint through a pointer it holds whatever `f` does to the elements
+  (`syn_bincl_list_map`, by `syn_bincl_same`).
+- **New lemma** `subtype_bincl_elim` (`type.v`): a subtyping may assume the `syn_bincl`
+  of another subtyping. `list_subtype` uses it to equate the node sizes
+  `list_node_size 𝔄 = list_node_size 𝔅`, which depend on the element type.
+- **Ported** (`typing/examples/list.v`, hints restored):
+  `list_subtype : subtype E L ty ty' f → subtype E L (list_ty ty) (list_ty ty') (list_mapₛ f)`
+  and `list_eqtype`, with no hypothesis beyond the subtyping of the elements.
