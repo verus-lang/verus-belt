@@ -1944,12 +1944,21 @@ Section cpd.
     match lt with
     | OfTy _ | Blocked _ _ | ShrBlocked _ _ | ShrLty _ _ => True
     | OwnPtrLty _ lt => lty_simple lt
-    | ProdLty lt1 lt2 => lty_simple lt1 ∧ lty_simple lt2
+    | StructLty _ lts => (fix go {𝔅l} (lts: hlist lty 𝔅l) : Prop :=
+        match lts with +[] => True | lt +:: lts' => lty_simple lt ∧ go lts' end) _ lts
     | SumLty _ _ lt => lty_simple lt
     | UniqLty lt _ => lty_simple lt
     (* Resolved places are not folded back (they are only in the owned part of a place). *)
     | OfRes _ | ResUniqLty _ _ | Moved _ => False
     end.
+
+  Lemma lty_simple_struct {𝔄l} L (lts: hlist lty 𝔄l) :
+    lty_simple (StructLty L lts) ↔ HForall (λ _ lt, lty_simple lt) lts.
+  Proof.
+    simpl. induction lts as [|𝔄 𝔄l lt lts IH]; simpl.
+    - split; [constructor|done].
+    - rewrite IH. split; [intros [??]; by constructor|by inversion 1; simplify_eq/=].
+  Qed.
 
   Lemma pat_ok_own κ p : pat_ok κ p -∗ pat_ok κ (pat_own p).
   Proof. iIntros "Ok". destruct p; simpl; try iApply pat_ok_leaf. done. Qed.
@@ -1975,7 +1984,7 @@ Section cpd.
   Qed.
 
   Definition lty_is_cpd {𝔄} (lt: lty 𝔄) : Prop :=
-    match lt with ProdLty _ _ | OwnPtrLty _ _ | UniqLty _ _ | SumLty _ _ _ => True | _ => False end.
+    match lt with StructLty _ _ | OwnPtrLty _ _ | UniqLty _ _ | SumLty _ _ _ => True | _ => False end.
 
   (** In [Uniq] mode, a compound place is a compound place whose node is the
       [Owned 0] interpretation. *)
@@ -2087,7 +2096,7 @@ Section cpd.
         uniq_body (lty_fold lt) x ξi d' g' idx κ' tid l.
   Proof.
     iIntros (Hfold ?) "#LFT #PROPH #UNIQ #Gκ' #Gty #Ok #†κ G £ #⧖ C".
-    destruct lt as [𝔅 ty|𝔅 ty α|𝔅 lt κ''|𝔅 n lt|𝔅 ℭ lt1 lt2|𝔅 ty α|𝔅l tyl i lt|𝔅 lt κ''|𝔅 ty|𝔅 lt κ''|𝔅 ty];
+    destruct lt as [𝔅 ty|𝔅 ty α|𝔅 lt κ''|𝔅 n lt|𝔅l L lts|𝔅 ty α|𝔅l tyl i lt|𝔅 lt κ''|𝔅 ty|𝔅 lt κ''|𝔅 ty];
       [..|iDestruct "C" as "[C _]"|by iDestruct "C" as "[]"|by iDestruct "C" as "[]"|
         by iDestruct "C" as "[]"];
       try (destruct r as [lr|]; [|done];
@@ -2100,10 +2109,17 @@ Section cpd.
   Qed.
 
   (** The fancy values of the values of compound and pointer types. *)
-  Lemma ty_fval_prod {𝔄 𝔅} (ty: type (𝔄 * 𝔅)) (ty1: type 𝔄) (ty2: type 𝔅) x1 x2 fv1 fv2 :
-    ty1.(ty_fval) x1 = Some fv1 → ty2.(ty_fval) x2 = Some fv2 →
-    ty.(ty_fval) (x1, x2) = Some (FVTuple [fv1; fv2]).
-  Proof. rewrite -!ty_fval_eq /=. by intros -> ->. Qed.
+  Definition fields_fval {𝔄l} (xs: plist (~~) 𝔄l) : option (list FValue) :=
+    mapM id (plist_to_list (pmap (λ _ x, syn_fval x) xs)).
+
+  Lemma fields_fval_cons {𝔄 𝔄l} (x: ~~𝔄) (xs: plist (~~) 𝔄l) fv fvs :
+    syn_fval x = Some fv → fields_fval xs = Some fvs →
+    fields_fval (𝔄l:=𝔄 :: 𝔄l) (x -:: xs) = Some (fv :: fvs).
+  Proof. rewrite /fields_fval /=. by intros -> ->. Qed.
+
+  Lemma ty_fval_struct {𝔄l} L (ty: type (structₛ L 𝔄l)) xs fvs :
+    fields_fval xs = Some fvs → ty.(ty_fval) xs = Some (FVTuple fvs).
+  Proof. rewrite -!ty_fval_eq /fields_fval /=. by intros ->. Qed.
 
   Lemma ty_fval_pinj {𝔄l} (ty: type (Σ! 𝔄l)) i (tyi: type (𝔄l !!ₗ i)) y fv :
     tyi.(ty_fval) y = Some fv →
@@ -2144,11 +2160,82 @@ Section cpd.
     iModIntro. iExists x, d', g'. iFrame. by iApply (fbytes_cbytes with "B").
   Qed.
 
+  Lemma pat_ok_struct_cons κ ps :
+    pat_ok κ (PatStruct ps) -∗ pat_ok κ (default PatLeaf (head ps)) ∗ pat_ok κ (PatStruct (tail ps)).
+  Proof.
+    destruct ps as [|p ps]; simpl; [iIntros "_"; rewrite /pat_ok /=; by iSplit|].
+    rewrite /pat_ok /= big_sepL_app. by iIntros "[$ $]".
+  Qed.
+
+  Lemma pat_ok_pat_struct κ p : pat_ok κ p -∗ pat_ok κ (PatStruct (pat_struct p)).
+  Proof. iIntros "Ok". destruct p; simpl; try done; by rewrite /pat_ok /=. Qed.
+
+  Lemma proph_eqz_pcons {A B} (uπ vπ: proph A) (uπ' vπ': proph B) :
+    uπ :== vπ -∗ uπ' :== vπ' -∗ (λ π, uπ π -:: uπ' π) :== (λ π, vπ π -:: vπ' π).
+  Proof.
+    iIntros "E E'". have ?: Inj2 (=) (=) (=) (@cons_pair A B).
+    { by intros ???? [= -> ->]. }
+    iApply (proph_eqz_constr2 cons_pair with "E E'").
+  Qed.
+
+  Local Lemma fields_bytes_unblock κ tid {𝔄l} (lts: hlist lty 𝔄l) offs m ps rs d g l :
+    HForall (λ _ lt, owned_bytes_unblock lt κ tid) lts →
+    ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ pat_ok κ (PatStruct ps) -∗ [†κ] -∗
+      ⧖((m + S d) `max` g) -∗
+      fields_node offs (hmap (λ _ lt, ltype_own_cp false lt (Owned m)) lts) ps rs d g tid l
+        ={lazyB}=∗
+      ∃ fvs, (∃ xs, ⌜fields_fval xs = Some fvs⌝ ∗
+          fields_bytes_own l offs (hmap (λ _ lt, lty_fold lt) lts) xs) ∗
+        guarded_upd lazyE @[lft_intersect_list (tyl_lfts (hmap (λ _ lt, lty_fold lt) lts))]
+          (∃ (ys: plist (~~) 𝔄l) d' g', ⌜fields_fval ys = Some fvs⌝ ∗
+            ▷ ((λ π, pmap (G:=proph_interp_of_syn_type) (λ 𝔅 (r: prfn 𝔅), prfn_den r π) rs) :==
+               (λ π, pmap (G:=proph_interp_of_syn_type) (λ 𝔅 (y: ~~𝔅), vπ y π) ys)) ∗
+            ⧖((m + S d') `max` g') ∗
+            ▷^m (fields_ty (hmap (λ _ lt, lty_fold lt) lts)).(ty_gho_own) ys d' g' tid).
+  Proof.
+    intros Hall. revert offs ps rs.
+    induction Hall as [|𝔅 𝔅l lt lts Hlt _ IH]; intros offs ps rs.
+    - destruct rs. iIntros "_ _ _ _ _ #⧖ _ !>". iExists []. iSplitR; [by iExists -[]|].
+      iApply guarded_upd_intro. iModIntro. iExists -[], d, g. iFrame "⧖".
+      iSplit; [done|]. iSplit; [iNext; iApply proph_eqz_refl|]. by iApply bi.laterN_intro.
+    - destruct offs as [|o offs]; [by iIntros "_ _ _ _ _ _ []"|]. destruct rs as [r rs].
+      iIntros "#LFT #PROPH #UNIQ Ok #†κ #⧖ [N1 N2]".
+      iDestruct (pat_ok_struct_cons with "Ok") as "[Ok1 Ok2]".
+      iMod (Hlt with "LFT PROPH UNIQ Ok1 †κ ⧖ N1") as (fv1) "[B1 U1]".
+      iMod (IH with "LFT PROPH UNIQ Ok2 †κ ⧖ N2") as (fvs) "[B2 U2]".
+      iModIntro. iExists (fv1 :: fvs). iSplitL "B1 B2".
+      { iDestruct "B1" as (x1 Hx1) "B1". iDestruct "B2" as (xs Hxs) "B2".
+        iExists (x1 -:: xs). iFrame. iPureIntro. apply fields_fval_cons; [|done].
+        by rewrite (ty_fval_eq (lty_fold lt)). }
+      iDestruct (guarded_upd_weaken _ _
+        @[lft_intersect_list (tyl_lfts (hmap (λ _ lt, lty_fold lt) (lt +:: lts)))]
+        with "[] U1") as "U1".
+      { simpl. rewrite lft_intersect_list_app. iApply llftl_intersect_incl_l. }
+      iDestruct (guarded_upd_weaken _ _
+        @[lft_intersect_list (tyl_lfts (hmap (λ _ lt, lty_fold lt) (lt +:: lts)))]
+        with "[] U2") as "U2".
+      { simpl. rewrite lft_intersect_list_app. iApply llftl_intersect_incl_r. }
+      iDestruct (guarded_upd_sep with "U1 U2") as "U".
+      iApply (guarded_upd_mono with "[] U").
+      iIntros "[(%y1 & %d1 & %g1 & %Hy1 & Eqz1 & #⧖1 & Gho1)
+        (%ys & %d2 & %g2 & %Hys & Eqz2 & #⧖2 & Gho2)] !>".
+      iExists (y1 -:: ys), (d1 `max` d2), (g1 `max` g2).
+      iSplit; [iPureIntro; apply fields_fval_cons; [by rewrite (ty_fval_eq (lty_fold lt))|done]|].
+      iSplitL "Eqz1 Eqz2". { iNext. iApply (proph_eqz_pcons with "Eqz1 Eqz2"). }
+      iCombine "⧖1 ⧖2" as "⧖3".
+      iSplit. { iApply (persistent_time_receipt_mono with "⧖3"). lia. }
+      rewrite /=. iNext. iSplitL "Gho1".
+      + iDestruct (ty_gho_own_depth_mono _ _ _ (d1 `max` d2) (g1 `max` g2) with "Gho1")
+          as "[$ _]"; lia.
+      + iDestruct (ty_gho_own_depth_mono _ _ _ (d1 `max` d2) (g1 `max` g2) with "Gho2")
+          as "[$ _]"; lia.
+  Qed.
+
   Lemma ltype_owned_bytes_unblock {𝔄} (lt: lty 𝔄) κ tid :
     lty_simple lt → owned_bytes_unblock lt κ tid.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty];
-      intros Hs m p r d g l; try done; try (exfalso; exact Hs).
+    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l L lts IH|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty]
+      using lty_ind'; intros Hs m p r d g l; try done; try (exfalso; exact Hs).
     8: { iIntros "#LFT #PROPH #UNIQ #Ok #†κ #⧖ [L _]"; destruct r as [lr|]; [|done];
       iMod (leaf_owned_s_bytes_unblock with "LFT Ok †κ ⧖ L") as (fv) "[B Upd]";
       iModIntro; iExists fv; iFrame "B";
@@ -2231,38 +2318,24 @@ Section cpd.
       iSplit. { iApply (persistent_time_receipt_mono with "⧖1"). lia. }
       rewrite /= /lty_size -(ty_bsize_eq (lty_fold lt)).
       iNext. iFrame "Pt' Fr". by rewrite (Nat.add_1_r m).
-    - destruct Hs as [Hs1 Hs2]. iIntros "#LFT #PROPH #UNIQ #Ok #†κ #⧖ N".
-      destruct r as [lr|[r1 r2]]; [done|]. iDestruct "N" as "[N1 N2]".
-      iDestruct (pat_ok_prod with "Ok") as "[Ok1 Ok2]".
-      iMod (IH1 with "LFT PROPH UNIQ Ok1 †κ ⧖ N1") as (fv1) "[B1 U1]"; [done|].
-      iMod (IH2 with "LFT PROPH UNIQ Ok2 †κ ⧖ N2") as (fv2) "[B2 U2]"; [done|].
-      iModIntro. iExists (FVTuple [fv1; fv2]). iSplitL "B1 B2".
-      { iDestruct "B1" as (x1 Hx1) "B1". iDestruct "B2" as (x2 Hx2) "B2". iExists (x1, x2).
-        iSplit; [iPureIntro; by apply (ty_fval_prod _ (lty_fold lt1) (lty_fold lt2))|].
-        rewrite /= (cbytes_pair _ (lty_fold lt1) (lty_fold lt2)) (ty_bsize_eq (lty_fold lt1)).
-        iFrame. }
-      iDestruct (guarded_upd_weaken _ _ @[ty_lft (lty_fold (ProdLty lt1 lt2))] with "[] U1")
-        as "U1".
-      { simpl. rewrite lft_intersect_list_app. iApply llftl_intersect_incl_l. }
-      iDestruct (guarded_upd_weaken _ _ @[ty_lft (lty_fold (ProdLty lt1 lt2))] with "[] U2")
-        as "U2".
-      { simpl. rewrite lft_intersect_list_app. iApply llftl_intersect_incl_r. }
-      iDestruct (guarded_upd_sep with "U1 U2") as "U".
+    - have Hall : HForall (λ _ lt, owned_bytes_unblock lt κ tid) lts.
+      { apply lty_simple_struct in Hs. clear -IH Hs.
+        induction IH as [|𝔅 𝔅l lt lts Hlt _ IH']; [constructor|].
+        inversion Hs; simplify_eq/=. constructor; [by apply Hlt|by apply IH']. }
+      iIntros "#LFT #PROPH #UNIQ #Ok #†κ #⧖ N".
+      destruct r as [lr|rs]; [done|]. iDestruct "N" as "[N Pad]".
+      iDestruct (pat_ok_pat_struct with "Ok") as "Ok'".
+      iMod (fields_bytes_unblock with "LFT PROPH UNIQ Ok' †κ ⧖ N") as (fvs) "[B U]"; [done|].
+      iModIntro. iExists (FVTuple fvs). iSplitL "B Pad".
+      { iDestruct "B" as (xs Hxs) "B". iExists xs.
+        iSplit; [iPureIntro; by apply ty_fval_struct|].
+        rewrite /cbytes (bytes_own_struct L _ (hmap (λ _ lt, lty_fold lt) lts)). iFrame. }
+      iDestruct (guarded_upd_weaken _ _ @[ty_lft (lty_fold (StructLty L lts))] with "[] U")
+        as "U".
+      { rewrite /= fields_ty_lfts. iApply guards_refl. }
       iApply (guarded_upd_mono with "[] U").
-      iIntros "[(%x1 & %d1 & %g1 & %Hx1 & Eqz1 & #⧖1 & Gho1)
-        (%x2 & %d2 & %g2 & %Hx2 & Eqz2 & #⧖2 & Gho2)] !>".
-      iExists (x1, x2), (d1 `max` d2), (g1 `max` g2).
-      iSplit; [iPureIntro; by apply (ty_fval_prod _ (lty_fold lt1) (lty_fold lt2))|].
-      iSplitL "Eqz1 Eqz2". { iNext. iApply (proph_eqz_prod with "[Eqz1] [Eqz2]").
-        - iApply (proph_eqz_eq with "Eqz1"); [|done]. by fun_ext=> π /=.
-        - iApply (proph_eqz_eq with "Eqz2"); [|done]. by fun_ext=> π /=. }
-      iCombine "⧖1 ⧖2" as "⧖3".
-      iSplit. { iApply (persistent_time_receipt_mono with "⧖3"). lia. }
-      rewrite /=. iNext. iSplitL "Gho1".
-      + iDestruct (ty_gho_own_depth_mono _ _ _ (d1 `max` d2) (g1 `max` g2) with "Gho1")
-          as "[$ _]"; lia.
-      + iDestruct (ty_gho_own_depth_mono _ _ _ (d1 `max` d2) (g1 `max` g2) with "Gho2")
-          as "[$ _]"; lia.
+      iIntros "(%ys & %d' & %g' & %Hys & Eqz & ⧖' & Gho) !>". iExists ys, d', g'.
+      iSplit; [iPureIntro; by apply ty_fval_struct|]. iFrame.
   Qed.
 
   Lemma ltype_owned_unblock_fold {𝔄} (lt: lty 𝔄) κ m p r d g tid l G :
@@ -2290,7 +2363,7 @@ Section cpd.
     iIntros (Hc Hs) "#LFT #PROPH #UNIQ #Ok #⧖ N". iSplit.
     { iApply guarded_upd_intro. by iFrame. }
     destruct r as [lr|rs].
-    { by destruct lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ'|𝔄 n lt|𝔄 𝔅 lt1 lt2|𝔄 ty α|𝔄l tyl i lt|𝔄 lt κ'|𝔄 ty|𝔄 lt κ'|𝔄 ty]. }
+    { by destruct lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ'|𝔄 n lt|𝔄l L lts|𝔄 ty α|𝔄l tyl i lt|𝔄 lt κ'|𝔄 ty|𝔄 lt κ'|𝔄 ty]. }
     iExists inhabitant. rewrite /leaf_owned_b /leaf_owned_lz /=. iSplitL; [|done].
     iIntros "#†κ".
     iMod (ltype_owned_bytes_unblock lt κp tid Hs 0 with "LFT PROPH UNIQ Ok †κ ⧖ N")
@@ -2372,7 +2445,7 @@ Section cpd.
   Proof.
     iIntros (Hc Hs) "#LFT #PROPH #UNIQ #Ok #⧖ N".
     destruct r as [lr|rs].
-    { by destruct lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ'|𝔄 n lt|𝔄 𝔅 lt1 lt2|𝔄 ty α|𝔄l tyl i lt|𝔄 lt κ'|𝔄 ty|𝔄 lt κ'|𝔄 ty]. }
+    { by destruct lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ'|𝔄 n lt|𝔄l L lts|𝔄 ty α|𝔄l tyl i lt|𝔄 lt κ'|𝔄 ty|𝔄 lt κ'|𝔄 ty]. }
     iDestruct (cpd_contents_eager with "LFT PROPH UNIQ Ok ⧖ N") as "[_ C]"; [done..|].
     rewrite /leaf_node leaf_owned_bg. iDestruct "C" as (fv) "[B _]". iExists fv. by iFrame "B".
   Qed.
