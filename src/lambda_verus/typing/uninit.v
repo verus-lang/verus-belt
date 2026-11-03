@@ -73,10 +73,9 @@ Section typing.
       split.
         + split; fun_ext; by intros [].
         + split; fun_ext; by intros [].
-        + done.
         + by intros [].
+        + by apply syn_bincl_same.
     }
-    { by apply syn_bincl_same. }
     iIntros "_!>_". iSplit; [iApply lft_equiv_refl|].
     iSplit; first iModIntro=>/=.
     - iIntros (??? vl). naive_solver. 
@@ -126,11 +125,10 @@ Section typing.
     { split.
       - split; fun_ext; by [intros []|intros [[] []]].
       - split; fun_ext; by [intros []|intros [[] []]].
-      - rewrite /syn_bsize /= !seq_size_cons seq_size_nil /=. lia.
       - intros [] bs. cbn [syn_mty syn_val]. rewrite decode_pad decode_pad_pair.
         case_decide; naive_solver.
+      - apply syn_bincl_uninit_split.
     }
-    { apply syn_bincl_uninit_split. }
     iIntros "_!>_". iSplit; [iApply lft_equiv_refl|].
     iSplit; first iModIntro=>/=.
     - iIntros (????). naive_solver. 

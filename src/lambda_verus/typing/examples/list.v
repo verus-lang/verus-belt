@@ -88,8 +88,8 @@ Proof.
     - split.
       + fun_ext. intros [loc0 [[]|[[elem [loc l]]|[]]]]; trivial.
       + fun_ext. intros [loc0 [|[a c] xl]]; trivial.
-    - done.
     - intros x bs. destruct x as [loc0 [[]|[[elem [loc l]]|[]]]]; done.
+    - apply syn_bincl_sum_to_list.
 Qed.
 
 Definition list_map1 {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) :
@@ -148,7 +148,7 @@ Section typing.
     eapply eqtype_eq.
     - eapply eqtype_trans.
       + apply fix_unfold_fold.
-      + apply mod_ty_outin, syn_bincl_sum_to_list.
+      + apply mod_ty_outin.
     - apply extensₛ; trivial.
     - apply extensₛ; trivial.
   Qed.
