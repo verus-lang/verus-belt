@@ -548,7 +548,7 @@ Section uniq_util_bytes.
         (∃ d' g', ⧖(S d' `max` g') ∗ ofty_gho 0 ty lr fv d' g' tid).
   Proof.
     iIntros "#LFT #Ok #†κ (%fv & B & Upd)". rewrite /leaf_owned_b /leaf_owned_lz /=.
-    destruct p as [|α| | | | |];
+    destruct p as [|α| | | | | |];
       try (iModIntro; iDestruct "B" as "[B _]"; iExists fv; iFrame "B";
         iApply (guarded_upd_mono with "[] Upd"); iIntros "[⧖ G] !>";
         iExists d, g; by iFrame).
@@ -855,7 +855,7 @@ Section uniq_util_bytes.
     { rewrite (fbytes_same ty ty') (guarded_upd_lft_equiv _ _ _ _ Hl).
       f_equiv; [f_equiv; by rewrite Hl'|]. f_equiv. f_equiv. by apply ofty_gho_ne. }
     (* [PatBlocked] separately: [f_equiv] takes long to fail on it. *)
-    destruct p as [|α| | | | |]; try exact Hub.
+    destruct p as [|α| | | | | |]; try exact Hub.
     rewrite /blocked_owned. do 3 f_equiv. f_equiv=> fv'.
     rewrite (fbytes_same ty ty') (guarded_upd_lft_equiv _ _ _ _ Hl). f_equiv.
     f_equiv. do 2 (f_equiv=>?). f_equiv. by apply ofty_gho_ne.
@@ -886,7 +886,7 @@ Section uniq_util_bytes.
     intros Hl. rewrite /uniq_gbody /leaf_contents. f_equiv=> p. f_equiv=> r.
     do 3 f_equiv. f_equiv=> fv. f_equiv.
     rewrite /leaf_owned_b. generalize (norm_pat κp p r) (prfn_place r)=> {}p lr.
-    destruct p as [|α| | | | |]; try by rewrite (fbytes_loc ty l l').
+    destruct p as [|α| | | | | |]; try by rewrite (fbytes_loc ty l l').
     rewrite /blocked_owned. do 2 f_equiv. f_equiv=> fv'. by rewrite (fbytes_loc ty l l').
   Qed.
 
@@ -1394,7 +1394,7 @@ Section uniq_util_bytes.
   Proof.
     iIntros "#[Incl Incl'] #EqOwn (%fv & B & Upd)". iExists fv.
     rewrite /leaf_owned_b /leaf_owned_lz.
-    destruct (norm_pat κp p r) as [|α| | | | |];
+    destruct (norm_pat κp p r) as [|α| | | | | |];
       try (iDestruct "B" as "[B %Hlr]"; rewrite (fbytes_same ty ty'); iFrame "B";
         iSplit; [iPureIntro; destruct (prfn_place r); rewrite /lr_fval //;
           by rewrite (ty_fval_same ty' ty)|];

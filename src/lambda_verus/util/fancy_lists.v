@@ -67,6 +67,14 @@ Fixpoint happly {Y Xl} (fl: hlist (λ X, Y → F X) Xl) (x: Y)
   match fl with +[] => +[] | f +:: fl' => f x +:: happly fl' x end.
 End hlist.
 
+Lemma hmap_hmap {A} {F G H: A → Type} (f: ∀X, G X → H X) (g: ∀X, F X → G X) {Xl} (xl: hlist F Xl) :
+  hmap f (hmap g xl) = hmap (λ X x, f X (g X x)) xl.
+Proof. induction xl; [done|]. by rewrite /= IHxl. Qed.
+
+Lemma hcmap_hmap {A} {F G: A → Type} {Y} (f: ∀X, G X → Y) (g: ∀X, F X → G X) {Xl} (xl: hlist F Xl) :
+  hcmap f (hmap g xl) = hcmap (λ X x, f X (g X x)) xl.
+Proof. induction xl; [done|]. by rewrite /= IHxl. Qed.
+
 Ltac inv_hlist xl := let A := type of xl in
   match eval hnf in A with hlist _ ?Xl =>
     match eval hnf in Xl with
@@ -516,6 +524,18 @@ Inductive HForallTwo (Φ: ∀X, F X → G X → Prop) : ∀{Xl}, hlist F Xl → 
 Lemma TCHForall_impl {Xl} (Φ Ψ: ∀X, F X → Prop) (xl: hlist F Xl) :
   (∀X x, Φ X x → Ψ _ x) → TCHForall Φ xl → TCHForall Ψ xl.
 Proof. move=> Imp. elim; constructor; by [apply Imp|]. Qed.
+
+Lemma HForall_impl {Xl} (Φ Ψ: ∀X, F X → Prop) (xl: hlist F Xl) :
+  (∀X x, Φ X x → Ψ _ x) → HForall Φ xl → HForall Ψ xl.
+Proof. move=> Imp. elim; constructor; by [apply Imp|]. Qed.
+
+Lemma hmap_ext_HForall {Xl} (f g: ∀X, F X → G X) (xl: hlist F Xl) :
+  HForall (λ X x, f X x = g X x) xl → hmap f xl = hmap g xl.
+Proof. induction 1; [done|]. by rewrite /= H IHHForall. Qed.
+
+Lemma hcmap_ext_HForall {Y Xl} (f g: ∀X, F X → Y) (xl: hlist F Xl) :
+  HForall (λ X x, f X x = g X x) xl → hcmap f xl = hcmap g xl.
+Proof. induction 1; [done|]. by rewrite /= H IHHForall. Qed.
 
 Lemma HForallTwo_impl {Xl} (Φ Ψ: ∀X, F X → G X → Prop) (xl: hlist F Xl) yl :
   (∀X x y, Φ X x y → Ψ X x y) → HForallTwo Φ xl yl → HForallTwo Ψ xl yl.
