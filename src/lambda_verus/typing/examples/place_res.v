@@ -241,7 +241,7 @@ Section place_res.
       iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vr γ i32t). }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vr v3 (PUniq γ PHole) i32t i32t);
+      { eapply (type_write_place_instr _ _ _ vr v3 (PUniq γ PHole) (OfTy i32t) i32t);
           [apply pctx_wty_same|apply resolve_just|simpl; solve_typing]. }
       { solve_typing. } { simpl. reflexivity. }
       iApply typed_body_tctx_incl.

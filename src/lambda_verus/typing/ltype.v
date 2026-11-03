@@ -37,7 +37,12 @@
   - [ShrLty lt κ]: the place contains a shared reference [&shr{κ}] whose referent is
     viewed as the place type [lt] (a read-only view, the context step [PShr] of
     [typing/lpath.v]): it is the leaf of its folded type [&shr{κ} (lty_fold lt)], together
-    with the variants of the sums of [lt] at the (unchanging) referent ([lty_vin]).
+    with the variants of the sums of [lt] at the (unchanging) referent ([lty_vin]);
+  - [OfRes ty], [ResUniqLty lt κ]: resolved places ([typing/place_res.v]);
+  - [Moved ty]: the place has been moved out of (Rust's moved-out state): it owns plain
+    bytes of the size of [ty], its value is irrelevant ([moved_leaf]); its folded type is
+    [ty] (for the lifetimes only: it is not simple, [lty_simple], so it is never folded);
+    it has no interpretation in [Uniq] mode and in views.
   [lty_core] replaces [Blocked ty κ] and [ShrBlocked ty κ] by [OfTy ty] (pointwise
   otherwise), as
   RefinedRust's [lty_core]; [lty_fold] is the type of the place once folded
@@ -144,7 +149,8 @@ Section lty.
   | SumLty {𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (lt: lty (𝔄l !!ₗ i)) : lty (Σ! 𝔄l)
   | ShrLty {𝔄} (lt: lty 𝔄) (κ: lft) : lty (at_locₛ 𝔄)
   | OfRes {𝔄} (ty: type 𝔄) : lty 𝔄
-  | ResUniqLty {𝔄} (lt: lty 𝔄) (κ: lft) : lty (uniq_borₛ 𝔄).
+  | ResUniqLty {𝔄} (lt: lty 𝔄) (κ: lft) : lty (uniq_borₛ 𝔄)
+  | Moved {𝔄} (ty: type 𝔄) : lty 𝔄.
 
   Fixpoint lty_core {𝔄} (lt: lty 𝔄) : lty 𝔄 :=
     match lt in lty 𝔄 return lty 𝔄 with
@@ -158,6 +164,7 @@ Section lty.
     | ShrLty lt κ => ShrLty (lty_core lt) κ
     | OfRes ty => OfRes ty
     | ResUniqLty lt κ => ResUniqLty (lty_core lt) κ
+    | Moved ty => Moved ty
     end.
 
   Fixpoint lty_pat {𝔄} (lt: lty 𝔄) : lpat :=
@@ -172,6 +179,7 @@ Section lty.
     | ShrLty _ _ => PatLeaf
     | OfRes _ => PatLeaf
     | ResUniqLty lt _ => PatUniq (lty_pat lt)
+    | Moved _ => PatLeaf
     end.
 
   (** The type of a place, once folded. *)
@@ -187,6 +195,7 @@ Section lty.
     | ShrLty lt κ => shr_bytes κ (lty_fold lt)
     | OfRes ty => ty
     | ResUniqLty lt κ => uniq_bytes κ (lty_fold lt)
+    | Moved ty => ty
     end.
 
   (** The size in bytes is determined by the syntactic type. *)
@@ -194,7 +203,7 @@ Section lty.
 
   Fixpoint lty_lfts {𝔄} (lt: lty 𝔄) : list lft :=
     match lt with
-    | OfTy ty | Blocked ty _ | ShrBlocked ty _ | OfRes ty => ty.(ty_lfts)
+    | OfTy ty | Blocked ty _ | ShrBlocked ty _ | OfRes ty | Moved ty => ty.(ty_lfts)
     | UniqLty lt κ | ResUniqLty lt κ => κ :: lty_lfts lt
     | OwnPtrLty _ lt => lty_lfts lt
     | ProdLty lt1 lt2 => lty_lfts lt1 ++ lty_lfts lt2
@@ -251,7 +260,7 @@ Section lty.
       reference can record the variant. *)
   Fixpoint lty_vin {𝔄} (lt: lty 𝔄) : ~~𝔄 → Prop :=
     match lt in lty 𝔄 return ~~𝔄 → Prop with
-    | OfTy _ | Blocked _ _ | ShrBlocked _ _ | OfRes _ => λ _, True
+    | OfTy _ | Blocked _ _ | ShrBlocked _ _ | OfRes _ | Moved _ => λ _, True
     | UniqLty lt _ | ResUniqLty lt _ => λ x, lty_vin lt (uniq_bor_current x)
     | OwnPtrLty _ lt => λ x, lty_vin lt x.2
     | ProdLty lt1 lt2 => λ x, lty_vin lt1 x.1 ∧ lty_vin lt2 x.2
@@ -553,7 +562,7 @@ Section ltype_own.
     | ShrLty lt' κ' => λ m p r d g tid l,
         (view_leaf κ m (shr_bytes κ' (lty_fold lt')) p r d g tid l ∗
           ⌜prfn_vin (λ x: ~~ (at_locₛ _), lty_vin lt' x.2) r⌝)%I
-    | OfRes _ | ResUniqLty _ _ => λ _ _ _ _ _ _ _, False%I
+    | OfRes _ | ResUniqLty _ _ | Moved _ => λ _ _ _ _ _ _ _, False%I
     end.
 
   (** A resolved unique borrow ([ResUniqLty lt κ']): its pointer cell, and the view of its
@@ -600,6 +609,19 @@ Section ltype_own.
     | inl _ => False
     | inr (l', r', ξi) =>
         ▷^m (κ' ⊑ ty_lft ty ∗ ∃ d' g', ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ child r' d' g' tid l')
+    end%I.
+
+  (** ** Moved-out leaves
+
+      A moved-out leaf ([Moved ty], the state of a Rust place whose value has been moved
+      out): plain bytes of the size of [ty], whatever they are and whatever the
+      refinement (its value is irrelevant). It is only part of the owned part of a place
+      (it is not folded back, [lty_simple]); in [Uniq] mode its interpretation is
+      [False]. *)
+  Definition moved_leaf {𝔄} (ty: type 𝔄) (r: prfn 𝔄) (l: loc) : iProp Σ :=
+    match r with
+    | inr _ => False
+    | inl _ => pad_cell l (ty_bsize ty)
     end%I.
 
   (** A leaf at a value (of size 1) with a MiniRust value (below [ShrLty]), and a resolved
@@ -715,6 +737,12 @@ Section ltype_own.
             if c then (∃ p', lty_view lt' κ' 0 p' r' d' g' tid l')%I
             else lty_view lt' κ' 0 (pat_uniq p) r' d' g' tid l')
         | Uniq _ _ => λ _ _ _ _ _, False%I
+        end
+    (* A moved-out leaf, only in [Owned] mode. *)
+    | Moved ty => λ k p r d g tid l,
+        match k with
+        | Owned _ => moved_leaf ty r l
+        | Uniq _ _ => False%I
         end
     end.
 
@@ -877,8 +905,8 @@ Section ltype_lemmas.
   (** Only the core of a place type matters for its view. *)
   Lemma lty_view_core {𝔄} (lt: lty 𝔄) : lty_view (lty_core lt) = lty_view lt.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ| |];
-      simpl; [done|done| | | |done| | |done|done].
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ| | |];
+      simpl; [done|done| | | |done| | |done|done|done].
     - by rewrite lty_fold_core lty_leafb_core IH.
     - by rewrite lty_size_core IH.
     - by rewrite lty_size_core IH1 IH2.
@@ -889,8 +917,8 @@ Section ltype_lemmas.
   (** Only the core of a place type matters for [ltype_own_cp]. *)
   Lemma ltype_own_cp_core c {𝔄} (lt: lty 𝔄) : ltype_own_cp c (lty_core lt) = ltype_own_cp c lt.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ| |𝔄 lt IH κ]
-      in c |- *; simpl; [done|done| | | |done| | |done|].
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ| |𝔄 lt IH κ|]
+      in c |- *; simpl; [done|done| | | |done| | |done| |done].
     - by rewrite lty_fold_core !IH.
     - by rewrite lty_size_core lty_fold_core !IH.
     - by rewrite lty_size_core !lty_fold_core !IH1 !IH2.
@@ -904,8 +932,8 @@ Section ltype_lemmas.
   Lemma ltype_own_cp_true_owned_pat {𝔄} (lt: lty 𝔄) m p p' r d g tid l :
     ltype_own_cp true lt (Owned m) p r d g tid l ⊢ ltype_own_cp true lt (Owned m) p' r d g tid l.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt IH κ|𝔄 ty|𝔄 lt IH κ]
-      in m, p, p', r, d, g, tid, l |- *; simpl.
+    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt IH κ|𝔄 ty|𝔄 lt IH κ|𝔄 ty]
+      in m, p, p', r, d, g, tid, l |- *; simpl; [| | | | | | | | | |done].
     - destruct r as [lr|]; [|done]. by destruct p, p'.
     - destruct r as [lr|]; [|done]. by destruct p, p'.
     - by apply uniq_node_mono.
@@ -956,9 +984,10 @@ Section ltype_lemmas.
     d ≤ d' → g ≤ g' →
     ltype_own_cp c lt (Owned m) p r d g tid l ⊢ ltype_own_cp c lt (Owned m) p r d' g' tid l.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt IH κ|𝔄 ty|𝔄 lt IH κ]
+    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt IH κ|𝔄 ty|𝔄 lt IH κ|𝔄 ty]
       in m, p, r, d, g, d', g', tid, l |- *; intros Hd Hg; simpl;
-      first [by apply leaf_owned_depth_mono|by apply bi.sep_mono_l, leaf_owned_depth_mono|idtac].
+      first [by apply leaf_owned_depth_mono|by apply bi.sep_mono_l, leaf_owned_depth_mono|idtac];
+      [| | | | | |done].
     4: { apply sum_node_mono=> *. by apply IH. }
     4: { destruct r as [lr|]; [|done]. rewrite /res_leaf.
       iIntros "(%x & $ & $ & H)". iNext. iDestruct "H" as (d1 g1 ?) "H".
@@ -1135,13 +1164,20 @@ Section ltype_lemmas.
     iIntros (r' d' g' tid' l') "H". by iExists _.
   Qed.
 
+  Lemma moved_imp_unblockable κs {𝔄} (ty: type 𝔄) : ⊢ imp_unblockable κs (Moved ty).
+  Proof.
+    iIntros "!>" (k r d g tid l G ?) "_ $ _ H". iModIntro. iExists d, g.
+    destruct k as [m|κ ξi]; [done|by iApply ltype_own_uniq_core].
+  Qed.
+
   Lemma imp_unblockable_blocked_dead {𝔄} (lt: lty 𝔄) :
     ⊢ imp_unblockable (lty_blocked_lfts lt) lt.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt IH κ|𝔄 ty|𝔄 lt IH κ];
+    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt IH κ|𝔄 ty|𝔄 lt IH κ|𝔄 ty];
       rewrite /lty_blocked_lfts /=; [| | | | |iApply shr_blocked_imp_unblockable|
         iApply sum_ltype_imp_unblockable; iApply IH|iApply shr_lty_imp_unblockable|
-        iApply ofres_imp_unblockable|iApply res_uniq_imp_unblockable].
+        iApply ofres_imp_unblockable|iApply res_uniq_imp_unblockable|
+        iApply moved_imp_unblockable].
     - iApply ofty_imp_unblockable.
     - iApply blocked_imp_unblockable.
     - iApply uniq_ltype_imp_unblockable.
@@ -1750,7 +1786,7 @@ Section cpd.
     | SumLty _ _ lt => lty_simple lt
     | UniqLty lt _ => lty_simple lt
     (* Resolved places are not folded back (they are only in the owned part of a place). *)
-    | OfRes _ | ResUniqLty _ _ => False
+    | OfRes _ | ResUniqLty _ _ | Moved _ => False
     end.
 
   Lemma pat_ok_own κ p : pat_ok κ p -∗ pat_ok κ (pat_own p).
@@ -1889,8 +1925,9 @@ Section cpd.
         uniq_body (lty_fold lt) x ξi d' g' idx κ' tid l.
   Proof.
     iIntros (Hfold ?) "#LFT #PROPH #UNIQ #Gκ' #Gty #Ok #†κ G £ #⧖ C".
-    destruct lt as [𝔅 ty|𝔅 ty α|𝔅 lt κ''|𝔅 n lt|𝔅 ℭ lt1 lt2|𝔅 ty α|𝔅l tyl i lt|𝔅 lt κ''|𝔅 ty|𝔅 lt κ''];
-      [..|iDestruct "C" as "[C _]"|by iDestruct "C" as "[]"|by iDestruct "C" as "[]"];
+    destruct lt as [𝔅 ty|𝔅 ty α|𝔅 lt κ''|𝔅 n lt|𝔅 ℭ lt1 lt2|𝔅 ty α|𝔅l tyl i lt|𝔅 lt κ''|𝔅 ty|𝔅 lt κ''|𝔅 ty];
+      [..|iDestruct "C" as "[C _]"|by iDestruct "C" as "[]"|by iDestruct "C" as "[]"|
+        by iDestruct "C" as "[]"];
       try (destruct r as [lr|]; [|done];
         iMod (leaf_uniq_unblock with "LFT Gκ' Gty Ok †κ G ⧖ C")
           as "[$ (%d2 & %g2 & #⧖2 & %x & %idx & Rel & Body)]";
@@ -1948,7 +1985,7 @@ Section cpd.
   Lemma ltype_owned_bytes_unblock {𝔄} (lt: lty 𝔄) κ tid :
     lty_simple lt → owned_bytes_unblock lt κ tid.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'];
+    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty];
       intros Hs m p r d g l; try done; try (exfalso; exact Hs).
     8: { iIntros "#LFT #PROPH #UNIQ #Ok #†κ #⧖ [L _]"; destruct r as [lr|]; [|done];
       iMod (leaf_owned_s_bytes_unblock with "LFT Ok †κ ⧖ L") as (fv) "[B Upd]";
@@ -2091,7 +2128,7 @@ Section cpd.
     iIntros (Hc Hs) "#LFT #PROPH #UNIQ #Ok #⧖ N". iSplit.
     { iApply guarded_upd_intro. by iFrame. }
     destruct r as [lr|rs].
-    { by destruct lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ'|𝔄 n lt|𝔄 𝔅 lt1 lt2|𝔄 ty α|𝔄l tyl i lt|𝔄 lt κ'|𝔄 ty|𝔄 lt κ']. }
+    { by destruct lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ'|𝔄 n lt|𝔄 𝔅 lt1 lt2|𝔄 ty α|𝔄l tyl i lt|𝔄 lt κ'|𝔄 ty|𝔄 lt κ'|𝔄 ty]. }
     iExists inhabitant. rewrite /leaf_owned_b /leaf_owned_lz /=. iSplitL; [|done].
     iIntros "#†κ".
     iMod (ltype_owned_bytes_unblock lt κp tid Hs 0 with "LFT PROPH UNIQ Ok †κ ⧖ N")
@@ -2173,7 +2210,7 @@ Section cpd.
   Proof.
     iIntros (Hc Hs) "#LFT #PROPH #UNIQ #Ok #⧖ N".
     destruct r as [lr|rs].
-    { by destruct lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ'|𝔄 n lt|𝔄 𝔅 lt1 lt2|𝔄 ty α|𝔄l tyl i lt|𝔄 lt κ'|𝔄 ty|𝔄 lt κ']. }
+    { by destruct lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ'|𝔄 n lt|𝔄 𝔅 lt1 lt2|𝔄 ty α|𝔄l tyl i lt|𝔄 lt κ'|𝔄 ty|𝔄 lt κ'|𝔄 ty]. }
     iDestruct (cpd_contents_eager with "LFT PROPH UNIQ Ok ⧖ N") as "[_ C]"; [done..|].
     rewrite /leaf_node leaf_owned_bg. iDestruct "C" as (fv) "[B _]". iExists fv. by iFrame "B".
   Qed.

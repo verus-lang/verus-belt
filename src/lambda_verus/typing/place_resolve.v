@@ -19,7 +19,8 @@
 
   [resolve_tctx_cons_oplace] resolves (and leaks) [p ◁ₗown{n} lt] in a context (e.g. at a
   jump), with a resolution condition per unblocked leaf ([lty_resolve], from [resolve] of
-  the leaf's type; moved-out leaves [OfTy (↯ n)] need nothing); blocked and shared-blocked
+  the leaf's type; moved-out leaves [Moved ty] and uninitialized leaves [OfTy (↯ n)] need
+  nothing); blocked and shared-blocked
   leaves are forgotten (their lender keeps the borrow, and gets the contents back at the
   end of the lifetime). [type_drop_oplace_instr] frees the memory of the place and,
   recursively, the pointees of its unfolded owned pointers ([OwnPtrLty], [drop_boxes]),
@@ -27,7 +28,9 @@
   blocked or shared ([lty_freeb]): the memory of such a leaf is lent, so it must not be
   freed (a pointee with a blocked leaf is leaked instead, [own_freeb]). Owned pointers in
   unblocked leaves ([OfTy (own_bytes …)]) are resolved by their type and their pointees
-  leaked, as by [type_delete_instr].
+  leaked, as by [type_delete_instr]. [type_uninit_oplace_instr] is the same, but keeps the
+  memory of the place, as an uninitialized place [OfTy (↯ n)] (e.g. a box whose fields have
+  all been moved out, to be re-used).
 
   ** Places below shared references
 
@@ -172,7 +175,7 @@ Section lty_mem.
       leaf is blocked or shared. *)
   Fixpoint lty_freeb {𝔄} (lt: lty 𝔄) : bool :=
     match lt with
-    | OfTy _ | OwnPtrLty _ _ | UniqLty _ _ | ShrLty _ _ | OfRes _ | ResUniqLty _ _ => true
+    | OfTy _ | OwnPtrLty _ _ | UniqLty _ _ | ShrLty _ _ | OfRes _ | ResUniqLty _ _ | Moved _ => true
     | ProdLty lt1 lt2 => lty_freeb lt1 && lty_freeb lt2
     | SumLty _ _ lt => lty_freeb lt
     | Blocked _ _ | ShrBlocked _ _ => false
@@ -207,7 +210,8 @@ Section lty_mem.
       laters, as in [own_node]. *)
   Fixpoint lty_omem_gen (M: loc → nat → iProp Σ) {𝔄} (m: nat) (lt: lty 𝔄) : loc → iProp Σ :=
     match lt in lty 𝔄 return loc → iProp Σ with
-    | OfTy _ | OfRes _ | UniqLty _ _ | ShrLty _ _ | ResUniqLty _ _ => λ l, M l (lty_size lt)
+    | OfTy _ | OfRes _ | UniqLty _ _ | ShrLty _ _ | ResUniqLty _ _ | Moved _ =>
+        λ l, M l (lty_size lt)
     | OwnPtrLty n lt' => λ l, ∃ l': loc, ptr_cell l l' ∗
         if own_freeb n lt' then
           ▷^m freeable_sz n (lty_size lt') l' ∗
@@ -252,14 +256,17 @@ Section lty_mem.
     ltype_own (Owned m) lt r d g tid l ⊢ lty_omem m lt l.
   Proof.
     induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'] in m, r, d, g, l |- *; rewrite /ltype_own /=;
+      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty] in m, r, d, g, l |- *; rewrite /ltype_own /=;
       [..|rewrite /leaf_owned_s /leaf_owned;
         destruct r as [lr|]; [|by iIntros "[[] _]"]; iIntros "[(%x & _ & Pt & _) _]";
         rewrite cbytes_at_loc; by iApply ptr_cell_mem_cell
        |rewrite /res_leaf; destruct r as [lr|]; [|by iIntros "[]"];
         iIntros "(%x & _ & Pt & _)"; by iApply cbytes_mem_cell
        |rewrite /res_node; destruct r as [|[[l' r'] ξi]]; [by iIntros "[]"|];
-        iIntros "[Pt _]"; by iApply ptr_cell_mem_cell]; try by iIntros.
+        iIntros "[Pt _]"; by iApply ptr_cell_mem_cell
+       |rewrite /moved_leaf; destruct r as [lr|]; [|by iIntros "[]"];
+        iIntros "Pt"; iApply pad_cell_mem_cell; by rewrite /lty_size -(ty_bsize_eq ty)];
+      try by iIntros.
     - rewrite /leaf_owned_s /leaf_owned.
       destruct r as [lr|]; [|by iIntros "[]"]. iIntros "(%x & _ & Pt & _)".
       by iApply cbytes_mem_cell.
@@ -389,7 +396,7 @@ Section drop_boxes.
   Global Instance drop_boxes_closed {𝔄} (lt: lty 𝔄) e :
     Closed [] e → Closed [] (drop_boxes lt e).
   Proof.
-    induction lt as [| | | 𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | |] in e |- *;
+    induction lt as [| | | 𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | | |] in e |- *;
       intros ?; simpl; try done.
     - destruct (own_freeb n lt); [|done].
       have ?: Closed [] (drop_boxes lt (Load Na1Ord MPtr e)%E).
@@ -441,7 +448,7 @@ Section drop_boxes.
   Lemma lty_omem_forget Reg {𝔄} m (lt: lty 𝔄) l :
     greg_open Reg -∗ lty_omem m lt l ={lazyE}=∗ greg_open Reg ∗ lty_omemb m lt l.
   Proof.
-    induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ']
+    induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty]
       in m, l |- *; iIntros "O M"; simpl; try (iModIntro; by iFrame).
     all: try by iApply (mem_cell_forget with "O M").
     - iDestruct "M" as (l') "[Pt M]". destruct (own_freeb n lt); [|iModIntro; iFrame; by iExists l'].
@@ -472,9 +479,10 @@ Section drop_boxes.
     (R -∗ mem_bytes l (lty_size lt) -∗ Φ #☠) -∗
     WP drop_boxes lt e @ E {{ Φ }}.
   Proof.
-    intros ?. induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ']
+    intros ?. induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty]
       in m, k, l, e, R, Φ |- *; intros Hf ? Hm Hev; simpl in Hf; try done; cbn [drop_boxes];
       iIntros "R M HΦ".
+    6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
     6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
     6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
     6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
@@ -618,6 +626,54 @@ Section oplace.
     iApply (wp_delete_bytes bs with "[Pt Fr]"); [solve_ndisj|by rewrite Hl|..].
     { iFrame "Pt". rewrite Hl. iDestruct "Fr" as "[$|%]"; by iRight. }
     iIntros "!> _". iExists -[]. iFrame "L I". iSplit; [done|].
+    iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?]. by apply Imp.
+  Qed.
+
+  (** Giving up the contents of an owned place, which becomes uninitialized: as
+      [type_drop_oplace_instr] (the unblocked leaves are resolved, e.g. moved-out leaves
+      [Moved ty] and uninitialized leaves [OfTy (↯ n)] with nothing, [lty_resolve_just];
+      the pointees of the unfolded owned pointers are freed), but the memory of the place
+      itself is kept, as the bytes of [↯ n] (the tags of the sums of the place are
+      forgotten). E.g. a box all of whose fields have been moved out becomes a box of
+      [↯ n] again, which can be re-used or freed ([type_drop_oplace_instr]). *)
+  Lemma type_uninit_oplace_instr {𝔄} E L I p n (lt: lty 𝔄) Φ :
+    lty_freeb lt = true → n = lty_size lt → lty_resolve E L lt Φ →
+    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt p;; Skip)%E
+      (λ _, +[p ◁ₗown{n} OfTy (↯ n)])
+      (λ post '-[x], λ mask π, Φ x.1.2 π → post -[((x.1.1, ()), [])] mask π).
+  Proof.
+    iIntros (Hf -> Rslv tid post mask iκs [x []])
+      "#LFT #TIME #PROPH #UNIQ #E L I [(%v & %Hp & Own) _] Obs".
+    destruct x as [[l x₀] ζm].
+    iDestruct "Own" as (D d g) "(#⧖ & _ & -> & %Hle & Fr & Own)".
+    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|]. iIntros "£ _".
+    iDestruct (lc_weaken (1 + (advance_credits D - 1)) with "£") as "[£1 £]";
+      [rewrite /advance_credits; lia|].
+    iMod (Rslv _ (⊤∖↑advN) with "LFT PROPH UNIQ TIME E Ghalf H1 Own") as "[M Upd]";
+      [solve_ndisj|].
+    iMod (lc_step_fupdN_elim_later with "[£] Upd") as "Upd".
+    { iApply (lc_weaken with "£"). rewrite /advance_credits. nia. }
+    iDestruct (invctx_interp_gcells with "I") as "[#GC I]".
+    iMod (lty_omem_forget_gc with "GC £1 M") as "M"; [solve_ndisj|].
+    iMod "Upd" as "[Obs' H1]".
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    have ?: Closed [] p by eapply eval_path_closed.
+    wp_bind (drop_boxes lt p).
+    have Hev: ⊢ ∀ Ψ (P: iProp Σ), True -∗ ▷^0 P -∗ (True -∗ P -∗ Ψ #l) -∗
+      WP p @ ⊤∖↑advN {{ Ψ }}.
+    { iIntros (Ψ P) "_ P HΨ". wp_bind p. iApply wp_wand; [by iApply wp_eval_path|].
+      iIntros (?) "->". by iApply ("HΨ" with "[//] P"). }
+    iApply (wp_drop_boxes lt 1 0 l p True%I (⊤∖↑advN) _ ltac:(solve_ndisj) Hf _
+      ltac:(lia) Hev with "[//] M").
+    iIntros "_ (%bs & Pt & %Hl)". iMod cumulative_time_receipt_0 as "⧗". wp_seq. wp_seq.
+    iExists -[((l, ()), [])]. iFrame "L I". iSplitR "Obs Obs'".
+    { iSplit; [|done]. iExists _. iSplit; [done|]. iExists D, d, g. iFrame "⧖ ⧗".
+      iSplit; [done|]. iSplit; [done|]. iFrame "Fr".
+      rewrite /ltype_own /= /ofty_owned. iExists (). iSplit; [done|]. iSplitL; [|done].
+      iApply (bytes_own_of_bytes with "Pt"). exists (VTuple []). split; [done|].
+      rewrite decode_value_tuple decide_True //. }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?]. by apply Imp.
   Qed.
 End oplace.

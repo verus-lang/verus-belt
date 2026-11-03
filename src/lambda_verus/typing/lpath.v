@@ -116,6 +116,8 @@ Section lty_rfn.
     | OfRes _ => λ x _ _, inl (PlaceIn x)
     | ResUniqLty lt _ => λ x ζm q,
         inr (uniq_bor_loc x, lty_rfn lt (uniq_bor_current x) ζm (false :: q), uniq_bor_ξi x)
+    (* A moved-out leaf keeps its (irrelevant) value. *)
+    | Moved _ => λ x _ _, inl (PlaceIn x)
     end.
 
   Lemma lty_rfn_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) x ζm q :
@@ -131,8 +133,8 @@ Section lty_rfn.
     (∀ r, blk_lookup ζm (r ++ q) = blk_lookup ζm' (r ++ q)) →
     lty_rfn lt x ζm q = lty_rfn lt x ζm' q.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | |𝔄 lt IH κ]
-      in x, q |- *; intros Heq; simpl; [done| | | | |done| |done|done|].
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | |𝔄 lt IH κ|]
+      in x, q |- *; intros Heq; simpl; [done| | | | |done| |done|done| |done].
     6: { rewrite (IH _ (false :: q)); [done|].
       intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
       by rewrite -app_assoc. }
@@ -209,7 +211,7 @@ Section lty_rfn.
   Lemma lty_blk_all_dep {𝔄} (lt: lty 𝔄) x ζm q ζl :
     lty_blk_all lt → prfn_rsv (lty_rfn lt x ζm q) ζl → prfn_den (lty_rfn lt x ζm q) ./ ζl.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | |] in x, q |- *;
+    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | | |] in x, q |- *;
       intros Hb Hr; try done.
     5: { revert Hr. rewrite lty_rfn_sum. destruct (psum_proj i x) as [y|];
         [|intros; apply prfn_dummy_dep].
@@ -1156,8 +1158,9 @@ Section pctx.
       [pctx_retype K 𝔅'] is the context [K] with a hole of type [𝔅'] (the same
       siblings and owned pointers), a context for the root type [pctx_root K 𝔅'].
       [pctx_reset K x y] replaces the value of the hole of [x] by [y] (of the new
-      type). Used when the type of a subplace changes, e.g. when a value is moved out
-      of it (it becomes uninitialized) or written into it. *)
+      type). Used when the type of a subplace changes, by a strong write ([pctx_wty]
+      of [place_write.v]; a move leaves the moved-out leaf [Moved ty] instead, without
+      retyping). *)
   Fixpoint pctx_root {𝔅 𝔄} (K: pctx 𝔅 𝔄) (𝔅': syn_type) : syn_type :=
     match K with
     | PHole => 𝔅'
