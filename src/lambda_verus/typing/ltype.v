@@ -120,8 +120,8 @@
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
-From lrust.typing Require Export type.
-From lrust.typing Require Import uniq_util uniq_bor own shr_bor bytes_layout product struct freeable_util sum gmb_cells.
+From lrust.typing Require Export type struct.
+From lrust.typing Require Import uniq_util uniq_bor own shr_bor bytes_layout product freeable_util sum gmb_cells.
 From lrust.lifetime Require Import lifetime_full guarded_bor.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".

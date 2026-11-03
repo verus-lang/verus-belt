@@ -729,7 +729,7 @@ Section read_acc.
     intros Hl ? HE Hp.
     have ?: ↑NllftG ⊆ E. { trans lazyE; [apply lazyE_NllftG|done]. }
     rename select (PctxVRoot K) into HR. rename select (PctxRead K) into HK.
-    destruct K as [| | |? ? n K| |? ? κ K|? ? κ K|? ? κ K]; try done;
+    destruct K as [| |? ? n K| |? ? κ K|? ? κ K|? ? κ K]; try done;
       rewrite /PctxRead /= in HK.
     - destruct (pctx_read_split K HK) as [HK'|[(𝔅' & κ & K1 & K2 & -> & HK1)|
         (𝔅' & κ & K1 & K2 & -> & HK1 & HKu & HK2)]].

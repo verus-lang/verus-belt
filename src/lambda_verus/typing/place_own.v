@@ -91,29 +91,27 @@ Section typing.
     rewrite /ltype_own !lty_pat_plug !lty_rfn_plug !ltype_own_plug Hsz. iFrame.
   Qed.
 
-  (** ** Products *)
+  (** ** Structs *)
 
-  Lemma tctx_unfold_oplace_prod {𝔅1 𝔅2 𝔄} E L p n (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoUniq K}
-      (ty1: type 𝔅1) (ty2: type 𝔅2) :
-    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (OfTy (ty1 * ty2))]
-      +[p ◁ₗown{n} pctx_plug K (ProdLty (OfTy ty1) (OfTy ty2))] (λ post '-[x], post -[x]).
+  Lemma tctx_unfold_oplace_struct {𝔅l 𝔄} E L p n Lay (K: pctx (structₛ Lay 𝔅l) 𝔄)
+      `{!PctxNoUniq K} (tyl: typel 𝔅l) :
+    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (OfTy (struct_ty Lay tyl))]
+      +[p ◁ₗown{n} pctx_plug K (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl))]
+      (λ post '-[x], post -[x]).
   Proof.
-    apply (tctx_oplace_change_hole _ _ _ _ K); [done|done|].
-    iIntros ([y1 y2] ??????) "H !>". by iApply prod_ofty_unfold_own.
+    apply (tctx_oplace_change_hole _ _ _ _ K); [done|by rewrite lty_nrc_struct_ofty|].
+    iIntros (y ??????) "H !>". rewrite lty_rfn_struct_ofty. by iApply struct_ofty_unfold_own.
   Qed.
 
-  Lemma tctx_fold_oplace_prod {𝔅1 𝔅2 𝔄} E L p n (K: pctx (𝔅1 * 𝔅2) 𝔄) `{!PctxNoUniq K}
-      (ty1: type 𝔅1) (ty2: type 𝔅2) :
-    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (ProdLty (OfTy ty1) (OfTy ty2))]
-      +[p ◁ₗown{n} pctx_plug K (OfTy (ty1 * ty2))] (λ post '-[x], post -[x]).
+  Lemma tctx_fold_oplace_struct {𝔅l 𝔄} E L p n Lay (K: pctx (structₛ Lay 𝔅l) 𝔄)
+      `{!PctxNoUniq K} (tyl: typel 𝔅l) :
+    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl))]
+      +[p ◁ₗown{n} pctx_plug K (OfTy (struct_ty Lay tyl))] (λ post '-[x], post -[x]).
   Proof.
-    apply (tctx_oplace_change_hole _ _ _ _ K); [done|done|].
-    iIntros ([y1 y2] ??????) "H !>". by iApply (prod_ofty_unfold_own with "H").
+    apply (tctx_oplace_change_hole _ _ _ _ K); [done|by rewrite lty_nrc_struct_ofty|].
+    iIntros (y ??????) "H !>". rewrite lty_rfn_struct_ofty.
+    by iApply (struct_ofty_unfold_own with "H").
   Qed.
-
-  (* N-ary products ([tctx_unfold_oplace_xprod], [tctx_fold_oplace_xprod]) are in
-     [typing/place_xprod.v]: the layout of [Π! (𝔅 :: 𝔅l)] and of [𝔅 * Π! 𝔅l] differ as
-     MiniRust types (they have the same bytes, [syn_iso_bytes]). *)
 
   (** ** Owned pointers
 
@@ -276,7 +274,7 @@ Section typing.
     WP pctx_vexpr K p @ E {{ Φ }}.
   Proof.
     rename select (PctxVRoot K) into HR. rename select (PctxNoUniq K) into HK.
-    destruct K as [| | |? 𝔄' n K| | | |]; try done; rewrite /PctxNoUniq /= in HK.
+    destruct K as [| |? 𝔄' n K| | | |]; try done; rewrite /PctxNoUniq /= in HK.
     have ?: PctxNoUniq K by done.
     iIntros (Hp) "£ #⧖ ⧗p Own HΦ".
     destruct x₀ as [l x₀]. rewrite /=.

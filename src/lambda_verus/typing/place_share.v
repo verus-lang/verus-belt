@@ -102,7 +102,7 @@ Section pctx_share.
   Lemma pctx_sleaf_app {ℭ 𝔅 𝔄} E L (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) α lt ty lt' :
     pctx_noshr K1 → pctx_sleaf E L (pctx_app K1 K2) α lt ty lt' → pctx_sleaf E L K2 α lt ty lt'.
   Proof.
-    induction K1 as [| | | | |? ? κ K1 IHK1| |] in K2 |- *; simpl;
+    induction K1 as [| | | |? ? κ K1 IHK1| |] in K2 |- *; simpl;
       [done|auto|auto|auto|auto| |done|done].
     intros [_ HK] H. destruct (pctx_sleaf_uniq E L κ _ _ _ _ _ H) as [H' _]. by apply IHK1.
   Qed.
@@ -685,7 +685,7 @@ Section share_rule.
         by apply lctx_lft_alive_intersect.
       - by apply (type_share_vplace_noshr_shrblk _ _ _ _ K ty β α). }
     rename select (PctxVRoot K) into HR. rename select (PctxRead K) into HK.
-    destruct K as [| | |? ? n K| |? ? κ K|? ? κ K|? ? κ K]; try done;
+    destruct K as [| |? ? n K| |? ? κ K|? ? κ K|? ? κ K]; try done;
       rewrite /PctxRead /= in HK.
     - destruct (pctx_read_split K HK) as [HK'|[(𝔅' & κ & K1 & K2 & -> & HK1)|
         (𝔅' & κ & K1 & K2 & -> & HK1 & HKu & HK2)]].

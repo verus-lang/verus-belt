@@ -169,6 +169,18 @@ Section lty_rfn.
     lty_rfn (StructLty L lts) x ζm q = inr (fields_rfn ζm q lts 0 x).
   Proof. done. Qed.
 
+  Lemma fields_rfn_ofty {𝔄l} (tyl: typel 𝔄l) ζm q j y :
+    fields_rfn ζm q (hmap (λ _ ty, OfTy ty) tyl) j y =
+      pmap (G:=λ 𝔅, prfn 𝔅) (λ _ x, inl (PlaceIn x)) y.
+  Proof.
+    induction tyl as [|𝔄 𝔄l ty tyl IH] in j, y |- *; [by destruct y|].
+    destruct y as [x y]. by rewrite /= IH.
+  Qed.
+
+  Lemma lty_rfn_struct_ofty {𝔄l} Lay (tyl: typel 𝔄l) y ζm q :
+    lty_rfn (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl)) y ζm q = prfn_fields_in Lay y.
+  Proof. by rewrite lty_rfn_struct fields_rfn_ofty. Qed.
+
   Lemma fields_rfn_app {𝔄lb 𝔄la} (lb: hlist lty 𝔄lb) (la: hlist lty 𝔄la) ζm q j x :
     fields_rfn ζm q (lb h++ la) j x =
       papp (fields_rfn ζm q lb j (psepl x)) (fields_rfn ζm q la (j + length 𝔄lb) (psepr x)).
@@ -256,6 +268,17 @@ Section lty_rfn.
     | StructLty _ lts => hsum (λ _ lt, lty_nrc lt e mm) lts
     | _ => 0
     end.
+
+  Lemma lty_nblk_struct_ofty {𝔄l} Lay (tyl: typel 𝔄l) :
+    lty_nblk (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl)) = 0.
+  Proof. simpl. induction tyl as [|𝔄 𝔄l ty tyl IH]; [done|]. by rewrite /= IH. Qed.
+
+  Lemma lty_nrc_struct_ofty {𝔄l} Lay (tyl: typel 𝔄l) :
+    lty_nrc (StructLty Lay (hmap (λ _ ty, OfTy ty) tyl)) = lty_nrc (OfTy (struct_ty Lay tyl)).
+  Proof.
+    fun_ext=> e. fun_ext=> mm. simpl. induction tyl as [|𝔄 𝔄l ty tyl IH]; [done|].
+    by rewrite /= IH.
+  Qed.
 
   (** All leaves are blocked. *)
   Fixpoint lty_blk_all {𝔄} (lt: lty 𝔄) : Prop :=

@@ -583,7 +583,7 @@ Section puniq.
     pctx_hmode K 0 + pctx_vne K ≤ pctx_dlev K.
   Proof.
     rename select (PctxVRoot K) into HR. rename select (PctxNoShr K) into HK.
-    destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K| |]; try done.
+    destruct K as [| |𝔅 𝔄' n K| |𝔅 𝔄' κ K| |]; try done.
     - have ?: PctxNoShr K by exact HK.
       pose proof (pctx_hmode_ne K 1 0 0). simpl in *. destruct (pctx_ulfts K); lia.
     - have ?: PctxNoShr K by exact (proj2 HK).
@@ -594,7 +594,7 @@ Section puniq.
     pctx_dlev K ≤ pctx_hmode K 0 + pctx_vne K + 1.
   Proof.
     rename select (PctxVRoot K) into HR. rename select (PctxNoShr K) into HK.
-    destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K| |]; try done.
+    destruct K as [| |𝔅 𝔄' n K| |𝔅 𝔄' κ K| |]; try done.
     - have ?: PctxNoShr K by exact HK.
       pose proof (pctx_hmode_ne K 1 0 0). simpl in *. destruct (pctx_ulfts K); lia.
     - have ?: PctxNoShr K by exact (proj2 HK).
@@ -734,7 +734,7 @@ Section puniq.
   Lemma pctx_vne_ulfts {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} : pctx_vne K = 0 → pctx_ulfts K = [].
   Proof.
     rename select (PctxVRoot K) into HR.
-    destruct K as [| | |𝔅 𝔄' n K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K|𝔅 𝔄' κ K]; try done.
+    destruct K as [| |𝔅 𝔄' n K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K|𝔅 𝔄' κ K]; try done.
     - simpl. apply pctx_ne_ulfts.
     - simpl. have := pctx_ne_ge K 1 0. lia.
     - simpl. apply pctx_ne_ulfts.
