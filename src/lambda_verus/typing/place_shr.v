@@ -157,7 +157,7 @@ Section shr_bytes_fields.
   Proof.
     iIntros (tid post mask iκs [[l [x1 x2]] []]) "_ _ _ _ _ $ $ [p _] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
-    simpl in Hw. simplify_eq. wp_value_head.
+    simpl in Hw. simplify_eq.
     iExists -[(l, x1)]. iFrame "Obs". iSplit; [|done].
     rewrite tctx_val_val. iExists d. iFrame "⧖". iSplit; [done|].
     destruct d as [|d]; [done|]. rewrite /= /by_succ.

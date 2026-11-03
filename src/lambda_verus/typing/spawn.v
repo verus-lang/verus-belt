@@ -206,7 +206,7 @@ Section spawn.
 
       iModIntro. wp_bind (lib.spawn.spawn _ _).
       iApply (spawn_spec spawnN (syn_mty 𝔅) _ (join_future retty (Φ c')) with "[- L I1 I2 cna_lifetimes]"); [solve_ndisj|..]; last first.
-      { iIntros "!> %c0 join". wp_pure _. iExists -[(c0, c')]. iFrame "GC L I1 I2 cna_lifetimes fnincl".
+      { iIntros "!> %c0 join". iExists -[(c0, c')]. iFrame "GC L I1 I2 cna_lifetimes fnincl".
         iSplit; last first.
         { iApply (proph_obs_impl with "Obs"). move => π Hpost.
           assert (syn_abstract a = syn_abstract a) as Heq by trivial.

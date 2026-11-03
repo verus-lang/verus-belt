@@ -66,13 +66,12 @@ Section type_context.
     | e => to_val e end.
 
   Lemma eval_path_of_val (v: val) : eval_path v = Some v.
-  Proof. case v; [done| |done]. move=>/= *. by rewrite (decide_True_pi _). Qed.
+  Proof. case v; [|done]. move=>/= *. by rewrite (decide_True_pi _). Qed.
 
   Lemma wp_eval_path E p v :
     eval_path p = Some v → ⊢ WP p @ E {{ v', ⌜v' = v⌝ }}.
   Proof.
     move: v. elim: p=>//.
-    - move=> > [= ?]. by iApply wp_value.
     - move=> > ?? /of_to_val ?. by iApply wp_value.
     - case=>// e Wp. case=>//. case=>//= ?. move: Wp.
       case (eval_path e)=>//. case=>//. case=>// ? Wp _ ?[=<-].

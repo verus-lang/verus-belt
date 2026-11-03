@@ -108,13 +108,13 @@ Section typing.
     { iApply (wp_pctx_expr K (lty_size (OfTy (Σ! tyl))) 1 x₀ ζm [] d g tid lr (p) True True
         with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-        by wp_pure _. }
+        iFrame; by iPureIntro. }
     iIntros (w) "(-> & _ & _ & Rest)".
     (* Read the discriminant: a typed [Load] of the tag. *)
     iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Tag & Pay & Pad)".
     iDestruct "Tag" as (bt) "[Bt %Hbt]".
     wp_bind (Load _ _ _).
-    iApply (wp_load_na with "Bt"); [exact Hbt|]. iIntros "!> Bt". wp_pure _.
+    iApply (wp_load_na with "Bt"); [exact Hbt|]. iIntros "!> Bt".
     wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
     iDestruct (big_sepN_lookup _ _ j with "el") as "el".
     iApply ("el" $! _ (((l, x₀), ζm) -:: xl)

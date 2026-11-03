@@ -136,7 +136,7 @@ Section write_acc.
     { iApply (wp_pctx_expr_mask E K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid l (p)
         True True with "[] Rest").
       wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-      by wp_pure _. }
+      iFrame; by iPureIntro. }
     iIntros (w) "(-> & _ & _ & Rest)".
     iApply ("HΦ" with "[%] Pt1 Gho1").
     { rewrite /= pctx_depth_sub. lia. }

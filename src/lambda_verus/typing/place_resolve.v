@@ -609,11 +609,11 @@ Section oplace.
     have Hev: ⊢ ∀ Ψ (P: iProp Σ), True -∗ ▷^0 P -∗ (True -∗ P -∗ Ψ #l) -∗
       WP p @ ⊤∖↑advN {{ Ψ }}.
     { iIntros (Ψ P) "_ P HΨ". wp_bind p. iApply wp_wand; [by iApply wp_eval_path|].
-      iIntros (?) "->". wp_pure _. by iApply ("HΨ" with "[//] P"). }
+      iIntros (?) "->". by iApply ("HΨ" with "[//] P"). }
     iApply (wp_drop_boxes lt 1 0 l (p) True%I (⊤∖↑advN) _ ltac:(solve_ndisj) Hf _
       ltac:(lia) Hev with "[//] M").
     iIntros "_ (%bs & Pt & %Hl)". wp_seq.
-    wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". wp_pure _.
+    wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
     iEval (rewrite freeable_sz_full) in "Fr".
     iApply (wp_delete_bytes bs with "[Pt Fr]"); [solve_ndisj|by rewrite Hl|..].
     { iFrame "Pt". rewrite Hl. iDestruct "Fr" as "[$|%]"; by iRight. }

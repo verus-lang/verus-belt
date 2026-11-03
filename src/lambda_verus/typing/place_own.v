@@ -299,7 +299,7 @@ Section typing.
     { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr (p) True True
         with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-        by wp_pure _. }
+        iFrame; by iPureIntro. }
     iIntros (w) "(-> & _ & _ & Rest)".
     iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
     iIntros "£ #⧖S". iApply wp_fupd.

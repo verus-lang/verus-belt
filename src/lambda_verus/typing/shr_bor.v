@@ -140,7 +140,7 @@ Section shr_bytes_rules.
     intros Hcopy0. assert (NoCell 𝔄) by exact (copy_nocell ty). revert Hcopy0.
     iIntros (? Alv tid post mask iκs [[l x] []]) "#LFT #TIME _ _ #E L $ [p _] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
-    simpl in Hw. simplify_eq.
+    simpl in Hw. simplify_eq. cbn [of_val].
     destruct d as [|d]; [done|]. rewrite /= /by_succ.
     iDestruct "Own" as "(#Pt & #Shr & #Pers)".
     iDestruct (copy_shr with "Shr") as "#GOwn".

@@ -434,7 +434,7 @@ Section value_rules.
     intros Hcopy0. assert (NoCell 𝔄) by exact (copy_nocell ty). revert Hcopy0.
     iIntros (? tid post mask iκs [[l x] []]) "_ #TIME _ _ _ $ $ [p _] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ Own".
-    simpl in Hw. simplify_eq.
+    simpl in Hw. simplify_eq. cbn [of_val].
     destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & Gho)".
     iDestruct (bytes_own_nocell_bytes with "Bytes") as (bs) "[Hbs %Hbs]".
     destruct (ty_bytes_val _ _ _ Hbs) as [v Hv].

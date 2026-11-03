@@ -83,10 +83,12 @@ Ltac wp_bind_core K :=
 Tactic Notation "wp_bind" open_constr(efoc) :=
   iStartProof;
   lazymatch goal with
-  | |- envs_entails _ (wp ?s ?E ?e ?Q) => reshape_expr e ltac:(fun K e' =>
-    match e' with
-    | efoc => unify e' efoc; wp_bind_core K
-    end) || fail "wp_bind: cannot find" efoc "in" e
+  | |- envs_entails _ (wp ?s ?E ?e ?Q) => first
+    [ reshape_expr e ltac:(fun K e' =>
+        match e' with
+        | efoc => unify e' efoc; wp_bind_core K
+        end)
+    | fail "wp_bind: cannot find" efoc "in" e ]
   | _ => fail "wp_bind: not a 'wp'"
   end.
 

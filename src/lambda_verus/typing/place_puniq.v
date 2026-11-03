@@ -654,7 +654,7 @@ Section puniq.
     iApply (wp_wand with "[P G']").
     { iApply (wp_pctx_vptrs ⊤ K (lty_size (OfTy ty)) G' x₀ p True%I with "[G'] P").
       iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
-    iIntros (w) "(-> & _ & G' & P)". wp_pure _.
+    iIntros (w) "(-> & _ & G' & P)".
     (* The new borrow. *)
     iDestruct (lc_weaken mh with "£k") as "£k"; [lia|].
     iMod (lc_fupd_elim_laterN with "£k Gho1") as "Gho1".
@@ -976,7 +976,7 @@ Section puniq.
     iApply (wp_wand with "[P G']").
     { iApply (wp_pctx_vptrs ⊤ K (lty_size (OfTy ty)) G' x₀ p True%I with "[G'] P").
       iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
-    iIntros (w) "(-> & _ & G' & P)". wp_pure _.
+    iIntros (w) "(-> & _ & G' & P)".
     (* The reborrow, and the token of its prophecy variable. *)
     have Hhn: pctx_hmode K 0 + pctx_vne K ≤ pctx_dlev K by apply pctx_vhmode_ne_le.
     iDestruct (cumulative_time_receipt_mono (1 + S (pctx_vne K)) with "⧗") as "⧗"; [lia|].
@@ -1410,11 +1410,11 @@ Section oplace_rslv.
     have Hev: ⊢ ∀ Ψ (P: iProp Σ), True -∗ ▷^0 P -∗ (True -∗ P -∗ Ψ #l) -∗
       WP p @ ⊤∖↑advN {{ Ψ }}.
     { iIntros (Ψ P) "_ P HΨ". wp_bind p. iApply wp_wand; [by iApply wp_eval_path|].
-      iIntros (?) "->". wp_pure _. by iApply ("HΨ" with "[//] P"). }
+      iIntros (?) "->". by iApply ("HΨ" with "[//] P"). }
     iApply (wp_drop_boxes lt 1 0 l (p) True%I (⊤∖↑advN) _ ltac:(solve_ndisj) Hf _
       ltac:(lia) Hev with "[//] M").
     iIntros "_ (%bs & Pt & %Hl)". wp_seq.
-    wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". wp_pure _.
+    wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
     iEval (rewrite freeable_sz_full) in "Fr".
     iApply (wp_delete_bytes bs with "[Pt Fr]"); [solve_ndisj|by rewrite Hl|..].
     { iFrame "Pt". rewrite Hl. iDestruct "Fr" as "[$|%]"; by iRight. }

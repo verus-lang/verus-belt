@@ -43,16 +43,6 @@ Implicit Type 𝔄 𝔅: syn_type.
 Section memcpy.
   Context `{!typeG Σ}.
 
-  (** The address of the hole of a context whose first step is the root pointer is not a
-      value: its first program step gives credits and time receipts. *)
-  Lemma pctx_expr_to_val {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : to_val e = None → to_val (pctx_expr K e) = None.
-  Proof. induction K in e |- *; simpl; [done|auto|intros; by apply IHK..]. Qed.
-
-  Lemma pctx_vexpr_to_val {𝔅 𝔄} (K: pctx 𝔅 𝔄) `{!PctxVRoot K} e : to_val (pctx_vexpr K e) = None.
-  Proof.
-    rename select (PctxVRoot K) into HR. destruct K; try done; by apply pctx_expr_to_val.
-  Qed.
-
   (** Copying the bytes of a readable [Copy] leaf into a writable leaf. *)
   Lemma type_memcpy_copy_place_instr {𝔅d 𝔄d 𝔅 𝔄 𝔄d'} E L I pd ps (Kd: pctx 𝔅d 𝔄d)
       `{!PctxNoShr Kd} `{!PctxVRoot Kd} (tyd: type 𝔅d) (Kd': pctx 𝔅 𝔄d') fd Φ
@@ -89,8 +79,7 @@ Section memcpy.
     have HM: Dd ≤ M ∧ Ds ≤ M by rewrite /M; lia.
     (* The first step of the address of the destination: credits and cumulative time
        receipts. *)
-    wp_bind (pctx_vexpr Kd pd).
-    have ?: TCEq (to_val (pctx_vexpr Kd pd)) None by rewrite pctx_vexpr_to_val; constructor.
+    wp_bind (place_addr (pctx_vexpr Kd pd)).
     iApply (wp_cumulative_time_receipt_linear with "TIME ⧖m"); [solve_ndisj|].
     iIntros "⧗".
     iDestruct (cumulative_time_receipt_sep 1 (S M) with "⧗") as "[⧗c ⧗k]".
@@ -99,9 +88,10 @@ Section memcpy.
     iDestruct (lc_weaken ((3 * Dd + 5) + (1 + (1 + Dd * (Dd + 1))) + 1) with "£")
       as "[[£a [£r £s]] £f]"; [rewrite /advance_credits; nia|].
     iDestruct (invctx_interp_gcells with "I") as "[#GC I]".
+    wp_bind (pctx_vexpr Kd pd).
     iApply (wp_vplace_wacc _ Kd tyd ty Kd' fd with "LFT PROPH UNIQ GAd A £a ⧖d ⧗d Ownd");
       [done|solve_ndisj|done|].
-    iIntros (ld dh gh [Hdh Hgh]) "Ptd Ghod Cld".
+    iIntros (ld dh gh [Hdh Hgh]) "Ptd Ghod Cld". wp_pure _.
     (* Resolve the old value of the destination. *)
     iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN ∖ ↑gmbN))
       with "LFT PROPH UNIQ TIME E Ghalf H2 Ghod") as "ToObs"; [set_solver|].
@@ -112,14 +102,14 @@ Section memcpy.
     iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
     (* The first step of the address of the source: credits for its access. *)
-    wp_bind (pctx_vexpr Ks ps).
-    have ?: TCEq (to_val (pctx_vexpr Ks ps)) None by rewrite pctx_vexpr_to_val; constructor.
+    wp_bind (place_addr (pctx_vexpr Ks ps)).
     iApply (wp_persistent_time_receipt with "TIME ⧖s"); [solve_ndisj|].
-    iIntros "£s _".
+    iIntros "£s _". wp_bind (pctx_vexpr Ks ps).
     iApply (wp_vplace_racc _ Ks lt ty κs with "LFT PROPH UNIQ GBs B £s ⧖s ⧗s Owns");
       [done|solve_ndisj|done|].
     rewrite /vplace_rcont.
     iIntros (ls G2 dd dhs ghs ([w Hw'] & ? & ?)) "#Guard G2 £dd #Ghos Cls".
+    wp_pure _.
     (* Copy the bytes. *)
     iApply wp_fupd.
     iApply (wp_bytes_own_forget with "GC £f Ptd"); [solve_ndisj|]. iIntros (bsd) "Hbsd %Hlend".
@@ -189,8 +179,7 @@ Section memcpy.
     have HM: Dd ≤ M ∧ Ds ≤ M by rewrite /M; lia.
     (* The first step of the address of the destination: credits and cumulative time
        receipts. *)
-    wp_bind (pctx_vexpr Kd pd).
-    have ?: TCEq (to_val (pctx_vexpr Kd pd)) None by rewrite pctx_vexpr_to_val; constructor.
+    wp_bind (place_addr (pctx_vexpr Kd pd)).
     iApply (wp_cumulative_time_receipt_linear with "TIME ⧖m"); [solve_ndisj|].
     iIntros "⧗".
     iDestruct (cumulative_time_receipt_sep 1 (S M) with "⧗") as "[⧗c ⧗k]".
@@ -199,9 +188,10 @@ Section memcpy.
     iDestruct (lc_weaken ((3 * Dd + 5) + (1 + (1 + Dd * (Dd + 1))) + 1) with "£")
       as "[[£a [£r £s]] £f]"; [rewrite /advance_credits; nia|].
     iDestruct (invctx_interp_gcells with "I") as "[#GC I]".
+    wp_bind (pctx_vexpr Kd pd).
     iApply (wp_vplace_wacc _ Kd tyd ty Kd' fd with "LFT PROPH UNIQ GAd A £a ⧖d ⧗d Ownd");
       [done|solve_ndisj|done|].
-    iIntros (ld dh gh [Hdh Hgh]) "Ptd Ghod Cld".
+    iIntros (ld dh gh [Hdh Hgh]) "Ptd Ghod Cld". wp_pure _.
     (* Resolve the old value of the destination. *)
     iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN ∖ ↑gmbN))
       with "LFT PROPH UNIQ TIME E Ghalf H2 Ghod") as "ToObs"; [set_solver|].
@@ -212,16 +202,15 @@ Section memcpy.
     iMod (fupd_mask_mono with "ToObs") as "ToObs"; [solve_ndisj|].
     iMod (fupd_mask_mono with "ToObs") as "[Obs' H2]"; [solve_ndisj|].
     (* The first step of the address of the source: credits for its access. *)
-    wp_bind (pctx_vexpr Ks ps).
-    have ?: TCEq (to_val (pctx_vexpr Ks ps)) None by rewrite pctx_vexpr_to_val; constructor.
+    wp_bind (place_addr (pctx_vexpr Ks ps)).
     iApply (wp_persistent_time_receipt with "TIME ⧖s"); [solve_ndisj|].
-    iIntros "£s _".
+    iIntros "£s _". wp_bind (pctx_vexpr Ks ps).
     iDestruct (lc_weaken (3 * Ds + 5 + 1) with "£s") as "[£s £m]";
       [rewrite /advance_credits; nia|].
     iApply (wp_vplace_wacc _ Ks ty (↯ (ty_bsize ty)) (pctx_retype Ks (uninitₛ (ty_bsize ty)))
       (pctx_reset Ks) with "LFT PROPH UNIQ GBs B £s ⧖s ⧗s Owns");
       [done|solve_ndisj|done|].
-    iIntros (ls dhs ghs [Hdhs Hghs]) "Pts Ghos Cls".
+    iIntros (ls dhs ghs [Hdhs Hghs]) "Pts Ghos Cls". wp_pure _.
     (* Move the bytes. *)
     iApply wp_fupd.
     iApply (wp_bytes_own_forget with "GC £f Ptd"); [solve_ndisj|]. iIntros (bsd) "Hbsd %Hlend".

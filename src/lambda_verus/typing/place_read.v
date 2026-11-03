@@ -584,11 +584,11 @@ Section read_acc.
       { iApply (wp_pctx_expr_mask _ K1 (lty_size lt1) 1 x₀ ζm [] d g tid l (p) True True
           with "[] Rest").
         wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-        by wp_pure _. }
+        iFrame; by iPureIntro. }
       iIntros (w) "(-> & _ & _ & Rest)".
       iDestruct "Pt" as (bs) "[Hbs %Hbs]".
       wp_bind (Load _ _ _). iApply (wp_load_na with "Hbs"); [exact Hbs|]. iIntros "!> Hbs".
-      wp_pure _. iSplit; [done|]. iFrame "Rest". iExists bs. by iFrame. }
+      iSplit; [done|]. iFrame "Rest". iExists bs. by iFrame. }
     iIntros (l' dd dh gh (Hw & ? & ?)) "#Guard £dd #Gho [Pt Rest] G V".
     iApply ("HΦ" $! l' G dd dh gh with "[%] Guard G £dd Gho"); [done|].
     iIntros "G !>". iFrame "G".
@@ -620,7 +620,7 @@ Section read_acc.
       [rewrite /advance_credits /view_cred; nia|].
     iApply (wp_view_racc _ K2 κ lt ty κs false 0 z ζm [] d' g' tid lx D G
       True%I with "Alv G £ V [] [-]"); [done|done|lia|lia|..].
-    { wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by wp_pure _. }
+    { wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". iFrame; by iPureIntro. }
     iIntros (l' dd dh gh (Hw & ? & ?)) "#Guard £dd #Gho _ G V".
     iApply ("HΦ" $! l' G dd dh gh with "[%] Guard G £dd Gho"); [done|].
     iIntros "G !>". iFrame "G".
@@ -695,7 +695,7 @@ Section read_acc.
     { iApply (wp_pctx_expr_mask E K (lty_size (OfRes ty)) 1 x₀ ζm [] d g tid l (p)
         True True with "[] Rest").
       wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-      by wp_pure _. }
+      iFrame; by iPureIntro. }
     iIntros (w) "(-> & _ & _ & Rest)".
     iDestruct (bytes_own_nocell_bytes with "Pt1") as (bs) "[Hbs %Hbs]".
     iDestruct (bytes_own_of_bytes with "Hbs") as "Pt1"; [done|].

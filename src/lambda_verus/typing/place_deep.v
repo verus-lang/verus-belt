@@ -235,7 +235,7 @@ Section sum_deep.
       { done. }
       { iIntros "_ !>". by iFrame "Own". }
       iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|]. iModIntro.
-      wp_pure _. wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
+      wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
       iDestruct (big_sepN_lookup _ _ j with "el") as "el".
       iApply ("el" $! _ ((x₀, ζm) -:: xl)
         with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
@@ -262,7 +262,7 @@ Section sum_deep.
         iExists (pinj j a). iSplit; [done|].
         rewrite /ofty_owned (cbytes_sum _ j (tyl +!! j)). by iFrame. }
       iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|]. iModIntro.
-      wp_pure _. wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
+      wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
       iDestruct (big_sepN_lookup _ _ j with "el") as "el".
       iApply ("el" $! _ ((x₀, ζm) -:: xl)
         with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.

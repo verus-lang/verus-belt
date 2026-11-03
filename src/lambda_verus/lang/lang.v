@@ -78,13 +78,6 @@ Definition read_move (m : mty) (e : expr) : expr := Load Na1Ord m e.
     ([type_write_place_instr] of [typing/place_write.v]); notation [e1 <-{m} e2]. *)
 Definition write (m : mty) (e1 e2 : expr) : expr := Store Na1Ord m e1 e2.
 
-(** A byte copy of [n] bytes from the place at the address [e2] to the place at the address
-    [e1]: a non-atomic [MemCopy] (byte-preserving). It is the instruction of the unified
-    place copies ([type_memcpy_copy_place_instr], [type_memcpy_move_place_instr] of
-    [typing/place_memcpy.v]); notation [e1 <-ᵇ{n} e2]. *)
-Definition memcpy (n : nat) (e1 e2 : expr) : expr := MemCopy Na1Ord n e1 e2.
-
-
 Fixpoint is_closed (X : list string) (e : expr) : bool :=
   match e with
   | Var x => bool_decide (x ∈ X)
@@ -889,11 +882,24 @@ Notation UniqBor := (Seq Skip Skip) (only parsing).
 Notation ReBor := (Seq Skip Skip) (only parsing).
 Notation SplitBor := (Seq Skip Skip) (only parsing).
 
+(** The address of a place as a pointer value: the value of the address [e], after one
+    step. The instructions on places that need a step before they access the place (for
+    later credits and time receipts) take their addresses with it: [share] and [memcpy]. *)
+Notation place_addr e := (Let (BNamed "_v") e (Var "_v")) (only parsing).
+
 (** A shared borrow of the place at the address [e]: the pointer value of the address, after
     one step (for the credits and the time receipt of the new reference). It is the
     instruction of the unified shared borrow ([type_share_place_instr] of
     [typing/place_share.v]); notation [&ˢ e]. *)
-Definition share (e : expr) : expr := Let (BNamed "_v") e (Var "_v").
+Definition share (e : expr) : expr := place_addr e.
+
+(** A byte copy of [n] bytes from the place at the address [e2] to the place at the address
+    [e1]: a non-atomic [MemCopy] (byte-preserving), each address taken in one step
+    ([place_addr]). It is the instruction of the unified place copies
+    ([type_memcpy_copy_place_instr], [type_memcpy_move_place_instr] of
+    [typing/place_memcpy.v]); notation [e1 <-ᵇ{n} e2]. *)
+Definition memcpy (n : nat) (e1 e2 : expr) : expr :=
+  MemCopy Na1Ord n (place_addr e1) (place_addr e2).
 
 (** A mutable (unique) borrow of the place at the address [e]: two steps (for the credits
     and the time receipts of the new borrow), then the pointer value of the address. It is

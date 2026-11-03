@@ -575,11 +575,11 @@ Section share.
       { iApply (wp_pctx_expr_mask _ K1 (lty_size lt1) 1 x₀ ζm [] d g tid l (p) True True
           with "[] Rest").
         wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
-        by wp_pure _. }
+        iFrame; by iPureIntro. }
       iIntros (w) "(-> & _ & _ & Rest)".
       iDestruct "Pt" as (bs) "[Hbs %Hbs]".
       wp_bind (Load _ _ _). iApply (wp_load_na with "Hbs"); [exact Hbs|]. iIntros "!> Hbs".
-      wp_pure _. iSplit; [done|]. iFrame "Rest". iExists bs. by iFrame. }
+      iSplit; [done|]. iFrame "Rest". iExists bs. by iFrame. }
     iIntros (dh Hdh) "#Vs [Pt Rest] H1 V".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     wp_pure _. iModIntro.
@@ -632,7 +632,7 @@ Section share.
     wp_bind (pctx_expr K2 _).
     iApply (wp_view_sacc _ K2 κ lt ty E L α 0 z ζm [] d' g' tid lx D (fractional.half γh)
       True%I with "Hs H1 £ V [] [-]"); [solve_ndisj|done|lia|lia|..].
-    { wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by wp_pure _. }
+    { wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". iFrame; by iPureIntro. }
     iIntros (dh Hdh) "#Vs _ H1 V".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     wp_pure _. iModIntro.
