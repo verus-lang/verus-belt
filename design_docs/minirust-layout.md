@@ -927,3 +927,31 @@ a custom induction principle):
   `place_deep.v`, `place_pshr.v`, `place_res.v`), through `wp_get_discr_sum`
   (`bytes_layout.v`) and `wp_get_discr_sum_guarded` / `wp_get_discr_shr_view`
   (`place_pshr.v`); examples `get_some_first.v`, `pcell_parts.v`, `place_pshr.v` updated.
+
+## Outcome: L2a (structs: layouts and types; branch `proto/layout-l2`)
+
+- **Layouts** (`lang/minirust.v`): `struct_layout` (`SL offs size align`), `sl_mty`,
+  `sl_wf` (decidable), `c_layout` (`repr(C)`, aligned offsets, `lcm` alignment, size rounded
+  up; `c_layout_wf`), `packed_layout` (`repr(packed)`), `struct_lay L ms` (the effective
+  layout: `L` if `sl_wf L ms`, else `packed_layout ms`), `struct_mty`. The fallback is the
+  packed layout, not `c_layout`: it depends only on the field *sizes*
+  (`struct_lay_sizes`), so `syn_bincl` needs no alignment conjunct. Alignment conditions in
+  `mty_wf` are left for L5 (with the alignment UB); `c_layout` computes aligned layouts
+  for the examples. Tests (`minirust_tests.v`): `c_layout [i32; u8; i32] = SL [0; 4; 8] 12
+  4`, and the well-formedness of `c_layout` and of a reordering layout, by computation.
+- **Syntactic type** `structₛ L 𝔄l` (`prophecy/syn_type.v`, last constructor): `plist`
+  interpretation, `syn_mty = struct_mty L (syn_mty <$> 𝔄l)`, structural `syn_val`/`syn_fval`;
+  `struct_consₛ`/`struct_mapₛ`. `bytes_layout.v`: `struct_offs`, `struct_size`,
+  `struct_fields`, `syn_fbytes_struct` (plain padding, `fields_fbytes` at the offsets),
+  `syn_bincl_struct_map`.
+- **Contents** (`own.v`): `pad_own`, `gconts_union`, `gcont_tuple` (the contents of a tuple
+  of any layout: its fields at their offsets and the padding; via `frepr_union_l` and
+  `gcells_disj_list` of `gcont.v`), `fields_bytes_own`, `bytes_own_struct`.
+  `value_ctx.v`: `val_cells_tuple`, `fields_val_own`, `val_own_struct`,
+  `type_mk_struct_val_instr`.
+- **Types** (`typing/struct.v`): `fields_nil_ty`, `fields_cons_ty`, `fields_ty`
+  (`type (Π! 𝔄l)`, ghost parts), `struct_of L`, `struct_ty L tyl := struct_of L (fields_ty
+  tyl)`, `cstructₛ`/`cstruct_ty`; `Copy`, `Send`, `SendUpd`, `Sync`, `ResOwn`, resolution,
+  `struct_subtype`/`struct_eqtype` (along `struct_mapₛ`), non-expansiveness and
+  contractiveness, outlives.
+- `prod`/`xprod` are untouched in L2a; L2b replaces them.
