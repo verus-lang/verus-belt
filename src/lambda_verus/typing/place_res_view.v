@@ -48,9 +48,10 @@ Section view_laws.
   Lemma lty_view_depth_mono {𝔄} (lt: lty 𝔄) κ m p r d g d' g' tid l :
     d ≤ d' → g ≤ g' → lty_view lt κ m p r d g tid l ⊢ lty_view lt κ m p r d' g' tid l.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty] in κ, m, p, r, d, g, d', g', tid, l |- *;
-      intros Hd Hg; simpl; try by apply view_leaf_depth_mono.
+    revert κ m p r d g d' g' tid l.
+    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l Lay lts IH|𝔄 ty α|
+      𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind';
+      intros κ m p r d g d' g' tid l Hd Hg; simpl; try by apply view_leaf_depth_mono.
     - destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /view_uniq.
       iIntros "(#G & $ & %d1 & %g1 & %Hle & C & I)". iSplitR.
       { iApply (lguards_weaken_later with "G"). lia. }
@@ -61,8 +62,10 @@ Section view_laws.
     - destruct r as [?|[l' r']]; [done|]. rewrite /view_own.
       iIntros "(#G & % & C)". iSplitR; [iApply (lguards_weaken_later with "G"); lia|].
       iSplit; [iPureIntro; lia|]. iApply (IH with "C"); lia.
-    - destruct r as [?|[r1 r2]]; [done|]. rewrite /prod_node.
-      iIntros "[A B]". iSplitL "A"; [iApply (IH1 with "A")|iApply (IH2 with "B")]; done.
+    - destruct r as [?|rs]; [done|]. rewrite /view_struct.
+      iIntros "[F #G]". iSplitL "F"; [|iApply (lguards_weaken_later with "G"); lia].
+      iApply (fields_node_hmap_mono with "F"). eapply HForall_impl; [|exact IH].
+      intros ?? H' p' r' tid' l'. by apply H'.
     - destruct r as [?|s]; [done|]. rewrite /view_sum.
       case_match; [|done]. iIntros "(#G1 & C & #G2)".
       iSplitR; [iApply (lguards_weaken_later with "G1"); lia|].
@@ -147,7 +150,7 @@ Section view_laws.
     match lt with
     | ShrBlocked _ α => α
     | UniqLty lt' _ | OwnPtrLty _ lt' | SumLty _ _ lt' => lty_sbl lt'
-    | ProdLty lt1 lt2 => lty_sbl lt1 ⊓ lty_sbl lt2
+    | StructLty _ lts => lft_intersect_list (hcmap (λ _ lt, lty_sbl lt) lts)
     | _ => static
     end.
 
@@ -163,6 +166,47 @@ Section view_laws.
     iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply llftl_intersect_incl_r].
   Qed.
 
+  Local Lemma fields_view_guard_proph {𝔄l} (lts: hlist lty 𝔄l) κ m ζm q j xs offs d g tid l :
+    HForall (λ 𝔄 lt, ∀ κ m x q d g tid l, ⊢ llft_ctx -∗ κ ⊑ ty_lft (lty_fold lt) -∗
+      lty_view lt κ m (lty_pat lt) (lty_rfn lt x ζm q) d g tid l -∗
+      lty_view lt κ m (lty_pat lt) (lty_rfn lt x ζm q) d g tid l ∗
+      ∃ ηl, ⌜∀ ζl, prfn_rsv (lty_rfn lt x ζm q) ζl → prfn_den (lty_rfn lt x ζm q) ./ ζl ++ ηl⌝ ∗
+        view_tguards (κ ⊓ lty_sbl lt) ηl d g) lts →
+    ⊢ llft_ctx -∗ κ ⊑ lft_intersect_list (tyl_lfts (hmap (λ _ lt, lty_fold lt) lts)) -∗
+      fields_node offs (hmap (λ _ lt, lty_view lt κ m) lts) (hcmap (λ _ lt, lty_pat lt) lts)
+        (fields_rfn ζm q lts j xs) d g tid l -∗
+      fields_node offs (hmap (λ _ lt, lty_view lt κ m) lts) (hcmap (λ _ lt, lty_pat lt) lts)
+        (fields_rfn ζm q lts j xs) d g tid l ∗
+      ∃ ηl, ⌜∀ ζl, pforall (λ _ r, prfn_rsv r ζl) (fields_rfn ζm q lts j xs) →
+          (λ π, pmap (G:=proph_interp_of_syn_type) (λ 𝔅 (r: prfn 𝔅), prfn_den r π)
+            (fields_rfn ζm q lts j xs)) ./ ζl ++ ηl⌝ ∗
+        view_tguards (κ ⊓ lft_intersect_list (hcmap (λ _ lt, lty_sbl lt) lts)) ηl d g.
+  Proof.
+    intros Hall. induction Hall as [|𝔅 𝔅l lt lts Hlt _ IH] in offs, xs, j |- *.
+    - iIntros "_ _ F". iFrame "F". iExists []. iSplit; [|iApply view_tguards_nil].
+      iPureIntro. intros ζl _ π π' _. done.
+    - destruct offs as [|o offs]; [by iIntros "_ _ []"|]. destruct xs as [x xs].
+      iIntros "#LFT #Incl [V1 V2]".
+      iAssert (κ ⊑ ty_lft (lty_fold lt))%I as "#Incl1".
+      { iApply (llftl_incl_trans with "Incl"). rewrite /= lft_intersect_list_app.
+        iApply llftl_intersect_incl_l. }
+      iAssert (κ ⊑ lft_intersect_list (tyl_lfts (hmap (λ _ lt, lty_fold lt) lts)))%I
+        as "#Incl2".
+      { iApply (llftl_incl_trans with "Incl"). rewrite /= lft_intersect_list_app.
+        iApply llftl_intersect_incl_r. }
+      iDestruct (Hlt with "LFT Incl1 V1") as "[V1 (%ηl1 & %Hdep1 & #T1)]".
+      iDestruct (IH with "LFT Incl2 V2") as "[V2 (%ηl2 & %Hdep2 & #T2)]".
+      iFrame "V1 V2". iExists (ηl1 ++ ηl2). iSplit.
+      + iPureIntro. intros ζl [Hr1 Hr2].
+        apply (proph_dep_weaken _ ((ζl ++ ηl1) ++ (ζl ++ ηl2))); [set_solver|].
+        have ?: ∀ A B, Inj2 (=) (=) (=) (@cons_pair A B).
+        { intros ?? ???? [= -> ->]. done. }
+        apply (proph_dep_constr2 cons_pair); [by apply Hdep1|by apply Hdep2].
+      + iApply view_tguards_app.
+        * iApply (view_tguards_mono with "[] T1"); [lia|lia|]. iApply lft_incl_inter_mono_l.
+        * iApply (view_tguards_mono with "[] T2"); [lia|lia|]. iApply lft_incl_inter_mono_r.
+  Qed.
+
   (** The prophecy tokens of the values of the unblocked and shared-blocked leaves of a
       view are guarded by anything that guards [κ ⊓ lty_sbl lt]. *)
   Lemma lty_view_guard_proph {𝔄} (lt: lty 𝔄) κ m x ζm q d g tid l :
@@ -172,9 +216,10 @@ Section view_laws.
     ∃ ηl, ⌜∀ ζl, prfn_rsv (lty_rfn lt x ζm q) ζl → prfn_den (lty_rfn lt x ζm q) ./ ζl ++ ηl⌝ ∗
       view_tguards (κ ⊓ lty_sbl lt) ηl d g.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty] in κ, m, x, q, d, g, tid, l |- *;
-      iIntros "#LFT #Incl V"; simpl.
+    revert κ m x q d g tid l.
+    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l Lay lts IH|𝔄 ty α|
+      𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind';
+      intros κ m x q d g tid l; iIntros "#LFT #Incl V"; simpl.
     - iDestruct "V" as "#V".
       iDestruct (view_leaf_unblocked_tguards κ m ty x d g tid l with "LFT Incl V") as "#T".
       iFrame "V". iExists (ξl x). iSplit.
@@ -204,22 +249,12 @@ Section view_laws.
       iExists ηl. iSplit.
       + iPureIntro. intros ζl Hr. apply (proph_dep_constr (pair l')). by apply Hdep.
       + iApply (view_tguards_mono with "[] T"); [lia|lia|iApply guards_refl].
-    - rewrite /prod_node. iDestruct "V" as "[V1 V2]".
-      iAssert (κ ⊑ ty_lft (lty_fold lt1))%I as "#Incl1".
-      { iApply (llftl_incl_trans with "Incl"). simpl. rewrite lft_intersect_list_app.
-        iApply llftl_intersect_incl_l. }
-      iAssert (κ ⊑ ty_lft (lty_fold lt2))%I as "#Incl2".
-      { iApply (llftl_incl_trans with "Incl"). simpl. rewrite lft_intersect_list_app.
-        iApply llftl_intersect_incl_r. }
-      iDestruct (IH1 with "LFT Incl1 V1") as "[V1 (%ηl1 & %Hdep1 & #T1)]".
-      iDestruct (IH2 with "LFT Incl2 V2") as "[V2 (%ηl2 & %Hdep2 & #T2)]".
-      iFrame "V1 V2". iExists (ηl1 ++ ηl2). iSplit.
-      + iPureIntro. intros ζl [Hr1 Hr2].
-        apply (proph_dep_weaken _ ((ζl ++ ηl1) ++ (ζl ++ ηl2))); [set_solver|].
-        apply (proph_dep_constr2 pair); [by apply Hdep1|by apply Hdep2].
-      + iApply view_tguards_app.
-        * iApply (view_tguards_mono with "[] T1"); [lia|lia|]. iApply lft_incl_inter_mono_l.
-        * iApply (view_tguards_mono with "[] T2"); [lia|lia|]. iApply lft_incl_inter_mono_r.
+    - rewrite /view_struct. iDestruct "V" as "[F #Gp]".
+      iEval (rewrite fields_ty_lfts) in "Incl".
+      iDestruct (fields_view_guard_proph with "LFT Incl F") as "[F (%ηl & %Hdep & #T)]";
+        [done|].
+      iFrame "F Gp". iExists ηl. iFrame "T". iPureIntro. intros ζl Hr.
+      apply Hdep. by apply prfn_rsv_struct in Hr.
     - iDestruct (view_leaf_shrblk_tguards κ m ty α x d g tid l with "LFT Incl V") as "[V #T]".
       iFrame "V". iExists (ξl x). iFrame "T". iPureIntro. intros ζl _.
       rewrite prfn_den_in. eapply proph_dep_weaken; [|apply syn_indep]. set_solver.
@@ -396,18 +431,21 @@ Section lty_share_view.
     | OfTy _ | Blocked _ _ | ShrBlocked _ _ | ShrLty _ _ => True
     | UniqLty lt' _ =>
         (match lt' with
-         | OfTy _ | ProdLty _ _ | OwnPtrLty _ _ | UniqLty _ _ | SumLty _ _ _ => True
+         | OfTy _ | StructLty _ _ | OwnPtrLty _ _ | UniqLty _ _ | SumLty _ _ _ => True
          | _ => False
          end) ∧ lty_vok lt'
     | OwnPtrLty _ lt' | SumLty _ _ lt' => lty_vok lt'
-    | ProdLty lt1 lt2 => lty_vok lt1 ∧ lty_vok lt2
+    | StructLty _ lts => foldr and True (hcmap (λ _ lt, lty_vok lt) lts)
     | OfRes _ | ResUniqLty _ _ | Moved _ => False
     end.
 
   Lemma lty_vok_simple {𝔄} (lt: lty 𝔄) : lty_vok lt → lty_simple lt.
   Proof.
-    induction lt; simpl; try done; try (intros [_ ?]; by auto); try by auto.
-    intros [??]. split; auto.
+    induction 𝔄, lt as [| | | |𝔄l Lay lts IH| | | | | |] using lty_ind'; simpl; try done;
+      try (intros [_ ?]; by auto); try by auto.
+    intros Hv. apply (lty_simple_struct Lay). clear Lay.
+    induction IH as [|𝔅 𝔅l lt lts Hlt _ IH']; [constructor|].
+    destruct Hv as [??]. constructor; auto.
   Qed.
 
   (** A place in a borrow at [κ] (in [Owned m] mode) is shared into its view at [κ], in
@@ -509,24 +547,52 @@ Section lty_share_view2.
     iApply (step_fupdN_wand with "Upd"). iIntros ">[$ V] !>". iFrame "Gp V". by iPureIntro.
   Qed.
 
-  Lemma share_view_prod {𝔄1 𝔄2} (lt1: lty 𝔄1) (lt2: lty 𝔄2) :
-    share_view_stmt lt1 → share_view_stmt lt2 → share_view_stmt (ProdLty lt1 lt2).
+  Local Lemma fields_share_view {𝔄l} (lts: hlist lty 𝔄l) κ m xs ζm q j offs d g g' tid l G E :
+    HForall (λ _ lt, share_view_stmt lt) lts → Timeless G → lazyE ⊆ E → g ≤ g' →
+    ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ (G &&{↑NllftG}&&> @[κ]) -∗
+      κ ⊑ lft_intersect_list (tyl_lfts (hmap (λ _ lt, lty_fold lt) lts)) -∗ G -∗
+      &{κ} (fields_node offs (hmap (λ _ lt, ltype_own_cp false lt (Owned m)) lts)
+        (hcmap (λ _ lt, lty_pat lt) lts) (fields_rfn ζm q lts j xs) d g tid l) ={E}=∗
+        |={E}▷=>^(m + 2 * d + 3) |={E}=>
+          G ∗ fields_node offs (hmap (λ _ lt, lty_view lt κ m) lts)
+            (hcmap (λ _ lt, lty_pat lt) lts) (fields_rfn ζm q lts j xs) d g' tid l.
   Proof.
-    iIntros (IH1 IH2 κ m x ζm q d g g' tid l G E ???) "#LFT #PROPH #UNIQ #Gκ #Incl G Bor".
+    intros Hall. induction Hall as [|𝔅 𝔅l lt lts Hlt _ IH] in G, offs, xs, j |- *; intros ???.
+    - iIntros "_ _ _ _ _ G _". iModIntro. iApply step_fupdN_intro; [done|].
+      iApply bi.laterN_intro. iModIntro. by iFrame.
+    - have ?: ↑Nllft ⊆ E by (trans lazyE; [rewrite /lazyE; solve_ndisj|done]).
+      destruct offs as [|o offs].
+      { iIntros "#LFT _ _ #Gκ _ G Bor".
+        iMod (llftl_bor_acc_guarded with "LFT Bor Gκ G") as "[>[] _]"; done. }
+      destruct xs as [x xs].
+      iIntros "#LFT #PROPH #UNIQ #Gκ #Incl G Bor".
+      iMod (llftl_sep_split with "LFT Bor") as "[B1 B2]"; [done|].
+      iAssert (κ ⊑ ty_lft (lty_fold lt))%I as "#Incl1".
+      { iApply (llftl_incl_trans with "Incl"). rewrite /= lft_intersect_list_app.
+        iApply llftl_intersect_incl_l. }
+      iAssert (κ ⊑ lft_intersect_list (tyl_lfts (hmap (λ _ lt, lty_fold lt) lts)))%I
+        as "#Incl2".
+      { iApply (llftl_incl_trans with "Incl"). rewrite /= lft_intersect_list_app.
+        iApply llftl_intersect_incl_r. }
+      iMod (share_par E κ G (m + 2 * d + 3) with "Gκ G [B1] [B2]") as "Upd";
+        [trans lazyE; [apply lazyE_NllftG|done]|..].
+      { iIntros (Hh ?) "#Hκ Hh". iApply (Hlt with "LFT PROPH UNIQ Hκ Incl1 Hh B1"); done. }
+      { iIntros (Hh ?) "#Hκ Hh". iApply (IH with "LFT PROPH UNIQ Hκ Incl2 Hh B2"); done. }
+      iModIntro. iApply (step_fupdN_wand with "Upd"). iIntros ">[$ [V1 V2]] !>". iFrame.
+  Qed.
+
+  Lemma share_view_struct {𝔄l} Lay (lts: hlist lty 𝔄l) :
+    HForall (λ _ lt, share_view_stmt lt) lts → share_view_stmt (StructLty Lay lts).
+  Proof.
+    iIntros (Hall κ m x ζm q d g g' tid l G E ???) "#LFT #PROPH #UNIQ #Gκ #Incl G Bor".
     have ?: ↑Nllft ⊆ E by (trans lazyE; [rewrite /lazyE; solve_ndisj|done]).
-    rewrite /ltype_own /= /prod_node.
-    iMod (llftl_sep_split with "LFT Bor") as "[B1 B2]"; [done|].
-    iAssert (κ ⊑ ty_lft (lty_fold lt1))%I as "#Incl1".
-    { iApply (llftl_incl_trans with "Incl"). simpl. rewrite lft_intersect_list_app.
-      iApply llftl_intersect_incl_l. }
-    iAssert (κ ⊑ ty_lft (lty_fold lt2))%I as "#Incl2".
-    { iApply (llftl_incl_trans with "Incl"). simpl. rewrite lft_intersect_list_app.
-      iApply llftl_intersect_incl_r. }
-    iMod (share_par E κ G (m + 2 * d + 3) with "Gκ G [B1] [B2]") as "Upd";
-      [trans lazyE; [apply lazyE_NllftG|done]|..].
-    { iIntros (Hh ?) "#Hκ Hh". iApply (IH1 with "LFT PROPH UNIQ Hκ Incl1 Hh B1"); done. }
-    { iIntros (Hh ?) "#Hκ Hh". iApply (IH2 with "LFT PROPH UNIQ Hκ Incl2 Hh B2"); done. }
-    iModIntro. iApply (step_fupdN_wand with "Upd"). iIntros ">[$ [V1 V2]] !>". iFrame.
+    rewrite /ltype_own lty_rfn_struct /= /struct_node.
+    iMod (llftl_sep_split with "LFT Bor") as "[Bor Pad]"; [done|].
+    iMod (llftl_bor_guard with "LFT Pad") as "#Pad"; [done|].
+    iEval (rewrite fields_ty_lfts) in "Incl".
+    iMod (fields_share_view with "LFT PROPH UNIQ Gκ Incl G Bor") as "Upd"; [done..|].
+    iModIntro. iApply (step_fupdN_wand with "Upd"). iIntros ">[$ V] !>".
+    rewrite /view_struct. iFrame "V". iApply (lguards_weaken_later with "Pad"). lia.
   Qed.
 
   Lemma share_view_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
@@ -707,14 +773,17 @@ Section lty_share_view4.
 
   Lemma lty_share_view {𝔄} (lt: lty 𝔄) : lty_vok lt → share_view_stmt lt.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty]; simpl; intros Hv; try done.
+    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l Lay lts IH|𝔄 ty α|
+      𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind'; simpl; intros Hv;
+      try done.
     - apply share_view_ofty.
     - apply share_view_blocked.
     - destruct Hv as [Hc Hv]. destruct lt; try done;
         [apply share_view_uniq_leaf|apply share_view_uniq_cpd; [done|by apply lty_vok_simple|by apply IH]..].
     - apply share_view_own, IH, Hv.
-    - destruct Hv. apply share_view_prod; [by apply IH1|by apply IH2].
+    - apply share_view_struct. clear Lay.
+      induction IH as [|𝔅 𝔅l lt lts Hlt _ IH']; [constructor|].
+      destruct Hv as [??]. constructor; auto.
     - apply share_view_shrblk.
     - apply share_view_sum, IH, Hv.
     - apply share_view_shr.
