@@ -460,7 +460,7 @@ Section drop.
       their lenders), then the memory of the place is freed. *)
   Lemma type_drop_oplace_res_instr {𝔄} E L I p n (nz: Z) (lt: lty 𝔄) :
     lty_freeb lt = true → n = lty_size lt → nz = Z.of_nat n →
-    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt (p);; new_delete.delete [ #nz; p])%E
+    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt p;; new_delete.delete [ #nz; p])%E
       (λ _, +[]) (λ post '-[x], post -[]).
   Proof.
     intros Hf Hn Hnz. eapply typed_instr_tr_impl;

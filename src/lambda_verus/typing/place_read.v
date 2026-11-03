@@ -579,9 +579,9 @@ Section read_acc.
     iApply (wp_view_racc _ K2 κ lt ty κs false 0 z ζm (false :: q0) d' g' tid ly D G
       (ptr_cell lK ly ∗ pctx_own K1 (lty_size lt1) 1 x₀ ζm [] d g tid l)%I
       with "Hs G £ V [Pt Rest]"); [done|done|lia|lia|..].
-    { wp_bind (pctx_expr K1 (p)).
+    { wp_bind (pctx_expr K1 p).
       iApply (wp_wand with "[Rest]").
-      { iApply (wp_pctx_expr_mask _ K1 (lty_size lt1) 1 x₀ ζm [] d g tid l (p) True True
+      { iApply (wp_pctx_expr_mask _ K1 (lty_size lt1) 1 x₀ ζm [] d g tid l p True True
           with "[] Rest").
         wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         iFrame; by iPureIntro. }

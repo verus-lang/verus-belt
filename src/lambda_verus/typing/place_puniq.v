@@ -1385,7 +1385,7 @@ Section oplace_rslv.
 
   Lemma type_drop_oplace_deep_instr {𝔄} E L I p n (nz: Z) (lt: lty 𝔄) Φ :
     lty_freeb lt = true → n = lty_size lt → nz = Z.of_nat n → lty_rslv E L lt Φ →
-    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt (p);; new_delete.delete [ #nz; p])%E
+    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt p;; new_delete.delete [ #nz; p])%E
       (λ _, +[]) (λ post '-[x], λ mask π, Φ x.1.2 x.2 [] π → post -[] mask π).
   Proof.
     iIntros (Hf -> -> Rslv tid post mask iκs [x []])
@@ -1406,12 +1406,12 @@ Section oplace_rslv.
     iMod "Upd" as "[Obs' H1]".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     have ?: Closed [] p by eapply eval_path_closed.
-    wp_bind (drop_boxes lt (p)).
+    wp_bind (drop_boxes lt p).
     have Hev: ⊢ ∀ Ψ (P: iProp Σ), True -∗ ▷^0 P -∗ (True -∗ P -∗ Ψ #l) -∗
       WP p @ ⊤∖↑advN {{ Ψ }}.
     { iIntros (Ψ P) "_ P HΨ". wp_bind p. iApply wp_wand; [by iApply wp_eval_path|].
       iIntros (?) "->". by iApply ("HΨ" with "[//] P"). }
-    iApply (wp_drop_boxes lt 1 0 l (p) True%I (⊤∖↑advN) _ ltac:(solve_ndisj) Hf _
+    iApply (wp_drop_boxes lt 1 0 l p True%I (⊤∖↑advN) _ ltac:(solve_ndisj) Hf _
       ltac:(lia) Hev with "[//] M").
     iIntros "_ (%bs & Pt & %Hl)". wp_seq.
     wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".

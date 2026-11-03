@@ -478,7 +478,7 @@ Section pcell_atomics.
     Copy ty → lctx_lft_alive E L κ →
     typed_instr E L I
       +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &shr{κ} (cell_points_to_ty ty)]
-      (Load ScOrd ty.(ty_mty) (p))
+      (Load ScOrd ty.(ty_mty) p)
       (λ v, +[v ◁ᵥ ty]) (λ post '-[(_, g); (_, (g', x))], λ mask π, g = g' ∧ post -[x] mask π).
   Proof.
     intros Hcopy0. assert (NoCell 𝔄) by exact (copy_nocell ty). revert Hcopy0.
@@ -563,7 +563,7 @@ Section pcell_atomics.
     lctx_lft_alive E L κ →
     typed_instr E L I
       +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &uniq{κ} (cell_points_to_ty ty); r ◁ᵥ ty]
-      (Store ScOrd ty.(ty_mty) (p) r) (λ _, +[])
+      (Store ScOrd ty.(ty_mty) p r) (λ _, +[])
       (λ post '-[(_, g); bor; y], λ mask π,
         let '(_, (g', _), _, _, _, _) := bor in g = g' ∧
         (uniq_bor_future bor π = (g, vπ y π) → post -[] mask π)).
@@ -623,7 +623,7 @@ Section pcell_atomics.
     typed_instr E L I
       +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &uniq{κ} (cell_points_to_ty ty);
         r1 ◁ᵥ ty; r2 ◁ᵥ ty]
-      (MCAS ty.(ty_mty) (p) r1 r2) (λ v, +[v ◁ᵥ bool_ty])
+      (MCAS ty.(ty_mty) p r1 r2) (λ v, +[v ◁ᵥ bool_ty])
       (λ post '-[(_, g); bor; y1; y2], λ mask π,
         let '(_, (g', x), _, _, _, _) := bor in g = g' ∧
         if bool_decide (ty.(ty_val) x = ty.(ty_val) y1)

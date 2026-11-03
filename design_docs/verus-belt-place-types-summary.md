@@ -901,7 +901,8 @@ Lemma type_share_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoo
     (λ post '-[x], post -[(pctx_vloc K (lty_size lt) x.1, pctx_get K x.1); x]).
 ```
 
-- **Instruction.** `share e := OfLit e` (`lang/lang.v`), notation `&ˢ e` (`lang/notation.v`,
+- **Instruction.** `share e := OfLit e` (`lang/lang.v`; since stage 7 of
+  `minirust-memory-model.md`, `share e := place_addr e`, one β step), notation `&ˢ e` (`lang/notation.v`,
   level 9); `W.of_expr` reifies it as an `OfLit`. No `Skip` (the old rules had `Share;;` =
   `Seq Skip Skip` for the owned/unique cases): the first step of the instruction
   (`wp_cumulative_time_receipt_linear` below no shared reference, `wp_persistent_time_receipt`

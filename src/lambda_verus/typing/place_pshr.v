@@ -10,7 +10,7 @@
 
   The places below a shared reference are of two forms:
   - [p ◁ₗ ShrLty (K2[lt]) κ]: the root is the shared reference itself, a value (e.g. a
-    function argument [x: &T]); the address of the hole is [pctx_expr K2 (p)];
+    function argument [x: &T]); the address of the hole is [pctx_expr K2 p];
   - [p ◁ₗ K1[ShrLty (K2[lt]) κ]], with [PctxNoShr K1] and [PctxVRoot K1] (the first
     [PShr] step, below an owned pointer or a unique borrow at the root, e.g.
     [p ◁ₗown{n} …] or [x: &mut &T]); the address of the hole is
@@ -424,7 +424,7 @@ Section pshr_addr.
       shr_view (pctx_slft K2 κ) (lty_fold lt) (pctx_get K2 x.2) dh D tid
         (pctx_loc K2 (lty_size lt) x.2 x.1) -∗
       Φ #(pctx_loc K2 (lty_size lt) x.2 x.1)) -∗
-    WP pctx_expr K2 (e) @ E {{ Φ }}.
+    WP pctx_expr K2 e @ E {{ Φ }}.
   Proof.
     iIntros (? Hfold Hv) "#Gs G £ WPe Own HΦ".
     iDestruct "Own" as (d g Hle) "[Leaf %Hvin]".
@@ -748,7 +748,7 @@ Section case.
       (p ◁ₗ ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ +:: T)
       (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ +:: T)
-      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K2 (p))) of el)
+      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K2 p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -772,7 +772,7 @@ Section case.
     iDestruct (lc_weaken (pshr_cred D + 2 * (D + 1)) with "£") as "[£a £r]";
       [have := pshr_cred_step D; lia|].
     set lt'' := pctx_plug K2 (SumLty tyl j (OfTy (tyl +!! j))).
-    wp_bind (pctx_expr K2 (p)).
+    wp_bind (pctx_expr K2 p).
     iApply (wp_pshr_open_root _ κ K2 (OfTy (Σ! tyl)) lt'' x D tid v p (fractional.half γh)
       with "Hs H1 £a [] Own"); [solve_ndisj| |..].
     { apply lty_fold_plug_eq'. by rewrite lty_fold_sum_ofty. }
@@ -874,7 +874,7 @@ Section case.
       (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
       (case: (Load Na1Ord (MInt (sum_tag 𝔄l))
-        (pctx_expr K2 (Load Na1Ord MPtr (pctx_expr K (p))))) of el)
+        (pctx_expr K2 (Load Na1Ord MPtr (pctx_expr K p)))) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1.2).2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.

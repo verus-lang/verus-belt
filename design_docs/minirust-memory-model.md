@@ -1019,6 +1019,9 @@ lemmas `tctx_fun_val`, `wp_fun`) instead of a value-based `◁ᵥ`. `typed_val`,
   model.
 - **Function values** (`◁ᶠ`, C1) carry a λRust closure for the same reason.
 
+(Superseded by stage 7 below: the λRust literals and `ToLit`/`OfLit` are gone; closures
+remain non-MiniRust values of the expression language.)
+
 **Axioms.** See the final report: `Print Assumptions` of the examples is unchanged from
 the baseline (`functional_extensionality_dep`, and `Eqdep.Eq_rect_eq.eq_rect_eq` for the
 rules with a pure verification condition).
@@ -1127,9 +1130,13 @@ instruction expressions change syntactically:
   and the shared-borrow rules use the first step of the instruction for credits and a time
   receipt (`wp_cumulative_time_receipt_linear` needs a non-value), while the address
   `pctx_vexpr K p` may now be a value (for `K = POwn _ PHole`). `share e` becomes
-  `let: "_v" := e in "_v"` (a derived form, evaluating `e` and then one β step), so the
-  rules keep their step structure and no constructor is added. `&ᵘ e` (`borrow_uniq`)
-  has its two `Skip` steps and becomes `Seq (Seq Skip Skip) e`.
+  `place_addr e := let: "_v" := e in "_v"` (a derived form, evaluating `e` and then one β
+  step), so the rules keep their step structure and no constructor is added. `&ᵘ e`
+  (`borrow_uniq`) has its two `Skip` steps and becomes `Seq (Seq Skip Skip) e`.
+- **`e1 <-ᵇ{n} e2` (`memcpy`) takes both addresses with `place_addr`** for the same reason:
+  the memcpy rules take the credits and time receipts of the destination and of the source
+  from the first step of each address (`pctx_vexpr_to_val`, which no longer holds, is
+  deleted). `memcpy n e1 e2 := MemCopy Na1Ord n (place_addr e1) (place_addr e2)`.
 - Proofs lose the `wp_pure` steps of `ToLit`/`OfLit`; where a proof used such a step to
   strip a later, a `Skip` or credit of the surrounding instruction is used instead (none is
   expected: the loads give their own later).
@@ -1161,3 +1168,33 @@ Size: about 40 files, mostly mechanical (about 200 `ToLit`, 50 `OfLit`, 150 `Lit
 `LitLoc` occurrences); the deleted language code is about 150 lines. Risk: low to medium.
 The proofs that stepped over a `ToLit`/`OfLit` change locally; `share` keeps its step,
 so the shared-borrow proofs should not change. No new axioms are expected.
+
+## Outcome: stage 7 (MiniRust values in the expression language)
+
+Branch `proto/lang-values`, merged into `memory-model` after a clean full build. No
+`Admitted`, no new axioms (`Print Assumptions` of the examples unchanged).
+
+- **Language** (`lang/lang.v`): `val := RecV … | MLitV (v : Value)`; deleted: the
+  expression `Lit`, `base_lit` (`LitPoison`, `LitLoc`, `LitInt`), `LitV`, `ToLit`,
+  `OfLit` (with their evaluation contexts and head steps), `value_to_lit`,
+  `lit_to_value`, `lit_of_bool` (and its coercion), `lit_eq`/`lit_neq` (now
+  `val_eq`/`val_neq` on `Value`s, with booleans; the comparisons of a pointer with the
+  integer `0` are deleted), `pure_eq_loc_0_l/r`, `pure_to_lit`, `pure_of_lit`. New:
+  `IfS` (`Case` on a `VBool`), `pure_eq_bool`, the notation `unitV` (`VTuple []`, the result
+  of `Store`, `MemCopy`, `Free`, `Fork`, `GlobalUnlock`), and `place_addr` (see above).
+  `GlobalLock` returns a `VBool`.
+- **Notation** (`lang/notation.v`): `#v` is `MLitV v`, with the coercions `VInt`, `VBool`,
+  `VPtr`; `☠` is the unit value.
+- **Tactics**: `W.expr` lost `Lit`, `ToLit`, `OfLit`; `share` and `memcpy` are unfolded
+  by `W.of_expr`. `wp_bind` now also succeeds when the focused expression is the whole
+  expression (it used `||`, which needs progress, and the empty context makes none).
+- **Typing**: `ToLit p` ↦ `p`, `OfLit (Alloc #n)` ↦ `Alloc #n` everywhere (`pctx_expr`,
+  `pctx_vexpr`, `drop_boxes`, `eval_path` on `VPtr`/`VInt`, the place rules, `pcell.v`,
+  `shr_bor.v`, `value_ctx.v`, `subtype.v`, `spawn.v`); the proofs lost the `ToLit`/`OfLit`
+  steps (where the next goal is no longer a `WP`, `iApply wp_fupd` keeps the update
+  modality: `wp_pshr_open`). `type_shr_bytes_fst_instr` is now the identity instruction
+  `p`. `wp_global_try_atomic_lock` returns a boolean.
+- **Examples**: the programs lost `ToLit`/`OfLit` (e.g. `!ᶜ{MInt i32} ("x" +ₗ #4)`,
+  `"c" <-ᵇ{8} …`, `let: "c" := Alloc #8 in`, `case: Load Na1Ord (MInt …) "b" of …`,
+  `if: "b" then …`); their proofs are unchanged.
+
