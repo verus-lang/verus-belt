@@ -116,7 +116,7 @@
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.typing Require Export type.
-From lrust.typing Require Import uniq_util uniq_bor own shr_bor bytes_layout product freeable_util sum.
+From lrust.typing Require Import uniq_util uniq_bor own shr_bor bytes_layout product freeable_util sum gmb_cells.
 From lrust.lifetime Require Import lifetime_full guarded_bor.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -602,12 +602,53 @@ Section ltype_own.
         ▷^m (κ' ⊑ ty_lft ty ∗ ∃ d' g', ⌜S d' ≤ d ∧ g' ≤ g⌝ ∗ child r' d' g' tid l')
     end%I.
 
-  (** A leaf at a value (of size 1), and a resolved leaf at a value (as [res_leaf]). *)
+  (** A leaf at a value (of size 1) with a MiniRust value (below [ShrLty]), and a resolved
+      leaf at a value (as [res_leaf]). *)
   Definition vleaf {𝔄} (ty: type 𝔄) (r: prfn 𝔄) (d g: nat) (tid: thread_id) (v: val) : iProp Σ :=
     match r with
     | inr _ => False
     | inl lr => ∃ x, place_rfn_rel lr x ∗ ⌜val_rep ty x v⌝ ∗ ty.(ty_gho_own) x d g tid
     end%I.
+
+  (** The leaf [OfTy ty] at a value: the value may contain cells, which are in transit with
+      it ([gtransit], as for [p ◁ᵥ ty]). *)
+  Definition vleaf_own {𝔄} (ty: type 𝔄) (r: prfn 𝔄) (d g: nat) (tid: thread_id) (v: val) : iProp Σ :=
+    match r with
+    | inr _ => False
+    | inl lr => ∃ x, place_rfn_rel lr x ∗
+        (∃ w fv, ⌜v = MLitV w ∧ ty.(ty_fval) x = Some fv⌝ ∗ gtransit ty.(ty_mty) fv w) ∗
+        ty.(ty_gho_own) x d g tid
+    end%I.
+
+  Lemma vleaf_own_intro_val {𝔄} (ty: type 𝔄) x w :
+    ty.(ty_val) x = Some w →
+    ⊢ ∃ w' fv, ⌜MLitV w = MLitV w' ∧ ty.(ty_fval) x = Some fv⌝ ∗ gtransit ty.(ty_mty) fv w'.
+  Proof.
+    iIntros (Hw). iExists w, (fv_lift w). iSplit.
+    - iPureIntro. split; [done|]. move: Hw. rewrite -ty_val_eq -ty_fval_eq. apply syn_fval_val.
+    - iApply gtransit_lift. by eapply ty_val_wf.
+  Qed.
+
+  Lemma vleaf_own_elim_val {𝔄} (ty: type 𝔄) x w0 w fv :
+    ty.(ty_val) x = Some w0 → ty.(ty_fval) x = Some fv → gtransit ty.(ty_mty) fv w -∗ ⌜w = w0⌝.
+  Proof.
+    iIntros (Hw0 Hfv) "Tr". have Hf : ty.(ty_fval) x = Some (fv_lift w0).
+    { move: Hw0. rewrite -ty_val_eq -ty_fval_eq. apply syn_fval_val. }
+    rewrite Hfv in Hf. injection Hf as ->. by iApply gtransit_lift_inv.
+  Qed.
+
+  (** For a type whose values all have a MiniRust value (e.g. pointers), the two leaves
+      agree. *)
+  Lemma vleaf_own_vleaf {𝔄} (ty: type 𝔄) r d g tid v :
+    (∀ x, is_Some (ty.(ty_val) x)) → vleaf_own ty r d g tid v ⊣⊢ vleaf ty r d g tid v.
+  Proof.
+    intros Hall. destruct r as [lr|]; [|done]. rewrite /vleaf_own /vleaf. iSplit.
+    - iIntros "(%x & Rel & (%w & %fv & [-> %Hfv] & Tr) & Gho)". iExists x. iFrame.
+      destruct (Hall x) as [w0 Hw0].
+      iDestruct (vleaf_own_elim_val with "Tr") as %->; [done|done|]. iPureIntro. by exists w0.
+    - iIntros "(%x & Rel & %Hv & Gho)". iExists x. iFrame. destruct Hv as (w & -> & Hw).
+      by iApply vleaf_own_intro_val.
+  Qed.
 
   Definition vres_leaf {𝔄} (ty: type 𝔄) (r: prfn 𝔄) (d g: nat) (tid: thread_id) (v: val) : iProp Σ :=
     match r with
@@ -697,7 +738,7 @@ Section ltype_own.
       value. The other place types have no interpretation at a value. *)
   Definition lty_vown {𝔄} (lt: lty 𝔄) : prfn 𝔄 → nat → nat → thread_id → val → iProp Σ :=
     match lt in lty 𝔄 return prfn 𝔄 → nat → nat → thread_id → val → iProp Σ with
-    | OfTy ty => vleaf ty
+    | OfTy ty => vleaf_own ty
     | UniqLty lt' κ' => λ r d g tid v,
         ((match r with inr (l', _, _) => ⌜v = MLitV (VPtr l')⌝ | inl _ => False end) ∗
          uniq_nval 0 κ' (lty_fold lt')
@@ -773,16 +814,6 @@ Section ltype_lemmas.
     res_node m κ' ty child (inr (l', r', ξi)) d g tid l ⊣⊢
       ptr_cell l l' ∗ res_nval m κ' ty child (inr (l', r', ξi)) d g tid.
   Proof. done. Qed.
-
-  (** A leaf is its bytes and the leaf at the value that they encode. *)
-  Lemma leaf_owned_vleaf {𝔄} (ty: type 𝔄) r d g tid (l: loc) w :
-    (∃ bs, l ↦b bs ∗ ⌜decode_value ty.(ty_mty) bs = Some w⌝) ∗ vleaf ty r d g tid (MLitV w)
-    ⊢ leaf_owned_s false 0 ty PatLeaf r d g tid l.
-  Proof.
-    destruct r as [lr|]; [|by iIntros "[_ []]"].
-    iIntros "[(%bs & Pt & %Hd) (%x & Rel & %Hv & Gho)]". iExists x. iFrame "Rel Gho".
-    destruct Hv as (w' & [= <-] & Hw). iApply (bytes_own_of_bytes with "Pt"). by exists w.
-  Qed.
 
   Lemma uniq_nval_mono {𝔅} m κ' (ty: type 𝔅)
       (c1 c2: positive → prfn 𝔅 → nat → nat → thread_id → loc → iProp Σ) r d g tid :
