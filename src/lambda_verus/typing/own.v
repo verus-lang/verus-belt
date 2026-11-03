@@ -318,6 +318,62 @@ Section own_bytes.
     by iApply ("Hwp" with "Hbs").
   Qed.
 
+  (** The bytes of the fields of a struct, at the offsets [offs]. *)
+  Fixpoint fields_bytes_own {𝔄l} (l: loc) (offs: list nat) (tyl: typel 𝔄l) :
+      plist (~~) 𝔄l → iProp Σ :=
+    match tyl in hlist _ 𝔄l return plist (~~) 𝔄l → iProp Σ with
+    | +[] => λ _, True
+    | ty +:: tyl' => λ xs,
+        match offs with
+        | [] => False
+        | o :: offs' => bytes_own ty (l +ₗ o) (phd xs) ∗ fields_bytes_own l offs' tyl' (ptl xs)
+        end
+    end%I.
+
+  Lemma fields_bytes_own_gcont {𝔄l} l offs (tyl: typel 𝔄l) (xs: plist (~~) 𝔄l) :
+    length offs = length 𝔄l →
+    fields_bytes_own l offs tyl xs ⊣⊢
+      ∃ fvs, ⌜mapM id (plist_to_list (pmap (λ _ x, syn_fval x) xs)) = Some fvs⌝ ∗
+        [∗ list] p ∈ zip (zip offs (syn_mty <$> 𝔄l)) fvs, gcont (l +ₗ Z.of_nat p.1.1) p.1.2 p.2.
+  Proof.
+    revert offs. induction tyl as [|𝔄 𝔄l ty tyl IH]; intros [|o offs] Hlen; simpl in *; try lia.
+    - iSplit; [iIntros "_"; iExists []; by iSplit|by iIntros].
+    - destruct xs as [x xs]. simpl. rewrite IH; [|lia]. iSplit.
+      + iIntros "[B (%fvs & %Hfvs & Hs)]". rewrite bytes_own_unseal.
+        iDestruct "B" as (fv Hfv) "C". rewrite -ty_fval_eq -ty_mty_eq in Hfv |- *.
+        iExists (fv :: fvs). rewrite Hfv Hfvs /=. iSplit; [done|]. iFrame.
+      + iIntros "(%fvs & %Hfvs & Hs)".
+        destruct (syn_fval x) as [fv|] eqn:Hfv; [|done]. simpl in Hfvs.
+        destruct (mapM id _) as [fvs'|] eqn:Hfvs'; [|done]. injection Hfvs as <-.
+        rewrite big_sepL_cons. iDestruct "Hs" as "[C Hs]". iSplitL "C".
+        * rewrite bytes_own_unseal. iExists fv. rewrite -ty_fval_eq -ty_mty_eq. by iFrame.
+        * iExists fvs'. by iFrame.
+  Qed.
+
+  (** The bytes of a struct: those of its fields, at their offsets, and the bytes outside the
+      fields. *)
+  Lemma bytes_own_struct {𝔄l} L (ty: type (structₛ L 𝔄l)) (tyl: typel 𝔄l) l xs :
+    bytes_own ty l xs ⊣⊢
+      fields_bytes_own l (struct_offs L 𝔄l) tyl xs ∗
+      pad_own l (struct_fields L 𝔄l) (struct_size L 𝔄l).
+  Proof.
+    rewrite fields_bytes_own_gcont; [|apply length_struct_offs].
+    rewrite bytes_own_unseal /bytes_own_def -!ty_fval_eq -!ty_mty_eq syn_mty_struct.
+    change (syn_fval (𝔄:=structₛ L 𝔄l) xs) with
+      (FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) xs))).
+    have Hwf := syn_mty_wf (structₛ L 𝔄l). rewrite syn_mty_struct in Hwf.
+    have Hlf : length (struct_fields L 𝔄l) = length 𝔄l.
+    { rewrite /struct_fields length_zip_with length_fmap length_struct_offs. lia. }
+    iSplit.
+    - iIntros "(%fv & %Hfv & C)". apply fmap_Some in Hfv as (fvs & Hfvs & ->).
+      rewrite gcont_tuple //; last first.
+      { rewrite Hlf. apply mapM_Some, Forall2_length in Hfvs. by rewrite -Hfvs length_plist_to_list. }
+      iDestruct "C" as "[Cs $]". iExists fvs. by iFrame.
+    - iIntros "[(%fvs & %Hfvs & Cs) Pad]". iExists (FVTuple fvs). rewrite Hfvs.
+      iSplit; [done|]. rewrite gcont_tuple //; [by iFrame|].
+      rewrite Hlf. apply mapM_Some, Forall2_length in Hfvs. by rewrite -Hfvs length_plist_to_list.
+  Qed.
+
   (** The fancy bytes of a pair: those of its components, one after the other. *)
   Lemma bytes_own_pair {𝔄 𝔅} (ty: type (𝔄 * 𝔅)) (ty1: type 𝔄) (ty2: type 𝔅) l x1 x2 :
     bytes_own ty l (x1, x2) ⊣⊢ bytes_own ty1 l x1 ∗ bytes_own ty2 (l +ₗ ty_bsize ty1) x2.
