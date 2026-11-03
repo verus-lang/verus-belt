@@ -37,7 +37,12 @@
   - [ShrLty lt κ]: the place contains a shared reference [&shr{κ}] whose referent is
     viewed as the place type [lt] (a read-only view, the context step [PShr] of
     [typing/lpath.v]): it is the leaf of its folded type [&shr{κ} (lty_fold lt)], together
-    with the variants of the sums of [lt] at the (unchanging) referent ([lty_vin]).
+    with the variants of the sums of [lt] at the (unchanging) referent ([lty_vin]);
+  - [OfRes ty], [ResUniqLty lt κ]: resolved places ([typing/place_res.v]);
+  - [Moved ty]: the place has been moved out of (Rust's moved-out state): it owns plain
+    bytes of the size of [ty], its value is irrelevant ([moved_leaf]); its folded type is
+    [ty] (for the lifetimes only: it is not simple, [lty_simple], so it is never folded);
+    it has no interpretation in [Uniq] mode and in views.
   [lty_core] replaces [Blocked ty κ] and [ShrBlocked ty κ] by [OfTy ty] (pointwise
   otherwise), as
   RefinedRust's [lty_core]; [lty_fold] is the type of the place once folded

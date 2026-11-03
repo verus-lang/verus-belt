@@ -19,7 +19,8 @@
 
   [resolve_tctx_cons_oplace] resolves (and leaks) [p ◁ₗown{n} lt] in a context (e.g. at a
   jump), with a resolution condition per unblocked leaf ([lty_resolve], from [resolve] of
-  the leaf's type; moved-out leaves [OfTy (↯ n)] need nothing); blocked and shared-blocked
+  the leaf's type; moved-out leaves [Moved ty] and uninitialized leaves [OfTy (↯ n)] need
+  nothing); blocked and shared-blocked
   leaves are forgotten (their lender keeps the borrow, and gets the contents back at the
   end of the lifetime). [type_drop_oplace_instr] frees the memory of the place and,
   recursively, the pointees of its unfolded owned pointers ([OwnPtrLty], [drop_boxes]),
@@ -27,7 +28,9 @@
   blocked or shared ([lty_freeb]): the memory of such a leaf is lent, so it must not be
   freed (a pointee with a blocked leaf is leaked instead, [own_freeb]). Owned pointers in
   unblocked leaves ([OfTy (own_bytes …)]) are resolved by their type and their pointees
-  leaked, as by [type_delete_instr].
+  leaked, as by [type_delete_instr]. [type_uninit_oplace_instr] is the same, but keeps the
+  memory of the place, as an uninitialized place [OfTy (↯ n)] (e.g. a box whose fields have
+  all been moved out, to be re-used).
 
   ** Places below shared references
 
@@ -623,6 +626,54 @@ Section oplace.
     iApply (wp_delete_bytes bs with "[Pt Fr]"); [solve_ndisj|by rewrite Hl|..].
     { iFrame "Pt". rewrite Hl. iDestruct "Fr" as "[$|%]"; by iRight. }
     iIntros "!> _". iExists -[]. iFrame "L I". iSplit; [done|].
+    iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?]. by apply Imp.
+  Qed.
+
+  (** Giving up the contents of an owned place, which becomes uninitialized: as
+      [type_drop_oplace_instr] (the unblocked leaves are resolved, e.g. moved-out leaves
+      [Moved ty] and uninitialized leaves [OfTy (↯ n)] with nothing, [lty_resolve_just];
+      the pointees of the unfolded owned pointers are freed), but the memory of the place
+      itself is kept, as the bytes of [↯ n] (the tags of the sums of the place are
+      forgotten). E.g. a box all of whose fields have been moved out becomes a box of
+      [↯ n] again, which can be re-used or freed ([type_drop_oplace_instr]). *)
+  Lemma type_uninit_oplace_instr {𝔄} E L I p n (lt: lty 𝔄) Φ :
+    lty_freeb lt = true → n = lty_size lt → lty_resolve E L lt Φ →
+    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt p;; Skip)%E
+      (λ _, +[p ◁ₗown{n} OfTy (↯ n)])
+      (λ post '-[x], λ mask π, Φ x.1.2 π → post -[((x.1.1, ()), [])] mask π).
+  Proof.
+    iIntros (Hf -> Rslv tid post mask iκs [x []])
+      "#LFT #TIME #PROPH #UNIQ #E L I [(%v & %Hp & Own) _] Obs".
+    destruct x as [[l x₀] ζm].
+    iDestruct "Own" as (D d g) "(#⧖ & _ & -> & %Hle & Fr & Own)".
+    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]";
+      [solve_ndisj|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|]. iIntros "£ _".
+    iDestruct (lc_weaken (1 + (advance_credits D - 1)) with "£") as "[£1 £]";
+      [rewrite /advance_credits; lia|].
+    iMod (Rslv _ (⊤∖↑advN) with "LFT PROPH UNIQ TIME E Ghalf H1 Own") as "[M Upd]";
+      [solve_ndisj|].
+    iMod (lc_step_fupdN_elim_later with "[£] Upd") as "Upd".
+    { iApply (lc_weaken with "£"). rewrite /advance_credits. nia. }
+    iDestruct (invctx_interp_gcells with "I") as "[#GC I]".
+    iMod (lty_omem_forget_gc with "GC £1 M") as "M"; [solve_ndisj|].
+    iMod "Upd" as "[Obs' H1]".
+    iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
+    have ?: Closed [] p by eapply eval_path_closed.
+    wp_bind (drop_boxes lt p).
+    have Hev: ⊢ ∀ Ψ (P: iProp Σ), True -∗ ▷^0 P -∗ (True -∗ P -∗ Ψ #l) -∗
+      WP p @ ⊤∖↑advN {{ Ψ }}.
+    { iIntros (Ψ P) "_ P HΨ". wp_bind p. iApply wp_wand; [by iApply wp_eval_path|].
+      iIntros (?) "->". by iApply ("HΨ" with "[//] P"). }
+    iApply (wp_drop_boxes lt 1 0 l p True%I (⊤∖↑advN) _ ltac:(solve_ndisj) Hf _
+      ltac:(lia) Hev with "[//] M").
+    iIntros "_ (%bs & Pt & %Hl)". iMod cumulative_time_receipt_0 as "⧗". wp_seq. wp_seq.
+    iExists -[((l, ()), [])]. iFrame "L I". iSplitR "Obs Obs'".
+    { iSplit; [|done]. iExists _. iSplit; [done|]. iExists D, d, g. iFrame "⧖ ⧗".
+      iSplit; [done|]. iSplit; [done|]. iFrame "Fr".
+      rewrite /ltype_own /= /ofty_owned. iExists (). iSplit; [done|]. iSplitL; [|done].
+      iApply (bytes_own_of_bytes with "Pt"). exists (VTuple []). split; [done|].
+      rewrite decode_value_tuple decide_True //. }
     iCombine "Obs Obs'" as "Obs". iApply (proph_obs_impl with "Obs")=>/= ?[Imp ?]. by apply Imp.
   Qed.
 End oplace.

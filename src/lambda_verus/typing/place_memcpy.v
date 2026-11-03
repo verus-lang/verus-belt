@@ -2,8 +2,8 @@
 
   A byte copy [pctx_vexpr Kd pd <-ᵇ{n} pctx_vexpr Ks ps] ([memcpy], a [MemCopy] of [n]
   bytes) copies the bytes of the leaf at the hole of the source place
-  [ps ◁ₗ pctx_plug Ks …] into the leaf [OfTy tyd] at the hole of the destination place
-  [pd ◁ₗ pctx_plug Kd (OfTy tyd)]. It is byte-preserving (no decode/encode); there is no
+  [ps ◁ₗ pctx_plug Ks …] into the leaf [ltd] at the hole of the destination place
+  [pd ◁ₗ pctx_plug Kd ltd]. It is byte-preserving (no decode/encode); there is no
   typed memcpy (a round trip through a value is a typed [Load] and a typed [Store]). Two
   rules, by the source:
 
@@ -11,19 +11,20 @@
     [type_read_place_instr] ([place_read.v]: a [Copy] leaf, [pctx_rleaf], below any mix of
     fields, sums, owned pointers, unique borrows, shared references and resolved unique
     borrows); it does not change; the access to it is [wp_vplace_racc].
-  - [type_memcpy_move_place_instr]: the source is any leaf [OfTy ty] of an owned path
-    without sums, as in [type_move_place_instr] ([place_own.v]); its value may contain
-    cells, which are moved with the bytes; it becomes uninitialized ([↯]). The access to
-    it is [wp_vplace_wacc] (a strong update to [↯]).
+  - [type_memcpy_move_place_instr]: the source is any leaf [OfTy ty] of an owned path, as
+    in [type_move_place_instr] ([place_own.v]); its value may contain cells, which are moved
+    with the bytes; it becomes moved-out ([Moved ty]). The access to it is
+    [wp_vplace_macc].
 
   The two differ in what happens to the source (a shared or owned read of a [Copy] value,
   which stays, against the transfer of the fancy bytes of any value, with its cells); a
   common statement would need a computed source type and transformer, for no gain.
 
-  The destination is any place writable as in [type_write_place_instr] ([place_write.v]),
-  with the new type [ty] of the source ([pctx_wty]: the same type, or, along an owned path
-  without sums, any type of the same size: e.g. a box [↯ n] gets the type of the copied
-  value); its old value is resolved, and its access is [wp_vplace_wacc].
+  The destination is any leaf writable as in [type_write_place_instr] ([place_write.v]),
+  with the new type [ty] of the source ([pctx_wty]: an [OfTy] leaf of the same type, or,
+  along an owned path without sums, of any type of the same size, e.g. a box [↯ n] gets
+  the type of the copied value; a moved-out leaf [Moved ty], re-initialized); the old value
+  of an [OfTy] leaf is resolved ([lty_wres]), and its access is [wp_vplace_wacc].
 
   The first step (of the address of the destination) gives the credits for the access to
   the destination and the resolution, and the cumulative time receipts to raise its depths;

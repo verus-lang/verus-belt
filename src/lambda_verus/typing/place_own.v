@@ -14,11 +14,12 @@
   new borrow (pending ownership, [blocked_owned]), which is fired when [α] has ended
   ([unblock_tctx_oplace]). A leaf can be read (copied, [type_read_place_instr] of
   [place_read.v]), moved
-  out (leaving it uninitialized, [type_move_place_instr], the unified place move: any
-  owned path of fields and owned pointers) and written ([type_write_place_instr] of
-  [place_write.v], which also re-initializes an uninitialized leaf). Moving out and
-  writing change the type of the leaf, so the place context is retyped ([pctx_retype]). Folding back gives an owned pointer whose type may have
-  uninitialized components. An owned pointer below other owned pointers (two or more
+  out (leaving it moved-out, [Moved ty], [type_move_place_instr], the unified place move:
+  any owned path of fields, sum payloads and owned pointers) and written
+  ([type_write_place_instr] of [place_write.v], which also re-initializes a moved-out or
+  an uninitialized leaf; a strong write of an uninitialized leaf retypes the place context,
+  [pctx_retype]). A place whose leaves are moved-out is made uninitialized again by
+  [type_uninit_oplace_instr] ([place_resolve.v]). An owned pointer below other owned pointers (two or more
   laters deep) is unfolded by an instruction ([type_unfold_oplace_own_instr]). All leaf
   operations are of values of size 1, at any path
   (the address is computed by [pctx_expr], one load per owned pointer above the

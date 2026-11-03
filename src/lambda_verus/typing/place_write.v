@@ -1,30 +1,35 @@
 (** * Writing a place
 
-  One rule, [type_write_place_instr], writes a value [pb ◁ᵥ ty'] into the leaf [OfTy ty] at
-  the hole of any writable place rooted at a value ([p ◁ₗ pctx_plug K (OfTy ty)],
-  [vplace.v]), with the instruction [pctx_vexpr K p <-{ty_mty ty'} pb] ([write], a typed
-  [Store]). The context [K] may mix fields, sums, owned pointers and unique borrows in any
-  order and nesting (no shared reference and no resolved unique borrow on the path,
-  [PctxNoShr]; the siblings below a unique borrow are simple); its root step is an owned
-  pointer (a place rooted at an owned location, [p ◁ₗown{n} …]) or a unique borrow
-  ([PctxVRoot]). The old value is resolved ([resolve E L ty Φ]); the lifetimes needed
-  to access the hole must be alive ([pctx_alv], [pctx_acc.v]: the lifetime of the folded
-  type at each unique borrow, [static] if there is none).
+  One rule, [type_write_place_instr], writes a value [pb ◁ᵥ ty'] into the leaf [lt] at the
+  hole of any writable place rooted at a value ([p ◁ₗ pctx_plug K lt], [vplace.v]), with
+  the instruction [pctx_vexpr K p <-{ty_mty ty'} pb] ([write], a typed [Store]). The
+  context [K] may mix fields, sums, owned pointers and unique borrows in any order and
+  nesting (no shared reference and no resolved unique borrow on the path, [PctxNoShr]; the
+  siblings below a unique borrow are simple); its root step is an owned pointer (a place
+  rooted at an owned location, [p ◁ₗown{n} …]) or a unique borrow ([PctxVRoot]). The old
+  value of an [OfTy] leaf is resolved ([lty_wres E L lt Φ]: [resolve E L ty Φ]; nothing for
+  a moved-out leaf, [lty_wres_moved]); the lifetimes needed to access the hole must be alive
+  ([pctx_alv], [pctx_acc.v]: the lifetime of the folded type at each unique borrow,
+  [static] if there is none).
 
-  - The new type ([pctx_wty K ty ty' K' f], computed by the constructors): in general the
-    type of the leaf is kept ([pctx_wty_same]: [ty' = ty], the new context is [K] and the
-    new value of the place [pctx_set K x b]); if the path is owned (no unique borrow,
+  - The leaf and the new type ([pctx_wty K lt ty' K' f], by its constructors): a leaf
+    [OfTy ty] keeps its type ([pctx_wty_same]: [ty' = ty], the new context is [K] and the
+    new value of the place [pctx_set K x b]), or, if the path is owned (no unique borrow,
     [pctx_nouniq], so the root is an owned pointer) and has no sum ([pctx_nosum]: the
-    payload of a sum place has the type of its variant), the leaf may get any type of the
-    same size (a strong update, [pctx_wty_strong]: the context is retyped, [pctx_retype],
-    the value [pctx_reset K x b]), e.g. to initialize an uninitialized leaf [↯ n].
+    payload of a sum place has the type of its variant), gets any type of the same size (a
+    strong update, [pctx_wty_strong]: the context is retyped, [pctx_retype], the value
+    [pctx_reset K x b]), e.g. to initialize an uninitialized leaf [↯ n]. A moved-out leaf
+    [Moved ty] (only along an owned path) is re-initialized with a value of [ty]
+    ([pctx_wty_moved], also in the payload of a sum), or, without sums, of any type of the
+    same size ([pctx_wty_moved_strong]).
   - No [Skip]: the first program step (of the address) gives the credits to open the
     enclosing borrows and the cumulative time receipts to raise the depths of the place to
     the depth of the new value.
 
-  The access to the leaf is [wp_vplace_wacc]: from the place, the bytes and the ownership
-  of the old value of the leaf, and a closer for a new value of the new type
-  ([vplace_wcloser]). It is used by the byte copies too ([place_memcpy.v]). *)
+  The access to the leaf is [wp_vplace_wacc]: from the place, the old contents of the leaf
+  ([lty_wold]) and a closer for a new value of the new type ([vplace_wcloser]); along an
+  owned path, [wp_vplace_wacc_own] (any leaf without blocked parts). It is used by the
+  byte copies too ([place_memcpy.v]). *)
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
