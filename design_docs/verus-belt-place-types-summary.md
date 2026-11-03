@@ -852,8 +852,9 @@ Lemma type_memcpy_move_place_instr {𝔅d 𝔄d 𝔅 𝔄 𝔄d'} E L I pd ps (K
   source is a `Copy` leaf of any readable place (also below shared references and resolved
   unique borrows, where it is only guarded: `wp_memcopy_guarded_gen`), which stays; a move
   source is any leaf of an owned path without sums (as for `type_move_place_instr`), whose
-  fancy bytes (with their cells) are transferred (`wp_fbytes_memcopy`) and which becomes
-  `↯`. One statement would need a computed source result (unchanged place vs retyped
+  fancy bytes (with their cells) are transferred (`wp_fbytes_memcopy`; superseded: since
+  phase 4/5 of `guarded-mutable-borrows-plan.md` this is `wp_gcont_memcopy`, and the cell WP
+  rules are deleted) and which becomes `↯`. One statement would need a computed source result (unchanged place vs retyped
   place, and two transformers) and a disjunction of the two side conditions, for no gain.
 - **Destination.** Any writable place as in `type_write_place_instr`, with the new type
   given by `pctx_wty Kd tyd ty Kd' fd` (same type, or strong update along an owned path

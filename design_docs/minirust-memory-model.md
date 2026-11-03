@@ -944,6 +944,8 @@ added (from `27ddfad`).
   word cases. `AbstractByte` lost the `Word` constructor and its parameter.
 - Deleted files: `util/non_atomic_cell_map.v`. `util/cellmap.v` keeps `fcmap` (used by
   the cells of `heap_cells.v`); its `cmap` camera and logic are deleted.
+  (Superseded: `util/cellmap.v` and `lang/heap_cells.v` were deleted in phase 5 of
+  `guarded-mutable-borrows-plan.md`; the byte region of `heap.v` is now a plain ghost map.)
 
 ### C1. Closures (merge `c886fd9`)
 

@@ -7,8 +7,8 @@ Set Default Proof Using "Type".
 
 (** * Tests of the cells as guarded mutable borrows ([gmb_cells.v])
 
-WP-level tests, mirroring [lang/pcell_tests.v] on the new layer (ordinary memory, no cell
-heap): creating and destroying a cell, reading through it, a typed move of a
+WP-level tests, mirroring the former [lang/pcell_tests.v] (deleted with the physical cell heap
+in phase 5) on the new layer (ordinary memory): creating and destroying a cell, reading through it, a typed move of a
 [PCell<(i32, PCell<i32>)>] (after a write of its first field), a verbatim copy of two
 sibling cells, shared reads, a lend with a write, the end of its lifetime and a move, and a
 compare-and-exchange. *)

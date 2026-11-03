@@ -531,8 +531,8 @@ Layouts (sizes are abstract and there is no alignment yet):
 - [Σ! 𝔄l] is an enum with a tag of type [enum_tag (length 𝔄l)] at offset 0 and the
   data of each variant right after the tag ([seq_enum]);
 - [uninitₛ n] is [n] bytes of padding ([MTuple [] n]);
-- a cell [pcellₛ m] (a multi-byte cell, whose value [~~(pcellₛ m)] is its group, see
-  [lang/heap_cells.v]) is its content's MiniRust type [m], if [m] is well formed (and
+- a cell [pcellₛ m] (a multi-byte cell, whose value [~~(pcellₛ m)] is its id, see
+  [typing/pcell.v]) is its content's MiniRust type [m], if [m] is well formed (and
   zero-sized otherwise, so that [syn_mty_wf] holds);
 - every other syntactic type is zero-sized ([zst_mty]).
 
