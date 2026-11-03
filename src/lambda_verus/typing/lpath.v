@@ -72,6 +72,31 @@ Proof.
   apply app_inj_1 in Heq as [_ Heq]; [|done]. by injection Heq.
 Qed.
 
+(** The selector of field [j] of a struct: [false :: replicate j true]. The selectors of the
+    fields are suffix-free (no one is a suffix of another), so the paths below different fields
+    differ ([fcode_suffix_ne]). Field [0] has the selector of the pointee of a pointer
+    ([[false]]). *)
+Definition fcode (j: nat) : lpath := false :: replicate j true.
+
+Lemma fcode_suffix_ne (r s q: lpath) i j :
+  i ≠ j → r ++ fcode i ++ q ≠ s ++ fcode j ++ q.
+Proof.
+  intros Hij Heq. rewrite !app_assoc in Heq. apply app_inv_tail in Heq.
+  apply (f_equal reverse) in Heq. rewrite !reverse_app /fcode !reverse_cons
+    !reverse_replicate in Heq.
+  have Hlook : ∀ (a b: nat) (t: lpath), a < b →
+    ((replicate a true ++ [false]) ++ t) !! a = Some false ∧
+    ((replicate b true ++ [false]) ++ t) !! a = Some true.
+  { intros a b t Hab. rewrite -!app_assoc. split.
+    - rewrite lookup_app_r length_replicate // Nat.sub_diag //.
+    - rewrite lookup_app_l ?length_replicate // lookup_replicate_2 //. }
+  destruct (Nat.lt_total i j) as [Hlt|[?|Hlt]]; [|done|].
+  - destruct (Hlook i j (reverse r) Hlt) as [H1 _]. destruct (Hlook i j (reverse s) Hlt) as [_ H2].
+    rewrite Heq in H1. congruence.
+  - destruct (Hlook j i (reverse s) Hlt) as [H1 _]. destruct (Hlook j i (reverse r) Hlt) as [_ H2].
+    rewrite -Heq in H1. congruence.
+Qed.
+
 (** * Refinements of places *)
 
 Section lty_rfn.
@@ -97,8 +122,13 @@ Section lty_rfn.
     | UniqLty lt _ => λ x ζm q,
         inr (uniq_bor_loc x, lty_rfn lt (uniq_bor_current x) ζm (false :: q), uniq_bor_ξi x)
     | OwnPtrLty _ lt => λ x ζm q, inr (x.1, lty_rfn lt x.2 ζm (false :: q))
-    | ProdLty lt1 lt2 => λ x ζm q,
-        inr (lty_rfn lt1 x.1 ζm (false :: q), lty_rfn lt2 x.2 ζm (true :: q))
+    (* A struct: the refinements of the fields (field [j] below the path [fcode j ++ q]). *)
+    | StructLty _ lts => λ x ζm q, inr ((fix go {𝔅l} (lts: hlist lty 𝔅l) (j: nat) :
+          plist (~~) 𝔅l → plist (λ 𝔅, prfn 𝔅) 𝔅l :=
+        match lts in hlist _ 𝔅l return plist (~~) 𝔅l → plist (λ 𝔅, prfn 𝔅) 𝔅l with
+        | +[] => λ _, -[]
+        | lt +:: lts' => λ x, lty_rfn lt (phd x) ζm (fcode j ++ q) -:: go lts' (S j) (ptl x)
+        end) _ lts 0 x)
     (* A shared-blocked leaf keeps its value. *)
     | ShrBlocked _ _ => λ x _ _, inl (PlaceIn x)
     (* A sum at variant [i]: the refinement of the payload (below the path
@@ -120,6 +150,28 @@ Section lty_rfn.
     | Moved _ => λ x _ _, inl (PlaceIn x)
     end.
 
+  (** The refinements of the fields [lts] (the first one being field [j]). *)
+  Definition fields_rfn (ζm: blk_map) (q: lpath) :
+      ∀ {𝔅l}, hlist lty 𝔅l → nat → plist (~~) 𝔅l → plist (λ 𝔅, prfn 𝔅) 𝔅l :=
+    fix go {𝔅l} (lts: hlist lty 𝔅l) (j: nat) :
+        plist (~~) 𝔅l → plist (λ 𝔅, prfn 𝔅) 𝔅l :=
+      match lts in hlist _ 𝔅l return plist (~~) 𝔅l → plist (λ 𝔅, prfn 𝔅) 𝔅l with
+      | +[] => λ _, -[]
+      | lt +:: lts' => λ x, lty_rfn lt (phd x) ζm (fcode j ++ q) -:: go lts' (S j) (ptl x)
+      end.
+
+  Lemma lty_rfn_struct {𝔄l} L (lts: hlist lty 𝔄l) x ζm q :
+    lty_rfn (StructLty L lts) x ζm q = inr (fields_rfn ζm q lts 0 x).
+  Proof. done. Qed.
+
+  Lemma fields_rfn_app {𝔄lb 𝔄la} (lb: hlist lty 𝔄lb) (la: hlist lty 𝔄la) ζm q j x :
+    fields_rfn ζm q (lb h++ la) j x =
+      papp (fields_rfn ζm q lb j (psepl x)) (fields_rfn ζm q la (j + length 𝔄lb) (psepr x)).
+  Proof.
+    induction lb as [|𝔄 𝔄lb lt lb IH] in j, x |- *; simpl; [by rewrite Nat.add_0_r|].
+    destruct x as [x0 x]. simpl. by rewrite IH Nat.add_succ_r.
+  Qed.
+
   Lemma lty_rfn_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) x ζm q :
     lty_rfn (SumLty tyl i lt) x ζm q =
       match psum_proj i x with
@@ -133,35 +185,47 @@ Section lty_rfn.
     (∀ r, blk_lookup ζm (r ++ q) = blk_lookup ζm' (r ++ q)) →
     lty_rfn lt x ζm q = lty_rfn lt x ζm' q.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | |𝔄 lt IH κ|]
-      in x, q |- *; intros Heq; simpl; [done| | | | |done| |done|done| |done].
-    6: { rewrite (IH _ (false :: q)); [done|].
-      intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
-      by rewrite -app_assoc. }
-    5: { destruct (psum_proj i x); [|done].
-      rewrite (IH _ (false :: q)); [done|].
-      intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
-      by rewrite -app_assoc. }
+    have Hsh : ∀ (s q: lpath), (∀ r, blk_lookup ζm (r ++ q) = blk_lookup ζm' (r ++ q)) →
+      ∀ r, blk_lookup ζm (r ++ s ++ q) = blk_lookup ζm' (r ++ s ++ q).
+    { intros s0 q0 Heq r. rewrite app_assoc. apply Heq. }
+    revert x q. induction 𝔄, lt as [| |𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH| |𝔄l tyl i lt IH| | |𝔄 lt κ IH|]
+      using lty_ind'; intros x q Heq; simpl; [done| | | | |done| |done|done| |done].
     - by rewrite (Heq []).
-    - rewrite (IH _ (false :: q)); [done|].
-      intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
-      by rewrite -app_assoc.
-    - rewrite (IH _ (false :: q)); [done|].
-      intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
-      by rewrite -app_assoc.
-    - rewrite (IH1 _ (false :: q)); [rewrite (IH2 _ (true :: q)); [done|]|].
-      + intros r. rewrite (_: r ++ true :: q = (r ++ [true]) ++ q); [apply Heq|].
-        by rewrite -app_assoc.
-      + intros r. rewrite (_: r ++ false :: q = (r ++ [false]) ++ q); [apply Heq|].
-        by rewrite -app_assoc.
+    - by rewrite (IH _ (false :: q)); [|apply (Hsh [false])].
+    - by rewrite (IH _ (false :: q)); [|apply (Hsh [false])].
+    - f_equal. change (plist (~~) 𝔄l) in x. clear L. generalize 0%nat. induction IH as [|𝔅 𝔅l lt lts Hlt _ IH'] in x |- *;
+        intros j; [done|]. simpl. rewrite IH' (Hlt _ (fcode j ++ q)); [done|].
+      by apply (Hsh (fcode j)).
+    - destruct (psum_proj i x); [|done].
+      by rewrite (IH _ (false :: q)); [|apply (Hsh [false])].
+    - by rewrite (IH _ (false :: q)); [|apply (Hsh [false])].
+  Qed.
+
+  Lemma fields_rfn_blk_irrel {𝔄l} (lts: hlist lty 𝔄l) x ζm ζm' q j :
+    (∀ j' r, j ≤ j' → j' < j + length 𝔄l →
+      blk_lookup ζm (r ++ fcode j' ++ q) = blk_lookup ζm' (r ++ fcode j' ++ q)) →
+    fields_rfn ζm q lts j x = fields_rfn ζm' q lts j x.
+  Proof.
+    induction lts as [|𝔄 𝔄l lt lts IH] in j, x |- *; intros Heq; [done|]. simpl.
+    rewrite (lty_rfn_blk_irrel _ _ ζm ζm'); [|intros r; apply Heq; simpl; lia].
+    rewrite IH; [done|]. intros j' r ??. apply Heq; simpl; lia.
+  Qed.
+
+  (** Adding an entry below field [n] does not change the refinements of the other fields. *)
+  Lemma fields_rfn_blk_cons_other {𝔄l} (lts: hlist lty 𝔄l) x ζm ζi q s n j :
+    (n < j ∨ j + length 𝔄l ≤ n) →
+    fields_rfn ((s ++ fcode n ++ q, ζi) :: ζm) q lts j x = fields_rfn ζm q lts j x.
+  Proof.
+    intros Hn. apply fields_rfn_blk_irrel=> j' r ??. rewrite /= decide_False; [done|].
+    intros Heq. by apply (fcode_suffix_ne r s q j' n); [lia|].
   Qed.
 
   (** The number of blocked leaves. *)
-  Fixpoint lty_nblk {𝔄} (lt: lty 𝔄) : nat :=
+  Fixpoint lty_nblk {𝔄} (lt: lty 𝔄) {struct lt} : nat :=
     match lt with
     | Blocked _ _ => 1
     | UniqLty lt _ | OwnPtrLty _ lt | SumLty _ _ lt | ShrLty lt _ | ResUniqLty lt _ => lty_nblk lt
-    | ProdLty lt1 lt2 => lty_nblk lt1 + lty_nblk lt2
+    | StructLty _ lts => hsum (λ _ lt, lty_nblk lt) lts
     | _ => 0
     end.
 
@@ -184,7 +248,7 @@ Section lty_rfn.
     | OwnPtrLty _ lt => lty_nrc lt e (S mm)
     | SumLty _ _ lt => lty_nrc lt e mm
     | ShrLty lt _ => lty_nrc lt e (S mm)
-    | ProdLty lt1 lt2 => lty_nrc lt1 e mm + lty_nrc lt2 e mm
+    | StructLty _ lts => hsum (λ _ lt, lty_nrc lt e mm) lts
     | _ => 0
     end.
 
@@ -193,7 +257,7 @@ Section lty_rfn.
     match lt with
     | Blocked _ _ => True
     | UniqLty lt _ | OwnPtrLty _ lt | SumLty _ _ lt => lty_blk_all lt
-    | ProdLty lt1 lt2 => lty_blk_all lt1 ∧ lty_blk_all lt2
+    | StructLty _ lts => foldr and True (hcmap (λ _ lt, lty_blk_all lt) lts)
     | _ => False
     end.
 
@@ -211,19 +275,25 @@ Section lty_rfn.
   Lemma lty_blk_all_dep {𝔄} (lt: lty 𝔄) x ζm q ζl :
     lty_blk_all lt → prfn_rsv (lty_rfn lt x ζm q) ζl → prfn_den (lty_rfn lt x ζm q) ./ ζl.
   Proof.
-    induction lt as [| |𝔄 lt IH κ|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | | |] in x, q |- *;
-      intros Hb Hr; try done.
-    5: { revert Hr. rewrite lty_rfn_sum. destruct (psum_proj i x) as [y|];
-        [|intros; apply prfn_dummy_dep].
-      rewrite prfn_rsv_sum prfn_den_sum. intros Hr.
-      apply (proph_dep_constr (λ a, (pinj i a))). by apply IH. }
+    revert x q. induction 𝔄, lt as [| |𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH| |𝔄l tyl i lt IH| | | |]
+      using lty_ind'; intros x q Hb Hr; try done.
     - simpl in *. rewrite prfn_den_inl. by rewrite prfn_rsv_inl in Hr.
     - destruct Hr as [Hr Hξ]. apply (proph_dep_weaken _ (ζl ++ ζl)); [set_solver|].
       apply (proph_dep_constr2 pair); [by apply IH|exact Hξ].
     - apply (proph_dep_constr (pair x.1)). by apply IH.
-    - destruct Hb as [Hb1 Hb2]. destruct Hr as [Hr1 Hr2].
-      apply (proph_dep_weaken _ (ζl ++ ζl)); [set_solver|].
-      apply (proph_dep_constr2 pair); [by apply IH1|by apply IH2].
+    - rewrite lty_rfn_struct in Hr |- *. simpl in Hb. change (plist (~~) 𝔄l) in x.
+      revert Hr. generalize 0%nat as j. intros j Hr.
+      induction IH as [|𝔅 𝔅l lt lts Hlt _ IH'] in x, j, Hb, Hr |- *.
+      + intros ???. by destruct x.
+      + destruct Hb as [Hb1 Hb2]. destruct Hr as [Hr1 Hr2].
+        apply (proph_dep_weaken _ (ζl ++ ζl)); [set_solver|].
+        have ?: ∀ A B, Inj2 (=) (=) (=) (@cons_pair A B).
+        { intros ?? ???? [= -> ->]. done. }
+        apply (proph_dep_constr2 cons_pair); [by apply Hlt|exact (IH' (ptl x) Hb2 (S j) Hr2)].
+    - revert Hr. rewrite lty_rfn_sum. destruct (psum_proj i x) as [y|];
+        [|intros; apply prfn_dummy_dep].
+      rewrite prfn_rsv_sum prfn_den_sum. intros Hr.
+      apply (proph_dep_constr (λ a, (pinj i a))). by apply IH.
   Qed.
 End lty_rfn.
 
