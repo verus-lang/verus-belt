@@ -1198,3 +1198,30 @@ Branch `proto/lang-values`, merged into `memory-model` after a clean full build.
   `"c" <-ᵇ{8} …`, `let: "c" := Alloc #8 in`, `case: Load Na1Ord (MInt …) "b" of …`,
   `if: "b" then …`); their proofs are unchanged.
 
+
+## Outcome: `Send` and `Sync` of the references (branch `proto/ref-send-sync`, 2026-11-03)
+
+- `sync_send : Sync ty → Send ty` (`typing/type.v`). `Sync` here includes the
+  thread-independence of `ty_gho_own` (and of `ty_gho_pers`, `ty_shr`), so a `Sync` type is
+  sent unchanged, without a step (in RustBelt, `Sync` only constrains the sharing
+  predicate; this is a consequence of the definitions here).
+- `shr_sync : Sync ty → Sync (&shr{κ} ty)` (by `sync_default`: the guard of the bytes does
+  not depend on the thread) and `shr_send : Sync ty → Send (&shr{κ} ty)` (`shr_bor.v`), as
+  in RustBelt.
+- `uniq_sync : Sync ty → Sync (&uniq{κ} ty)` is kept, and `uniq_send_sync : Sync ty →
+  Send (&uniq{κ} ty)` is new (`uniq_bor.v`).
+- **Not provable: `uniq_send : Send ty → Send (&uniq{κ} ty)`.** `send_change_tid` is a
+  one-way update (with `d` steps, a new value `x'` of the same `syn_abstract` and a new
+  depth), not RustBelt's equivalence of the ownership at two threads. The ownership of the
+  referent at `tid` is the body of the prophetic borrow at `κ` of `&uniq` (`uniq_persγ`,
+  with the lazy payload guarded by `@[ty_lft ty]`; its value and depths are those of the
+  token `uniq_tokγ`). So the body cannot be rewritten by `llftl_bor_iff`; a send would have
+  to open the borrow (with `κ` alive: the hypotheses of `send_change_tid` only guard the
+  thread's lifetimes `κs`), update, and close it with the ownership at `tid'` of the new
+  value, which the lender would then get back at the end of `κ` instead of what it lent.
+  Needed: `Send` as (or implying) a thread-equivalence of `ty_gho_own` (then the proof is
+  that of `uniq_sync`), or the restriction to `κ = static` (borrows never given back; the
+  legacy `uniq_send_static`, deleted with the legacy layer, with an access lemma of the
+  body at another thread). The reason is also stated in `uniq_bor.v`.
+- Tests: `typing/ref_send_sync_tests.v` (instance search for `&shr`/`&uniq` of `int`, of
+  boxes, of pairs, nested, and `&shr` of a cell).

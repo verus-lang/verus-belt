@@ -115,6 +115,18 @@ Section shr_bytes_rules.
     - intros. by apply copy_shr_default.
   Qed.
 
+  (** [&T: Sync] and [&T: Send] when [T: Sync]: the ownership of [&shr{κ} ty] is the guard of
+      the bytes (which does not depend on the thread), the sharing predicate and the
+      persistent predicate of the referent. *)
+  Global Instance shr_sync {𝔄} κ (ty: type 𝔄) : Sync ty → Sync (&shr{κ} ty).
+  Proof.
+    move=> Hsync. apply sync_default; [done|]. move=> tid tid' [l x] [|d] g; [done|].
+    simpl. destruct (Hsync tid tid' x d g) as (_ & Hp & Hs). by rewrite Hp Hs.
+  Qed.
+
+  Global Instance shr_send {𝔄} κ (ty: type 𝔄) : Sync ty → Send (&shr{κ} ty).
+  Proof. move=> ?. by apply sync_send, shr_sync. Qed.
+
   (** Loading the referent, given a guard [G] of [@[κ]]: a typed [Load] of [ty_mty ty]
       returns the value of the referent. *)
   Lemma wp_shr_bytes_load {𝔄} κ (ty: type 𝔄) l x v d g tid G E :

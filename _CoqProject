@@ -331,6 +331,7 @@ src/lambda_verus/typing/place_xprod.v
 src/lambda_verus/typing/pptr.v
 src/lambda_verus/typing/pcell.v
 src/lambda_verus/typing/pcell_borrow.v
+src/lambda_verus/typing/ref_send_sync_tests.v
 src/lambda_verus/typing/gmb_uniq.v
 src/lambda_verus/typing/gmb_uniq_tests.v
 src/lambda_verus/typing/gmb_cells.v
