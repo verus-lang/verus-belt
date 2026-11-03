@@ -688,7 +688,7 @@ Section repr.
   (** *** Encoding and decoding *)
 
   (** Write the field encodings [ins] (offset, bytes) over [base]. *)
-  Definition fill_fields (ins : list (nat * list (AbstractByte))) base :=
+  Definition fill_fields {A} (ins : list (nat * list A)) (base : list A) : list A :=
     foldr (λ p acc, list_inserts p.1 p.2 acc) base ins.
 
   (** Write the integers of a tagger over [base]. *)
@@ -790,7 +790,8 @@ Section repr.
   Qed.
 
   (** *** The length law *)
-  Lemma length_fill_fields ins base : length (fill_fields ins base) = length base.
+  Lemma length_fill_fields {A} (ins : list (nat * list A)) (base : list A) :
+    length (fill_fields ins base) = length base.
   Proof. induction ins as [|[o e] ins IH]; simpl; [done|]. by rewrite length_inserts. Qed.
 
   Lemma length_encode_int it z : length (encode_int it z) = int_size it.
@@ -871,7 +872,7 @@ Section repr.
   Qed.
 
   (** *** Fields *)
-  Lemma lookup_fill_fields_out ins base j :
+  Lemma lookup_fill_fields_out {A} (ins : list (nat * list A)) (base : list A) j :
     (∀ k o e, ins !! k = Some (o, e) → (j < o ∨ o + length e ≤ j)%nat) →
     fill_fields ins base !! j = base !! j.
   Proof.
@@ -881,7 +882,7 @@ Section repr.
       apply IH; intros k; apply (Hout (S k)).
   Qed.
 
-  Lemma lookup_fill_fields_in ins base k o e j :
+  Lemma lookup_fill_fields_in {A} (ins : list (nat * list A)) (base : list A) k o e j :
     ins !! k = Some (o, e) →
     (∀ k' o' e', k' ≠ k → ins !! k' = Some (o', e') →
        (o' + length e' ≤ o ∨ o + length e ≤ o')%nat) →
@@ -899,7 +900,7 @@ Section repr.
         apply (IH k); [done| |done|done]. intros k' ???. apply (Hdisj (S k')). congruence.
   Qed.
 
-  Lemma list_slice_eq (l e : list (AbstractByte)) o :
+  Lemma list_slice_eq {A} (l e : list A) o :
     (o + length e ≤ length l)%nat →
     (∀ j, (o ≤ j < o + length e)%nat → l !! j = e !! (j - o)%nat) →
     list_slice o (length e) l = e.
@@ -910,7 +911,7 @@ Section repr.
     - rewrite lookup_take_ge; [|lia]. rewrite lookup_ge_None_2 //. lia.
   Qed.
 
-  Lemma list_slice_fill_fields ins base k o e :
+  Lemma list_slice_fill_fields {A} (ins : list (nat * list A)) (base : list A) k o e :
     ins !! k = Some (o, e) →
     (∀ k' o' e', k' ≠ k → ins !! k' = Some (o', e') →
        (o' + length e' ≤ o ∨ o + length e ≤ o')%nat) →
@@ -942,7 +943,7 @@ Section repr.
   Proof. intros. have := list_slice_inserts l e 0. rewrite /list_slice drop_0. auto. Qed.
 
   (** A slice outside all the insertions of [fill_fields]. *)
-  Lemma list_slice_fill_fields_out ins base o n :
+  Lemma list_slice_fill_fields_out {A} (ins : list (nat * list A)) (base : list A) o n :
     (∀ k o' e, ins !! k = Some (o', e) → (o' + length e ≤ o ∨ o + n ≤ o')%nat) →
     list_slice o n (fill_fields ins base) = list_slice o n base.
   Proof.

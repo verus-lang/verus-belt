@@ -370,6 +370,46 @@ Section gcells_defs.
       + by eapply HR2.
   Qed.
 
+  (** A representation can be moved to a registry that also contains another registry
+      [R2], in which the representations of values with other cells stay valid. *)
+  Lemma frepr_union_l R1 R2 m1 fbs1 fv1 :
+    frepr R1 m1 fbs1 fv1 → reg_wf R1 → reg_wf R2 →
+    ∃ R, frepr R m1 fbs1 fv1 ∧ reg_wf R ∧
+      ∀ m fbs fv, frepr R2 m fbs fv → (∀ g, g ∈ fv_cells fv1 → g ∉ fv_cells fv) →
+        frepr R m fbs fv.
+  Proof.
+    intros H1 HR1 HR2.
+    set R1' := filter (λ e : positive * (mty * list positive), e.1 ∈ fv_cells fv1) R1.
+    exists (R1' ∪ R2). split_and!.
+    - eapply frepr_restrict; [done|]. intros g Hg.
+      destruct (R1 !! g) as [e|] eqn:He.
+      + apply lookup_union_Some_l. by apply map_lookup_filter_Some.
+      + rewrite lookup_union_r; [|by apply map_lookup_filter_None; left].
+        destruct (frepr_cells_in _ _ _ _ _ H1 Hg) as (? & ? & HR & _). by rewrite He in HR.
+    - intros g m cs [HL|[_ HL]]%lookup_union_Some_raw.
+      + apply map_lookup_filter_Some in HL as [HL _]. by eapply HR1.
+      + by eapply HR2.
+    - intros m fbs fv H2 Hd. eapply frepr_restrict; [done|]. intros g Hg.
+      rewrite lookup_union_r //. apply map_lookup_filter_None. right. intros e _ Hin.
+      by apply (Hd g).
+  Qed.
+
+  (** The cells of separate contents are distinct from those of a list of contents. *)
+  Lemma gcells_disj_list R1 R2 m1 fbs1 fv1 l1 l (ps : list ((nat * mty) * FValue)) :
+    frepr R1 m1 fbs1 fv1 → (∀ k p, ps !! k = Some p → ∃ fbs, frepr R2 p.1.2 fbs p.2) →
+    gcells l1 m1 fv1 -∗ ([∗ list] p ∈ ps, gcells (l +ₗ Z.of_nat p.1.1) p.1.2 p.2) -∗
+    ⌜∀ k p g, ps !! k = Some p → g ∈ fv_cells fv1 → g ∉ fv_cells p.2⌝.
+  Proof.
+    iIntros (H1 Hps) "C Cs". iInduction ps as [|p ps] "IH" forall (Hps).
+    - iPureIntro. intros ???. by rewrite lookup_nil.
+    - rewrite big_sepL_cons. iDestruct "Cs" as "[C' Cs]".
+      destruct (Hps 0%nat p eq_refl) as [fbs Hp].
+      iDestruct (gcells_disj with "C C'") as %Hd0; [done|done|].
+      iDestruct ("IH" with "[%] C Cs") as %Hd1.
+      { intros k p' Hk. by apply (Hps (S k)). }
+      iPureIntro. intros [|k] p' g Hk; simplify_eq/=; [apply Hd0|by apply (Hd1 k)].
+  Qed.
+
   (** The cells of a tuple laid out in sequence: those of its first field and those of
       the others. *)
   Lemma gcells_seq_tuple_cons l m ms fv fvs :
