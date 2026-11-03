@@ -28,16 +28,16 @@ Section place_own.
   *)
   Definition set_snd : expr := (
     Newlft;;
-    let: "r" := &ᵘ (ToLit "x" +ₗ #4) in                  (* &mut x.1 *)
+    let: "r" := &ᵘ ("x" +ₗ #4) in                  (* &mut x.1 *)
     let: "five" := MLit (VInt 5) in
     Skip;;                                                (* r as a place *)
-    ToLit "r" <-{MInt i32} "five";;                        (* *r = 5 *)
+    "r" <-{MInt i32} "five";;                        (* *r = 5 *)
     Skip;;                                                (* resolve r *)
     Endlft;;                                              (* unblock x.1 *)
     let: "three" := MLit (VInt 3) in
-    ToLit "x" <-{MInt i32} "three";;                      (* x.0 = 3 *)
-    let: "v" := !ᶜ{MInt i32} (ToLit "x" +ₗ #4) in          (* x.1 *)
-    ((#☠;; #☠);; delete [ #8; ToLit "x"]);;               (* drop x *)
+    "x" <-{MInt i32} "three";;                      (* x.0 = 3 *)
+    let: "v" := !ᶜ{MInt i32} ("x" +ₗ #4) in          (* x.1 *)
+    ((#☠;; #☠);; delete [ #8; "x"]);;               (* drop x *)
     jump: "return" ["v"])%E.
 
   Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.
@@ -133,14 +133,14 @@ Section place_own.
   [Store]. *)
   Definition box_pair : expr := (
     Newlft;;
-    let: "r" := &ᵘ (ToLit (Load Na1Ord MPtr (ToLit "b"))) in            (* &mut *( *b).0 *)
+    let: "r" := &ᵘ (Load Na1Ord MPtr "b") in            (* &mut *( *b).0 *)
     let: "seven" := MLit (VInt 7) in
     Skip;;                                                (* r as a place *)
-    ToLit "r" <-{MInt i32} "seven";;                       (* *r = 7 *)
+    "r" <-{MInt i32} "seven";;                       (* *r = 7 *)
     Skip;;                                                (* resolve r *)
     Endlft;;                                              (* unblock *( *b).0 *)
-    let: "c" := !ᵐ{MPtr} (ToLit "b") in                   (* move ( *b).0 out *)
-    ToLit "b" <-{MPtr} "c";;                              (* re-assign ( *b).0 *)
+    let: "c" := !ᵐ{MPtr} "b" in                   (* move ( *b).0 out *)
+    "b" <-{MPtr} "c";;                              (* re-assign ( *b).0 *)
     jump: "return" ["b"])%E.
 
   Notation box_pairₛ := (at_locₛ (at_locₛ (intₛ i32) * intₛ i32))%ST.

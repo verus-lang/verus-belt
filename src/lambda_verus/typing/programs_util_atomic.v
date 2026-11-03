@@ -24,8 +24,7 @@ Section programs_util_atomic.
   Local Lemma wp_global_try_atomic_lock E :
      {{{ True }}}
      GlobalLock @ E
-     {{{ (b: Z), RET LitV (LitInt b);
-      match b with 0%Z => heap_ato_ctx | 1%Z => True | _ => False end }}}.
+     {{{ (b: bool), RET MLitV (VBool b); if b then True else heap_ato_ctx }}}.
   Proof.
     iIntros (Φ) "ato ToΦ".
     iApply wp_lift_atomic_base_step_no_fork; auto. iIntros (σ1 stepcnt κ κs n) "[Hσ Ht]".
@@ -41,23 +40,21 @@ Section programs_util_atomic.
   Lemma wp_global_atomic_lock E :
      {{{ True }}}
      GlobalAtomicLock @ E
-     {{{ RET LitV LitPoison; heap_ato_ctx }}}.
+     {{{ RET #☠; heap_ato_ctx }}}.
   Proof.
     iIntros (Φ) "_ ToΦ". iLöb as "IH".
     wp_rec.
     wp_bind (GlobalLock).
     iApply wp_global_try_atomic_lock; first done.
-    iNext. iIntros (z) "A".
-    destruct (decide (z = 0)) as [Heq0|Hn]; last destruct (decide (z = 1)) as [Heq1|Hn2].
-     - subst z. wp_if. iApply "ToΦ". done.
-     - subst z. wp_if. iApply "IH". iNext. done.
-     - destruct z as [|[ | | ]|]; try done.
+    iNext. iIntros (b) "A". destruct b; wp_if.
+    - iApply "IH". iNext. done.
+    - iApply "ToΦ". done.
   Qed.
   
   Lemma wp_global_atomic_unlock E :
      {{{ heap_ato_ctx }}}
      GlobalAtomicUnlock @ E
-     {{{ RET LitV LitPoison; True }}}.
+     {{{ RET #☠; True }}}.
   Proof.
     iIntros (Φ) "ato ToΦ".
     iApply wp_lift_atomic_base_step_no_fork; auto. iIntros (σ1 stepcnt κ κs n) "[Hσ Ht]".

@@ -24,12 +24,12 @@ Section get_snd.
   ```
   *)
   Definition get_snd : expr := (
-    let: "x1" := Load Na1Ord MPtr (ToLit "x") in             (* *x *)
-    let: "x2" := Load Na1Ord MPtr (ToLit "x1") in            (* **x *)
-    let: "x3" := OfLit (ToLit "x2" +ₗ #4) in                 (* &( **x).1 *)
-    let: "v" := Load Na1Ord (MInt i32) (ToLit "x3") in       (* ( **x).1 *)
+    let: "x1" := Load Na1Ord MPtr "x" in             (* *x *)
+    let: "x2" := Load Na1Ord MPtr "x1" in            (* **x *)
+    let: "x3" := ("x2" +ₗ #4) in                 (* &( **x).1 *)
+    let: "v" := Load Na1Ord (MInt i32) "x3" in       (* ( **x).1 *)
     Skip;; Skip;;                                            (* drop x1, x3 *)
-    (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "x"]);;        (* drop x *)
+    (#☠;; delete [ #(Z.of_nat PTR_SIZE); "x"]);;        (* drop x *)
     jump: "return" ["v"])%E.
 
   Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.

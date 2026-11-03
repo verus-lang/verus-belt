@@ -149,7 +149,7 @@ Section sum_deep.
     ([∗ nat] i < length 𝔄l, typed_body E L I C
       (p ◁ₗ pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ pctx_plug K (OfTy (Σ! tyl)) +:: T)
-      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_vexpr K p)) of el)
+      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_vexpr K p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -279,7 +279,7 @@ Section sum_deep.
     ([∗ nat] i < length 𝔄l, typed_body E L I C
       (p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)) +:: T)
-      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K (ToLit p))) of el)
+      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K (p))) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.

@@ -378,8 +378,8 @@ Section drop_boxes.
     match lt with
     | OwnPtrLty n lt' =>
         if own_freeb n lt' then
-          (drop_boxes lt' (ToLit (Load Na1Ord MPtr e));;
-           new_delete.delete [ #(lty_size lt'); ToLit (Load Na1Ord MPtr e)])%E
+          (drop_boxes lt' (Load Na1Ord MPtr e);;
+           new_delete.delete [ #(lty_size lt'); (Load Na1Ord MPtr e)])%E
         else #☠%E
     | ProdLty lt1 lt2 => (drop_boxes lt1 e;; drop_boxes lt2 (e +ₗ #(lty_size lt1)))%E
     | @SumLty _ _ 𝔄l _ _ lt' => drop_boxes lt' (e +ₗ #(tag_size 𝔄l))%E
@@ -392,7 +392,7 @@ Section drop_boxes.
     induction lt as [| | | 𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | |] in e |- *;
       intros ?; simpl; try done.
     - destruct (own_freeb n lt); [|done].
-      have ?: Closed [] (drop_boxes lt (ToLit (Load Na1Ord MPtr e))%E).
+      have ?: Closed [] (drop_boxes lt (Load Na1Ord MPtr e)%E).
       { apply IH. apply _. }
       apply _.
     - have ?: Closed [] (drop_boxes lt1 e) by apply IH1.
@@ -485,18 +485,18 @@ Section drop_boxes.
       apply andb_true_iff in Hfb as [Hf' Hn%bool_decide_eq_true].
       have Hev': ⊢ ∀ Ψ (P: iProp Σ), (R ∗ ptr_cell l l') -∗
         ▷^(k + 1) P -∗ ((R ∗ ptr_cell l l') -∗ P -∗ Ψ #l') -∗
-        WP (ToLit (Load Na1Ord MPtr e))%E @ E {{ Ψ }}.
+        WP (Load Na1Ord MPtr e)%E @ E {{ Ψ }}.
       { iIntros (Ψ P) "[R Pt] P HΨ". wp_bind e.
         iApply (Hev $! _ (▷ P)%I with "R [P]"); [by rewrite bi.laterN_add|]. iIntros "R P".
         iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
-        iApply (wp_load_na with "Hbs"); [exact Hbs|]. iIntros "!> Hbs". wp_pure _.
+        iApply (wp_load_na with "Hbs"); [exact Hbs|]. iIntros "!> Hbs".
         iApply ("HΨ" with "[R Hbs] P"). by iFrame. }
       iDestruct "M" as "[Fr M]".
-      wp_bind (drop_boxes lt (ToLit (Load Na1Ord MPtr e))%E).
-      iApply (IH (m + 1) (k + 1) l' (ToLit (Load Na1Ord MPtr e))%E (R ∗ ptr_cell l l')%I
+      wp_bind (drop_boxes lt (Load Na1Ord MPtr e)%E).
+      iApply (IH (m + 1) (k + 1) l' (Load Na1Ord MPtr e)%E (R ∗ ptr_cell l l')%I
         _ Hf' _ ltac:(lia) Hev' with "[$R $Pt] M").
       iIntros "[R Pt] (%bs & Pt' & %Hl)". wp_seq.
-      wp_bind (ToLit _). iApply (Hev' with "[$R $Pt] [Fr]").
+      wp_bind (Load _ _ _). iApply (Hev' with "[$R $Pt] [Fr]").
       { iApply (bi.laterN_le with "Fr"). lia. }
       iIntros "[R Pt] Fr". iEval (rewrite -Hn freeable_sz_full) in "Fr".
       iApply (wp_delete_bytes bs with "[Pt' Fr]"); [done|by rewrite Hl -Hn|..].
@@ -584,7 +584,7 @@ Section oplace.
       memory is lent. *)
   Lemma type_drop_oplace_instr {𝔄} E L I p n (nz: Z) (lt: lty 𝔄) Φ :
     lty_freeb lt = true → n = lty_size lt → nz = Z.of_nat n → lty_resolve E L lt Φ →
-    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt (ToLit p);; new_delete.delete [ #nz; ToLit p])%E
+    typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt (p);; new_delete.delete [ #nz; p])%E
       (λ _, +[]) (λ post '-[x], λ mask π, Φ x.1.2 π → post -[] mask π).
   Proof.
     iIntros (Hf -> -> Rslv tid post mask iκs [x []])
@@ -605,12 +605,12 @@ Section oplace.
     iMod "Upd" as "[Obs' H1]".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     have ?: Closed [] p by eapply eval_path_closed.
-    wp_bind (drop_boxes lt (ToLit p)).
+    wp_bind (drop_boxes lt (p)).
     have Hev: ⊢ ∀ Ψ (P: iProp Σ), True -∗ ▷^0 P -∗ (True -∗ P -∗ Ψ #l) -∗
-      WP ToLit p @ ⊤∖↑advN {{ Ψ }}.
+      WP p @ ⊤∖↑advN {{ Ψ }}.
     { iIntros (Ψ P) "_ P HΨ". wp_bind p. iApply wp_wand; [by iApply wp_eval_path|].
       iIntros (?) "->". wp_pure _. by iApply ("HΨ" with "[//] P"). }
-    iApply (wp_drop_boxes lt 1 0 l (ToLit p) True%I (⊤∖↑advN) _ ltac:(solve_ndisj) Hf _
+    iApply (wp_drop_boxes lt 1 0 l (p) True%I (⊤∖↑advN) _ ltac:(solve_ndisj) Hf _
       ltac:(lia) Hev with "[//] M").
     iIntros "_ (%bs & Pt & %Hl)". wp_seq.
     wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". wp_pure _.

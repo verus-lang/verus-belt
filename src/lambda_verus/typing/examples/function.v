@@ -22,7 +22,7 @@ Section bfn_examples.
   *)
   Definition get_snd_f : val :=
     fn: ["x"] :=
-      let: "v" := !ᶜ{MInt i32} (ToLit (Load Na1Ord MPtr (ToLit "x")) +ₗ #4) in
+      let: "v" := !ᶜ{MInt i32} ((Load Na1Ord MPtr "x") +ₗ #4) in
       return: ["v"].
 
   Definition get_snd_f_spec :
@@ -73,7 +73,7 @@ Section bfn_examples.
       Skip;;                                                     (* x as a place *)
       ReBor;;                                                    (* unfold **x *)
       ReBor;;                                                    (* view ***x as a pair *)
-      let: "r" := &ˢ (ToLit (Load Na1Ord MPtr (ToLit "x"))) in (* &( **x).0 *)
+      let: "r" := &ˢ (Load Na1Ord MPtr "x") in (* &( **x).0 *)
       ReBor;; ReBor;;                                            (* fold back *)
       Skip;;                                                     (* resolve x *)
       return: ["r"].

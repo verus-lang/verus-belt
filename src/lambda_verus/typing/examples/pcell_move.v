@@ -35,27 +35,27 @@ Section pcell_move.
   ```
   *)
   Definition pcell_move : expr := (
-    let: "c" := OfLit (Alloc #4) in
+    let: "c" := (Alloc #4) in
     let: "seventeen" := MLit (VInt 17) in
-    ToLit "c" <-{MInt i32} "seventeen";;
+    "c" <-{MInt i32} "seventeen";;
     let: "perm" := PCellNew ["c"] in                            (* c: a cell *)
-    let: "q" := OfLit (Alloc #8) in
+    let: "q" := (Alloc #8) in
     let: "five" := MLit (VInt 5) in
-    ToLit "q" <-{MInt i32} "five";;                             (* q.0 = 5 *)
-    let: "v" := !ᵐ{MInt i32} (ToLit "c") in                     (* move *c out *)
-    ToLit "q" +ₗ #4 <-{MInt i32} "v";;                          (* q.1 = v *)
-    (#☠;; delete [ #4; ToLit "c"]);;                            (* drop c (moved out) *)
-    let: "r" := OfLit (Alloc #8) in
-    let: "pair" := !ᵐ{syn_mty pairₛ} (ToLit "q") in             (* move *q out *)
-    ToLit "r" <-{syn_mty pairₛ} "pair";;                        (* *r = pair *)
-    (#☠;; delete [ #8; ToLit "q"]);;                            (* drop q (moved out) *)
-    let: "s" := OfLit (Alloc #4) in
-    let: "w" := !ᵐ{MInt i32} (ToLit "r" +ₗ #4) in               (* move r.1 out *)
-    ToLit "s" <-{MInt i32} "w";;                                (* *s = w *)
-    ((#☠;; #☠);; delete [ #8; ToLit "r"]);;                      (* drop r *)
+    "q" <-{MInt i32} "five";;                             (* q.0 = 5 *)
+    let: "v" := !ᵐ{MInt i32} "c" in                     (* move *c out *)
+    "q" +ₗ #4 <-{MInt i32} "v";;                          (* q.1 = v *)
+    (#☠;; delete [ #4; "c"]);;                            (* drop c (moved out) *)
+    let: "r" := (Alloc #8) in
+    let: "pair" := !ᵐ{syn_mty pairₛ} "q" in             (* move *q out *)
+    "r" <-{syn_mty pairₛ} "pair";;                        (* *r = pair *)
+    (#☠;; delete [ #8; "q"]);;                            (* drop q (moved out) *)
+    let: "s" := (Alloc #4) in
+    let: "w" := !ᵐ{MInt i32} ("r" +ₗ #4) in               (* move r.1 out *)
+    "s" <-{MInt i32} "w";;                                (* *s = w *)
+    ((#☠;; #☠);; delete [ #8; "r"]);;                      (* drop r *)
     let: "b" := PCellIntoInner ["s"; "perm"] in                 (* s.into_inner(perm) *)
-    let: "x" := Load Na1Ord (MInt i32) (ToLit "b") in           (* *b *)
-    (#☠;; delete [ #4; ToLit "b"]);;                            (* drop b *)
+    let: "x" := Load Na1Ord (MInt i32) "b" in           (* *b *)
+    (#☠;; delete [ #4; "b"]);;                            (* drop b *)
     jump: "return" ["x"])%E.
 
   Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.

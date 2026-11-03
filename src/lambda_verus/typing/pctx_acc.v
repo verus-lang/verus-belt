@@ -418,7 +418,7 @@ Section wp_pctx.
         wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
         iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
         iApply (wp_load_na with "Hbs"); [exact Hbs|].
-        iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
+        iIntros "!> Hbs". iSplit; [done|]. by iFrame. }
       iIntros (v) "($ & [$ $] & $ & $)".
     - iIntros "WP Ptrs".
       iApply (IHK (psum_proj_or i x w) (l +ₗ tag_size 𝔄l) _ R
@@ -432,7 +432,7 @@ Section wp_pctx.
         wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
         iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
         iApply (wp_load_na with "Hbs"); [exact Hbs|].
-        iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
+        iIntros "!> Hbs". iSplit; [done|]. by iFrame. }
       iIntros (v) "($ & [$ $] & $ & $)".
     - iIntros "WP (Pt & Ptrs)".
       iApply (wp_wand with "[- ]").
@@ -440,7 +440,7 @@ Section wp_pctx.
         wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
         iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
         iApply (wp_load_na with "Hbs"); [exact Hbs|].
-        iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
+        iIntros "!> Hbs". iSplit; [done|]. by iFrame. }
       iIntros (v) "($ & [$ $] & $ & $)".
     - iIntros "WP (Pt & Ptrs)".
       iApply (wp_wand with "[- ]").
@@ -449,7 +449,7 @@ Section wp_pctx.
         wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
         iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
         iApply (wp_load_na with "Hbs"); [exact Hbs|].
-        iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
+        iIntros "!> Hbs". iSplit; [done|]. by iFrame. }
       iIntros (v) "($ & [$ $] & $ & $)".
   Qed.
 End wp_pctx.
@@ -758,10 +758,6 @@ Section vroot.
     WP pctx_vexpr K e @ E {{ v, ⌜v = #(pctx_vloc K n x)⌝ ∗ R ∗ G ∗ pctx_vptrs K n x }}.
   Proof.
     rename select (PctxVRoot K) into HR.
-    iIntros "WP P".
-    iAssert (WP ToLit e @ E {{ v, ⌜v = #(pctx_vrloc K n x)⌝ ∗ R ∗ G }})%I with "[WP]" as "WP".
-    { wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_pure _. by iFrame. }
-    iRevert "WP P".
     destruct K as [| | |𝔅 𝔄' n' K| |𝔅 𝔄' κ K|𝔅 𝔄' κ K|𝔅 𝔄' κ K]; try done; simpl.
     - iIntros "WP P".
       iApply (wp_pctx_ptrs E K n G x.2 x.1 _ R with "WP P").

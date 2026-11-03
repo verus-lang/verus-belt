@@ -61,8 +61,8 @@ Section type_context.
   Context `{!typeG Σ}.
 
   Fixpoint eval_path (p: path) : option val := match p with
-    | BinOp OffsetOp e (#(LitInt n))%E => match eval_path e with
-        Some #(LitLoc l) => Some #(l +ₗ n) | _ => None end
+    | BinOp OffsetOp e (#(VInt n))%E => match eval_path e with
+        Some #(VPtr l) => Some #(l +ₗ n) | _ => None end
     | e => to_val e end.
 
   Lemma eval_path_of_val (v: val) : eval_path v = Some v.

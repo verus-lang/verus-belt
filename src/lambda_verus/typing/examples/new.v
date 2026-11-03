@@ -6,7 +6,7 @@ Set Default Proof Using "Type".
 (** * Allocation and subtyping on bytes
 
 [swap_snd] of [typing/examples/place_deep.v], allocating its result
-([type_new_bytes]: [OfLit (Alloc #8)] gives [own_bytes 8 (↯ 8)]), and a subtyping of a
+([type_new_bytes]: [(Alloc #8)] gives [own_bytes 8 (↯ 8)]), and a subtyping of a
 shared reference to bytes ([tctx_subtype_shr_bytes]). *)
 
 Section new_examples.
@@ -26,14 +26,14 @@ Section new_examples.
   *)
   Definition swap_snd_n : expr := (
     ReBor;; ReBor;; ReBor;;                         (* unfold *x, **x, **x as a pair *)
-    let: "c" := OfLit (Alloc #8) in                 (* a new box *)
-    ToLit "c" <-ᵇ{8}
-      (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x")))) +ₗ #4);;  (* c = ( **x).1 *)
-    (ToLit (Load Na1Ord MPtr (ToLit (Load Na1Ord MPtr (ToLit "x")))) +ₗ #4) <-ᵇ{8}
-      ToLit "y";;                                   (* ( **x).1 = y *)
+    let: "c" := (Alloc #8) in                 (* a new box *)
+    "c" <-ᵇ{8}
+      ((Load Na1Ord MPtr (Load Na1Ord MPtr "x")) +ₗ #4);;  (* c = ( **x).1 *)
+    ((Load Na1Ord MPtr (Load Na1Ord MPtr "x")) +ₗ #4) <-ᵇ{8}
+      "y";;                                   (* ( **x).1 = y *)
     ReBor;; ReBor;; ReBor;;                         (* fold back *)
-    (#☠;; delete [ #(Z.of_nat PTR_SIZE); ToLit "x"]);;  (* drop x, resolving it *)
-    (#☠;; delete [ #8; ToLit "y"]);;                (* drop y (moved out) *)
+    (#☠;; delete [ #(Z.of_nat PTR_SIZE); "x"]);;  (* drop x, resolving it *)
+    (#☠;; delete [ #8; "y"]);;                (* drop y (moved out) *)
     jump: "return" ["c"])%E.
 
   Definition ret_pair : predl_trans' [at_locₛ (intₛ i32 * intₛ i32)] (at_locₛ (intₛ i32 * intₛ i32)) :=

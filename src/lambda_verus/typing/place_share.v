@@ -23,7 +23,7 @@
   - the lifetimes to access the hole are alive ([pctx_alv K lt], as for the other place
     rules).
 
-  The first program step (of the address, or [OfLit] itself) gives the credits and, for a
+  The first program step (of the address, or the step of [share] itself) gives the credits and, for a
   shared-blocked leaf below a unique borrow, the receipt of the leaf ([lty_nrc]). The proof
   splits [K] as the read access does ([pctx_read_split]): below no shared reference, the access
   [vroot_acc] to the leaf and [ofty_owned_share] ([place_shr.v]); below a shared reference,
@@ -349,7 +349,7 @@ Section share.
     { iApply (guards_transitive with "Ghalf Alv"). }
     iDestruct (lc_weaken (pshr_cred D) with "£") as "£a";
       [have := pshr_cred_step D; lia|].
-    wp_bind (pctx_expr K2 (ToLit p)).
+    wp_bind (pctx_expr K2 (p)).
     iApply (wp_pshr_open_root _ κ K2 lt (pctx_plug K2 lt) x D tid v p (fractional.half γh)
       with "Hs H1 £a [] Own"); [solve_ndisj|done|done|..].
     { iApply wp_wand; [by iApply wp_eval_path|]. by iIntros (?) "->". }
@@ -570,9 +570,9 @@ Section share.
     iApply (wp_view_sacc _ K2 κ lt ty E L α 0 z ζm (false :: q0) d' g' tid ly D (fractional.half γh)
       (ptr_cell lK ly ∗ pctx_own K1 (lty_size lt1) 1 x₀ ζm [] d g tid l)%I
       with "Hs H1 £ V [Pt Rest]"); [solve_ndisj|done|lia|lia|..].
-    { wp_bind (pctx_expr K1 (ToLit p)).
+    { wp_bind (pctx_expr K1 (p)).
       iApply (wp_wand with "[Rest]").
-      { iApply (wp_pctx_expr_mask _ K1 (lty_size lt1) 1 x₀ ζm [] d g tid l (ToLit p) True True
+      { iApply (wp_pctx_expr_mask _ K1 (lty_size lt1) 1 x₀ ζm [] d g tid l (p) True True
           with "[] Rest").
         wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }

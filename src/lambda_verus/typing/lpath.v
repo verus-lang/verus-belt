@@ -1005,9 +1005,9 @@ Section pctx.
     | PHole => e
     | PFst K _ => pctx_expr K e
     | PSnd lt1 K => pctx_expr K (e +ₗ #(lty_size lt1))%E
-    | POwn _ K => pctx_expr K (ToLit (Load Na1Ord MPtr e))%E
+    | POwn _ K => pctx_expr K (Load Na1Ord MPtr e)%E
     | @PSum _ 𝔄l _ _ _ K => pctx_expr K (e +ₗ #(tag_size 𝔄l))%E
-    | PUniq _ K | PShr _ K | PResUniq _ K => pctx_expr K (ToLit (Load Na1Ord MPtr e))%E
+    | PUniq _ K | PShr _ K | PResUniq _ K => pctx_expr K (Load Na1Ord MPtr e)%E
     end.
 
   Lemma pctx_expr_closed {𝔅 𝔄} (K: pctx 𝔅 𝔄) e : Closed [] e → Closed [] (pctx_expr K e).
@@ -1034,7 +1034,7 @@ Section pctx.
         wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)".
         iDestruct "Pt" as (bs) "[Hbs %Hbs]". wp_bind (Load _ _ _).
         iApply (wp_load_na with "Hbs"); [exact Hbs|].
-        iIntros "!> Hbs". wp_pure _. iSplit; [done|]. by iFrame. }
+        iIntros "!> Hbs". iSplit; [done|]. by iFrame. }
       iIntros (v) "($ & [$ $] & $ & $)". by iFrame.
     - destruct (psum_proj i x) as [y|] eqn:Hy; [|by iIntros "_ []"].
       iIntros "WP (Tag & Own & Pad)". iApply (wp_wand with "[- Tag Pad]").
@@ -1395,13 +1395,13 @@ Section pctx.
   Proof. intros Heq. by rewrite !lty_vnrc_plug Heq. Qed.
 
   (** The address of the hole, from the value [e] of the root pointer (a MiniRust pointer
-      value, converted to an address by [ToLit]). *)
+      value). *)
   Definition pctx_vexpr {𝔅 𝔄} (K: pctx 𝔅 𝔄) (e: expr) : expr :=
     match K with
-    | POwn _ K' => pctx_expr K' (ToLit e)
-    | PUniq _ K' => pctx_expr K' (ToLit e)
-    | PShr _ K' => pctx_expr K' (ToLit e)
-    | PResUniq _ K' => pctx_expr K' (ToLit e)
+    | POwn _ K' => pctx_expr K' (e)
+    | PUniq _ K' => pctx_expr K' (e)
+    | PShr _ K' => pctx_expr K' (e)
+    | PResUniq _ K' => pctx_expr K' (e)
     | _ => e
     end.
 

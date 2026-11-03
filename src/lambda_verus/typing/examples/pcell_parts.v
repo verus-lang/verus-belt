@@ -34,23 +34,23 @@ Section pcell_parts.
   ```
   *)
   Definition pcell_pair : expr := (
-    let: "c" := OfLit (Alloc #4) in
+    let: "c" := (Alloc #4) in
     let: "seventeen" := MLit (VInt 17) in
-    ToLit "c" <-{MInt i32} "seventeen";;
+    "c" <-{MInt i32} "seventeen";;
     let: "perm" := PCellNew ["c"] in                            (* c: a cell *)
-    let: "v" := !ᵐ{MInt i32} (ToLit "c") in                     (* move *c out *)
-    (#☠;; delete [ #4; ToLit "c"]);;                            (* drop c (moved out) *)
+    let: "v" := !ᵐ{MInt i32} "c" in                     (* move *c out *)
+    (#☠;; delete [ #4; "c"]);;                            (* drop c (moved out) *)
     let: "five" := MLit (VInt 5) in
     let: "pair" := MkTuple ["five"; "v"] in                     (* (5, v) *)
-    let: "r" := OfLit (Alloc #8) in
-    ToLit "r" <-{syn_mty pairₛ} "pair";;                        (* *r = pair *)
-    let: "s" := OfLit (Alloc #4) in
-    let: "w" := !ᵐ{MInt i32} (ToLit "r" +ₗ #4) in               (* move r.1 out *)
-    ToLit "s" <-{MInt i32} "w";;                                (* *s = w *)
-    ((#☠;; #☠);; delete [ #8; ToLit "r"]);;                      (* drop r *)
+    let: "r" := (Alloc #8) in
+    "r" <-{syn_mty pairₛ} "pair";;                        (* *r = pair *)
+    let: "s" := (Alloc #4) in
+    let: "w" := !ᵐ{MInt i32} ("r" +ₗ #4) in               (* move r.1 out *)
+    "s" <-{MInt i32} "w";;                                (* *s = w *)
+    ((#☠;; #☠);; delete [ #8; "r"]);;                      (* drop r *)
     let: "b" := PCellIntoInner ["s"; "perm"] in                 (* s.into_inner(perm) *)
-    let: "x" := Load Na1Ord (MInt i32) (ToLit "b") in           (* *b *)
-    (#☠;; delete [ #4; ToLit "b"]);;                            (* drop b *)
+    let: "x" := Load Na1Ord (MInt i32) "b" in           (* *b *)
+    (#☠;; delete [ #4; "b"]);;                            (* drop b *)
     jump: "return" ["x"])%E.
 
   Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.
@@ -188,26 +188,26 @@ Section pcell_parts.
   ```
   *)
   Definition pcell_variant : expr := (
-    let: "c" := OfLit (Alloc #4) in
+    let: "c" := (Alloc #4) in
     let: "seventeen" := MLit (VInt 17) in
-    ToLit "c" <-{MInt i32} "seventeen";;
+    "c" <-{MInt i32} "seventeen";;
     let: "perm" := PCellNew ["c"] in                            (* c: a cell *)
-    let: "v" := !ᵐ{MInt i32} (ToLit "c") in                     (* move *c out *)
-    (#☠;; delete [ #4; ToLit "c"]);;                            (* drop c (moved out) *)
+    let: "v" := !ᵐ{MInt i32} "c" in                     (* move *c out *)
+    (#☠;; delete [ #4; "c"]);;                            (* drop c (moved out) *)
     let: "cp" := MkTuple ["v"; "perm"] in                       (* (v, perm) *)
     let: "opt" := MkVariant 1 "cp" in                           (* Some(cp) *)
-    let: "o" := OfLit (Alloc #5) in
-    ToLit "o" <-{syn_mty optₛ} "opt";;                          (* *o = opt *)
-    case: ToLit (Load Na1Ord (MInt (sum_tag [unitₛ; pair'ₛ])) (ToLit "o")) of
+    let: "o" := (Alloc #5) in
+    "o" <-{syn_mty optₛ} "opt";;                          (* *o = opt *)
+    case: (Load Na1Ord (MInt (sum_tag [unitₛ; pair'ₛ])) "o") of
     [ jump: "return" ["o"];                                     (* None: unreachable *)
       Newlft;;                                                  (* Some(r) *)
-      let: "r" := &ˢ (ToLit "o" +ₗ #1) in                       (* r: &(PCell, PointsTo) *)
-      let: "pcell_ref" := OfLit (ToLit "r") in                   (* &r.0 *)
-      let: "perm_ref" := OfLit (ToLit "r" +ₗ #4) in              (* &r.1 *)
+      let: "r" := &ˢ ("o" +ₗ #1) in                       (* r: &(PCell, PointsTo) *)
+      let: "pcell_ref" := "r" in                   (* &r.0 *)
+      let: "perm_ref" := ("r" +ₗ #4) in              (* &r.1 *)
       let: "intref" := PCellBorrow ["pcell_ref"; "perm_ref"] in
-      let: "x" := Load Na1Ord (MInt i32) (ToLit "intref") in     (* *intref *)
+      let: "x" := Load Na1Ord (MInt i32) "intref" in     (* *intref *)
       Endlft;;
-      (#☠;; delete [ #5; ToLit "o"]);;                          (* drop o *)
+      (#☠;; delete [ #5; "o"]);;                          (* drop o *)
       jump: "return" ["x"]])%E.
 
   Lemma pcell_variant_type ϝ (k: val) :

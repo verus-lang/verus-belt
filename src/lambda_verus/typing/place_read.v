@@ -579,9 +579,9 @@ Section read_acc.
     iApply (wp_view_racc _ K2 κ lt ty κs false 0 z ζm (false :: q0) d' g' tid ly D G
       (ptr_cell lK ly ∗ pctx_own K1 (lty_size lt1) 1 x₀ ζm [] d g tid l)%I
       with "Hs G £ V [Pt Rest]"); [done|done|lia|lia|..].
-    { wp_bind (pctx_expr K1 (ToLit p)).
+    { wp_bind (pctx_expr K1 (p)).
       iApply (wp_wand with "[Rest]").
-      { iApply (wp_pctx_expr_mask _ K1 (lty_size lt1) 1 x₀ ζm [] d g tid l (ToLit p) True True
+      { iApply (wp_pctx_expr_mask _ K1 (lty_size lt1) 1 x₀ ζm [] d g tid l (p) True True
           with "[] Rest").
         wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }
@@ -692,7 +692,7 @@ Section read_acc.
     iEval (rewrite res_own) in "Gr". iDestruct "Gr" as "#Gho".
     (* The address of the hole. *)
     iApply (wp_wand with "[Rest]").
-    { iApply (wp_pctx_expr_mask E K (lty_size (OfRes ty)) 1 x₀ ζm [] d g tid l (ToLit p)
+    { iApply (wp_pctx_expr_mask E K (lty_size (OfRes ty)) 1 x₀ ζm [] d g tid l (p)
         True True with "[] Rest").
       wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
       by wp_pure _. }

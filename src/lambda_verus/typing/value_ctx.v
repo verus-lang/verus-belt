@@ -20,8 +20,8 @@ is the plain form [ty_val x = Some w] ([val_own_nocell], [val_own_val], [tctx_va
 needs no new case. (The legacy word element [p ◁ ty] was deleted in
 stage 6.)
 
-Pointers are MiniRust values too ([VPtr l]); the address argument of [Load], [Store],
-[MemCopy] and of the offset [+ₗ] is a legacy literal [#l], which [ToLit] gives. *)
+Pointers are MiniRust values too ([VPtr l], notation [#l]); they are the address arguments of
+[Load], [Store], [MemCopy] and of the offset [+ₗ]. *)
 
 Implicit Type 𝔄 𝔅: syn_type.
 
@@ -428,13 +428,13 @@ Section value_rules.
   (** Reading the pointee of a box of a [Copy] type: a typed [Load]. *)
   Lemma type_load_own_bytes_copy_instr {𝔄} n (ty: type 𝔄) p E L I :
     Copy ty →
-    typed_instr E L I +[p ◁ᵥ own_bytes n ty] (Load Na1Ord ty.(ty_mty) (ToLit p))
+    typed_instr E L I +[p ◁ᵥ own_bytes n ty] (Load Na1Ord ty.(ty_mty) (p))
       (λ v, +[p ◁ᵥ own_bytes n ty; v ◁ᵥ ty]) (λ post '-[a], post -[a; a.2]).
   Proof.
     intros Hcopy0. assert (NoCell 𝔄) by exact (copy_nocell ty). revert Hcopy0.
     iIntros (? tid post mask iκs [[l x] []]) "_ #TIME _ _ _ $ $ [p _] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ Own".
-    simpl in Hw. simplify_eq. wp_pure _.
+    simpl in Hw. simplify_eq.
     destruct d as [|d]; [done|]. iDestruct "Own" as "(Bytes & Free & Gho)".
     iDestruct (bytes_own_nocell_bytes with "Bytes") as (bs) "[Hbs %Hbs]".
     destruct (ty_bytes_val _ _ _ Hbs) as [v Hv].
@@ -470,20 +470,19 @@ Section value_rules.
     rewrite left_id. iFrame "L I". iApply proph_obs_impl; [|done]=>/= ?[Imp ?]. by apply Imp.
   Qed.
 
-  (** Branching on a boolean value. [ToLit] turns the MiniRust boolean into the literal
-      that [if:] cases on. *)
+  (** Branching on a boolean value: [if:] cases on the MiniRust boolean. *)
   Lemma type_if_val {𝔄l 𝔅l ℭ} p (T: tctx 𝔄l) (T': tctx 𝔅l) e1 e2 tr1 tr2 trx E L I
       (C: cctx ℭ) :
     tctx_extract_ctx E L +[p ◁ᵥ bool_ty] T T' trx →
     typed_body E L I C T' e1 tr1 -∗ typed_body E L I C T' e2 tr2 -∗
-    typed_body E L I C T (if: ToLit p then e1 else e2)
+    typed_body E L I C T (if: p then e1 else e2)
       (trx ∘ (λ post '(b -:: vl), if b then tr1 post vl else tr2 post vl)).
   Proof.
     iIntros (?) "e1 e2". iApply typed_body_tctx_incl; [done|]=>/=.
     iIntros (?[b ?]???) "/= #LFT #TIME #PROPH #UNIQ #E L I C [p T] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d _ Hw) "_ _".
-    simpl in Hw. simplify_eq. wp_pure _.
-    destruct b; wp_case.
+    simpl in Hw. simplify_eq.
+    destruct b; wp_if.
     - iApply ("e1" with "LFT TIME PROPH UNIQ E L I C T").
       iApply (proph_obs_impl with "Obs"). intros π. done.
     - iApply ("e2" with "LFT TIME PROPH UNIQ E L I C T").

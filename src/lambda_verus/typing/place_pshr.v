@@ -10,11 +10,11 @@
 
   The places below a shared reference are of two forms:
   - [p ◁ₗ ShrLty (K2[lt]) κ]: the root is the shared reference itself, a value (e.g. a
-    function argument [x: &T]); the address of the hole is [pctx_expr K2 (ToLit p)];
+    function argument [x: &T]); the address of the hole is [pctx_expr K2 (p)];
   - [p ◁ₗ K1[ShrLty (K2[lt]) κ]], with [PctxNoShr K1] and [PctxVRoot K1] (the first
     [PShr] step, below an owned pointer or a unique borrow at the root, e.g.
     [p ◁ₗown{n} …] or [x: &mut &T]); the address of the hole is
-    [pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K1 p)))].
+    [pctx_expr K2 (Load Na1Ord MPtr (pctx_vexpr K1 p))].
 
   - Phase 1 (only for the second form, [wp_vpshr_root]): the access of [pctx_acc.v] to
     the [ShrLty] leaf (in [Owned] or [Uniq] mode, below any number of unique borrows), the
@@ -424,7 +424,7 @@ Section pshr_addr.
       shr_view (pctx_slft K2 κ) (lty_fold lt) (pctx_get K2 x.2) dh D tid
         (pctx_loc K2 (lty_size lt) x.2 x.1) -∗
       Φ #(pctx_loc K2 (lty_size lt) x.2 x.1)) -∗
-    WP pctx_expr K2 (ToLit e) @ E {{ Φ }}.
+    WP pctx_expr K2 (e) @ E {{ Φ }}.
   Proof.
     iIntros (? Hfold Hv) "#Gs G £ WPe Own HΦ".
     iDestruct "Own" as (d g Hle) "[Leaf %Hvin]".
@@ -468,7 +468,7 @@ Section pshr_addr.
       shr_view (pctx_slft K2 κ) (lty_fold lt) (pctx_get K2 y.2) dh D tid
         (pctx_loc K2 (lty_size lt) y.2 y.1) -∗
       Φ #(pctx_loc K2 (lty_size lt) y.2 y.1)) -∗
-    WP pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K1 e))) @ E {{ Φ }}.
+    WP pctx_expr K2 (Load Na1Ord MPtr (pctx_vexpr K1 e)) @ E {{ Φ }}.
   Proof.
     iIntros (? HE Hfold lt1 lt1' y Hv) "#LFT #PROPH #UNIQ #Gu #Gs G £ #⧖ WPe Own HΦ".
     have Hdl: 1 ≤ pctx_dlev K1 by apply pctx_vroot_dlev.
@@ -747,7 +747,7 @@ Section case.
       (p ◁ₗ ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ +:: T)
       (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ +:: T)
-      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K2 (ToLit p))) of el)
+      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K2 (p))) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -771,7 +771,7 @@ Section case.
     iDestruct (lc_weaken (pshr_cred D + 2 * (D + 1)) with "£") as "[£a £r]";
       [have := pshr_cred_step D; lia|].
     set lt'' := pctx_plug K2 (SumLty tyl j (OfTy (tyl +!! j))).
-    wp_bind (pctx_expr K2 (ToLit p)).
+    wp_bind (pctx_expr K2 (p)).
     iApply (wp_pshr_open_root _ κ K2 (OfTy (Σ! tyl)) lt'' x D tid v p (fractional.half γh)
       with "Hs H1 £a [] Own"); [solve_ndisj| |..].
     { apply lty_fold_plug_eq'. by rewrite lty_fold_sum_ofty. }
@@ -809,8 +809,8 @@ Section case.
       (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ) +:: T)
       (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
-      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l))
-        (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_vexpr K p))))) of el)
+      (case: (Load Na1Ord (MInt (sum_tag 𝔄l))
+        (pctx_expr K2 (Load Na1Ord MPtr (pctx_vexpr K p)))) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1).2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -872,8 +872,8 @@ Section case.
       (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ) +:: T)
       (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
-      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l))
-        (pctx_expr K2 (ToLit (Load Na1Ord MPtr (pctx_expr K (ToLit p)))))) of el)
+      (case: (Load Na1Ord (MInt (sum_tag 𝔄l))
+        (pctx_expr K2 (Load Na1Ord MPtr (pctx_expr K (p))))) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1.2).2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.

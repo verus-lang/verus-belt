@@ -24,8 +24,8 @@ Section get_first.
   Definition get_first : expr := (
     Skip;;                                          (* b as a place *)
     ReBor;;                                         (* unfold *b *)
-    let: "r0" := &ᵘ (ToLit "b") in                  (* &mut ( *b).0 *)
-    let: "r1" := &ᵘ (ToLit "b" +ₗ #4) in            (* &mut ( *b).1, to drop b *)
+    let: "r0" := &ᵘ "b" in                  (* &mut ( *b).0 *)
+    let: "r1" := &ᵘ ("b" +ₗ #4) in            (* &mut ( *b).1, to drop b *)
     Skip;;                                          (* resolve r1 *)
     jump: "return" ["r0"])%E.
 

@@ -478,7 +478,7 @@ Section pcell_atomics.
     Copy ty → lctx_lft_alive E L κ →
     typed_instr E L I
       +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &shr{κ} (cell_points_to_ty ty)]
-      (Load ScOrd ty.(ty_mty) (ToLit p))
+      (Load ScOrd ty.(ty_mty) (p))
       (λ v, +[v ◁ᵥ ty]) (λ post '-[(_, g); (_, (g', x))], λ mask π, g = g' ∧ post -[x] mask π).
   Proof.
     intros Hcopy0. assert (NoCell 𝔄) by exact (copy_nocell ty). revert Hcopy0.
@@ -487,7 +487,7 @@ Section pcell_atomics.
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
     iDestruct (tctx_val_elim with "q") as (vq Hq wq dq [-> Hwq]) "[#⧖q #Own']".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
-    simpl in Hw. simplify_eq. wp_pure _.
+    simpl in Hw. simplify_eq.
     destruct d as [|d0]; [done|]. destruct dq as [|dq0]; [done|].
     have Hm := ty_mty_wf ty.
     iDestruct "Own" as "(#Gp & _ & _)". iDestruct "Own'" as "(_ & [#Pt #TyShr] & _)".
@@ -518,7 +518,7 @@ Section pcell_atomics.
     iDestruct (lguards_weaken_later _ _ _ _ (D + 1) with "Gb'") as "GbD"; [lia|].
     rewrite ty_fval_nocell // in Hfv. apply fmap_Some in Hfv as (v & Hv & ->).
     iDestruct "Hp" as "(_ & #GI & _)".
-    have -> : (Lit $ LitLoc l) = (Lit $ LitLoc (l +ₗ 0%nat)) by rewrite shift_loc_0_nat.
+    have -> : (MLit $ VPtr l) = (MLit $ VPtr (l +ₗ 0%nat)) by rewrite shift_loc_0_nat.
     iApply wp_fupd.
     iApply (wp_gcell_load_sc_shared _ γ l ty.(ty_mty) (fv_lift v) 0 ty.(ty_mty) v
       (fractional.half γh) (D + 1) with "[H1 £2]"); [solve_ndisj|done|apply fv_sub_here|..].
@@ -563,7 +563,7 @@ Section pcell_atomics.
     lctx_lft_alive E L κ →
     typed_instr E L I
       +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &uniq{κ} (cell_points_to_ty ty); r ◁ᵥ ty]
-      (Store ScOrd ty.(ty_mty) (ToLit p) r) (λ _, +[])
+      (Store ScOrd ty.(ty_mty) (p) r) (λ _, +[])
       (λ post '-[(_, g); bor; y], λ mask π,
         let '(_, (g', _), _, _, _, _) := bor in g = g' ∧
         (uniq_bor_future bor π = (g, vπ y π) → post -[] mask π)).
@@ -573,7 +573,7 @@ Section pcell_atomics.
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
     iDestruct (Alv with "L E") as "#Alv".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
-    simpl in Hw. simplify_eq. wp_pure _.
+    simpl in Hw. simplify_eq.
     wp_bind r. iApply (wp_val with "r"). iIntros (v dy Hr Hv) "#⧖y Gy".
     iDestruct (tctx_val_elim with "q") as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
     destruct d as [|d0]; [done|].
@@ -595,7 +595,7 @@ Section pcell_atomics.
       as (ζi ζidx) "(#Obsl & #Incl & H2 & ⧗s & _ & _ & Bytes & Close)".
     iDestruct (bytes_own_val with "Bytes") as %[vx Hvx].
     rewrite /cbytes (bytes_own_gcont _ _ _ (fv_lift vx)); [|by rewrite ty_fval_nocell // Hvx].
-    have -> : (Lit $ LitLoc l) = (Lit $ LitLoc (l +ₗ 0%nat)) by rewrite shift_loc_0_nat.
+    have -> : (MLit $ VPtr l) = (MLit $ VPtr (l +ₗ 0%nat)) by rewrite shift_loc_0_nat.
     iApply (wp_gcont_store_sc_sub _ l _ _ 0 _ vx v (fv_lift v) with "Bytes");
       [solve_ndisj|done|by eapply ty_val_wf|apply fv_repl_here|].
     iIntros "!> Bytes".
@@ -623,7 +623,7 @@ Section pcell_atomics.
     typed_instr E L I
       +[p ◁ᵥ &shr{κ} (pcell_ty ty.(ty_mty)); q ◁ᵥ &uniq{κ} (cell_points_to_ty ty);
         r1 ◁ᵥ ty; r2 ◁ᵥ ty]
-      (MCAS ty.(ty_mty) (ToLit p) r1 r2) (λ v, +[v ◁ᵥ bool_ty])
+      (MCAS ty.(ty_mty) (p) r1 r2) (λ v, +[v ◁ᵥ bool_ty])
       (λ post '-[(_, g); bor; y1; y2], λ mask π,
         let '(_, (g', x), _, _, _, _) := bor in g = g' ∧
         if bool_decide (ty.(ty_val) x = ty.(ty_val) y1)
@@ -635,7 +635,7 @@ Section pcell_atomics.
     iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)"; [done|].
     iDestruct (Alv with "L E") as "#Alv".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
-    simpl in Hw. simplify_eq. wp_pure _.
+    simpl in Hw. simplify_eq.
     wp_bind r1. iApply (wp_val with "r1"). iIntros (v1 d1 Hr1 Hv1) "_ _".
     wp_bind r2. iApply (wp_val with "r2"). iIntros (v2 dy Hr2 Hv2) "#⧖y Gy".
     iDestruct (tctx_val_elim with "q") as (vq Hq wq dq [-> Hwq]) "[#⧖q Uniq]".
@@ -658,7 +658,7 @@ Section pcell_atomics.
       as (ζi ζidx) "(#Obsl & #Incl & H2 & ⧗s & #⧖x & Gx & Bytes & Close)".
     iDestruct (bytes_own_val with "Bytes") as %[vx Hvx].
     rewrite /cbytes (bytes_own_gcont _ _ _ (fv_lift vx)); [|by rewrite ty_fval_nocell // Hvx].
-    have -> : (Lit $ LitLoc l) = (Lit $ LitLoc (l +ₗ 0%nat)) by rewrite shift_loc_0_nat.
+    have -> : (MLit $ VPtr l) = (MLit $ VPtr (l +ₗ 0%nat)) by rewrite shift_loc_0_nat.
     iApply (wp_gcont_mcas_sub _ l _ _ 0 _ vx v1 v2 (fv_lift v2) with "Bytes");
       [solve_ndisj|done|by eapply ty_val_wf|apply fv_repl_here|].
     iIntros "!>" (b) "[[[-> %Heq] Bytes]|[[-> %Hne] Bytes]]".

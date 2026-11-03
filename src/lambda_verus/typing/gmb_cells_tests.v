@@ -27,7 +27,7 @@ Section gmb_cells_tests.
   Lemma dec7 : decode_value (MInt i32) (encode_value (MInt i32) (VInt 7)) = Some (VInt 7).
   Proof. apply decode_encode_value; [constructor|apply int7_wf]. Qed.
 
-  Lemma loc_0 l : (Lit (LitLoc l)) = (Lit (LitLoc (l +ₗ 0%nat))).
+  Lemma loc_0 l : (MLit (VPtr l)) = (MLit (VPtr (l +ₗ 0%nat))).
   Proof. by rewrite shift_loc_0_nat. Qed.
 
   (** A plain [i32] at [l], made into a cell. *)

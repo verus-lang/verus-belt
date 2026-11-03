@@ -25,9 +25,9 @@ Section place_struct.
   *)
   Definition set_mid : expr := (
     let: "seven" := MLit (VInt 7) in
-    ToLit "x" +ₗ #4 <-{MInt i32} "seven";;                       (* x.b = 7 *)
-    let: "v" := !ᶜ{MInt i32} (ToLit "x" +ₗ #4 +ₗ #4) in         (* x.c *)
-    ((#☠;; (#☠;; (#☠;; #☠)));; delete [ #12; ToLit "x"]);;         (* drop x *)
+    "x" +ₗ #4 <-{MInt i32} "seven";;                       (* x.b = 7 *)
+    let: "v" := !ᶜ{MInt i32} ("x" +ₗ #4 +ₗ #4) in         (* x.c *)
+    ((#☠;; (#☠;; (#☠;; #☠)));; delete [ #12; "x"]);;         (* drop x *)
     jump: "return" ["v"])%E.
 
   Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.

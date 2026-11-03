@@ -25,7 +25,7 @@ Section place_res_root.
   Definition downgrade : expr := (
     Skip;;                                   (* x as a place *)
     (Skip;; #☠);;                            (* resolve x *)
-    let: "r" := &ˢ (ToLit "x") in            (* &*x *)
+    let: "r" := &ˢ "x" in            (* &*x *)
     jump: "return" ["r"])%E.
 
   Definition ret_pair : predl_trans' [at_locₛ (intₛ i32 * intₛ i32)] (at_locₛ (intₛ i32 * intₛ i32)) :=

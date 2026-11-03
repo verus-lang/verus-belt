@@ -82,7 +82,7 @@ Section typing.
     ([∗ nat] i < length 𝔄l, typed_body E L I C
       (p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
     typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)) +:: T)
-      (case: ToLit (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K (ToLit p))) of el)
+      (case: (Load Na1Ord (MInt (sum_tag 𝔄l)) (pctx_expr K (p))) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -91,7 +91,7 @@ Section typing.
     destruct x as [[l x₀] ζm].
     rewrite /tctx_elt_interp.
     iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
-    have ?: Closed [] (pctx_expr K (ToLit p)).
+    have ?: Closed [] (pctx_expr K (p)).
     { apply pctx_expr_closed. have ?: Closed [] p by eapply eval_path_closed. apply _. }
     rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug.
     iDestruct "Own" as "[L1 Rest]". iSimpl in "L1".
@@ -103,9 +103,9 @@ Section typing.
     set lr := l.
     set lK := pctx_loc K (lty_size (OfTy (Σ! tyl))) x₀ lr.
     (* The address of the hole. *)
-    wp_bind (pctx_expr K (ToLit p)).
+    wp_bind (pctx_expr K (p)).
     iApply (wp_wand with "[Rest]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy (Σ! tyl))) 1 x₀ ζm [] d g tid lr (ToLit p) True True
+    { iApply (wp_pctx_expr K (lty_size (OfTy (Σ! tyl))) 1 x₀ ζm [] d g tid lr (p) True True
         with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         by wp_pure _. }

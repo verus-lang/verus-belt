@@ -8,12 +8,11 @@ Section assert.
 
   (* assert takes a bool argument b and performs undefined behavior if !b
      It's more like Rust's `assert_unchecked`.
-     The argument is a MiniRust boolean value; [ToLit] turns it into the literal that
-     [if:] cases on.
+     The argument is a MiniRust boolean value, which [if:] cases on.
   *)
   Definition assert : val :=
     fn: ["b"] :=
-      if: ToLit "b" then
+      if: "b" then
         let: "r" := MkTuple [] in
         return: ["r"]
       else
