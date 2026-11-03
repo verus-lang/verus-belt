@@ -1534,6 +1534,18 @@ Section traits.
     move=> *. apply Hyp.
   Qed.
 
+  (** A [Sync] type is [Send]. [Sync] includes the thread-independence of [ty_gho_own], so
+      the ownership is sent unchanged (without a step). This is a consequence of the
+      definitions here (in RustBelt, [Sync] says nothing about the ownership of the type). *)
+  Lemma sync_send {𝔄} (ty: type 𝔄) : Sync ty → Send ty.
+  Proof.
+    move=> Hsync. split.
+    iIntros (tid tid' x d g G H κs d0 Hineq TG TH) "_ _ _ _ H _ G Own ⧖o".
+    iApply step_fupdN_intro; first done. iNext. iModIntro.
+    iExists x, 0%nat. rewrite !Nat.add_0_r.
+    iEval (rewrite (proj1 (Hsync tid tid' x d g))) in "Own". by iFrame.
+  Qed.
+
   (* VerusBelt: this doesn't work anymore; Sync is proved on a per-type basis
   Global Instance simple_type_sync {𝔄} (st: simple_type 𝔄) : Send st → Sync st.
   Proof. move=> Eq >/=. by setoid_rewrite Eq at 1. Qed.
