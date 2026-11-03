@@ -262,7 +262,7 @@ Section lty_mem.
        |rewrite /res_node; destruct r as [|[[l' r'] ξi]]; [by iIntros "[]"|];
         iIntros "[Pt _]"; by iApply ptr_cell_mem_cell
        |rewrite /moved_leaf; destruct r as [lr|]; [|by iIntros "[]"];
-        iIntros "Pt"; iApply pad_cell_mem_cell; by rewrite /lty_size -ty_bsize_eq];
+        iIntros "Pt"; iApply pad_cell_mem_cell; by rewrite /lty_size -(ty_bsize_eq ty)];
       try by iIntros.
     - rewrite /leaf_owned_s /leaf_owned.
       destruct r as [lr|]; [|by iIntros "[]"]. iIntros "(%x & _ & Pt & _)".

@@ -70,6 +70,7 @@ Section view_laws.
     - iIntros "[V $]". by iApply (view_leaf_depth_mono with "V").
     - done.
     - done.
+    - done.
   Qed.
 
   (** ** The guards of the prophecy tokens
@@ -242,6 +243,7 @@ Section view_laws.
       + iPureIntro. intros ζl _.
         eapply proph_dep_weaken; [|apply (syn_indep x)]. set_solver.
       + iApply (view_tguards_mono with "[] T"); [lia|lia|]. iApply llftl_intersect_incl_l.
+    - done.
     - done.
     - done.
   Qed.
