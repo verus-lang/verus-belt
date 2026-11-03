@@ -49,7 +49,7 @@ Section view_laws.
     d ≤ d' → g ≤ g' → lty_view lt κ m p r d g tid l ⊢ lty_view lt κ m p r d' g' tid l.
   Proof.
     induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'] in κ, m, p, r, d, g, d', g', tid, l |- *;
+      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty] in κ, m, p, r, d, g, d', g', tid, l |- *;
       intros Hd Hg; simpl; try by apply view_leaf_depth_mono.
     - destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /view_uniq.
       iIntros "(#G & $ & %d1 & %g1 & %Hle & C & I)". iSplitR.
@@ -172,7 +172,7 @@ Section view_laws.
       view_tguards (κ ⊓ lty_sbl lt) ηl d g.
   Proof.
     induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'] in κ, m, x, q, d, g, tid, l |- *;
+      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty] in κ, m, x, q, d, g, tid, l |- *;
       iIntros "#LFT #Incl V"; simpl.
     - iDestruct "V" as "#V".
       iDestruct (view_leaf_unblocked_tguards κ m ty x d g tid l with "LFT Incl V") as "#T".
@@ -399,7 +399,7 @@ Section lty_share_view.
          end) ∧ lty_vok lt'
     | OwnPtrLty _ lt' | SumLty _ _ lt' => lty_vok lt'
     | ProdLty lt1 lt2 => lty_vok lt1 ∧ lty_vok lt2
-    | OfRes _ | ResUniqLty _ _ => False
+    | OfRes _ | ResUniqLty _ _ | Moved _ => False
     end.
 
   Lemma lty_vok_simple {𝔄} (lt: lty 𝔄) : lty_vok lt → lty_simple lt.
@@ -706,7 +706,7 @@ Section lty_share_view4.
   Lemma lty_share_view {𝔄} (lt: lty 𝔄) : lty_vok lt → share_view_stmt lt.
   Proof.
     induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ']; simpl; intros Hv; try done.
+      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty]; simpl; intros Hv; try done.
     - apply share_view_ofty.
     - apply share_view_blocked.
     - destruct Hv as [Hc Hv]. destruct lt; try done;

@@ -172,7 +172,7 @@ Section lty_mem.
       leaf is blocked or shared. *)
   Fixpoint lty_freeb {𝔄} (lt: lty 𝔄) : bool :=
     match lt with
-    | OfTy _ | OwnPtrLty _ _ | UniqLty _ _ | ShrLty _ _ | OfRes _ | ResUniqLty _ _ => true
+    | OfTy _ | OwnPtrLty _ _ | UniqLty _ _ | ShrLty _ _ | OfRes _ | ResUniqLty _ _ | Moved _ => true
     | ProdLty lt1 lt2 => lty_freeb lt1 && lty_freeb lt2
     | SumLty _ _ lt => lty_freeb lt
     | Blocked _ _ | ShrBlocked _ _ => false
@@ -207,7 +207,8 @@ Section lty_mem.
       laters, as in [own_node]. *)
   Fixpoint lty_omem_gen (M: loc → nat → iProp Σ) {𝔄} (m: nat) (lt: lty 𝔄) : loc → iProp Σ :=
     match lt in lty 𝔄 return loc → iProp Σ with
-    | OfTy _ | OfRes _ | UniqLty _ _ | ShrLty _ _ | ResUniqLty _ _ => λ l, M l (lty_size lt)
+    | OfTy _ | OfRes _ | UniqLty _ _ | ShrLty _ _ | ResUniqLty _ _ | Moved _ =>
+        λ l, M l (lty_size lt)
     | OwnPtrLty n lt' => λ l, ∃ l': loc, ptr_cell l l' ∗
         if own_freeb n lt' then
           ▷^m freeable_sz n (lty_size lt') l' ∗
@@ -252,14 +253,17 @@ Section lty_mem.
     ltype_own (Owned m) lt r d g tid l ⊢ lty_omem m lt l.
   Proof.
     induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'] in m, r, d, g, l |- *; rewrite /ltype_own /=;
+      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty] in m, r, d, g, l |- *; rewrite /ltype_own /=;
       [..|rewrite /leaf_owned_s /leaf_owned;
         destruct r as [lr|]; [|by iIntros "[[] _]"]; iIntros "[(%x & _ & Pt & _) _]";
         rewrite cbytes_at_loc; by iApply ptr_cell_mem_cell
        |rewrite /res_leaf; destruct r as [lr|]; [|by iIntros "[]"];
         iIntros "(%x & _ & Pt & _)"; by iApply cbytes_mem_cell
        |rewrite /res_node; destruct r as [|[[l' r'] ξi]]; [by iIntros "[]"|];
-        iIntros "[Pt _]"; by iApply ptr_cell_mem_cell]; try by iIntros.
+        iIntros "[Pt _]"; by iApply ptr_cell_mem_cell
+       |rewrite /moved_leaf; destruct r as [lr|]; [|by iIntros "[]"];
+        iIntros "Pt"; iApply pad_cell_mem_cell; by rewrite /lty_size -ty_bsize_eq];
+      try by iIntros.
     - rewrite /leaf_owned_s /leaf_owned.
       destruct r as [lr|]; [|by iIntros "[]"]. iIntros "(%x & _ & Pt & _)".
       by iApply cbytes_mem_cell.
@@ -389,7 +393,7 @@ Section drop_boxes.
   Global Instance drop_boxes_closed {𝔄} (lt: lty 𝔄) e :
     Closed [] e → Closed [] (drop_boxes lt e).
   Proof.
-    induction lt as [| | | 𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | |] in e |- *;
+    induction lt as [| | | 𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | | |] in e |- *;
       intros ?; simpl; try done.
     - destruct (own_freeb n lt); [|done].
       have ?: Closed [] (drop_boxes lt (Load Na1Ord MPtr e)%E).
@@ -441,7 +445,7 @@ Section drop_boxes.
   Lemma lty_omem_forget Reg {𝔄} m (lt: lty 𝔄) l :
     greg_open Reg -∗ lty_omem m lt l ={lazyE}=∗ greg_open Reg ∗ lty_omemb m lt l.
   Proof.
-    induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ']
+    induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty]
       in m, l |- *; iIntros "O M"; simpl; try (iModIntro; by iFrame).
     all: try by iApply (mem_cell_forget with "O M").
     - iDestruct "M" as (l') "[Pt M]". destruct (own_freeb n lt); [|iModIntro; iFrame; by iExists l'].
@@ -472,9 +476,10 @@ Section drop_boxes.
     (R -∗ mem_bytes l (lty_size lt) -∗ Φ #☠) -∗
     WP drop_boxes lt e @ E {{ Φ }}.
   Proof.
-    intros ?. induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ']
+    intros ?. induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty]
       in m, k, l, e, R, Φ |- *; intros Hf ? Hm Hev; simpl in Hf; try done; cbn [drop_boxes];
       iIntros "R M HΦ".
+    6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
     6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
     6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
     6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
