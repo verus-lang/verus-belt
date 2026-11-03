@@ -197,12 +197,7 @@ Section Ra.
   (* Definition ra_ty  : type (at_locₛ (positiveₛ* 𝔄)) := own_ptr 0 (ra_inner). *)
 
   Global Instance ra_send : Send ra_ty.
-  Proof.
-    intros. split; trivial.
-     - iIntros. iApply step_fupdN_intro; first done. iNext.
-       iExists x, 0%nat. iModIntro. iFrame. simpl.
-       replace (d0 + 0)%nat with d0 by lia. iFrame "#". done.
-  Qed.
+  Proof. done. Qed.
 
   Global Instance ra_sync : Sync ra_ty.
   Proof. apply sync_default; [done|]. move => ??[??]??; split => //=. Qed.

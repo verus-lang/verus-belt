@@ -238,13 +238,21 @@ Section typing.
   Proof.
     move=> ?. have Send: ∀i, Send (hlookup tyl i).
     { move=> *. by apply TCHForall_lookup. }
+    intros tid tid' x d g. unfold ty_gho_own, xsum_ty.
+    refine (match (to_xsum x) with | xinj i x0 => _ end). apply Send.
+  Qed.
+
+  Global Instance xsum_send_upd {𝔄l} (tyl: typel 𝔄l) : ListSendUpd tyl → SendUpd (Σ! tyl).
+  Proof.
+    move=> ?. have Send: ∀i, SendUpd (hlookup tyl i).
+    { move=> *. by apply TCHForall_lookup. }
     split.
     iIntros (tid tid' x d g G H κs d0 Hineq TG TH) "LFT UNIQ TIME Hg H Gg G Gho ⧖".
       replace x with (of_xsum (to_xsum x)).
         2: { apply semi_iso'. typeclasses eauto. }
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       unfold ty_gho_own, xsum_ty. rewrite semi_iso'.
-      iDestruct (@send_change_tid _ _ (𝔄l !!ₗ i) (tyl +!! i) (Send i) tid tid' x0 d g G H κs d0 with "LFT UNIQ TIME Hg H Gg G Gho ⧖") as "X". { trivial. }
+      iDestruct (@send_upd_change_tid _ _ (𝔄l !!ₗ i) (tyl +!! i) (Send i) tid tid' x0 d g G H κs d0 with "LFT UNIQ TIME Hg H Gg G Gho ⧖") as "X". { trivial. }
       iApply (step_fupdN_wand with "X"). iIntros ">X".
       iDestruct "X" as (x0' off) "(gho & ⧖off & %Habs & G & H)".
       iModIntro. iExists (of_xsum (xinj i x0')), off.

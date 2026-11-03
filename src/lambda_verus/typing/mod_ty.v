@@ -52,10 +52,13 @@ Section typing.
       - intros. apply copy_shr.
   Qed.
 
-  Global Instance mod_ty_send {𝔄 𝔅} `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty
+  Global Instance mod_ty_send {𝔄 𝔅} `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty : Send ty → Send (<{f;fⁱ}> ty).
+  Proof. move=> Hsend ?????. apply Hsend. Qed.
+
+  Global Instance mod_ty_send_upd {𝔄 𝔅} `{!@Isoₛ 𝔄 𝔅 f fⁱ} ty
     (syn_abstract_consistent : ∀ x x', syn_abstract x = syn_abstract x' →
         syn_abstract (f ~~$ₛ x) = syn_abstract (f ~~$ₛ x'))
-    : Send ty → Send (<{f;fⁱ}> ty).
+    : SendUpd ty → SendUpd (<{f;fⁱ}> ty).
   Proof.
     intros Hsend. destruct Hsend as [Hgho]. split.
      iIntros (tid tid' x d g G H1 κs d0 Hineq TG TH)

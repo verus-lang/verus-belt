@@ -335,7 +335,16 @@ Section fix_ty.
   Global Instance fix_send :
     (∀`(!Send ty), Send (T ty)) → Send (fix_ty T).
   Proof.
-    move=> ?. have ?: ∀n, Send (Tn T n) by elim; apply _. split; rewrite /fix_ty=> > /=.
+    move=> ?. have ?: ∀n, Send (Tn T n) by elim; apply _. rewrite /fix_ty=> > /=.
+    eapply @limit_preserving.
+    + apply limit_preserving_equiv=> ??? Eq; apply Eq.
+    + intros. apply send_change_tid.
+  Qed.
+
+  Global Instance fix_send_upd :
+    (∀`(!SendUpd ty), SendUpd (T ty)) → SendUpd (fix_ty T).
+  Proof.
+    move=> ?. have ?: ∀n, SendUpd (Tn T n) by elim; apply _. split; rewrite /fix_ty=> > /=.
     eapply @limit_preserving.
     + apply limit_preserving_forall. intro.
       apply limit_preserving_forall. intro.
@@ -343,7 +352,7 @@ Section fix_ty.
       apply limit_preserving_entails=> ??? Eq; [done|].
       do 8 f_equiv. { apply Eq. }
       do 8 f_equiv. apply Eq.
-    + intros. apply send_change_tid; trivial.
+    + intros. apply send_upd_change_tid; trivial.
   Qed.
 
   Global Instance fix_sync :

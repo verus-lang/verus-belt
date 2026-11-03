@@ -35,9 +35,7 @@ Section base.
   Qed.
 
   Global Instance base_send {𝔄} : Send (@base 𝔄).
-  Proof. split=>//.
-     by iIntros.
-  Qed.
+  Proof. done. Qed.
 
   Global Instance base_sync {𝔄} : Sync (@base 𝔄).
   Proof. done. Qed.

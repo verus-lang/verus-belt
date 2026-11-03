@@ -61,12 +61,7 @@ Section pcell.
   Proof. done. Qed.
 
   Global Instance pcell_send m : Send (pcell_ty m).
-  Proof.
-    split. iIntros (tid tid' x d g G H κs d0 Hineq TG TH) "LFT UNIQ TIME Hg H Gg G #Own #⧖o".
-    iApply step_fupdN_intro; first done. iNext.
-    iExists x, 0%nat. iModIntro. iFrame "G H". simpl.
-    replace (d0 + 0)%nat with d0 by lia. replace (d + 0)%nat with d by lia. by iFrame "#".
-  Qed.
+  Proof. done. Qed.
 
   Global Instance pcell_sync m : Sync (pcell_ty m).
   Proof. apply sync_default; [done|]. split; done. Qed.
@@ -235,6 +230,10 @@ Section cell_points_to.
 
   Global Instance cell_points_to_send {𝔄} (ty: type 𝔄) :
       Send ty → Send (cell_points_to_ty ty).
+  Proof. move=> Hsend tid tid' x d g /=. by rewrite (Hsend tid tid'). Qed.
+
+  Global Instance cell_points_to_send_upd {𝔄} (ty: type 𝔄) :
+      SendUpd ty → SendUpd (cell_points_to_ty ty).
   Proof.
     intros [Hgho]. split.
     intros tid tid' x d g G H κs d0 Hineq TG TH.

@@ -40,17 +40,11 @@ Section StorageProtocol.
     by rewrite Hgho Hpers Hshr.
   Qed.
 
-  (* this shouldn't really require Sync, but we would need another layer of step-indexing
-    accounting to fix it (similar to how local_inv works). At least in this case,
-    it doesn't matter, since the Storage Protocol requires Sync anyway. *)
-  Global Instance storable_ty_send {𝔄} (ty : type 𝔄) : Send ty → Sync ty → Send (storable_ty ty).
-  Proof. intros Hsend. intros Hsync. split; trivial.
-    iIntros (tid tid' x d g G H κs d1 Hineq TG TH) "LFT UNIQ TIME Hg H Gg G gho ⧖".
-    iDestruct (storable_ty_gho_change_tid ty tid tid' x with "gho") as "gho".
-    iApply step_fupdN_intro; first done. iNext. iModIntro.
-    iExists x, 0. iFrame. replace (d1 + 0) with d1 by lia. iFrame.
-    done.
-  Qed.
+  (* The ownership of a storable value contains the sharing predicate of [ty], so [Send]
+    needs [Sync ty]. At least in this case, it doesn't matter, since the Storage Protocol
+    requires Sync anyway. *)
+  Global Instance storable_ty_send {𝔄} (ty : type 𝔄) : Sync ty → Send (storable_ty ty).
+  Proof. intros Hsync ?????. by apply storable_ty_gho_change_tid. Qed.
 
   Global Instance storable_ty_sync {𝔄} (ty : type 𝔄) : Sync ty → Sync (storable_ty ty).
   Proof. intros Hsync. apply sync_default; [done|].
@@ -86,25 +80,17 @@ Section StorageProtocol.
       Qed.
       Next Obligation. done. Qed.
 
-  Lemma storage_ty_sync : Send tyC → Sync tyC → Sync storage_resource_ty.
+  Lemma storage_ty_sync : Sync tyC → Sync storage_resource_ty.
   Proof.
-    intros Hsend Hsync. apply sync_default; [done|]. split; last by done.
+    intros Hsync. apply sync_default; [done|]. split; last by done.
     simpl. unfold gt_gho. destruct x as [γ p].
     have Hg : ∀ c, tyC.(gt_gho) c tid ⊣⊢ tyC.(gt_gho) c tid'.
     { intros c. destruct (Hsync tid tid' c 0 0) as [H2 [H3 _]]. apply H2. }
     rewrite /sp_sto /sp_inv_body. by setoid_rewrite Hg.
   Qed.
 
-  Lemma storage_ty_send : Send tyC → Sync tyC → Send storage_resource_ty.
-  Proof.
-    intros Hsend. intros Hsync. split; trivial.
-    iIntros (tid tid' x d g G H' κs d1 Hineq TG TH) "LFT UNIQ TIME Hg H Gg G gho ⧖".
-    have H1 := storage_ty_sync Hsend Hsync.
-    destruct (H1 tid tid' x d g) as [H3 [H4 _]]. rewrite H3. iIntros.
-    iIntros. iApply step_fupdN_intro; first done. iNext. iModIntro.
-    iExists x, 0. iFrame. replace (d1 + 0) with d1 by lia. iFrame.
-    done.
-  Qed.
+  Lemma storage_ty_send : Sync tyC → Send storage_resource_ty.
+  Proof. intros Hsync. by apply sync_send, storage_ty_sync. Qed.
 End StorageProtocol.
 
 (** * Storage protocols on the byte layer

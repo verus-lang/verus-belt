@@ -419,6 +419,9 @@ Section own_bytes_rules.
     - lia.
   Qed.
   Global Instance own_bytes_send {𝔄} n (ty: type 𝔄) : Send ty → Send (own_bytes n ty).
+  Proof. move=> Hsend tid tid' x [|d] g //=. by rewrite (Hsend tid tid'). Qed.
+
+  Global Instance own_bytes_send_upd {𝔄} n (ty: type 𝔄) : SendUpd ty → SendUpd (own_bytes n ty).
   Proof. move=> [Hgho]. split.
        intros tid tid' x d g G H κs d0 Hineq TG TH.
          iIntros "LFT UNIQ TIME Hg H Gg G Hgho #⧖o".
