@@ -17,8 +17,8 @@ Section pcell_parts.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
-  Notation cellt := (pcell_ty (MInt i32)).
-  Notation pairₛ := (intₛ i32 * pcellₛ (MInt i32))%ST.
+  Notation cellt := (pcell_ty (wfm (MInt i32))).
+  Notation pairₛ := (intₛ i32 * pcellₛ (wfm (MInt i32)))%ST.
 
   (*
   ```
@@ -161,8 +161,8 @@ Section pcell_parts.
     intros. simpl. intros. split; [done|]. intros _. done.
   Qed.
 
-  Notation pairt := (pcell_ty (MInt i32) * cell_points_to_ty i32t)%T.
-  Notation pair'ₛ := (pcellₛ (MInt i32) * trackedₛ (pcellₛ (syn_mty (intₛ i32)) * intₛ i32))%ST.
+  Notation pairt := (pcell_ty (wfm (MInt i32)) * cell_points_to_ty i32t)%T.
+  Notation pair'ₛ := (pcellₛ (wfm (MInt i32)) * trackedₛ (pcellₛ (syn_wmty (intₛ i32)) * intₛ i32))%ST.
   Notation optt := (Σ! +[(); pairt])%T.
   Notation optₛ := (Σ! [unitₛ; pair'ₛ])%ST.
 
@@ -280,11 +280,11 @@ Section pcell_parts.
       iApply typed_body_tctx_incl.
       { apply (copy_val_tctx_incl _ _ _ _ _ (Copy0:=shr_bytes_copy κ pairt)). }
       iApply (type_let with "[]").
-      { apply (type_shr_bytes_fst_instr κ (pcell_ty (MInt i32)) (cell_points_to_ty i32t)). }
+      { apply (type_shr_bytes_fst_instr κ (pcell_ty (wfm (MInt i32))) (cell_points_to_ty i32t)). }
       { solve_typing. } { reflexivity. }
       iIntros (vpc). simpl_subst.
       iApply (type_let with "[]").
-      { apply (type_shr_bytes_snd_instr κ (pcell_ty (MInt i32)) (cell_points_to_ty i32t)). }
+      { apply (type_shr_bytes_snd_instr κ (pcell_ty (wfm (MInt i32))) (cell_points_to_ty i32t)). }
       { solve_typing. } { reflexivity. }
       iIntros (vpt). simpl_subst.
       (* borrow the contents, and read them *)

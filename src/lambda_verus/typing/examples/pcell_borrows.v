@@ -19,7 +19,7 @@ Section pcell_borrows.
   Notation i32t := (int_ty i32).
   Notation pairt := (i32t * i32t)%T.
   Notation pm := (syn_mty (intₛ i32 * intₛ i32)).
-  Notation cellt := (pcell_ty pairt.(ty_mty)).
+  Notation cellt := (pcell_ty (ty_wmty pairt)).
   Notation permt := (cell_points_to_ty pairt).
 
   (*
@@ -276,7 +276,7 @@ Section pcell_borrows.
     (* the final value of the permission *)
     have H7 : a5 = 7%Z.
     { rewrite Hv5 (uniq_util.uniq_prvar_app_irrel (𝔄:=intₛ i32) a2 7%Z ξ3 π). exact Hres3. }
-    have Hp : (π (uniq_prvar (𝔄:=trackedₛ (pcellₛ pm * (intₛ i32 * intₛ i32))) (g1, (a2, b5)) ξ1)).1
+    have Hp : (π (uniq_prvar (𝔄:=trackedₛ (pcellₛ (syn_wmty (intₛ i32 * intₛ i32)) * (intₛ i32 * intₛ i32))) (g1, (a2, b5)) ξ1)).1
       = (g1, (7%Z, b5)).
     { rewrite !uniq_bor_future_eq in Hf2 Hg2.
       assert (∀ p : positive * (Z * Z), p.1 = g1 → p.2 = (7%Z, b5) → p = (g1, (7%Z, b5))) as Hpair.

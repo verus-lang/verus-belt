@@ -16,8 +16,8 @@ Section pcell_move.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
-  Notation cellt := (pcell_ty (MInt i32)).
-  Notation pairₛ := (intₛ i32 * pcellₛ (MInt i32))%ST.
+  Notation cellt := (pcell_ty (wfm (MInt i32))).
+  Notation pairₛ := (intₛ i32 * pcellₛ (wfm (MInt i32)))%ST.
 
   (*
   ```
