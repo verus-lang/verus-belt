@@ -1,6 +1,10 @@
 (** * Fancy MiniRust values
 
-The values held by multi-byte cells (see [design_docs/pcell-multibyte-cells.md]). A
+The values held by multi-byte cells (see [design_docs/pcell-multibyte-cells.md]; since phase 5
+of [design_docs/guarded-mutable-borrows-plan.md] there is no physical cell heap, and the
+cells are instances of guarded mutable borrows: the registry [R] and its byte-cells only
+name the positions of the cells in fancy bytes, for [frepr] in [gcont], [typing/gcont.v];
+the dynamic registry [ρ] and [registry_decode] are not used outside this file). A
 _fancy value_ ([FValue]) is a MiniRust [Value] that may embed cells: [FVCell g] stands for
 the current value of the cell group [g]. Groups are registered in a _static registry_
 [R : gmap gid (mty * list positive)], which records for each group its MiniRust type

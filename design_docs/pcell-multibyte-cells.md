@@ -1,6 +1,12 @@
 # PCell on the byte memory model: multi-byte cells
 
-Status: steps 1–3 implemented (2026-10-30), branch `memory-model`; see §9 Outcome. §10 step 1
+**Superseded (2026-11-03).** The physical cell heap described here (byte-cells, chains,
+untether/retether, D3 in the heap, `lang/heap_cells.v`, `util/cellmap.v`, the cell WP rules,
+`lang/pcell_tests.v`) was replaced by guarded mutable borrows and deleted in phase 5 of
+`design_docs/guarded-mutable-borrows-plan.md`; see §21. Fancy values and `frepr`
+(`lang/fvalue.v`, D2) remain in use. The history below is kept as it was.
+
+Status (before the supersession): steps 1–3 implemented (2026-10-30), branch `memory-model`; see §9 Outcome. §10 step 1
 done (2026-10-31); see §11. §10 steps 2 and 3 done; see §12 and §13. §10 step 4 done; see §14.
 §10 step 5 done; see §15 and §16. Moves of values with cells: see §19. PCell borrows as
 `&shr`/`&uniq` with exact bytes: not implemented, see §20 (obstacles and two proposed routes).
@@ -30,6 +36,8 @@ For a typed move we need three things:
   *fancy MiniRust value*: a MiniRust value that may embed further cells.
 
 ## 2. The current machinery
+
+*Superseded: the physical cell heap was deleted (phase 5 of the GMB plan, see §21).*
 
 **`util/cellmap.v`, generic in `L` (locations), `C` (cell ids) and `V` (values):**
 - The ghost state is a `full_map : gmap (L + untether_id) (list C * V)`. Each location, or
@@ -62,6 +70,8 @@ The byte region (`l ↦b bs`) has **no cells**.
 ## 3. Design
 
 ### D1. Cells are per byte; a cell group is a multi-byte cell
+
+*Superseded: the physical cell heap was deleted (phase 5 of the GMB plan, see §21).*
 
 Instantiate the cell map with `V = abyte`, so cells live in the byte region. Each byte location
 keeps its own chain of **byte-cells**, which reuses all of `cellmap.v` unchanged. Add one layer on
@@ -103,6 +113,8 @@ decode field-wise.
 
 ### D3. The decodability invariant
 
+*Superseded: the physical cell heap was deleted (phase 5 of the GMB plan, see §21).*
+
 The byte-region context gains an authoritative map `fv_g` (each group's current fancy value) and
 this invariant:
 
@@ -134,6 +146,8 @@ write semantics later would need no change to the invariant: the `WSt` exemption
 - **The location side of a PCell:** `l ↦b[^ [g]] _`, the chains `l+i ↦ cs_g !! i`.
 
 ### D5. Operations and their lemmas
+
+*Superseded: the physical cell heap was deleted (phase 5 of the GMB plan, see §21).*
 
 1. **Create (`PCellFromOwn`).**
    - From `l ↦b bs` with `ty_bytes ty x bs` (so `decode m bs = Some v`), with `m := ty_mty ty`.
@@ -300,6 +314,8 @@ on step 4. No `Admitted`; no new axioms (the tests are closed under the global c
 
 ### Step 1: byte cell map
 
+*Superseded: the physical cell heap was deleted (phase 5 of the GMB plan, see §21).*
+
 - `util/cellmap.v` gains a full-authority RA, **`fcmap`**. Its authority is the whole full map
   `𝛼`; its fragments are edges (`fpt`) and untethered rows (`funt`). It has update lemmas for
   alloc, delete, write at the end of a row, untether, retether, and insert/delete of a front
@@ -337,6 +353,8 @@ on step 4. No `Admitted`; no new axioms (the tests are closed under the global c
   - Groups need `0 < mty_size m`.
 
 ### Step 3: D5 lemmas and WP-level tests
+
+*Superseded: the physical cell heap was deleted (phase 5 of the GMB plan, see §21).*
 
 **Context lemmas (`heap.v`):**
 - `bytes_ctx_pcell_create`, `bytes_ctx_pcell_destroy`.
@@ -447,6 +465,8 @@ next to the legacy `pcellₛ n`; the legacy one is deleted in stage 5.
 6. **Stage 5:** delete the legacy layer.
 
 ## 11. Outcome: §10 step 1 (2026-10-31)
+
+*Superseded: the physical cell heap was deleted (phase 5 of the GMB plan, see §21).*
 
 All five items are done at the lemma level, with no typing-layer changes. No `Admitted`; no
 new axioms (all tests are closed under the global context). The cell lemmas moved from
@@ -940,6 +960,8 @@ Values that contain cells are moved by the generic move and store rules, without
 
 ### Heap: several groups in transit (`lang/heap.v`, `lang/heap_cells.v`, `lang/lifting.v`)
 
+*Superseded: the physical cell heap was deleted (phase 5 of the GMB plan, see §21).*
+
 A value may embed several sibling groups (each possibly with nested groups). Instead of one
 `untethered g m cs bs` per group, its cells are in transit pointwise, along its fancy
 bytes:
@@ -1152,3 +1174,20 @@ problem.
 Either way O3 is the bulk of the typing-layer work. Route V needs the language change and
 the threading of O3; route C needs, in addition, several thousand lines in `heap_cells.v`
 and the meta-theory.
+
+## 21. Closing: superseded by guarded mutable borrows (2026-11-03)
+
+The obstacles of §20 were resolved by neither route V nor route C, but by a different design:
+`design_docs/guarded-mutable-borrows-plan.md`. A cell is an instance of a _guarded mutable
+borrow_ (`lifetime/guarded_bor.v`) over ordinary memory, with the location as placement and
+the fancy value as logical contents; the decodability invariant D3 is a property of the
+contents `gcont l m fv` (`typing/gcont.v`, `typing/gmb_cells.v`), held by whoever has them,
+rather than an invariant of the heap. `borrow` is (L2) and `borrow_mut` is the prophetic lend
+(L3p) (`typing/pcell.v`, `typing/pcell_borrow.v`, example `typing/examples/pcell_borrows.v`).
+
+The physical cell heap of §§9–19 (`lang/heap_cells.v`, `util/cellmap.v`, the cell parts of
+`lang/heap.v`, the `wp_pcell_*`/`wp_fbytes_*` rules of `lang/lifting.v`, `lang/pcell_tests.v`)
+was deleted in phase 5 of that plan (merge `9edae9c`); the byte region of `lang/heap.v` is now
+a plain ghost map. What survives from this document: fancy values and their representation
+(D2, §7: `lang/fvalue.v`), the layout of `pcellₛ m` (§12: `prophecy/syn_type.v`) and the
+fancy bytes of the types (§14: `typing/bytes_layout.v`).
