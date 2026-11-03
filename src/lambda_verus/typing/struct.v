@@ -200,4 +200,163 @@ Section typing.
     move=> [?[->All]]. clear T. elim All. { rewrite /happly /compose. apply _. }
     move=> ?? T Tl ???. by apply struct_cons_type_contractive.
   Qed.
+
+  Global Instance struct_cons_copy {𝔄 𝔄l} L (ty: type 𝔄) (ty': type (structₛ L 𝔄l)) :
+    Copy ty → Copy ty' → Copy (struct_cons_ty L ty ty').
+  Proof.
+    move=> C1 C2. split.
+    - rewrite /NoCell /=. apply andb_True. split; [apply C1|apply C2].
+    - intros. unfold ty_gho_own, struct_cons_ty. typeclasses eauto.
+    - intros. iIntros "[S1 S2]".
+      iDestruct (copy_shr with "S1") as "#G1". iDestruct (copy_shr with "S2") as "#G2".
+      by iApply (guards_sep_pers with "G1 G2").
+  Qed.
+
+  Global Instance struct_nil_copy L : Copy (struct_nil_ty L).
+  Proof.
+    split. - done. - by apply _. - intros. iIntros. iApply guards_true.
+  Qed.
+
+  Global Instance struct_copy {𝔄l} L (tyl: typel 𝔄l) : ListCopy tyl → Copy (struct_ty L tyl).
+  Proof. elim; apply _. Qed.
+
+  Global Instance struct_cons_send {𝔄 𝔄l} L (ty: type 𝔄) (ty': type (structₛ L 𝔄l)) :
+    Send ty → Send ty' → Send (struct_cons_ty L ty ty').
+  Proof. move=> S1 S2 tid tid' x d g /=. f_equiv; [apply S1|apply S2]. Qed.
+
+  Global Instance struct_nil_send L : Send (struct_nil_ty L).
+  Proof. done. Qed.
+
+  Global Instance struct_send {𝔄l} L (tyl: typel 𝔄l) : ListSend tyl → Send (struct_ty L tyl).
+  Proof. elim; apply _. Qed.
+
+  Global Instance struct_cons_send_upd {𝔄 𝔄l} L (ty: type 𝔄) (ty': type (structₛ L 𝔄l)) :
+    SendUpd ty → SendUpd ty' → SendUpd (struct_cons_ty L ty ty').
+  Proof.
+    intros [Hgho1] [Hgho2]. split.
+      intros tid tid' x d g G H κs d0 Hineq TG TH.
+        iIntros "#LFT #UNIQ #TIME #Hg H #Gg G [gho1 gho2] #⧖o".
+        iApply fupd_step_fupdN_front.
+        iMod (fractional.frac_split_guard_in_half with "H Hg") as (γH) "(H1 & H2 & #HgHalf & Hback)"; first by solve_ndisj.
+        iMod (fractional.frac_split_in_half (NllftG) with "G") as (γG) "(G1 & G2 & #GgHalf' & Gback)"; first by solve_ndisj.
+        iAssert (∀ κ : lft, ⌜κ ∈ κs⌝ -∗ fractional.half γG &&{ ↑NllftG }&&> @[κ])%I as "GgHalf".
+          { iIntros (κ) "%Hκ". iApply (guards_transitive with "GgHalf' []").
+            iApply "Gg". done. }
+        iDestruct (Hgho1 with "LFT UNIQ TIME HgHalf H1 GgHalf G1 gho1 ⧖o") as "gho1"; trivial.
+        iDestruct (Hgho2 with "LFT UNIQ TIME HgHalf H2 GgHalf G2 gho2 ⧖o") as "gho2"; trivial.
+        iCombine "gho1 gho2" as "gho".
+        iModIntro. iApply (step_fupdN_wand with "gho").
+        iIntros "[>gho1 >gho2]".
+        iDestruct "gho1" as (x'1 off1) "[gho1 [⧖1 [%s1 [G1 H1]]]]".
+        iDestruct "gho2" as (x'2 off2) "[gho2 [⧖2 [%s2 [G2 H2]]]]".
+        iExists (x'1 -:: x'2), (off1 `max` off2)%nat.
+        iDestruct ("Hback" with "H1 H2") as "H". iMod (fupd_mask_mono with "H") as "H"; first solve_ndisj.
+        iDestruct ("Gback" with "G1 G2") as "G". iMod (fupd_mask_mono with "G") as "G"; first solve_ndisj.
+        iModIntro.
+        iDestruct (ty_gho_own_depth_mono with "gho1") as "[$ _]". { lia. } { lia. }
+        iDestruct (ty_gho_own_depth_mono with "gho2") as "[$ _]". { lia. } { lia. }
+        iCombine "⧖1 ⧖2" as "⧖". iFrame "G H".
+        iSplit.
+         + iApply (persistent_time_receipt_mono with "⧖"). lia.
+         + iPureIntro. destruct x. simpl. rewrite s1. simpl in s2. rewrite s2. done.
+  Qed.
+
+  Global Instance struct_nil_send_upd L : SendUpd (struct_nil_ty L).
+  Proof. apply send_send_upd, _. Qed.
+
+  Global Instance struct_send_upd {𝔄l} L (tyl: typel 𝔄l) :
+    ListSendUpd tyl → SendUpd (struct_ty L tyl).
+  Proof. elim; apply _. Qed.
+
+  Global Instance struct_cons_sync {𝔄 𝔄l} L (ty: type 𝔄) (ty': type (structₛ L 𝔄l)) :
+    Sync ty → Sync ty' → Sync (struct_cons_ty L ty ty').
+  Proof. intros S1 S2. intro tid. intro tid'. intro x. intros d g.
+      destruct (S1 tid tid' (phd x) d g) as [S1g [S1gp S1s]].
+      destruct (S2 tid tid' (ptl x) d g) as [S2g [S2gp S2s]].
+      move=> >/=. split; [|split].
+      + f_equiv; trivial.
+      + f_equiv; trivial.
+      + move=> ?. f_equiv; trivial.
+  Qed.
+
+  Global Instance struct_nil_sync L : Sync (struct_nil_ty L).
+  Proof. intros. split; [|split]; trivial. Qed.
+
+  Global Instance struct_sync {𝔄l} L (tyl: typel 𝔄l) : ListSync tyl → Sync (struct_ty L tyl).
+  Proof. elim; apply _. Qed.
+
+  Lemma struct_cons_resolve {𝔄 𝔄l} L (ty: type 𝔄) (ty': type (structₛ L 𝔄l)) Φ Φ' E L' :
+    resolve E L' ty Φ → resolve E L' ty' Φ' →
+    resolve E L' (struct_cons_ty L ty ty') (λ '(a -:: b), λ π , Φ a π ∧ Φ' b π).
+  Proof.
+    iIntros (Rslv Rslv' ? vπ ???? Ti Ma) "#LFT #PROPH #UNIQ #TIME #E #L G [T1 T2]".
+    iMod (fractional.frac_split_guard_in_half NllftG with "G L") as (hγ) "[F1 [F2 [#Ghalf #back]]]". { solve_ndisj. }
+    iMod (Rslv with "LFT PROPH UNIQ TIME E Ghalf F1 T1") as "ToObs"; [done|].
+    iMod (Rslv' with "LFT PROPH UNIQ TIME E Ghalf F2 T2") as "ToObs'"; [done|].
+    iCombine "ToObs ToObs'" as "ToObs".
+    iModIntro.
+    iApply (step_fupdN_wand with "ToObs").
+    iIntros "[A B]".
+    iMod "A". iMod "B".
+    iDestruct "A" as "[A F1]".
+    iDestruct "B" as "[B F2]".
+    iDestruct ("back" with "F1 F2") as "G".
+    iMod (fupd_mask_mono with "G") as "G". { solve_ndisj. }
+    iFrame "G".
+    iCombine "A B" as "C".
+    iModIntro. iApply proph_obs_eq; [|done]=>/= π. destruct x; trivial.
+  Qed.
+
+  Lemma struct_nil_resolve L E L' : resolve E L' (struct_nil_ty L) (const (const True)).
+  Proof. apply resolve_just. Qed.
+
+  Lemma struct_resolve {𝔄l} L (tyl: typel 𝔄l) Φl E L' :
+    resolvel E L' tyl Φl →
+    resolve E L' (struct_ty L tyl) (λ al π, pforall (λ _ '(Φ, a), Φ a π) (pzip Φl al)).
+  Proof.
+    elim; [eapply resolve_impl; [apply resolve_just|done]|]=>/= *.
+    eapply resolve_impl.
+     - apply struct_cons_resolve; done.
+     - intros [a al]. intros. done.
+  Qed.
+
+  Lemma struct_resolve_just {𝔄l} L (tyl: typel 𝔄l) E L' :
+    resolve E L' (struct_ty L tyl) (const (const True)).
+  Proof. apply resolve_just. Qed.
+
+  Global Instance struct_nil_res_own L : ResOwn (struct_nil_ty L).
+  Proof. done. Qed.
+  Global Instance struct_cons_res_own {𝔄 𝔄l} L (ty: type 𝔄) (ty': type (structₛ L 𝔄l)) :
+    ResOwn ty → ResOwn ty' → ResOwn (struct_cons_ty L ty ty').
+  Proof. move=> ?? x d g tid /=. by rewrite !res_own. Qed.
+  Global Instance struct_res_own {𝔄l} L (tyl: typel 𝔄l) :
+    TCHForall (λ 𝔄, @ResOwn _ _ 𝔄) tyl → ResOwn (struct_ty L tyl).
+  Proof. elim; apply _. Qed.
+
+  Lemma struct_cons_resolve_keep {𝔄 𝔄l} L (ty: type 𝔄) (ty': type (structₛ L 𝔄l)) Φ Φ' E L' :
+    resolve_keep E L' ty Φ → resolve_keep E L' ty' Φ' →
+    resolve_keep E L' (struct_cons_ty L ty ty') (λ '(a -:: b), λ π , Φ a π ∧ Φ' b π).
+  Proof.
+    iIntros (Rslv Rslv' ? vπ ???? Ti Ma) "#LFT #PROPH #UNIQ #TIME #E #L G [T1 T2]".
+    iMod (fractional.frac_split_guard_in_half NllftG with "G L")
+      as (hγ) "[F1 [F2 [#Ghalf #back]]]"; [solve_ndisj|].
+    iMod (Rslv with "LFT PROPH UNIQ TIME E Ghalf F1 T1") as "ToObs"; [done|].
+    iMod (Rslv' with "LFT PROPH UNIQ TIME E Ghalf F2 T2") as "ToObs'"; [done|].
+    iCombine "ToObs ToObs'" as "ToObs". iModIntro.
+    iApply (step_fupdN_wand with "ToObs").
+    iIntros "[>(A & F1 & R1) >(B & F2 & R2)]".
+    iMod (fupd_mask_mono with "(back F1 F2)") as "$"; [solve_ndisj|].
+    iFrame "R1 R2". iCombine "A B" as "C".
+    iModIntro. iApply proph_obs_eq; [|done]=>/= π. destruct x; trivial.
+  Qed.
+
+  Lemma struct_outlives_E_elctx_sat {𝔄l} E L' L (tyl: typel 𝔄l) κ:
+    elctx_sat E L' (tyl_outlives_E tyl κ) → elctx_sat E L' (ty_outlives_E (struct_ty L tyl) κ).
+  Proof.
+    move=> ?. eapply eq_ind; [done|]. rewrite /ty_outlives_E /=.
+    elim tyl=>/= [|> IH]; [done|]. by rewrite fmap_app -IH.
+  Qed.
 End typing.
+
+Global Hint Resolve struct_resolve | 5 : lrust_typing.
+Global Hint Resolve struct_resolve_just struct_outlives_E_elctx_sat : lrust_typing.

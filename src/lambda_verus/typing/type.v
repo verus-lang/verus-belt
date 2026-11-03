@@ -579,6 +579,8 @@ Global Instance xprod_nocell 𝔄l : NoCellL 𝔄l → NoCell (Π! 𝔄l).
 Proof. done. Qed.
 Global Instance xsum_nocell 𝔄l : NoCellL 𝔄l → NoCell (Σ! 𝔄l).
 Proof. done. Qed.
+Global Instance struct_nocell L 𝔄l : NoCellL 𝔄l → NoCell (structₛ L 𝔄l).
+Proof. done. Qed.
 
 Section ty_mty_lemmas.
   Context `{!typeG Σ}.
