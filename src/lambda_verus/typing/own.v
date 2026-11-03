@@ -41,6 +41,35 @@ Section own_bytes.
   Global Instance pad_own_timeless l fs sz : Timeless (pad_own l fs sz).
   Proof. apply bi.exist_timeless=> bs. apply _. Qed.
 
+  (** The padding only depends on the offsets and sizes of the fields. *)
+  Lemma pad_own_sizes l offs ms ms' sz :
+    mty_size <$> ms = mty_size <$> ms' → pad_own l (zip offs ms) sz = pad_own l (zip offs ms') sz.
+  Proof.
+    intros Hs. have Hin : ∀ i, in_field (zip offs ms) i ↔ in_field (zip offs ms') i.
+    { intros i. rewrite /in_field. revert ms ms' Hs.
+      induction offs as [|o offs IH]; intros [|m ms] [|m' ms'] Hs; simplify_eq/=;
+        try (split; intros (? & Hf & _); by apply elem_of_nil in Hf).
+      split; intros (f & [->|Hf]%elem_of_cons & Hi); simpl in *.
+      - exists (o, m'). split; [by left|]. simpl. by rewrite -H.
+      - destruct (proj1 (IH ms ms' H0) (ex_intro _ f (conj Hf Hi))) as (f' & ? & ?).
+        exists f'. split; [by right|done].
+      - exists (o, m). split; [by left|]. simpl. by rewrite H.
+      - destruct (proj2 (IH ms ms' H0) (ex_intro _ f (conj Hf Hi))) as (f' & ? & ?).
+        exists f'. split; [by right|done]. }
+    rewrite /pad_own. f_equal. fun_ext=> bs. f_equal. f_equal. fun_ext=> i. fun_ext=> b.
+    destruct (decide (in_field (zip offs ms) i)), (decide (in_field (zip offs ms') i));
+      naive_solver.
+  Qed.
+
+  Lemma pad_own_struct_bsize l L 𝔄l 𝔅l :
+    syn_bsize <$> 𝔄l = syn_bsize <$> 𝔅l →
+    pad_own l (struct_fields L 𝔄l) (struct_size L 𝔄l) =
+      pad_own l (struct_fields L 𝔅l) (struct_size L 𝔅l).
+  Proof.
+    intros Hs. rewrite /struct_fields (struct_offs_bsize L 𝔄l 𝔅l) // (struct_size_bsize L 𝔄l 𝔅l) //.
+    apply pad_own_sizes. by rewrite -!list_fmap_compose.
+  Qed.
+
   (** Separate contents at offsets of [l] have a common registry. *)
   Lemma gconts_union l (ps : list ((nat * mty) * FValue)) :
     ([∗ list] p ∈ ps, gcont (l +ₗ Z.of_nat p.1.1) p.1.2 p.2) ⊢

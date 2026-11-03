@@ -935,6 +935,22 @@ Section ltype_lemmas.
     iIntros "[A B]". iSplitL "A"; [by iApply Hlt|by iApply IH].
   Qed.
 
+  Lemma fields_node_app {𝔅l ℭl} offs
+      (cs1: hlist (λ 𝔅, lpat → prfn 𝔅 → nat → nat → thread_id → loc → iProp Σ) 𝔅l)
+      (cs2: hlist (λ 𝔅, lpat → prfn 𝔅 → nat → nat → thread_id → loc → iProp Σ) ℭl)
+      ps1 ps2 rs1 rs2 d g tid l :
+    length ps1 = length 𝔅l →
+    fields_node offs (cs1 h++ cs2) (ps1 ++ ps2) (papp rs1 rs2) d g tid l ⊣⊢
+      fields_node (take (length 𝔅l) offs) cs1 ps1 rs1 d g tid l ∗
+      fields_node (drop (length 𝔅l) offs) cs2 ps2 rs2 d g tid l.
+  Proof.
+    revert offs ps1. induction cs1 as [|𝔅 𝔅l c cs1 IH]; intros offs ps1 Hlen.
+    - destruct ps1; [|done]. by rewrite /= left_id.
+    - destruct ps1 as [|p ps1]; [done|]. destruct rs1 as [r rs1].
+      destruct offs as [|o offs]; simpl; [iSplit; [by iIntros "[]"|by iIntros "[[] _]"]|].
+      rewrite IH; [|simpl in Hlen; lia]. by rewrite assoc.
+  Qed.
+
   Lemma struct_node_hmap_mono {𝔅l} L (lts: hlist lty 𝔅l)
       (f f': ∀ 𝔅, lty 𝔅 → lpat → prfn 𝔅 → nat → nat → thread_id → loc → iProp Σ)
       ps r d g d' g' tid l :

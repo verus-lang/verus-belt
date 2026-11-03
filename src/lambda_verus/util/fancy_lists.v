@@ -609,6 +609,24 @@ Proof.
 Qed.
 End Forall.
 
+Lemma pforall_app {A} {F: A → Type} {Xl Yl} (Φ: ∀X, F X → Prop) (xl: plist F Xl) (yl: plist F Yl) :
+  pforall Φ (papp xl yl) ↔ pforall Φ xl ∧ pforall Φ yl.
+Proof.
+  induction Xl as [|X Xl IH]; simpl; [tauto|]. destruct xl as [x xl]. simpl. rewrite IH. tauto.
+Qed.
+
+Lemma pforall_impl {A} {F: A → Type} {Xl} (Φ Ψ: ∀X, F X → Prop) (xl: plist F Xl) :
+  (∀X x, Φ X x → Ψ X x) → pforall Φ xl → pforall Ψ xl.
+Proof.
+  intros Imp. induction Xl as [|X Xl IH]; simpl; [done|]. destruct xl as [x xl].
+  intros [??]. split; [by apply Imp|by apply IH].
+Qed.
+
+Lemma HForall_forall {A} {F: A → Type} {Xl} (Φ: ∀X, F X → Prop) (xl: hlist F Xl) :
+  (∀X x, Φ X x) → HForall Φ xl.
+Proof. intros H. induction xl; constructor; [apply H|done]. Qed.
+
+
 Lemma HForall_hmap {A} {F G: A → Type} {Xl} (Φ: ∀X, G X → Prop) (f: ∀X, F X → G X) (xl: hlist F Xl) :
   HForall Φ (hmap f xl) ↔ HForall (λ X x, Φ X (f X x)) xl.
 Proof.

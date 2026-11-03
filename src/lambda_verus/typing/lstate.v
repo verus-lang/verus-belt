@@ -333,6 +333,13 @@ Proof.
   destruct xs as [x xs]. by rewrite /= prfn_wit_in IH.
 Qed.
 
+Lemma prfn_rsv_struct {𝔄l} L (rs: plist (λ 𝔅, prfn 𝔅) 𝔄l) ζl :
+  prfn_rsv (𝔄:=structₛ L 𝔄l) (inr rs) ζl ↔ pforall (λ _ r, prfn_rsv r ζl) rs.
+Proof.
+  induction 𝔄l as [|𝔄 𝔄l IH]; [done|]. destruct rs as [r rs]. simpl.
+  split; intros [? Hr]; split; try done; by apply IH.
+Qed.
+
 Lemma prfn_rsv_fields_in {𝔄l} L (xs: plist (~~) 𝔄l) ζl : prfn_rsv (prfn_fields_in L xs) ζl.
 Proof.
   rewrite /prfn_fields_in /=. induction 𝔄l as [|𝔄 𝔄l IH]; [done|].
@@ -405,6 +412,9 @@ Fixpoint pat_blk_lfts (p: lpat) : list lft :=
   | PatSum p' => pat_blk_lfts p'
   | PatShrBlocked α => [α]
   end.
+
+Lemma pat_blk_lfts_struct ps : pat_blk_lfts (PatStruct ps) = concat (pat_blk_lfts <$> ps).
+Proof. induction ps as [|p ps IH]; [done|]. simpl. f_equal. exact IH. Qed.
 
 (** The pattern of a leaf at a state: a structured refinement (of an unfolded
     compound place) is seen by a leaf as blocked at [κ]. *)
