@@ -1873,6 +1873,18 @@ Section subtyping.
     iApply type_incl_trans; by [iApply "Incl"|iApply "Incl'"].
   Qed.
 
+  (** Every subtyping preserves the bytes ([syn_bincl], part of [type_incl]), so another
+      subtyping may assume it (e.g. to equate sizes that depend on the syntactic types). *)
+  Lemma subtype_bincl_elim {𝔄 𝔅 ℭ 𝔇} E L (ty1: type 𝔄) (ty1': type 𝔅) (f: 𝔄 →ₛ 𝔅)
+      (ty: type ℭ) (ty': type 𝔇) (g: ℭ →ₛ 𝔇) :
+    subtype E L ty1 ty1' f → (syn_bincl f → subtype E L ty ty' g) → subtype E L ty ty' g.
+  Proof.
+    move=> Sub Sub'. iIntros "L". iDestruct (Sub with "L") as "#Incl".
+    iAssert (∀ _: syn_bincl f, □ (elctx_interp E -∗ type_incl ty ty' g))%I
+      with "[L]" as "#Incl'"; [iIntros (Hb); by iApply (Sub' Hb with "L")|].
+    iIntros "!> #E". iDestruct ("Incl" with "E") as "[%Hb _]". by iApply "Incl'".
+  Qed.
+
   Lemma eqtype_trans {𝔄 𝔅 ℭ} ty ty' ty'' (f: 𝔄 →ₛ 𝔅) f' (g: 𝔅 →ₛ ℭ) g' E L :
     eqtype E L ty ty' f f' → eqtype E L ty' ty'' g g' →
     eqtype E L ty ty'' (g ∘ₛ f) (f' ∘ₛ g').
