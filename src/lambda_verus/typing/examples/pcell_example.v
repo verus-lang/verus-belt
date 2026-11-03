@@ -46,7 +46,7 @@ Section pcell_example.
 
   Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.
 
-  Notation pairt := (pcell_ty (MInt i32) * cell_points_to_ty i32t)%T.
+  Notation pairt := (pcell_ty (wfm (MInt i32)) * cell_points_to_ty i32t)%T.
 
   Lemma pcell_example_type ϝ (k: val) :
     ⊢ typed_body [] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
@@ -85,11 +85,11 @@ Section pcell_example.
       iApply typed_body_tctx_incl.
       { apply (copy_val_tctx_incl _ _ _ _ _ (Copy0:=shr_bytes_copy κ pairt)). }
       iApply (type_let with "[]").
-      { apply (type_shr_bytes_fst_instr κ (pcell_ty (MInt i32)) (cell_points_to_ty i32t)). }
+      { apply (type_shr_bytes_fst_instr κ (pcell_ty (wfm (MInt i32))) (cell_points_to_ty i32t)). }
       { solve_typing. } { reflexivity. }
       iIntros (vpc). simpl_subst.
       iApply (type_let with "[]").
-      { apply (type_shr_bytes_snd_instr κ (pcell_ty (MInt i32)) (cell_points_to_ty i32t)). }
+      { apply (type_shr_bytes_snd_instr κ (pcell_ty (wfm (MInt i32))) (cell_points_to_ty i32t)). }
       { solve_typing. } { reflexivity. }
       iIntros (vpt). simpl_subst.
       (* borrow the contents, and read them *)

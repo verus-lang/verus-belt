@@ -1311,3 +1311,52 @@ The erasure `fval_erase` and the dynamic registry `ρ`, `registry_decode`, `frep
 
 `Print Assumptions` of both: `functional_extensionality_dep`.
 
+
+## 23. Cells take a well-formed MiniRust type (branch `proto/wf-mty`, 2026-11-03)
+
+This closes the deviation of §12: `syn_mty (pcellₛ m)` is now exactly the type of the
+contents, without the fallback to `zst_mty` and without `mty_wf m` side conditions.
+
+### Definitions
+
+- `lang/minirust.v`: `wf_mty := { m : mty | mty_wfb m = true }`. Proofs of an equality of
+  booleans are unique without axioms (stdpp `eq_pi`, `sig_eq_pi`), so `wf_mty` has
+  decidable equality (`wf_mty_eq_dec`, by `sig_eq_dec`), and `wf_mty_eq : `m = `m' → m = m'`.
+  `wf_mty_wf m : mty_wf (`m)`.
+- Canonical proofs. `wfb_canon : b = true → b = true` matches on `b` and returns
+  `eq_refl` when `b` computes to `true`. Every builder goes through it:
+  `mk_wf_mty m H := m ↾ wfb_canon H`, `mty_to_wf m (H: mty_wf m)`. So for a concrete `m`,
+  every `wf_mty` built on `m` is _convertible_ to `wfm m`, whatever the proof (opaque or
+  not). This is what makes the cell types built by the rules match those written in the
+  examples.
+- `wfm m` (a notation) is `exist _ m eq_refl`, for concrete types: `wfm (MInt i32)`.
+- `prophecy/syn_type.v`: `pcellₛ (_: wf_mty)`; `syn_mty (pcellₛ m) = `m`;
+  `syn_wmty 𝔄 := mty_to_wf (syn_mty 𝔄) (syn_mty_wf 𝔄)`, the index of the permission:
+  `cell_points_to_ty ty : type (trackedₛ (pcellₛ (syn_wmty 𝔄) * 𝔄))`.
+- `typing/type.v`: `ty_wmty ty := mty_to_wf ty.(ty_mty) (ty_mty_wf ty)`; the rules use
+  `pcell_ty (ty_wmty ty)` (was `pcell_ty ty.(ty_mty)`), and `` `(ty_wmty ty) `` reduces
+  to `ty.(ty_mty)`, so the proofs are unchanged.
+- `typing/pcell.v`: `pcell_ty (m: wf_mty) : type (pcellₛ m)`.
+
+### Removed side conditions
+
+`mty_wf m →` is gone from `pcell_ty_mty`, `pcell_ty_bsize`, `pcell_ty_own`,
+`pcell_ty_pers`, `bytes_own_pcell_ty`, `bytes_own_pcell_gca`, `guard_pcell_gca` (all are
+now `done` or one rewrite), and the `decide_True` rewrites of `pcell_pair_bsize` and of
+`type_pcell_borrow_mut_instr` are gone. The PCell typing rules never had the side condition
+(they took the type of a `ty`).
+
+Kept: the `mty_wf m` hypotheses of the GMB layer (`typing/gmb_cells.v`: `gcont_open`,
+`wp_gcont_*`, `wp_gcell_load_*_shared`, …). There `m` is the MiniRust type of arbitrary
+memory contents (the value at a location, of which a cell is only a special case), and the
+registry and `gcells` name the types of nested cells by the plain `mty` of the enclosing
+type. Those hypotheses are discharged by `ty_mty_wf` in the typing layer, as before.
+
+### Examples
+
+`pcell_ty (wfm (MInt i32))`, `pcellₛ (wfm (MInt i32))` and
+`pcellₛ (syn_wmty (intₛ i32))` replace `pcell_ty (MInt i32)` etc.; they are convertible to
+the cells produced by `type_pcell_new_instr` at `int_ty i32`.
+
+No `Admitted`; `wf_mty_eq_dec` and `wf_mty_eq` use no axiom; the axioms of the examples are
+unchanged (`functional_extensionality_dep`, and `eq_rect_eq` where `proph_obs_sat` is used).

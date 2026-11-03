@@ -20,7 +20,7 @@ Inductive syn_type := intₛ (_: IntType) | boolₛ | unitₛ | Propₛ | positi
 | storableₛ (_: syn_type)
 | invₛ (_: syn_type)
 | local_invₛ (_: syn_type)
-| pcellₛ (_: mty)
+| pcellₛ (_: wf_mty)
 | namespaceₛ
 | uninitₛ (_: nat)
 | locₛ
@@ -532,8 +532,8 @@ Layouts (sizes are abstract and there is no alignment yet):
   data of each variant right after the tag ([seq_enum]);
 - [uninitₛ n] is [n] bytes of padding ([MTuple [] n]);
 - a cell [pcellₛ m] (a multi-byte cell, whose value [~~(pcellₛ m)] is its id, see
-  [typing/pcell.v]) is its content's MiniRust type [m], if [m] is well formed (and
-  zero-sized otherwise, so that [syn_mty_wf] holds);
+  [typing/pcell.v]) is its content's MiniRust type [`m] (a [wf_mty], so it is well
+  formed);
 - every other syntactic type is zero-sized ([zst_mty]).
 
 [syn_val x] is [None] for the values that have no MiniRust representation: integers
@@ -563,7 +563,7 @@ Fixpoint syn_mty (𝔄: syn_type) : mty :=
   | xprodₛ 𝔄l => seq_tuple (syn_mty <$> 𝔄l)
   | xsumₛ 𝔄l => seq_enum (syn_mty <$> 𝔄l)
   | uninitₛ n => MTuple [] n
-  | pcellₛ m => if decide (mty_wf m) then m else zst_mty
+  | pcellₛ m => `m
   | _ => zst_mty
   end.
 
@@ -698,8 +698,13 @@ Proof.
   - apply seq_tuple_wf. constructor; [apply FIX|]. constructor; [apply FIX|]. constructor.
   - apply seq_tuple_wf. induction l as [|𝔄 l IH]; constructor; [apply FIX|apply IH].
   - apply seq_enum_wf. induction l as [|𝔄 l IH]; constructor; [apply FIX|apply IH].
-  - clear FIX. case_decide; [done|by repeat constructor].
+  - clear FIX. apply wf_mty_wf.
 Qed.
+
+(** The MiniRust type of a syntactic type, as a [wf_mty] (e.g. the type of the contents of
+    the cell of a permission, [typing/pcell.v]). For a concrete [𝔄] it is convertible to
+    [wfm (syn_mty 𝔄)] ([wfb_canon]). *)
+Definition syn_wmty 𝔄 : wf_mty := mty_to_wf (syn_mty 𝔄) (syn_mty_wf 𝔄).
 
 Lemma syn_val_wf 𝔄 (x: ~~𝔄) v : syn_val x = Some v → val_wf (syn_mty 𝔄) v.
 Proof.

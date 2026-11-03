@@ -586,6 +586,10 @@ Section ty_mty_lemmas.
   Lemma ty_mty_wf {𝔄} (ty: type 𝔄) : mty_wf ty.(ty_mty).
   Proof. rewrite -ty_mty_eq. apply syn_mty_wf. Qed.
 
+  (** The MiniRust type of [ty], as a [wf_mty]: for a concrete type it is convertible to
+      [wfm m] ([wfb_canon]). *)
+  Definition ty_wmty {𝔄} (ty: type 𝔄) : wf_mty := mty_to_wf ty.(ty_mty) (ty_mty_wf ty).
+
   Lemma ty_val_wf {𝔄} (ty: type 𝔄) x v : ty.(ty_val) x = Some v → val_wf ty.(ty_mty) v.
   Proof. rewrite -ty_mty_eq -ty_val_eq. apply syn_val_wf. Qed.
 
