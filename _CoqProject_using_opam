@@ -58,7 +58,6 @@ src/lambda_verus/util/fancy_lists.v
 src/lambda_verus/util/adequacy_util.v
 src/lambda_verus/util/cancellable_na_invariants.v
 src/lambda_verus/util/cancellable.v
-src/lambda_verus/util/cellmap.v
 src/lambda_verus/util/atomic_lock_counter.v
 
 src/lambda_verus/prophecy/syn_type.v
@@ -68,7 +67,6 @@ src/lambda_verus/prophecy/prophecy.v
 
 src/lambda_verus/lang/adequacy.v
 src/lambda_verus/lang/heap.v
-src/lambda_verus/lang/heap_cells.v
 src/lambda_verus/lang/minirust.v
 src/lambda_verus/lang/lang.v
 src/lambda_verus/lang/lifting.v

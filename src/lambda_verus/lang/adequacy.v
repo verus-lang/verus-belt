@@ -10,16 +10,10 @@ Set Default Proof Using "Type".
 
 Class lrustGpreS Σ := HeapGpreS {
   #[global] lrustGpreS_iris :: invGpreS Σ;
-  #[global] lrustGpreS_heap :: fcmap_logicG loc positive bval Σ;
+  #[global] lrustGpreS_heap :: ghost_mapG Σ loc bval;
   #[global] lrustGpreS_heap_freeable :: inG Σ (authR heap_freeableUR);
   #[global] lrustGpreS_heap_bbank :: inG Σ (gmap_viewR nat (agreeR (prodO
     (leibnizO (loc * list abyte)) (laterO (iPropO Σ)))));
-  #[global] lrustGpreS_heap_greg :: ghost_mapG Σ positive (mty * list positive);
-  #[global] lrustGpreS_heap_gdyn :: ghost_mapG Σ positive FValue;
-  #[global] lrustGpreS_heap_gnc :: ghost_mapG Σ positive ();
-  #[global] lrustGpreS_heap_gnest :: ghost_mapG Σ (positive * positive * nat) ();
-  #[global] lrustGpreS_heap_cw :: inG Σ (gmap_viewR positive (agreeR (prodO
-    (leibnizO (loc * nat * nat * FValue)) (laterO (iPropO Σ)))));
   #[global] lrustGpreS_heap_na_inv :: na_invG Σ;
   #[global] lrustGpreS_atomic_lock_ctr :: alc_logicG Σ;
   #[global] lrustGpreS_time :: timePreG Σ
@@ -27,14 +21,9 @@ Class lrustGpreS Σ := HeapGpreS {
 
 Definition lrustΣ : gFunctors :=
   #[invΣ; timeΣ;
-    fcmap_logicΣ loc positive bval;
+    ghost_mapΣ loc bval;
     GFunctor (constRF (authR heap_freeableUR));
     GFunctor (gmap_viewRF nat (agreeRF (prodOF (leibnizO (loc * list abyte)) (laterOF idOF))));
-    ghost_mapΣ positive (mty * list positive);
-    ghost_mapΣ positive FValue;
-    ghost_mapΣ positive ();
-    ghost_mapΣ (positive * positive * nat) ();
-    GFunctor (gmap_viewRF positive (agreeRF (prodOF (leibnizO (loc * nat * nat * FValue)) (laterOF idOF))));
     alc_logicΣ;
     na_invΣ
     ].
@@ -48,32 +37,21 @@ Proof.
   intros Hwp. apply adequate_alt. intros t2 σ2 [n [κs ?]]%erased_steps_nsteps.
   (* use a variant that lets us start at step 1 with some later credits *)
   eapply (adequacy_util.wp_strong_adequacy Σ _); [|done]=>?.
-  iMod (fcmap_init loc positive bval) as (bγ) "Hbγ".
+  iMod (ghost_map_alloc_empty (K:=loc) (V:=bval)) as (bγ) "Hbγ".
   iMod (own_alloc (● (∅ : heap_freeableUR))) as (fγ) "Hfγ";
     first by apply auth_auth_valid.
   iMod (own_alloc (gmap_view_auth (V:=agreeR (prodO (leibnizO (loc * list abyte))
     (laterO (iPropO Σ)))) (DfracOwn 1) ∅)) as (kγ) "Hkγ";
     first by apply gmap_view_auth_valid.
-  iMod (ghost_map_alloc_empty (K:=positive) (V:=mty * list positive)) as (rγ) "Hrγ".
-  iMod (ghost_map_alloc_strong_empty (K:=positive) (V:=FValue) (λ γ, γ ∉ ({[bγ]} : gset gname)))
-    as (dγ) "[%Hdγ Hdγ]".
-  { apply (pred_infinite_set (C:=gset gname)). intros X. exists (fresh ({[bγ]} ∪ X)).
-    apply not_elem_of_union, is_fresh. }
-  have Hne : bγ ≠ dγ by set_solver.
-  iMod (ghost_map_alloc_empty (K:=positive) (V:=())) as (nγ) "Hnγ".
-  iMod (ghost_map_alloc_empty (K:=positive * positive * nat) (V:=())) as (sγ) "Hsγ".
-  iMod (own_alloc (gmap_view_auth (V:=agreeR (prodO (leibnizO (loc * nat * nat * FValue))
-    (laterO (iPropO Σ)))) (DfracOwn 1) (∅ : gmap positive _))) as (wγ) "Hwγ";
-    first by apply gmap_view_auth_valid.
   iIntros "H£". iDestruct "H£" as "[H£1 H£2]".
   iMod (time_init with "H£1") as (Htime) "[TIME Htime]"; [done|].
   iMod (na_alloc) as (atomic_poolname) "pool".
   iMod (atomic_lock_ctr_alloc) as (atomic_lock_ctr_name) "ctr".
-  set (Hheap := HeapGS _ _ _ _ _ _ _ _ _ bγ kγ rγ dγ nγ sγ wγ fγ atomic_poolname atomic_lock_ctr_name Hne).
+  set (Hheap := HeapGS _ _ _ _ bγ kγ fγ atomic_poolname atomic_lock_ctr_name).
   iModIntro. iExists _, [_], _, _. simpl.
   iDestruct (Hwp (LRustGS _ _ _ _ Hheap Htime) with "H£2 TIME") as "$".
-  iSplitL. { iDestruct (@bytes_ctx_empty _ Hheap _ with "Hbγ [Hkγ] Hrγ Hdγ Hnγ Hsγ [Hwγ]") as "HB".
-    { by rewrite /bbank_auth fmap_empty. } { by rewrite /cwbank_auth fmap_empty. } iFrame "Htime".
+  iSplitL. { iDestruct (@bytes_ctx_empty _ Hheap _ with "Hbγ [Hkγ]") as "HB".
+    { by rewrite /bbank_auth fmap_empty. } iFrame "Htime".
     iExists ∅. iFrame "Hfγ HB".
     iSplit; [iPureIntro; intros ?? Hb; by rewrite lookup_empty in Hb|]. iFrame. }
   iIntros ([|e' [|]]? -> ??) "//".
