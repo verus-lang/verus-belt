@@ -260,25 +260,22 @@ Section typing.
       value whose path from the root is owned: [K] is below no unique borrow, shared
       reference or resolved unique borrow ([PctxNoUniq]), so its root step ([PctxVRoot]) is
       an owned pointer ([p ◁ₗ pctx_plug (POwn n K') (OfTy ty)] is
-      [p ◁ₗown{n} pctx_plug K' (OfTy ty)]), and the path is made of fields and owned
-      pointers ([pctx_nosum]: the payload of a sum place has the type of its variant). The
-      instruction is a typed [Load] ([!ᵐ{ty_mty ty}], [read_move]) at the address of the
-      hole; the value may contain cells, which are moved with it ([val_cells]). The leaf
-      becomes uninitialized: its type is [↯ (ty_bsize ty)] (its bytes are kept, and
-      represent any value of [↯]), the context is retyped ([pctx_retype]). *)
+      [p ◁ₗown{n} pctx_plug K' (OfTy ty)]); the path is made of fields, sum payloads and
+      owned pointers. The instruction is a typed [Load] ([!ᵐ{ty_mty ty}], [read_move]) at
+      the address of the hole; the value may contain cells, which are moved with it
+      ([val_cells]). The leaf becomes moved-out ([Moved ty]: its bytes are kept, plain);
+      the value of the place does not change (the value of a moved-out leaf is
+      irrelevant). *)
   Lemma type_move_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot K} `{!PctxNoUniq K}
       (ty: type 𝔅) :
-    pctx_nosum K →
     typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (!ᵐ{ty.(ty_mty)} (pctx_vexpr K p))
-      (λ v, +[v ◁ᵥ ty;
-        p ◁ₗ pctx_plug (pctx_retype K (uninitₛ (ty_bsize ty))) (OfTy (↯ (ty_bsize ty)))])
-      (λ post '-[x], post -[pctx_get K x.1;
-        (pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) K x.1 (), x.2)]).
+      (λ v, +[v ◁ᵥ ty; p ◁ₗ pctx_plug K (Moved ty)])
+      (λ post '-[x], post -[pctx_get K x.1; x]).
   Proof.
     rename select (PctxVRoot K) into HR. rename select (PctxNoUniq K) into HK.
     destruct K as [| | |? 𝔄' n K| | | |]; try done; rewrite /PctxNoUniq /= in HK.
     have ?: PctxNoUniq K by done.
-    iIntros (Hns tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
+    iIntros (tid post mask iκs [x []]) "#LFT #TIME #PROPH #UNIQ #E L I (Tp & _) Obs".
     destruct x as [[l x₀] ζm]. rewrite /read_move /=.
     rewrite /tctx_elt_interp.
     iDestruct "Tp" as (v Hp D d g) "(#⧖ & ⧗p & -> & %Hle & Fr & Own)".
@@ -289,14 +286,12 @@ Section typing.
     iDestruct "L1" as (? ->) "[Pt1 Gho1]".
     iDestruct (pctx_own_mode_le with "Rest") as %Hk.
     set y := pctx_get K x₀.
-    set lr := l.
-    set lK := pctx_loc K (lty_size (OfTy ty)) x₀ lr.
     set dh := pctx_depth K d.
     have Hdh: dh ≤ d. { rewrite /dh pctx_depth_sub. lia. }
     (* The address of the hole. *)
     wp_bind (pctx_expr K p).
     iApply (wp_wand with "[Rest]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid lr p True True
+    { iApply (wp_pctx_expr K (lty_size (OfTy ty)) 1 x₀ ζm [] d g tid l p True True
         with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         iFrame; by iPureIntro. }
@@ -309,23 +304,16 @@ Section typing.
     iDestruct (invctx_interp_gcells with "I") as "[#GC I]".
     iApply (wp_bytes_own_move with "[$GC $£1 $Pt1]"); [solve_ndisj|].
     iIntros "!>" (vw fv bs) "(%Hfv & Hc & Hbs & %Hlen)". iModIntro.
-    iExists -[y; ((l, pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) K x₀ ()), ζm)]. iFrame "L I Obs".
+    iExists -[y; ((l, x₀), ζm)]. iFrame "L I Obs".
     iSplitR "Hbs Rest ⧗p Fr".
     { iExists _. iSplit; [by rewrite eval_path_of_val|]. iExists vw, D, fv. iSplit; [done|].
       iFrame "Hc".
       iFrame "⧖". iDestruct (ty_gho_own_depth_mono _ dh g D D with "Gho1") as "[$ _]"; lia. }
-    have Hsz : lty_size (OfTy (↯ (ty_bsize ty))) = lty_size (OfTy ty).
-    { rewrite /lty_size. change (syn_bsize (uninitₛ (ty_bsize ty))) with (ty_bsize ty).
-      apply ty_bsize_eq. }
     iSplit; [|done]. iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g. iFrame "⧖".
-    rewrite (lty_nrc_plug_retype K (OfTy ty) (OfTy (↯ (ty_bsize ty)))) //.
-    rewrite (lty_size_plug_retype K (OfTy ty) (OfTy (↯ (ty_bsize ty)))); [|done|done].
+    rewrite (lty_nrc_plug_eq K (OfTy ty) (Moved ty)) //.
+    rewrite (lty_size_plug_eq K (Moved ty) (OfTy ty)) //.
     iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
-    rewrite /ltype_own lty_pat_plug lty_rfn_plug pctx_get_reset ltype_own_plug pctx_own_reset //
-      pctx_loc_reset // pctx_mode_retype pctx_depth_retype /=.
-    rewrite Hsz. iFrame "Rest".
-    iExists (). iSplit; [done|]. rewrite /ofty_owned /=. iSplitL; [|done].
-    iApply (bytes_own_of_bytes with "Hbs"). exists (VTuple []). split; [done|].
-    rewrite decode_value_tuple decide_True //.
+    rewrite /ltype_own lty_pat_plug lty_rfn_plug ltype_own_plug /=.
+    iFrame "Rest". rewrite /moved_leaf /pad_cell. iExists bs. by iFrame "Hbs".
   Qed.
 End typing.
