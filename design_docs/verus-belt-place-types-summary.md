@@ -748,6 +748,7 @@ Lemma type_move_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot
   `PResUniq`), so the root step (`PctxVRoot`) is `POwn n`: `p ◁ₗ pctx_plug (POwn n K') lt` is
   `p ◁ₗown{n} pctx_plug K' lt`. The value may contain cells (they are moved with it,
   `val_cells`).
+- **(Superseded by "Moved places" below: a move leaves `Moved ty`, also below sums.)**
 - **Sums (deviation: `pctx_nosum` kept).** The payload of a sum place `SumLty tyl i lt` has
   the type of variant `i` (`lt: lty (𝔄l !!ₗ i)`), so a payload left uninitialized (of type
   `uninitₛ n`) under the same variant is not expressible without a new place-type
@@ -848,6 +849,8 @@ Lemma type_memcpy_move_place_instr {𝔅d 𝔄d 𝔅 𝔄 𝔄d'} E L I pd ps (K
         (pctx_reset (𝔅':=uninitₛ (ty_bsize ty)) Ks xs.1 (), xs.2)] mask π).
 ```
 
+- **(The move source now becomes `Moved ty`, and the destination is any leaf `ltd`; see
+  "Moved places" below.)**
 - **Two rules (justified deviation from "one").** The source side differs in kind: a copy
   source is a `Copy` leaf of any readable place (also below shared references and resolved
   unique borrows, where it is only guarded: `wp_memcopy_guarded_gen`), which stays; a move
@@ -1108,3 +1111,119 @@ Follow-ups on the eight unified rules (statements above are updated).
   an owned pointer, re-sharing a `ShrBlocked` leaf (owned, below a unique borrow, in a view),
   resolving a compound root (`vroot_res_uniq_cpd`).
 
+
+## Moved places (branch `proto/moved`, 2026-11-03)
+
+A place type for Rust's moved-out state, produced by every move (also below sums).
+Supersedes the `↯`-retyping of the moves in "Unified place move" and "Unified place memcpy"
+(`pctx_retype`/`pctx_reset`/`pctx_nosum` are no longer used by moves).
+
+- **`Moved {𝔄} (ty: type 𝔄) : lty 𝔄`** (`typing/ltype.v`, last constructor). Owned mode:
+  `moved_leaf ty r l` = plain bytes of size `ty_bsize ty` (`pad_cell l (ty_bsize ty)`) for
+  any leaf refinement `inl _` (the value is irrelevant; `lty_rfn (Moved ty) x _ _ =
+  inl (PlaceIn x)`, pattern `PatLeaf`, so the value of the place does not change when a leaf
+  is moved out). `Uniq` mode: `False`. `lty_fold (Moved ty) = ty` and `lty_lfts` are those
+  of `ty` (lifetimes only); `lty_simple (Moved _) = False` (never folded, never below
+  `&uniq`); `lty_view` `False`, `lty_vok` `False` (not in views, not readable, not
+  shareable or borrowable: the read/share/borrow leaf relations have no `Moved` case);
+  `lty_vown` `False`; `lty_nrc`/`lty_nblk` 0; `imp_unblockable` trivially
+  (`moved_imp_unblockable`); `lty_freeb` `true`, `lty_omem` the bytes of the leaf.
+- **Move** (`typing/place_own.v`):
+
+```coq
+Lemma type_move_place_instr {𝔅 𝔄} E L I p (K: pctx 𝔅 𝔄) `{!PctxVRoot K} `{!PctxNoUniq K}
+    (ty: type 𝔅) :
+  typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy ty)] (!ᵐ{ty.(ty_mty)} (pctx_vexpr K p))
+    (λ v, +[v ◁ᵥ ty; p ◁ₗ pctx_plug K (Moved ty)])
+    (λ post '-[x], post -[pctx_get K x.1; x]).
+```
+
+  Any owned path (fields, sum payloads, owned pointers). Its access, shared with the
+  move-memcpy source, is `wp_vplace_macc` (the bytes and ownership of the leaf, laters
+  stripped with `£D`, and a closer that takes plain bytes and gives `K[Moved ty]` at the
+  same value). The first step (`wp_persistent_time_receipt` on the whole instruction) gives
+  the credits.
+- **Write** (`typing/place_write.v`): the leaf is an argument `lt`, with
+
+```coq
+Inductive pctx_wty {𝔅 𝔄} (K: pctx 𝔅 𝔄) :
+    ∀ {𝔅' 𝔄'}, lty 𝔅 → type 𝔅' → pctx 𝔅' 𝔄' → (~~𝔄 → ~~𝔅' → ~~𝔄') → Prop :=
+| pctx_wty_same (ty: type 𝔅) : pctx_wty K (OfTy ty) ty K (pctx_set K)
+| pctx_wty_strong (ty: type 𝔅) {𝔅'} (ty': type 𝔅') :
+    pctx_nouniq K → pctx_nosum K → ty_bsize ty' = ty_bsize ty →
+    pctx_wty K (OfTy ty) ty' (pctx_retype K 𝔅') (pctx_reset K)
+| pctx_wty_moved (ty: type 𝔅) :
+    pctx_nouniq K → pctx_wty K (Moved ty) ty K (pctx_set K)
+| pctx_wty_moved_strong (ty: type 𝔅) {𝔅'} (ty': type 𝔅') :
+    pctx_nouniq K → pctx_nosum K → ty_bsize ty' = ty_bsize ty →
+    pctx_wty K (Moved ty) ty' (pctx_retype K 𝔅') (pctx_reset K).
+
+Definition lty_wres {𝔅} E L (lt: lty 𝔅) (Φ: ~~𝔅 → proph_asn → Prop) : Prop :=
+  match lt with OfTy ty => resolve E L ty Φ | Moved _ => ∀ x π, Φ x π | _ => False end.
+  (* lty_wres_moved : lty_wres E L (Moved ty) (λ _ _, True) *)
+
+Lemma type_write_place_instr {𝔅 𝔄 𝔅' 𝔄'} E L I p pb (K: pctx 𝔅 𝔄) `{!PctxNoShr K}
+    `{!PctxVRoot K} (lt: lty 𝔅) (ty': type 𝔅') (K': pctx 𝔅' 𝔄') f Φ :
+  pctx_wty K lt ty' K' f → lty_wres E L lt Φ → lctx_lft_alive E L (pctx_alv K lt) →
+  typed_instr E L I +[p ◁ₗ pctx_plug K lt; pb ◁ᵥ ty']
+    (pctx_vexpr K p <-{ty'.(ty_mty)} pb)
+    (λ _, +[p ◁ₗ pctx_plug K' (OfTy ty')])
+    (λ post '-[x; b], λ mask π, Φ (pctx_get K x.1) π → post -[(f x.1 b, x.2)] mask π).
+```
+
+  A `Moved ty` leaf on an owned path is re-initialized with a value of `ty`, also in a sum
+  payload (`pctx_wty_moved`, `f = pctx_set K`), or, without sums, of any type of the same
+  size (`pctx_wty_moved_strong`). `lty_wres` reduces to `resolve` for `OfTy` leaves, so the
+  existing side conditions (`apply resolve_just`, `apply uninit_resolve`) are unchanged.
+  The access `wp_vplace_wacc` gives the old contents `lty_wold lt` (bytes and ownership for
+  `OfTy`, plain bytes for `Moved`); `lty_wold_resolve` resolves them into plain bytes and
+  `⟨π, Φ y π⟩`. The strong and moved cases share `wp_vplace_wacc_own` (any leaf of an owned
+  path without blocked parts, with `pctx_wown`: same context or retyped); the old
+  `wp_vplace_wacc_strong` is gone.
+- **Memcpy** (`typing/place_memcpy.v`): both rules take a destination leaf `ltd` with
+  `pctx_wty Kd ltd ty Kd' fd`, `lty_wres E L ltd Φ`, `lctx_lft_alive E L (pctx_alv Kd ltd)`
+  (so a moved-out destination is re-initialized by a byte copy). The move source:
+
+```coq
+Lemma type_memcpy_move_place_instr {𝔅d 𝔄d 𝔅 𝔄 𝔄d'} E L I pd ps (Kd: pctx 𝔅d 𝔄d)
+    `{!PctxNoShr Kd} `{!PctxVRoot Kd} (ltd: lty 𝔅d) (Kd': pctx 𝔅 𝔄d') fd Φ
+    (Ks: pctx 𝔅 𝔄) `{!PctxVRoot Ks} `{!PctxNoUniq Ks} (ty: type 𝔅) :
+  pctx_wty Kd ltd ty Kd' fd → lty_wres E L ltd Φ →
+  lctx_lft_alive E L (pctx_alv Kd ltd) →
+  typed_instr E L I +[pd ◁ₗ pctx_plug Kd ltd; ps ◁ₗ pctx_plug Ks (OfTy ty)]
+    (pctx_vexpr Kd pd <-ᵇ{ty_bsize ty} pctx_vexpr Ks ps)
+    (λ _, +[pd ◁ₗ pctx_plug Kd' (OfTy ty); ps ◁ₗ pctx_plug Ks (Moved ty)])
+    (λ post '-[xd; xs], λ mask π, Φ (pctx_get Kd xd.1) π →
+      post -[(fd xd.1 (pctx_get Ks xs.1), xd.2); xs] mask π).
+```
+
+- **Drop / uninitialize** (`typing/place_resolve.v`): `type_drop_oplace_instr` and
+  `resolve_tctx_cons_oplace` work unchanged with `Moved` leaves (`lty_freeb`, `lty_omem`,
+  `lty_resolve_just`). New:
+
+```coq
+Lemma type_uninit_oplace_instr {𝔄} E L I p n (lt: lty 𝔄) Φ :
+  lty_freeb lt = true → n = lty_size lt → lty_resolve E L lt Φ →
+  typed_instr E L I +[p ◁ₗown{n} lt] (drop_boxes lt p;; Skip)%E
+    (λ _, +[p ◁ₗown{n} OfTy (↯ n)])
+    (λ post '-[x], λ mask π, Φ x.1.2 π → post -[((x.1.1, ()), [])] mask π).
+```
+
+  The leaves are resolved (`Moved` and `↯` leaves with nothing), the unfolded owned
+  pointers' pointees freed, and the memory of the place kept as `↯ n` (sum tags forgotten).
+  It is an instruction, not a `tctx_incl`: the resolution of the leaves takes steps.
+- **Resolve**: `Moved` resolves trivially, by `lty_res_id` (it stays `Moved`).
+- **Removed**: `pctx_nosum` and the retyping from `type_move_place_instr` and
+  `type_memcpy_move_place_instr` (the `pctx_reset (𝔅':=uninitₛ …)` results);
+  `wp_vplace_wacc_strong` (now an instance of `wp_vplace_wacc_own`). `pctx_retype`,
+  `pctx_reset`, `pctx_nosum` stay for the strong writes.
+- **Examples**: ported `place_own` (`box_pair`: `b.0` moved out becomes
+  `Moved (own_bytes 4 i32t)`, re-assigned with `pctx_wty_moved`), `pcell_move`,
+  `pcell_parts`, `pcell_borrows` (moved-out leaves dropped as `Moved cellt`,
+  `ProdLty (Moved cellt) (Moved permt)`), `place_deep`, `new` (the source `y` of the
+  memcpy is dropped as `Moved (i32t * i32t)`); the write/memcpy calls take the leaf
+  (`(OfTy (↯ 8))`, `(OfTy i32t)`) instead of its type. New `examples/place_moved.v`:
+  moving the payload of a sum place out (`POwn 5 (PSum +[(); boxt] 1 _ PHole)`) and
+  re-initializing it (`replace_payload`, a whole function body: move `x.0`, write `y`
+  into it, fold the sum back), and `type_uninit_oplace_instr` on a box of two moved-out
+  fields.
