@@ -70,6 +70,46 @@ Section own_bytes.
     apply pad_own_sizes. by rewrite -!list_fmap_compose.
   Qed.
 
+  (** Byte chunks at the fields [fs] and the padding make the bytes of the tuple. *)
+  Lemma bytes_fields_pad l (fs: list (nat * mty)) (bss: list (list abyte)) sz :
+    fields_disjoint fs → Forall (λ f, f.1 + mty_size f.2 ≤ sz)%nat fs →
+    (∀ j f bs, fs !! j = Some f → bss !! j = Some bs → length bs = mty_size f.2) →
+    ([∗ list] f; bs ∈ fs; bss, (l +ₗ Z.of_nat f.1) ↦b bs) ∗ pad_own l fs sz ⊢
+    ∃ bs, l ↦b bs ∗ ⌜length bs = sz⌝.
+  Proof.
+    iIntros (Hdisj Hin Hlj) "[Fs (%bs0 & %Hl0 & Hp)]".
+    set ins := zip_with (λ (f: nat * mty) (bs: list abyte), (f.1, bs)) fs bss.
+    set bs := fill_fields ins bs0.
+    have Hlbs : length bs = sz by rewrite length_fill_fields.
+    have Hins : ∀ j f bsj, fs !! j = Some f → bss !! j = Some bsj → ins !! j = Some (f.1, bsj).
+    { intros j f bsj Hf Hb. by rewrite /ins lookup_zip_with Hf /= Hb. }
+    have Hslice : ∀ j f bsj, fs !! j = Some f → bss !! j = Some bsj →
+      list_slice f.1 (mty_size f.2) bs = bsj.
+    { intros j f bsj Hf Hb. rewrite -(Hlj j f bsj Hf Hb).
+      apply (list_slice_fill_fields ins _ j); [by apply Hins| |].
+      - intros j' o' e' Hj' (f' & bsj' & [= -> ->] & Hf' & Hb')%lookup_zip_with_Some.
+        rewrite (Hlj j' f' bsj' Hf' Hb') (Hlj j f bsj Hf Hb).
+        destruct f as [o fm], f' as [o2 fm2]; simpl in *.
+        destruct (Hdisj j' j o2 fm2 o fm) as [?|?]; [done|done|done|lia|lia].
+      - rewrite (Hlj j f bsj Hf Hb) Hl0. exact (Forall_lookup_1 _ _ _ _ Hin Hf). }
+    have Hpadbs : ∀ i, ¬ in_field fs i → bs !! i = bs0 !! i.
+    { intros i Hi. rewrite lookup_fill_fields_out //.
+      intros j o e (f & bsj & [= -> ->] & Hf & Hb)%lookup_zip_with_Some.
+      rewrite (Hlj j f bsj Hf Hb).
+      destruct (decide (f.1 ≤ i < f.1 + mty_size f.2)%nat); [|lia].
+      exfalso. apply Hi. exists f. split; [by eapply elem_of_list_lookup_2|done]. }
+    iExists bs. iSplit; [|done].
+    rewrite heap_mapsto_bytes_pos (big_sepL_fields _ bs fs) //; last first.
+    { rewrite Hlbs. eapply Forall_impl; [exact Hin|]. simpl. lia. }
+    iSplitL "Fs".
+    - iApply (big_sepL2_to_sepL_l with "Fs"). intros j f bsj Hf Hb.
+      rewrite (Hslice j f bsj Hf Hb) heap_mapsto_bytes_pos.
+      apply big_sepL_mono=> ?? _. by rewrite shift_loc_assoc_nat.
+    - iApply (big_sepL_same_length with "Hp"); [by rewrite Hlbs|].
+      intros i b b' Hb Hb'. case_decide as Hi; [done|].
+      rewrite Hpadbs // Hb' in Hb. by injection Hb as <-.
+  Qed.
+
   (** Separate contents at offsets of [l] have a common registry. *)
   Lemma gconts_union l (ps : list ((nat * mty) * FValue)) :
     ([∗ list] p ∈ ps, gcont (l +ₗ Z.of_nat p.1.1) p.1.2 p.2) ⊢

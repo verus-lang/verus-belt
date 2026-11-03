@@ -176,7 +176,7 @@ Section lty_mem.
   Fixpoint lty_freeb {𝔄} (lt: lty 𝔄) : bool :=
     match lt with
     | OfTy _ | OwnPtrLty _ _ | UniqLty _ _ | ShrLty _ _ | OfRes _ | ResUniqLty _ _ | Moved _ => true
-    | ProdLty lt1 lt2 => lty_freeb lt1 && lty_freeb lt2
+    | StructLty _ lts => foldr andb true (hcmap (λ _ lt, lty_freeb lt) lts)
     | SumLty _ _ lt => lty_freeb lt
     | Blocked _ _ | ShrBlocked _ _ => false
     end.
@@ -208,7 +208,8 @@ Section lty_mem.
       (unless a leaf is blocked or shared) and the memory of the pointees of its owned
       pointers that are freed by [drop_boxes]; the right to free a pointee is under [m]
       laters, as in [own_node]. *)
-  Fixpoint lty_omem_gen (M: loc → nat → iProp Σ) {𝔄} (m: nat) (lt: lty 𝔄) : loc → iProp Σ :=
+  Fixpoint lty_omem_gen (M: loc → nat → iProp Σ) {𝔄} (m: nat) (lt: lty 𝔄) {struct lt} :
+      loc → iProp Σ :=
     match lt in lty 𝔄 return loc → iProp Σ with
     | OfTy _ | OfRes _ | UniqLty _ _ | ShrLty _ _ | ResUniqLty _ _ | Moved _ =>
         λ l, M l (lty_size lt)
@@ -217,15 +218,40 @@ Section lty_mem.
           ▷^m freeable_sz n (lty_size lt') l' ∗
           lty_omem_gen M (m + 1) lt' l'
         else True
-    | ProdLty lt1 lt2 => λ l,
-        lty_omem_gen M m lt1 l ∗
-        lty_omem_gen M m lt2 (l +ₗ lty_size lt1)
+    | @StructLty _ _ 𝔄l Lay lts => λ l,
+        (fix go {𝔅l} (offs: list nat) (lts: hlist lty 𝔅l) {struct lts} : iProp Σ :=
+          match lts with
+          | +[] => True
+          | lt +:: lts' => match offs with
+              | [] => False
+              | o :: offs' => lty_omem_gen M m lt (l +ₗ o) ∗ go offs' lts'
+              end
+          end) _ (struct_offs Lay 𝔄l) lts ∗
+        pad_own l (struct_fields Lay 𝔄l) (struct_size Lay 𝔄l)
     | @SumLty _ _ 𝔄l tyl i lt' => λ l,
         tag_cell 𝔄l l i ∗
         lty_omem_gen M m lt' (l +ₗ tag_size 𝔄l) ∗
         pad_cell ((l +ₗ tag_size 𝔄l) +ₗ lty_size lt') (sum_max 𝔄l - lty_size lt')
     | Blocked _ _ | ShrBlocked _ _ => λ _, True
     end%I.
+  (** The memory of the fields [lts] of a struct (at [l], at the offsets [offs]). *)
+  Definition fields_omem (M: loc → nat → iProp Σ) (m: nat) (l: loc) :
+      ∀ {𝔅l}, list nat → hlist lty 𝔅l → iProp Σ :=
+    fix go {𝔅l} (offs: list nat) (lts: hlist lty 𝔅l) {struct lts} : iProp Σ :=
+      match lts with
+      | +[] => True
+      | lt +:: lts' => match offs with
+          | [] => False
+          | o :: offs' => lty_omem_gen M m lt (l +ₗ o) ∗ go offs' lts'
+          end
+      end%I.
+
+  Lemma lty_omem_struct M m {𝔄l} Lay (lts: hlist lty 𝔄l) l :
+    lty_omem_gen M m (StructLty Lay lts) l =
+      (fields_omem M m l (struct_offs Lay 𝔄l) lts ∗
+       pad_own l (struct_fields Lay 𝔄l) (struct_size Lay 𝔄l))%I.
+  Proof. done. Qed.
+
   (** The memory, with leaves that may embed cells ([lty_omem]), or with plain bytes
       ([lty_omemb]). *)
   Local Notation lty_omem := (lty_omem_gen mem_cell).
@@ -251,33 +277,44 @@ Section lty_mem.
   Lemma ptr_cell_mem_cell l l' : ptr_cell l l' -∗ mem_cell l PTR_SIZE.
   Proof. iIntros "Pt". iApply pad_cell_mem_cell. by iApply ptr_cell_pad_cell. Qed.
 
+  Lemma fields_owned_omem {𝔄l} (lts: hlist lty 𝔄l) m offs rs d g tid l :
+    HForall (λ 𝔄 lt, ∀ m r d g l, ltype_own (Owned m) lt r d g tid l ⊢ lty_omem m lt l) lts →
+    fields_node offs (hmap (λ _ lt, ltype_own_cp false lt (Owned m)) lts)
+      (hcmap (λ _ lt, lty_pat lt) lts) rs d g tid l ⊢ fields_omem mem_cell m l offs lts.
+  Proof.
+    intros Hall. induction Hall as [|𝔅 𝔅l lt lts Hlt _ IH] in offs, rs |- *; [by iIntros|].
+    destruct offs as [|o offs]; [by iIntros "[]"|]. iIntros "[F1 F2]".
+    iSplitL "F1"; [by iApply Hlt|by iApply IH].
+  Qed.
+
   (** The memory of any place. *)
   Lemma ltype_owned_omem {𝔄} (lt: lty 𝔄) m r d g tid l :
     ltype_own (Owned m) lt r d g tid l ⊢ lty_omem m lt l.
   Proof.
-    induction lt as [𝔄 ty|𝔄 ty α|𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty] in m, r, d, g, l |- *; rewrite /ltype_own /=;
-      [..|rewrite /leaf_owned_s /leaf_owned;
+    revert m r d g l.
+    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l Lay lts IH|𝔄 ty α|
+      𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind'; intros m r d g l;
+      [..|rewrite /ltype_own /= /leaf_owned_s /leaf_owned;
         destruct r as [lr|]; [|by iIntros "[[] _]"]; iIntros "[(%x & _ & Pt & _) _]";
         rewrite cbytes_at_loc; by iApply ptr_cell_mem_cell
-       |rewrite /res_leaf; destruct r as [lr|]; [|by iIntros "[]"];
+       |rewrite /ltype_own /= /res_leaf; destruct r as [lr|]; [|by iIntros "[]"];
         iIntros "(%x & _ & Pt & _)"; by iApply cbytes_mem_cell
-       |rewrite /res_node; destruct r as [|[[l' r'] ξi]]; [by iIntros "[]"|];
+       |rewrite /ltype_own /= /res_node; destruct r as [|[[l' r'] ξi]]; [by iIntros "[]"|];
         iIntros "[Pt _]"; by iApply ptr_cell_mem_cell
-       |rewrite /moved_leaf; destruct r as [lr|]; [|by iIntros "[]"];
+       |rewrite /ltype_own /= /moved_leaf; destruct r as [lr|]; [|by iIntros "[]"];
         iIntros "Pt"; iApply pad_cell_mem_cell; by rewrite /lty_size -(ty_bsize_eq ty)];
-      try by iIntros.
-    - rewrite /leaf_owned_s /leaf_owned.
+      try by (rewrite /ltype_own /=; iIntros).
+    - rewrite /ltype_own /= /leaf_owned_s /leaf_owned.
       destruct r as [lr|]; [|by iIntros "[]"]. iIntros "(%x & _ & Pt & _)".
       by iApply cbytes_mem_cell.
-    - rewrite /uniq_node. destruct r as [|[[l' r'] ξi]]; [by iIntros "[]"|].
+    - rewrite /ltype_own /= /uniq_node. destruct r as [|[[l' r'] ξi]]; [by iIntros "[]"|].
       iIntros "[Pt _]". by iApply ptr_cell_mem_cell.
-    - rewrite /own_node. destruct r as [|[l' r']]; [by iIntros "[]"|].
+    - rewrite /ltype_own /= /own_node. destruct r as [|[l' r']]; [by iIntros "[]"|].
       iIntros "(Pt & _ & Fr & O)". iExists l'. iFrame "Pt".
       destruct (own_freeb n lt); [|done]. iFrame "Fr". by iApply IH.
-    - rewrite /prod_node. destruct r as [|[r1 r2]]; [by iIntros "[]"|]. iIntros "[O1 O2]".
-      iSplitL "O1"; [by iApply IH1|by iApply IH2].
-    - destruct r as [|s]; [by iIntros "[]"|]. rewrite /sum_node.
+    - rewrite lty_omem_struct /ltype_own /= /struct_node. destruct r as [|rs]; [by iIntros "[]"|].
+      iIntros "[F $]". by iApply (fields_owned_omem with "F").
+    - rewrite /ltype_own /=. destruct r as [|s]; [by iIntros "[]"|]. rewrite /sum_node.
       case_match; [|by iIntros "[]"]. iIntros "(Tag & O & Pad)".
       iFrame "Tag Pad". by iApply IH.
   Qed.
@@ -327,21 +364,48 @@ Section lty_resolve.
     iApply (Rslv with "LFT PROPH UNIQ TIME E L G Gho"); done.
   Qed.
 
-  Lemma lty_resolve_prod {𝔄1 𝔄2} E L (lt1: lty 𝔄1) (lt2: lty 𝔄2) Φ1 Φ2 :
-    lty_resolve E L lt1 Φ1 → lty_resolve E L lt2 Φ2 →
-    lty_resolve E L (ProdLty lt1 lt2) (λ x π, Φ1 x.1 π ∧ Φ2 x.2 π).
+  (** The resolution of the fields of a struct, with a property for each field. *)
+  Fixpoint fields_rslv_pred {𝔄l} :
+      plist (λ 𝔄, ~~𝔄 → proph_asn → Prop) 𝔄l → plist (~~) 𝔄l → proph_asn → Prop :=
+    match 𝔄l with
+    | [] => λ _ _ _, True
+    | _ :: _ => λ '(Φ -:: Φl) '(x -:: xl) π, Φ x π ∧ fields_rslv_pred Φl xl π
+    end.
+
+  Local Lemma fields_resolve {𝔄l} E L (lts: hlist lty 𝔄l) Φl G F m offs xs ζm q j d g tid l :
+    HForall_1 (λ _ lt Φ, lty_resolve E L lt Φ) lts Φl → Timeless G →
+    ↑Nllft ∪ ↑prophN ∪ ↑uniqN ∪ ↑gmbN ⊆ F →
+    ⊢ llft_ctx -∗ proph_ctx -∗ uniq_ctx -∗ time_ctx -∗ elctx_interp E -∗
+      (G &&{↑NllftG}&&> llctx_interp L) -∗ G -∗
+      fields_node offs (hmap (λ _ lt, ltype_own_cp false lt (Owned m)) lts)
+        (hcmap (λ _ lt, lty_pat lt) lts) (fields_rfn ζm q lts j xs) d g tid l ={F}=∗
+      fields_omem mem_cell m l offs lts ∗
+        |={F}▷=>^(m + d*(g+1)) |={F}=> ⟨π, fields_rslv_pred Φl xs π⟩ ∗ G.
   Proof.
-    iIntros (Rslv1 Rslv2 G F m x ζm q d g tid l ??) "#LFT #PROPH #UNIQ #TIME #E #L G Own".
-    rewrite /ltype_own /=. iDestruct "Own" as "[Own1 Own2]".
-    iMod (fractional.frac_split_guard_in_half with "G L") as (γ) "[H1 [H2 [#Gh #Back]]]";
-      [solve_ndisj|].
-    iMod (Rslv1 with "LFT PROPH UNIQ TIME E Gh H1 Own1") as "[M1 Upd1]"; [done..|].
-    iMod (Rslv2 with "LFT PROPH UNIQ TIME E Gh H2 Own2") as "[M2 Upd2]"; [done..|].
-    iSplitL "M1 M2". { iModIntro. iFrame. }
-    iCombine "Upd1 Upd2" as "Upd". iModIntro.
-    iApply (step_fupdN_wand with "Upd"). iIntros "[>[Obs1 H1] >[Obs2 H2]]".
-    iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
-    iModIntro. by iCombine "Obs1 Obs2" as "?".
+    intros Hall. induction Hall as [|𝔅 𝔅l lt Φ lts Φl Hlt _ IH] in offs, xs, j, G |- *;
+      intros ??.
+    - iIntros "_ _ _ _ _ _ G _ !>". iSplit; [done|]. iApply step_fupdN_full_intro.
+      iFrame "G". by iApply proph_obs_true.
+    - destruct offs as [|o offs]; [by iIntros "_ _ _ _ _ _ _ []"|]. destruct xs as [x xs].
+      iIntros "#LFT #PROPH #UNIQ #TIME #E #L G [Own1 Own2]".
+      iMod (fractional.frac_split_guard_in_half with "G L") as (γ) "[H1 [H2 [#Gh #Back]]]";
+        [solve_ndisj|].
+      iMod (Hlt with "LFT PROPH UNIQ TIME E Gh H1 Own1") as "[M1 Upd1]"; [done..|].
+      iMod (IH with "LFT PROPH UNIQ TIME E Gh H2 Own2") as "[M2 Upd2]"; [done..|].
+      iSplitL "M1 M2". { iModIntro. iFrame. }
+      iCombine "Upd1 Upd2" as "Upd". iModIntro.
+      iApply (step_fupdN_wand with "Upd"). iIntros "[>[Obs1 H1] >[Obs2 H2]]".
+      iMod (fupd_mask_mono with "(Back H1 H2)") as "$"; [solve_ndisj|].
+      iModIntro. by iCombine "Obs1 Obs2" as "?".
+  Qed.
+
+  Lemma lty_resolve_struct {𝔄l} E L Lay (lts: hlist lty 𝔄l) Φl :
+    HForall_1 (λ _ lt Φ, lty_resolve E L lt Φ) lts Φl →
+    lty_resolve E L (StructLty Lay lts) (λ x π, fields_rslv_pred Φl x π).
+  Proof.
+    iIntros (Rslv G F m x ζm q d g tid l ??) "LFT PROPH UNIQ TIME E L G Own".
+    rewrite lty_rfn_struct lty_omem_struct /ltype_own /=. iDestruct "Own" as "[Own $]".
+    iApply (fields_resolve with "LFT PROPH UNIQ TIME E L G Own"); done.
   Qed.
 
   Lemma lty_resolve_own {𝔄} E L n (lt: lty 𝔄) Φ :
@@ -388,24 +452,67 @@ Section drop_boxes.
           (drop_boxes lt' (Load Na1Ord MPtr e);;
            new_delete.delete [ #(lty_size lt'); (Load Na1Ord MPtr e)])%E
         else #☠%E
-    | ProdLty lt1 lt2 => (drop_boxes lt1 e;; drop_boxes lt2 (e +ₗ #(lty_size lt1)))%E
+    | @StructLty _ _ 𝔄l Lay lts =>
+        (fix go {𝔅l} (offs: list nat) (lts: hlist lty 𝔅l) {struct lts} : expr :=
+          match lts with
+          | +[] => #☠%E
+          | lt +:: lts' => match offs with
+              | [] => #☠%E
+              | o :: offs' => (drop_boxes lt (e +ₗ #o);; go offs' lts')%E
+              end
+          end) _ (struct_offs Lay 𝔄l) lts
     | @SumLty _ _ 𝔄l _ _ lt' => drop_boxes lt' (e +ₗ #(tag_size 𝔄l))%E
     | _ => #☠%E
     end.
 
+  (** The program freeing the pointees of the fields [lts] of a struct (at the address
+      computed by [e], at the offsets [offs]). *)
+  Definition fields_drop (e: expr) : ∀ {𝔅l}, list nat → hlist lty 𝔅l → expr :=
+    fix go {𝔅l} (offs: list nat) (lts: hlist lty 𝔅l) {struct lts} : expr :=
+      match lts with
+      | +[] => #☠%E
+      | lt +:: lts' => match offs with
+          | [] => #☠%E
+          | o :: offs' => (drop_boxes lt (e +ₗ #o);; go offs' lts')%E
+          end
+      end.
+
+  Lemma fields_drop_cons {𝔄 𝔅l} e o offs (lt: lty 𝔄) (lts: hlist lty 𝔅l) :
+    fields_drop e (o :: offs) (lt +:: lts) = (drop_boxes lt (e +ₗ #o);; fields_drop e offs lts)%E.
+  Proof. done. Qed.
+
+  Lemma drop_boxes_struct {𝔄l} Lay (lts: hlist lty 𝔄l) e :
+    drop_boxes (StructLty Lay lts) e = fields_drop e (struct_offs Lay 𝔄l) lts.
+  Proof. done. Qed.
+
   Global Instance drop_boxes_closed {𝔄} (lt: lty 𝔄) e :
     Closed [] e → Closed [] (drop_boxes lt e).
   Proof.
-    induction lt as [| | | 𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH| | | |] in e |- *;
-      intros ?; simpl; try done.
+    revert e.
+    induction 𝔄, lt as [| | | 𝔄 n lt IH|𝔄l Lay lts IH| |𝔄l tyl i lt IH| | | |] using lty_ind';
+      intros e ?; simpl; try done.
     - destruct (own_freeb n lt); [|done].
       have ?: Closed [] (drop_boxes lt (Load Na1Ord MPtr e)%E).
       { apply IH. apply _. }
       apply _.
-    - have ?: Closed [] (drop_boxes lt1 e) by apply IH1.
-      have ?: Closed [] (drop_boxes lt2 (e +ₗ #(lty_size lt1))%E) by apply IH2; apply _.
+    - rewrite -/(fields_drop e (struct_offs Lay 𝔄l) lts).
+      generalize (struct_offs Lay 𝔄l) as offs. clear Lay.
+      induction IH as [|𝔅 𝔅l lt lts Hlt _ IH']; intros offs; [simpl; apply _|].
+      destruct offs as [|o offs]; [simpl; apply _|]. rewrite fields_drop_cons.
+      have ?: Closed [] (drop_boxes lt (e +ₗ #o)%E) by apply Hlt; apply _.
+      have ?: Closed [] (fields_drop e offs lts) by apply IH'.
       apply _.
     - apply IH. apply _.
+  Qed.
+
+  Global Instance fields_drop_closed {𝔅l} e offs (lts: hlist lty 𝔅l) :
+    Closed [] e → Closed [] (fields_drop e offs lts).
+  Proof.
+    intros ?. induction lts as [|𝔅 𝔅l lt lts IH] in offs |- *; [simpl; apply _|].
+    destruct offs as [|o offs]; [simpl; apply _|]. rewrite fields_drop_cons.
+    have ?: Closed [] (fields_drop e offs lts) by apply IH.
+    have ?: Closed [] (drop_boxes lt (e +ₗ #o)%E) by apply drop_boxes_closed; apply _.
+    apply _.
   Qed.
 
   Lemma wp_delete_bytes bs (n: Z) l E :
@@ -445,16 +552,30 @@ Section drop_boxes.
     iModIntro. iExists bs. by iFrame.
   Qed.
 
+  Local Lemma fields_omem_forget Reg {𝔅l} m (lts: hlist lty 𝔅l) offs l :
+    HForall (λ 𝔄 lt, ∀ m l,
+      greg_open Reg -∗ lty_omem m lt l ={lazyE}=∗ greg_open Reg ∗ lty_omemb m lt l) lts →
+    greg_open Reg -∗ fields_omem mem_cell m l offs lts ={lazyE}=∗
+      greg_open Reg ∗ fields_omem mem_bytes m l offs lts.
+  Proof.
+    intros Hall. induction Hall as [|𝔄 𝔅l lt lts Hlt _ IH] in offs |- *; iIntros "O M";
+      [by iFrame|].
+    destruct offs as [|o offs]; [done|]. iDestruct "M" as "[M1 M2]".
+    iMod (Hlt with "O M1") as "[O $]". by iApply (IH with "O M2").
+  Qed.
+
   Lemma lty_omem_forget Reg {𝔄} m (lt: lty 𝔄) l :
     greg_open Reg -∗ lty_omem m lt l ={lazyE}=∗ greg_open Reg ∗ lty_omemb m lt l.
   Proof.
-    induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty]
-      in m, l |- *; iIntros "O M"; simpl; try (iModIntro; by iFrame).
+    revert m l.
+    induction 𝔄, lt as [𝔄 ty| |𝔄 lt κ' IH|𝔄 n lt IH|𝔄l Lay lts IH| |𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty]
+      using lty_ind'; intros m l; rewrite ?lty_omem_struct; iIntros "O M"; simpl;
+      try (iModIntro; by iFrame).
     all: try by iApply (mem_cell_forget with "O M").
     - iDestruct "M" as (l') "[Pt M]". destruct (own_freeb n lt); [|iModIntro; iFrame; by iExists l'].
       iDestruct "M" as "[Fr M]". iMod (IH with "O M") as "[$ M]". iModIntro.
       iExists l'. iFrame.
-    - iDestruct "M" as "[M1 M2]". iMod (IH1 with "O M1") as "[O $]". by iApply (IH2 with "O M2").
+    - iDestruct "M" as "[M $]". by iApply (fields_omem_forget with "O M").
     - iDestruct "M" as "(Tag & M & Pad)". iFrame "Tag Pad". by iApply (IH with "O M").
   Qed.
 
@@ -466,12 +587,68 @@ Section drop_boxes.
     iIntros (Reg) "O M". by iApply (lty_omem_forget with "O M").
   Qed.
 
+  Lemma mem_bytes_fields l (fs: list (nat * mty)) :
+    ([∗ list] f ∈ fs, mem_bytes (l +ₗ Z.of_nat f.1) (mty_size f.2)) ⊢
+    ∃ bss, ⌜∀ j f bs, fs !! j = Some f → bss !! j = Some bs → length bs = mty_size f.2⌝ ∗
+      [∗ list] f; bs ∈ fs; bss, (l +ₗ Z.of_nat f.1) ↦b bs.
+  Proof.
+    induction fs as [|f fs IH]; simpl.
+    - iIntros "_". iExists []. iSplit; [|done]. iPureIntro. intros ???. by rewrite lookup_nil.
+    - iIntros "[(%bs & B & %Hl) Fs]". iDestruct (IH with "Fs") as (bss) "[%Hls Fs]".
+      iExists (bs :: bss). iFrame. iPureIntro. intros [|j] f' bs'; simpl; [|apply Hls].
+      by intros [= <-] [= <-].
+  Qed.
+
+  (** The memory of the fields of a struct and its padding make the memory of the
+      struct. *)
+  Lemma mem_bytes_struct l Lay 𝔄l :
+    ([∗ list] f ∈ struct_fields Lay 𝔄l, mem_bytes (l +ₗ Z.of_nat f.1) (mty_size f.2)) ∗
+    pad_own l (struct_fields Lay 𝔄l) (struct_size Lay 𝔄l) ⊢ mem_bytes l (struct_size Lay 𝔄l).
+  Proof.
+    iIntros "[Fs Pad]". iDestruct (mem_bytes_fields with "Fs") as (bss) "[%Hls Fs]".
+    iApply (bytes_fields_pad with "[$Fs $Pad]"); [apply struct_fields_disjoint|
+      apply struct_fields_bounds|done].
+  Qed.
+
   (** [drop_boxes lt e] frees the pointees of the owned pointers of the place (those in
       [lty_omem]) and gives back the bytes of the place itself. [e] computes the
       address of the place, using some resource [R], in at least [k] steps; the rights
       to free the pointees are under [m] laters, with [m ≤ k + 1]: the pointee of an
       owned pointer is freed after its address has been computed again, i.e. after
       [k + 1] steps. *)
+  Local Lemma wp_fields_drop E {𝔅l} (lts: hlist lty 𝔅l) m k (l: loc) (e: expr) (R: iProp Σ) Ψ offs :
+    ↑naN ⊆ E →
+    HForall (λ 𝔄 lt, ∀ m k (l: loc) (e: expr) (R: iProp Σ) Φ,
+      lty_freeb lt = true → Closed [] e → m ≤ k + 1 →
+      (⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^k P -∗ (R -∗ P -∗ Ψ #l) -∗ WP e @ E {{ Ψ }}) →
+      R -∗ lty_omemb m lt l -∗
+      (R -∗ mem_bytes l (lty_size lt) -∗ Φ #☠) -∗
+      WP drop_boxes lt e @ E {{ Φ }}) lts →
+    foldr andb true (hcmap (λ _ lt, lty_freeb lt) lts) = true → Closed [] e → m ≤ k + 1 →
+    (⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^k P -∗ (R -∗ P -∗ Ψ #l) -∗ WP e @ E {{ Ψ }}) →
+    R -∗ fields_omem mem_bytes m l offs lts -∗
+    (R -∗ ([∗ list] f ∈ zip offs (syn_mty <$> 𝔅l), mem_bytes (l +ₗ Z.of_nat f.1) (mty_size f.2)) -∗
+      Ψ #☠) -∗
+    WP fields_drop e offs lts @ E {{ Ψ }}.
+  Proof.
+    intros ? Hall. induction Hall as [|𝔄 𝔅l lt lts Hlt _ IH] in offs, Ψ |- *;
+      intros Hf ? Hm Hev; iIntros "R M HΨ".
+    - rewrite /fields_drop. iApply wp_value. iApply ("HΨ" with "R"). by destruct offs.
+    - destruct offs as [|o offs]; [by iDestruct "M" as "[]"|]. simpl in Hf.
+      apply andb_true_iff in Hf as [Hf1 Hf2]. iDestruct "M" as "[M1 M2]".
+      rewrite fields_drop_cons.
+      have Hev': ⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^(k + 1) P -∗ (R -∗ P -∗ Ψ #(l +ₗ o)) -∗
+        WP (e +ₗ #o)%E @ E {{ Ψ }}.
+      { iIntros (Ψ' P) "R P HΨ". wp_bind e.
+        iApply (Hev $! _ (▷ P)%I with "R [P]"); [by rewrite bi.laterN_add|]. iIntros "R P".
+        wp_op. by iApply ("HΨ" with "R P"). }
+      wp_bind (drop_boxes _ _).
+      iApply (Hlt m (k + 1) (l +ₗ o) (e +ₗ #o)%E R _ Hf1 _ ltac:(lia) Hev' with "R M1 [M2 HΨ]").
+      iIntros "R B1". wp_seq.
+      iApply (IH with "R M2"); [done|done|done|]. iIntros "R Bs".
+      iApply ("HΨ" with "R"). simpl. iSplitL "B1"; [done|done].
+  Qed.
+
   Lemma wp_drop_boxes {𝔄} (lt: lty 𝔄) m k (l: loc) (e: expr) (R: iProp Σ) E Φ :
     ↑naN ⊆ E → lty_freeb lt = true → Closed [] e → m ≤ k + 1 →
     (⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^k P -∗ (R -∗ P -∗ Ψ #l) -∗ WP e @ E {{ Ψ }}) →
@@ -479,8 +656,10 @@ Section drop_boxes.
     (R -∗ mem_bytes l (lty_size lt) -∗ Φ #☠) -∗
     WP drop_boxes lt e @ E {{ Φ }}.
   Proof.
-    intros ?. induction lt as [𝔄 ty| |𝔄 lt IH κ'|𝔄 n lt IH|𝔄 𝔅 lt1 IH1 lt2 IH2| |𝔄l tyl i lt IH|𝔄 lt IH κ'|𝔄 ty|𝔄 lt IH κ'|𝔄 ty]
-      in m, k, l, e, R, Φ |- *; intros Hf ? Hm Hev; simpl in Hf; try done; cbn [drop_boxes];
+    intros ?. revert m k l e R Φ.
+    induction 𝔄, lt as [𝔄 ty| |𝔄 lt κ' IH|𝔄 n lt IH|𝔄l Lay lts IH| |𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty]
+      using lty_ind'; intros m k l e R Φ Hf ? Hm Hev; simpl in Hf; try done;
+      rewrite ?lty_omem_struct ?drop_boxes_struct; cbn [drop_boxes];
       iIntros "R M HΦ".
     6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
     6: { iApply wp_value. by iApply ("HΦ" with "R M"). }
@@ -510,20 +689,9 @@ Section drop_boxes.
       iApply (wp_delete_bytes bs with "[Pt' Fr]"); [done|by rewrite Hl -Hn|..].
       { iFrame "Pt'". rewrite Hl -Hn. iDestruct "Fr" as "[$|%]"; by iRight. }
       iIntros "!> _". iApply ("HΦ" with "R"). by iApply ptr_cell_mem_bytes.
-    - apply andb_true_iff in Hf as [Hf1 Hf2]. iDestruct "M" as "[M1 M2]".
-      rewrite lty_size_prod.
-      have Hev2: ⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^(k + 1) P -∗ (R -∗ P -∗ Ψ #(l +ₗ lty_size lt1)) -∗
-        WP (e +ₗ #(lty_size lt1))%E @ E {{ Ψ }}.
-      { iIntros (Ψ P) "R P HΨ". wp_bind e.
-        iApply (Hev $! _ (▷ P)%I with "R [P]"); [by rewrite bi.laterN_add|]. iIntros "R P".
-        wp_op. by iApply ("HΨ" with "R P"). }
-      wp_bind (drop_boxes lt1 e).
-      iApply (IH1 m k l e R _ Hf1 _ Hm Hev with "R M1 [M2 HΦ]").
-      iIntros "R Pt1". wp_seq.
-      iApply (IH2 m (k + 1) (l +ₗ lty_size lt1) (e +ₗ #(lty_size lt1))%E R _ Hf2 _ ltac:(lia)
-        Hev2 with "R M2 [Pt1 HΦ]").
-      iIntros "R Pt2". iApply ("HΦ" with "R [Pt1 Pt2]").
-      iApply mem_bytes_app. iFrame.
+    - iDestruct "M" as "[M Pad]".
+      iApply (wp_fields_drop with "R M [Pad HΦ]"); [done..|].
+      iIntros "R Bs". iApply ("HΦ" with "R"). iApply mem_bytes_struct. iFrame.
     - have Hsz: lty_size (SumLty tyl i lt) = (tag_size 𝔄l + (lty_size lt + (sum_max 𝔄l - lty_size lt)))%nat.
       { rewrite /lty_size syn_bsize_sum /tag_size. have := sum_max_ge 𝔄l i. lia. }
       rewrite Hsz. cbn [lty_omem_gen].
