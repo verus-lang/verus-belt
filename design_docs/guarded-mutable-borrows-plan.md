@@ -1222,8 +1222,8 @@ number of nested cells is not known before the move.
 
 ## Outcome: phase 4
 
-Two merges: `proto/gmb-anyidx` (the GMB library accepts share guards at any step-index) and
-`proto/gmb-typing` (the typing layer on GMB). No generic typing-rule statement changed (the
+Two merges: `proto/gmb-anyidx` (724cabf; the GMB library accepts share guards at any step-index) and
+`proto/gmb-typing` (9e696c6; the typing layer on GMB). No generic typing-rule statement changed (the
 rules of places, values, functions and lifetimes keep their statements; their proofs
 changed). The PCell rules changed, as planned. The typing layer no longer depends on the
 physical cell heap (`lang/heap_cells.v`, the cell parts of `lang/heap.v`, `util/cellmap.v`,
