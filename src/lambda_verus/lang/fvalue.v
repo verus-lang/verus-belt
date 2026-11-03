@@ -118,6 +118,12 @@ Proof.
   - by apply IH.
 Qed.
 
+Lemma fv_lift_inj v v' : fv_lift v = fv_lift v' → v = v'.
+Proof.
+  intros Heq. apply (fval_erase_det ∅ (fv_lift v)); [apply fval_erase_lift|].
+  rewrite Heq. apply fval_erase_lift.
+Qed.
+
 (** ** Fancy bytes and their representation *)
 Section frepr.
   Implicit Types (fbs : list (positive + AbstractByte)) (bs : list (AbstractByte)).

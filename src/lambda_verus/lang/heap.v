@@ -1,6 +1,5 @@
 Require Import guarding.internal.na_invariants_fork.
 From lrust.util Require Import atomic_lock_counter update.
-From lrust.util Require Export cellmap.
 From guarding Require Import guard.
 From Coq.Arith Require Import PeanoNat.
 From stdpp Require Import coPset.
@@ -19,54 +18,34 @@ Import uPred.
 (** * The heap
 
 Physical memory holds abstract bytes ([state' = gmap loc (lock_state * abyte)]). Its
-ghost state is a full-authority cell map ([fcmapR] of [util/cellmap.v]) whose values
-([bval]) are a lock state and an abstract byte, which backs the byte points-to
-[l ↦b bs]. Each location has a row: a chain of byte-cells (possibly empty) ending in its
-value. The physical memory is [𝜙 𝛼] (the values of the location rows), plus the read
-counts of the bank of guarded reads ([bytes_ctx]). (The legacy word region, a
-non-atomic map of [val]s that backed the word points-to [l ↦ v], was deleted in
-stage 6.) *)
+ghost state is a ghost map from locations to a lock state and an abstract byte ([bval]),
+which backs the byte points-to [l ↦b bs]. The physical memory is the authority of this
+map, plus the read counts of the bank of guarded reads ([bytes_ctx]). (The legacy word
+region was deleted in stage 6; the physical cell heap, with its chains of byte-cells, in
+phase 5 of the plan of guarded mutable borrows: cells are now a ghost layer over plain
+bytes, [typing/gcont.v].) *)
 
 (** The namespace of the non-atomic accesses (guarded reads and writes). *)
 Definition naN : namespace := nroot .@ "leaf_lifetime_logic" .@ "guarding".
 
 Canonical Structure abyteO := leibnizO abyte.
 
-(** The values of the rows of the byte region: a lock state and a byte. *)
+(** The values of the byte region: a lock state and a byte. *)
 Definition bval : Type := lock_state * abyte.
-
-(** The full maps of the byte region: rows of byte-cells ([positive]) ending in a [bval]. *)
-Notation bfull := (full_map loc positive bval).
-Notation bphi := (𝜙 loc positive bval).
 
 Definition heap_freeableUR : ucmra :=
   gmapUR block (prodR fracR (gmapR Z (exclR unitO))).
 
 Class heapGS Σ := HeapGS {
-  #[global] heap_bmap_inG :: fcmap_logicG loc positive bval Σ;
+  #[global] heap_bytes_inG :: ghost_mapG Σ loc bval;
   #[global] heap_freeable_inG :: inG Σ (authR heap_freeableUR);
   #[global] heap_bbank_inG :: inG Σ (gmap_viewR nat (agreeR (prodO (leibnizO (loc * list abyte))
     (laterO (iPropO Σ)))));
-  #[global] heap_greg_inG :: ghost_mapG Σ positive (mty * list positive);
-  #[global] heap_gdyn_inG :: ghost_mapG Σ positive FValue;
-  #[global] heap_gnc_inG :: ghost_mapG Σ positive ();
-  #[global] heap_gnest_inG :: ghost_mapG Σ (positive * positive * nat) ();
-  #[global] heap_cw_inG :: inG Σ (gmap_viewR positive (agreeR (prodO
-    (leibnizO (loc * nat * nat * FValue)) (laterO (iPropO Σ)))));
   heap_bytes_name : gname;
   heap_bbank_name : gname;
-  heap_greg_name : gname;
-  heap_gdyn_name : gname;
-  heap_gnc_name : gname;
-  heap_gnest_name : gname;
-  heap_cw_name : gname;
   heap_freeable_name : gname;
   atomic_threadpool: gname;
-  atomic_lock_ctr_name: gname;
-  (* The edges of the byte region and the dynamic registry of cell groups are different
-     ghost cells, so that guards of the location side of a group and of its permission can
-     be combined ([loc_side_and_gdyn] in [lang/heap_cells.v]). *)
-  heap_bytes_gdyn_ne : heap_bytes_name ≠ heap_gdyn_name
+  atomic_lock_ctr_name: gname
 }.
 
 Definition heap_freeable_rel (σ : state) (hF : heap_freeableUR) : Prop :=
@@ -77,22 +56,17 @@ Definition heap_freeable_rel (σ : state) (hF : heap_freeableUR) : Prop :=
 Section byte_defs.
   Context `{!heapGS Σ}.
 
-  (** The authority of the byte region, its edges and its untethered rows. *)
-  Definition bheap (𝛼 : bfull) : iProp Σ := fheap loc positive bval heap_bytes_name 𝛼.
-  Definition bpt (lc : loc + positive) (cv : positive + bval) : iProp Σ :=
-    fpt loc positive bval heap_bytes_name lc cv.
-  Definition bunt (u : untether_id) (c : positive) (v : bval) : iProp Σ :=
-    funt loc positive bval heap_bytes_name u c v.
+  (** The authority of the byte region. *)
+  Definition bheap (σA : state') : iProp Σ := ghost_map_auth heap_bytes_name 1 σA.
 
-  (** A location without cells, with lock state [st] and byte [b]. *)
+  (** The location [l], with lock state [st] and byte [b]. *)
   Definition heap_mapsto_st (st : lock_state) (l : loc) (b : abyte) : iProp Σ :=
-    bpt (inl l) (inr (st, b)).
+    l ↪[heap_bytes_name] (st, b).
 
   Definition heap_mapsto_st_vec (st : lock_state) (l : loc) (bs : list abyte) : iProp Σ :=
     [∗ list] i ↦ b ∈ bs, heap_mapsto_st st (l +ₗ i) b.
 
-  (** The byte points-to: [l ↦b bs] owns the bytes [bs] at [l], [l +ₗ 1], ..., which are
-      not in cells. *)
+  (** The byte points-to: [l ↦b bs] owns the bytes [bs] at [l], [l +ₗ 1], .... *)
   Definition heap_mapsto_bytes_def (l : loc) (bs : list abyte) : iProp Σ :=
     heap_mapsto_st_vec (RSt 0) l bs.
   Definition heap_mapsto_bytes_aux : seal (@heap_mapsto_bytes_def). Proof. by eexists. Qed.
@@ -105,186 +79,6 @@ Global Instance: Params (@heap_mapsto_bytes) 3 := {}.
 
 Notation "l ↦b bs" := (heap_mapsto_bytes l bs) (at level 20) : bi_scope.
 
-(** ** Cell groups
-
-A _cell group_ [g] is a multi-byte cell: the MiniRust type [m_g] of its contents and one
-byte-cell per byte ([cs_g], with [length cs_g = mty_size m_g > 0]). The static registry
-[greg g m_g cs_g] is persistent; the dynamic registry holds the current fancy value of each
-live group, and its fragment [gdyn g fv] is the permission of the group. Groups whose
-fancy value never contains cells are recorded persistently ([gnocell g]).
-
-The byte context owns the _contents_ of the cells of every live group (the edges
-[inr c ↦ ...] from its byte-cells) and keeps the decodability invariant D3: the contents
-of a group represent its fancy value ([frepr], which depends only on the static
-registry). The bytes of the contents of a group only change in the second phase of a
-write, together with its fancy value, so D3 needs no exemption for groups with a write in
-flight (their contents are marked [WSt], and [fb_strip] ignores lock states).
-
-A non-atomic write through a cell ([bytes_ctx_cell_write_begin]) deposits the permission
-of the group, and the guard of its location side, in the bank of cell writes ([CW]) for
-the duration of the write. *)
-
-(** A fancy byte of the byte region without its lock state. *)
-Definition fb_strip (fb : positive + bval) : positive + abyte :=
-  match fb with inl c => inl c | inr (_, b) => inr b end.
-
-(** A fancy byte with lock state [RSt 0]. *)
-Definition fb_rst (fb : positive + abyte) : positive + bval :=
-  match fb with inl c => inl c | inr b => inr (RSt 0, b) end.
-
-(** The data of a cell write in flight: the location of the group, the offset and the
-    length of the written range, and the fancy value of the group before the write. *)
-Definition cwkey : Type := loc * nat * nat * FValue.
-
-(** The lock state of the byte [i] of the contents of [g]. *)
-Definition cw_ls (CW : gmap positive cwkey) (g : positive) (i : nat) : lock_state :=
-  match CW !! g with
-  | Some (_, o, n, _) => if decide (o ≤ i < o + n)%nat then WSt else RSt 0
-  | None => RSt 0
-  end.
-
-(** The nesting of groups: [nest_path NS g0 g o] says that the group [g] sits at the
-    offset [o] inside the group [g0], following the nestings [NS]. A nesting
-    [(g0, g1, o1) ∈ dom NS] says that the contents of [g0] at [o1] are the byte-cells of
-    [g1] (while [g0] is live). *)
-Inductive nest_path (NS : gmap (positive * positive * nat) ()) : positive → positive → nat → Prop :=
-| nest_path_refl g : nest_path NS g g 0
-| nest_path_step g0 g1 o1 g o :
-    NS !! (g0, g1, o1) = Some () → nest_path NS g1 g o → nest_path NS g0 g (o1 + o).
-
-(** The row of the location [l] contains the byte-cell [c]. *)
-Definition row_has (𝛼 : bfull) (l : loc) (c : positive) : Prop :=
-  ∃ cells v, 𝛼 !! inl l = Some (cells, v) ∧ c ∈ cells.
-
-(** The pure invariants of the cell registry. *)
-Definition cells_wf (R : gmap positive (mty * list positive)) (ρ : gmap positive FValue)
-    (NC : gmap positive ()) (NS : gmap (positive * positive * nat) ())
-    (CW : gmap positive cwkey) : Prop :=
-  reg_wf R ∧ dom ρ ⊆ dom R ∧
-  (∀ g fv, ρ !! g = Some fv → ∀ g', g' ∈ fv_cells fv → (g' < g)%positive ∧ g' ∈ dom ρ) ∧
-  (∀ g1 g2 m1 cs1 m2 cs2, g1 ≠ g2 → R !! g1 = Some (m1, cs1) → R !! g2 = Some (m2, cs2) →
-     cs1 ## cs2) ∧
-  (∀ g m cs, R !! g = Some (m, cs) → (0 < mty_size m)%nat) ∧
-  dom NC ⊆ dom R ∧ (∀ g fv, ρ !! g = Some fv → g ∈ dom NC → fv_cells fv = []) ∧
-  (∀ g k, CW !! g = Some k → ρ !! g = Some k.2 ∧
-     ∃ m cs, R !! g = Some (m, cs) ∧ (k.1.1.2 + k.1.2 ≤ length cs)%nat) ∧
-  (∀ g m cs, R !! g = Some (m, cs) → mty_wf m) ∧
-  (∀ k, k ∈ dom NS → k.1.1 ∈ dom R).
-
-(** Every byte-cell of the byte region belongs to a live group, and the rows of the
-    locations of a group with a write in flight contain its byte-cells. *)
-Definition cells_live (𝛼 : bfull) (R : gmap positive (mty * list positive))
-    (ρ : gmap positive FValue) (CW : gmap positive cwkey) : Prop :=
-  (∀ k cs v c, 𝛼 !! k = Some (cs, v) → c ∈ cs →
-     ∃ g m cs', g ∈ dom ρ ∧ R !! g = Some (m, cs') ∧ c ∈ cs') ∧
-  (∀ g k m cs, CW !! g = Some k → R !! g = Some (m, cs) →
-     ∀ (i : nat) c, cs !! i = Some c → row_has 𝛼 (k.1.1.1 +ₗ i) c).
-
-(** The pure part of the contents [fbs] of a live group [g] (D3): they represent its fancy
-    value, their lock states mirror the bank of cell writes, and they contain the byte-cells
-    of the groups nested in [g]. *)
-Definition gc_pure (R : gmap positive (mty * list positive)) (NS : gmap (positive * positive * nat) ())
-    (CW : gmap positive cwkey) (g : positive) (fv : FValue) (m : mty) (cs : list positive)
-    (fbs : list (positive + bval)) : Prop :=
-  R !! g = Some (m, cs) ∧ frepr R m (fb_strip <$> fbs) fv ∧
-  (∀ i ls b, fbs !! i = Some (inr (ls, b)) → ls = cw_ls CW g i) ∧
-  (∀ g' o, (g, g', o) ∈ dom NS → ∃ m' cs', R !! g' = Some (m', cs') ∧
-     list_slice o (length cs') (fb_strip <$> fbs) = inl <$> cs').
-
-Section cells_defs.
-  Context `{!heapGS Σ}.
-  Context `{!invGS Σ}.
-
-  (** The static registry: the group [g] has the MiniRust type [m] and the byte-cells [cs]. *)
-  Definition greg (g : positive) (m : mty) (cs : list positive) : iProp Σ :=
-    g ↪[heap_greg_name]□ (m, cs).
-  (** The permission of the group [g]: its current fancy value is [fv]. *)
-  Definition gdyn (g : positive) (fv : FValue) : iProp Σ := g ↪[heap_gdyn_name] fv.
-  (** The fancy value of the group [g] never contains cells. *)
-  Definition gnocell (g : positive) : iProp Σ := g ↪[heap_gnc_name]□ ().
-  (** The group [g] is nested at the offset [o] inside the group [g0] (as long as [g0] is
-      live). *)
-  Definition gnest (g0 g : positive) (o : nat) : iProp Σ := (g0, g, o) ↪[heap_gnest_name]□ ().
-  (** The group [g] sits at the offset [o] inside the group [g0], through nestings. *)
-  Definition gpath (g0 g : positive) (o : nat) : iProp Σ :=
-    ∃ NS, ⌜nest_path NS g0 g o⌝ ∗ [∗ map] k ↦ _ ∈ NS, gnest k.1.1 k.1.2 k.2.
-
-  (** The contents [fbs] of the byte-cells [cs]. *)
-  Definition bcells (cs : list positive) (fbs : list (positive + bval)) : iProp Σ :=
-    [∗ list] c; fb ∈ cs; fbs, bpt (inr c) fb.
-
-  (** The location side of a cell group, i.e. the [PCell] itself: the locations [l],
-      [l +ₗ 1], ... point to the byte-cells of [g]. *)
-  Definition loc_side (l : loc) (g : positive) (m : mty) (cs : list positive) : iProp Σ :=
-    greg g m cs ∗ [∗ list] i ↦ c ∈ cs, bpt (inl (l +ₗ i)) (inl c).
-
-  (** A cell group in transit (after [bytes_ctx_pcell_untether]): the byte-cells of [g]
-      head untethered rows, whose final bytes are [bs]. *)
-  Definition untethered (g : positive) (m : mty) (cs : list positive) (bs : list abyte)
-      : iProp Σ :=
-    greg g m cs ∗ [∗ list] c; b ∈ cs; bs, ∃ u, bunt u c (RSt 0, b).
-
-  (** Fancy bytes in transit (after [bytes_ctx_fbytes_untether]), with the bytes [bs]: each
-      byte-cell of [fbs] heads an untethered row whose final byte is the byte of [bs] at its
-      position, and the plain bytes of [fbs] are those of [bs]. This is the form of the
-      several (sibling) groups of a value with cells in transit: [untethered g m cs bs] is
-      [unt_fbytes (inl <$> cs) bs] ([untethered_fbytes]). *)
-  Definition unt_fb (fb : positive + abyte) (b : abyte) : iProp Σ :=
-    match fb with inl c => ∃ u, bunt u c (RSt 0, b) | inr b' => ⌜b' = b⌝ end.
-  Definition unt_fbytes (fbs : list (positive + abyte)) (bs : list abyte) : iProp Σ :=
-    [∗ list] fb; b ∈ fbs; bs, unt_fb fb b.
-
-  (** Fancy bytes at locations: [l +ₗ i] points to the byte-cell or the byte [fbs !! i]. *)
-  Definition heap_mapsto_fbytes (l : loc) (fbs : list (positive + abyte)) : iProp Σ :=
-    [∗ list] i ↦ fb ∈ fbs, bpt (inl (l +ₗ i)) (fb_rst fb).
-
-  (** The fancy bytes [fbs] represent [fv] at [m], with the static registry. *)
-  Definition brepr (m : mty) (fbs : list (positive + abyte)) (fv : FValue) : iProp Σ :=
-    ∃ R, ⌜frepr R m fbs fv⌝ ∗ [∗ map] g ↦ e ∈ R, greg g e.1 e.2.
-
-  (** The contents of a live group, owned by the byte context, with the invariant D3. *)
-  Definition gcontents (R : gmap positive (mty * list positive))
-      (NS : gmap (positive * positive * nat) ()) (CW : gmap positive cwkey)
-      (g : positive) (fv : FValue) : iProp Σ :=
-    ∃ m cs fbs, ⌜gc_pure R NS CW g fv m cs fbs⌝ ∗ bcells cs fbs.
-
-  (** The bank of cell writes. *)
-  Definition cw_elt (k : cwkey) (G : iProp Σ) : prodO (leibnizO cwkey) (laterO (iPropO Σ)) :=
-    (k, Next G).
-  Definition cwbank_auth (CW : gmap positive (cwkey * iProp Σ)) : iProp Σ :=
-    own heap_cw_name (gmap_view_auth (DfracOwn 1)
-      ((λ e : cwkey * iProp Σ, to_agree (cw_elt e.1 e.2)) <$> CW)).
-  Definition cwrite_tok (g : positive) (k : cwkey) (G : iProp Σ) : iProp Σ :=
-    own heap_cw_name (gmap_view_frag g (DfracOwn 1) (to_agree (cw_elt k G))).
-  (** An entry of the bank of cell writes: the permission of the group, and the guard [G]
-      of the location side of the group [g0] in which [g] is nested (possibly [g] itself). *)
-  Definition cwentry (g : positive) (e : cwkey * iProp Σ) : iProp Σ :=
-    ∃ m cs, greg g m cs ∗ gdyn g e.1.2 ∗ e.2 ∗ ∃ P d, £d ∗ (e.2 &&{↑naN; d}&&> P) ∗
-      □ (P -∗ ∃ l0 g0 m0 cs0 (o : nat), ⌜e.1.1.1.1 = l0 +ₗ o ∧ (o + length cs ≤ length cs0)%nat⌝ ∗
-           loc_side l0 g0 m0 cs0).
-
-  Definition cells_ctx (𝛼 : bfull) : iProp Σ :=
-    ∃ R ρ NC NS (CW : gmap positive (cwkey * iProp Σ)),
-      ghost_map_auth heap_greg_name 1 R ∗ ghost_map_auth heap_gdyn_name 1 ρ ∗
-      ghost_map_auth heap_gnc_name 1 NC ∗ ghost_map_auth heap_gnest_name 1 NS ∗
-      cwbank_auth CW ∗
-      ⌜cells_wf R ρ NC NS (fst <$> CW) ∧ cells_live 𝛼 R ρ (fst <$> CW)⌝ ∗
-      ([∗ map] g ↦ e ∈ R, greg g e.1 e.2) ∗ ([∗ map] k ↦ _ ∈ NS, gnest k.1.1 k.1.2 k.2) ∗
-      ([∗ map] g ↦ e ∈ CW, cwentry g e) ∗
-      [∗ map] g ↦ fv ∈ ρ, gcontents R NS (fst <$> CW) g fv.
-
-  (** The read witness of an entry of the bank of guarded reads, of the location edges [cvs]
-      of the range at [l]: they all point to bytes, or the range is a plain sub-value at the
-      offset [o'] of a group [g] whose permission the reader has, which sits at the offset [o]
-      inside the group [g0] whose byte-cells the edges point to. *)
-  Definition cells_wit (l : loc) (cvs : list (positive + bval)) : iProp Σ :=
-    ⌜Forall (λ cv, ∃ v, cv = inr v) cvs⌝ ∨
-    ∃ l0 g0 m0 cs0 g o m cs fv o' m' fvs,
-      greg g0 m0 cs0 ∗ gpath g0 g o ∗ greg g m cs ∗ gdyn g fv ∗
-      ⌜l = l0 +ₗ (o + o')%nat ∧ cvs = inl <$> list_slice (o + o') (length cvs) cs0 ∧
-       fv_sub m fv o' m' fvs ∧ fv_cells fvs = [] ∧ length cvs = mty_size m'⌝.
-End cells_defs.
-
 (** ** The bank of guarded reads of the byte region
 
 A non-atomic read of bytes that are only _guarded_ ([G &&{↑naN; d}&&> l ↦b bs], as
@@ -293,11 +87,11 @@ two steps of the read. As in the non-atomic map of lambda-Rust (its read bank),
 the guard [G] is deposited in a bank for the duration of the read: an entry of the
 bank records the range [(l, bs)] of the read, and holds [G] together with its guard
 (and the later credits to open it). The physical lock states [σB] of the byte region
-are those of the authoritative heap [σA] (the values [𝜙 𝛼] of the location rows) plus
+are those of the authoritative heap [σA] plus
 the number of entries of the bank whose range contains the location ([bank_rel]); every
 entry is a range that is being read in [σA] ([bank_wf]). A writer (which owns the
 points-to of its range) learns that no entry overlaps its range by opening the guards
-of the entries ([bbank_disj]): an overlapping entry would give a second edge from one
+of the entries ([bbank_disj]): an overlapping entry would give a second points-to of one
 of its locations. *)
 
 Definition bbankR Σ : cmra :=
@@ -343,17 +137,17 @@ Section bank_defs.
       ((λ e, to_agree (bbank_elt e.1 e.2)) <$> M)).
 
   (** An entry holds [G], a guard of some [P] by [G], and the knowledge that [P] contains
-      the edges from the locations of the range of the entry. *)
+      the points-to of the locations of the range of the entry. *)
   Definition bbank_entry (e : (loc * list abyte) * iProp Σ) : iProp Σ :=
     e.2 ∗ ∃ P d, £d ∗ (e.2 &&{↑naN; d}&&> P) ∗
-      □ (P -∗ ∃ cvs, ⌜length cvs = length e.1.2⌝ ∗
-           ([∗ list] i ↦ cv ∈ cvs, bpt (inl (e.1.1 +ₗ i)) cv) ∗ cells_wit e.1.1 cvs).
+      □ (P -∗ ∃ bvs : list bval, ⌜length bvs = length e.1.2⌝ ∗
+           [∗ list] i ↦ bv ∈ bvs, (e.1.1 +ₗ i) ↪[heap_bytes_name] bv).
 
   (** The ghost state of the byte region, at the physical byte region [σB]. *)
   Definition bytes_ctx (σB : state') : iProp Σ :=
-    ∃ (𝛼 : bfull) (M : gmap nat ((loc * list abyte) * iProp Σ)),
-      ⌜bank_rel (fst <$> M) (bphi 𝛼) σB⌝ ∗ ⌜bank_wf (fst <$> M) (bphi 𝛼)⌝ ∗
-      bheap 𝛼 ∗ bbank_auth M ∗ ([∗ map] e ∈ M, bbank_entry e) ∗ cells_ctx 𝛼.
+    ∃ (σA : state') (M : gmap nat ((loc * list abyte) * iProp Σ)),
+      ⌜bank_rel (fst <$> M) σA σB⌝ ∗ ⌜bank_wf (fst <$> M) σA⌝ ∗
+      bheap σA ∗ bbank_auth M ∗ ([∗ map] e ∈ M, bbank_entry e).
 
   (** The token of a guarded read in progress, of the bytes [bs] at [l], whose guard
       [G] is in the bank. *)
@@ -518,13 +312,12 @@ End heap.
 
 Section bytes.
   Context `{!heapGS Σ}.
-  Implicit Types σB : gmap loc (lock_state * abyte).
+  Implicit Types σA σB : gmap loc (lock_state * abyte).
   Implicit Types bs : list abyte.
-  Implicit Types 𝛼 : bfull.
 
   (** ** Structural lemmas *)
   Global Instance heap_mapsto_st_timeless st l b : Timeless (heap_mapsto_st st l b).
-  Proof. rewrite /heap_mapsto_st /bpt. apply _. Qed.
+  Proof. rewrite /heap_mapsto_st. apply _. Qed.
 
   Global Instance heap_mapsto_bytes_timeless l bs : Timeless (l ↦b bs).
   Proof. rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec. apply _. Qed.
@@ -561,67 +354,34 @@ Section bytes.
 
   Lemma heap_mapsto_st_excl st st' l b b' :
     heap_mapsto_st st l b -∗ heap_mapsto_st st' l b' -∗ False.
-  Proof. apply fpt_excl. Qed.
-
-  (** ** Rows of the byte region *)
-
-  (** Two full maps have the same rows with cells. The operations on locations without
-      cells (reads, writes, allocation and deallocation) preserve the rows with cells. *)
-  Definition rows_cells_eq 𝛼 𝛼' : Prop :=
-    ∀ k cs v, cs ≠ [] → 𝛼 !! k = Some (cs, v) ↔ 𝛼' !! k = Some (cs, v).
-
-  Lemma rows_cells_eq_refl 𝛼 : rows_cells_eq 𝛼 𝛼.
-  Proof. done. Qed.
-  Lemma rows_cells_eq_trans 𝛼1 𝛼2 𝛼3 :
-    rows_cells_eq 𝛼1 𝛼2 → rows_cells_eq 𝛼2 𝛼3 → rows_cells_eq 𝛼1 𝛼3.
-  Proof. intros H1 H2 k cs v ?. by rewrite H1 // H2. Qed.
-  Lemma rows_cells_eq_insert_plain 𝛼 l v :
-    (∀ cs v0, 𝛼 !! inl l = Some (cs, v0) → cs = []) →
-    rows_cells_eq 𝛼 (<[inl l := ([], v)]> 𝛼).
-  Proof.
-    intros Hl k cs v' Hcs. destruct (decide (k = inl l)) as [->|].
-    - rewrite lookup_insert. split; [intros Hk; by rewrite (Hl _ _ Hk) in Hcs|by intros [= <- _]].
-    - by rewrite lookup_insert_ne.
-  Qed.
-  Lemma rows_cells_eq_delete_plain 𝛼 l :
-    (∀ cs v0, 𝛼 !! inl l = Some (cs, v0) → cs = []) →
-    rows_cells_eq 𝛼 (delete (inl l) 𝛼).
-  Proof.
-    intros Hl k cs v' Hcs. destruct (decide (k = inl l)) as [->|].
-    - rewrite lookup_delete. split; [intros Hk; by rewrite (Hl _ _ Hk) in Hcs|done].
-    - by rewrite lookup_delete_ne.
-  Qed.
+  Proof. iIntros "H1 H2". iDestruct (ghost_map_elem_ne with "H1 H2") as %Hne. by destruct Hne. Qed.
 
   (** ** Single locations *)
-  Lemma heap_mapsto_st_lookup 𝛼 l ls b :
-    bheap 𝛼 -∗ heap_mapsto_st ls l b -∗ ⌜𝛼 !! inl l = Some ([], (ls, b))⌝.
-  Proof. iIntros "H● H◯". iApply (fheap_fpt with "H● H◯"). Qed.
+  Lemma heap_mapsto_st_lookup σA l ls b :
+    bheap σA -∗ heap_mapsto_st ls l b -∗ ⌜σA !! l = Some (ls, b)⌝.
+  Proof. iIntros "H● H◯". iApply (ghost_map_lookup with "H● H◯"). Qed.
 
-  Lemma heap_mapsto_st_lookup_phi 𝛼 l ls b :
-    bheap 𝛼 -∗ heap_mapsto_st ls l b -∗ ⌜bphi 𝛼 !! l = Some (ls, b)⌝.
+  Lemma heap_mapsto_st_update σA l ls b ls' b' :
+    bheap σA -∗ heap_mapsto_st ls l b ==∗
+      ⌜σA !! l = Some (ls, b)⌝ ∗
+      bheap (<[l := (ls', b')]> σA) ∗ heap_mapsto_st ls' l b'.
   Proof.
     iIntros "H● H◯". iDestruct (heap_mapsto_st_lookup with "H● H◯") as %Hl.
-    iPureIntro. by rewrite phi_lookup Hl.
+    iMod (ghost_map_update with "H● H◯") as "[$ $]". done.
   Qed.
 
-  Lemma heap_mapsto_st_update 𝛼 l ls b ls' b' :
-    bheap 𝛼 -∗ heap_mapsto_st ls l b ==∗
-      ⌜𝛼 !! inl l = Some ([], (ls, b))⌝ ∗
-      bheap (<[inl l := ([], (ls', b'))]> 𝛼) ∗ heap_mapsto_st ls' l b'.
+  Lemma heap_bytes_alloc_vs σA l b :
+    σA !! l = None →
+    bheap σA ==∗ bheap (<[l := (RSt 0, b)]> σA) ∗ heap_mapsto_st (RSt 0) l b.
+  Proof. iIntros (Hl) "H●". by iApply ghost_map_insert. Qed.
+
+  Lemma heap_bytes_dealloc_vs σA l b :
+    bheap σA -∗ heap_mapsto_st (RSt 0) l b ==∗
+    ⌜σA !! l = Some (RSt 0, b)⌝ ∗ bheap (delete l σA).
   Proof.
     iIntros "H● H◯". iDestruct (heap_mapsto_st_lookup with "H● H◯") as %Hl.
-    iMod (fcmap_write_loc with "H● H◯") as "[$ $]"; [done|done|]. done.
+    iMod (ghost_map_delete with "H● H◯") as "$". done.
   Qed.
-
-  Lemma heap_bytes_alloc_vs 𝛼 l b :
-    𝛼 !! inl l = None →
-    bheap 𝛼 ==∗ bheap (<[inl l := ([], (RSt 0, b))]> 𝛼) ∗ heap_mapsto_st (RSt 0) l b.
-  Proof. iIntros (Hl) "H●". by iApply fcmap_alloc. Qed.
-
-  Lemma heap_bytes_dealloc_vs 𝛼 l b :
-    bheap 𝛼 -∗ heap_mapsto_st (RSt 0) l b ==∗
-    ⌜𝛼 !! inl l = Some ([], (RSt 0, b))⌝ ∗ bheap (delete (inl l) 𝛼).
-  Proof. iIntros "H● H◯". by iApply (fcmap_delete with "H● H◯"). Qed.
 
   Lemma alter_insert_Some {A} (m : gmap loc A) l (f : A → A) x :
     m !! l = Some x → alter f l m = <[l := f x]> m.
@@ -660,61 +420,27 @@ Section bytes.
     rewrite lookup_mem_set_out //. intros i Hi. apply shift_loc_ne_S.
   Qed.
 
-  Lemma heap_st_vec_lookup 𝛼 st l bs :
-    bheap 𝛼 -∗ heap_mapsto_st_vec st l bs -∗ ⌜mem_range (.= st) (bphi 𝛼) l bs⌝.
+  Lemma heap_st_vec_lookup σA st l bs :
+    bheap σA -∗ heap_mapsto_st_vec st l bs -∗ ⌜mem_range (.= st) σA l bs⌝.
   Proof.
     iInduction bs as [|b bs] "IH" forall (l); iIntros "H● Hbs"; [done|].
     rewrite heap_mapsto_st_vec_cons. iDestruct "Hbs" as "[Hb Hbs]".
-    iDestruct (heap_mapsto_st_lookup_phi with "H● Hb") as %Hl.
+    iDestruct (heap_mapsto_st_lookup with "H● Hb") as %Hl.
     iDestruct ("IH" with "H● Hbs") as %Hr. iPureIntro. split; [|done]. by eexists.
   Qed.
 
-  Lemma heap_st_vec_set 𝛼 st st' l bs bs' :
+  Lemma heap_st_vec_set σA st st' l bs bs' :
     length bs' = length bs →
-    bheap 𝛼 -∗ heap_mapsto_st_vec st l bs ==∗ ∃ 𝛼',
-      ⌜mem_range (.= st) (bphi 𝛼) l bs ∧ bphi 𝛼' = mem_set st' l bs' (bphi 𝛼) ∧
-        rows_cells_eq 𝛼 𝛼'⌝ ∗
-      bheap 𝛼' ∗ heap_mapsto_st_vec st' l bs'.
+    bheap σA -∗ heap_mapsto_st_vec st l bs ==∗
+      ⌜mem_range (.= st) σA l bs⌝ ∗ bheap (mem_set st' l bs' σA) ∗ heap_mapsto_st_vec st' l bs'.
   Proof.
-    iInduction bs as [|b bs] "IH" forall (l bs' 𝛼); iIntros (Hlen) "H● Hbs";
-      destruct bs' as [|b' bs']; try done.
-    { iModIntro. iExists 𝛼. iFrame. rewrite /heap_mapsto_st_vec. iSplit; [iPureIntro; done|done]. }
+    iIntros (Hlen) "H● Hbs". iDestruct (heap_st_vec_lookup with "H● Hbs") as %Hr.
+    iSplitR; [done|]. clear Hr.
+    iInduction bs as [|b bs] "IH" forall (l bs' Hlen); destruct bs' as [|b' bs']; try done.
+    { by iFrame. }
     rewrite !heap_mapsto_st_vec_cons. iDestruct "Hbs" as "[Hb Hbs]".
-    iDestruct (heap_mapsto_st_lookup_phi with "H● Hb") as %Hl0.
-    iMod ("IH" $! _ bs' with "[] H● Hbs") as (𝛼1) "([%Hr [%H𝛼1 %Hc1]] & H● & Hbs)";
-      [by simplify_eq/=|].
-    iMod (heap_mapsto_st_update _ _ _ _ st' b' with "H● Hb") as "(%Hl1 & H● & Hb)".
-    iModIntro. iExists _. rewrite (heap_mapsto_st_vec_cons st').
-    iFrame "H● Hb Hbs". iPureIntro. split_and!.
-    - split; [|done]. by eexists.
-    - by rewrite phi_insert_loc H𝛼1.
-    - eapply rows_cells_eq_trans; [done|]. apply rows_cells_eq_insert_plain.
-      rewrite Hl1. by intros ?? [= <- _].
-  Qed.
-
-  (** Allocation and deallocation of single locations, with [bphi]. *)
-  Lemma heap_bytes_alloc_vs' 𝛼 l b :
-    bphi 𝛼 !! l = None →
-    bheap 𝛼 ==∗ ∃ 𝛼', ⌜bphi 𝛼' = <[l:=(RSt 0, b)]> (bphi 𝛼) ∧ rows_cells_eq 𝛼 𝛼'⌝ ∗
-      bheap 𝛼' ∗ heap_mapsto_st (RSt 0) l b.
-  Proof.
-    iIntros (Hl) "H●". rewrite phi_lookup in Hl.
-    have Hl' : 𝛼 !! inl l = None by destruct (𝛼 !! inl l) as [[]|].
-    iMod (heap_bytes_alloc_vs with "H●") as "[H● $]"; [done|]. iModIntro. iExists _.
-    iFrame. iPureIntro. split; [by rewrite phi_insert_loc|].
-    apply rows_cells_eq_insert_plain. by rewrite Hl'.
-  Qed.
-
-  Lemma heap_bytes_dealloc_vs' 𝛼 l b :
-    bheap 𝛼 -∗ heap_mapsto_st (RSt 0) l b ==∗ ∃ 𝛼',
-    ⌜bphi 𝛼 !! l = Some (RSt 0, b) ∧ bphi 𝛼' = delete l (bphi 𝛼) ∧ rows_cells_eq 𝛼 𝛼'⌝ ∗
-      bheap 𝛼'.
-  Proof.
-    iIntros "H● H◯". iMod (heap_bytes_dealloc_vs with "H● H◯") as "[%Hl H●]".
-    iModIntro. iExists _. iFrame. iPureIntro. split_and!.
-    - by rewrite phi_lookup Hl.
-    - by rewrite phi_delete_loc.
-    - apply rows_cells_eq_delete_plain. rewrite Hl. by intros ?? [= <- _].
+    iMod ("IH" $! _ bs' with "[] H● Hbs") as "[H● $]"; [by simplify_eq/=|].
+    iMod (heap_mapsto_st_update _ _ _ _ st' b' with "H● Hb") as "(_ & $ & $)". done.
   Qed.
 
   Lemma heap_freeable_rel_dom (σ σ' : state) hF :
@@ -983,25 +709,10 @@ Section bank_pure.
   Proof. intros H i e Hi j Hj. apply (H i e Hi j). simpl. lia. Qed.
 End bank_pure.
 
-Section cells_rows.
-  Context `{!heapGS Σ}.
-  Context `{!invGS Σ}.
-
-  Lemma cells_ctx_rows_eq 𝛼 𝛼' : rows_cells_eq 𝛼 𝛼' → cells_ctx 𝛼 -∗ cells_ctx 𝛼'.
-  Proof.
-    iIntros (Heq) "(%R & %ρ & %NC & %NS & %CW & Hreg & Hdyn & Hnc & Hns & Hcw & [%Hwf [%Hl1 %Hl2]] & HR & HNS & Hcwe & Hρ)".
-    iExists R, ρ, NC, NS, CW. iFrame. iPureIntro. split; [done|]. split.
-    - intros k cs v c Hk Hc. apply (Hl1 k cs v c); [|done]. apply Heq; [|done].
-      intros ->. by apply not_elem_of_nil in Hc.
-    - intros g k m cs Hg HR i c Hc. destruct (Hl2 g k m cs Hg HR i c Hc) as (cells & v & Hr & Hcc).
-      exists cells, v. split; [|done]. apply Heq; [|done]. intros ->. by apply not_elem_of_nil in Hcc.
-  Qed.
-End cells_rows.
-
 Section bank.
   Context `{!heapGS Σ}.
   Context `{!invGS Σ}.
-  Implicit Types (σA σB : state') (bs : list abyte) (𝛼 : bfull).
+  Implicit Types (σA σB : state') (bs : list abyte).
   Implicit Types M : gmap nat ((loc * list abyte) * iProp Σ).
 
   (** An entry of the bank does not overlap the bytes owned by a writer. *)
@@ -1020,12 +731,13 @@ Section bank.
     iDestruct "Entry" as "(G & %P & %d & £ & #Guard & #HP)".
     iMod (guards_open_later with "Guard G") as "Open"; [done|].
     iMod (lc_fupd_elim_laterN with "£ Open") as ">[P _]".
-    iDestruct ("HP" with "P") as (cvs Hlen') "[Pt _]".
-    destruct (lookup_lt_is_Some_2 cvs k) as [cv Hcv]; [lia|].
+    iDestruct ("HP" with "P") as (bvs Hlen') "Pt".
+    destruct (lookup_lt_is_Some_2 bvs k) as [bv Hbv]; [lia|].
     destruct (lookup_lt_is_Some_2 bs j) as [b Hb]; [lia|].
     iDestruct (big_sepL_lookup with "Pt") as "Pt"; [done|].
     iDestruct (big_sepL_lookup with "Hbs") as "Hbs"; [done|].
-    iEval (rewrite -Heq) in "Pt". iDestruct (fpt_excl with "Hbs Pt") as "[]".
+    iEval (rewrite -Heq) in "Pt".
+    iDestruct (ghost_map_elem_ne with "Hbs Pt") as %Hne. by destruct Hne.
   Qed.
 
   Lemma bbank_disj E M st l bs :
@@ -1045,25 +757,17 @@ Section bank.
   Qed.
 
   (** ** The ghost state of the byte region *)
-  Lemma bytes_ctx_empty : bheap ∅ -∗ bbank_auth ∅ -∗
-    ghost_map_auth heap_greg_name 1 (∅ : gmap positive (mty * list positive)) -∗
-    ghost_map_auth heap_gdyn_name 1 (∅ : gmap positive FValue) -∗
-    ghost_map_auth heap_gnc_name 1 (∅ : gmap positive ()) -∗
-    ghost_map_auth heap_gnest_name 1 (∅ : gmap (positive * positive * nat) ()) -∗
-    cwbank_auth ∅ -∗ bytes_ctx ∅.
+  Lemma bytes_ctx_empty : bheap ∅ -∗ bbank_auth ∅ -∗ bytes_ctx ∅.
   Proof.
-    iIntros "H● Hbank Hreg Hdyn Hnc Hns Hcw". iExists ∅, ∅.
-    rewrite !big_sepM_empty phi_empty. iFrame "H● Hbank".
+    iIntros "H● Hbank". iExists ∅, ∅. rewrite big_sepM_empty. iFrame "H● Hbank".
     iSplit. { iPureIntro. intros l. by rewrite fmap_empty !lookup_empty. }
-    iSplit. { iPureIntro. intros i e. by rewrite fmap_empty lookup_empty. }
-    iSplit; [done|]. iExists ∅, ∅, ∅, ∅, ∅. iFrame. rewrite !big_sepM_empty fmap_empty.
-    iPureIntro. split_and!; try done; set_solver.
+    iPureIntro. intros i e. by rewrite fmap_empty lookup_empty.
   Qed.
 
   Lemma bytes_ctx_lookup σB l bs :
     bytes_ctx σB -∗ l ↦b bs -∗ ⌜mem_range is_reading σB l bs⌝.
   Proof.
-    iIntros "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hbs".
+    iIntros "(%σA & %M & %Hr & %Hwf & H● & Hbank & Entries) Hbs".
     rewrite heap_mapsto_bytes_st_vec.
     iDestruct (heap_st_vec_lookup with "H● Hbs") as %Hrd. iPureIntro.
     eapply bank_rel_reading; [done|]. eapply mem_range_impl; [|done]. intros ? ->. by eexists.
@@ -1072,7 +776,7 @@ Section bank.
   Lemma bytes_ctx_lookup_reading σB l bs :
     bytes_ctx σB -∗ heap_mapsto_st_vec (RSt 1) l bs -∗ ⌜mem_range is_reading_S σB l bs⌝.
   Proof.
-    iIntros "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hbs".
+    iIntros "(%σA & %M & %Hr & %Hwf & H● & Hbank & Entries) Hbs".
     iDestruct (heap_st_vec_lookup with "H● Hbs") as %Hrd. iPureIntro.
     eapply bank_rel_reading_S; [done|]. eapply mem_range_impl; [|done]. intros ? ->. by eexists.
   Qed.
@@ -1082,10 +786,10 @@ Section bank.
     bytes_ctx σB -∗ heap_mapsto_st_vec st l bs ={E}=∗
       ⌜mem_range (.= st) σB l bs⌝ ∗ bytes_ctx σB ∗ heap_mapsto_st_vec st l bs.
   Proof.
-    iIntros (?) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hbs".
+    iIntros (?) "(%σA & %M & %Hr & %Hwf & H● & Hbank & Entries) Hbs".
     iDestruct (heap_st_vec_lookup with "H● Hbs") as %Hrd.
     iMod (bbank_disj with "Entries Hbs") as "(%Hd & Entries & $)"; [done|].
-    iModIntro. iSplit; [iPureIntro; by eapply bank_rel_disj|]. iExists 𝛼, M. by iFrame.
+    iModIntro. iSplit; [iPureIntro; by eapply bank_rel_disj|]. iExists σA, M. by iFrame.
   Qed.
 
   Lemma bytes_ctx_read_begin σB l bs :
@@ -1093,14 +797,13 @@ Section bank.
       ⌜mem_range is_reading σB l bs⌝ ∗
       bytes_ctx (mem_alter ls_inc l (length bs) σB) ∗ heap_mapsto_st_vec (RSt 1) l bs.
   Proof.
-    iIntros "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hbs".
+    iIntros "(%σA & %M & %Hr & %Hwf & H● & Hbank & Entries) Hbs".
     rewrite heap_mapsto_bytes_st_vec.
-    iMod (heap_st_vec_set _ _ (RSt 1) _ _ bs with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' %Hc]] & H● & $)"; [done|].
-    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|].
-    have Hrd' : mem_range is_reading (bphi 𝛼) l bs.
+    iMod (heap_st_vec_set _ _ (RSt 1) _ _ bs with "H● Hbs") as "(%Hrd & H● & $)"; [done|].
+    have Hrd' : mem_range is_reading σA l bs.
     { eapply mem_range_impl; [|done]. intros ? ->. by eexists. }
     iModIntro. iSplit; [iPureIntro; by eapply bank_rel_reading|]. iExists _, M. iFrame. iPureIntro.
-    rewrite H𝛼' -(mem_set_alter ls_inc (RSt 0)) //. split.
+    rewrite -(mem_set_alter ls_inc (RSt 0)) //. split.
     - by apply bank_rel_mem_alter_inc.
     - apply bank_wf_mem_alter; [|done]. intros ? [n ->]. by eexists.
   Qed.
@@ -1110,14 +813,13 @@ Section bank.
       ⌜mem_range is_reading_S σB l bs⌝ ∗
       bytes_ctx (mem_alter ls_dec l (length bs) σB) ∗ l ↦b bs.
   Proof.
-    iIntros "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hbs".
+    iIntros "(%σA & %M & %Hr & %Hwf & H● & Hbank & Entries) Hbs".
     rewrite heap_mapsto_bytes_st_vec.
-    iMod (heap_st_vec_set _ _ (RSt 0) _ _ bs with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' %Hc]] & H● & $)"; [done|].
-    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|].
-    have Hrd' : mem_range is_reading_S (bphi 𝛼) l bs.
+    iMod (heap_st_vec_set _ _ (RSt 0) _ _ bs with "H● Hbs") as "(%Hrd & H● & $)"; [done|].
+    have Hrd' : mem_range is_reading_S σA l bs.
     { eapply mem_range_impl; [|done]. intros ? ->. by eexists. }
     iModIntro. iSplit; [iPureIntro; by eapply bank_rel_reading_S|]. iExists _, M. iFrame. iPureIntro.
-    rewrite H𝛼' -(mem_set_alter ls_dec (RSt 1)) //. split.
+    rewrite -(mem_set_alter ls_dec (RSt 1)) //. split.
     - by apply bank_rel_mem_alter_dec.
     - apply bank_wf_mem_alter; [|done]. intros ? [n ->]. by eexists.
   Qed.
@@ -1128,13 +830,12 @@ Section bank.
       ⌜mem_range (.= RSt 0) σB l bs⌝ ∗
       bytes_ctx (mem_alter (λ _, WSt) l (length bs) σB) ∗ heap_mapsto_st_vec WSt l bs.
   Proof.
-    iIntros (?) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hbs".
+    iIntros (?) "(%σA & %M & %Hr & %Hwf & H● & Hbank & Entries) Hbs".
     iEval (rewrite heap_mapsto_bytes_st_vec) in "Hbs".
     iMod (bbank_disj with "Entries Hbs") as "(%Hd & Entries & Hbs)"; [done|].
-    iMod (heap_st_vec_set _ _ WSt _ _ bs with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' %Hc]] & H● & $)"; [done|].
-    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|].
+    iMod (heap_st_vec_set _ _ WSt _ _ bs with "H● Hbs") as "(%Hrd & H● & $)"; [done|].
     iModIntro. iSplit; [iPureIntro; by eapply bank_rel_disj|]. iExists _, M. iFrame. iPureIntro.
-    rewrite H𝛼' -(mem_set_alter (λ _, WSt) (RSt 0)) //. split.
+    rewrite -(mem_set_alter (λ _, WSt) (RSt 0)) //. split.
     - by apply bank_rel_mem_alter_wst.
     - by apply bank_wf_mem_alter_disj.
   Qed.
@@ -1144,13 +845,12 @@ Section bank.
     bytes_ctx σB -∗ heap_mapsto_st_vec WSt l bs ={E}=∗
       ⌜mem_range (.= WSt) σB l bs⌝ ∗ bytes_ctx (mem_write l bs' σB) ∗ l ↦b bs'.
   Proof.
-    iIntros (? Hlen) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hbs".
+    iIntros (? Hlen) "(%σA & %M & %Hr & %Hwf & H● & Hbank & Entries) Hbs".
     iMod (bbank_disj with "Entries Hbs") as "(%Hd & Entries & Hbs)"; [done|].
     rewrite heap_mapsto_bytes_st_vec.
-    iMod (heap_st_vec_set _ _ (RSt 0) _ _ bs' with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' %Hc]] & H● & $)"; [done|].
-    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|].
+    iMod (heap_st_vec_set _ _ (RSt 0) _ _ bs' with "H● Hbs") as "(%Hrd & H● & $)"; [done|].
     iModIntro. iSplit; [iPureIntro; by eapply bank_rel_disj|]. iExists _, M. iFrame.
-    iPureIntro. rewrite H𝛼' mem_set_write. split.
+    iPureIntro. rewrite mem_set_write. split.
     - by apply (bank_rel_mem_write _ _ _ _ bs).
     - apply bank_wf_mem_write; [by rewrite Hlen|done].
   Qed.
@@ -1160,14 +860,13 @@ Section bank.
     bytes_ctx σB -∗ l ↦b bs ={E}=∗
       ⌜mem_range (.= RSt 0) σB l bs⌝ ∗ bytes_ctx (mem_write l bs' σB) ∗ l ↦b bs'.
   Proof.
-    iIntros (? Hlen) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hbs".
+    iIntros (? Hlen) "(%σA & %M & %Hr & %Hwf & H● & Hbank & Entries) Hbs".
     iEval (rewrite heap_mapsto_bytes_st_vec) in "Hbs".
     iMod (bbank_disj with "Entries Hbs") as "(%Hd & Entries & Hbs)"; [done|].
     rewrite heap_mapsto_bytes_st_vec.
-    iMod (heap_st_vec_set _ _ (RSt 0) _ _ bs' with "H● Hbs") as (𝛼') "([%Hrd [%H𝛼' %Hc]] & H● & $)"; [done|].
-    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|].
+    iMod (heap_st_vec_set _ _ (RSt 0) _ _ bs' with "H● Hbs") as "(%Hrd & H● & $)"; [done|].
     iModIntro. iSplit; [iPureIntro; by eapply bank_rel_disj|]. iExists _, M. iFrame.
-    iPureIntro. rewrite H𝛼' mem_set_write. split.
+    iPureIntro. rewrite mem_set_write. split.
     - by apply (bank_rel_mem_write _ _ _ _ bs).
     - apply bank_wf_mem_write; [by rewrite Hlen|done].
   Qed.
@@ -1176,11 +875,10 @@ Section bank.
     σB !! l = None →
     bytes_ctx σB ==∗ bytes_ctx (<[l:=(RSt 0, b)]> σB) ∗ heap_mapsto_st (RSt 0) l b.
   Proof.
-    iIntros (Hl) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells)".
+    iIntros (Hl) "(%σA & %M & %Hr & %Hwf & H● & Hbank & Entries)".
     have HlA := bank_rel_lookup_None _ _ _ _ Hr Hl.
-    iMod (heap_bytes_alloc_vs' _ _ b with "H●") as (𝛼') "([%H𝛼' %Hc] & H● & $)"; [done|].
-    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|].
-    iModIntro. iExists _, M. iFrame. iPureIntro. rewrite H𝛼'. split.
+    iMod (heap_bytes_alloc_vs _ _ b with "H●") as "[H● $]"; [done|].
+    iModIntro. iExists _, M. iFrame. iPureIntro. split.
     - apply bank_rel_insert; [done|]. by eapply bank_wf_bcnt.
     - by apply bank_wf_insert.
   Qed.
@@ -1190,17 +888,16 @@ Section bank.
     bytes_ctx σB -∗ heap_mapsto_st (RSt 0) l b ={E}=∗
       ⌜σB !! l = Some (RSt 0, b)⌝ ∗ bytes_ctx (delete l σB).
   Proof.
-    iIntros (?) "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Hb".
+    iIntros (?) "(%σA & %M & %Hr & %Hwf & H● & Hbank & Entries) Hb".
     iAssert (heap_mapsto_st_vec (RSt 0) l [b]) with "[Hb]" as "Hb".
     { rewrite /heap_mapsto_st_vec /= shift_loc_0. by iFrame. }
     iMod (bbank_disj with "Entries Hb") as "(%Hd & Entries & Hb)"; [done|].
     rewrite /heap_mapsto_st_vec /= shift_loc_0. iDestruct "Hb" as "[Hb _]".
-    iMod (heap_bytes_dealloc_vs' with "H● Hb") as (𝛼') "([%HlA [%H𝛼' %Hc]] & H●)".
-    iDestruct (cells_ctx_rows_eq with "Cells") as "Cells"; [done|]. iModIntro.
+    iMod (heap_bytes_dealloc_vs with "H● Hb") as "[%HlA H●]". iModIntro.
     iSplit.
     { iPureIntro. have H0 := bank_disj_bcnt _ _ _ 0%nat Hd ltac:(simpl; lia).
       rewrite shift_loc_0_nat in H0. by rewrite Hr HlA /= H0. }
-    iExists _, M. iFrame. iPureIntro. rewrite H𝛼'. split.
+    iExists _, M. iFrame. iPureIntro. split.
     - by apply bank_rel_delete.
     - by apply bank_wf_delete.
   Qed.
@@ -1213,14 +910,14 @@ Section bank.
       ∃ i bs, ⌜Φ bs⌝ ∗ ⌜mem_range is_reading σB l bs⌝ ∗
       bytes_ctx (mem_alter ls_inc l n σB) ∗ bread_tok i l bs G.
   Proof.
-    iIntros (? HΦ) "[£1 £2] #Guard #HP G (%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells)".
+    iIntros (? HΦ) "[£1 £2] #Guard #HP G (%σA & %M & %Hr & %Hwf & H● & Hbank & Entries)".
     replace (d + 0)%nat with d by lia.
     iMod (guards_open_later with "Guard G") as "Open"; [done|].
     iMod (lc_fupd_elim_laterN with "£1 Open") as ">[P Back]".
     iDestruct ("HP" with "P") as (bs HΦbs) "[Pt Ret]".
     iEval (rewrite heap_mapsto_bytes_st_vec) in "Pt".
     iDestruct (heap_st_vec_lookup with "H● Pt") as %Hrd0.
-    have Hrd : mem_range is_reading (bphi 𝛼) l bs.
+    have Hrd : mem_range is_reading σA l bs.
     { eapply mem_range_impl; [|done]. intros ? ->. by eexists. }
     iEval (rewrite -heap_mapsto_bytes_st_vec) in "Pt".
     iMod ("Back" with "(Ret Pt)") as "G".
@@ -1234,16 +931,16 @@ Section bank.
     { rewrite fmap_insert. apply gmap_view_alloc; [|done..]. by rewrite lookup_fmap Hi. }
     iModIntro. iExists i, bs. iFrame "Tok". iSplit; [done|].
     iSplit; [iPureIntro; by eapply bank_rel_reading|].
-    iExists 𝛼, (<[i := ((l, bs), G)]> M). iFrame "H● Hbank Cells". iSplit.
+    iExists σA, (<[i := ((l, bs), G)]> M). iFrame "H● Hbank". iSplit.
     { iPureIntro. rewrite fmap_insert. apply bank_rel_add; [done| |done].
       by rewrite lookup_fmap Hi. }
     iSplit. { iPureIntro. rewrite fmap_insert. by apply bank_wf_add. }
     rewrite big_sepM_insert //. iFrame "Entries G". iExists P, d. iFrame "£2 Guard".
     iIntros "!> P". iDestruct ("HP" with "P") as (bs' Hbs') "[Pt _]".
-    iExists ((λ b, inr (RSt 0, b)) <$> bs'). iSplit.
+    iExists ((λ b, (RSt 0, b)) <$> bs'). iSplit.
     { iPureIntro. by rewrite length_fmap (HΦ _ Hbs'). }
     rewrite heap_mapsto_bytes_eq /heap_mapsto_bytes_def /heap_mapsto_st_vec big_sepL_fmap.
-    iFrame "Pt". iLeft. iPureIntro. apply Forall_fmap, Forall_true. eauto.
+    iFrame "Pt".
   Qed.
 
   Lemma bytes_ctx_read_end_guarded σB i l bs G :
@@ -1251,7 +948,7 @@ Section bank.
       ⌜mem_range is_reading_S σB l bs⌝ ∗
       bytes_ctx (mem_alter ls_dec l (length bs) σB) ∗ ▷ G.
   Proof.
-    iIntros "(%𝛼 & %M & %Hr & %Hwf & H● & Hbank & Entries & Cells) Tok".
+    iIntros "(%σA & %M & %Hr & %Hwf & H● & Hbank & Entries) Tok".
     iDestruct (own_valid_2 with "Hbank Tok") as "#Hv".
     rewrite gmap_view_both_validI lookup_fmap. iDestruct "Hv" as "(_ & _ & Hv)".
     destruct (M !! i) as [[[l' bs'] G']|] eqn:Hi; last first.
@@ -1271,12 +968,13 @@ Section bank.
       eexists. split; [done|]. exists (n + bcnt (delete i (fst <$> M)) (l +ₗ j))%nat.
       f_equal. lia. }
     iSplitR "G Heq".
-    - iExists 𝛼, (delete i M). rewrite /bbank_auth -fmap_delete. iFrame. iPureIntro. split.
+    - iExists σA, (delete i M). rewrite /bbank_auth -fmap_delete. iFrame. iPureIntro. split.
       + rewrite fmap_delete. by eapply bank_rel_remove.
       + rewrite fmap_delete. by apply bank_wf_remove.
     - rewrite later_equivI. iNext. by iRewrite "Heq" in "G".
   Qed.
 End bank.
+
 
 Section bytes_ctx.
   Context `{!heapGS Σ}.
