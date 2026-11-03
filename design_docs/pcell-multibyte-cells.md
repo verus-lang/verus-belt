@@ -1074,7 +1074,7 @@ returned. The specification is `post 17` (the group `g` of the permission is the
 ### Limits
 
 - Values with cells arise only from loads: `MkTuple`/`MkVariant` of values with cells (or a
-  `val_cells` for a composite built from parts) are not provided.
+  `val_cells` for a composite built from parts) are not provided. *(Resolved on GMB, §22.)*
 - Moves out of places below unique borrows (there is no deep move rule) are not provided;
   memcpy into them is.
 
@@ -1191,3 +1191,123 @@ was deleted in phase 5 of that plan (merge `9edae9c`); the byte region of `lang/
 a plain ghost map. What survives from this document: fancy values and their representation
 (D2, §7: `lang/fvalue.v`), the layout of `pcellₛ m` (§12: `prophecy/syn_type.v`) and the
 fancy bytes of the types (§14: `typing/bytes_layout.v`).
+
+## 22. Values with cells from parts (2026-11-03)
+
+Branch `proto/cells-from-parts` (known gap 8). A value built from parts with `MkTuple` or
+`MkVariant` may contain cells: its cells in transit (`val_cells m fv w := gtransit m fv w`,
+`typing/value_ctx.v`, see §21 and the GMB plan) are those of its parts. The closer of the
+whole value splits bytes that decode to it along the layout, and the closer of each part
+puts its cells back at the offset of the part. No `Admitted`, no new axioms.
+
+### Lemmas (`typing/value_ctx.v`)
+
+```
+Lemma val_cells_seq_tuple_nil : ⊢ val_cells (seq_tuple []) (FVTuple []) (VTuple []).
+Lemma val_cells_seq_tuple_cons m ms fv fvs w ws :
+  val_cells m fv w -∗ val_cells (seq_tuple ms) (FVTuple fvs) (VTuple ws) -∗
+  val_cells (seq_tuple (m :: ms)) (FVTuple (fv :: fvs)) (VTuple (w :: ws)).
+Lemma gcont_enum_intro l vars tag sz t vm fv bst bsp :      (* tag bytes, payload, padding *)
+  length bst = int_size tag → decode_int tag bst = Some t → (0 ≤ t)%Z →
+  vars !! Z.to_nat t = Some vm → (int_size tag + mty_size vm + length bsp = sz)%nat →
+  l ↦b bst -∗ gcont (l +ₗ int_size tag) vm fv -∗
+  (l +ₗ (int_size tag + mty_size vm)%nat) ↦b bsp -∗ gcont l (MEnum vars tag sz) (FVVariant t fv).
+Lemma val_cells_enum vars tag sz t vm fv w :
+  mty_wf (MEnum vars tag sz) → (0 ≤ t)%Z → vars !! Z.to_nat t = Some vm → int_in_range tag t →
+  val_cells vm fv w -∗ val_cells (MEnum vars tag sz) (FVVariant t fv) (VVariant t w).
+Lemma val_cells_wf m fv w : val_cells m fv w -∗ ⌜val_wf m w⌝.
+Lemma val_own_pair ty1 ty2 a b tid w1 w2 :
+  val_own ty1 a tid (MLitV w1) -∗ val_own ty2 b tid (MLitV w2) -∗
+  val_own (ty1 * ty2) (a, b) tid (MLitV (VTuple [w1; w2])).
+Lemma val_own_xprod_nil tid : ⧖0 -∗ val_own (Π! +[]) -[] tid (MLitV (VTuple [])).
+Lemma val_own_xprod_cons ty tyl a al tid w ws :
+  val_own ty a tid (MLitV w) -∗ val_own (Π! tyl) al tid (MLitV (VTuple ws)) -∗
+  val_own (Π! (ty +:: tyl)) (a -:: al) tid (MLitV (VTuple (w :: ws))).
+Lemma val_own_pinj tyl i a tid w :
+  val_own (tyl +!! i) a tid (MLitV w) -∗
+  val_own (Σ! tyl) (pinj i a) tid (MLitV (VVariant (Z.of_nat (fin_to_nat i)) w)).
+Lemma wp_val_own E tid p ty x Φ :
+  tctx_elt_interp tid (p ◁ᵥ ty) x -∗ (∀ w, val_own ty x tid (MLitV w) -∗ Φ (MLitV w)) -∗
+  WP p @ E {{ Φ }}.
+```
+
+### Rules
+
+```
+Lemma type_mk_pair_val_instr {𝔄 𝔅} (ty1: type 𝔄) (ty2: type 𝔅) p1 p2 E L I :
+  typed_instr E L I +[p1 ◁ᵥ ty1; p2 ◁ᵥ ty2] (MkTuple [p1; p2]) (λ v, +[v ◁ᵥ ty1 * ty2])
+    (λ post '-[a; b], post -[(a, b)]).
+Lemma type_mk_tuple_val_instr {𝔄l} (tyl: typel 𝔄l) (pl: plistc path 𝔄l) el E L I :
+  IntoPlistc el pl →
+  typed_instr E L I (hzip_with (λ _ ty q, q ◁ᵥ ty) tyl pl) (MkTuple el)
+    (λ v, +[v ◁ᵥ Π! tyl]) (λ post al, post -[al]).
+Lemma type_mk_variant_val_instr {𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (t: Z) p E L I :
+  t = Z.of_nat (fin_to_nat i) →                              (* NoCell of the payload removed *)
+  typed_instr E L I +[p ◁ᵥ tyl +!! i] (MkVariant t p) (λ v, +[v ◁ᵥ Σ! tyl])
+    (λ post '-[a], post -[pinj i a]).
+Lemma tctx_subtype_val {𝔄 𝔅 𝔄l} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) (T: tctx 𝔄l) p E L :
+  subtype E L ty ty' f → ty'.(ty_mty) = ty.(ty_mty) →        (* was: NoCell 𝔄 and ty_val agree *)
+  (∀ x, ty'.(ty_fval) (f ~~$ₛ x) = ty.(ty_fval) x) →
+  tctx_incl E L (p ◁ᵥ ty +:: T) (p ◁ᵥ ty' +:: T) (λ post '(a -:: al), post (f ~~$ₛ a -:: al)).
+Lemma tctx_ty_to_vplace {𝔄} E L p (ty: type 𝔄) :           (* NoCell removed *)
+  tctx_incl E L +[p ◁ᵥ ty] +[p ◁ₗ OfTy ty] (λ post '-[a], post -[(a, [])]).
+Lemma spawn_type … `{!Send fty, !Send retty} : …           (* NoCell 𝔅 of the result removed *)
+```
+- `tctx_ty_to_vplace`: the leaf `OfTy ty` of a place rooted at a value is now
+  `vleaf_own` (`typing/ltype.v`), which holds the value with its cells in transit
+  (`∃ w fv, ⌜v = MLitV w ∧ ty_fval x = Some fv⌝ ∗ gtransit (ty_mty ty) fv w`) instead of the
+  pure `val_rep`. `vleaf` (with `val_rep`) stays for the leaf below `ShrLty` (a shared
+  reference, a MiniRust value); `vleaf_own_vleaf` relates the two for types whose values
+  all have a MiniRust value (pointers), and `vleaf_own_intro_val`/`vleaf_own_elim_val`
+  convert at pointer leaves. The unused `leaf_owned_vleaf` was deleted.
+- `spawn_type`: the join future holds the result with its cells in transit
+  (`∃ w fv, ⌜v = MLitV w ∧ syn_fval x' = Some fv⌝ ∗ val_cells (syn_mty 𝔄) fv w`).
+- `tctx_subtype_val`: its callers (boxes, shared and unique references) are pointers, whose
+  MiniRust type is `MPtr` on both sides.
+
+### `NoCell` that remain (all semantically required)
+
+- Through `Copy` (`copy_nocell`): copying would duplicate the cells (`Copy` instances
+  `base_copy`, `fix_copy`, `mod_ty_copy`, `simple_type_copy`; the read rule, the copy loads,
+  the memcpy-copy rules, `copy_val_tctx_incl`, `type_pcell_load_sc_instr`).
+- `type_pcell_store_sc_instr`, `type_pcell_mcas_instr`: the GMB-level atomic writes
+  (`wp_gcont_store_sc_sub`, `wp_gcont_mcas_sub`) replace a plain value by a plain value; an
+  old value with cells would have to be forgotten, and the new one put in place, through
+  the registry within the atomic step.
+- `wp_own_bytes_store`, `wp_own_bytes_delete` (WP helpers of `typing/own.v`, used by
+  `examples/own.v`): they overwrite or free the old value without the registry; the typing
+  rules (writes, drops) forget the old cells through the registry.
+- The reduction lemmas, which state the plain form of a value without cells:
+  `val_own_nocell`, `tctx_val_nocell`, `tctx_val_elim`, `tctx_val_val`, `wp_val`,
+  `bytes_own_nocell(_bytes)`, `bytes_own_view_nocell`, `bytes_own_val`,
+  `shr_bytes_own_nocell`, `cbytes_nocell`. (`wp_val_cells`/`wp_val_own` are the general
+  forms.)
+
+Not provided: the destructors `Proj`, `VariantTag`, `VariantData` have no typing rules
+(the closer of a whole value in transit cannot be split into closers of its parts); a
+payload can not be moved out of a sum place (`pctx_nosum` of the move rule: the payload of
+a sum place keeps the type of its variant), so the variant example borrows it.
+
+### Deletions (`lang/fvalue.v`, 929 → 539 lines)
+
+The erasure `fval_erase` and the dynamic registry `ρ`, `registry_decode`, `frepr_decode`,
+`fin_bytes`, `frepr_rebytes`, `frepr_mix`, `fb_same_shape`, `same_shape_inl/inr`,
+`frepr_inl_cell`, `frepr_sub_cell`, `frepr_plain_tuple`, `frepr_plain_variant`,
+`fval_erase_nocells`, `fv_cells_upd`, `fv_lift_cell_inv`, `fv_upd_wf`, `fv_sub_upd`,
+`fb_mix_shape/inr/inl/mix/id`, `list_slice_slice_n`: none was used. `fv_lift_inj` and
+`frepr_lift` are now proved directly (they used the erasure).
+
+### Tests (`typing/examples/pcell_parts.v`)
+
+- `pcell_pair_type`: `PCell::new(17)` in a box `c`; `*c` is moved out (a cell in transit);
+  `MkTuple [5; v]` gives a value of `(i32, PCell<i32>)` (`type_mk_pair_val_instr`), which
+  is stored into a box `r`; `r.1` is moved into a box `s`; `PCell::into_inner(s, perm)`
+  and a read give `17` (specification `post 17`).
+- `pcell_variant_type`: the cell moved out of its box and its permission are paired
+  (`MkTuple`), the pair is the payload of `Some` (`MkVariant 1`, a variant with a cell
+  payload, `Σ! +[(); PCell<i32> * PointsTo<i32>]`), stored into a box `o`; the `match`
+  (`type_case_oplace`; the `None` branch is ruled out by the specification) shares the
+  payload, `PCell::borrow` through its fields gives `&shr i32`, read `17`; `o` is dropped.
+
+`Print Assumptions` of both: `functional_extensionality_dep`.
+

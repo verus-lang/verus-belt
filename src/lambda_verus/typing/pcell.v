@@ -460,7 +460,11 @@ End pcell_lend.
 (** * Atomic accesses through a cell
 
 At the MiniRust type of the contents (no mixed-size accesses), for contents without cells
-([NoCell]; for a load it follows from [Copy]). A load needs shared references to the cell
+([NoCell]; for a load it follows from [Copy]: a copy would duplicate the cells; for a store
+and a compare-and-exchange, the GMB-level writes [wp_gcont_store_sc_sub] and
+[wp_gcont_mcas_sub] replace a plain value by a plain value, since the old cells would have
+to be forgotten, and the new ones put in place, through the registry within the atomic
+step). A load needs shared references to the cell
 and to its permission ((L2)); a store and a compare-and-exchange need a unique borrow of the
 permission: the contents are lent ([pcell_lend_uniq]), accessed through the unique borrow of
 the contents, which is resolved. *)

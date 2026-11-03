@@ -1526,3 +1526,9 @@ In total the phase removes about 6 960 lines and adds about 110.
 
 The memory model of the language is plain bytes (`lang/heap.v`); cells exist only in the
 ghost layers 2–4.
+
+## After phases 5–6: values with cells from parts
+
+`MkTuple`/`MkVariant` of parts with cells in transit, and the removal of the residual
+`NoCell` premises that only came from this (`type_mk_variant_val_instr`, `tctx_subtype_val`,
+`tctx_ty_to_vplace`, the result of `spawn_type`): see §22 of `pcell-multibyte-cells.md`.

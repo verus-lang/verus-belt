@@ -13,8 +13,11 @@ fancy value [ty_fval x], whose cells (GMB instances, [typing/gmb_cells.v]) are i
 with it ([val_cells]), and a [Store] of [w] puts them back at the new location. For a type
 without cells ([NoCell]), or a value with a MiniRust value, this
 is the plain form [ty_val x = Some w] ([val_own_nocell], [val_own_val], [tctx_val_elim],
-[val_own_intro_sep]). It is a semantic element ([TCtx_sem]), so the type context needs no
-new case. (The legacy word element [p ◁ ty] was deleted in
+[val_own_intro_sep]). The cells in transit of a tuple or a variant built from parts
+([MkTuple], [MkVariant]) are those of the parts ([val_cells_seq_tuple_cons],
+[val_cells_enum]; the rules [type_mk_pair_val_instr], [type_mk_tuple_val_instr],
+[type_mk_variant_val_instr]). It is a semantic element ([TCtx_sem]), so the type context
+needs no new case. (The legacy word element [p ◁ ty] was deleted in
 stage 6.)
 
 Pointers are MiniRust values too ([VPtr l]); the address argument of [Load], [Store],
