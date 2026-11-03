@@ -17,8 +17,8 @@ Set Default Proof Using "Type".
     parents own bytes, so a box, a unique borrow or a shared reference can be retyped only
     if the bytes of its referent represent the value at the new type too. Rules:
     [own_bytes_subtype], [shr_bytes_subtype], [uniq_bytes_subtype], and
-    [tctx_subtype_val] for MiniRust values (which needs the MiniRust values to agree, as
-    for pointers). *)
+    [tctx_subtype_val] for MiniRust values (which needs the MiniRust types and the fancy
+    values to agree, as for pointers). *)
 
 Implicit Type 𝔄 𝔅: syn_type.
 
@@ -194,23 +194,25 @@ Section subtype.
 
   (** ** MiniRust values *)
 
-  (** A value of [ty] is a value of [ty'], if the MiniRust values agree (e.g. pointers:
-      boxes, references; values without cells). *)
-  Lemma tctx_subtype_val {𝔄 𝔅 𝔄l} `{!NoCell 𝔄} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) (T: tctx 𝔄l) p E L :
-    subtype E L ty ty' f → (∀ x, ty'.(ty_val) (f ~~$ₛ x) = ty.(ty_val) x) →
+  (** A value of [ty] is a value of [ty'], if the MiniRust types and the fancy values
+      agree (e.g. pointers: boxes, references). The value may contain cells: they stay in
+      transit. *)
+  Lemma tctx_subtype_val {𝔄 𝔅 𝔄l} (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅) (T: tctx 𝔄l) p E L :
+    subtype E L ty ty' f → ty'.(ty_mty) = ty.(ty_mty) →
+    (∀ x, ty'.(ty_fval) (f ~~$ₛ x) = ty.(ty_fval) x) →
     tctx_incl E L (p ◁ᵥ ty +:: T) (p ◁ᵥ ty' +:: T)
       (λ post '(a -:: al), post (f ~~$ₛ a -:: al)).
   Proof.
-    intros Sub Hval. split; [by intros ??? [??]|].
+    intros Sub Hm Hfv. split; [by intros ??? [??]|].
     iIntros (??[x wπl]???) "#LFT _ _ E #L G /=[Tp T] Obs".
-    iDestruct (tctx_val_elim with "Tp") as "(%v & %Hp & %w & %d & [-> %Hw] & ⧖ & Gho)".
+    iDestruct "Tp" as (v Hp w d fv [-> Hx]) "(Hc & ⧖ & Gho)".
     leaf_open "L" with "G" as "[L1 back]". { set_solver. }
     iDestruct (Sub with "L1 E") as "#(_ & _ & #InOwn & _)".
     iMod ("back" with "L1") as "G".
     iModIntro. iExists (f ~~$ₛ x -:: wπl). iFrame "G T".
     iSplitR "Obs".
-    - iExists _. iSplit; [done|]. rewrite -(val_own_intro_sep _ _ _ _ w d); [|done|by rewrite Hval]. iFrame "⧖".
-      iDestruct ("InOwn" with "Gho") as "[$ _]".
+    - iExists _. iSplit; [done|]. iExists w, d, fv. rewrite Hm Hfv. iFrame "Hc ⧖".
+      iSplit; [done|]. iDestruct ("InOwn" with "Gho") as "[$ _]".
     - iApply (proph_obs_impl with "Obs"). intros. done.
   Qed.
 
@@ -220,7 +222,7 @@ Section subtype.
     tctx_incl E L (p ◁ᵥ own_bytes n ty +:: T) (p ◁ᵥ own_bytes n ty' +:: T)
       (λ post '(a -:: al), post (at_loc_mapₛ f ~~$ₛ a -:: al)).
   Proof.
-    intros. apply tctx_subtype_val; [by apply own_bytes_subtype|]. by intros [??].
+    intros. apply tctx_subtype_val; [by apply own_bytes_subtype|done|]. by intros [??].
   Qed.
 
   Lemma tctx_subtype_shr_bytes {𝔄 𝔅 𝔄l} κ κ' (ty: type 𝔄) (ty': type 𝔅) (f: 𝔄 →ₛ 𝔅)
@@ -229,7 +231,7 @@ Section subtype.
     tctx_incl E L (p ◁ᵥ &shr{κ} ty +:: T) (p ◁ᵥ &shr{κ'} ty' +:: T)
       (λ post '(a -:: al), post (at_loc_mapₛ f ~~$ₛ a -:: al)).
   Proof.
-    intros. apply tctx_subtype_val; [by apply shr_bytes_subtype|]. by intros [??].
+    intros. apply tctx_subtype_val; [by apply shr_bytes_subtype|done|]. by intros [??].
   Qed.
 
   Lemma tctx_subtype_uniq_bytes {𝔄 𝔄l} κ κ' (ty ty': type 𝔄) (T: tctx 𝔄l) p E L :
@@ -237,7 +239,7 @@ Section subtype.
     tctx_incl E L (p ◁ᵥ &uniq{κ} ty +:: T) (p ◁ᵥ &uniq{κ'} ty' +:: T)
       (λ post '(a -:: al), post (a -:: al)).
   Proof.
-    intros. apply (tctx_subtype_val _ _ idₛ); [by apply uniq_bytes_subtype|].
-    intros x. apply ty_val_same.
+    intros. apply (tctx_subtype_val _ _ idₛ); [by apply uniq_bytes_subtype|done|].
+    intros x. by rewrite -!ty_fval_eq.
   Qed.
 End subtype.
