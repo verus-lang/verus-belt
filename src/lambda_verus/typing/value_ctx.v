@@ -50,6 +50,9 @@ Section value_plain.
   Lemma val_cells_intro m w : mty_wf m → val_wf m w → ⊢ val_cells m (fv_lift w) w.
   Proof. intros _ Hw. by iApply gtransit_lift. Qed.
 
+  Lemma val_cells_wf m fv w : val_cells m fv w -∗ ⌜val_wf m w⌝.
+  Proof. apply gtransit_wf. Qed.
+
   Lemma ty_fval_val {𝔄} (ty: type 𝔄) x w : ty.(ty_val) x = Some w → ty.(ty_fval) x = Some (fv_lift w).
   Proof. rewrite -ty_val_eq -ty_fval_eq. apply syn_fval_val. Qed.
 
