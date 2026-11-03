@@ -302,7 +302,7 @@ Lemma syn_fval_pinj {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) :
   syn_fval (𝔄:=Σ! 𝔄l) (pinj i y) = FVVariant (Z.of_nat (fin_to_nat i)) <$> syn_fval y.
 Proof. by rewrite /= psum_map1_pinj to_xsum_pinj. Qed.
 
-(** ** Fancy bytes of syntactic types ([syn_fbytes], [typing/type.v]) *)
+(** ** Fancy bytes of syntactic types ([syn_fbytes], [prophecy/syn_type.v]) *)
 
 Lemma ty_fbytes_syn `{!typeG Σ} {𝔄} (ty: type 𝔄) R x fbs :
   ty_fbytes R ty x fbs ↔ syn_fbytes R x fbs.
@@ -524,7 +524,7 @@ Proof.
   rewrite mcells_seq_enum Nat2Z.id list_lookup_fmap llookup_lookup /= length_fmap. done.
 Qed.
 
-(** ** Byte-preserving maps ([syn_bincl], [typing/type.v]) *)
+(** ** Byte-preserving maps ([syn_bincl], [prophecy/syn_type.v]) *)
 
 (** [syn_bincl_same] (same MiniRust type and fancy value, e.g. pointers and zero-sized
     types) is in [prophecy/syn_type.v]. *)
