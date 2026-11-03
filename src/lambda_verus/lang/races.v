@@ -10,32 +10,32 @@ Inductive access_kind : Type := ReadAcc | WriteAcc | FreeAcc.
 Inductive next_access_head : expr → state → access_kind * order → loc → Prop :=
 | Access_free n l σ i :
     0 ≤ i < n →
-    next_access_head (Free (Lit $ LitInt n) (Lit $ LitLoc l))
+    next_access_head (Free (MLit $ VInt n) (MLit $ VPtr l))
                      σ (FreeAcc, Na2Ord) (l +ₗ i)
 (* Typed accesses: to every byte of the range *)
 | Access_load ord m l (i : nat) σ :
     (i < mty_size m)%nat →
-    next_access_head (Load ord m (Lit $ LitLoc l)) σ (ReadAcc, ord) (l +ₗ i)
+    next_access_head (Load ord m (MLit $ VPtr l)) σ (ReadAcc, ord) (l +ₗ i)
 | Access_store ord m l e (i : nat) σ :
     is_Some (to_val e) → (i < mty_size m)%nat →
-    next_access_head (Store ord m (Lit $ LitLoc l) e) σ (WriteAcc, ord) (l +ₗ i)
+    next_access_head (Store ord m (MLit $ VPtr l) e) σ (WriteAcc, ord) (l +ₗ i)
 | Access_memcopy_dst ord n l1 l2 (i : nat) σ :
     (i < n)%nat →
-    next_access_head (MemCopy ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2)) σ (WriteAcc, ord) (l1 +ₗ i)
+    next_access_head (MemCopy ord n (MLit $ VPtr l1) (MLit $ VPtr l2)) σ (WriteAcc, ord) (l1 +ₗ i)
 | Access_memcopy_src ord n l1 l2 (i : nat) σ :
     (i < n)%nat →
-    next_access_head (MemCopy ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2)) σ (ReadAcc, ord) (l2 +ₗ i)
+    next_access_head (MemCopy ord n (MLit $ VPtr l1) (MLit $ VPtr l2)) σ (ReadAcc, ord) (l2 +ₗ i)
 (* A typed CAS reads every byte of the range if the comparison fails, and writes every byte
    if it succeeds. The comparison depends only on the bytes. *)
 | Access_mcas_fail m l (i : nat) e1 v1 e2 v2 bs v σ :
     to_val e1 = Some (MLitV v1) → to_val e2 = Some (MLitV v2) → (i < mty_size m)%nat →
     mem_range (λ _, True) σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v →
     v ≠ v1 →
-    next_access_head (MCAS m (Lit $ LitLoc l) e1 e2) σ (ReadAcc, ScOrd) (l +ₗ i)
+    next_access_head (MCAS m (MLit $ VPtr l) e1 e2) σ (ReadAcc, ScOrd) (l +ₗ i)
 | Access_mcas_suc m l (i : nat) e1 v1 e2 v2 bs σ :
     to_val e1 = Some (MLitV v1) → to_val e2 = Some (MLitV v2) → (i < mty_size m)%nat →
     mem_range (λ _, True) σ.1 l bs → length bs = mty_size m → decode_value m bs = Some v1 →
-    next_access_head (MCAS m (Lit $ LitLoc l) e1 e2) σ (WriteAcc, ScOrd) (l +ₗ i).
+    next_access_head (MCAS m (MLit $ VPtr l) e1 e2) σ (WriteAcc, ScOrd) (l +ₗ i).
 
 (* Some sanity checks to make sure the definition above is not entirely insensible. *)
 Goal ∀ e1 e2 σ, base_reducible (Free e1 e2) σ →
@@ -98,7 +98,7 @@ Proof.
 Qed.
 
 Definition head_reduce_not_to_stuck (e : expr) (σ : state) :=
-  ∀ κ e' σ' efs, ectx_language.base_step e σ κ e' σ' efs → e' ≠ App (Lit $ LitInt 0) [].
+  ∀ κ e' σ' efs, ectx_language.base_step e σ κ e' σ' efs → e' ≠ App (MLit $ VInt 0) [].
 
 Lemma next_access_base_reducible_state e σ a l :
   next_access_head e σ a l → base_reducible e σ →

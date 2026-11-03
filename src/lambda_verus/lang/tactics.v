@@ -11,7 +11,6 @@ Inductive expr :=
 | Val (v : val) (e : lang.expr) (H : to_val e = Some v)
 | ClosedExpr (e : lang.expr) `{!Closed [] e}
 | Var (x : string)
-| Lit (l : base_lit)
 | Rec (f : binder) (xl : list binder) (e : expr)
 | BinOp (op : bin_op) (e1 e2 : expr)
 | NdInt
@@ -31,8 +30,6 @@ Inductive expr :=
 | MkVariant (t : Z) (e : expr)
 | VariantTag (e : expr)
 | VariantData (e : expr)
-| ToLit (e : expr)
-| OfLit (e : expr)
 | MCAS (m : mty) (e0 e1 e2 : expr)
 .
 
@@ -41,7 +38,6 @@ Fixpoint to_expr (e : expr) : lang.expr :=
   | Val v e' _ => e'
   | ClosedExpr e => e
   | Var x => lang.Var x
-  | Lit l => lang.Lit l
   | Rec f xl e => lang.Rec f xl (to_expr e)
   | BinOp op e1 e2 => lang.BinOp op (to_expr e1) (to_expr e2)
   | NdInt => lang.NdInt
@@ -61,15 +57,12 @@ Fixpoint to_expr (e : expr) : lang.expr :=
   | MkVariant t e => lang.MkVariant t (to_expr e)
   | VariantTag e => lang.VariantTag (to_expr e)
   | VariantData e => lang.VariantData (to_expr e)
-  | ToLit e => lang.ToLit (to_expr e)
-  | OfLit e => lang.OfLit (to_expr e)
   | MCAS m e0 e1 e2 => lang.MCAS m (to_expr e0) (to_expr e1) (to_expr e2)
   end.
 
 Ltac of_expr e :=
   lazymatch e with
   | lang.Var ?x => constr:(Var x)
-  | lang.Lit ?l => constr:(Lit l)
   | lang.Rec ?f ?xl ?e => let e := of_expr e in constr:(Rec f xl e)
   | lang.BinOp ?op ?e1 ?e2 =>
     let e1 := of_expr e1 in let e2 := of_expr e2 in constr:(BinOp op e1 e2)
@@ -95,7 +88,8 @@ Ltac of_expr e :=
   | lang.read_move ?m ?e => let e := of_expr e in constr:(Load Na1Ord m e)
   | lang.write ?m ?e1 ?e2 =>
     let e1 := of_expr e1 in let e2 := of_expr e2 in constr:(Store Na1Ord m e1 e2)
-  | lang.share ?e => let e := of_expr e in constr:(OfLit e)
+  | lang.share ?e =>
+    let e' := eval unfold lang.share in (lang.share e) in of_expr e'
   | lang.borrow_uniq ?e =>
     let e' := eval unfold lang.borrow_uniq in (lang.borrow_uniq e) in of_expr e'
   | lang.memcpy ?n ?e1 ?e2 =>
@@ -109,8 +103,6 @@ Ltac of_expr e :=
   | lang.MkVariant ?t ?e => let e := of_expr e in constr:(MkVariant t e)
   | lang.VariantTag ?e => let e := of_expr e in constr:(VariantTag e)
   | lang.VariantData ?e => let e := of_expr e in constr:(VariantData e)
-  | lang.ToLit ?e => let e := of_expr e in constr:(ToLit e)
-  | lang.OfLit ?e => let e := of_expr e in constr:(OfLit e)
   | lang.MCAS ?m ?e0 ?e1 ?e2 =>
      let e0 := of_expr e0 in let e1 := of_expr e1 in let e2 := of_expr e2 in
      constr:(MCAS m e0 e1 e2)
@@ -124,14 +116,14 @@ Fixpoint is_closed (X : list string) (e : expr) : bool :=
   match e with
   | Val _ _ _ | ClosedExpr _ => true
   | Var x => bool_decide (x ∈ X)
-  | Lit _ | NdInt | GlobalLock | GlobalUnlock | MLit _ => true
+  | NdInt | GlobalLock | GlobalUnlock | MLit _ => true
   | Rec f xl e => is_closed (f :b: xl +b+ X) e
   | BinOp _ e1 e2 | Free e1 e2 | Store _ _ e1 e2 | MemCopy _ _ e1 e2 =>
     is_closed X e1 && is_closed X e2
   | App e el | Case e el => is_closed X e && forallb (is_closed X) el
   | MkTuple el => forallb (is_closed X) el
   | Alloc e | Fork e | Load _ _ e | Proj _ e | MkVariant _ e
-  | VariantTag e | VariantData e | ToLit e | OfLit e => is_closed X e
+  | VariantTag e | VariantData e => is_closed X e
   | MCAS _ e0 e1 e2 => is_closed X e0 && is_closed X e1 && is_closed X e2
   end.
 Lemma is_closed_correct X e : is_closed X e → lang.is_closed X (to_expr e).
@@ -153,7 +145,6 @@ Definition to_val (e : expr) : option val :=
   | Rec f xl e =>
     if decide (is_closed (f :b: xl +b+ []) e) is left H
     then Some (@RecV f xl (to_expr e) (is_closed_correct _ _ H)) else None
-  | Lit l => Some (LitV l)
   | MLit v => Some (MLitV v)
   | _ => None
   end.
@@ -174,7 +165,6 @@ Fixpoint subst (x : string) (es : expr) (e : expr)  : expr :=
   | Val v e H => Val v e H
   | ClosedExpr e => ClosedExpr e
   | Var y => if bool_decide (y = x) then es else Var y
-  | Lit l => Lit l
   | Rec f xl e =>
     Rec f xl $ if bool_decide (BNamed x ≠ f ∧ BNamed x ∉ xl) then subst x es e else e
   | BinOp op e1 e2 => BinOp op (subst x es e1) (subst x es e2)
@@ -195,8 +185,6 @@ Fixpoint subst (x : string) (es : expr) (e : expr)  : expr :=
   | MkVariant t e => MkVariant t (subst x es e)
   | VariantTag e => VariantTag (subst x es e)
   | VariantData e => VariantData (subst x es e)
-  | ToLit e => ToLit (subst x es e)
-  | OfLit e => OfLit (subst x es e)
   | MCAS m e0 e1 e2 => MCAS m (subst x es e0) (subst x es e1) (subst x es e2)
   end.
 Lemma to_expr_subst x er e :
@@ -291,7 +279,7 @@ Ltac inv_head_step :=
   repeat match goal with
   | _ => progress simplify_map_eq/= (* simplify memory stuff *)
   | H : to_val _ = Some _ |- _ => apply of_to_val in H
-  | H : Lit _ = of_val ?v |- _ =>
+  | H : MLit _ = of_val ?v |- _ =>
     apply (f_equal (to_val)) in H; rewrite to_of_val in H;
     injection H; clear H; intro
   | H : context [to_val (of_val _)] |- _ => rewrite to_of_val in H
@@ -308,7 +296,6 @@ Ltac reshape_val e tac :=
   let rec go e :=
   match e with
   | of_val ?v => v
-  | Lit ?l => constr:(LitV l)
   | MLit ?v => constr:(MLitV v)
   | Rec ?f ?xl ?e => constr:(RecV f xl e)
   end in let v := go e in tac v.
@@ -348,8 +335,6 @@ Ltac reshape_expr e tac :=
   | MkVariant ?t ?e => go (MkVariantCtx t :: K) e
   | VariantTag ?e => go (VariantTagCtx :: K) e
   | VariantData ?e => go (VariantDataCtx :: K) e
-  | ToLit ?e => go (ToLitCtx :: K) e
-  | OfLit ?e => go (OfLitCtx :: K) e
   | MCAS ?m ?e0 ?e1 ?e2 => reshape_val e0 ltac:(fun v0 => first
      [ reshape_val e1 ltac:(fun v1 => go (MCasRCtx m v0 v1 :: K) e2)
      | go (MCasMCtx m v0 e2 :: K) e1 ])

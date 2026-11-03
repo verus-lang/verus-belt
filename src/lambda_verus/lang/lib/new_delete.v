@@ -18,7 +18,7 @@ Section specs.
   Lemma wp_new E n:
     0 ≤ n →
     {{{ True }}} new [ #n ] @ E
-    {{{ l, RET LitV $ LitLoc l;
+    {{{ l, RET #l;
         (†l…(Z.to_nat n) ∨ ⌜n = 0⌝) ∗ l ↦b replicate (Z.to_nat n) Uninit }}}.
   Proof.
     iIntros (? Φ) "_ HΦ". wp_lam. wp_op; case_bool_decide.

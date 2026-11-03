@@ -21,7 +21,7 @@ Definition finish (m : mty) : val :=
     #☠.
 Definition join (m : mty) : val :=
   rec: "join" ["c"] :=
-    if: ToLit (Load ScOrd MBool "c") then
+    if: Load ScOrd MBool "c" then
       (* The thread finished, we can non-atomically load the result. *)
       let: "v" := Load Na1Ord m ("c" +ₗ #1) in
       Free #(Z.of_nat (1 + mty_size m)) "c";;
@@ -133,11 +133,11 @@ Proof using HN.
   destruct b; last first.
   { iMod ("Hclose" with "[Hc]").
     - iNext. iRight. iExists _. iFrame.
-    - iModIntro. wp_pure _. wp_if. iApply ("IH" with "Hj H†"). auto. }
+    - iModIntro. wp_if. iApply ("IH" with "Hj H†"). auto. }
   iDestruct "Ho" as (v) "(%Hwf & Hd & HΨ & Hf)".
   iMod ("Hclose" with "[Hj Hf]") as "_".
   { iNext. iLeft. iFrame. }
-  iModIntro. wp_pure _. wp_if. wp_op.
+  iModIntro. wp_if. wp_op.
   wp_bind (Load _ _ _).
   iApply (wp_load_na with "Hd"); [by apply decode_encode_value|]. iIntros "!> Hd". wp_let.
   iAssert (c ↦b (flag_bytes true ++ encode_value m v))%I with "[Hc Hd]" as "Hc".

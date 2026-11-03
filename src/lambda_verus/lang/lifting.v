@@ -33,8 +33,8 @@ Global Opaque iris_invGS.
 
 Ltac inv_lit :=
   repeat match goal with
-  | H : lit_eq _ ?x ?y |- _ => inversion H; clear H; simplify_map_eq/=
-  | H : lit_neq ?x ?y |- _ => inversion H; clear H; simplify_map_eq/=
+  | H : val_eq _ ?x ?y |- _ => inversion H; clear H; simplify_map_eq/=
+  | H : val_neq ?x ?y |- _ => inversion H; clear H; simplify_map_eq/=
   end.
 
 Ltac inv_bin_op_eval :=
@@ -45,7 +45,7 @@ Ltac inv_bin_op_eval :=
 Local Hint Extern 0 (atomic _) => solve_atomic : core.
 Local Hint Extern 0 (base_reducible _ _) => eexists _, _, _, _; simpl : core.
 
-Local Hint Constructors head_step bin_op_eval lit_neq lit_eq : core.
+Local Hint Constructors head_step bin_op_eval val_neq val_eq : core.
 Local Hint Resolve alloc_fresh : core.
 Local Hint Resolve to_of_val : core.
 
@@ -308,7 +308,7 @@ Qed.
 
 (** Base axioms for core primitives of the language: Stateless reductions *)
 Lemma wp_fork E e :
-  {{{ ▷ WP e {{ _, True }} }}} Fork e @ E {{{ RET LitV LitPoison; True }}}.
+  {{{ ▷ WP e {{ _, True }} }}} Fork e @ E {{{ RET MLitV unitV; True }}}.
 Proof.
   iIntros (?) "?HΦ". iApply wp_lift_atomic_base_step; [done|].
   iIntros (σ1 stepcnt κ κs n) "[Hσ Ht] !>"; iSplit; first by eauto.
@@ -339,49 +339,47 @@ Qed.
 Close Scope nat_scope.
 
 Global Instance pure_le n1 n2 :
-  PureExec True 1 (BinOp LeOp (Lit (LitInt n1)) (Lit (LitInt n2)))
-                  (Lit (bool_decide (n1 ≤ n2))).
+  PureExec True 1 (BinOp LeOp (MLit (VInt n1)) (MLit (VInt n2)))
+                  (MLit (VBool (bool_decide (n1 ≤ n2)))).
 Proof. solve_pure_exec. Qed.
 
 Global Instance pure_eq_int n1 n2 :
-  PureExec True 1 (BinOp EqOp (Lit (LitInt n1)) (Lit (LitInt n2))) (Lit (bool_decide (n1 = n2))).
+  PureExec True 1 (BinOp EqOp (MLit (VInt n1)) (MLit (VInt n2)))
+    (MLit (VBool (bool_decide (n1 = n2)))).
 Proof. case_bool_decide; solve_pure_exec. Qed.
 
-Global Instance pure_eq_loc_0_r l :
-  PureExec True 1 (BinOp EqOp (Lit (LitLoc l)) (Lit (LitInt 0))) (Lit false).
-Proof. solve_pure_exec. Qed.
-
-Global Instance pure_eq_loc_0_l l :
-  PureExec True 1 (BinOp EqOp (Lit (LitInt 0)) (Lit (LitLoc l))) (Lit false).
-Proof. solve_pure_exec. Qed.
+Global Instance pure_eq_bool b1 b2 :
+  PureExec True 1 (BinOp EqOp (MLit (VBool b1)) (MLit (VBool b2)))
+    (MLit (VBool (bool_decide (b1 = b2)))).
+Proof. case_bool_decide; solve_pure_exec. Qed.
 
 Global Instance pure_plus z1 z2 :
-  PureExec True 1 (BinOp PlusOp (Lit $ LitInt z1) (Lit $ LitInt z2)) (Lit $ LitInt $ z1 + z2).
+  PureExec True 1 (BinOp PlusOp (MLit $ VInt z1) (MLit $ VInt z2)) (MLit $ VInt $ z1 + z2).
 Proof. solve_pure_exec. Qed.
 
 Global Instance pure_minus z1 z2 :
-  PureExec True 1 (BinOp MinusOp (Lit $ LitInt z1) (Lit $ LitInt z2)) (Lit $ LitInt $ z1 - z2).
+  PureExec True 1 (BinOp MinusOp (MLit $ VInt z1) (MLit $ VInt z2)) (MLit $ VInt $ z1 - z2).
 Proof. solve_pure_exec. Qed.
 
 Global Instance pure_mult z1 z2 :
-  PureExec True 1 (BinOp MultOp (Lit $ LitInt z1) (Lit $ LitInt z2)) (Lit $ LitInt $ z1 * z2).
+  PureExec True 1 (BinOp MultOp (MLit $ VInt z1) (MLit $ VInt z2)) (MLit $ VInt $ z1 * z2).
 Proof. solve_pure_exec. Qed.
 
 Global Instance pure_offset l z  :
-  PureExec True 1 (BinOp OffsetOp (Lit $ LitLoc l) (Lit $ LitInt z)) (Lit $ LitLoc $ l +ₗ z).
+  PureExec True 1 (BinOp OffsetOp (MLit $ VPtr l) (MLit $ VInt z)) (MLit $ VPtr $ l +ₗ z).
 Proof. solve_pure_exec. Qed.
 
 Global Instance pure_case i e el :
-  PureExec (0 ≤ i ∧ el !! (Z.to_nat i) = Some e) 1 (Case (Lit $ LitInt i) el) e | 10.
+  PureExec (0 ≤ i ∧ el !! (Z.to_nat i) = Some e) 1 (Case (MLit $ VInt i) el) e | 10.
 Proof. solve_pure_exec. Qed.
 
 Global Instance pure_if b e1 e2 :
-  PureExec True 1 (If (Lit (lit_of_bool b)) e1 e2) (if b then e1 else e2) | 1.
+  PureExec True 1 (If (MLit (VBool b)) e1 e2) (if b then e1 else e2) | 1.
 Proof. destruct b; solve_pure_exec. Qed.
 
 Lemma wp_nd_int E :
   {{{ True }}} NdInt @ E
-  {{{ z, RET LitV $ LitInt z; True }}}.
+  {{{ z, RET MLitV (VInt z); True }}}.
 Proof.
   iIntros (? _) "Φ". iApply wp_lift_atomic_base_step_no_fork; auto.
   iIntros (σ1 stepcnt κ κs n') "[σ t] !>"; iSplit. { unshelve auto. apply 0. }
@@ -393,14 +391,14 @@ Qed.
 Lemma wp_eq_loc E (l1 : loc) (l2: loc) b1 b2 P Φ :
   (P -∗ ▷ l1 ↦b [b1]) →
   (P -∗ ▷ l2 ↦b [b2]) →
-  (P -∗ ▷ Φ (LitV (bool_decide (l1 = l2)))) →
-  P -∗ WP BinOp EqOp (Lit (LitLoc l1)) (Lit (LitLoc l2)) @ E {{ Φ }}.
+  (P -∗ ▷ Φ (MLitV (VBool (bool_decide (l1 = l2))))) →
+  P -∗ WP BinOp EqOp (MLit (VPtr l1)) (MLit (VPtr l2)) @ E {{ Φ }}.
 Proof.
   iIntros (Hl1 Hl2 Hpost) "HP".
   destruct (bool_decide_reflect (l1 = l2)) as [->|].
   - iApply wp_lift_pure_det_base_step_no_fork';
       [done|solve_exec_safe|solve_exec_puredet|].
-    iAssert (▷ (WP Lit true @ E {{ v, Φ v }}))%I with "[HP]" as "X".
+    iAssert (▷ (WP MLit (VBool true) @ E {{ v, Φ v }}))%I with "[HP]" as "X".
      + iApply wp_value. by iApply Hpost.
      + iNext. iIntros. iFrame "X".
   - iApply wp_lift_atomic_base_step_no_fork; subst=>//.
@@ -410,7 +408,7 @@ Proof.
     { iPureIntro. repeat eexists. econstructor. eapply BinOpEqFalse. by auto. }
     (* We need to do a little gymnastics here to apply Hne now and strip away a
        ▷ but also have the ↦s. *)
-    iAssert ((▷ l1 ↦b [b1]) ∧ (▷ l2 ↦b [b2]) ∧ ▷ Φ (LitV false))%I
+    iAssert ((▷ l1 ↦b [b1]) ∧ (▷ l2 ↦b [b2]) ∧ ▷ Φ (MLitV (VBool false)))%I
       with "[HP]" as "HP".
     { iSplit; last iSplit.
       + by iApply Hl1.
@@ -515,27 +513,11 @@ Global Instance pure_variant_data t v :
   PureExec True 1 (VariantData (MLit (VVariant t v))) (MLit v).
 Proof. solve_pure_exec'. Qed.
 
-Global Instance pure_to_lit v lit :
-  PureExec (value_to_lit v = Some lit) 1 (ToLit (MLit v)) (Lit lit).
-Proof.
-  intros ?. apply nsteps_once, pure_base_step_pure_step. constructor.
-  - intros σ. do 3 eexists. by econstructor.
-  - intros ????? Hstep. inv_head_step. by simplify_eq.
-Qed.
-
-Global Instance pure_of_lit lit v :
-  PureExec (lit_to_value lit = Some v) 1 (OfLit (Lit lit)) (MLit v).
-Proof.
-  intros ?. apply nsteps_once, pure_base_step_pure_step. constructor.
-  - intros σ. do 3 eexists. by econstructor.
-  - intros ????? Hstep. inv_head_step. by simplify_eq.
-Qed.
-
 (** ** Allocation and deallocation of bytes *)
 Lemma wp_alloc_bytes E (n : Z) :
   0 < n →
-  {{{ True }}} Alloc (Lit $ LitInt n) @ E
-  {{{ l (sz: nat), RET LitV $ LitLoc l; ⌜n = sz⌝ ∗ †l…sz ∗ l ↦b replicate sz Uninit }}}.
+  {{{ True }}} Alloc (MLit $ VInt n) @ E
+  {{{ l (sz: nat), RET MLitV (VPtr l); ⌜n = sz⌝ ∗ †l…sz ∗ l ↦b replicate sz Uninit }}}.
 Proof.
   iIntros (? Φ) "_ HΦ". iApply wp_lift_atomic_base_step_no_fork; auto.
   iIntros (σ1 stepcnt κ κs n') "[Hσ Ht] !>"; iSplit; first by auto.
@@ -548,8 +530,8 @@ Qed.
 Lemma wp_free_bytes E (n:Z) l bs :
   ↑naN ⊆ E → n = length bs →
   {{{ ▷ l ↦b bs ∗ ▷ †l…(length bs) }}}
-    Free (Lit $ LitInt n) (Lit $ LitLoc l) @ E
-  {{{ RET LitV LitPoison; True }}}.
+    Free (MLit $ VInt n) (MLit $ VPtr l) @ E
+  {{{ RET MLitV unitV; True }}}.
 Proof.
   iIntros (?? Φ) "[>Hmt >Hf] HΦ". iApply wp_lift_atomic_base_step_no_fork; auto.
   iIntros (σ1 stepcnt κ κs n') "[Hσ Ht]".
@@ -563,7 +545,7 @@ Qed.
 (** ** Typed loads *)
 Lemma wp_load_sc E l m bs v :
   decode_value m bs = Some v →
-  {{{ ▷ l ↦b bs }}} Load ScOrd m (Lit $ LitLoc l) @ E
+  {{{ ▷ l ↦b bs }}} Load ScOrd m (MLit $ VPtr l) @ E
   {{{ RET MLitV v; l ↦b bs }}}.
 Proof.
   iIntros (Hdec Φ) ">Hbs HΦ". have Hlen := decode_value_length _ _ _ Hdec.
@@ -582,7 +564,7 @@ Qed.
 
 Lemma wp_load_na E l m bs v :
   decode_value m bs = Some v →
-  {{{ ▷ l ↦b bs }}} Load Na1Ord m (Lit $ LitLoc l) @ E
+  {{{ ▷ l ↦b bs }}} Load Na1Ord m (MLit $ VPtr l) @ E
   {{{ RET MLitV v; l ↦b bs }}}.
 Proof.
   iIntros (Hdec Φ) ">Hbs HΦ". have Hlen := decode_value_length _ _ _ Hdec.
@@ -618,8 +600,8 @@ Qed.
 (** ** Typed stores *)
 Lemma wp_store_sc E l m bs e v :
   ↑naN ⊆ E → IntoVal e (MLitV v) → val_wf m v → length bs = mty_size m →
-  {{{ ▷ l ↦b bs }}} Store ScOrd m (Lit $ LitLoc l) e @ E
-  {{{ RET LitV LitPoison; l ↦b encode_value m v }}}.
+  {{{ ▷ l ↦b bs }}} Store ScOrd m (MLit $ VPtr l) e @ E
+  {{{ RET MLitV unitV; l ↦b encode_value m v }}}.
 Proof.
   iIntros (? <- Hwf Hlen Φ) ">Hbs HΦ".
   iApply wp_lift_atomic_base_step_no_fork; auto.
@@ -639,8 +621,8 @@ Qed.
 
 Lemma wp_store_na E l m bs e v :
   ↑naN ⊆ E → IntoVal e (MLitV v) → val_wf m v → length bs = mty_size m →
-  {{{ ▷ l ↦b bs }}} Store Na1Ord m (Lit $ LitLoc l) e @ E
-  {{{ RET LitV LitPoison; l ↦b encode_value m v }}}.
+  {{{ ▷ l ↦b bs }}} Store Na1Ord m (MLit $ VPtr l) e @ E
+  {{{ RET MLitV unitV; l ↦b encode_value m v }}}.
 Proof.
   iIntros (? <- Hwf Hlen Φ) ">Hbs HΦ".
   iApply wp_lift_base_step; auto.
@@ -677,8 +659,8 @@ Qed.
 Lemma wp_memcopy E l1 l2 bs1 bs2 (n : nat) :
   ↑naN ⊆ E → length bs1 = n → length bs2 = n →
   {{{ ▷ l1 ↦b bs1 ∗ ▷ l2 ↦b bs2 }}}
-    MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2) @ E
-  {{{ RET LitV LitPoison; l1 ↦b bs2 ∗ l2 ↦b bs2 }}}.
+    MemCopy Na1Ord n (MLit $ VPtr l1) (MLit $ VPtr l2) @ E
+  {{{ RET MLitV unitV; l1 ↦b bs2 ∗ l2 ↦b bs2 }}}.
 Proof.
   iIntros (? Hlen1 Hlen2 Φ) "[>Hbs1 >Hbs2] HΦ". subst n.
   iApply wp_lift_base_step; auto.
@@ -730,7 +712,7 @@ for the duration of the read ([bytes_ctx_read_begin_guarded]); this costs [£d] 
 at the bytes and [£d] that stay with [G] in the bank. *)
 Lemma wp_load_sc_guarded E l m bs v G d :
   ↑naN ⊆ E → decode_value m bs = Some v →
-  {{{ (G &&{↑naN; d}&&> l ↦b bs) ∗ G ∗ £d }}} Load ScOrd m (Lit $ LitLoc l) @ E
+  {{{ (G &&{↑naN; d}&&> l ↦b bs) ∗ G ∗ £d }}} Load ScOrd m (MLit $ VPtr l) @ E
   {{{ RET MLitV v; G }}}.
 Proof.
   iIntros (? Hdec Φ) "(#Guard & G & £) HΦ". have Hlen := decode_value_length _ _ _ Hdec.
@@ -756,7 +738,7 @@ Lemma wp_load_na_guarded_gen E l m v G P (Ψ : list abyte → Prop) d :
   ↑naN ⊆ E → (∀ bs, Ψ bs → decode_value m bs = Some v) →
   {{{ (G &&{↑naN; d}&&> P) ∗ □ (P -∗ ∃ bs, ⌜Ψ bs⌝ ∗ l ↦b bs ∗ (l ↦b bs -∗ P)) ∗
       G ∗ £(2*d) }}}
-    Load Na1Ord m (Lit $ LitLoc l) @ E
+    Load Na1Ord m (MLit $ VPtr l) @ E
   {{{ RET MLitV v; G }}}.
 Proof.
   iIntros (? HΨ Φ) "(#Guard & #HP & G & £) HΦ".
@@ -795,7 +777,7 @@ Qed.
 
 Lemma wp_load_na_guarded E l m bs v G d :
   ↑naN ⊆ E → decode_value m bs = Some v →
-  {{{ (G &&{↑naN; d}&&> l ↦b bs) ∗ G ∗ £(2*d) }}} Load Na1Ord m (Lit $ LitLoc l) @ E
+  {{{ (G &&{↑naN; d}&&> l ↦b bs) ∗ G ∗ £(2*d) }}} Load Na1Ord m (MLit $ VPtr l) @ E
   {{{ RET MLitV v; G }}}.
 Proof.
   iIntros (? Hdec Φ) "(#Guard & G & £) HΦ".
@@ -807,8 +789,8 @@ Lemma wp_memcopy_guarded_gen E l1 l2 bs1 (n : nat) G P (Ψ : list abyte → Prop
   ↑naN ⊆ E → length bs1 = n → (∀ bs, Ψ bs → length bs = n) →
   {{{ ▷ l1 ↦b bs1 ∗ (G &&{↑naN; d}&&> P) ∗
       □ (P -∗ ∃ bs, ⌜Ψ bs⌝ ∗ l2 ↦b bs ∗ (l2 ↦b bs -∗ P)) ∗ G ∗ £(2*d) }}}
-    MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2) @ E
-  {{{ bs2, RET LitV LitPoison; ⌜Ψ bs2⌝ ∗ l1 ↦b bs2 ∗ G }}}.
+    MemCopy Na1Ord n (MLit $ VPtr l1) (MLit $ VPtr l2) @ E
+  {{{ bs2, RET MLitV unitV; ⌜Ψ bs2⌝ ∗ l1 ↦b bs2 ∗ G }}}.
 Proof.
   iIntros (? <- HΨ Φ) "(>Hbs1 & #Guard & #HP & G & £) HΦ".
   iApply wp_lift_base_step; auto.
@@ -857,8 +839,8 @@ Qed.
 Lemma wp_memcopy_guarded E l1 l2 bs1 bs2 (n : nat) G d :
   ↑naN ⊆ E → length bs1 = n → length bs2 = n →
   {{{ ▷ l1 ↦b bs1 ∗ (G &&{↑naN; d}&&> l2 ↦b bs2) ∗ G ∗ £(2*d) }}}
-    MemCopy Na1Ord n (Lit $ LitLoc l1) (Lit $ LitLoc l2) @ E
-  {{{ RET LitV LitPoison; l1 ↦b bs2 ∗ G }}}.
+    MemCopy Na1Ord n (MLit $ VPtr l1) (MLit $ VPtr l2) @ E
+  {{{ RET MLitV unitV; l1 ↦b bs2 ∗ G }}}.
 Proof.
   iIntros (? Hlen1 Hlen2 Φ) "(Hbs1 & #Guard & G & £) HΦ".
   iApply (wp_memcopy_guarded_gen _ _ _ _ _ _ _ (.= bs2) with "[$Hbs1 $Guard $G $£]");
@@ -875,7 +857,7 @@ encoding of [e2]. It is atomic. *)
 Lemma wp_mcas E l m bs v e1 v1 e2 v2 :
   ↑naN ⊆ E → IntoVal e1 (MLitV v1) → IntoVal e2 (MLitV v2) → val_wf m v2 →
   decode_value m bs = Some v →
-  {{{ ▷ l ↦b bs }}} MCAS m (Lit $ LitLoc l) e1 e2 @ E
+  {{{ ▷ l ↦b bs }}} MCAS m (MLit $ VPtr l) e1 e2 @ E
   {{{ b, RET MLitV (VBool b);
       (⌜b = true ∧ v = v1⌝ ∗ l ↦b encode_value m v2) ∨ (⌜b = false ∧ v ≠ v1⌝ ∗ l ↦b bs) }}}.
 Proof.
