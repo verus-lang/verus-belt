@@ -1,26 +1,20 @@
 (** * Fancy MiniRust values
 
-The values held by multi-byte cells (see [design_docs/pcell-multibyte-cells.md]; since phase 5
-of [design_docs/guarded-mutable-borrows-plan.md] there is no physical cell heap, and the
-cells are instances of guarded mutable borrows: the registry [R] and its byte-cells only
-name the positions of the cells in fancy bytes, for [frepr] in [gcont], [typing/gcont.v];
-the dynamic registry [ρ] and [registry_decode] are not used outside this file). A
-_fancy value_ ([FValue]) is a MiniRust [Value] that may embed cells: [FVCell g] stands for
-the current value of the cell group [g]. Groups are registered in a _static registry_
-[R : gmap gid (mty * list positive)], which records for each group its MiniRust type
-[m_g] and its byte-cells [cs_g] (one per byte); the _dynamic registry_
-[ρ : gmap gid FValue] records the current fancy value of each group.
+The values held by cells (see [design_docs/pcell-multibyte-cells.md]; since phase 5 of
+[design_docs/guarded-mutable-borrows-plan.md] there is no physical cell heap, and the cells
+are instances of guarded mutable borrows: the registry [R] and its byte-cells only name the
+positions of the cells in fancy bytes, for [frepr] in [gcont], [typing/gcont.v]). A _fancy
+value_ ([FValue]) is a MiniRust [Value] that may embed cells: [FVCell g] stands for the
+current value of the cell [g]. A registry [R : gmap gid (mty * list positive)] records for
+each cell its MiniRust type [m_g] and its byte-cells [cs_g] (one per byte).
 
-- [fval_erase ρ fv v] ([⌊fv⌋_ρ = v]): [v] is [fv] with every [FVCell g] replaced by the
-  erasure of [ρ g], recursively.
 - [frepr R m fbs fv]: the _fancy bytes_ [fbs] (each a byte-cell or an abstract byte)
-  represent [fv] at the MiniRust type [m]. It depends only on the static registry: a cell
-  [FVCell g] must sit at a position whose sub-type is [m_g] (a tuple field, an enum payload
-  or the whole value: alignment requirement A), and occupy exactly the byte-cells [cs_g];
-  the other parts are plain bytes that decode as [decode_value] does.
-- [registry_decode]: the compositionality lemma. If every group's contents represent its
-  fancy value, then the final bytes of every group (following the cells) decode to the
-  erasure of its fancy value. *)
+  represent [fv] at the MiniRust type [m]: a cell [FVCell g] must sit at a position whose
+  sub-type is [m_g] (a tuple field, an enum payload or the whole value: alignment
+  requirement A), and occupy exactly the byte-cells [cs_g]; the other parts are plain bytes
+  that decode as [decode_value] does.
+- [fv_sub], [fv_upd]: sub-values and their replacement; [fb_mix]: fancy bytes with new
+  plain bytes. *)
 From lrust.lang Require Export minirust.
 From stdpp Require Import ssreflect.
 Set Default Proof Using "Type".
@@ -84,48 +78,13 @@ Proof.
   split; [|by apply elem_of_list_In]. apply in_map, elem_of_list_In. by eapply elem_of_list_lookup_2.
 Qed.
 
-(** ** Erasure: [⌊fv⌋_ρ] *)
-Inductive fval_erase (ρ : gmap positive FValue) : FValue → Value → Prop :=
-| fval_erase_int z : fval_erase ρ (FVInt z) (VInt z)
-| fval_erase_bool b : fval_erase ρ (FVBool b) (VBool b)
-| fval_erase_ptr l : fval_erase ρ (FVPtr l) (VPtr l)
-| fval_erase_tuple fvs vs :
-    length fvs = length vs →
-    (∀ k fv v, fvs !! k = Some fv → vs !! k = Some v → fval_erase ρ fv v) →
-    fval_erase ρ (FVTuple fvs) (VTuple vs)
-| fval_erase_variant t d v : fval_erase ρ d v → fval_erase ρ (FVVariant t d) (VVariant t v)
-| fval_erase_cell g fv v : ρ !! g = Some fv → fval_erase ρ fv v → fval_erase ρ (FVCell g) v.
-
-Lemma fval_erase_lift ρ v : fval_erase ρ (fv_lift v) v.
-Proof.
-  induction v as [| | |vs IH|t d IH] using Value_ind'; simpl; try constructor; try done.
-  - by rewrite length_map.
-  - intros k fv v. rewrite list_lookup_fmap. intros Hfv Hv.
-    destruct (vs !! k) as [v'|] eqn:Hk; simplify_eq/=.
-    eapply (Forall_lookup_1 _ _ _ _ IH Hk).
-Qed.
-
-Lemma fval_erase_det ρ fv v1 v2 : fval_erase ρ fv v1 → fval_erase ρ fv v2 → v1 = v2.
-Proof.
-  intros H1. revert v2. induction H1 as [| | |fvs vs Hlen Hk IH|t d v Hd IH|g fv v Hg Hfv IH];
-    intros v2 H2; inversion H2; simplify_eq; try done.
-  - f_equal. apply list_eq. intros k.
-    destruct (fvs !! k) as [fv|] eqn:Hfv.
-    + destruct (vs !! k) as [v|] eqn:Hv; [|apply lookup_ge_None in Hv; apply lookup_lt_Some in Hfv; lia].
-      match goal with H : ∀ _ _ _, fvs !! _ = _ → ?vs' !! _ = _ → _ |- _ =>
-        destruct (vs' !! k) as [v'|] eqn:Hv';
-          [|apply lookup_ge_None in Hv'; apply lookup_lt_Some in Hfv; lia];
-        rewrite (IH _ _ _ Hfv Hv v') //; by apply (H k) end.
-    + have : vs !! k = None by apply lookup_ge_None; apply lookup_ge_None in Hfv; lia.
-      intros ->. symmetry. apply lookup_ge_None. apply lookup_ge_None in Hfv. lia.
-  - f_equal. by apply IH.
-  - by apply IH.
-Qed.
-
 Lemma fv_lift_inj v v' : fv_lift v = fv_lift v' → v = v'.
 Proof.
-  intros Heq. apply (fval_erase_det ∅ (fv_lift v)); [apply fval_erase_lift|].
-  rewrite Heq. apply fval_erase_lift.
+  revert v'. induction v as [z|b|l|vs IH|t d IH] using Value_ind';
+    intros [z'|b'|l'|vs'|t' d'] Heq; simplify_eq/=; try done.
+  - f_equal. revert vs' Heq. induction IH as [|v vs Hv _ IHvs]; intros [|v' vs'] Heq;
+      simplify_eq/=; [done|]. f_equal; [by apply Hv|by apply IHvs].
+  - f_equal. by apply IH.
 Qed.
 
 (** ** Fancy bytes and their representation *)
@@ -134,10 +93,6 @@ Section frepr.
   Implicit Types (R : gmap positive (mty * list positive)).
 
   Definition is_plain (fb : positive + AbstractByte) : Prop := ∃ b, fb = inr b.
-
-  (** The final bytes of fancy bytes, given the final byte [rv c] of every byte-cell [c]. *)
-  Definition fin_bytes (rv : positive → AbstractByte) fbs : list (AbstractByte) :=
-    (λ fb, match fb with inl c => rv c | inr b => b end) <$> fbs.
 
   (** The position [i] is in one of the fields [fs]. *)
   Definition in_field (fs : list (nat * mty)) (i : nat) : Prop :=
@@ -173,84 +128,6 @@ Section frepr.
     intros Hsub. induction 1; econstructor; eauto. by eapply lookup_weaken.
   Qed.
 
-  Lemma fin_bytes_slice rv o n fbs :
-    fin_bytes rv (list_slice o n fbs) = list_slice o n (fin_bytes rv fbs).
-  Proof. by rewrite /fin_bytes /list_slice fmap_take fmap_drop. Qed.
-
-  Lemma length_fin_bytes rv fbs : length (fin_bytes rv fbs) = length fbs.
-  Proof. by rewrite /fin_bytes length_fmap. Qed.
-
-  (** One level of compositionality: if the groups embedded in [fv] have final bytes that
-      decode to their erasures, so do the final bytes of [fbs]. *)
-  Lemma frepr_decode R (ρ : gmap positive FValue) rv m fbs fv :
-    frepr R m fbs fv →
-    (∀ g m' cs, g ∈ fv_cells fv → R !! g = Some (m', cs) →
-       ∃ v', fval_erase ρ (FVCell g) v' ∧ decode_value m' (rv <$> cs) = Some v') →
-    ∃ v, fval_erase ρ fv v ∧ decode_value m (fin_bytes rv fbs) = Some v.
-  Proof.
-    induction 1 as [m g cs Hg|m bs v Hdec|fs sz fbs fvs Hlen Hlenf Hfs IH Hpad
-      |vars tag sz fbs t vm d bst Hlen Htag Ht Ht0 Hvm Hd IH Hpad]; intros Hcells.
-    - destruct (Hcells g m cs) as (v' & Hv' & Hdec); [by left|done|].
-      exists v'. split; [done|]. by rewrite /fin_bytes -list_fmap_compose.
-    - exists v. split; [apply fval_erase_lift|]. by rewrite /fin_bytes -list_fmap_compose list_fmap_id.
-    - have Hv : ∀ k f fv, fs !! k = Some f → fvs !! k = Some fv →
-        ∃ v, fval_erase ρ fv v ∧
-          decode_value f.2 (list_slice f.1 (mty_size f.2) (fin_bytes rv fbs)) = Some v.
-      { intros k f fv Hf Hfv. rewrite -fin_bytes_slice. apply (IH k f fv Hf Hfv).
-        intros g m' cs Hg. apply Hcells. by eapply fv_cells_tuple. }
-      assert (∃ vs, length vs = length fs ∧ ∀ k f v, fs !! k = Some f → vs !! k = Some v →
-        decode_value f.2 (list_slice f.1 (mty_size f.2) (fin_bytes rv fbs)) = Some v ∧
-        ∃ fv, fvs !! k = Some fv ∧ fval_erase ρ fv v) as (vs & Hvs & Hvk).
-      { clear IH Hcells Hpad Hfs. revert fvs Hlenf Hv. induction fs as [|f fs IHfs]; intros fvs Hlenf Hv.
-        { exists []. split; [done|]. by intros []. }
-        destruct fvs as [|fv fvs]; [done|]. simpl in Hlenf.
-        destruct (Hv 0%nat f fv) as (v & Hfv & Hdv); [done..|].
-        destruct (IHfs fvs ltac:(lia)) as (vs & Hlenv & Hvs).
-        { intros k f' fv' ??. by apply (Hv (S k)). }
-        exists (v :: vs). split; [by rewrite /= Hlenv|].
-        intros [|k] f' v'; simpl; [intros [= <-] [= <-]; eauto|]. eauto. }
-      exists (VTuple vs). split.
-      + constructor; [lia|]. intros k fv v Hfv Hv'.
-        destruct (fs !! k) as [f|] eqn:Hf; [|apply lookup_ge_None in Hf; apply lookup_lt_Some in Hfv; lia].
-        destruct (Hvk k f v Hf Hv') as (_ & fv' & Hfv' & ?). by simplify_eq.
-      + rewrite decode_value_tuple length_fin_bytes decide_True //. apply fmap_Some_2.
-        apply mapM_Some, Forall2_lookup. intros k.
-        destruct (fs !! k) as [f|] eqn:Hf, (vs !! k) as [v|] eqn:Hv'; simpl; try constructor.
-        * by destruct (Hvk k f v Hf Hv') as [? _].
-        * apply lookup_ge_None in Hv'. apply lookup_lt_Some in Hf. lia.
-        * apply lookup_ge_None in Hf. apply lookup_lt_Some in Hv'. lia.
-    - destruct IH as (v & Hv & Hdec).
-      { intros g m' cs Hg. apply Hcells. done. }
-      exists (VVariant t v). split; [by constructor|].
-      rewrite decode_value_enum length_fin_bytes decide_True //.
-      rewrite /fin_bytes -fmap_take Htag -list_fmap_compose list_fmap_id Ht /=.
-      rewrite decide_True // Hvm /=. rewrite -/(fin_bytes rv _) -fin_bytes_slice Hdec //.
-  Qed.
-
-  (** The compositionality lemma, over the whole registry. [fbs] are the contents of the
-      group [g] (the fancy bytes that follow its cells), and [rv c] the final byte of the
-      cell [c]: the final bytes of [g] are those of its contents. [ok] is a property of
-      groups (e.g. "at rest") that holds of the groups embedded in a group with [ok]; the
-      contents of the groups with [ok] represent their fancy values. Groups only embed older
-      groups, so the nesting is well-founded. *)
-  Theorem registry_decode R (ρ : gmap positive FValue) (rv : positive → AbstractByte)
-      (ok : positive → Prop) :
-    (∀ g fv, ρ !! g = Some fv → ok g → ∃ m cs fbs, R !! g = Some (m, cs) ∧ frepr R m fbs fv ∧
-       rv <$> cs = fin_bytes rv fbs ∧
-       ∀ g', g' ∈ fv_cells fv → (g' < g)%positive ∧ g' ∈ dom ρ ∧ ok g') →
-    ∀ g fv m cs, ρ !! g = Some fv → R !! g = Some (m, cs) → ok g →
-    ∃ v, fval_erase ρ fv v ∧ decode_value m (rv <$> cs) = Some v.
-  Proof.
-    intros Hinv g. remember (Pos.to_nat g) as n eqn:Hn. revert g Hn.
-    induction n as [n IH] using lt_wf_ind. intros g -> fv m cs Hg HR Hok.
-    destruct (Hinv g fv Hg Hok) as (m' & cs' & fbs & HR' & Hrep & Hrv & Hlt).
-    rewrite HR in HR'. simplify_eq. rewrite Hrv. eapply frepr_decode; [done|].
-    intros g' m'' cs'' Hg' HR''. destruct (Hlt g' Hg') as (Hlt' & Hdom & Hok').
-    apply elem_of_dom in Hdom as [fv' Hfv'].
-    destruct (IH (Pos.to_nat g') ltac:(lia) g' eq_refl fv' m'' cs'' Hfv' HR'' Hok')
-      as (v' & Hv' & Hdec).
-    exists v'. split; [by econstructor|done].
-  Qed.
 End frepr.
 
 (** ** Sub-values and their replacement
@@ -297,19 +174,6 @@ Lemma fv_upd_bound m fv o m' fv' fvn :
   fv_upd m fv o m' fv' fvn → mty_wf m → (o + mty_size m' ≤ mty_size m)%nat.
 Proof. intros [fvo Hsub]%fv_upd_sub. by eapply fv_sub_bound. Qed.
 
-Lemma fv_cells_upd m fv o m' fv' fvn g :
-  fv_upd m fv o m' fv' fvn → g ∈ fv_cells fvn → g ∈ fv_cells fv ∨ g ∈ fv_cells fv'.
-Proof.
-  induction 1 as [|fs sz fvs k off fm fvk o m' fv' fvk' Hk Hfvk Hupd IH|]; [by right| |done].
-  intros Hg. apply elem_of_list_In in Hg. simpl in Hg. apply in_concat in Hg as (l & Hl & Hg).
-  apply in_map_iff in Hl as (fv0 & <- & Hfv0). apply elem_of_list_In in Hfv0.
-  apply elem_of_list_lookup_1 in Hfv0 as [j Hj]. apply elem_of_list_In in Hg.
-  destruct (decide (j = k)) as [->|Hne].
-  - rewrite list_lookup_insert in Hj; [|by eapply lookup_lt_Some]. simplify_eq.
-    destruct (IH Hg) as [H|H]; [left|by right]. by eapply (fv_cells_tuple fvs k).
-  - rewrite list_lookup_insert_ne in Hj; [|done]. left. by eapply (fv_cells_tuple fvs j).
-Qed.
-
 Lemma list_lookup_map {A B} (f : A → B) (l : list A) k : map f l !! k = f <$> l !! k.
 Proof. revert k. induction l as [|x l IH]; intros [|k]; simpl; auto. Qed.
 
@@ -317,22 +181,6 @@ Lemma fv_lift_tuple_inv v fvs : fv_lift v = FVTuple fvs → ∃ vs, v = VTuple v
 Proof. destruct v; simpl; try done. intros [= <-]. eauto. Qed.
 Lemma fv_lift_variant_inv v t d : fv_lift v = FVVariant t d → ∃ dv, v = VVariant t dv ∧ d = fv_lift dv.
 Proof. destruct v; simpl; try done. intros [= <- <-]. eauto. Qed.
-Lemma fv_lift_cell_inv v g : fv_lift v ≠ FVCell g.
-Proof. by destruct v. Qed.
-
-Lemma fval_erase_nocells ρ fv v : fv_cells fv = [] → fval_erase ρ fv v → fv = fv_lift v.
-Proof.
-  intros Hc H. induction H as [| | |fvs vs Hlen Hk IH| |]; simpl in *; try done.
-  - f_equal. apply list_eq. intros k. rewrite list_lookup_fmap.
-    destruct (fvs !! k) as [fv|] eqn:Hfv.
-    + destruct (vs !! k) as [v|] eqn:Hv; [|apply lookup_ge_None in Hv; apply lookup_lt_Some in Hfv; lia].
-      simpl. f_equal. apply (IH k); [done..|].
-      apply elem_of_nil_inv. intros g Hg. have : g ∈ fv_cells (FVTuple fvs) by eapply fv_cells_tuple.
-      rewrite /= Hc. apply not_elem_of_nil.
-    + have Hv : vs !! k = None by apply lookup_ge_None; apply lookup_ge_None in Hfv; lia.
-      by rewrite Hv.
-  - f_equal. by apply IHfval_erase.
-Qed.
 
 (** Slices and insertions. *)
 Lemma lookup_list_slice {A} o n (l : list A) i :
@@ -425,43 +273,26 @@ Section frepr_ops.
       destruct (Hpl fb) as [b ->]; [by left|]. destruct IH as [bs ->].
       { intros fb' ?. apply Hpl. by right. }
       by exists (b :: bs). }
-    exists bs. split; [done|].
-    destruct (frepr_decode R ∅ (λ _, Uninit) m _ _ Hrep) as (v' & Hv' & Hdec).
-    { intros g. rewrite fv_cells_lift. intros ? ? []%not_elem_of_nil. }
-    rewrite /fin_bytes -list_fmap_compose list_fmap_id in Hdec.
-    have Hvv := fval_erase_det _ _ _ _ Hv' (fval_erase_lift ∅ v). by subst.
-  Qed.
-
-  (** Representations of plain tuples and variants, field by field. *)
-  Lemma frepr_plain_tuple R fs sz bs vs :
-    decode_value (MTuple fs sz) bs = Some (VTuple vs) →
-    frepr R (MTuple fs sz) (inr <$> bs) (FVTuple (map fv_lift vs)).
-  Proof.
-    intros Hdec. move: (Hdec). rewrite decode_value_tuple. case_decide as Hlen; [|done].
-    intros (vs' & Hvs & [= <-])%fmap_Some_1. apply mapM_Some in Hvs.
-    apply frepr_tuple.
-    - by rewrite length_fmap.
-    - rewrite length_map. symmetry. by eapply Forall2_length.
-    - intros k f fv Hf Hfv. rewrite list_lookup_fmap in Hfv.
-      destruct (vs !! k) as [v|] eqn:Hv; simplify_eq/=.
-      have := Forall2_lookup_lr _ _ _ _ _ _ Hvs Hf Hv. intros Hd.
-      rewrite /list_slice -fmap_drop -fmap_take. by apply frepr_plain.
-    - intros i fb Hi _. rewrite list_lookup_fmap in Hi. destruct (bs !! i); simplify_eq/=. by eexists.
-  Qed.
-
-  Lemma frepr_plain_variant R vars tag sz bs t d :
-    decode_value (MEnum vars tag sz) bs = Some (VVariant t d) →
-    frepr R (MEnum vars tag sz) (inr <$> bs) (FVVariant t (fv_lift d)).
-  Proof.
-    intros Hdec. move: (Hdec). rewrite decode_value_enum. case_decide as Hlen; [|done].
-    destruct (decode_int tag (take (int_size tag) bs)) as [t'|] eqn:Ht; simpl; [|done].
-    case_decide as Ht0; [|done]. destruct (vars !! Z.to_nat t') as [vm|] eqn:Hvm; simpl; [|done].
-    intros (d' & Hd & [= <- <-])%fmap_Some_1.
-    eapply (frepr_enum R vars tag sz _ t vm (fv_lift d) (take (int_size tag) bs)); try done.
-    - by rewrite length_fmap.
-    - by rewrite fmap_take.
-    - rewrite /list_slice -fmap_drop -fmap_take. by apply frepr_plain.
-    - intros i fb Hi _. rewrite list_lookup_fmap in Hi. destruct (bs !! i); simplify_eq/=. by eexists.
+    exists bs. split; [done|]. clear Hpl.
+    remember (inr <$> bs) as fbs eqn:Hfbs. remember (fv_lift v) as fv eqn:Hfv.
+    revert bs v Hfbs Hfv.
+    induction Hrep as [m g cs Hg|m bs0 v0 Hdec|fs sz fbs fvs Hlen Hlenf Hfs IH Hpad
+      |vars tag sz fbs t vm d bst Hlen Htag Ht Ht0 Hvm Hd IH Hpad]; intros bs v Hfbs Hfv.
+    - by destruct v.
+    - apply (inj (fmap inr)) in Hfbs as ->. by apply fv_lift_inj in Hfv as ->.
+    - destruct (fv_lift_tuple_inv _ _ (eq_sym Hfv)) as (vs & -> & ->).
+      rewrite decode_value_tuple -Hlen Hfbs length_fmap decide_True //.
+      apply fmap_Some_2, mapM_Some, Forall2_lookup. intros k.
+      rewrite length_map in Hlenf.
+      destruct (fs !! k) as [f|] eqn:Hf, (vs !! k) as [vk|] eqn:Hvk; simpl; try constructor.
+      + apply (IH k f (fv_lift vk) Hf); [by rewrite list_lookup_map Hvk|by rewrite Hfbs /list_slice fmap_take fmap_drop|done].
+      + apply lookup_ge_None in Hvk. apply lookup_lt_Some in Hf. lia.
+      + apply lookup_ge_None in Hf. apply lookup_lt_Some in Hvk. lia.
+    - destruct (fv_lift_variant_inv _ _ _ (eq_sym Hfv)) as (dv & -> & ->).
+      rewrite decode_value_enum -Hlen Hfbs length_fmap decide_True //.
+      rewrite Hfbs -fmap_take in Htag. apply (inj (fmap inr)) in Htag as ->.
+      rewrite Ht /= decide_True // Hvm /=.
+      rewrite (IH _ dv) //. by rewrite Hfbs /list_slice fmap_take fmap_drop.
   Qed.
 
   (** The representation of a field, or of the payload of a variant. *)
@@ -654,18 +485,6 @@ Proof.
     by destruct (Forall_lookup_1 _ _ _ _ Hvars Hvm).
 Qed.
 
-Lemma fv_upd_wf m fv o m' fv' fvn : fv_upd m fv o m' fv' fvn → mty_wf m → mty_wf m'.
-Proof. intros [fvo Hsub]%fv_upd_sub. by eapply fv_sub_wf. Qed.
-
-Lemma fv_sub_upd m fv o m' fvo fv' : fv_sub m fv o m' fvo → ∃ fvn, fv_upd m fv o m' fv' fvn.
-Proof.
-  induction 1 as [m fv|fs sz fvs k off fm fvk o m' fvo Hk Hfvk Hsub [fvk' IH]
-    |vars tag sz t d vm o m' fvo Hvm Hsub [d' IH]].
-  - exists fv'. constructor.
-  - eexists. by eapply fv_upd_field.
-  - eexists. by eapply fv_upd_payload.
-Qed.
-
 (** A fancy value without cells is a plain value. *)
 Lemma fv_nocells_lift fv : fv_cells fv = [] → ∃ v, fv = fv_lift v.
 Proof.
@@ -681,22 +500,11 @@ Proof.
   - done.
 Qed.
 
-Lemma list_slice_slice_n {A} o n off N (l : list A) :
-  length (list_slice o n (list_slice off N l)) = n →
-  list_slice o n (list_slice off N l) = list_slice (off + o) n l.
-Proof.
-  intros Hlen. apply list_eq. intros i. rewrite !lookup_list_slice.
-  destruct (decide (i < n)%nat); [|done].
-  have : is_Some (list_slice o n (list_slice off N l) !! i) by apply lookup_lt_is_Some_2; lia.
-  rewrite !lookup_list_slice decide_True //. case_decide; [|by intros []].
-  intros _. f_equal. lia.
-Qed.
-
 Section frepr_more.
   Implicit Types (fbs : list (positive + AbstractByte)) (bs : list (AbstractByte)).
   Implicit Types (R : gmap positive (mty * list positive)).
 
-  (** A plain sub-value is represented by plain bytes; a cell, by its byte-cells. *)
+  (** A plain sub-value is represented by plain bytes. *)
   Lemma frepr_sub_plain R m fbs fv o m' fvs :
     reg_wf R → frepr R m fbs fv → fv_sub m fv o m' fvs → mty_wf m → fv_cells fvs = [] →
     ∃ bs v, list_slice o (mty_size m') fbs = inr <$> bs ∧ decode_value m' bs = Some v ∧
@@ -707,155 +515,11 @@ Section frepr_more.
     destruct (frepr_lift _ _ _ _ Hr) as (bs & Hbs & Hd). eauto.
   Qed.
 
-  Lemma frepr_sub_cell R m fbs fv o m' g :
-    reg_wf R → frepr R m fbs fv → fv_sub m fv o m' (FVCell g) → mty_wf m →
-    ∃ cs, R !! g = Some (m', cs) ∧ list_slice o (mty_size m') fbs = inl <$> cs.
-  Proof.
-    intros HR Hrep Hsub Hwf. have Hr := frepr_sub _ _ _ _ _ _ _ HR Hrep Hsub Hwf.
-    remember (list_slice o (mty_size m') fbs) as sl eqn:Hsl.
-    inversion Hr as [m0 g0 cs Hg| m0 bs v Hd Hv| |]; subst.
-    - eauto.
-    - by destruct v.
-  Qed.
-
-  (** The byte-cells in fancy bytes belong to embedded groups. *)
-  Lemma frepr_inl_cell R m fbs fv j c :
-    frepr R m fbs fv → fbs !! j = Some (inl c) →
-    ∃ g m' cs, g ∈ fv_cells fv ∧ R !! g = Some (m', cs) ∧ c ∈ cs.
-  Proof.
-    intros Hrep. revert j. induction Hrep as [m g cs Hg|m bs v Hdec|fs sz fbs fvs Hlen Hlenf Hfs IH Hpad
-      |vars tag sz fbs t vm d bst Hlen Htag Ht Ht0 Hvm Hd IH Hpad]; intros j Hj.
-    - exists g, m, cs. split; [by left|]. split; [done|].
-      rewrite list_lookup_fmap in Hj. destruct (cs !! j) eqn:?; simplify_eq/=.
-      by eapply elem_of_list_lookup_2.
-    - rewrite list_lookup_fmap in Hj. by destruct (bs !! j).
-    - destruct (decide (in_field fs j)) as [(f & Hf & Hfj)|Hnf].
-      + apply elem_of_list_lookup in Hf as [k Hk].
-        destruct (fvs !! k) as [fvk|] eqn:Hfvk;
-          [|apply lookup_ge_None in Hfvk; apply lookup_lt_Some in Hk; lia].
-        destruct (IH k f fvk Hk Hfvk (j - f.1)%nat) as (g & m' & cs & Hg & HR & Hc).
-        { rewrite lookup_list_slice decide_True; [|lia]. rewrite -Hj. f_equal. lia. }
-        exists g, m', cs. split_and!; [|done|done]. by eapply fv_cells_tuple.
-      + by destruct (Hpad j _ Hj Hnf) as [b [=]].
-    - destruct (decide (j < int_size tag)%nat).
-      + have : take (int_size tag) fbs !! j = Some (inl c) by rewrite lookup_take.
-        rewrite Htag list_lookup_fmap. by destruct (bst !! j).
-      + destruct (decide (j < int_size tag + mty_size vm)%nat);
-          [|by destruct (Hpad j _ Hj ltac:(lia)) as [b [=]]].
-        destruct (IH (j - int_size tag)%nat) as (g & m' & cs & Hg & HR & Hc).
-        { rewrite lookup_list_slice decide_True; [|lia]. rewrite -Hj. f_equal. lia. }
-        by exists g, m', cs.
-  Qed.
-
-  (** ** Rewriting the plain bytes of a representation
-
-  The fancy bytes [fbs'] have the shape of [fbs] (the same byte-cells at the same
-  positions, and plain bytes elsewhere), and their plain bytes are those of [bs'], which
-  decode to the erasure of [fv]. Then [fbs'] represent [fv] too, and the bytes of [bs'] at
-  the position of every embedded group decode to the erasure of that group. *)
-  Definition fb_same_shape (fb fb' : positive + AbstractByte) : Prop :=
-    match fb, fb' with inl c, inl c' => c = c' | inr _, inr _ => True | _, _ => False end.
-
-  Lemma same_shape_inl cs fbs' : Forall2 fb_same_shape (inl <$> cs) fbs' → fbs' = inl <$> cs.
-  Proof.
-    revert fbs'. induction cs as [|c cs IH]; intros fbs' H; inversion H as [|? fb' ? fbs'' Hfb Hrest]; subst; [done|].
-    rewrite fmap_cons. destruct fb' as [c'|]; [|done]. simpl in Hfb. subst. f_equal. by apply IH.
-  Qed.
-
-  Lemma same_shape_inr bs fbs' bs' :
-    Forall2 fb_same_shape (inr <$> bs) fbs' → (∀ i b, fbs' !! i = Some (inr b) → bs' !! i = Some b) →
-    length bs' = length fbs' → fbs' = inr <$> bs'.
-  Proof.
-    intros Hsh Hb Hlen. apply list_eq. intros i. rewrite list_lookup_fmap.
-    destruct (fbs' !! i) as [fb'|] eqn:Hi.
-    - destruct (Forall2_lookup_r _ _ _ _ _ Hsh Hi) as (fb & Hfb & Hs).
-      rewrite list_lookup_fmap in Hfb. destruct (bs !! i); simplify_eq/=.
-      destruct fb' as [|b']; [done|]. by rewrite (Hb i b' Hi).
-    - have -> : bs' !! i = None by apply lookup_ge_None; apply lookup_ge_None in Hi; lia. done.
-  Qed.
-
-  Lemma frepr_rebytes R (ρ : gmap positive FValue) m fbs fv v fbs' bs' :
-    reg_wf R → frepr R m fbs fv → fval_erase ρ fv v → decode_value m bs' = Some v →
-    Forall2 fb_same_shape fbs fbs' → (∀ i b, fbs' !! i = Some (inr b) → bs' !! i = Some b) →
-    frepr R m fbs' fv ∧
-    ∀ g, g ∈ fv_cells fv → ∃ m' cs o v', R !! g = Some (m', cs) ∧
-      list_slice o (length cs) fbs = inl <$> cs ∧ fval_erase ρ (FVCell g) v' ∧
-      decode_value m' (list_slice o (length cs) bs') = Some v'.
-  Proof.
-    intros HR Hrep. revert v fbs' bs'.
-    induction Hrep as [m g cs Hg|m bs v0 Hdec|fs sz fbs fvs Hlen Hlenf Hfs IH Hpad
-      |vars tag sz fbs t vm d bst Hlen Htag Ht Ht0 Hvm Hd IH Hpad];
-      intros v fbs' bs' Her Hdec' Hsh Hb.
-    - rewrite (same_shape_inl _ _ Hsh). split; [by constructor|].
-      intros g' ->%elem_of_list_singleton. exists m, cs, 0%nat, v. split_and!; [done| |done|].
-      + rewrite /list_slice drop_0 take_ge // length_fmap //.
-      + have Hl := decode_value_length _ _ _ Hdec'. rewrite /list_slice drop_0 take_ge //.
-        rewrite Hl (HR _ _ _ Hg) //.
-    - have Hvv := fval_erase_det _ _ _ _ (fval_erase_lift ρ v0) Her. subst v.
-      have Hl := decode_value_length _ _ _ Hdec'.
-      have Hl' := Forall2_length _ _ _ Hsh. rewrite length_fmap (decode_value_length _ _ _ Hdec) in Hl'.
-      rewrite (same_shape_inr _ _ bs' Hsh Hb); [|lia]. split; [by constructor|].
-      rewrite fv_cells_lift. by intros ? ?%not_elem_of_nil.
-    - inversion Her as [| | |? vs Hlenv Hvs| |]; subst.
-      move: Hdec'. rewrite decode_value_tuple. case_decide as Hlen'; [|done].
-      intros (vs' & Hvs' & [= <-])%fmap_Some_1. apply mapM_Some in Hvs'.
-      have Hlsh := Forall2_length _ _ _ Hsh.
-      have Hfield : ∀ k f fvk, fs !! k = Some f → fvs !! k = Some fvk →
-        frepr R f.2 (list_slice f.1 (mty_size f.2) fbs') fvk ∧
-        ∀ g, g ∈ fv_cells fvk → ∃ m' cs o v', R !! g = Some (m', cs) ∧
-          list_slice o (length cs) (list_slice f.1 (mty_size f.2) fbs) = inl <$> cs ∧
-          fval_erase ρ (FVCell g) v' ∧
-          decode_value m' (list_slice o (length cs) (list_slice f.1 (mty_size f.2) bs')) = Some v'.
-      { intros k f fvk Hf Hfvk.
-        destruct (vs !! k) as [vk|] eqn:Hvk; [|apply lookup_ge_None in Hvk; apply lookup_lt_Some in Hfvk; lia].
-        apply (IH k f fvk Hf Hfvk vk).
-        - by apply (Hvs k).
-        - exact (Forall2_lookup_lr _ _ _ _ _ _ Hvs' Hf Hvk).
-        - by apply Forall2_take, Forall2_drop.
-        - intros i b. rewrite !lookup_list_slice. case_decide; [|done]. apply Hb. }
-      split.
-      + apply frepr_tuple; [lia|done| |].
-        * intros k f fvk Hf Hfvk. exact (proj1 (Hfield k f fvk Hf Hfvk)).
-        * intros i fb' Hi Hnf. destruct (Forall2_lookup_r _ _ _ _ _ Hsh Hi) as (fb & Hfb & Hs).
-          destruct (Hpad i fb Hfb Hnf) as [b ->]. destruct fb' as [|b']; [done|]. by eexists.
-      + intros g Hg. destruct (fv_cells_tuple_inv _ _ Hg) as (k & fvk & Hk & Hgk).
-        destruct (fs !! k) as [f|] eqn:Hf; [|apply lookup_ge_None in Hf; apply lookup_lt_Some in Hk; lia].
-        destruct (proj2 (Hfield k f fvk Hf Hk) g Hgk) as (m' & cs & o & v' & HRg & Hsl & Her' & Hd').
-        exists m', cs, (f.1 + o)%nat, v'. split_and!; [done| |done|].
-        * rewrite -(list_slice_slice_n _ _ _ (mty_size f.2)) //. by rewrite Hsl length_fmap.
-        * rewrite -(list_slice_slice_n _ _ _ (mty_size f.2)) //.
-          rewrite (decode_value_length _ _ _ Hd'). by erewrite HR.
-    - inversion Her as [| | | |? ? vd Hvd|]; subst.
-      move: Hdec'. rewrite decode_value_enum. case_decide as Hlen'; [|done].
-      destruct (decode_int tag (take (int_size tag) bs')) as [t'|] eqn:Ht'; simpl; [|done].
-      case_decide as Ht0'; [|done]. destruct (vars !! Z.to_nat t') as [vm'|] eqn:Hvm'; simpl; [|done].
-      intros (vd' & Hvd' & [= <- <-])%fmap_Some_1. rewrite Hvm in Hvm'. injection Hvm' as <-.
-      have Hlsh := Forall2_length _ _ _ Hsh.
-      destruct (IH vd (list_slice (int_size tag) (mty_size vm) fbs')
-        (list_slice (int_size tag) (mty_size vm) bs')) as [Hpay Hnest].
-      { done. } { done. } { by apply Forall2_take, Forall2_drop. }
-      { intros i b. rewrite !lookup_list_slice. case_decide; [|done]. apply Hb. }
-      split.
-      + eapply (frepr_enum R vars tag _ _ t vm d (take (int_size tag) bs')); try (done || lia).
-        * eapply (same_shape_inr bst).
-          -- rewrite -Htag. by apply Forall2_take.
-          -- intros i b. destruct (decide (i < int_size tag)%nat).
-             ++ rewrite !lookup_take //. apply Hb.
-             ++ rewrite lookup_take_ge //. lia.
-          -- rewrite !length_take. lia.
-        * intros i fb' Hi Hge. destruct (Forall2_lookup_r _ _ _ _ _ Hsh Hi) as (fb & Hfb & Hs).
-          destruct (Hpad i fb Hfb Hge) as [b ->]. destruct fb' as [|b']; [done|]. by eexists.
-      + intros g Hg. destruct (Hnest g Hg) as (m' & cs & o & v' & HRg & Hsl & Her' & Hd').
-        exists m', cs, (int_size tag + o)%nat, v'. split_and!; [done| |done|].
-        * rewrite -(list_slice_slice_n _ _ _ (mty_size vm)) //. by rewrite Hsl length_fmap.
-        * rewrite -(list_slice_slice_n _ _ _ (mty_size vm)) //.
-          rewrite (decode_value_length _ _ _ Hd'). by erewrite HR.
-  Qed.
   (** ** Fancy bytes with new plain bytes
 
   [fb_mix fbs bs'] keeps the byte-cells of [fbs] and takes its plain bytes from [bs'] (the
-  bytes of a value with cells after a typed move: the cells are retethered at their
-  positions, and the other bytes are those that the [Store] wrote). *)
+  bytes of a value with cells after a typed move: the cells keep their positions, and the
+  other bytes are those that the [Store] wrote). *)
   Definition fb_mix (fbs : list (positive + AbstractByte)) (bs' : list AbstractByte) :=
     zip_with (λ fb b, match fb with inl c => inl c | inr _ => inr b end) fbs bs'.
 
@@ -867,63 +531,9 @@ Section frepr_more.
     fb_mix fbs bs' !! i = Some (match fb with inl c => inl c | inr _ => inr b end).
   Proof. intros Hfb Hb. by rewrite /fb_mix lookup_zip_with Hfb Hb. Qed.
 
-  Lemma fb_mix_shape fbs bs' :
-    length bs' = length fbs → Forall2 fb_same_shape fbs (fb_mix fbs bs').
-  Proof.
-    intros Hlen. apply Forall2_lookup. intros i. destruct (fbs !! i) as [fb|] eqn:Hfb.
-    - destruct (lookup_lt_is_Some_2 bs' i) as [b Hb]; [rewrite Hlen; by eapply lookup_lt_Some|].
-      rewrite (fb_mix_lookup _ _ _ _ _ Hfb Hb). constructor. by destruct fb.
-    - rewrite (lookup_ge_None_2 (fb_mix _ _)); [constructor|].
-      rewrite fb_mix_length //. by apply lookup_ge_None.
-  Qed.
-
-  Lemma fb_mix_inr fbs bs' i b : fb_mix fbs bs' !! i = Some (inr b) → bs' !! i = Some b.
-  Proof.
-    rewrite /fb_mix lookup_zip_with. destruct (fbs !! i) as [[]|], (bs' !! i); simpl;
-      intros; simplify_eq; done.
-  Qed.
-
-  Lemma fb_mix_inl fbs bs' i c :
-    length bs' = length fbs → fb_mix fbs bs' !! i = Some (inl c) ↔ fbs !! i = Some (inl c).
-  Proof.
-    intros Hlen. rewrite /fb_mix lookup_zip_with. split.
-    - destruct (fbs !! i) as [[]|], (bs' !! i); simpl; intros; simplify_eq; done.
-    - intros Hi. rewrite Hi /=. destruct (lookup_lt_is_Some_2 bs' i) as [b ->]; [|done].
-      rewrite Hlen. by eapply lookup_lt_Some.
-  Qed.
-
-  Lemma fb_mix_mix fbs bs1 bs2 :
-    length bs1 = length fbs → fb_mix (fb_mix fbs bs1) bs2 = fb_mix fbs bs2.
-  Proof.
-    revert bs1 bs2. induction fbs as [|fb fbs IH]; intros [|b1 bs1] [|b2 bs2] Hlen;
-      simpl in *; try done; try lia. f_equal; [by destruct fb|]. apply IH. lia.
-  Qed.
-
-  Lemma fb_mix_id fbs bs :
-    length bs = length fbs → (∀ i b, fbs !! i = Some (inr b) → bs !! i = Some b) →
-    fb_mix fbs bs = fbs.
-  Proof.
-    intros Hlen Hpl. apply list_eq. intros i. destruct (fbs !! i) as [fb|] eqn:Hfb.
-    - destruct (lookup_lt_is_Some_2 bs i) as [b Hb]; [rewrite Hlen; by eapply lookup_lt_Some|].
-      rewrite (fb_mix_lookup _ _ _ _ _ Hfb Hb). destruct fb as [|b']; [done|].
-      rewrite (Hpl i b' Hfb) in Hb. by injection Hb as ->.
-    - apply lookup_ge_None_2. rewrite fb_mix_length //. by apply lookup_ge_None.
-  Qed.
-
   Lemma fb_mix_cells cs bs' : length bs' = length cs → fb_mix (inl <$> cs) bs' = inl <$> cs.
   Proof.
     revert bs'. induction cs as [|c cs IH]; intros [|b bs'] Hlen; simpl in *; try done; try lia.
     f_equal. apply IH. lia.
-  Qed.
-
-  (** The fancy bytes of a value, with the plain bytes of other bytes that decode to its
-      erasure, represent it. *)
-  Lemma frepr_mix R (ρ : gmap positive FValue) m fbs fv v bs' :
-    reg_wf R → frepr R m fbs fv → fval_erase ρ fv v → decode_value m bs' = Some v →
-    length bs' = length fbs → frepr R m (fb_mix fbs bs') fv.
-  Proof.
-    intros HR Hrep Her Hd Hlen.
-    apply (proj1 (frepr_rebytes R ρ m fbs fv v (fb_mix fbs bs') bs' HR Hrep Her Hd
-      (fb_mix_shape _ _ Hlen) (fb_mix_inr _ _))).
   Qed.
 End frepr_more.
