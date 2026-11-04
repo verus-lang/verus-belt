@@ -29,6 +29,11 @@ Section pcell_example.
   }
   ```
   *)
+  (* The struct of the cell and its permission ([pcell_pair_ty]). *)
+  Notation PPL := (pcell_pair_layout (ty_wmty i32t)).
+  Notation PPl := [pcellₛ (ty_wmty i32t); trackedₛ (pcellₛ (syn_wmty (intₛ i32)) * intₛ i32)%ST].
+  Notation pairt := (pcell_pair_ty i32t).
+
   Definition pcell_example_b : expr := (
     let: "p" := (Alloc #4) in                         (* a box of 4 bytes *)
     let: "seventeen" := MLit (VInt 17) in
@@ -36,8 +41,8 @@ Section pcell_example.
     let: "pair" := PCellFromOwn ["p"] in                    (* (PCell, PointsTo) *)
     Newlft;;
     let: "r" := &ˢ "pair" in                         (* &pair *)
-    let: "pcell_ref" := "r" in                 (* &pair.0 *)
-    let: "perm_ref" := ("r" +ₗ #4) in            (* &pair.1 *)
+    let: "pcell_ref" := ("r" +ₗ #(struct_off PPL PPl 0)) in   (* &pair.0 *)
+    let: "perm_ref" := ("r" +ₗ #(struct_off PPL PPl 1)) in    (* &pair.1 *)
     let: "intref" := PCellBorrow ["pcell_ref"; "perm_ref"] in
     let: "x" := Load Na1Ord (MInt i32) "intref" in   (* *intref *)
     Endlft;;
@@ -46,7 +51,6 @@ Section pcell_example.
 
   Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.
 
-  Notation pairt := (pcell_ty (wfm (MInt i32)) * cell_points_to_ty i32t)%T.
 
   Lemma pcell_example_type ϝ (k: val) :
     ⊢ typed_body [] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
@@ -85,11 +89,13 @@ Section pcell_example.
       iApply typed_body_tctx_incl.
       { apply (copy_val_tctx_incl _ _ _ _ _ (Copy0:=shr_bytes_copy κ pairt)). }
       iApply (type_let with "[]").
-      { apply (type_shr_bytes_fst_instr κ (pcell_ty (wfm (MInt i32))) (cell_points_to_ty i32t)). }
+      { apply (type_shr_bytes_field_instr κ PPL +[] (pcell_ty (ty_wmty i32t))
+          +[cell_points_to_ty i32t]). }
       { solve_typing. } { reflexivity. }
       iIntros (vpc). simpl_subst.
       iApply (type_let with "[]").
-      { apply (type_shr_bytes_snd_instr κ (pcell_ty (wfm (MInt i32))) (cell_points_to_ty i32t)). }
+      { apply (type_shr_bytes_field_instr κ PPL +[pcell_ty (ty_wmty i32t)]
+          (cell_points_to_ty i32t) +[]). }
       { solve_typing. } { reflexivity. }
       iIntros (vpt). simpl_subst.
       (* borrow the contents, and read them *)
