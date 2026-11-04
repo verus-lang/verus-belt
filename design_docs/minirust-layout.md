@@ -1037,3 +1037,69 @@ Definition enum_mty EL ms := if decide (el_wf EL ms) then el_mty EL ms else el_m
   `ProdLty`/`PFst`/`PSnd`/`prod_ty` updated.
 - Kept: `seq_tuple` and its cell lemmas (`gcont_seq_tuple_*`, `frepr_seq_tuple_*`), still
   used as an auxiliary `mty` by `mem_cell_app` (`place_resolve.v`); `seq_enum` until L3.
+
+## Outcome: L3 (enums; branch `proto/layout-l3`)
+
+- **Layouts** (`lang/minirust.v`): `Record enum_layout := EnumL { el_vars : list (nat *
+  tagger); el_discr : discr; el_size : nat; el_align : nat }` (the constructor is `EnumL`:
+  `EL` is the usual variable name), `el_mty EL ms`, `el_wf EL ms` (decidable), and the
+  effective layout `enum_lay EL ms` (`EL` if well formed, else `tagged_layout ms`),
+  `enum_mty EL ms := el_mty (enum_lay EL ms) ms` (`enum_mty_wf`, `enum_lay_wf_eq`,
+  `enum_lay_tagged`, and `enum_lay_sizes`: it depends only on the sizes of the payloads).
+  `enum_tag`/`seq_discr` moved here. **Deviation from §7.2**: `tagged_layout ms` is the old
+  sequential layout (the tag `enum_tag n` at 0, every payload right after it, alignment 1),
+  not rounded up to the payload alignments, so that the fallback depends only on sizes (as
+  the packed fallback of structs; the retyping lemmas need it).
+- **Syntactic types**: `enumₛ (EL: enum_layout) 𝔄l` (interpreted as `psum`, like `Σ!`), with
+  `syn_mty (enumₛ EL 𝔄l) = enum_mty EL (syn_mty <$> 𝔄l)`; `xsumₛ` (`Σ!`) is logical (its
+  memory cases are deleted). `enum_mapₛ EL fl` (variant-wise) and `enum_relayₛ EL EL'`.
+- **Bytes** (`typing/bytes_layout.v`): `enum_ly EL 𝔄l`, `enum_vars`, `enum_size`,
+  `enum_discr`, `enum_off EL 𝔄l i` (`simpl never`, read off the actual `mty`), the bounds
+  `enum_off_bound` and `enum_reads` (tag-only: the discriminator reads outside every
+  payload). The **rest** of the bytes of variant `i` is
+  `enum_rest_ok EL 𝔄l i b1 b2`: `b1` before the payload (`length b1 = enum_off`), `b2` after
+  it, and `decode_discr (enum_discr EL 𝔄l) (b1 ++ replicate n Uninit ++ b2) = Some i`
+  (`decode_discr_enum_payload`: the payload does not matter). `syn_bytes_enum`,
+  `syn_fbytes_enum` (the rest is plain), `mcells_enum_pinj`, `syn_bincl_enum_map`,
+  `syn_bincl_enum_relay`.
+- **Types** (`typing/sum.v`): `enum_ty EL tyl : type (enumₛ EL 𝔄l)` (the ghost parts of
+  `xsum_ty`), its instances, `enum_resolve` (with `enum_resolve_just` at priority 10, as
+  for structs), `enum_subtype`/`enum_eqtype` (same layout, `enum_mapₛ`), and
+  `enum_relay_eqtype`.
+- **Places**: `SumLty EL tyl i lt : lty (enumₛ EL 𝔄l)` and the context step
+  `PSum EL tyl i w K` at offset `enum_off EL 𝔄l i`; `enum_rest EL 𝔅l i l := ∃ b1 b2, l ↦b
+  b1 ∗ (l +ₗ (enum_off + size)) ↦b b2 ∗ ⌜enum_rest_ok …⌝` replaces `tag_cell`/`pad_cell` (the
+  latter stays for `Moved`); `sum_node EL tyl i child := enum_rest ∗ child (l +ₗ enum_off)`
+  (no size argument any more), `view_sum κ EL tyl i child` (one guard of the rest),
+  `cbytes_sum : cbytes ty (pinj i y) l ⊣⊢ enum_rest EL 𝔄l i l ∗ cbytes tyi y (l +ₗ
+  enum_off EL 𝔄l i)`, `lty_lft_sum` stated without the layout.
+- **GetDiscr.** The case rules (`type_case_oplace`, `type_case_vplace_deep`,
+  `type_case_oplace_res`, `type_case_*_pshr`) use `case: GetDiscr (syn_mty (enumₛ EL 𝔄l))
+  (pctx_expr K p) of …`. Owned bytes: `wp_get_discr_enum` (chunks `[(0, b1); (o + n, b2)]`,
+  `enum_rest_chunks`). **Below a shared reference** the rest is only guarded, and each
+  load of the discriminator opens the guard anew, possibly seeing other bytes (with the
+  same discriminant): a discriminator with several reads could then read a mixture. The
+  rules `type_case_vplace_pshr(_root)`/`type_case_oplace_pshr` therefore take the
+  hypothesis `discr_depth EL.(el_discr) ≤ 1` (one read; true for every tagged layout, by
+  computation), with `wp_get_discr_enum_guarded`. New lemmas in `lang/`:
+  `wp_load_na_guarded_ex` (a guarded load returning the value of one opening),
+  `discr_eval_all` ("gives `t` whatever is read, read by read"), `discr_eval_all_depth1`,
+  `discr_reads_depth1`, `wp_get_discr_rel`, `wp_get_discr_guarded_all`.
+- **Deleted**: `xsum_ty`, `empty_ty` and the type notation `Σ!`, `seq_enum`, `seq_enum_wf`,
+  `decode_discr_seq`, `decode_seq_enum`, `frepr_seq_enum_iff`, `mcells_seq_enum`, `sum_tag`,
+  `sum_max`, `syn_bsize_sum`, `syn_bytes_sum`, `syn_fbytes_sum`, `mcells_sum`,
+  `sum_tag_chunk(_discr)`, `wp_get_discr_sum(_guarded)`, `syn_bincl_psum_map`, `tag_size`,
+  `tag_cell`, `xsum_nocell`; the `xsum_*_pinj` lemmas are `enum_*_pinj`.
+- **Examples** at tagged layouts written literally (`tagged_layout [zst_mty; MInt i32]`):
+  `own` (`Box<Option<i32>>`), `place_pshr` (`get_or_zero`), `place_moved`, `get_some_first`
+  (`Option<S>`, `Option<&mut i32>`; `type_mk_variant_val_instr (EL:=RL)`), `pcell_parts`,
+  `list` (`list_enum_layout n := tagged_layout [zst_mty; MTuple [] (n + mty_size MPtr) 1]`,
+  depending only on the size of the element, with `enum_relay_eqtype` in `list_subtype`).
+  Payload offsets in programs are `+ₗ #(enum_off EL 𝔄l i)`.
+- **Decisions for the user**: (1) multi-read discriminators below shared references
+  (frozen bytes in shared views, i.e. `∃ b1 b2` outside the guard, or a single-step
+  `GetDiscr`); (2) whether the fallback tagged layout should round the payload offset up
+  to the payload alignment (then the layout depends on alignments, and the retyping lemmas
+  need equal alignments); (3) enum and tuple alignment conditions in `mty_wf` (L5, with
+  misaligned-access UB). `prfn_sum` takes the layout as an implicit argument that its value
+  does not determine: some lemmas need `prfn_sum (EL:=EL)`.
