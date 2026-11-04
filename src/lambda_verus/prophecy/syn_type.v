@@ -29,6 +29,7 @@ Inductive syn_type := intₛ (_: IntType) | boolₛ | unitₛ | Propₛ | positi
 | join_handleₛ (_: syn_type)
 | maskₛ
 | structₛ (_: struct_layout) (_: list syn_type)
+| enumₛ (_: enum_layout) (_: list syn_type)
 .
 
 (** The syntactic type of the integers of an [IntType]. [Zₛ] is the one of [isize]
@@ -78,6 +79,7 @@ Fixpoint indep_interp_of_syn_type (𝔄: syn_type) : Type :=
   | join_handleₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
   | maskₛ => Mask
   | structₛ _ 𝔄l => plist indep_interp_of_syn_type 𝔄l
+  | enumₛ _ 𝔄l => psum indep_interp_of_syn_type 𝔄l
   end.
 
 Notation "~~" := indep_interp_of_syn_type.
@@ -108,6 +110,7 @@ Fixpoint proph_interp_of_syn_type (𝔄: syn_type) : Type :=
   | join_handleₛ 𝔄₀ => indep_interp_of_syn_type 𝔄₀
   | maskₛ => Mask
   | structₛ _ 𝔄l => plist proph_interp_of_syn_type 𝔄l
+  | enumₛ _ 𝔄l => psum proph_interp_of_syn_type 𝔄l
   end.
 Coercion proph_interp_of_syn_type: syn_type >-> Sortclass.
 
@@ -137,6 +140,7 @@ Fixpoint abstracted_syn_type (𝔄: syn_type) : Type :=
   | join_handleₛ 𝔄₀ => abstracted_syn_type 𝔄₀
   | maskₛ => Mask
   | structₛ _ 𝔄l => plist abstracted_syn_type 𝔄l
+  | enumₛ _ 𝔄l => psum abstracted_syn_type 𝔄l
   end.
   
 (** Decidable Equality *)
@@ -161,6 +165,7 @@ Fixpoint syn_type_beq 𝔄 𝔅 : bool :=
   | vecₛ 𝔄₀ n, vecₛ 𝔅₀ m => syn_type_beq 𝔄₀ 𝔅₀ && bool_decide (n = m)
   | Π! 𝔄l, Π! 𝔅l | Σ! 𝔄l, Σ! 𝔅l => forall2b syn_type_beq 𝔄l 𝔅l
   | structₛ L 𝔄l, structₛ L' 𝔅l => bool_decide (L = L') && forall2b syn_type_beq 𝔄l 𝔅l
+  | enumₛ L 𝔄l, enumₛ L' 𝔅l => bool_decide (L = L') && forall2b syn_type_beq 𝔄l 𝔅l
   | _, _ => false
   end%ST.
 
@@ -190,7 +195,7 @@ Fixpoint inh_syn_type' 𝔄 : bool :=
   | sumₛ 𝔄₀ 𝔄₁ => inh_syn_type' 𝔄₀ || inh_syn_type' 𝔄₁
   | funₛ 𝔄₀ 𝔄₁ => negb (inh_syn_type' 𝔄₀) || inh_syn_type' 𝔄₁
   | xprodₛ 𝔄l | structₛ _ 𝔄l => forallb inh_syn_type' 𝔄l
-  | xsumₛ 𝔄l => existsb inh_syn_type' 𝔄l
+  | xsumₛ 𝔄l | enumₛ _ 𝔄l => existsb inh_syn_type' 𝔄l
   | at_locₛ 𝔄₀ | uniq_borₛ 𝔄₀ | blockedₛ 𝔄₀ | exec_funₛ 𝔄₀ | ghostₛ 𝔄₀ | trackedₛ 𝔄₀
   | invₛ 𝔄₀ | local_invₛ 𝔄₀ | join_handleₛ 𝔄₀ | storableₛ 𝔄₀
     => inh_syn_type' 𝔄₀
@@ -204,7 +209,7 @@ Fixpoint inh_syn_type 𝔄 : bool :=
   | sumₛ 𝔄₀ 𝔄₁ => inh_syn_type 𝔄₀ || inh_syn_type 𝔄₁
   | funₛ 𝔄₀ 𝔄₁ => negb (inh_syn_type' 𝔄₀) || inh_syn_type' 𝔄₁
   | xprodₛ 𝔄l | structₛ _ 𝔄l => forallb inh_syn_type 𝔄l
-  | xsumₛ 𝔄l => existsb inh_syn_type 𝔄l
+  | xsumₛ 𝔄l | enumₛ _ 𝔄l => existsb inh_syn_type 𝔄l
   | at_locₛ 𝔄₀ | uniq_borₛ 𝔄₀ | trackedₛ 𝔄₀ => inh_syn_type 𝔄₀
   | exec_funₛ 𝔄₀ | ghostₛ 𝔄₀ | storableₛ 𝔄₀ | invₛ 𝔄₀ | local_invₛ 𝔄₀ | join_handleₛ 𝔄₀ => inh_syn_type' 𝔄₀
   | _ => true
@@ -243,6 +248,9 @@ Proof.
     + move=> 𝔄 x. exact (fst (FIX 𝔄) x).
     + move=> _. elim; [move=> ?; exact -[]|]=> ?? IH /andb_True [??].
       split; by [apply FIX|apply IH].
+    + move=> _. elim; [done|]=>/= 𝔄 ? IH. case Eq: (inh_syn_type' 𝔄)=>/= H.
+      * left. apply FIX. by rewrite Eq.
+      * right. by apply IH.
   - case: 𝔄=>//=.
     + move=> ?[|?]; rewrite negb_orb=> /andb_True[/negb_True/bool_decide_spec ??] v;
       [lia|]. by eapply FIX, vhd.
@@ -270,6 +278,9 @@ Proof.
     + move=> 𝔄 Hneg x. exact (snd (FIX 𝔄) Hneg x).
     + move=> _. elim; [done|]=> 𝔄 ? IH. rewrite negb_andb. case Eq: (inh_syn_type' 𝔄)
       =>/= ?[??]; [by apply IH|]. eapply FIX; [|done]. by rewrite Eq.
+    + move=> _ l n x. move: l n x.
+      elim; [move=> ?; by apply absurd|]=> ?? IH.
+      rewrite negb_orb=> /andb_True[??] [?|?]; by [eapply FIX|apply IH].
 Qed.
 
 Local Lemma of_just_and_neg_inh_syn_type {𝔄} :
@@ -302,6 +313,9 @@ Proof.
     + move=> 𝔄 x. exact (fst (@of_just_and_neg_inh_syn_type' 𝔄) x).
     + move=> _. elim; [move=> ?; exact -[]|]=> ?? IH /andb_True [??].
       split; by [apply FIX|apply IH].
+    + move=> _. elim; [done|]=>/= 𝔄 ? IH. case Eq: (inh_syn_type 𝔄)=>/= H.
+      * left. apply FIX. by rewrite Eq.
+      * right. by apply IH.
   - case: 𝔄=>//=.
     + move=> ?[|?]; rewrite negb_orb=> /andb_True[/negb_True/bool_decide_spec ??] v;
       [lia|]. by eapply FIX, vhd.
@@ -328,6 +342,9 @@ Proof.
     + move=> 𝔄 Hneg x. exact (snd (@of_just_and_neg_inh_syn_type' 𝔄) Hneg x).
     + move=> _. elim; [done|]=> 𝔄 ? IH. rewrite negb_andb. case Eq: (inh_syn_type 𝔄)
       =>/= ?[??]; [by apply IH|]. eapply FIX; [|done]. by rewrite Eq.
+    + move=> _ l n x. move: l n x.
+      elim; [move=> ?; by apply absurd|]=> ?? IH.
+      rewrite negb_orb=> /andb_True[??] [?|?]; by [eapply FIX|apply IH].
 Qed.
   
 Lemma of_inh_syn_type {𝔄} : inh_syn_type 𝔄 → 𝔄.
@@ -407,6 +424,7 @@ Fixpoint vπ {𝔄} : ~~𝔄 → proph_asn → 𝔄 :=
   | maskₛ => λ x π, x
   | namespaceₛ => λ x π, x
   | structₛ _ 𝔄l => λ x π , pmap (λ _ x0 , vπ x0 π) x
+  | enumₛ _ 𝔄l => λ x π , psum_map1 (λ _ x0, vπ x0 π) x
   end.
   
 Fixpoint plist_to_list {A: Type} {U: Type} {Xl} (xl: plist (λ (_ : A), U) Xl) : list U :=
@@ -457,6 +475,10 @@ Fixpoint ξl {𝔄} : ~~𝔄 → list proph_var :=
   | maskₛ => λ x , []
   | namespaceₛ => λ x , []
   | structₛ _ 𝔄l => λ x , List.concat (plist_to_list (pmap (λ _ x0 , ξl x0) x))
+  | enumₛ _ 𝔄l => λ x ,
+      match to_xsum (psum_map1 (λ _ x0, ξl x0) x) return (list proph_var) with
+          xinj _ l => l
+      end
   end.
   
   
@@ -534,6 +556,7 @@ Fixpoint syn_abstract {𝔄} : ~~𝔄 → abstracted_syn_type 𝔄 :=
   | maskₛ => λ x , x
   | namespaceₛ => λ x , x
   | structₛ _ 𝔄l => λ x , pmap (λ _ x0 , syn_abstract x0) x
+  | enumₛ _ 𝔄l => λ x , psum_map1 (λ _ x0, syn_abstract x0) x
   end.
 
 (** * MiniRust types and values of syntactic types
@@ -544,42 +567,29 @@ are determined by the syntactic type: every semantic type [ty : type 𝔄] has
 [ty_mty ty = syn_mty 𝔄] and [ty_val ty = syn_val] (see [typing/type.v]). They are
 shallow: a pointer is [MPtr] whatever its pointee.
 
-Layouts (sizes are abstract and there is no alignment yet):
+Layouts (sizes are abstract):
 - [intₛ it] is [MInt it], [boolₛ] is [MBool], and the pointer-like types ([locₛ],
   [at_locₛ], [uniq_borₛ], [exec_funₛ]) are [MPtr];
 - a struct [structₛ L 𝔄l] is laid out by its explicit layout [L] ([struct_mty]);
-- [Σ! 𝔄l] is an enum with a tag of type [enum_tag (length 𝔄l)] at offset 0 and the
-  data of each variant right after the tag ([seq_enum]): the tagger of variant [i] writes
-  [i] at offset 0, and the discriminator reads it;
-- these layouts have alignment 1;
+- an enum [enumₛ EL 𝔄l] is laid out by its explicit layout [EL] ([enum_mty]): the payload
+  of each variant at its offset, its tagger, and the discriminator of [EL] (or of
+  [tagged_layout] if [EL] is ill formed);
 - [uninitₛ n] is [n] bytes of padding ([MTuple [] n 1]);
 - a cell [pcellₛ m] (a multi-byte cell, whose value [~~(pcellₛ m)] is its id, see
   [typing/pcell.v]) is its content's MiniRust type [`m] (a [wf_mty], so it is well
   formed);
 - every other syntactic type is zero-sized ([zst_mty]); in particular the products
-  [prodₛ] and [Π!] are logical (they have no bytes; the data types with fields are
-  structs).
+  [prodₛ] and [Π!] and the sums [Σ!] are logical (they have no bytes; the data types with
+  fields are structs and enums).
 
 [syn_val x] is [None] for the values that have no MiniRust representation: integers
 out of the range of their [IntType], closures ([exec_funₛ]) and cells
-([pcellₛ]); so is a struct or sum with such a component. *)
+([pcellₛ]); so is a struct or enum with such a component. *)
 
 Fixpoint layout_fields (o : nat) (ms : list mty) : list (nat * mty) :=
   match ms with [] => [] | m :: ms => (o, m) :: layout_fields (o + mty_size m) ms end.
 Definition seq_size (ms : list mty) : nat := list_sum (mty_size <$> ms).
 Definition seq_tuple (ms : list mty) : mty := MTuple (layout_fields 0 ms) (seq_size ms) 1.
-
-(** A one-byte tag for up to 256 variants. *)
-Definition enum_tag (n : nat) : IntType :=
-  IntTy false (if decide (n ≤ 256)%nat then 1 else n).
-Definition seq_discr (n : nat) : discr :=
-  DBranch 0 (enum_tag n) DInvalid
-    ((λ i, ((Z.of_nat i, (Z.of_nat i + 1)%Z), DKnown (Z.of_nat i))) <$> seq 0 n).
-Definition seq_enum (ms : list mty) : mty :=
-  MEnum (imap (λ i m, (m, int_size (enum_tag (length ms)),
-                       [(0%nat, enum_tag (length ms), Z.of_nat i)])) ms)
-    (seq_discr (length ms))
-    (int_size (enum_tag (length ms)) + list_max (mty_size <$> ms)) 1.
 
 Definition zst_mty : mty := MTuple [] 0 1.
 
@@ -589,7 +599,7 @@ Fixpoint syn_mty (𝔄: syn_type) : mty :=
   | boolₛ => MBool
   | locₛ | at_locₛ _ | uniq_borₛ _ | exec_funₛ _ => MPtr
   | structₛ L 𝔄l => struct_mty L (syn_mty <$> 𝔄l)
-  | xsumₛ 𝔄l => seq_enum (syn_mty <$> 𝔄l)
+  | enumₛ EL 𝔄l => enum_mty EL (syn_mty <$> 𝔄l)
   | uninitₛ n => MTuple [] n 1
   | pcellₛ m => `m
   | _ => zst_mty
@@ -605,7 +615,7 @@ Fixpoint syn_val {𝔄} : ~~𝔄 → option Value :=
   | exec_funₛ _ => λ _, None
   | pcellₛ _ => λ _, None
   | structₛ _ 𝔄l => λ x, VTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) x))
-  | xsumₛ 𝔄l => λ x,
+  | enumₛ _ 𝔄l => λ x,
       match to_xsum (psum_map1 (λ _ x0, syn_val x0) x) return option Value with
         xinj i ov => VVariant (Z.of_nat (fin_to_nat i)) <$> ov
       end
@@ -621,7 +631,7 @@ Fixpoint syn_fval {𝔄} : ~~𝔄 → option FValue :=
   match 𝔄 return ~~𝔄 → option FValue with
   | pcellₛ _ => λ g, Some (FVCell g)
   | structₛ _ 𝔄l => λ x, FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) x))
-  | xsumₛ 𝔄l => λ x,
+  | enumₛ _ 𝔄l => λ x,
       match to_xsum (psum_map1 (λ _ x0, syn_fval x0) x) return option FValue with
         xinj i ofv => FVVariant (Z.of_nat (fin_to_nat i)) <$> ofv
       end
@@ -634,7 +644,7 @@ Fixpoint syn_fval {𝔄} : ~~𝔄 → option FValue :=
 Fixpoint syn_nocell (𝔄: syn_type) : bool :=
   match 𝔄 with
   | pcellₛ _ => false
-  | xsumₛ 𝔄l | structₛ _ 𝔄l => forallb syn_nocell 𝔄l
+  | enumₛ _ 𝔄l | structₛ _ 𝔄l => forallb syn_nocell 𝔄l
   | _ => true
   end.
 
@@ -688,106 +698,6 @@ Proof.
     rewrite ?Forall2_cons ?IH; split; inversion 1; by constructor.
 Qed.
 
-Lemma list_max_lookup (ns : list nat) i n : ns !! i = Some n → (n ≤ list_max ns)%nat.
-Proof.
-  intros Hi. have [Hle _] := list_max_le ns (list_max ns).
-  have := Hle (le_n _). rewrite Forall_lookup. intros H. by apply (H i).
-Qed.
-
-Lemma enum_tag_in_range n i : (i < n)%nat → int_in_range (enum_tag n) (Z.of_nat i).
-Proof.
-  intros Hi. rewrite /int_in_range /int_modulus /=. case_decide.
-  - rewrite Z.pow_1_r. lia.
-  - split; [lia|]. have := Z.pow_gt_lin_r 256 (Z.of_nat n). lia.
-Qed.
-
-(** The discriminator of [seq_enum] reads [i] from the tagger of variant [i]. *)
-Lemma seq_discr_eval rd n i :
-  (i < n)%nat → rd 0%nat (enum_tag n) = Some (Z.of_nat i) →
-  discr_eval rd (seq_discr n) = Some (Z.of_nat i).
-Proof.
-  intros Hi Hrd. rewrite /seq_discr discr_eval_branch Hrd /=.
-  rewrite (_ : list_find _ _ = Some (i, ((Z.of_nat i, (Z.of_nat i + 1)%Z), DKnown (Z.of_nat i)))) //.
-  apply list_find_Some. split; [|split].
-  - rewrite list_lookup_fmap lookup_seq_lt //.
-  - simpl. lia.
-  - intros j y Hj Hji. rewrite list_lookup_fmap lookup_seq_lt in Hj; [|lia].
-    simplify_eq/=. lia.
-Qed.
-
-Lemma discr_reads_seq_discr n : discr_reads (seq_discr n) = [(0%nat, enum_tag n)].
-Proof.
-  rewrite /seq_discr /=. f_equal. generalize 0%nat. induction n as [|n IH]; intros k; [done|].
-  simpl. apply IH.
-Qed.
-
-Lemma discr_depth_seq n : discr_depth (seq_discr n) = 1%nat.
-Proof. rewrite /seq_discr /=. induction (seq 0 n) as [|i l IH]; simpl in *; [done|exact IH]. Qed.
-
-Lemma seq_enum_wf ms : Forall mty_wf ms → mty_wf (seq_enum ms).
-Proof.
-  intros Hms. set tag := enum_tag (length ms).
-  have Hmax : ∀ i m, ms !! i = Some m → (mty_size m ≤ list_max (mty_size <$> ms))%nat.
-  { intros i m Hi. apply (list_max_lookup _ i). by rewrite list_lookup_fmap Hi. }
-  constructor; [split_and!|].
-  - apply Forall_lookup. intros i v. rewrite list_lookup_imap.
-    destruct (ms !! i) as [m|] eqn:Hi; simpl; intros Hv; simplify_eq/=.
-    have := Hmax _ _ Hi. split; [lia|]. split.
-    + constructor; [|done]. simpl. split_and!; [lia|lia|].
-      apply enum_tag_in_range. by eapply lookup_lt_Some.
-    + rewrite /tagger_ranges /=. apply ranges_disjoint_cons. split; [done|].
-      intros ??????? Hk. by rewrite lookup_nil in Hk.
-  - rewrite /discr_tag_only discr_reads_seq_discr. constructor; [|done]. simpl. split; [lia|].
-    apply Forall_lookup. intros i v. rewrite list_lookup_imap.
-    destruct (ms !! i) as [m|]; simpl; intros Hv; simplify_eq/=. lia.
-  - rewrite /discr_ok length_imap. apply Forall2_lookup. intros i.
-    destruct (seq 0 (length ms) !! i) as [i'|] eqn:Hi'.
-    + apply lookup_seq in Hi' as [-> Hlt]. rewrite list_lookup_imap.
-      destruct (ms !! i) as [m|] eqn:Hi; [|apply lookup_ge_None in Hi; lia].
-      constructor. apply (seq_discr_eval _ (length ms) i); [done|].
-      by rewrite /= decide_True.
-    + rewrite list_lookup_imap. apply lookup_ge_None in Hi'. rewrite length_seq in Hi'.
-      rewrite lookup_ge_None_2; [constructor|lia].
-  - apply Forall_lookup. intros i v. rewrite list_lookup_imap.
-    destruct (ms !! i) as [m|] eqn:Hi; simpl; intros Hv; simplify_eq/=.
-    by apply (Forall_lookup_1 _ _ _ _ Hms Hi).
-Qed.
-
-(** The discriminator of [seq_enum] reads the tag at offset 0. *)
-Lemma decode_discr_seq n bs :
-  decode_discr (seq_discr n) bs =
-    t ← decode_int (enum_tag n) (take (int_size (enum_tag n)) bs);
-    if decide (0 ≤ t < Z.of_nat n)%Z then Some t else None.
-Proof.
-  rewrite /decode_discr /seq_discr discr_eval_branch /bytes_reader /list_slice drop_0.
-  destruct (decode_int _ _) as [z|]; simpl; [|done].
-  destruct (list_find _ _) as [[k [[lo hi] c]]|] eqn:Hf.
-  - apply list_find_Some in Hf as (Hk & Hz & _). rewrite list_lookup_fmap in Hk.
-    apply fmap_Some in Hk as (j & Hj & [= -> -> ->]). apply lookup_seq in Hj as [-> Hj].
-    simpl in *. rewrite decide_True; [|lia]. f_equal. lia.
-  - rewrite decide_False //. intros Hz. apply list_find_None in Hf.
-    rewrite Forall_lookup in Hf. apply (Hf (Z.to_nat z) ((z, (z + 1)%Z), DKnown z)); [|simpl; lia].
-    rewrite list_lookup_fmap lookup_seq_lt; [|lia]. simpl. by rewrite Z2Nat.id; [|lia].
-Qed.
-
-(** The decoding of [seq_enum]: the tag at offset 0, and the payload after it. *)
-Lemma decode_seq_enum ms bs :
-  decode_value (seq_enum ms) bs =
-  if decide (length bs = int_size (enum_tag (length ms)) + list_max (mty_size <$> ms))%nat then
-    t ← decode_int (enum_tag (length ms)) (take (int_size (enum_tag (length ms))) bs);
-    if decide (0 ≤ t)%Z then
-      m ← ms !! Z.to_nat t;
-      VVariant t <$> decode_value m (list_slice (int_size (enum_tag (length ms))) (mty_size m) bs)
-    else None
-  else None.
-Proof.
-  rewrite /seq_enum decode_value_enum. case_decide; [|done]. rewrite decode_discr_seq.
-  destruct (decode_int _ _) as [t|]; simpl; [|done].
-  destruct (decide ((0 ≤ t < Z.of_nat (length ms))%Z)) as [Ht|Ht]; simpl.
-  - destruct (decide (0 ≤ t)%Z); [|lia]. rewrite list_lookup_imap. by destruct (ms !! Z.to_nat t).
-  - destruct (decide (0 ≤ t)%Z); [|done]. rewrite lookup_ge_None_2 //. lia.
-Qed.
-
 Lemma llookup_lookup {A} (xl : list A) (i : fin (length xl)) : xl !! fin_to_nat i = Some (xl !!ₗ i).
 Proof.
   induction xl as [|x xl IH]; [inv_fin i|]. inv_fin i; [done|]. intros i. apply IH.
@@ -797,9 +707,9 @@ Lemma syn_mty_wf 𝔄 : mty_wf (syn_mty 𝔄).
 Proof.
   move: 𝔄. fix FIX 1. move=> 𝔄. destruct 𝔄; simpl;
     try (clear FIX; by repeat constructor).
-  - apply seq_enum_wf. induction l as [|𝔄 l IH]; constructor; [apply FIX|apply IH].
   - clear FIX. apply wf_mty_wf.
   - apply struct_mty_wf. induction l as [|𝔄 l IH]; constructor; [apply FIX|apply IH].
+  - apply enum_mty_wf. induction l as [|𝔄 l IH]; constructor; [apply FIX|apply IH].
 Qed.
 
 Lemma syn_mty_wf_list 𝔄l : Forall mty_wf (syn_mty <$> 𝔄l).
@@ -822,15 +732,6 @@ Proof.
   move: 𝔄 x v. fix FIX 1. move=> 𝔄 x v. destruct 𝔄; simpl;
     try (clear FIX; intros; simplify_eq; by repeat constructor).
   - clear FIX. case_decide; intros; simplify_eq. by constructor.
-  - assert (∀ (i: fin (length l)) (x0 : ~~ (l !!ₗ i)) v0,
-      syn_val x0 = Some v0 → val_wf (syn_mty (l !!ₗ i)) v0) as Hall.
-    { clear x v. induction l as [|𝔄0 l IH]; intros i; [inv_fin i|].
-      inv_fin i; [apply FIX|apply IH]. }
-    clear FIX.
-    replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
-    destruct (to_xsum x) as [i x0]. simpl. rewrite psum_map1_pinj to_xsum_pinj.
-    intros (d&Hd&->)%fmap_Some_1. econstructor; [lia| |by eapply Hall, Hd].
-    rewrite Nat2Z.id list_lookup_imap list_lookup_fmap llookup_lookup //.
   - clear FIX. destruct x as [[[[[??]?]?]?]?]. intros; simplify_eq. constructor.
   - intros (vs&Hvs&->)%fmap_Some_1. constructor. apply Forall2_zip_snd.
     { rewrite length_struct_lay; [done|apply syn_mty_wf_list]. }
@@ -839,6 +740,19 @@ Proof.
     + intros vs. destruct (syn_val x) as [w|] eqn:Hw; [|done]. simpl.
       destruct (mapM _ _) as [ws|] eqn:Hws; [|done]. intros [= <-].
       constructor; [by apply (FIX _ x w Hw)|]. by apply (IH xl).
+  - assert (∀ (i: fin (length l)) (x0 : ~~ (l !!ₗ i)) v0,
+      syn_val x0 = Some v0 → val_wf (syn_mty (l !!ₗ i)) v0) as Hall.
+    { clear x v. induction l as [|𝔄0 l IH]; intros i; [inv_fin i|].
+      inv_fin i; [apply FIX|apply IH]. }
+    clear FIX.
+    replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
+    destruct (to_xsum x) as [i x0]. simpl. rewrite psum_map1_pinj to_xsum_pinj.
+    intros (d&Hd&->)%fmap_Some_1.
+    have Hlen := length_enum_lay e (syn_mty <$> l) (syn_mty_wf_list l).
+    destruct (lookup_lt_is_Some_2 (enum_lay e (syn_mty <$> l)).(el_vars) i) as [[o tg] Hv].
+    { rewrite Hlen length_fmap. apply fin_to_nat_lt. }
+    econstructor; [lia| |by eapply Hall, Hd].
+    rewrite Nat2Z.id lookup_zip_with list_lookup_fmap llookup_lookup /= Hv //.
 Qed.
 
 Lemma mapM_fmap_fv_lift (ovs : list (option Value)) :
@@ -851,6 +765,12 @@ Qed.
 Lemma syn_fval_nocell 𝔄 (x: ~~𝔄) : syn_nocell 𝔄 → syn_fval x = fv_lift <$> syn_val x.
 Proof.
   move: 𝔄 x. fix FIX 1. move=> 𝔄 x. destruct 𝔄; simpl; try (clear FIX; done).
+  - move=> Hl. rewrite -option_fmap_compose.
+    assert (plist_to_list (pmap (λ _ x0, syn_fval x0) x) =
+      fmap fv_lift <$> plist_to_list (pmap (λ _ x0, syn_val x0) x)) as ->.
+    { induction l as [|𝔄 l IH]; [done|]. destruct x as [x xl].
+      move: Hl=> /= /andb_True[H Hl]. by rewrite (FIX _ x H) (IH xl Hl). }
+    clear FIX. rewrite mapM_fmap_fv_lift -option_fmap_compose. done.
   - move=> Hl.
     assert (∀ (i: fin (length l)) (x0 : ~~ (l !!ₗ i)),
       syn_fval x0 = fv_lift <$> syn_val x0) as Hall.
@@ -860,12 +780,6 @@ Proof.
     replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
     destruct (to_xsum x) as [i x0]. simpl. rewrite !psum_map1_pinj !to_xsum_pinj Hall.
     by destruct (syn_val x0).
-  - move=> Hl. rewrite -option_fmap_compose.
-    assert (plist_to_list (pmap (λ _ x0, syn_fval x0) x) =
-      fmap fv_lift <$> plist_to_list (pmap (λ _ x0, syn_val x0) x)) as ->.
-    { induction l as [|𝔄 l IH]; [done|]. destruct x as [x xl].
-      move: Hl=> /= /andb_True[H Hl]. by rewrite (FIX _ x H) (IH xl Hl). }
-    clear FIX. rewrite mapM_fmap_fv_lift -option_fmap_compose. done.
 Qed.
 
 (** ** Decoding tuples laid out by [seq_tuple] *)
@@ -916,6 +830,15 @@ Proof.
   move: 𝔄 x x'. fix FIX 1. move=> 𝔄 x x' Hab. destruct 𝔄;
     try (clear FIX; done);
     try (clear FIX; simpl in Hab; subst; done).
+  - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
+  - destruct x as [[[[[[? ?] ?] ?] ?] ?] ?].
+    destruct x' as [[[[[[? ?] ?] ?] ?] ?] ?].
+    inversion Hab as [[Ha Hb]]. clear FIX. simpl. by subst.
+  - simpl. f_equal. f_equal. induction l; first by (clear FIX; destruct x, x'; trivial).
+    destruct x as [x xl]. destruct x' as [x' xl'].
+    simpl. inversion Hab. f_equal.
+      * apply FIX. clear FIX. trivial.
+      * apply IHl. clear FIX. trivial.
   - assert (∀ (i: fin (length l)) (x1 x2 : ~~ (l !!ₗ i)),
         syn_abstract x1 = syn_abstract x2 → syn_val x1 = syn_val x2
     ) as Hall.
@@ -937,15 +860,6 @@ Proof.
     have He := Hall _ _ _ Hd.
     simpl. do 2 (rewrite psum_map1_pinj). do 2 (rewrite to_xsum_pinj).
     rewrite He. trivial.
-  - inversion Hab as [[Ha Hb]]. simpl. rewrite Ha. clear FIX. trivial.
-  - destruct x as [[[[[[? ?] ?] ?] ?] ?] ?].
-    destruct x' as [[[[[[? ?] ?] ?] ?] ?] ?].
-    inversion Hab as [[Ha Hb]]. clear FIX. simpl. by subst.
-  - simpl. f_equal. f_equal. induction l; first by (clear FIX; destruct x, x'; trivial).
-    destruct x as [x xl]. destruct x' as [x' xl'].
-    simpl. inversion Hab. f_equal.
-      * apply FIX. clear FIX. trivial.
-      * apply IHl. clear FIX. trivial.
 Qed.
 
 (** So does the fancy value. *)
@@ -956,6 +870,12 @@ Proof.
     try (clear FIX; match goal with |- @syn_fval ?A _ = _ =>
       change (fv_lift <$> @syn_val A x = fv_lift <$> @syn_val A x') end;
       by rewrite (syn_abstract_val_eq _ _ _ Hab)).
+  - clear FIX. simpl in Hab. by subst.
+  - simpl. f_equal. f_equal. induction l; first by (clear FIX; destruct x, x'; trivial).
+    destruct x as [x xl]. destruct x' as [x' xl'].
+    simpl. inversion Hab. f_equal.
+      * apply FIX. clear FIX. trivial.
+      * apply IHl. clear FIX. trivial.
   - assert (∀ (i: fin (length l)) (x1 x2 : ~~ (l !!ₗ i)),
         syn_abstract x1 = syn_abstract x2 → syn_fval x1 = syn_fval x2
     ) as Hall.
@@ -977,12 +897,6 @@ Proof.
     have He := Hall _ _ _ Hd.
     simpl. do 2 (rewrite psum_map1_pinj). do 2 (rewrite to_xsum_pinj).
     rewrite He. trivial.
-  - clear FIX. simpl in Hab. by subst.
-  - simpl. f_equal. f_equal. induction l; first by (clear FIX; destruct x, x'; trivial).
-    destruct x as [x xl]. destruct x' as [x' xl'].
-    simpl. inversion Hab. f_equal.
-      * apply FIX. clear FIX. trivial.
-      * apply IHl. clear FIX. trivial.
 Qed.
 
 Record syn_type_morphism (𝔄 𝔅 : syn_type) := {
@@ -1146,6 +1060,23 @@ Qed.
 
 Infix "∘ₛ" := (composeₛ) (at level 50).
 
+(** The variant-wise maps of enums (at the same layout parameter), as [psum_mapₛ]. *)
+Program Definition enum_mapₛ {𝔄l 𝔅l} (EL: enum_layout) (fl : plist2 (λ 𝔄 𝔅, 𝔄 →ₛ 𝔅) 𝔄l 𝔅l)
+    : enumₛ EL 𝔄l →ₛ enumₛ EL 𝔅l := {|
+  syn_type_morphism_fn := psum_map (p2map (@syn_type_morphism_fn) fl) ;
+  syn_type_morphism_proph_fn := psum_map (p2map (@syn_type_morphism_proph_fn) fl) ;
+|}.
+Next Obligation. intros. exact (syn_type_morphism_commutes _ _ (psum_mapₛ fl) x π). Qed.
+Next Obligation. intros. exact (syn_type_morphism_ξl _ _ (psum_mapₛ fl) x). Qed.
+
+(** An enum seen at another layout parameter (the identity on the values). *)
+Program Definition enum_relayₛ {𝔄l} (EL EL': enum_layout) : enumₛ EL 𝔄l →ₛ enumₛ EL' 𝔄l := {|
+    syn_type_morphism_fn := id ;
+    syn_type_morphism_proph_fn := id ;
+|}.
+Next Obligation. done. Qed.
+Next Obligation. done. Qed.
+
 (** ** The layout of the cells of a fancy value
 
 [mcells m fv]: the cells embedded in [fv] at the MiniRust type [m], with their offsets and
@@ -1260,13 +1191,6 @@ Qed.
 
 Lemma mcells_seq_tuple_nil fvs : mcells (seq_tuple []) (FVTuple fvs) = [].
 Proof. rewrite /seq_tuple mcells_tuple /=. by apply concat_imap_nil. Qed.
-
-Lemma mcells_seq_enum ms t d :
-  mcells (seq_enum ms) (FVVariant t d) =
-  match ms !! Z.to_nat t with
-  | Some vm => mshift (int_size (enum_tag (length ms))) (mcells vm d) | None => []
-  end.
-Proof. rewrite /seq_enum mcells_enum list_lookup_imap. by destruct (ms !! _). Qed.
 
 (** ** Byte-preserving maps *)
 

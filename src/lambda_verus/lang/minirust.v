@@ -1384,3 +1384,205 @@ Proof.
   - exfalso. apply H. by apply (sl_wf_sizes L ms' ms).
   - by apply packed_layout_sizes.
 Qed.
+
+(** ** Explicit enum layouts
+
+An enum layout [EL] gives, for each variant, the offset of its payload and its tagger, the
+discriminator, the size and the alignment ([el_mty EL ms] for the payload types [ms]).
+As for structs, an ill-formed layout is replaced ([enum_lay]): by the tagged layout
+[tagged_layout ms] (a tag [enum_tag n] at offset 0, every payload right after it,
+alignment 1), so that [enum_mty EL ms] is always well formed when the [ms] are
+([enum_mty_wf]), and the choice depends only on the sizes of the payloads
+([enum_lay_sizes]). *)
+Record enum_layout := EnumL {
+  el_vars : list (nat * tagger); el_discr : discr; el_size : nat; el_align : nat }.
+
+Global Instance enum_layout_eq_dec : EqDecision enum_layout.
+Proof. solve_decision. Defined.
+
+Definition el_mty (EL : enum_layout) (ms : list mty) : mty :=
+  MEnum (zip_with (λ m v, (m, v.1, v.2)) ms EL.(el_vars)) EL.(el_discr) EL.(el_size)
+    EL.(el_align).
+Definition el_wf (EL : enum_layout) (ms : list mty) : Prop :=
+  length EL.(el_vars) = length ms ∧ mty_wf (el_mty EL ms).
+Global Instance el_wf_dec EL ms : Decision (el_wf EL ms).
+Proof. rewrite /el_wf. apply _. Defined.
+
+(** A one-byte tag for up to 256 variants. *)
+Definition enum_tag (n : nat) : IntType :=
+  IntTy false (if decide (n ≤ 256)%nat then 1%nat else n).
+Definition seq_discr (n : nat) : discr :=
+  DBranch 0 (enum_tag n) DInvalid
+    ((λ i, ((Z.of_nat i, (Z.of_nat i + 1)%Z), DKnown (Z.of_nat i))) <$> seq 0 n).
+
+(** The tagged layout ([repr(u8)]-like, packed): the tag at offset 0, the payloads right
+    after it. *)
+Definition tagged_layout (ms : list mty) : enum_layout :=
+  EnumL (imap (λ i _, (int_size (enum_tag (length ms)),
+                    [(0%nat, enum_tag (length ms), Z.of_nat i)])) ms)
+    (seq_discr (length ms))
+    (int_size (enum_tag (length ms)) + list_max (mty_size <$> ms))%nat 1%nat.
+
+Lemma list_max_lookup (ns : list nat) i n : ns !! i = Some n → (n ≤ list_max ns)%nat.
+Proof.
+  intros Hi. have [Hle _] := list_max_le ns (list_max ns).
+  have := Hle (le_n _). rewrite Forall_lookup. intros H. by apply (H i).
+Qed.
+
+Lemma enum_tag_in_range n i : (i < n)%nat → int_in_range (enum_tag n) (Z.of_nat i).
+Proof.
+  intros Hi. rewrite /int_in_range /int_modulus /=. case_decide.
+  - rewrite Z.pow_1_r. lia.
+  - split; [lia|]. have := Z.pow_gt_lin_r 256 (Z.of_nat n). lia.
+Qed.
+
+(** The discriminator of the tagged layout reads [i] from the tagger of variant [i]. *)
+Lemma seq_discr_eval rd n i :
+  (i < n)%nat → rd 0%nat (enum_tag n) = Some (Z.of_nat i) →
+  discr_eval rd (seq_discr n) = Some (Z.of_nat i).
+Proof.
+  intros Hi Hrd. rewrite /seq_discr discr_eval_branch Hrd /=.
+  rewrite (_ : list_find _ _ = Some (i, ((Z.of_nat i, (Z.of_nat i + 1)%Z), DKnown (Z.of_nat i)))) //.
+  apply list_find_Some. split; [|split].
+  - rewrite list_lookup_fmap lookup_seq_lt //.
+  - simpl. lia.
+  - intros j y Hj Hji. rewrite list_lookup_fmap lookup_seq_lt in Hj; [|lia].
+    simplify_eq/=. lia.
+Qed.
+
+Lemma discr_reads_seq_discr n : discr_reads (seq_discr n) = [(0%nat, enum_tag n)].
+Proof.
+  rewrite /seq_discr /=. f_equal. generalize 0%nat. induction n as [|n IH]; intros k; [done|].
+  simpl. apply IH.
+Qed.
+
+Lemma discr_depth_seq n : discr_depth (seq_discr n) = 1%nat.
+Proof. rewrite /seq_discr /=. induction (seq 0 n) as [|i l IH]; simpl in *; [done|exact IH]. Qed.
+
+Lemma el_mty_tagged ms :
+  el_mty (tagged_layout ms) ms =
+  MEnum (imap (λ i m, (m, int_size (enum_tag (length ms)),
+                       [(0%nat, enum_tag (length ms), Z.of_nat i)])) ms)
+    (seq_discr (length ms))
+    (int_size (enum_tag (length ms)) + list_max (mty_size <$> ms))%nat 1%nat.
+Proof.
+  rewrite /el_mty /tagged_layout /=. f_equal. apply list_eq=> k.
+  rewrite lookup_zip_with !list_lookup_imap. by destruct (ms !! k).
+Qed.
+
+Lemma tagged_layout_wf ms : Forall mty_wf ms → el_wf (tagged_layout ms) ms.
+Proof.
+  intros Hms. split; [by rewrite /= length_imap|]. rewrite el_mty_tagged.
+  have Hmax : ∀ i m, ms !! i = Some m → (mty_size m ≤ list_max (mty_size <$> ms))%nat.
+  { intros i m Hi. apply (list_max_lookup _ i). by rewrite list_lookup_fmap Hi. }
+  constructor; [split_and!|].
+  - apply Forall_lookup. intros i v. rewrite list_lookup_imap.
+    destruct (ms !! i) as [m|] eqn:Hi; simpl; intros Hv; simplify_eq/=.
+    have := Hmax _ _ Hi. split; [lia|]. split.
+    + constructor; [|done]. simpl. split_and!; [lia|lia|].
+      apply enum_tag_in_range. by eapply lookup_lt_Some.
+    + rewrite /tagger_ranges /=. apply ranges_disjoint_cons. split; [done|].
+      intros ??????? Hk. by rewrite lookup_nil in Hk.
+  - rewrite /discr_tag_only discr_reads_seq_discr. constructor; [|done]. simpl. split; [lia|].
+    apply Forall_lookup. intros i v. rewrite list_lookup_imap.
+    destruct (ms !! i) as [m|]; simpl; intros Hv; simplify_eq/=. lia.
+  - rewrite /discr_ok length_imap. apply Forall2_lookup. intros i.
+    destruct (seq 0 (length ms) !! i) as [i'|] eqn:Hi'.
+    + apply lookup_seq in Hi' as [-> Hlt]. rewrite list_lookup_imap.
+      destruct (ms !! i) as [m|] eqn:Hi; [|apply lookup_ge_None in Hi; lia].
+      constructor. apply (seq_discr_eval _ (length ms) i); [done|].
+      by rewrite /= decide_True.
+    + rewrite list_lookup_imap. apply lookup_ge_None in Hi'. rewrite length_seq in Hi'.
+      rewrite lookup_ge_None_2; [constructor|lia].
+  - apply Forall_lookup. intros i v. rewrite list_lookup_imap.
+    destruct (ms !! i) as [m|] eqn:Hi; simpl; intros Hv; simplify_eq/=.
+    by apply (Forall_lookup_1 _ _ _ _ Hms Hi).
+Qed.
+
+(** The effective layout of an enum: [EL] if it is well formed, else [tagged_layout ms]. *)
+Definition enum_lay (EL : enum_layout) (ms : list mty) : enum_layout :=
+  if decide (el_wf EL ms) then EL else tagged_layout ms.
+Definition enum_mty (EL : enum_layout) (ms : list mty) : mty := el_mty (enum_lay EL ms) ms.
+
+Lemma enum_lay_wf EL ms : Forall mty_wf ms → el_wf (enum_lay EL ms) ms.
+Proof. intros. rewrite /enum_lay. case_decide; [done|by apply tagged_layout_wf]. Qed.
+
+Lemma enum_mty_wf EL ms : Forall mty_wf ms → mty_wf (enum_mty EL ms).
+Proof. intros. by apply enum_lay_wf. Qed.
+
+Lemma length_enum_lay EL ms : Forall mty_wf ms → length (enum_lay EL ms).(el_vars) = length ms.
+Proof. intros. by apply enum_lay_wf. Qed.
+
+Lemma enum_lay_wf_eq EL ms : el_wf EL ms → enum_lay EL ms = EL.
+Proof. intros. by rewrite /enum_lay decide_True. Qed.
+
+(** The effective layout depends only on the sizes of the (well-formed) payloads. *)
+Lemma el_wf_sizes EL ms ms' :
+  Forall mty_wf ms' → mty_size <$> ms = mty_size <$> ms' → el_wf EL ms → el_wf EL ms'.
+Proof.
+  intros Hw' Hs [Hlen Hwf]. have Hl : length ms = length ms'.
+  { by rewrite -(length_fmap mty_size ms) Hs length_fmap. }
+  split; [lia|]. apply mty_wf_enum_inv in Hwf as [(Hb & Ht & Hd) _].
+  have Hsz : ∀ k v, zip_with (λ m v, (m, v.1, v.2)) ms' EL.(el_vars) !! k = Some v →
+    ∃ v0, zip_with (λ m v, (m, v.1, v.2)) ms EL.(el_vars) !! k = Some v0 ∧
+      v0.1.2 = v.1.2 ∧ v0.2 = v.2 ∧ mty_size v0.1.1 = mty_size v.1.1 ∧ mty_wf v.1.1.
+  { intros k v. rewrite !lookup_zip_with.
+    destruct (ms' !! k) as [m'|] eqn:Hk'; [|done].
+    destruct (el_vars EL !! k) as [[o tg]|]; [|done]. simpl. intros [= <-].
+    have Hk : is_Some (ms !! k) by (apply lookup_lt_is_Some_2; apply lookup_lt_Some in Hk'; lia).
+    destruct Hk as [m Hk]. exists (m, o, tg). rewrite Hk. split_and!; [done..| |].
+    - have : (mty_size <$> ms) !! k = (mty_size <$> ms') !! k by rewrite Hs.
+      rewrite !list_lookup_fmap Hk Hk'. by intros [=].
+    - by apply (Forall_lookup_1 _ _ _ _ Hw' Hk'). }
+  have Hsz' : ∀ k v0, zip_with (λ m v, (m, v.1, v.2)) ms EL.(el_vars) !! k = Some v0 →
+    ∃ v, zip_with (λ m v, (m, v.1, v.2)) ms' EL.(el_vars) !! k = Some v ∧
+      v0.1.2 = v.1.2 ∧ v0.2 = v.2 ∧ mty_size v0.1.1 = mty_size v.1.1.
+  { intros k v0. rewrite !lookup_zip_with.
+    destruct (ms !! k) as [m|] eqn:Hk; [|done].
+    destruct (el_vars EL !! k) as [[o tg]|]; [|done]. simpl. intros [= <-].
+    have Hk' : is_Some (ms' !! k) by (apply lookup_lt_is_Some_2; apply lookup_lt_Some in Hk; lia).
+    destruct Hk' as [m' Hk']. exists (m', o, tg). rewrite Hk'. split_and!; [done..|].
+    have : (mty_size <$> ms) !! k = (mty_size <$> ms') !! k by rewrite Hs.
+    rewrite !list_lookup_fmap Hk Hk'. by intros [=]. }
+  constructor; [split_and!|].
+  - apply Forall_lookup. intros k v Hv. destruct (Hsz k v Hv) as (v0 & Hv0 & Ho & Htg & Hs0 & _).
+    have := Forall_lookup_1 _ _ _ _ Hb Hv0. rewrite Ho Htg Hs0. done.
+  - rewrite /discr_tag_only. eapply Forall_impl; [apply Ht|]. intros r [Hr Hr']. split; [done|].
+    apply Forall_lookup. intros k v Hv. destruct (Hsz k v Hv) as (v0 & Hv0 & Ho & _ & Hs0 & _).
+    have := Forall_lookup_1 _ _ _ _ Hr' Hv0. rewrite Ho Hs0. done.
+  - rewrite /discr_ok. rewrite /discr_ok in Hd.
+    have Hlz : length (zip_with (λ m v, (m, v.1, v.2)) ms' EL.(el_vars)) =
+      length (zip_with (λ m v, (m, v.1, v.2)) ms EL.(el_vars)) by rewrite !length_zip_with; lia.
+    rewrite Hlz. apply Forall2_lookup. intros k.
+    destruct (seq 0 _ !! k) as [k'|] eqn:Hk.
+    + have Hlt := lookup_lt_Some _ _ _ Hk. rewrite length_seq in Hlt.
+      destruct (lookup_lt_is_Some_2 (zip_with (λ m v, (m, v.1, v.2)) ms EL.(el_vars)) k)
+        as [v0 Hv0]; [lia|].
+      destruct (Hsz' k v0 Hv0) as (v & Hv & _ & Htg & _). rewrite Hv. constructor.
+      have := Forall2_lookup_lr _ _ _ _ _ _ Hd Hk Hv0. by rewrite Htg.
+    + rewrite lookup_ge_None_2; [constructor|]. apply lookup_ge_None in Hk.
+      rewrite length_seq in Hk. lia.
+  - apply Forall_lookup. intros k v Hv. by destruct (Hsz k v Hv) as (? & ? & ? & ? & ? & ?).
+Qed.
+
+Lemma tagged_layout_sizes ms ms' :
+  mty_size <$> ms = mty_size <$> ms' → tagged_layout ms = tagged_layout ms'.
+Proof.
+  intros Hs. have Hl : length ms = length ms'.
+  { by rewrite -(length_fmap mty_size ms) Hs length_fmap. }
+  rewrite /tagged_layout Hl Hs. f_equal. apply list_eq. intros k. rewrite !list_lookup_imap.
+  destruct (ms !! k) eqn:Hk, (ms' !! k) eqn:Hk'; try done.
+  - apply lookup_lt_Some in Hk. apply lookup_ge_None in Hk'. lia.
+  - apply lookup_lt_Some in Hk'. apply lookup_ge_None in Hk. lia.
+Qed.
+
+Lemma enum_lay_sizes EL ms ms' :
+  Forall mty_wf ms → Forall mty_wf ms' → mty_size <$> ms = mty_size <$> ms' →
+  enum_lay EL ms = enum_lay EL ms'.
+Proof.
+  intros Hw Hw' Hs. rewrite /enum_lay.
+  destruct (decide (el_wf EL ms)) as [H|H], (decide (el_wf EL ms')) as [H'|H']; try done.
+  - exfalso. apply H'. by apply (el_wf_sizes EL ms ms').
+  - exfalso. apply H. by apply (el_wf_sizes EL ms' ms).
+  - by apply tagged_layout_sizes.
+Qed.
