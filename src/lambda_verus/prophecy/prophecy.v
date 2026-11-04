@@ -137,6 +137,15 @@ Proof.
    - apply (FIX 𝔄).
    - induction l; first by (clear FIX; done). destruct x. apply proph_dep_constr2.
       + apply FIX. + apply IHl.
+   - induction l as [|𝔄₀ 𝔄l]; first by (clear FIX; done).
+     destruct x as [x|x].
+     + apply (proph_dep_constr inl _ _ (FIX 𝔄₀ x)).
+     + clear FIX. have h1 := IH𝔄l x.
+       replace (@ξl (enumₛ e (@cons syn_type 𝔄₀ 𝔄l))
+          (@inr (indep_interp_of_syn_type 𝔄₀) (@psum syn_type indep_interp_of_syn_type 𝔄l) x))
+         with (@ξl (enumₛ e 𝔄l) x).
+       * apply (proph_dep_constr inr _ _ h1).
+       * simpl. destruct (to_xsum (psum_map1 (λ (A : syn_type) (x0 : ~~ A), ξl x0) x)). trivial.
 Qed.
 
 (** * Prophecy Log *)
