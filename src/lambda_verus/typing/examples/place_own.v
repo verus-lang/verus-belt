@@ -16,6 +16,15 @@ Section place_own.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
+  (* [P]: a [repr(C)] struct of two [i32]. *)
+  Notation Pl := [intₛ i32; intₛ i32].
+  Notation PL := (c_layout [MInt i32; MInt i32]).
+  Notation Pₛ := (structₛ PL Pl).
+  Notation Pt := (struct_ty PL +[i32t; i32t]).
+  (* [B]: a [repr(C)] struct of a box of an [i32] and an [i32]. *)
+  Notation Bl := [at_locₛ (intₛ i32); intₛ i32].
+  Notation BL := (c_layout [MPtr; MInt i32]).
+  Notation Bt := (struct_ty BL +[own_bytes 4 i32t; i32t]).
 
   (*
   ```
@@ -28,16 +37,16 @@ Section place_own.
   *)
   Definition set_snd : expr := (
     Newlft;;
-    let: "r" := &ᵘ ("x" +ₗ #4) in                  (* &mut x.1 *)
+    let: "r" := &ᵘ ("x" +ₗ #(struct_off PL Pl 1)) in   (* &mut x.1 *)
     let: "five" := MLit (VInt 5) in
     Skip;;                                                (* r as a place *)
     "r" <-{MInt i32} "five";;                        (* *r = 5 *)
     Skip;;                                                (* resolve r *)
     Endlft;;                                              (* unblock x.1 *)
     let: "three" := MLit (VInt 3) in
-    "x" <-{MInt i32} "three";;                      (* x.0 = 3 *)
-    let: "v" := !ᶜ{MInt i32} ("x" +ₗ #4) in          (* x.1 *)
-    ((#☠;; #☠);; delete [ #8; "x"]);;               (* drop x *)
+    ("x" +ₗ #(struct_off PL Pl 0)) <-{MInt i32} "three";;  (* x.0 = 3 *)
+    let: "v" := !ᶜ{MInt i32} ("x" +ₗ #(struct_off PL Pl 1)) in  (* x.1 *)
+    ((#☠;; (#☠;; #☠));; delete [ #8; "x"]);;        (* drop x *)
     jump: "return" ["v"])%E.
 
   Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.
@@ -45,7 +54,7 @@ Section place_own.
   Lemma set_snd_type ϝ (k vx: val) :
     ⊢ typed_body [] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
-        +[vx ◁ᵥ own_bytes 8 (i32t * i32t)%T]
+        +[vx ◁ᵥ own_bytes 8 Pt]
         (subst "return" k (subst "x" vx set_snd))
         (λ post '-[_], λ mask π, post 5%Z mask π).
   Proof.
@@ -54,11 +63,11 @@ Section place_own.
       (* x as an owned place, unfolded *)
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_own_to_oplace|].
-        apply (tctx_unfold_oplace_prod _ _ _ _ PHole i32t i32t). }
+        apply (tctx_unfold_oplace_struct _ _ _ _ PL PHole +[i32t; i32t]). }
       iApply (type_newlft []). iIntros (β).
       (* &mut x.1 *)
       iApply (type_let with "[]").
-      { eapply (type_borrow_place_instr _ _ _ vx (POwn _ (PSnd (OfTy i32t) PHole)) β i32t);
+      { eapply (type_borrow_place_instr _ _ _ vx (POwn _ (PField PL +[OfTy i32t] PHole +[])) β i32t);
           solve_typing. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
@@ -80,7 +89,7 @@ Section place_own.
       (* end β: unblock x.1 *)
       iApply (type_endlft _ _ _ _ β).
       { solve_typing. }
-      { apply (unblock_tctx_oplace _ _ _ (PSnd (OfTy i32t) PHole) i32t); [solve_typing|].
+      { apply (unblock_tctx_oplace _ _ _ (PField PL +[OfTy i32t] PHole +[]) i32t); [solve_typing|].
         apply unblock_tctx_nil. }
       (* x.0 = 3 *)
       iApply (type_let with "[]").
@@ -88,18 +97,18 @@ Section place_own.
       { solve_typing. } { reflexivity. }
       iIntros (v3). simpl_subst.
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vx v3 (POwn 8 (PFst PHole (OfTy i32t))) (OfTy i32t) i32t);
+      { eapply (type_write_place_instr _ _ _ vx v3 (POwn 8 (PField PL +[] PHole +[OfTy i32t])) (OfTy i32t) i32t);
           [apply pctx_wty_same|apply resolve_just|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* x.1 *)
       iApply (type_let with "[]").
-      { apply (type_read_place_instr _ _ _ vx (POwn 8 (PSnd (OfTy i32t) PHole)) (OfTy i32t) i32t
+      { apply (type_read_place_instr _ _ _ vx (POwn 8 (PField PL +[OfTy i32t] PHole +[])) (OfTy i32t) i32t
           static); [by constructor|apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       (* drop x *)
       iApply type_seq.
-      { apply (type_drop_oplace_instr _ _ _ vx 8 8 (ProdLty (OfTy i32t) (OfTy i32t))
+      { apply (type_drop_oplace_instr _ _ _ vx 8 8 (StructLty PL +[OfTy i32t; OfTy i32t])
           (const (const True))); [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
       (* return x.1 *)
@@ -109,9 +118,9 @@ Section place_own.
       { solve_typing. }
       { reflexivity. }
     }
-    intros post [[lx [a b]] []] mask π Hspec. rewrite /trans_upper /trans_tail /ret_z /=.
+    intros post [[lx [a [b []]]] []] mask π Hspec. rewrite /trans_upper /trans_tail /ret_z /=.
     intros [[[[[l1 w1] ζi] d1] g1] idx1] Hc1 _ d g idx Hres
-      [[[lx' [a' b']] ζm'] []] (_ & _ & _ & Hfin & _) _ _.
+      [[[lx' [a' [b' []]]] ζm'] []] (_ & _ & _ & Hfin & _) _ _.
     simpl in Hc1, Hres, Hfin |- *. subst w1.
     rewrite Hfin /oplace_blk_fin /= (uniq_util.uniq_prvar_app_irrel b 5%Z ζi π) Hres. apply Hspec.
   Qed.
@@ -134,40 +143,40 @@ Section place_own.
   ([pctx_wty_moved]). *)
   Definition box_pair : expr := (
     Newlft;;
-    let: "r" := &ᵘ (Load Na1Ord MPtr "b") in            (* &mut *( *b).0 *)
+    let: "r" := &ᵘ (Load Na1Ord MPtr ("b" +ₗ #(struct_off BL Bl 0))) in  (* &mut *( *b).0 *)
     let: "seven" := MLit (VInt 7) in
     Skip;;                                                (* r as a place *)
     "r" <-{MInt i32} "seven";;                       (* *r = 7 *)
     Skip;;                                                (* resolve r *)
     Endlft;;                                              (* unblock *( *b).0 *)
-    let: "c" := !ᵐ{MPtr} "b" in                   (* move ( *b).0 out *)
-    "b" <-{MPtr} "c";;                              (* re-assign ( *b).0 *)
+    let: "c" := !ᵐ{MPtr} ("b" +ₗ #(struct_off BL Bl 0)) in  (* move ( *b).0 out *)
+    ("b" +ₗ #(struct_off BL Bl 0)) <-{MPtr} "c";;         (* re-assign ( *b).0 *)
     jump: "return" ["b"])%E.
 
-  Notation box_pairₛ := (at_locₛ (at_locₛ (intₛ i32) * intₛ i32))%ST.
+  Notation box_pairₛ := (at_locₛ (structₛ BL Bl))%ST.
 
   Definition ret_box_pair : predl_trans' [box_pairₛ] box_pairₛ := λ post '-[r], post r.
 
   Lemma box_pair_type ϝ (k vb: val) :
     ⊢ typed_body [] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
-          λ v: vec val 1, +[vhd v ◁ᵥ own_bytes (PTR_SIZE + 4) (own_bytes 4 i32t * i32t)] }
+          λ v: vec val 1, +[vhd v ◁ᵥ own_bytes (struct_size BL Bl) Bt] }
           ret_box_pair]
-        +[vb ◁ᵥ own_bytes (PTR_SIZE + 4) (own_bytes 4 i32t * i32t)%T]
+        +[vb ◁ᵥ own_bytes (struct_size BL Bl) Bt]
         (subst "return" k (subst "b" vb box_pair))
-        (λ post '-[(l, ((lb, _), w))], λ mask π, post (l, ((lb, 7%Z), w)) mask π).
+        (λ post '-[(l, (lb, _) -:: w)], λ mask π, post (l, (lb, 7%Z) -:: w) mask π).
   Proof.
     rewrite /box_pair. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
       (* the pointee of b as an owned place, unfolded, with the inner box unfolded *)
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_own_to_oplace|].
-        eapply tctx_incl_trans; [apply (tctx_unfold_oplace_prod _ _ _ _ PHole (own_bytes 4 i32t) i32t)|].
-        apply (tctx_unfold_oplace_own _ _ _ _ (PFst PHole (OfTy i32t)) 4 i32t). done. }
+        eapply tctx_incl_trans; [apply (tctx_unfold_oplace_struct _ _ _ _ BL PHole +[own_bytes 4 i32t; i32t])|].
+        apply (tctx_unfold_oplace_own _ _ _ _ (PField BL +[] PHole +[OfTy i32t]) 4 i32t). done. }
       iApply (type_newlft []). iIntros (β).
       (* &mut *( *b).0 *)
       iApply (type_let with "[]").
-      { eapply (type_borrow_place_instr _ _ _ vb (POwn _ (PFst (POwn 4 PHole) (OfTy i32t))) β i32t);
+      { eapply (type_borrow_place_instr _ _ _ vb (POwn _ (PField BL +[] (POwn 4 PHole) +[OfTy i32t])) β i32t);
           solve_typing. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
@@ -189,25 +198,25 @@ Section place_own.
       (* end β: unblock *( *b).0 *)
       iApply (type_endlft _ _ _ _ β).
       { solve_typing. }
-      { apply (unblock_tctx_oplace _ _ _ (PFst (POwn 4 PHole) (OfTy i32t)) i32t); [solve_typing|].
+      { apply (unblock_tctx_oplace _ _ _ (PField BL +[] (POwn 4 PHole) +[OfTy i32t]) i32t); [solve_typing|].
         apply unblock_tctx_nil. }
       (* fold the inner box back; move ( *b).0 out *)
       iApply typed_body_tctx_incl.
-      { apply (tctx_fold_oplace_own _ _ _ _ (PFst PHole (OfTy i32t)) 4 i32t). }
+      { apply (tctx_fold_oplace_own _ _ _ _ (PField BL +[] PHole +[OfTy i32t]) 4 i32t). }
       iApply (type_let with "[]").
-      { apply (type_move_place_instr _ _ _ vb (POwn (PTR_SIZE + 4) (PFst PHole (OfTy i32t)))
+      { apply (type_move_place_instr _ _ _ vb (POwn (struct_size BL Bl) (PField BL +[] PHole +[OfTy i32t]))
           (own_bytes 4 i32t)). }
       { solve_typing. } { reflexivity. }
       iIntros (vc). simpl_subst.
       (* re-assign ( *b).0 *)
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vb vc (POwn (PTR_SIZE + 4) (PFst PHole (OfTy i32t)))
+      { eapply (type_write_place_instr _ _ _ vb vc (POwn (struct_size BL Bl) (PField BL +[] PHole +[OfTy i32t]))
           (Moved (own_bytes 4 i32t)) (own_bytes 4 i32t));
           [by apply pctx_wty_moved|apply lty_wres_moved|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* fold back, return b *)
       iApply typed_body_tctx_incl.
-      { eapply tctx_incl_trans; [apply (tctx_fold_oplace_prod _ _ _ _ PHole (own_bytes 4 i32t) i32t)|].
+      { eapply tctx_incl_trans; [apply (tctx_fold_oplace_struct _ _ _ _ BL PHole +[own_bytes 4 i32t; i32t])|].
         apply tctx_oplace_to_own. }
       iApply type_jump.
       { rewrite elem_of_list_singleton. reflexivity. }
