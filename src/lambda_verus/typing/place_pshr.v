@@ -202,7 +202,7 @@ Section pctx_shr.
     WP pctx_expr K e @ E {{ Φ }}.
   Proof.
     intros HE.
-    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IHK la|𝔅 𝔄' n' K IHK|𝔅 𝔄l tyl i w K IHK|
+    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IHK la|𝔅 𝔄' n' K IHK|𝔅 𝔄l EL tyl i w K IHK|
       𝔅 𝔄' κ' K IHK|𝔅 𝔄' κ' K IHK|𝔅 𝔄' κ' K IHK] in y, l, e, Φ |- *; simpl.
     - iIntros "WP". iApply (wp_wand with "WP"). iIntros (v) "(-> & _ & _ & G & HΦ)".
       by iApply "HΦ".
@@ -254,7 +254,7 @@ Section pctx_shr.
         shr_view (pctx_slft K κ) (lty_fold lt) (pctx_get K y) dh g tid
           (pctx_loc K (lty_size lt) y l).
   Proof.
-    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IH la|𝔅 𝔄' n' K IH|𝔅 𝔄l tyl i w K IH|
+    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IH la|𝔅 𝔄' n' K IH|𝔅 𝔄l EL tyl i w K IH|
       𝔅 𝔄' κ' K IH|𝔅 𝔄' κ' K IH|𝔅 𝔄' κ' K IH] in κ, y, d, l, lt |- *; simpl; intros Hin.
     - iIntros "_ _ #V !>". iSplit; [done|]. iExists d. iFrame "V". iPureIntro. lia.
     - iIntros "#Gs £ #(Pt & Shr & Pers)".
@@ -288,8 +288,7 @@ Section pctx_shr.
       rewrite xsum_shr_pinj xsum_pers_pinj hlookup_hlist_set.
       iApply (IH with "Gs £"); [done|]. iFrame "Shr Pers".
       iEval (rewrite (cbytes_sum _ i (lty_fold (pctx_plug K lt)))) in "Pt".
-      iDestruct (guards_weaken_rhs_sep_r with "Pt") as "Pt'".
-      by iApply (guards_weaken_rhs_sep_l with "Pt'").
+      by iApply (guards_weaken_rhs_sep_r with "Pt").
     - iIntros "#Gs £ #(Pt & Shr & Pers)". destruct y as [[[[[l' z] ξi] d'] g'] idx].
       iDestruct "Shr" as "(%Hle & Pt' & _ & Shr0 & Pers0)".
       iDestruct (lc_weaken (1 + (1 + (1 + d' * (g + 3)))) with "£") as "(£a & £b & £c & £)";

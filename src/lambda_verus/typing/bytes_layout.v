@@ -1,4 +1,5 @@
 From lrust.typing Require Export type.
+From guarding Require Import guard.
 Set Default Proof Using "Type".
 
 (** * Byte layouts of syntactic types (stage 4 of the MiniRust memory model)
@@ -215,7 +216,43 @@ Section get_discr_enum.
     - rewrite /chunks_own /= shift_loc_0. iFrame.
     - iIntros "(H1 & H2 & _)". rewrite /= shift_loc_0. iApply ("HΦ" with "H1 H2").
   Qed.
+
+  (** Through a guard of the rest of the bytes, which may give other bytes at each opening:
+      for a discriminator with at most one read ([enum_discr_depth1]). *)
+  Lemma wp_get_discr_enum_guarded E EL 𝔄l (i: fin (length 𝔄l)) l G P dg Φ :
+    ↑naN ⊆ E → (discr_depth (enum_discr EL 𝔄l) ≤ 1)%nat →
+    (G &&{↑naN; dg}&&> P) -∗
+    □ (P -∗ ∃ b1 b2, ⌜enum_rest_ok EL 𝔄l i b1 b2⌝ ∗ l ↦b b1 ∗
+        (l +ₗ (enum_off EL 𝔄l i + syn_bsize (𝔄l !!ₗ i))%nat) ↦b b2 ∗
+        (l ↦b b1 -∗ (l +ₗ (enum_off EL 𝔄l i + syn_bsize (𝔄l !!ₗ i))%nat) ↦b b2 -∗ P)) -∗
+    G -∗ £(2 * dg) -∗ (G -∗ Φ (MLitV (VInt (Z.of_nat (fin_to_nat i))))) -∗
+    WP GetDiscr (syn_mty (enumₛ EL 𝔄l)) (MLit (VPtr l)) @ E {{ Φ }}.
+  Proof.
+    iIntros (? Hd) "#Guard #HP G £ HΦ". rewrite syn_mty_enum.
+    set o := (enum_off EL 𝔄l i + syn_bsize (𝔄l !!ₗ i))%nat.
+    iApply (wp_get_discr_guarded_all _ _ _ _ _ l G P
+      (λ cs, ∃ b1 b2, cs = [(0%nat, b1); (o, b2)] ∧ enum_rest_ok EL 𝔄l i b1 b2) dg 1
+      with "Guard [] G [£] HΦ"); [done| |done| | |by rewrite Nat.mul_1_r].
+    - apply discr_eval_all_depth1; [done| |].
+      + destruct (enum_vars_lookup EL 𝔄l i) as [tg Hv]. destruct (enum_layout_ok_syn EL 𝔄l) as (_ & _ & Hok).
+        exists (tagger_reader tg). exact (discr_ok_lookup _ _ _ _ Hok Hv).
+      + intros off it z (cs & (b1 & b2 & -> & Hr) & Hz). exists (chunks_reader [(0%nat, b1); (o, b2)]).
+        split; [done|]. by apply enum_rest_chunks.
+    - intros off it Hr cs (b1 & b2 & -> & Hrest).
+      eapply discr_reads_depth1; [done|done|]. by apply enum_rest_chunks.
+    - iIntros "!> HPx". iDestruct ("HP" with "HPx") as (b1 b2 Hr) "(B1 & B2 & Cl)".
+      iExists [(0%nat, b1); (o, b2)]. iSplit; [by eauto|].
+      rewrite /chunks_own /= shift_loc_0. iFrame "B1 B2". iIntros "(B1 & B2 & _)".
+      iApply ("Cl" with "B1 B2").
+  Qed.
 End get_discr_enum.
+
+Lemma enum_discr_depth1 EL 𝔄l :
+  (discr_depth EL.(el_discr) ≤ 1)%nat → (discr_depth (enum_discr EL 𝔄l) ≤ 1)%nat.
+Proof.
+  intros. rewrite /enum_discr /enum_ly /enum_lay. case_decide; [done|].
+  rewrite /tagged_layout. cbn [el_discr]. rewrite discr_depth_seq. lia.
+Qed.
 
 (** * Fancy bytes (§10 step 4 of [design_docs/pcell-multibyte-cells.md])
 

@@ -64,7 +64,7 @@ Section view_acc.
          lty_view (pctx_plug K lt') κ m (pctx_pat K p') (pctx_rfn K x ζm q r') dn gn tid l).
   Proof.
     rename select (PctxNoShr K) into HK. rewrite /PctxNoShr in HK.
-    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IH la|𝔅 𝔄' n' K IH|𝔅 𝔄l tyl i w K IH|
+    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IH la|𝔅 𝔄' n' K IH|𝔅 𝔄l EL tyl i w K IH|
       𝔅 𝔄' κ' K IH|𝔅 𝔄' κ' K IH|] in HK, κ, lt, m, p, r, x, q, d, g, l |- *;
       simpl; simpl in HK; try done; iIntros "#GR V".
     - iExists d, g. iSplit; [iPureIntro; lia|]. iFrame "V". iSplit; [done|].
