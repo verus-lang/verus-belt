@@ -164,11 +164,19 @@ Section lty_res.
 
   (** The resolution of the fields of a struct, field by field. *)
   Inductive fields_res (E: elctx) (L: llctx) : ∀ {𝔄l}, hlist lty 𝔄l → hlist lty 𝔄l → nat →
-      plist (λ 𝔄, ~~𝔄 → blk_map → lpath → proph_asn → Prop) 𝔄l → Prop :=
-  | fields_res_nil : fields_res E L +[] +[] 0 -[]
+      hlist (λ 𝔄, ~~𝔄 → blk_map → lpath → proph_asn → Prop) 𝔄l → Prop :=
+  | fields_res_nil : fields_res E L +[] +[] 0 +[]
   | fields_res_cons {𝔄 𝔄l} (lt lt': lty 𝔄) (lts lts': hlist lty 𝔄l) k ks Φ Φl :
       lty_res E L lt lt' k Φ → fields_res E L lts lts' ks Φl →
-      fields_res E L (lt +:: lts) (lt' +:: lts') (k + ks) (Φ -:: Φl).
+      fields_res E L (lt +:: lts) (lt' +:: lts') (k + ks) (Φ +:: Φl).
+
+  (** The property of the fields (field [j] at the path [fcode j ++ q]). *)
+  Fixpoint fields_res_pred {𝔄l} (Φl: hlist (λ 𝔄, ~~𝔄 → blk_map → lpath → proph_asn → Prop) 𝔄l) :
+      plist (~~) 𝔄l → blk_map → lpath → nat → proph_asn → Prop :=
+    match Φl with
+    | +[] => λ _ _ _ _ _, True
+    | Φ +:: Φl' => λ xs ζm q j π, Φ (phd xs) ζm (fcode j ++ q) π ∧ fields_res_pred Φl' (ptl xs) ζm q (S j) π
+    end.
 
   Local Lemma fields_res_nrc E L {𝔄l} (lts lts': hlist lty 𝔄l) k Φl e mm :
     fields_res E L lts lts' k Φl →
@@ -183,7 +191,7 @@ Section lty_res.
       fields_node offs (hmap (λ _ lt, ltype_own_cp false lt (Owned m)) lts)
         (hcmap (λ _ lt, lty_pat lt) lts) (fields_rfn ζm q lts j xs) d g tid l -∗
       ctask (advance_credits D) k
-        (⟨π, fields_rslv_pred' Φl xs ζm q j π⟩ ∗ G ∗
+        (⟨π, fields_res_pred Φl xs ζm q j π⟩ ∗ G ∗
          fields_node offs (hmap (λ _ lt, ltype_own_cp false lt (Owned m)) lts')
            (hcmap (λ _ lt, lty_pat lt) lts') (fields_rfn ζm q lts' j xs) d g tid l).
   Proof.
@@ -209,7 +217,7 @@ Section lty_res.
   Lemma lty_res_struct {𝔄l} E L Lay (lts lts': hlist lty 𝔄l) k Φl :
     fields_res E L lts lts' k Φl →
     lty_res E L (StructLty Lay lts) (StructLty Lay lts') k
-      (λ x ζm q π, fields_rslv_pred' Φl x ζm q 0 π).
+      (λ x ζm q π, fields_res_pred Φl x ζm q 0 π).
   Proof.
     intros Hall. split; [done|by fun_ext=> e; fun_ext=> mm; apply (fields_res_nrc E L _ _ k Φl)|].
     iIntros (G m x ζm q d g D tid l ? Hd Hg) "#LFT #PROPH #UNIQ #TIME #E #L G #⧖ Own".

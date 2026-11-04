@@ -453,37 +453,44 @@ Section drop_boxes.
            new_delete.delete [ #(lty_size lt'); (Load Na1Ord MPtr e)])%E
         else #☠%E
     | @StructLty _ _ 𝔄l Lay lts =>
-        (fix go {𝔅l} (offs: list nat) (lts: hlist lty 𝔅l) {struct lts} : expr :=
+        (fix go {𝔅l} (j: nat) (lts: hlist lty 𝔅l) {struct lts} : expr :=
           match lts with
           | +[] => #☠%E
-          | lt +:: lts' => match offs with
-              | [] => #☠%E
-              | o :: offs' => (drop_boxes lt (e +ₗ #o);; go offs' lts')%E
-              end
-          end) _ (struct_offs Lay 𝔄l) lts
+          | lt +:: lts' => (drop_boxes lt (e +ₗ #(struct_off Lay 𝔄l j));; go (S j) lts')%E
+          end) _ 0%nat lts
     | @SumLty _ _ 𝔄l _ _ lt' => drop_boxes lt' (e +ₗ #(tag_size 𝔄l))%E
     | _ => #☠%E
     end.
 
-  (** The program freeing the pointees of the fields [lts] of a struct (at the address
-      computed by [e], at the offsets [offs]). *)
-  Definition fields_drop (e: expr) : ∀ {𝔅l}, list nat → hlist lty 𝔅l → expr :=
-    fix go {𝔅l} (offs: list nat) (lts: hlist lty 𝔅l) {struct lts} : expr :=
+  (** The program freeing the pointees of the fields [lts] of a struct of layout [Lay] and
+      fields [𝔄l] (at the address computed by [e]), the first of them being field [j]. *)
+  Definition fields_drop (e: expr) (Lay: struct_layout) (𝔄l: syn_typel) :
+      ∀ {𝔅l}, nat → hlist lty 𝔅l → expr :=
+    fix go {𝔅l} (j: nat) (lts: hlist lty 𝔅l) {struct lts} : expr :=
       match lts with
       | +[] => #☠%E
-      | lt +:: lts' => match offs with
-          | [] => #☠%E
-          | o :: offs' => (drop_boxes lt (e +ₗ #o);; go offs' lts')%E
-          end
+      | lt +:: lts' => (drop_boxes lt (e +ₗ #(struct_off Lay 𝔄l j));; go (S j) lts')%E
       end.
 
-  Lemma fields_drop_cons {𝔄 𝔅l} e o offs (lt: lty 𝔄) (lts: hlist lty 𝔅l) :
-    fields_drop e (o :: offs) (lt +:: lts) = (drop_boxes lt (e +ₗ #o);; fields_drop e offs lts)%E.
+  Lemma fields_drop_cons {𝔄 𝔅l} e Lay 𝔄l j (lt: lty 𝔄) (lts: hlist lty 𝔅l) :
+    fields_drop e Lay 𝔄l j (lt +:: lts) =
+      (drop_boxes lt (e +ₗ #(struct_off Lay 𝔄l j));; fields_drop e Lay 𝔄l (S j) lts)%E.
   Proof. done. Qed.
 
   Lemma drop_boxes_struct {𝔄l} Lay (lts: hlist lty 𝔄l) e :
-    drop_boxes (StructLty Lay lts) e = fields_drop e (struct_offs Lay 𝔄l) lts.
+    drop_boxes (StructLty Lay lts) e = fields_drop e Lay 𝔄l 0 lts.
   Proof. done. Qed.
+
+  Local Lemma fields_drop_closed_aux e Lay 𝔄l {𝔅l} (lts: hlist lty 𝔅l) j :
+    HForall (λ _ lt, ∀ e, Closed [] e → Closed [] (drop_boxes lt e)) lts → Closed [] e →
+    Closed [] (fields_drop e Lay 𝔄l j lts).
+  Proof.
+    intros Hall ?. induction Hall as [|𝔅 𝔅l lt lts Hlt _ IH] in j |- *; [simpl; apply _|].
+    rewrite fields_drop_cons.
+    have ?: Closed [] (drop_boxes lt (e +ₗ #(struct_off Lay 𝔄l j))%E) by apply Hlt; apply _.
+    have ?: Closed [] (fields_drop e Lay 𝔄l (S j) lts) by apply IH.
+    apply _.
+  Qed.
 
   Global Instance drop_boxes_closed {𝔄} (lt: lty 𝔄) e :
     Closed [] e → Closed [] (drop_boxes lt e).
@@ -495,23 +502,18 @@ Section drop_boxes.
       have ?: Closed [] (drop_boxes lt (Load Na1Ord MPtr e)%E).
       { apply IH. apply _. }
       apply _.
-    - rewrite -/(fields_drop e (struct_offs Lay 𝔄l) lts).
-      generalize (struct_offs Lay 𝔄l) as offs. clear Lay.
-      induction IH as [|𝔅 𝔅l lt lts Hlt _ IH']; intros offs; [simpl; apply _|].
-      destruct offs as [|o offs]; [simpl; apply _|]. rewrite fields_drop_cons.
-      have ?: Closed [] (drop_boxes lt (e +ₗ #o)%E) by apply Hlt; apply _.
-      have ?: Closed [] (fields_drop e offs lts) by apply IH'.
-      apply _.
+    - rewrite -/(fields_drop e Lay 𝔄l 0 lts). by apply fields_drop_closed_aux.
     - apply IH. apply _.
   Qed.
 
-  Global Instance fields_drop_closed {𝔅l} e offs (lts: hlist lty 𝔅l) :
-    Closed [] e → Closed [] (fields_drop e offs lts).
+  Global Instance fields_drop_closed {𝔅l} e Lay 𝔄l j (lts: hlist lty 𝔅l) :
+    Closed [] e → Closed [] (fields_drop e Lay 𝔄l j lts).
   Proof.
-    intros ?. induction lts as [|𝔅 𝔅l lt lts IH] in offs |- *; [simpl; apply _|].
-    destruct offs as [|o offs]; [simpl; apply _|]. rewrite fields_drop_cons.
-    have ?: Closed [] (fields_drop e offs lts) by apply IH.
-    have ?: Closed [] (drop_boxes lt (e +ₗ #o)%E) by apply drop_boxes_closed; apply _.
+    intros ?. induction lts as [|𝔅 𝔅l lt lts IH] in j |- *; [simpl; apply _|].
+    rewrite fields_drop_cons.
+    have ?: Closed [] (fields_drop e Lay 𝔄l (S j) lts) by apply IH.
+    have ?: Closed [] (drop_boxes lt (e +ₗ #(struct_off Lay 𝔄l j))%E)
+      by apply drop_boxes_closed; apply _.
     apply _.
   Qed.
 
@@ -616,8 +618,9 @@ Section drop_boxes.
       to free the pointees are under [m] laters, with [m ≤ k + 1]: the pointee of an
       owned pointer is freed after its address has been computed again, i.e. after
       [k + 1] steps. *)
-  Local Lemma wp_fields_drop E {𝔅l} (lts: hlist lty 𝔅l) m k (l: loc) (e: expr) (R: iProp Σ) Ψ offs :
-    ↑naN ⊆ E →
+  Local Lemma wp_fields_drop E {𝔅l} (lts: hlist lty 𝔅l) m k (l: loc) (e: expr) (R: iProp Σ) Ψ
+      Lay 𝔄l j :
+    ↑naN ⊆ E → j + length 𝔅l ≤ length 𝔄l →
     HForall (λ 𝔄 lt, ∀ m k (l: loc) (e: expr) (R: iProp Σ) Φ,
       lty_freeb lt = true → Closed [] e → m ≤ k + 1 →
       (⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^k P -∗ (R -∗ P -∗ Ψ #l) -∗ WP e @ E {{ Ψ }}) →
@@ -626,15 +629,18 @@ Section drop_boxes.
       WP drop_boxes lt e @ E {{ Φ }}) lts →
     foldr andb true (hcmap (λ _ lt, lty_freeb lt) lts) = true → Closed [] e → m ≤ k + 1 →
     (⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^k P -∗ (R -∗ P -∗ Ψ #l) -∗ WP e @ E {{ Ψ }}) →
-    R -∗ fields_omem mem_bytes m l offs lts -∗
-    (R -∗ ([∗ list] f ∈ zip offs (syn_mty <$> 𝔅l), mem_bytes (l +ₗ Z.of_nat f.1) (mty_size f.2)) -∗
-      Ψ #☠) -∗
-    WP fields_drop e offs lts @ E {{ Ψ }}.
+    R -∗ fields_omem mem_bytes m l (drop j (struct_offs Lay 𝔄l)) lts -∗
+    (R -∗ ([∗ list] f ∈ zip (drop j (struct_offs Lay 𝔄l)) (syn_mty <$> 𝔅l),
+        mem_bytes (l +ₗ Z.of_nat f.1) (mty_size f.2)) -∗ Ψ #☠) -∗
+    WP fields_drop e Lay 𝔄l j lts @ E {{ Ψ }}.
   Proof.
-    intros ? Hall. induction Hall as [|𝔄 𝔅l lt lts Hlt _ IH] in offs, Ψ |- *;
+    intros ? Hj Hall. induction Hall as [|𝔄 𝔅l lt lts Hlt _ IH] in j, Hj, Ψ |- *;
       intros Hf ? Hm Hev; iIntros "R M HΨ".
-    - rewrite /fields_drop. iApply wp_value. iApply ("HΨ" with "R"). by destruct offs.
-    - destruct offs as [|o offs]; [by iDestruct "M" as "[]"|]. simpl in Hf.
+    - rewrite /fields_drop. iApply wp_value. iApply ("HΨ" with "R").
+      by destruct (drop j (struct_offs Lay 𝔄l)).
+    - rewrite (drop_S _ (struct_off Lay 𝔄l j)); last first.
+      { apply struct_off_lookup. simpl in Hj. lia. }
+      set o := struct_off Lay 𝔄l j. simpl in Hf.
       apply andb_true_iff in Hf as [Hf1 Hf2]. iDestruct "M" as "[M1 M2]".
       rewrite fields_drop_cons.
       have Hev': ⊢ ∀ Ψ (P: iProp Σ), R -∗ ▷^(k + 1) P -∗ (R -∗ P -∗ Ψ #(l +ₗ o)) -∗
@@ -645,7 +651,7 @@ Section drop_boxes.
       wp_bind (drop_boxes _ _).
       iApply (Hlt m (k + 1) (l +ₗ o) (e +ₗ #o)%E R _ Hf1 _ ltac:(lia) Hev' with "R M1 [M2 HΨ]").
       iIntros "R B1". wp_seq.
-      iApply (IH with "R M2"); [done|done|done|]. iIntros "R Bs".
+      iApply (IH with "R M2"); [simpl in Hj; lia|done|done|done|]. iIntros "R Bs".
       iApply ("HΨ" with "R"). simpl. iSplitL "B1"; [done|done].
   Qed.
 
@@ -690,7 +696,7 @@ Section drop_boxes.
       { iFrame "Pt'". rewrite Hl -Hn. iDestruct "Fr" as "[$|%]"; by iRight. }
       iIntros "!> _". iApply ("HΦ" with "R"). by iApply ptr_cell_mem_bytes.
     - iDestruct "M" as "[M Pad]".
-      iApply (wp_fields_drop with "R M [Pad HΦ]"); [done..|].
+      iApply (wp_fields_drop _ _ _ _ _ _ _ _ Lay 𝔄l 0 with "R M [Pad HΦ]"); [done|lia|done..|].
       iIntros "R Bs". iApply ("HΦ" with "R"). iApply mem_bytes_struct. iFrame.
     - have Hsz: lty_size (SumLty tyl i lt) = (tag_size 𝔄l + (lty_size lt + (sum_max 𝔄l - lty_size lt)))%nat.
       { rewrite /lty_size syn_bsize_sum /tag_size. have := sum_max_ge 𝔄l i. lia. }
