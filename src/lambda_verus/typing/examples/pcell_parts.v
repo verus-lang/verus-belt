@@ -18,7 +18,11 @@ Section pcell_parts.
 
   Notation i32t := (int_ty i32).
   Notation cellt := (pcell_ty (wfm (MInt i32))).
-  Notation pairₛ := (intₛ i32 * pcellₛ (wfm (MInt i32)))%ST.
+  (* [C]: a [repr(C)] struct of an [i32] and a [PCell<i32>]. *)
+  Notation Cl := [intₛ i32; pcellₛ (wfm (MInt i32))].
+  Notation CL := (c_layout [MInt i32; syn_mty (pcellₛ (wfm (MInt i32)))]).
+  Notation pairₛ := (structₛ CL Cl).
+  Notation Ct := (struct_ty CL +[i32t; cellt]).
 
   (*
   ```
@@ -45,9 +49,9 @@ Section pcell_parts.
     let: "r" := (Alloc #8) in
     "r" <-{syn_mty pairₛ} "pair";;                        (* *r = pair *)
     let: "s" := (Alloc #4) in
-    let: "w" := !ᵐ{MInt i32} ("r" +ₗ #4) in               (* move r.1 out *)
+    let: "w" := !ᵐ{MInt i32} ("r" +ₗ #(struct_off CL Cl 1)) in  (* move r.1 out *)
     "s" <-{MInt i32} "w";;                                (* *s = w *)
-    ((#☠;; #☠);; delete [ #8; "r"]);;                      (* drop r *)
+    ((#☠;; (#☠;; #☠));; delete [ #8; "r"]);;               (* drop r *)
     let: "b" := PCellIntoInner ["s"; "perm"] in                 (* s.into_inner(perm) *)
     let: "x" := Load Na1Ord (MInt i32) "b" in           (* *b *)
     (#☠;; delete [ #4; "b"]);;                            (* drop b *)
@@ -99,7 +103,7 @@ Section pcell_parts.
       { solve_typing. } { reflexivity. }
       iIntros (v5). simpl_subst.
       iApply (type_let with "[]").
-      { apply (type_mk_pair_val_instr i32t cellt v5 vv). }
+      { by apply (type_mk_struct_val_instr CL +[i32t; cellt] -[(v5: path); (vv: path)]). }
       { solve_typing. } { reflexivity. }
       iIntros (vpair). simpl_subst.
       (* r: a box, uninitialized; *r = pair *)
@@ -107,16 +111,16 @@ Section pcell_parts.
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_own_to_oplace. }
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vr vpair (POwn 8 PHole) (OfTy (↯ 8)) (i32t * cellt));
+      { eapply (type_write_place_instr _ _ _ vr vpair (POwn 8 PHole) (OfTy (↯ 8)) Ct);
           [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* s: a box, uninitialized; move r.1 into it *)
       iApply (type_new_bytes 4); [lia|]. iIntros (vs). simpl_subst.
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_l _ _ +[_]). eapply (tctx_incl_frame_r +[_] +[_]).
-        apply (tctx_unfold_oplace_prod _ _ _ _ PHole i32t cellt). }
+        apply (tctx_unfold_oplace_struct _ _ _ _ CL PHole +[i32t; cellt]). }
       iApply (type_let with "[]").
-      { apply (type_move_place_instr _ _ _ vr (POwn 8 (PSnd (OfTy i32t) PHole)) cellt). }
+      { apply (type_move_place_instr _ _ _ vr (POwn 8 (PField CL +[OfTy i32t] PHole +[])) cellt). }
       { solve_typing. } { reflexivity. }
       iIntros (vw). simpl_subst.
       (* *s = w *)
@@ -129,7 +133,7 @@ Section pcell_parts.
       { solve_typing. } { reflexivity. }
       (* drop r *)
       iApply type_seq.
-      { apply (type_drop_oplace_instr _ _ _ vr 8 8 (ProdLty (OfTy i32t) (Moved cellt))
+      { apply (type_drop_oplace_instr _ _ _ vr 8 8 (StructLty CL +[OfTy i32t; Moved cellt])
           (const (const True))); [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
       (* s.into_inner(perm) *)
@@ -161,8 +165,12 @@ Section pcell_parts.
     intros. simpl. intros. split; [done|]. intros _. done.
   Qed.
 
-  Notation pairt := (pcell_ty (wfm (MInt i32)) * cell_points_to_ty i32t)%T.
-  Notation pair'ₛ := (pcellₛ (wfm (MInt i32)) * trackedₛ (pcellₛ (syn_wmty (intₛ i32)) * intₛ i32))%ST.
+  (* [D]: a [repr(C)] struct of a [PCell<i32>] and its permission. *)
+  Notation Dl := [pcellₛ (wfm (MInt i32)); trackedₛ (pcellₛ (syn_wmty (intₛ i32)) * intₛ i32)%ST].
+  Notation DL := (c_layout [syn_mty (pcellₛ (wfm (MInt i32)));
+    syn_mty (trackedₛ (pcellₛ (syn_wmty (intₛ i32)) * intₛ i32))]).
+  Notation pairt := (struct_ty DL +[pcell_ty (wfm (MInt i32)); cell_points_to_ty i32t]).
+  Notation pair'ₛ := (structₛ DL Dl).
   Notation optt := (Σ! +[(); pairt])%T.
   Notation optₛ := (Σ! [unitₛ; pair'ₛ])%ST.
 
@@ -202,8 +210,8 @@ Section pcell_parts.
     [ jump: "return" ["o"];                                     (* None: unreachable *)
       Newlft;;                                                  (* Some(r) *)
       let: "r" := &ˢ ("o" +ₗ #1) in                       (* r: &(PCell, PointsTo) *)
-      let: "pcell_ref" := "r" in                   (* &r.0 *)
-      let: "perm_ref" := ("r" +ₗ #4) in              (* &r.1 *)
+      let: "pcell_ref" := ("r" +ₗ #(struct_off DL Dl 0)) in   (* &r.0 *)
+      let: "perm_ref" := ("r" +ₗ #(struct_off DL Dl 1)) in    (* &r.1 *)
       let: "intref" := PCellBorrow ["pcell_ref"; "perm_ref"] in
       let: "x" := Load Na1Ord (MInt i32) "intref" in     (* *intref *)
       Endlft;;
@@ -250,7 +258,7 @@ Section pcell_parts.
       { solve_typing. } { reflexivity. }
       (* Some((v, perm)) *)
       iApply (type_let with "[]").
-      { apply (type_mk_pair_val_instr cellt (cell_points_to_ty i32t) vv vperm). }
+      { by apply (type_mk_struct_val_instr DL +[cellt; cell_points_to_ty i32t] -[(vv: path); (vperm: path)]). }
       { solve_typing. } { reflexivity. }
       iIntros (vcp). simpl_subst.
       iApply (type_let with "[]").
@@ -273,18 +281,20 @@ Section pcell_parts.
       iApply (type_newlft []). iIntros (κ).
       iApply (type_let with "[]").
       { eapply (type_share_place_instr _ _ _ vo
-          (POwn 5 (PSum +[(); pairt]%T 1%fin (1%positive, (1%positive, 0%Z)) PHole)) κ (OfTy pairt) pairt);
+          (POwn 5 (PSum +[(); pairt]%T 1%fin -[1%positive; (1%positive, 0%Z)] PHole)) κ (OfTy pairt) pairt);
           [apply lty_sleaf_ofty; solve_typing|simpl; solve_typing..]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       iApply typed_body_tctx_incl.
       { apply (copy_val_tctx_incl _ _ _ _ _ (Copy0:=shr_bytes_copy κ pairt)). }
       iApply (type_let with "[]").
-      { apply (type_shr_bytes_fst_instr κ (pcell_ty (wfm (MInt i32))) (cell_points_to_ty i32t)). }
+      { apply (type_shr_bytes_field_instr κ DL +[] (pcell_ty (wfm (MInt i32)))
+          +[cell_points_to_ty i32t]). }
       { solve_typing. } { reflexivity. }
       iIntros (vpc). simpl_subst.
       iApply (type_let with "[]").
-      { apply (type_shr_bytes_snd_instr κ (pcell_ty (wfm (MInt i32))) (cell_points_to_ty i32t)). }
+      { apply (type_shr_bytes_field_instr κ DL +[pcell_ty (wfm (MInt i32))]
+          (cell_points_to_ty i32t) +[]). }
       { solve_typing. } { reflexivity. }
       iIntros (vpt). simpl_subst.
       (* borrow the contents, and read them *)
@@ -301,7 +311,7 @@ Section pcell_parts.
       iApply (type_endlft _ _ _ _ κ).
       { solve_typing. }
       { apply unblock_tctx_cons_just.
-        apply (unblock_tctx_oplace_shr _ _ _ (PSum +[(); pairt]%T 1%fin (1%positive, (1%positive, 0%Z)) PHole) pairt).
+        apply (unblock_tctx_oplace_shr _ _ _ (PSum +[(); pairt]%T 1%fin -[1%positive; (1%positive, 0%Z)] PHole) pairt).
         apply unblock_tctx_nil. }
       iApply type_seq.
       { apply (type_drop_oplace_instr _ _ _ vo 5 5 (SumLty +[(); pairt]%T 1%fin (OfTy pairt))

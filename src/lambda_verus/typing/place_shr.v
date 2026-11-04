@@ -127,41 +127,36 @@ End typing.
 
 (** * Fields of shared references to bytes
 
-The referent of [&shr{κ} (ty1 * ty2)] is the bytes of [ty1] followed by those of [ty2]
-([cbytes_pair]), so a shared reference to a field is the shared reference at the offset
-of the field (a pointer offset, no load); together with the shared places of
-[typing/place_pshr.v], this replaces the reads below shared references of the legacy
-layer. *)
+The referent of [&shr{κ} (struct_ty Lay tyl)] is the bytes of its fields at their offsets
+and its padding ([bytes_own_struct]), so a shared reference to a field is the shared
+reference at the offset of the field (a pointer offset, no load); together with the shared
+places of [typing/place_pshr.v], this replaces the reads below shared references of the
+legacy layer. *)
 Section shr_bytes_fields.
   Context `{!typeG Σ}.
 
-  Lemma type_shr_bytes_snd_instr {𝔄 𝔅} κ (ty1: type 𝔄) (ty2: type 𝔅) p E L I :
-    typed_instr E L I +[p ◁ᵥ &shr{κ} (ty1 * ty2)] (p +ₗ #(ty_bsize ty1))%E
-      (λ v, +[v ◁ᵥ &shr{κ} ty2])
-      (λ post '-[a], post -[((a.1 +ₗ ty_bsize ty1), a.2.2)]).
+  Lemma type_shr_bytes_field_instr {𝔄lb 𝔄 𝔄la} κ Lay (tb: typel 𝔄lb) (ty: type 𝔄)
+      (ta: typel 𝔄la) p E L I :
+    typed_instr E L I +[p ◁ᵥ &shr{κ} (struct_ty Lay (tb h++ ty +:: ta))]
+      (p +ₗ #(struct_off Lay (𝔄lb ++ 𝔄 :: 𝔄la) (length 𝔄lb)))%E
+      (λ v, +[v ◁ᵥ &shr{κ} ty])
+      (λ post '-[a], post -[((a.1 +ₗ struct_off Lay (𝔄lb ++ 𝔄 :: 𝔄la) (length 𝔄lb)),
+        phd (psepr (Xl:=𝔄lb) a.2))]).
   Proof.
-    iIntros (tid post mask iκs [[l [x1 x2]] []]) "_ _ _ _ _ $ $ [p _] Obs".
+    iIntros (tid post mask iκs [[l x] []]) "_ _ _ _ _ $ $ [p _] Obs".
     wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
     simpl in Hw. simplify_eq. wp_op.
-    iExists -[((l +ₗ ty_bsize ty1), x2)]. iFrame "Obs". iSplit; [|done].
+    set o := struct_off Lay (𝔄lb ++ 𝔄 :: 𝔄la) (length 𝔄lb).
+    iExists -[((l +ₗ o), phd (psepr x))]. iFrame "Obs". iSplit; [|done].
     rewrite tctx_val_val. iExists d. iFrame "⧖". iSplit; [done|].
     destruct d as [|d]; [done|]. rewrite /= /by_succ.
-    iDestruct "Own" as "(#Pt & [_ Shr] & [_ Pers])". iFrame "Shr Pers".
-    rewrite /shr_bytes_own (bytes_own_pair _ ty1 ty2). by iApply (guards_weaken_rhs_sep_r with "Pt").
-  Qed.
-
-  Lemma type_shr_bytes_fst_instr {𝔄 𝔅} κ (ty1: type 𝔄) (ty2: type 𝔅) p E L I :
-    typed_instr E L I +[p ◁ᵥ &shr{κ} (ty1 * ty2)] (p)
-      (λ v, +[v ◁ᵥ &shr{κ} ty1])
-      (λ post '-[a], post -[(a.1, a.2.1)]).
-  Proof.
-    iIntros (tid post mask iκs [[l [x1 x2]] []]) "_ _ _ _ _ $ $ [p _] Obs".
-    wp_bind p. iApply (wp_val with "p"). iIntros (w d Hp Hw) "#⧖ #Own".
-    simpl in Hw. simplify_eq.
-    iExists -[(l, x1)]. iFrame "Obs". iSplit; [|done].
-    rewrite tctx_val_val. iExists d. iFrame "⧖". iSplit; [done|].
-    destruct d as [|d]; [done|]. rewrite /= /by_succ.
-    iDestruct "Own" as "(#Pt & [Shr _] & [Pers _])". iFrame "Shr Pers".
-    rewrite /shr_bytes_own (bytes_own_pair _ ty1 ty2). by iApply (guards_weaken_rhs_sep_l with "Pt").
+    iDestruct "Own" as "(#Pt & Shr & Pers)".
+    iEval (rewrite fields_ty_shr_app) in "Shr". iEval (rewrite fields_ty_gho_pers_app) in "Pers".
+    iDestruct "Shr" as "[_ [$ _]]". iDestruct "Pers" as "[_ [$ _]]".
+    rewrite /shr_bytes_own (bytes_own_struct Lay _ (tb h++ ty +:: ta)) fields_bytes_own_app.
+    rewrite (drop_S _ o); [|apply struct_off_lookup; rewrite length_app /=; lia].
+    iDestruct (guards_weaken_rhs_sep_l with "Pt") as "Pt'".
+    iDestruct (guards_weaken_rhs_sep_r with "Pt'") as "Pt''".
+    by iDestruct (guards_weaken_rhs_sep_l with "Pt''") as "$".
   Qed.
 End shr_bytes_fields.
