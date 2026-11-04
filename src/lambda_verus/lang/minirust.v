@@ -1516,6 +1516,9 @@ Proof. intros. by apply enum_lay_wf. Qed.
 Lemma enum_lay_wf_eq EL ms : el_wf EL ms → enum_lay EL ms = EL.
 Proof. intros. by rewrite /enum_lay decide_True. Qed.
 
+Lemma enum_lay_tagged ms : Forall mty_wf ms → enum_lay (tagged_layout ms) ms = tagged_layout ms.
+Proof. intros. by apply enum_lay_wf_eq, tagged_layout_wf. Qed.
+
 (** The effective layout depends only on the sizes of the (well-formed) payloads. *)
 Lemma el_wf_sizes EL ms ms' :
   Forall mty_wf ms' → mty_size <$> ms = mty_size <$> ms' → el_wf EL ms → el_wf EL ms'.
