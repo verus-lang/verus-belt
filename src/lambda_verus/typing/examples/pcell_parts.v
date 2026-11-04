@@ -171,8 +171,11 @@ Section pcell_parts.
     syn_mty (trackedₛ (pcellₛ (syn_wmty (intₛ i32)) * intₛ i32))]).
   Notation pairt := (struct_ty DL +[pcell_ty (wfm (MInt i32)); cell_points_to_ty i32t]).
   Notation pair'ₛ := (structₛ DL Dl).
-  Notation optt := (Σ! +[(); pairt])%T.
-  Notation optₛ := (Σ! [unitₛ; pair'ₛ])%ST.
+  (* [Option<D>], at the tagged layout. *)
+  Notation Ol := [unitₛ; pair'ₛ].
+  Notation OL := (tagged_layout [zst_mty; syn_mty pair'ₛ]).
+  Notation optt := (enum_ty OL +[(); pairt])%T.
+  Notation optₛ := (enumₛ OL Ol)%ST.
 
   (** A branch that the specification rules out. *)
   Local Lemma typed_body_false {𝔄l 𝔅} E L I (C: cctx 𝔅) (T: tctx 𝔄l) e :
@@ -206,10 +209,10 @@ Section pcell_parts.
     let: "opt" := MkVariant 1 "cp" in                           (* Some(cp) *)
     let: "o" := (Alloc #5) in
     "o" <-{syn_mty optₛ} "opt";;                          (* *o = opt *)
-    case: (GetDiscr (syn_mty (Σ! [unitₛ; pair'ₛ])%ST) "o") of
+    case: (GetDiscr (syn_mty optₛ) "o") of
     [ jump: "return" ["o"];                                     (* None: unreachable *)
       Newlft;;                                                  (* Some(r) *)
-      let: "r" := &ˢ ("o" +ₗ #1) in                       (* r: &(PCell, PointsTo) *)
+      let: "r" := &ˢ ("o" +ₗ #(enum_off OL Ol 1)) in      (* r: &(PCell, PointsTo) *)
       let: "pcell_ref" := ("r" +ₗ #(struct_off DL Dl 0)) in   (* &r.0 *)
       let: "perm_ref" := ("r" +ₗ #(struct_off DL Dl 1)) in    (* &r.1 *)
       let: "intref" := PCellBorrow ["pcell_ref"; "perm_ref"] in
@@ -262,7 +265,7 @@ Section pcell_parts.
       { solve_typing. } { reflexivity. }
       iIntros (vcp). simpl_subst.
       iApply (type_let with "[]").
-      { apply (type_mk_variant_val_instr +[(); pairt]%T 1%fin). done. }
+      { apply (type_mk_variant_val_instr (EL:=OL) +[(); pairt]%T 1%fin). done. }
       { solve_typing. } { reflexivity. }
       iIntros (vopt). simpl_subst.
       (* o: a box, uninitialized; *o = opt *)
@@ -281,7 +284,7 @@ Section pcell_parts.
       iApply (type_newlft []). iIntros (κ).
       iApply (type_let with "[]").
       { eapply (type_share_place_instr _ _ _ vo
-          (POwn 5 (PSum +[(); pairt]%T 1%fin -[1%positive; (1%positive, 0%Z)] PHole)) κ (OfTy pairt) pairt);
+          (POwn 5 (PSum OL +[(); pairt]%T 1%fin -[1%positive; (1%positive, 0%Z)] PHole)) κ (OfTy pairt) pairt);
           [apply lty_sleaf_ofty; solve_typing|simpl; solve_typing..]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
@@ -311,10 +314,10 @@ Section pcell_parts.
       iApply (type_endlft _ _ _ _ κ).
       { solve_typing. }
       { apply unblock_tctx_cons_just.
-        apply (unblock_tctx_oplace_shr _ _ _ (PSum +[(); pairt]%T 1%fin -[1%positive; (1%positive, 0%Z)] PHole) pairt).
+        apply (unblock_tctx_oplace_shr _ _ _ (PSum OL +[(); pairt]%T 1%fin -[1%positive; (1%positive, 0%Z)] PHole) pairt).
         apply unblock_tctx_nil. }
       iApply type_seq.
-      { apply (type_drop_oplace_instr _ _ _ vo 5 5 (SumLty +[(); pairt]%T 1%fin (OfTy pairt))
+      { apply (type_drop_oplace_instr _ _ _ vo 5 5 (SumLty OL +[(); pairt]%T 1%fin (OfTy pairt))
           (const (const True))); [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
       iApply type_jump.

@@ -110,13 +110,13 @@ Section shr_view.
     shr_view κ ty y d g tid l -∗ (&shr{κ} ty).(ty_gho_own) (l, y) (S d) g tid.
   Proof. iIntros "#(Pt & Shr & Pers)". iFrame "Pt Shr". by iNext. Qed.
 
-  Lemma xsum_shr_pinj {𝔄l} (tyl: typel 𝔄l) i κ x0 d g tid :
-    ty_shr (Σ! tyl) κ (pinj i x0) d g tid ⊣⊢ ty_shr (tyl +!! i) κ x0 d g tid.
-  Proof. rewrite [ty_shr (Σ! tyl)]/ty_shr /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
+  Lemma enum_shr_pinj {EL 𝔄l} (tyl: typel 𝔄l) i κ x0 d g tid :
+    ty_shr (enum_ty EL tyl) κ (pinj i x0) d g tid ⊣⊢ ty_shr (tyl +!! i) κ x0 d g tid.
+  Proof. rewrite [ty_shr (enum_ty EL tyl)]/ty_shr /enum_ty /=. by rewrite to_xsum_pinj. Qed.
 
-  Lemma xsum_pers_pinj {𝔄l} (tyl: typel 𝔄l) i x0 d g tid :
-    ty_gho_pers (Σ! tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_pers (tyl +!! i) x0 d g tid.
-  Proof. rewrite [ty_gho_pers (Σ! tyl)]/ty_gho_pers /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
+  Lemma enum_pers_pinj {EL 𝔄l} (tyl: typel 𝔄l) i x0 d g tid :
+    ty_gho_pers (enum_ty EL tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_pers (tyl +!! i) x0 d g tid.
+  Proof. rewrite [ty_gho_pers (enum_ty EL tyl)]/ty_gho_pers /enum_ty /=. by rewrite to_xsum_pinj. Qed.
 
   (** A guarded typed load of a pointer from the guard of its bytes. *)
   Lemma wp_load_ptr_guarded E (l: loc) (l': loc) (G: iProp Σ) k :
@@ -162,8 +162,8 @@ End shr_view.
 Section pctx_shr.
   Context `{!typeG Σ}.
 
-  Lemma pctx_in_sum_inv {𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) y :
-    pctx_in (PSum tyl i w K) y → ∃ z, y = pinj i z ∧ pctx_in K z.
+  Lemma pctx_in_sum_inv {EL 𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) y :
+    pctx_in (PSum EL tyl i w K) y → ∃ z, y = pinj i z ∧ pctx_in K z.
   Proof.
     simpl. destruct (psum_proj i y) as [z|] eqn:Hs; [|done]. intros ?.
     exists z. split; [by apply psum_proj_Some|done].
@@ -177,9 +177,9 @@ Section pctx_shr.
         pctx_sguards K n k G (phd (psepr y)) (l +ₗ struct_off Lay (𝔄lb ++ 𝔄 :: 𝔄la) (length 𝔄lb))
     | POwn _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l y.1) ∗
         pctx_sguards K n k G y.2 y.1
-    | @PSum _ _ _ 𝔄l _ i w K => λ y l,
+    | @PSum _ _ _ 𝔄l EL _ i w K => λ y l,
         pctx_sguards K n k G (psum_proj_or i y w)
-          (l +ₗ tag_size 𝔄l)
+          (l +ₗ enum_off EL 𝔄l i)
     | PUniq _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l (uniq_bor_loc y)) ∗
         pctx_sguards K n k G (uniq_bor_current y) (uniq_bor_loc y)
     | PShr _ K => λ y l, (G &&{↑NllftG; k}&&> ptr_cell l y.1) ∗
@@ -202,7 +202,7 @@ Section pctx_shr.
     WP pctx_expr K e @ E {{ Φ }}.
   Proof.
     intros HE.
-    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IHK la|𝔅 𝔄' n' K IHK|𝔅 𝔄l tyl i w K IHK|
+    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IHK la|𝔅 𝔄' n' K IHK|𝔅 𝔄l EL tyl i w K IHK|
       𝔅 𝔄' κ' K IHK|𝔅 𝔄' κ' K IHK|𝔅 𝔄' κ' K IHK] in y, l, e, Φ |- *; simpl.
     - iIntros "WP". iApply (wp_wand with "WP"). iIntros (v) "(-> & _ & _ & G & HΦ)".
       by iApply "HΦ".
@@ -218,7 +218,7 @@ Section pctx_shr.
       iApply (wp_load_ptr_guarded _ l y.1 G k with "[$Gp $G $£1]"); [done|].
       iIntros "!> G". by iFrame.
     - iIntros "WP". iApply (IHK (psum_proj_or i y w)
-        (l +ₗ tag_size 𝔄l)).
+        (l +ₗ enum_off EL 𝔄l i)).
       wp_bind e. iApply (wp_wand with "WP").
       iIntros (v) "(-> & Gs & £ & G & HΦ)". wp_op. by iFrame.
     - iIntros "WP". iApply (IHK (uniq_bor_current y) (uniq_bor_loc y)).
@@ -254,7 +254,7 @@ Section pctx_shr.
         shr_view (pctx_slft K κ) (lty_fold lt) (pctx_get K y) dh g tid
           (pctx_loc K (lty_size lt) y l).
   Proof.
-    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IH la|𝔅 𝔄' n' K IH|𝔅 𝔄l tyl i w K IH|
+    induction K as [|𝔅 𝔄lb 𝔄f 𝔄la Lay lb K IH la|𝔅 𝔄' n' K IH|𝔅 𝔄l EL tyl i w K IH|
       𝔅 𝔄' κ' K IH|𝔅 𝔄' κ' K IH|𝔅 𝔄' κ' K IH] in κ, y, d, l, lt |- *; simpl; intros Hin.
     - iIntros "_ _ #V !>". iSplit; [done|]. iExists d. iFrame "V". iPureIntro. lia.
     - iIntros "#Gs £ #(Pt & Shr & Pers)".
@@ -285,11 +285,10 @@ Section pctx_shr.
     - destruct (pctx_in_sum_inv tyl i w K y Hin) as (z & Hy & Hin').
       simpl in Hy. subst y. rewrite psum_proj_or_pinj.
       iIntros "#Gs £ #(Pt & Shr & Pers)".
-      rewrite xsum_shr_pinj xsum_pers_pinj hlookup_hlist_set.
+      rewrite enum_shr_pinj enum_pers_pinj hlookup_hlist_set.
       iApply (IH with "Gs £"); [done|]. iFrame "Shr Pers".
       iEval (rewrite (cbytes_sum _ i (lty_fold (pctx_plug K lt)))) in "Pt".
-      iDestruct (guards_weaken_rhs_sep_r with "Pt") as "Pt'".
-      by iApply (guards_weaken_rhs_sep_l with "Pt'").
+      by iApply (guards_weaken_rhs_sep_r with "Pt").
     - iIntros "#Gs £ #(Pt & Shr & Pers)". destruct y as [[[[[l' z] ξi] d'] g'] idx].
       iDestruct "Shr" as "(%Hle & Pt' & _ & Shr0 & Pers0)".
       iDestruct (lc_weaken (1 + (1 + (1 + d' * (g + 3)))) with "£") as "(£a & £b & £c & £)";
@@ -370,7 +369,7 @@ Section pctx_vin.
     | PField _ lb K la => λ y,
         ltys_vin lb (psepl y) ∧ pctx_vin K (phd (psepr y)) ∧ ltys_vin la (ptl (psepr y))
     | POwn _ K | PShr _ K => λ y, pctx_vin K y.2
-    | PSum _ i _ K => λ y, match psum_proj i y with Some z => pctx_vin K z | None => False end
+    | PSum _ _ i _ K => λ y, match psum_proj i y with Some z => pctx_vin K z | None => False end
     | PUniq _ K | PResUniq _ K => λ y, pctx_vin K (uniq_bor_current y)
     end.
 
@@ -434,7 +433,7 @@ Section pshr_addr.
 
   (** The root of the place is the shared reference (a value [v], the value of [e]). The
       view of the referent may be changed to [lt''], of the same folded type, if the
-      referent is of its variants (e.g. after reading the tag of a sum). *)
+      referent is of its variants (e.g. after reading the discriminant of a sum). *)
   Lemma wp_pshr_open_root {𝔅 𝔄'} E κ (K2: pctx 𝔅 𝔄') (lt: lty 𝔅) (lt'': lty 𝔄')
       (x: ~~ (at_locₛ 𝔄')) D tid
       (v: val) (e: expr) (G: iProp Σ) (Φ: val → iProp Σ) :
@@ -739,65 +738,44 @@ End typing.
 Section case.
   Context `{!typeG Σ}.
 
-  (** The bytes of the tag only guarded, by [G] (as [wp_load_na_guarded_gen]). *)
-  Lemma wp_get_discr_sum_guarded E 𝔄l (j: nat) l G P dg Φ :
-    ↑naN ⊆ E → (j < length 𝔄l)%nat →
-    (G &&{↑naN; dg}&&> P) -∗
-    □ (P -∗ ∃ bt, ⌜decode_value (MInt (sum_tag 𝔄l)) bt = Some (VInt (Z.of_nat j))⌝ ∗
-        l ↦b bt ∗ (l ↦b bt -∗ P)) -∗
-    G -∗ £(2 * dg) -∗ (G -∗ Φ (MLitV (VInt (Z.of_nat j)))) -∗
-    WP GetDiscr (syn_mty (Σ! 𝔄l)) (MLit (VPtr l)) @ E {{ Φ }}.
-  Proof.
-    iIntros (? Hj) "#Guard #HP G £ HΦ".
-    iApply (wp_get_discr_guarded _ _ _ _ _ l G P
-      (λ cs, ∃ bt, cs = [(0%nat, bt)] ∧
-        decode_value (MInt (sum_tag 𝔄l)) bt = Some (VInt (Z.of_nat j)))
-      (λ off it, if decide (off = 0%nat ∧ it = sum_tag 𝔄l) then Some (Z.of_nat j) else None)
-      dg 1 with "Guard [] G [£] HΦ"); [done| | | | |by rewrite Nat.mul_1_r].
-    - rewrite length_fmap. apply seq_discr_eval; [done|]. by rewrite decide_True.
-    - by rewrite discr_depth_seq.
-    - intros cs off it z (bt & -> & Hbt) Hz. case_decide as Hc; [|done].
-      destruct Hc as [-> ->]. injection Hz as <-. by apply sum_tag_chunk.
-    - iIntros "!> HPx". iDestruct ("HP" with "HPx") as (bt Hbt) "[Hl Cl]".
-      iExists [(0%nat, bt)]. iSplit; [by eauto|].
-      rewrite /chunks_own /= shift_loc_0 right_id. iFrame "Hl". done.
-  Qed.
-
-  (** Reading the discriminant of a sum from its shared view (guarded loads of its tag). *)
-  Lemma wp_get_discr_shr_view {𝔄l} E κ (tyl: typel 𝔄l) j a dh D tid (l: loc)
+  (** Reading the discriminant of an enum from its shared view (guarded loads of the rest
+      of its bytes). The rest may be other bytes at each opening of the guard, so the
+      discriminator must read at most once ([enum_discr_depth1]). *)
+  Lemma wp_get_discr_shr_view {EL 𝔄l} E κ (tyl: typel 𝔄l) j a dh D tid (l: loc)
       (G: iProp Σ) (Φ: val → iProp Σ) :
-    ↑NllftG ⊆ E →
+    ↑NllftG ⊆ E → (discr_depth (enum_discr EL 𝔄l) ≤ 1)%nat →
     (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £(2 * (D + 1)) -∗
-    shr_view κ (Σ! tyl)%T (pinj j a) dh D tid l -∗
+    shr_view κ (enum_ty EL tyl) (pinj j a) dh D tid l -∗
     (G -∗ Φ (MLitV (VInt (Z.of_nat (fin_to_nat j))))) -∗
-    WP GetDiscr (syn_mty (Σ! 𝔄l)) #(l) @ E {{ Φ }}.
+    WP GetDiscr (syn_mty (enumₛ EL 𝔄l)) #(l) @ E {{ Φ }}.
   Proof.
-    iIntros (?) "#Gκ G £ #(Pt & _ & _) HΦ".
+    iIntros (? Hd) "#Gκ G £ #(Pt & _ & _) HΦ".
     iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt".
     iDestruct (guards_weaken_rhs_sep_l with "Pt") as "Pt'".
-    iApply (wp_get_discr_sum_guarded _ _ _ _ G (tag_cell 𝔄l l j) (D + 1)
-      with "[] [] G £ HΦ"); [done|apply fin_to_nat_lt| |].
+    iApply (wp_get_discr_enum_guarded _ _ _ _ _ G (enum_rest EL 𝔄l j l) (D + 1)
+      with "[] [] G £ HΦ"); [solve_ndisj|done| |].
     { iApply (guards_transitive_right with "Gκ Pt'"). }
-    iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
-    iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame.
+    iIntros "!> (%b1 & %b2 & B1 & B2 & %Hr)". iExists b1, b2. iFrame "B1 B2".
+    iSplit; [done|]. iIntros "B1 B2". iExists b1, b2. by iFrame.
   Qed.
 
   (** At the root: case analysis on the sum at the hole of [K2], below the shared reference
       at the root; the branch of the variant [i] gets the view
-      [SumLty tyl i (OfTy (tyl +!! i))] at the hole. *)
-  Lemma type_case_vplace_pshr_root {𝔄l 𝔅 𝔅l 𝔇} E L I (C: cctx 𝔇) p κ (K2: pctx (Σ! 𝔄l) 𝔅)
+      [SumLty EL tyl i (OfTy (tyl +!! i))] at the hole. *)
+  Lemma type_case_vplace_pshr_root {EL 𝔄l 𝔅 𝔅l 𝔇} E L I (C: cctx 𝔇) p κ (K2: pctx (enumₛ EL 𝔄l) 𝔅)
       (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
     IntoPlistc el el' →
+    (discr_depth EL.(el_discr) ≤ 1)%nat →
     lctx_lft_alive E L (pctx_salv K2 κ) →
     ([∗ nat] i < length 𝔄l, typed_body E L I C
-      (p ◁ₗ ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ +:: T)
+      (p ◁ₗ ShrLty (pctx_plug K2 (SumLty EL tyl i (OfTy (tyl +!! i)))) κ +:: T)
       (el' -!! i) (trl -!! i)) -∗
-    typed_body E L I C (p ◁ₗ ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ +:: T)
-      (case: (GetDiscr (syn_mty (Σ! 𝔄l)) (pctx_expr K2 p)) of el)
+    typed_body E L I C (p ◁ₗ ShrLty (pctx_plug K2 (OfTy (enum_ty EL tyl))) κ +:: T)
+      (case: (GetDiscr (syn_mty (enumₛ EL 𝔄l)) (pctx_expr K2 p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
-    move=> -> Alv. iIntros "el".
+    move=> -> Hdd Alv. iIntros "el".
     iIntros (tid [x xl] mask post iκs) "#LFT #TIME #PROPH #UNIQ #E L I C /=[Tp T] #Obs".
     destruct x as [x ζm].
     iDestruct "Tp" as (v Hp) "Tp". rewrite vplace_own_eq.
@@ -816,9 +794,9 @@ Section case.
     { iApply (guards_transitive with "Ghalf Alv"). }
     iDestruct (lc_weaken (pshr_cred D + 2 * (D + 1)) with "£") as "[£a £r]";
       [have := pshr_cred_step D; lia|].
-    set lt'' := pctx_plug K2 (SumLty tyl j (OfTy (tyl +!! j))).
+    set lt'' := pctx_plug K2 (SumLty EL tyl j (OfTy (tyl +!! j))).
     wp_bind (pctx_expr K2 p).
-    iApply (wp_pshr_open_root _ κ K2 (OfTy (Σ! tyl)) lt'' x D tid v p (fractional.half γh)
+    iApply (wp_pshr_open_root _ κ K2 (OfTy (enum_ty EL tyl)) lt'' x D tid v p (fractional.half γh)
       with "Hs H1 £a [] Own"); [solve_ndisj| |..].
     { apply lty_fold_plug_eq'. by rewrite lty_fold_sum_ofty. }
     { rewrite !lty_vin_plug -Hz /= psum_proj_pinj. naive_solver. }
@@ -827,7 +805,7 @@ Section case.
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
     { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
     rewrite -Hz.
-    iApply (wp_get_discr_shr_view with "Hsl H1 £r V"); [solve_ndisj|].
+    iApply (wp_get_discr_shr_view with "Hsl H1 £r V"); [solve_ndisj|by apply enum_discr_depth1|].
     iIntros "H1".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro.
@@ -841,26 +819,28 @@ Section case.
   Qed.
 
   (** Case analysis on the sum at the hole of [K2], below the shared reference at the hole
-      of [K]: the tag is read through the view (a guarded typed load), and the branch of the
-      variant [i] gets the place with the view [SumLty tyl i (OfTy (tyl +!! i))] at the
+      of [K]: the discriminant is read through the view (guarded typed loads, for a
+      discriminator that reads once), and the branch of the
+      variant [i] gets the place with the view [SumLty EL tyl i (OfTy (tyl +!! i))] at the
       hole (the referent does not change, so the variant is recorded in the place type,
       [lty_vin]). *)
-  Lemma type_case_vplace_pshr {𝔄l 𝔅 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p (K: pctx (at_locₛ 𝔅) 𝔄)
-      `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx (Σ! 𝔄l) 𝔅) (tyl: typel 𝔄l) (T: tctx 𝔅l)
+  Lemma type_case_vplace_pshr {EL 𝔄l 𝔅 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p (K: pctx (at_locₛ 𝔅) 𝔄)
+      `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx (enumₛ EL 𝔄l) 𝔅) (tyl: typel 𝔄l) (T: tctx 𝔅l)
       el el' trl :
     IntoPlistc el el' →
-    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)) →
+    (discr_depth EL.(el_discr) ≤ 1)%nat →
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (enum_ty EL tyl))) κ)) →
     lctx_lft_alive E L (pctx_salv K2 κ) →
     ([∗ nat] i < length 𝔄l, typed_body E L I C
-      (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ) +:: T)
+      (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (SumLty EL tyl i (OfTy (tyl +!! i)))) κ) +:: T)
       (el' -!! i) (trl -!! i)) -∗
-    typed_body E L I C (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
-      (case: (GetDiscr (syn_mty (Σ! 𝔄l))
+    typed_body E L I C (p ◁ₗ pctx_plug K (ShrLty (pctx_plug K2 (OfTy (enum_ty EL tyl))) κ) +:: T)
+      (case: (GetDiscr (syn_mty (enumₛ EL 𝔄l))
         (pctx_expr K2 (Load Na1Ord MPtr (pctx_vexpr K p)))) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1).2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
-    move=> -> Alv1 Alv2. iIntros "el".
+    move=> -> Hdd Alv1 Alv2. iIntros "el".
     iIntros (tid [x xl] mask post iκs) "#LFT #TIME #PROPH #UNIQ #E L I C /=[Tp T] #Obs".
     destruct x as [x₀ ζm].
     iDestruct "Tp" as (v Hp) "Tp". iEval (rewrite vplace_own_open) in "Tp".
@@ -877,15 +857,15 @@ Section case.
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
       [solve_ndisj|].
     iAssert (fractional.half γh &&{↑NllftG}&&>
-      @[pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)])%I
+      @[pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (enum_ty EL tyl))) κ)])%I
       as "#Hu". { iApply (guards_transitive with "Ghalf Alv1"). }
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_salv K2 κ])%I as "#Hs".
     { iApply (guards_transitive with "Ghalf Alv2"). }
     iDestruct (lc_weaken (pshr_cred D + 2 * (D + 1)) with "£") as "[£a £r]";
       [have := pshr_cred_step D; lia|].
-    set lt'' := pctx_plug K2 (SumLty tyl j (OfTy (tyl +!! j))).
+    set lt'' := pctx_plug K2 (SumLty EL tyl j (OfTy (tyl +!! j))).
     wp_bind (pctx_expr K2 _).
-    iApply (wp_pshr_open _ K κ K2 (OfTy (Σ! tyl)) lt'' x₀ ζm D tid _ p (fractional.half γh)
+    iApply (wp_pshr_open _ K κ K2 (OfTy (enum_ty EL tyl)) lt'' x₀ ζm D tid _ p (fractional.half γh)
       with "LFT PROPH UNIQ Hu Hs H1 £a ⧖ [] Own"); [solve_ndisj| |..].
     { apply lty_fold_plug_eq'. by rewrite lty_fold_sum_ofty. }
     { rewrite !lty_vin_plug -/y -Hz /= psum_proj_pinj. naive_solver. }
@@ -894,7 +874,7 @@ Section case.
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
     { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
     rewrite -Hz.
-    iApply (wp_get_discr_shr_view with "Hsl H1 £r V"); [solve_ndisj|].
+    iApply (wp_get_discr_shr_view with "Hsl H1 £r V"); [solve_ndisj|by apply enum_discr_depth1|].
     iIntros "H1".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro.
@@ -905,25 +885,26 @@ Section case.
     { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?to_xsum_pinj. }
     iFrame "T". iExists _. iSplit; [done|].
     iApply (vplace_own_close with "⧖ [⧗p]"); [|done].
-    rewrite (lty_vnrc_plug_eq K (ShrLty lt'' κ) (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)) //.
-    by rewrite /= /lt'' (lty_nrc_plug_eq K2 (SumLty tyl j (OfTy (tyl +!! j))) (OfTy (Σ! tyl))).
+    rewrite (lty_vnrc_plug_eq K (ShrLty lt'' κ) (ShrLty (pctx_plug K2 (OfTy (enum_ty EL tyl))) κ)) //.
+    by rewrite /= /lt'' (lty_nrc_plug_eq K2 (SumLty EL tyl j (OfTy (tyl +!! j))) (OfTy (enum_ty EL tyl))).
   Qed.
 
-  Lemma type_case_oplace_pshr {𝔄l 𝔅 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (at_locₛ 𝔅) 𝔄)
-      `{!PctxNoShr K} κ (K2: pctx (Σ! 𝔄l) 𝔅) (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
+  Lemma type_case_oplace_pshr {EL 𝔄l 𝔅 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (at_locₛ 𝔅) 𝔄)
+      `{!PctxNoShr K} κ (K2: pctx (enumₛ EL 𝔄l) 𝔅) (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
     IntoPlistc el el' →
-    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ)) →
+    (discr_depth EL.(el_discr) ≤ 1)%nat →
+    lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (enum_ty EL tyl))) κ)) →
     lctx_lft_alive E L (pctx_salv K2 κ) →
     ([∗ nat] i < length 𝔄l, typed_body E L I C
-      (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (SumLty tyl i (OfTy (tyl +!! i)))) κ) +:: T)
+      (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (SumLty EL tyl i (OfTy (tyl +!! i)))) κ) +:: T)
       (el' -!! i) (trl -!! i)) -∗
-    typed_body E L I C (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (OfTy (Σ! tyl))) κ) +:: T)
-      (case: (GetDiscr (syn_mty (Σ! 𝔄l))
+    typed_body E L I C (p ◁ₗown{n} pctx_plug K (ShrLty (pctx_plug K2 (OfTy (enum_ty EL tyl))) κ) +:: T)
+      (case: (GetDiscr (syn_mty (enumₛ EL 𝔄l))
         (pctx_expr K2 (Load Na1Ord MPtr (pctx_expr K p)))) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1.2).2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
-    iIntros (???) "el".
+    iIntros (????) "el".
     iApply (type_case_vplace_pshr E L I C p (POwn n K) κ K2 tyl T el el' trl with "el"); done.
   Qed.
 End case.

@@ -264,18 +264,19 @@ Section value_parts.
   Qed.
 
   (** The value of a variant, from the value of its payload. *)
-  Lemma val_own_pinj {𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) a tid w :
+  Lemma val_own_pinj {EL 𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) a tid w :
     val_own (tyl +!! i) a tid (MLitV w) -∗
-    val_own (Σ! tyl) (pinj i a) tid (MLitV (VVariant (Z.of_nat (fin_to_nat i)) w)).
+    val_own (enum_ty EL tyl) (pinj i a) tid (MLitV (VVariant (Z.of_nat (fin_to_nat i)) w)).
   Proof.
     iIntros "(%w' & %d & %fv & [%Hv %Hfv] & Hc & ⧖ & Gho)". injection Hv as <-.
     iExists _, d, _. iSplit.
     { iPureIntro. split; [done|]. rewrite -ty_fval_eq syn_fval_pinj (ty_fval_eq (tyl +!! i)) Hfv //. }
     iFrame "⧖". iSplitL "Hc".
-    - rewrite -!ty_mty_eq. change (syn_mty (Σ! 𝔄l)) with (seq_enum (syn_mty <$> 𝔄l)).
-      iApply (val_cells_enum with "Hc"); [apply (syn_mty_wf (Σ! 𝔄l))|lia|].
-      rewrite /seq_enum Nat2Z.id list_lookup_imap list_lookup_fmap llookup_lookup //.
-    - rewrite [ty_gho_own (Σ! tyl)]/ty_gho_own /xsum_ty /= to_xsum_pinj. done.
+    - rewrite -!ty_mty_eq. destruct (enum_vars_lookup EL 𝔄l i) as [tg Hvl].
+      have Hwf := syn_mty_wf (enumₛ EL 𝔄l). rewrite syn_mty_enum in Hwf |- *.
+      iApply (val_cells_enum with "Hc"); [exact Hwf|lia|].
+      rewrite Nat2Z.id Hvl //.
+    - rewrite [ty_gho_own (enum_ty EL tyl)]/ty_gho_own /enum_ty /= to_xsum_pinj. done.
   Qed.
 
   (** The values of the fields of a struct. *)
@@ -411,9 +412,9 @@ Section value_rules.
 
   (** A variant value: the payload (which may contain cells) with the index of the
       variant. *)
-  Lemma type_mk_variant_val_instr {𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (t: Z) p E L I :
+  Lemma type_mk_variant_val_instr {EL 𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (t: Z) p E L I :
     t = Z.of_nat (fin_to_nat i) →
-    typed_instr E L I +[p ◁ᵥ tyl +!! i] (MkVariant t p) (λ v, +[v ◁ᵥ Σ! tyl])
+    typed_instr E L I +[p ◁ᵥ tyl +!! i] (MkVariant t p) (λ v, +[v ◁ᵥ enum_ty EL tyl])
       (λ post '-[a], post -[pinj i a]).
   Proof.
     iIntros (-> tid post mask iκs [a []]) "_ _ _ _ _ $$ [p _] Obs".

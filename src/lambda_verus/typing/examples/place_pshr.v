@@ -142,13 +142,16 @@ Section place_pshr.
       match **b { Some(v) => v, None => 0 }
   }
   ```
-  The tag of `**b` is read through the shared reference with a guarded typed load
+  The discriminant of `**b` is read through the shared reference with a guarded typed load
   ([type_case_oplace_pshr], [K = PHole], [K2 = PHole]); in the branch of `Some`, the view
-  of the referent is the sum place [SumLty _ 1 (OfTy i32)] and its payload is read
-  ([K2 = PSum _ 1 _ PHole], at the offset of the tag).
+  of the referent is the enum place [SumLty OL _ 1 (OfTy i32)] and its payload is read
+  ([K2 = PSum OL _ 1 _ PHole], at the offset [enum_off OL Ol 1] of the payload). The
+  layout is the tagged one ([tagged_layout]), whose discriminator reads once.
   *)
-  Notation opt_i32 := (Σ! +[(); i32t])%T.
-  Notation opt_i32ₛ := (Σ! [unitₛ; intₛ i32])%ST.
+  Notation Ol := [unitₛ; intₛ i32].
+  Notation OL := (tagged_layout [zst_mty; MInt i32]).
+  Notation opt_i32 := (enum_ty OL +[(); i32t])%T.
+  Notation opt_i32ₛ := (enumₛ OL Ol)%ST.
 
   Definition get_or_zero_pb : expr := (
     ReBor;;                                                    (* unfold *b *)
@@ -156,7 +159,7 @@ Section place_pshr.
     [ (#☠;; delete [ #(Z.of_nat PTR_SIZE); "b"]);;       (* None: drop b *)
       let: "z" := MLit (VInt 0) in
       jump: "return" ["z"];
-      let: "v" := !ᶜ{MInt i32} ((Load Na1Ord MPtr "b") +ₗ #1) in
+      let: "v" := !ᶜ{MInt i32} ((Load Na1Ord MPtr "b") +ₗ #(enum_off OL Ol 1)) in
       (#☠;; delete [ #(Z.of_nat PTR_SIZE); "b"]);;       (* Some(v): drop b *)
       jump: "return" ["v"]])%E.
 
@@ -180,12 +183,12 @@ Section place_pshr.
       { solve_typing. } { reflexivity. }
       (* match **b *)
       iApply (type_case_oplace_pshr _ _ _ _ vb PTR_SIZE PHole α PHole +[(); i32t]%T _ _ _
-        -[_; _]); [solve_typing|solve_typing|].
+        -[_; _]); [by vm_compute|solve_typing|solve_typing|].
       iSplitL; [|iSplitL; [|done]].
       - (* None: drop b *)
         iApply type_seq.
         { apply (type_drop_oplace_deep_instr _ _ _ vb PTR_SIZE (Z.of_nat PTR_SIZE)
-            (ShrLty (SumLty +[(); i32t]%T 0%fin (OfTy ())) α)); [done|done|done|].
+            (ShrLty (SumLty OL +[(); i32t]%T 0%fin (OfTy ())) α)); [done|done|done|].
           apply lty_rslv_shr. }
         { solve_typing. } { simpl. reflexivity. }
         iApply (type_let with "[]"). { by apply (type_val_int_instr i32 0). }
@@ -199,13 +202,13 @@ Section place_pshr.
       - (* Some(v): read v *)
         iApply (type_let with "[]").
         { apply (type_read_place_instr _ _ _ vb
-            (POwn PTR_SIZE (PShr α (PSum +[(); i32t]%T 1%fin 0%Z PHole))) (OfTy i32t) i32t static);
+            (POwn PTR_SIZE (PShr α (PSum OL +[(); i32t]%T 1%fin 0%Z PHole))) (OfTy i32t) i32t static);
             [by split|apply _|solve_typing]. }
         { solve_typing. } { simpl. reflexivity. }
         iIntros (vv). simpl_subst.
         iApply type_seq.
         { apply (type_drop_oplace_deep_instr _ _ _ vb PTR_SIZE (Z.of_nat PTR_SIZE)
-            (ShrLty (SumLty +[(); i32t]%T 1%fin (OfTy i32t)) α)); [done|done|done|].
+            (ShrLty (SumLty OL +[(); i32t]%T 1%fin (OfTy i32t)) α)); [done|done|done|].
           apply lty_rslv_shr. }
         { solve_typing. } { reflexivity. }
         iApply type_jump.

@@ -243,6 +243,116 @@ Section get_discr.
         iApply ("IH1" with "[%] [%] HR HΦ"); [done|simpl in *; lia].
   Qed.
 
+  (** A discriminator gives [t] whatever the integers read are, as long as each one
+      satisfies [ok] (a reader per read: e.g. when each read opens a guard anew). *)
+  Fixpoint discr_eval_all (ok : nat → IntType → Z → Prop) (d : discr) (t : Z) : Prop :=
+    match d with
+    | DKnown t' => t' = t
+    | DInvalid => False
+    | DBranch off it fb ch => ∀ z, ok off it z →
+        (fix go ch := match ch with
+          | [] => discr_eval_all ok fb t
+          | ((lo, hi), c) :: ch => if decide (lo ≤ z < hi)%Z then discr_eval_all ok c t else go ch
+          end) ch
+    end.
+
+  Lemma discr_eval_all_branch ok fb ch t (z : Z) :
+    (fix go ch := match ch with
+      | [] => discr_eval_all ok fb t
+      | ((lo, hi), c) :: ch => if decide (lo ≤ z < hi)%Z then discr_eval_all ok c t else go ch
+      end) ch =
+    match list_find (λ c, (c.1.1 ≤ z < c.1.2)%Z) ch with
+    | Some (_, (_, c)) => discr_eval_all ok c t | None => discr_eval_all ok fb t end.
+  Proof.
+    induction ch as [|[[lo hi] c] ch IH]; simpl; [done|]. case_decide; [done|].
+    rewrite IH. by destruct (list_find _ ch) as [[??]|].
+  Qed.
+
+  (** A discriminator with at most one read gives [t] whatever is read, if every value
+      that may be read is that of a reader giving [t]. *)
+  Lemma discr_eval_all_depth1 ok d t :
+    (discr_depth d ≤ 1)%nat → (∃ rd, discr_eval rd d = Some t) →
+    (∀ off it z, ok off it z → ∃ rd, rd off it = Some z ∧ discr_eval rd d = Some t) →
+    discr_eval_all ok d t.
+  Proof.
+    have Hleaf : ∀ c rd, discr_depth c = 0%nat → discr_eval rd c = Some t → discr_eval_all ok c t.
+    { intros [t'| |????] rd; simpl; [by intros _ [= ->]|done|lia]. }
+    intros Hd [rd0 H0] Hok. destruct d as [t'| |off it fb ch];
+      [by injection H0|done|].
+    cbn [discr_eval_all]. intros z Hz. destruct (Hok _ _ _ Hz) as (rd & Hrd & Hev).
+    rewrite discr_eval_all_branch. rewrite discr_eval_branch Hrd /= in Hev.
+    destruct (list_find _ ch) as [[k [r c]]|] eqn:Hf.
+    - apply list_find_Some in Hf as (Hk & _ & _).
+      have [_ Hc] := discr_depth_branch off it fb ch k r c Hk.
+      apply (Hleaf c rd); [lia|done].
+    - have Hfb : (discr_depth fb < discr_depth (DBranch off it fb ch))%nat by simpl; lia.
+      apply (Hleaf fb rd); [lia|done].
+  Qed.
+
+  (** The reads of a discriminator with at most one read succeed if it gives a result. *)
+  Lemma discr_reads_depth1 d off it rd t :
+    (discr_depth d ≤ 1)%nat → (off, it) ∈ discr_reads d → discr_eval rd d = Some t →
+    is_Some (rd off it).
+  Proof.
+    have Hleaf : ∀ c, discr_depth c = 0%nat → discr_reads c = [].
+    { intros [t'| |????]; simpl; [done|done|lia]. }
+    destruct d as [t'| |off0 it0 fb ch]; simpl; [by intros _ ?%elem_of_nil|by intros _ ?%elem_of_nil|].
+    intros Hd Hr Hev. rewrite (Hleaf fb) in Hr; [|lia].
+    have Hch : ∀ k r c, ch !! k = Some (r, c) → discr_depth c = 0%nat.
+    { intros k r c Hk. have [_ Hc] := discr_depth_branch off0 it0 fb ch k r c Hk. simpl in Hc. lia. }
+    rewrite (_ : (fix go (ch : list ((Z * Z) * discr)) : list (nat * IntType) :=
+      match ch with [] => [] | (_, c) :: ch => discr_reads c ++ go ch end) ch = []) in Hr.
+    { apply elem_of_list_singleton in Hr. injection Hr as -> ->.
+      destruct (rd off0 it0); [by eexists|by simpl in Hev]. }
+    clear Hd Hev. induction ch as [|[r c] ch IH]; simpl; [done|].
+    rewrite (Hleaf c); [|by apply (Hch 0%nat r)]. apply IH. intros k. apply (Hch (S k)).
+  Qed.
+
+  Lemma wp_get_discr_rel E vars d sz al l (rdok : nat → IntType → Prop)
+      (ok : nat → IntType → Z → Prop) (R : nat → iProp Σ) t n Φ :
+    discr_eval_all ok d t → (discr_depth d ≤ n)%nat →
+    (∀ off it, (off, it) ∈ discr_reads d → rdok off it) →
+    □ (∀ off it k, ⌜rdok off it⌝ -∗ R (S k) -∗
+        WP Load Na1Ord (MInt it) (MLit (VPtr (l +ₗ off))) @ E
+          {{ v, ∃ z, ⌜v = MLitV (VInt z) ∧ ok off it z⌝ ∗ R k }}) -∗
+    R n -∗ (∀ k, R k -∗ Φ (MLitV (VInt t))) -∗
+    WP GetDiscr (MEnum vars d sz al) (MLit (VPtr l)) @ E {{ Φ }}.
+  Proof.
+    iIntros (Hd Hn Hrd) "#Hload HR HΦ". wp_pure (GetDiscr _ _).
+    iInduction d as [t'| |off it fb ch] "IH" using discr_ind' forall (n Hd Hn Hrd).
+    - simplify_eq/=. wp_value_head. by iApply "HΦ".
+    - done.
+    - destruct n as [|n]; [simpl in Hn; lia|].
+      have Hcl := discr_expr_closed (DBranch off it fb ch) l.
+      simpl in Hcl. apply andb_True in Hcl as [Hcl _].
+      iApply (wp_bind (fill [AppRCtx (@RecV BAnon [BNamed "z"] _ Hcl) [] []])).
+      iApply (wp_wand with "(Hload [%] HR)").
+      { apply Hrd, elem_of_discr_reads_branch. by left. }
+      iIntros (v) "(%z & [-> %Hz] & HR) /=".
+      cbn [discr_eval_all] in Hd. specialize (Hd z Hz). rewrite discr_eval_all_branch in Hd.
+      set body := (fix go (ch : list ((Z * Z) * discr)) : expr := match ch with
+        | [] => discr_expr fb l
+        | ((lo, hi), c) :: ch => Case (discr_test lo hi) [go ch; discr_expr c l] end) ch.
+      have Hpe : PureExec True 1 (App (Rec BAnon [BNamed "z"] body) [MLit (VInt z)])
+          (subst "z" (MLit (VInt z)) body).
+      { apply (pure_rec _ BAnon [BNamed "z"] body); [done| |exact Hcl|].
+        - constructor; [|constructor]. by eexists (MLitV _).
+        - rewrite /DoSubstL /=. reflexivity. }
+      iApply (wp_pure_step_later _ _ _ _ _ _ _ Hpe); [done|].
+      iIntros "!> _". rewrite subst_discr_sel. iApply wp_discr_sel.
+      destruct (list_find _ ch) as [[k [r c]]|] eqn:Hf.
+      + apply list_find_Some in Hf as (Hk & _ & _).
+        have [_ Hc] := discr_depth_branch off it fb ch k r c Hk.
+        iDestruct (big_sepL_lookup _ _ k with "IH") as "IHc"; [done|].
+        iDestruct "IHc" as "#IHc". iApply ("IHc" with "[%] [%] [%] HR HΦ"); [done|simpl in *; lia|].
+        intros off' it' Hr'. apply Hrd, elem_of_discr_reads_branch. right; right.
+        exists (r, c). split; [by eapply elem_of_list_lookup_2|done].
+      + have [Hfb _] : (discr_depth fb < discr_depth (DBranch off it fb ch) ∧ True)%nat.
+        { split; [simpl; lia|done]. }
+        iApply ("IH1" with "[%] [%] [%] HR HΦ"); [done|simpl in *; lia|].
+        intros off' it' Hr'. apply Hrd, elem_of_discr_reads_branch. by right; left.
+  Qed.
+
   (** The reader of the integers in chunks [(offset, bytes)] of the bytes of an enum. *)
   Fixpoint chunks_reader (cs : list (nat * list abyte)) (off : nat) (it : IntType) : option Z :=
     match cs with
@@ -319,5 +429,42 @@ Section get_discr.
       iDestruct (chunks_reader_acc with "Hcs") as (bs) "(%Hbs & Hbs & Cl')"; [by eapply Hrd|].
       iExists bs. iFrame "Hbs". iSplit; [done|]. iIntros "Hbs". iApply "Cl". by iApply "Cl'". }
     iIntros "!> G". iSplit; [done|]. iFrame.
+  Qed.
+  (** Guarded chunks that may change between the reads: each read reads the chunks of one
+      opening of the guard ([Ψ cs]); the discriminator must give [t] for any mixture
+      ([discr_eval_all], e.g. [discr_eval_all_depth1]). *)
+  Lemma wp_get_discr_guarded_all E vars d sz al l G P (Ψ : list (nat * list abyte) → Prop)
+      dg n t Φ :
+    ↑naN ⊆ E →
+    discr_eval_all (λ off it z, ∃ cs, Ψ cs ∧ chunks_reader cs off it = Some z) d t →
+    (discr_depth d ≤ n)%nat →
+    (∀ off it, (off, it) ∈ discr_reads d → ∀ cs, Ψ cs → is_Some (chunks_reader cs off it)) →
+    (G &&{↑naN; dg}&&> P) -∗
+    □ (P -∗ ∃ cs, ⌜Ψ cs⌝ ∗ chunks_own l cs ∗ (chunks_own l cs -∗ P)) -∗
+    G -∗ £(2 * dg * n) -∗ (G -∗ Φ (MLitV (VInt t))) -∗
+    WP GetDiscr (MEnum vars d sz al) (MLit (VPtr l)) @ E {{ Φ }}.
+  Proof.
+    iIntros (? Hd Hn Hrd) "#Guard #HP G £ HΦ".
+    iApply (wp_get_discr_rel _ _ _ _ _ _
+      (λ off it, ∀ cs, Ψ cs → is_Some (chunks_reader cs off it))
+      (λ off it z, ∃ cs, Ψ cs ∧ chunks_reader cs off it = Some z)
+      (λ k, G ∗ £(2 * dg * k))%I t n with "[] [$G $£] [HΦ]"); [exact Hd|exact Hn|exact Hrd|..];
+      last first.
+    { iIntros (k) "[G _]". by iApply "HΦ". }
+    iIntros "!>" (off it k Hok) "[G £]".
+    rewrite (_ : (2 * dg * S k = 2 * dg + 2 * dg * k)%nat); [|lia].
+    iDestruct "£" as "[£ £']".
+    iApply (wp_load_na_guarded_ex _ _ _ G P
+      (λ bs, ∃ cs z, Ψ cs ∧ chunks_reader cs off it = Some z ∧
+        decode_value (MInt it) bs = Some (VInt z)) dg with "[$G $£ $Guard]"); [done|..].
+    { intros bs (cs & z & _ & _ & ->). by eexists. }
+    { iIntros "!> HPx". iDestruct ("HP" with "HPx") as (cs Hcs) "[Hcs Cl]".
+      destruct (Hok cs Hcs) as [z Hz].
+      iDestruct (chunks_reader_acc with "Hcs") as (bs) "(%Hbs & Hbs & Cl')"; [done|].
+      iExists bs. iFrame "Hbs". iSplit; [iPureIntro; by exists cs, z|].
+      iIntros "Hbs". iApply "Cl". by iApply "Cl'". }
+    iIntros "!>" (v) "[%Hv G]". destruct Hv as (bs & (cs & z & Hcs & Hz & Hd') & Hd'').
+    rewrite Hd' in Hd''. injection Hd'' as <-. iExists z. iFrame. iPureIntro.
+    split; [done|]. by exists cs.
   Qed.
 End get_discr.

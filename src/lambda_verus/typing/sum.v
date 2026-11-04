@@ -5,6 +5,14 @@ From guarding Require Import guard tactics guard_later_pers.
 From lrust.lifetime Require Import lifetime_full.
 Set Default Proof Using "Type".
 
+(** * Enums
+
+[enum_ty EL tyl : type (enumₛ EL 𝔄l)] is an enum whose variants have the payload types
+[tyl], laid out by the explicit layout [EL] (see [design_docs/minirust-layout.md], §7.5).
+Its value is the [psum] of the values of the variants; the ghost parts are those of the
+variant, and the bytes are those of [syn_mty (enumₛ EL 𝔄l)] ([enum_mty]): the payload at
+[enum_off EL 𝔄l i] and the rest of the bytes ([enum_rest_ok], [typing/bytes_layout.v]). *)
+
 Implicit Type (𝔄 𝔅: syn_type) (𝔄l 𝔅l: syn_typel).
 
 Section sum.
@@ -16,7 +24,7 @@ Section sum.
     apply lft_intersect_list_submseteq_incl, sublist_submseteq, tyl_lfts_lookup_sublist.
   Qed.
 
-  Program Definition xsum_ty {𝔄l} (tyl: typel 𝔄l) : type (Σ! 𝔄l) := {|
+  Program Definition enum_ty {𝔄l} (EL: enum_layout) (tyl: typel 𝔄l) : type (enumₛ EL 𝔄l) := {|
     ty_lfts := tyl_lfts tyl;
     ty_E := tyl_E tyl;
     ty_gho_own x d g tid :=
@@ -39,40 +47,40 @@ Section sum.
         end ;
   |}%I.
   Next Obligation.
-    intros 𝔄l tyl d g d' g' x tid H1 H2. simpl.
+    intros 𝔄l EL tyl d g d' g' x tid H1 H2. simpl.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     apply ty_gho_own_depth_mono; trivial.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl d g d' g' x tid H1 H2. simpl.
+    intros 𝔄l EL tyl d g d' g' x tid H1 H2. simpl.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     apply ty_gho_pers_depth_mono; trivial.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl x d g tid.
+    intros 𝔄l EL tyl x d g tid.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
   Qed.
   Next Obligation.
-    intros 𝔄l tyl x d g tid.
+    intros 𝔄l EL tyl x d g tid.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     apply ty_gho_pers_impl.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl κ x d g tid. simpl.
+    intros 𝔄l EL tyl κ x d g tid. simpl.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
   Qed.
   Next Obligation.
-    intros 𝔄l tyl κ κ' x d g tid. simpl.
+    intros 𝔄l EL tyl κ κ' x d g tid. simpl.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     apply ty_shr_lft_mono.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl κ d g d' g' x tid ??. simpl.
+    intros 𝔄l EL tyl κ d g d' g' x tid ??. simpl.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     by apply ty_shr_depth_mono.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl E κ x d g tid G ??. simpl.
+    intros 𝔄l EL tyl E κ x d g tid G ??. simpl.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     iIntros "#LFT #Incl Pers Gκ G Bor".
     iApply (ty_share with "LFT [] Pers Gκ G Bor"); [done..|].
@@ -80,7 +88,7 @@ Section sum.
     iApply lft_intersect_tyl_lfts_lookup_incl.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl κ x n d g tid ξ R. simpl.
+    intros 𝔄l EL tyl κ x n d g tid ξ R. simpl.
     move=> Hin. replace x with (of_xsum (to_xsum x)) in Hin; last by rewrite semi_iso'. move: Hin.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     intros Hin. simpl in Hin. rewrite psum_map1_pinj in Hin. rewrite to_xsum_pinj in Hin.
@@ -90,11 +98,11 @@ Section sum.
     iApply lft_intersect_tyl_lfts_lookup_incl.
   Qed.
   Next Obligation.
-    intros 𝔄l tyl x d g tid. simpl.
+    intros 𝔄l EL tyl x d g tid. simpl.
     refine (match (to_xsum x) with | xinj i x0 => _ end). apply ty_gho_res_of_own.
   Qed.
 
-  Global Instance xsum_ty_ne {𝔄l} : NonExpansive (@xsum_ty 𝔄l).
+  Global Instance enum_ty_ne {𝔄l} EL : NonExpansive (@enum_ty 𝔄l EL).
   Proof.
     move=> n tyl tyl' Eqv.
     split=>/=.
@@ -105,34 +113,32 @@ Section sum.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       simpl.
       have Eqv': tyl +!! i ≡{n}≡ tyl' +!! i by apply @hlookup_ne.
-      unfold ty_gho_own, xsum_ty. rewrite to_xsum_pinj. apply Eqv'.
+      unfold ty_gho_own, enum_ty. rewrite to_xsum_pinj. apply Eqv'.
     - intros x d g tid.
       replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       simpl.
       have Eqv': tyl +!! i ≡{n}≡ tyl' +!! i by apply @hlookup_ne.
-      unfold ty_gho_pers, xsum_ty. rewrite to_xsum_pinj. apply Eqv'.
+      unfold ty_gho_pers, enum_ty. rewrite to_xsum_pinj. apply Eqv'.
     - intros κ x d g tid.
       replace x with (of_xsum (to_xsum x)); last by rewrite semi_iso'.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       simpl.
       have Eqv': tyl +!! i ≡{n}≡ tyl' +!! i by apply @hlookup_ne.
-      unfold ty_shr, xsum_ty. rewrite to_xsum_pinj. apply Eqv'.
+      unfold ty_shr, enum_ty. rewrite to_xsum_pinj. apply Eqv'.
   Qed.
 End sum.
 
-Notation "Σ!" := xsum_ty : lrust_type_scope.
-Notation empty_ty := (xsum_ty +[]).
 
 Section typing.
   Context `{!typeG Σ}.
 
-  Lemma xsum_lft_morphism {𝔅 𝔄l} (Tl: hlist (λ 𝔄, type 𝔅 → type 𝔄) 𝔄l) :
+  Lemma enum_lft_morphism {𝔅 𝔄l} EL (Tl: hlist (λ 𝔄, type 𝔅 → type 𝔄) 𝔄l) :
     TCHForall (λ 𝔄, TypeLftMorphism) Tl →
-    TypeLftMorphism (λ ty: type 𝔅, Σ! (Tl +$ ty))%T.
+    TypeLftMorphism (λ ty: type 𝔅, enum_ty EL (Tl +$ ty))%T.
   Proof.
     move=> All.
-    set T := λ ty, Σ!%T (Tl +$ ty).
+    set T := λ ty, enum_ty EL (Tl +$ ty).
     have [[?[?[?[??]]]]|[?[?[??]]]]:
       ((∃α βs E, (∀ty, ⊢ ty_lft (T ty) ≡ₗ α ⊓ ty_lft ty) ∧
         (∀ty, elctx_interp (T ty).(ty_E) ⊣⊢
@@ -175,74 +181,74 @@ Section typing.
       + by rewrite !elctx_interp_app HE HE'.
   Qed.
 
-  Global Instance xsum_type_ne {𝔄 𝔅l} (T: type 𝔄 → typel 𝔅l) :
-    ListTypeNonExpansive T → TypeNonExpansive (Σ! ∘ T)%T.
+  Global Instance enum_type_ne {𝔄 𝔅l} EL (T: type 𝔄 → typel 𝔅l) :
+    ListTypeNonExpansive T → TypeNonExpansive (enum_ty EL ∘ T)%T.
   Proof.
     move=> [Tl[->All]].
     split=>/=.
-    - apply xsum_lft_morphism. eapply TCHForall_impl; [|done]. by move=> >[].
+    - apply enum_lft_morphism. eapply TCHForall_impl; [|done]. by move=> >[].
     - move=> ? ty ty' H1 H2 H3 H4 H5 x d g tid.
-      unfold xsum_ty, ty_gho_own. simpl.
+      unfold enum_ty, ty_gho_own. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
       by apply All.
     - move=> ? ty ty' H1 H2 H3 H4 H5 x d g tid.
-      unfold xsum_ty, ty_gho_pers. simpl.
+      unfold enum_ty, ty_gho_pers. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
       by apply All.
     - move=> ? ty ty' H1 H2 H3 H4 H5 κ x d g tid.
-      unfold xsum_ty, ty_shr. simpl.
+      unfold enum_ty, ty_shr. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
       by apply All.
   Qed.
 
-  Global Instance xsum_type_contractive {𝔄 𝔅l} (T: type 𝔄 → typel 𝔅l) :
-    ListTypeContractive T → TypeContractive (Σ! ∘ T)%T.
+  Global Instance enum_type_contractive {𝔄 𝔅l} EL (T: type 𝔄 → typel 𝔅l) :
+    ListTypeContractive T → TypeContractive (enum_ty EL ∘ T)%T.
   Proof.
     move=> [Tl[->All]].
     split=>/=.
-    - apply xsum_lft_morphism. eapply TCHForall_impl; [|done]. by move=> >[].
+    - apply enum_lft_morphism. eapply TCHForall_impl; [|done]. by move=> >[].
     - move=> ? ty ty' H1 H2 H3 H4 H5 x d g tid.
-      unfold xsum_ty, ty_gho_own. simpl.
+      unfold enum_ty, ty_gho_own. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
       by apply All.
     - move=> ? ty ty' H1 H2 H3 H4 H5 x d g tid.
-      unfold xsum_ty, ty_gho_pers. simpl.
+      unfold enum_ty, ty_gho_pers. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
       by apply All.
     - move=> ? ty ty' H1 H2 H3 H4 H5 κ x d g tid.
-      unfold xsum_ty, ty_shr. simpl.
+      unfold enum_ty, ty_shr. simpl.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       eapply TCHForall_lookup in All. rewrite !hlookup_apply.
       by apply All.
   Qed.
 
-  Global Instance xsum_copy {𝔄l} (tyl: typel 𝔄l) : ListCopy tyl → Copy (Σ! tyl).
+  Global Instance enum_copy {EL 𝔄l} (tyl: typel 𝔄l) : ListCopy tyl → Copy (enum_ty EL tyl).
   Proof.
     move=> ?. have Copy: ∀i, Copy (hlookup tyl i).
     { move=> *. by apply TCHForall_lookup. }
     split.
     - apply _.
-    - intros x d g tid. unfold ty_gho_own, xsum_ty.
+    - intros x d g tid. unfold ty_gho_own, enum_ty.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
-    - intros κ x d g tid. unfold ty_shr, ty_gho_own, xsum_ty.
+    - intros κ x d g tid. unfold ty_shr, ty_gho_own, enum_ty.
       refine (match (to_xsum x) with | xinj i x0 => _ end).
       have Cpyi := Copy i. apply copy_shr.
   Qed.
 
-  Global Instance xsum_send {𝔄l} (tyl: typel 𝔄l) : ListSend tyl → Send (Σ! tyl).
+  Global Instance enum_send {EL 𝔄l} (tyl: typel 𝔄l) : ListSend tyl → Send (enum_ty EL tyl).
   Proof.
     move=> ?. have Send: ∀i, Send (hlookup tyl i).
     { move=> *. by apply TCHForall_lookup. }
-    intros tid tid' x d g. unfold ty_gho_own, xsum_ty.
+    intros tid tid' x d g. unfold ty_gho_own, enum_ty.
     refine (match (to_xsum x) with | xinj i x0 => _ end). apply Send.
   Qed.
 
-  Global Instance xsum_send_upd {𝔄l} (tyl: typel 𝔄l) : ListSendUpd tyl → SendUpd (Σ! tyl).
+  Global Instance enum_send_upd {EL 𝔄l} (tyl: typel 𝔄l) : ListSendUpd tyl → SendUpd (enum_ty EL tyl).
   Proof.
     move=> ?. have Send: ∀i, SendUpd (hlookup tyl i).
     { move=> *. by apply TCHForall_lookup. }
@@ -251,7 +257,7 @@ Section typing.
       replace x with (of_xsum (to_xsum x)).
         2: { apply semi_iso'. typeclasses eauto. }
       refine (match (to_xsum x) with | xinj i x0 => _ end).
-      unfold ty_gho_own, xsum_ty. rewrite semi_iso'.
+      unfold ty_gho_own, enum_ty. rewrite semi_iso'.
       iDestruct (@send_upd_change_tid _ _ (𝔄l !!ₗ i) (tyl +!! i) (Send i) tid tid' x0 d g G H κs d0 with "LFT UNIQ TIME Hg H Gg G Gho ⧖") as "X". { trivial. }
       iApply (step_fupdN_wand with "X"). iIntros ">X".
       iDestruct "X" as (x0' off) "(gho & ⧖off & %Habs & G & H)".
@@ -260,52 +266,52 @@ Section typing.
       simpl. do 2 (rewrite psum_map1_pinj). rewrite Habs. trivial.
   Qed.
   
-  Global Instance xsum_sync {𝔄l} (tyl: typel 𝔄l) : ListSync tyl → Sync (Σ! tyl).
+  Global Instance enum_sync {EL 𝔄l} (tyl: typel 𝔄l) : ListSync tyl → Sync (enum_ty EL tyl).
   Proof.
     move=> ?. have Sync: ∀i, Sync (hlookup tyl i).
     { move=> *. by apply TCHForall_lookup. }
     intros tid tid' x d g.
    
-    unfold ty_gho_own, ty_gho_pers, ty_shr, xsum_ty.
+    unfold ty_gho_own, ty_gho_pers, ty_shr, enum_ty.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     destruct (Sync i tid tid' x0 d g) as [Hb [Hc Hd]].
     split; last split; trivial.
   Qed.
 
-  Lemma xsum_resolve {𝔄l} E L (tyl: typel 𝔄l) Φl :
+  Lemma enum_resolve {EL 𝔄l} E L (tyl: typel 𝔄l) Φl :
     resolvel E L tyl Φl →
-    resolve E L (Σ! tyl) (λ s, let 'xinj i x := to_xsum s in (Φl -!! i) x).
+    resolve E L (enum_ty EL tyl) (λ s, let 'xinj i x := to_xsum s in (Φl -!! i) x).
   Proof.
     iIntros (Rslv G vπ x ??? Ti Ma) "#LFT #PROPH #E #L G T".
-    unfold ty_gho_own, xsum_ty.
+    unfold ty_gho_own, enum_ty.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     eapply HForall_1_lookup in Rslv.
     instantiate (1 := i) in Rslv.
     iApply (Rslv with "[] [] [] [] G T"); trivial.
   Qed.
 
-  Global Instance xsum_res_own {𝔄l} (tyl: typel 𝔄l) :
-    TCHForall (λ 𝔄, @ResOwn _ _ 𝔄) tyl → ResOwn (Σ! tyl).
+  Global Instance enum_res_own {EL 𝔄l} (tyl: typel 𝔄l) :
+    TCHForall (λ 𝔄, @ResOwn _ _ 𝔄) tyl → ResOwn (enum_ty EL tyl).
   Proof.
     move=> Hres x d g tid. rewrite /ty_gho_res /ty_gho_own /=.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     have ?: ResOwn (tyl +!! i) by apply TCHForall_lookup. by rewrite res_own.
   Qed.
 
-  Lemma xsum_resolve_keep {𝔄l} E L (tyl: typel 𝔄l) Φl :
+  Lemma enum_resolve_keep {EL 𝔄l} E L (tyl: typel 𝔄l) Φl :
     HForall_1 (λ _, resolve_keep E L) tyl Φl →
-    resolve_keep E L (Σ! tyl) (λ s, let 'xinj i x := to_xsum s in (Φl -!! i) x).
+    resolve_keep E L (enum_ty EL tyl) (λ s, let 'xinj i x := to_xsum s in (Φl -!! i) x).
   Proof.
     iIntros (Rslv G vπ x ??? Ti Ma) "#LFT #PROPH #E #L G T".
-    unfold ty_gho_own, ty_gho_res, xsum_ty.
+    unfold ty_gho_own, ty_gho_res, enum_ty.
     refine (match (to_xsum x) with | xinj i x0 => _ end).
     eapply HForall_1_lookup in Rslv.
     instantiate (1 := i) in Rslv.
     iApply (Rslv with "[] [] [] [] G T"); trivial.
   Qed.
 
-  Lemma xsum_resolve_just {𝔄l} E L (tyl: typel 𝔄l) :
-    HForall (λ _ ty, resolve E L ty (const (const True))) tyl → resolve E L (Σ! tyl) (const (const True)).
+  Lemma enum_resolve_just {EL 𝔄l} E L (tyl: typel 𝔄l) :
+    HForall (λ _ ty, resolve E L ty (const (const True))) tyl → resolve E L (enum_ty EL tyl) (const (const True)).
   Proof. move=> ?. apply resolve_just. Qed.
 
   Lemma psum_map_p2lookup_pinj {𝔄l 𝔅l} {F G}
@@ -327,36 +333,46 @@ Section typing.
         + intros i x0. simpl. rewrite IH𝔄l. trivial.
   Qed.
 
-  Lemma syn_bincl_psum_map {𝔄l 𝔅l} (fl: plist2 (λ 𝔄 𝔅, 𝔄 →ₛ 𝔅) 𝔄l 𝔅l) :
-    (∀ i, syn_bincl (fl -2!! i)) → syn_bincl (psum_mapₛ fl).
+  Lemma syn_bincl_enum_map {𝔄l 𝔅l} EL (fl: plist2 (λ 𝔄 𝔅, 𝔄 →ₛ 𝔅) 𝔄l 𝔅l) :
+    (∀ i, syn_bincl (fl -2!! i)) → syn_bincl (enum_mapₛ EL fl).
   Proof.
-    intros Hb. have Hlen := plist2_eq_len fl.
+    intros Hb.
     have Hsz : syn_bsize <$> 𝔄l = syn_bsize <$> 𝔅l.
-    { clear Hlen. revert 𝔅l fl Hb. induction 𝔄l as [|𝔄 𝔄l IH]; intros [|𝔅 𝔅l] fl Hb;
+    { revert 𝔅l fl Hb. induction 𝔄l as [|𝔄 𝔄l IH]; intros [|𝔅 𝔅l] fl Hb;
         [done|done|done|]. destruct fl as [f fl]. simpl. f_equal; [apply (Hb 0%fin)|].
       apply (IH _ fl). intros i. apply (Hb (FS i)). }
-    have Htag : sum_tag 𝔄l = sum_tag 𝔅l by rewrite /sum_tag Hlen.
-    have Hmax : sum_max 𝔄l = sum_max 𝔅l by rewrite /sum_max Hsz.
-    split; [by rewrite !syn_bsize_sum Htag Hmax|]. split.
+    have Hly : enum_ly EL 𝔄l = enum_ly EL 𝔅l.
+    { apply enum_lay_sizes; [apply syn_mty_wf_list..|]. by rewrite -!list_fmap_compose. }
+    have Hoff : ∀ j, enum_off EL 𝔄l j = enum_off EL 𝔅l j by intros; rewrite /enum_off Hly.
+    have Hsize : enum_size EL 𝔄l = enum_size EL 𝔅l by rewrite /enum_size Hly.
+    have Hdiscr : enum_discr EL 𝔄l = enum_discr EL 𝔅l by rewrite /enum_discr Hly.
+    split; [by rewrite !syn_bsize_enum|]. split.
     - intros x R fbs.
       replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'.
       destruct (to_xsum x) as [i y]. simpl.
-      rewrite psum_map_p2lookup_pinj !syn_fbytes_sum.
+      rewrite psum_map_p2lookup_pinj !syn_fbytes_enum.
       destruct (Hb i) as [Hs [Hf _]].
-      rewrite fin_to_nat_fin_renew -Htag -Hmax -Hs. by setoid_rewrite (Hf y).
+      rewrite /enum_rest_ok fin_to_nat_fin_renew -Hoff -Hsize -Hdiscr -Hs.
+      by setoid_rewrite (Hf y).
     - intros x.
       replace x with (@of_xsum _ (~~) (𝔄l) (to_xsum x)); last by rewrite semi_iso'.
       destruct (to_xsum x) as [i y]. intros R fbs fv fv' Hbx Hx Hx'.
-      have Hx'' : syn_fval (𝔄:=Σ! 𝔅l) (pinj (fin_renew_by_plist2 fl i) ((fl -2!! i) ~~$ₛ y)) = Some fv'.
+      have Hx'' : syn_fval (𝔄:=enumₛ EL 𝔅l)
+          (pinj (fin_renew_by_plist2 fl i) ((fl -2!! i) ~~$ₛ y)) = Some fv'.
       { rewrite -psum_map_p2lookup_pinj. exact Hx'. }
-      apply (syn_fbytes_sum R i y) in Hbx as (bt & fp & bq & _ & _ & Hfp & _).
-      destruct (mcells_sum i y fv Hx) as (fy & Hfy & ->).
-      destruct (mcells_sum (fin_renew_by_plist2 fl i) ((fl -2!! i) ~~$ₛ y) fv' Hx'') as (fy' & Hfy' & ->).
-      destruct (Hb i) as [_ [_ Hc]]. rewrite -Htag (Hc y R fp fy fy') //.
+      apply (syn_fbytes_enum R i y) in Hbx as (b1 & fp & b2 & _ & _ & Hfp).
+      destruct (mcells_enum_pinj i y fv Hx) as (fy & Hfy & ->).
+      destruct (mcells_enum_pinj (fin_renew_by_plist2 fl i) ((fl -2!! i) ~~$ₛ y) fv' Hx'')
+        as (fy' & Hfy' & ->).
+      destruct (Hb i) as [_ [_ Hc]]. rewrite fin_to_nat_fin_renew -Hoff (Hc y R fp fy fy') //.
   Qed.
 
-  Lemma xsum_subtype {𝔄l 𝔅l} E L (tyl: typel 𝔄l) (tyl': typel 𝔅l) fl :
-    subtypel E L tyl tyl' fl → subtype E L (Σ! tyl) (Σ! tyl') ((psum_mapₛ fl)).
+  (** An enum at another, equal, layout parameter. *)
+  Lemma syn_bincl_enum_relay {𝔄l} EL EL' : EL = EL' → syn_bincl (enum_relayₛ (𝔄l:=𝔄l) EL EL').
+  Proof. intros <-. apply syn_bincl_same; [done|]. by intros ?. Qed.
+
+  Lemma enum_subtype {EL 𝔄l 𝔅l} E L (tyl: typel 𝔄l) (tyl': typel 𝔅l) fl :
+    subtypel E L tyl tyl' fl → subtype E L (enum_ty EL tyl) (enum_ty EL tyl') ((enum_mapₛ EL fl)).
   Proof. 
     move=> Subs. iIntros "L".
     iAssert (□ (elctx_interp E -∗ tyl_lft tyl' ⊑ tyl_lft tyl))%I as "#InLft".
@@ -381,7 +397,7 @@ Section typing.
     (* iDestruct ("InTyl" $! i) as (?) "[#?[#InOwn %Hphys]]". *)
     iAssert ⌜∀ i, syn_bincl (fl -2!! i)⌝%I as %Hb.
     { rewrite bi.pure_forall. iIntros (i). by iDestruct ("InTyl" $! i) as "[$ _]". }
-    iSplit; [iPureIntro; by apply syn_bincl_psum_map|].
+    iSplit; [iPureIntro; by apply syn_bincl_enum_map|].
     iSplit; [done|].
     iSplit. { (* gho *)
       iModIntro. iIntros (x d g tid).
@@ -395,7 +411,7 @@ Section typing.
       (*replace (psum_map (@syn_type_morphism_fn -2<$> fl) (pinj i x0))
          with (pinj (fin_renew_by_plist2 fl i) ((~~!ₛ) (fl -2!! i) x0)).
         2: { symmetry. apply psum_map_p2lookup_pinj. }*)
-      unfold ty_gho_own, xsum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj. iFrame "Gho".
+      unfold ty_gho_own, enum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj. iFrame "Gho".
     } 
     iSplit. { (* gho_pers *)
       iModIntro. iIntros (x d g tid).
@@ -404,7 +420,7 @@ Section typing.
       iDestruct ("InTyl" $! i) as "(_ & Incl & _ & #GhoPers & _)".
       iSpecialize ("GhoPers" $! x0 d g tid). simpl.
       rewrite psum_map_p2lookup_pinj.
-      unfold ty_gho_pers, xsum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj. iFrame "GhoPers".
+      unfold ty_gho_pers, enum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj. iFrame "GhoPers".
     }
     { (* shr *)
       iModIntro. iIntros (κ x d g tid).
@@ -413,19 +429,26 @@ Section typing.
       iDestruct ("InTyl" $! i) as "(_ & Incl & _ & _ & #Shr)".
       iSpecialize ("Shr" $! κ x0 d g tid). simpl.
       rewrite psum_map_p2lookup_pinj.
-      unfold ty_shr, xsum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj. iFrame "Shr".
+      unfold ty_shr, enum_ty. rewrite to_xsum_pinj. rewrite to_xsum_pinj. iFrame "Shr".
     }
   Qed.
 
-  Lemma xsum_eqtype {𝔄l 𝔅l} E L (tyl: typel 𝔄l) (tyl': typel 𝔅l) fl gl :
+  Lemma enum_eqtype {EL 𝔄l 𝔅l} E L (tyl: typel 𝔄l) (tyl': typel 𝔅l) fl gl :
     eqtypel E L tyl tyl' fl gl →
-    eqtype E L (Σ! tyl) (Σ! tyl') ((psum_mapₛ fl)) ((psum_mapₛ gl)).
+    eqtype E L (enum_ty EL tyl) (enum_ty EL tyl') ((enum_mapₛ EL fl)) ((enum_mapₛ EL gl)).
   Proof.
-    move=> /eqtypel_subtypel[??]. by split; apply xsum_subtype.
+    move=> /eqtypel_subtypel[??]. by split; apply enum_subtype.
   Qed.
+
+  (** An enum at another, equal, layout parameter. *)
+  Lemma enum_relay_eqtype {𝔄l} E L EL EL' (tyl: typel 𝔄l) :
+    EL = EL' →
+    eqtype E L (enum_ty EL tyl) (enum_ty EL' tyl) (enum_relayₛ EL EL') (enum_relayₛ EL' EL).
+  Proof. intros <-. eapply eqtype_eq; [apply eqtype_refl|by apply extensₛ..]. Qed.
   
 End typing.
 
-Global Hint Resolve xsum_resolve | 5 : lrust_typing.
-Global Hint Resolve xsum_resolve_just xsum_subtype xsum_eqtype
-  : lrust_typing.
+Global Hint Resolve enum_resolve | 5 : lrust_typing.
+(* After [enum_resolve], which learns the predicates of the variants. *)
+Global Hint Resolve enum_resolve_just | 10 : lrust_typing.
+Global Hint Resolve enum_subtype enum_eqtype : lrust_typing.

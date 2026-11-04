@@ -20,15 +20,18 @@ Section place_moved.
   Notation Pₛ := (structₛ PL Pl).
   Notation Pt := (struct_ty PL +[i32t; i32t]).
   Notation boxt := (own_bytes 4 i32t).
-  Notation optt := (Σ! +[(); boxt])%T.
-  Notation optₛ := (Σ! [()%ST; at_locₛ (intₛ i32)])%ST.
+  (* [Option<Box<i32>>], at the tagged layout. *)
+  Notation Ol := [()%ST; at_locₛ (intₛ i32)].
+  Notation OL := (tagged_layout [zst_mty; MPtr]).
+  Notation optt := (enum_ty OL +[(); boxt])%T.
+  Notation optₛ := (enumₛ OL Ol)%ST.
 
   Local Notation E := ([]: elctx).
 
   (** The payload of a sum place, moved out: [let v = ( *x).0] for
       [x: Box<Option<Box<i32>>>] at the variant [Some]. *)
   Lemma move_sum_payload L I p :
-    let K := POwn 5 (PSum +[(); boxt]%T 1%fin ((1%positive, 0%Z), 0%Z) PHole) in
+    let K := POwn 5 (PSum OL +[(); boxt]%T 1%fin ((1%positive, 0%Z), 0%Z) PHole) in
     typed_instr E L I +[p ◁ₗ pctx_plug K (OfTy boxt)] (!ᵐ{MPtr} (pctx_vexpr K p))
       (λ v, +[v ◁ᵥ boxt; p ◁ₗ pctx_plug K (Moved boxt)])
       (λ post '-[x], post -[pctx_get K x.1; x]).
@@ -36,7 +39,7 @@ Section place_moved.
 
   (** Re-initializing the moved-out payload of a sum place, with a value of its type. *)
   Lemma reinit_sum_payload L I p pb :
-    let K := POwn 5 (PSum +[(); boxt]%T 1%fin ((1%positive, 0%Z), 0%Z) PHole) in
+    let K := POwn 5 (PSum OL +[(); boxt]%T 1%fin ((1%positive, 0%Z), 0%Z) PHole) in
     typed_instr E L I +[p ◁ₗ pctx_plug K (Moved boxt); pb ◁ᵥ boxt]
       (pctx_vexpr K p <-{MPtr} pb)
       (λ _, +[p ◁ₗ pctx_plug K (OfTy boxt)])
@@ -57,10 +60,11 @@ Section place_moved.
   }
   ```
 
-  The payload is at offset [tag_size] (1 byte) of the pointee of [x]. *)
+  The payload is at offset [enum_off OL Ol 1] (1 byte, after the tag) of the pointee of
+  [x]. *)
   Definition replace_payload : expr := (
-    let: "z" := !ᵐ{MPtr} ("x" +ₗ #1) in                (* move ( *x).0 out *)
-    ("x" +ₗ #1) <-{MPtr} "y";;                           (* ( *x).0 = y *)
+    let: "z" := !ᵐ{MPtr} ("x" +ₗ #(enum_off OL Ol 1)) in    (* move ( *x).0 out *)
+    ("x" +ₗ #(enum_off OL Ol 1)) <-{MPtr} "y";;               (* ( *x).0 = y *)
     (#☠;; delete [ #4; "z"]);;                            (* drop z: a box of i32 *)
     jump: "return" ["x"])%E.
 
@@ -70,7 +74,7 @@ Section place_moved.
     ⊢ typed_body [] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
           λ v: vec val 1, +[vhd v ◁ᵥ own_bytes 5 optt] } ret_opt]
-        +[vx ◁ₗown{5} SumLty +[(); boxt]%T 1%fin (OfTy boxt); vy ◁ᵥ boxt]
+        +[vx ◁ₗown{5} SumLty OL +[(); boxt]%T 1%fin (OfTy boxt); vy ◁ᵥ boxt]
         (subst "return" k (subst "x" vx (subst "y" vy replace_payload)))
         (λ post '-[((l, s), _); b], λ mask π, post (l, pinj (Xl:=[()%ST; at_locₛ (intₛ i32)]) 1%fin b) mask π).
   Proof.
@@ -79,13 +83,13 @@ Section place_moved.
       (* move ( *x).0 out *)
       iApply (type_let with "[]").
       { apply (type_move_place_instr _ _ _ vx
-          (POwn 5 (PSum +[(); boxt]%T 1%fin ((1%positive, 0%Z), 0%Z) PHole)) boxt). }
+          (POwn 5 (PSum OL +[(); boxt]%T 1%fin ((1%positive, 0%Z), 0%Z) PHole)) boxt). }
       { solve_typing. } { reflexivity. }
       iIntros (vz). simpl_subst.
       (* ( *x).0 = y *)
       iApply type_seq.
       { eapply (type_write_place_instr _ _ _ vx vy
-          (POwn 5 (PSum +[(); boxt]%T 1%fin ((1%positive, 0%Z), 0%Z) PHole)) (Moved boxt) boxt);
+          (POwn 5 (PSum OL +[(); boxt]%T 1%fin ((1%positive, 0%Z), 0%Z) PHole)) (Moved boxt) boxt);
           [by apply pctx_wty_moved|apply lty_wres_moved|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* drop z *)

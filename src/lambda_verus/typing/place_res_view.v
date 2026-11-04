@@ -50,7 +50,7 @@ Section view_laws.
   Proof.
     revert κ m p r d g d' g' tid l.
     induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l Lay lts IH|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind';
+      𝔄l EL tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind';
       intros κ m p r d g d' g' tid l Hd Hg; simpl; try by apply view_leaf_depth_mono.
     - destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /view_uniq.
       iIntros "(#G & $ & %d1 & %g1 & %Hle & C & I)". iSplitR.
@@ -67,9 +67,8 @@ Section view_laws.
       iApply (fields_node_hmap_mono with "F"). eapply HForall_impl; [|exact IH].
       intros ?? H' p' r' tid' l'. by apply H'.
     - destruct r as [?|s]; [done|]. rewrite /view_sum.
-      case_match; [|done]. iIntros "(#G1 & C & #G2)".
-      iSplitR; [iApply (lguards_weaken_later with "G1"); lia|].
-      iSplitL; [iApply (IH with "C"); lia|]. iApply (lguards_weaken_later with "G2"); lia.
+      case_match; [|done]. iIntros "(#G1 & C)".
+      iSplitR; [iApply (lguards_weaken_later with "G1"); lia|]. iApply (IH with "C"); lia.
     - iIntros "[V $]". by iApply (view_leaf_depth_mono with "V").
     - done.
     - done.
@@ -149,7 +148,7 @@ Section view_laws.
   Fixpoint lty_sbl {𝔄} (lt: lty 𝔄) : lft :=
     match lt with
     | ShrBlocked _ α => α
-    | UniqLty lt' _ | OwnPtrLty _ lt' | SumLty _ _ lt' => lty_sbl lt'
+    | UniqLty lt' _ | OwnPtrLty _ lt' | SumLty _ _ _ lt' => lty_sbl lt'
     | StructLty _ lts => lft_intersect_list (hcmap (λ _ lt, lty_sbl lt) lts)
     | _ => static
     end.
@@ -218,7 +217,7 @@ Section view_laws.
   Proof.
     revert κ m x q d g tid l.
     induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l Lay lts IH|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind';
+      𝔄l EL tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind';
       intros κ m x q d g tid l; iIntros "#LFT #Incl V"; simpl.
     - iDestruct "V" as "#V".
       iDestruct (view_leaf_unblocked_tguards κ m ty x d g tid l with "LFT Incl V") as "#T".
@@ -261,14 +260,14 @@ Section view_laws.
     - destruct (psum_proj i x) as [y|] eqn:Hy; last first.
       { by rewrite /prfn_dummy /view_sum /=. }
       iEval (rewrite /view_sum /prfn_sum psum_proj_pinj) in "V".
-      iDestruct "V" as "(#G1 & V & #G2)".
+      iDestruct "V" as "(#G1 & V)".
       iAssert (κ ⊑ ty_lft (lty_fold lt))%I as "#Incl'".
       { iApply (llftl_incl_trans with "Incl"). iApply lty_lft_sum. }
       iDestruct (IH with "LFT Incl' V") as "[V (%ηl & %Hdep & #T)]".
-      iSplitL "V". { rewrite /view_sum /prfn_sum psum_proj_pinj. by iFrame "G1 V G2". }
+      iSplitL "V". { rewrite /view_sum /prfn_sum psum_proj_pinj. by iFrame "G1 V". }
       iExists ηl. iFrame "T". iPureIntro.
-      intros ζl. change (prfn_rsv (prfn_sum i (lty_rfn lt y ζm (false :: q))) ζl →
-        prfn_den (prfn_sum i (lty_rfn lt y ζm (false :: q))) ./ ζl ++ ηl).
+      intros ζl. change (prfn_rsv (prfn_sum (EL:=EL) i (lty_rfn lt y ζm (false :: q))) ζl →
+        prfn_den (prfn_sum (EL:=EL) i (lty_rfn lt y ζm (false :: q))) ./ ζl ++ ηl).
       rewrite prfn_rsv_sum prfn_den_sum. intros Hr.
       apply (proph_dep_constr (λ a, (pinj i a))). by apply Hdep.
     - iDestruct "V" as "[#V %Hv]".
@@ -431,10 +430,10 @@ Section lty_share_view.
     | OfTy _ | Blocked _ _ | ShrBlocked _ _ | ShrLty _ _ => True
     | UniqLty lt' _ =>
         (match lt' with
-         | OfTy _ | StructLty _ _ | OwnPtrLty _ _ | UniqLty _ _ | SumLty _ _ _ => True
+         | OfTy _ | StructLty _ _ | OwnPtrLty _ _ | UniqLty _ _ | SumLty _ _ _ _ => True
          | _ => False
          end) ∧ lty_vok lt'
-    | OwnPtrLty _ lt' | SumLty _ _ lt' => lty_vok lt'
+    | OwnPtrLty _ lt' | SumLty _ _ _ lt' => lty_vok lt'
     | StructLty _ lts => foldr and True (hcmap (λ _ lt, lty_vok lt) lts)
     | OfRes _ | ResUniqLty _ _ | Moved _ => False
     end.
@@ -595,8 +594,8 @@ Section lty_share_view2.
     rewrite /view_struct. iFrame "V". iApply (lguards_weaken_later with "Pad"). lia.
   Qed.
 
-  Lemma share_view_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
-    share_view_stmt lt → share_view_stmt (SumLty tyl i lt).
+  Lemma share_view_sum {EL 𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
+    share_view_stmt lt → share_view_stmt (SumLty EL tyl i lt).
   Proof.
     iIntros (IH κ m x ζm q d g g' tid l G E ???) "#LFT #PROPH #UNIQ #Gκ #Incl G Bor".
     have ?: ↑Nllft ⊆ E by (trans lazyE; [rewrite /lazyE; solve_ndisj|done]).
@@ -604,19 +603,16 @@ Section lty_share_view2.
     { rewrite /= /prfn_dummy /sum_node /=.
       iMod (llftl_bor_acc_guarded with "LFT Bor Gκ G") as "[>[] _]"; done. }
     rewrite ltype_own_cp_sum_owned sum_node_sum /=.
-    iMod (llftl_sep_split with "LFT Bor") as "[Tag Bor]"; [done|].
-    iMod (llftl_sep_split with "LFT Bor") as "[Bor Pad]"; [done|].
-    iMod (llftl_bor_guard with "LFT Tag") as "#Tag"; [done|].
-    iMod (llftl_bor_guard with "LFT Pad") as "#Pad"; [done|].
+    iMod (llftl_sep_split with "LFT Bor") as "[ERest Bor]"; [done|].
+    iMod (llftl_bor_guard with "LFT ERest") as "#ERest"; [done|].
     iAssert (κ ⊑ ty_lft (lty_fold lt))%I as "#Incl'".
     { iApply (llftl_incl_trans with "Incl"). iApply lty_lft_sum. }
     iMod (IH κ m y ζm (false :: q) d g g' tid
-      (l +ₗ tag_size 𝔄l) G E
+      (l +ₗ enum_off EL 𝔄l i) G E
       with "LFT PROPH UNIQ Gκ Incl' G Bor") as "Upd"; [done..|].
     iModIntro. iApply (step_fupdN_wand with "Upd"). iIntros ">[$ V] !>".
-    rewrite /view_sum /prfn_sum psum_proj_pinj. iFrame "V". iSplit.
-    - iApply (lguards_weaken_later with "Tag"). lia.
-    - iApply (lguards_weaken_later with "Pad"). lia.
+    rewrite /view_sum /prfn_sum psum_proj_pinj. iFrame "V".
+    iApply (lguards_weaken_later with "ERest"). lia.
   Qed.
 End lty_share_view2.
 
@@ -774,7 +770,7 @@ Section lty_share_view4.
   Lemma lty_share_view {𝔄} (lt: lty 𝔄) : lty_vok lt → share_view_stmt lt.
   Proof.
     induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l Lay lts IH|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind'; simpl; intros Hv;
+      𝔄l EL tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind'; simpl; intros Hv;
       try done.
     - apply share_view_ofty.
     - apply share_view_blocked.

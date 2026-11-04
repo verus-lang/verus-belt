@@ -1,7 +1,7 @@
 (** Tests for stage 3 of the MiniRust memory model: typed [Load]s and [Store]s of the
     pointee of a box that owns bytes ([own_bytes], see [typing/own.v]), for a [repr(C)]
     struct of two integers and for [Option<i32>]. *)
-From lrust.typing Require Import int unit struct sum own.
+From lrust.typing Require Import int unit struct sum own bytes_layout.
 Set Default Proof Using "Type".
 
 Section own_bytes_tests.
@@ -49,17 +49,21 @@ Section own_bytes_tests.
     iIntros "!> Own". rebuild d g tid. by iApply "HΦ".
   Qed.
 
-  (** ** [Box<Option<i32>>] *)
-  Notation opt_ty := (Σ! +[(); int_ty i32])%T.
+  (** ** [Box<Option<i32>>], at the tagged layout *)
+  Notation OL := (tagged_layout [zst_mty; MInt i32]).
+  Notation opt_ty := (enum_ty OL +[(); int_ty i32])%T.
 
   (** The layout: a one-byte tag at offset 0 and the [i32] at offset 1. *)
   Lemma opt_ty_mty : opt_ty.(ty_mty) =
     MEnum [(MTuple [] 0 1, 1%nat, [(0%nat, u8, 0%Z)]); (MInt i32, 1%nat, [(0%nat, u8, 1%Z)])]
       (DBranch 0 u8 DInvalid [((0, 1), DKnown 0); ((1, 2), DKnown 1)]%Z) 5 1.
-  Proof. by rewrite -ty_mty_eq. Qed.
+  Proof.
+    rewrite -ty_mty_eq /= /enum_mty enum_lay_tagged; [done|].
+    exact (syn_mty_wf_list [unitₛ; intₛ i32]).
+  Qed.
 
-  Definition some_i32 (z: Z) : ~~(Σ! [unitₛ; intₛ i32]) := inr (inl z).
-  Definition none_i32 : ~~(Σ! [unitₛ; intₛ i32]) := inl ().
+  Definition some_i32 (z: Z) : ~~(enumₛ OL [unitₛ; intₛ i32]) := inr (inl z).
+  Definition none_i32 : ~~(enumₛ OL [unitₛ; intₛ i32]) := inl ().
 
   Lemma opt_ty_val_some z :
     int_in_range i32 z → opt_ty.(ty_val) (some_i32 z) = Some (VVariant 1 (VInt z)).

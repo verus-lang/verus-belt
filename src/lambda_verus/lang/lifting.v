@@ -781,6 +781,49 @@ Proof.
   by iApply "HΦ".
 Qed.
 
+(** The same, when the bytes need not all decode to the same value: the result is the
+    value of the bytes of one of the openings. *)
+Lemma wp_load_na_guarded_ex E l m G P (Ψ : list abyte → Prop) d :
+  ↑naN ⊆ E → (∀ bs, Ψ bs → is_Some (decode_value m bs)) →
+  {{{ (G &&{↑naN; d}&&> P) ∗ □ (P -∗ ∃ bs, ⌜Ψ bs⌝ ∗ l ↦b bs ∗ (l ↦b bs -∗ P)) ∗
+      G ∗ £(2*d) }}}
+    Load Na1Ord m (MLit $ VPtr l) @ E
+  {{{ v, RET MLitV v; ⌜∃ bs, Ψ bs ∧ decode_value m bs = Some v⌝ ∗ G }}}.
+Proof.
+  iIntros (? HΨ Φ) "(#Guard & #HP & G & £) HΦ".
+  iApply wp_lift_base_step; auto.
+  iIntros (σ1 stepcnt κ κs n) "[Hσ Ht]". heap_split.
+  iMod (bytes_ctx_read_begin_guarded _ _ _ Ψ (mty_size m) with "£ Guard HP G HB")
+    as (i bs) "(%HΨbs & %Hrange & HB & Tok)";
+    [done|intros bs' Hb'; destruct (HΨ bs' Hb') as [? Hd']; by eapply decode_value_length|].
+  destruct (HΨ _ HΨbs) as [v Hdec]. have Hlen := decode_value_length _ _ _ Hdec.
+  have Hrange' := Hrange.
+  iApply fupd_mask_intro; first set_solver. iIntros "Hclose". iSplit.
+  { iPureIntro. eexists _, _, _, _. by eapply LoadNa1S. }
+  iNext; iIntros (e2 σ2 efs Hstep); inv_head_step. iMod "Hclose" as "_".
+  iMod (time_interp_step with "Ht") as "$". iIntros "credit !>".
+  iSplitR "HΦ Tok credit".
+  { iExists hF. rewrite -Hlen. iFrame. iPureIntro.
+    eapply heap_freeable_rel_dom; [|done]. intros ?. by rewrite is_Some_mem_alter. }
+  iSplit; last done.
+  clear dependent σ1 hF. iApply wp_lift_atomic_base_step_no_fork; auto.
+  iIntros (σ1 stepcnt' κ' κs' n') "[Hσ Ht]".
+  iMod (time_interp_step with "Ht") as "$". heap_split.
+  iMod (bytes_ctx_read_end_guarded with "HB Tok") as "(%Hrange & HB & G)".
+  iMod (lc_fupd_elim_later with "credit G") as "G".
+  have Hrange' := Hrange.
+  iModIntro; iSplit.
+  { iPureIntro. eexists _, _, _, _. by eapply LoadNa2S. }
+  iNext. iIntros (e2 σ2 efs Hstep) "credit2 !>"; inv_head_step.
+  match goal with H : mem_range _ _ _ ?bs' |- _ =>
+    have Heq := mem_range_det _ _ _ _ _ _ Hrange' H ltac:(lia) end. subst.
+  match goal with H : decode_value _ _ = Some _ |- _ => rewrite Hdec in H; simplify_eq end.
+  iSplit; [done|]. iSplitR "HΦ G".
+  { iExists hF. rewrite -Hlen. iFrame. iPureIntro.
+    eapply heap_freeable_rel_dom; [|done]. intros ?. by rewrite is_Some_mem_alter. }
+  iApply "HΦ". iFrame "G". iPureIntro. eauto.
+Qed.
+
 Lemma wp_load_na_guarded E l m bs v G d :
   ↑naN ⊆ E → decode_value m bs = Some v →
   {{{ (G &&{↑naN; d}&&> l ↦b bs) ∗ G ∗ £(2*d) }}} Load Na1Ord m (MLit $ VPtr l) @ E

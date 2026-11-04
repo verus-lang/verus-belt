@@ -1,11 +1,11 @@
 (** * Sum places
 
-  A leaf [OfTy (Σ! tyl)] of a place rooted at an owned location ([p ◁ₗown{n} lt]) holds a
+  A leaf [OfTy (enum_ty EL tyl)] of a place rooted at an owned location ([p ◁ₗown{n} lt]) holds a
   sum. Reading its discriminant ([type_case_oplace]) branches on the
   variant [i] of its value and, in branch [i], unfolds the leaf into a _sum place_ at
-  variant [i], [SumLty tyl i (OfTy (tyl +!! i))] (whose payload is the leaf of the
+  variant [i], [SumLty EL tyl i (OfTy (tyl +!! i))] (whose payload is the leaf of the
   variant; the specification of the branch knows the variant). The payload is reached
-  by the context step [PSum tyl i w K] (offset 1, [lpath.v]), so that the general rules
+  by the context step [PSum EL tyl i w K] (at [enum_off EL 𝔄l i], [lpath.v]), so that the general rules
   for unfolding, reborrowing, shared borrows, reading, writing and unblocking leaves,
   and for dropping a place while its leaves are blocked, apply to the payload and its
   subplaces. A sum place is folded back unconditionally ([tctx_fold_oplace_sum]). A leaf
@@ -30,16 +30,16 @@ Section place_sum.
   Lemma pctx_plug_cpd {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt : pctx_nonempty K → lty_is_cpd (pctx_plug K lt).
   Proof. by destruct K. Qed.
 
-  Lemma lty_rfn_sum_in {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) a ζm q :
-    lty_rfn (SumLty tyl i lt) (pinj i a) ζm q = prfn_sum i (lty_rfn lt a ζm (false :: q)).
+  Lemma lty_rfn_sum_in {EL 𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) a ζm q :
+    lty_rfn (SumLty EL tyl i lt) (pinj i a) ζm q = prfn_sum i (lty_rfn lt a ζm (false :: q)).
   Proof. by rewrite lty_rfn_sum /= psum_proj_pinj. Qed.
 
   (** The interpretation of a sum place whose payload is a leaf, at the refinement of a
       value. *)
-  Lemma sum_ofty_own_rfn m {𝔄l} (tyl: typel 𝔄l) i (y: ~~ (Σ! 𝔄l)) ζm q d g tid l :
-    ltype_own (Owned m) (SumLty tyl i (OfTy (tyl +!! i)))
-      (lty_rfn (SumLty tyl i (OfTy (tyl +!! i))) y ζm q) d g tid l ⊢
-    ltype_own (Owned m) (OfTy (Σ! tyl)) (inl (PlaceIn y)) d g tid l.
+  Lemma sum_ofty_own_rfn m {EL 𝔄l} (tyl: typel 𝔄l) i (y: ~~ (enumₛ EL 𝔄l)) ζm q d g tid l :
+    ltype_own (Owned m) (SumLty EL tyl i (OfTy (tyl +!! i)))
+      (lty_rfn (SumLty EL tyl i (OfTy (tyl +!! i))) y ζm q) d g tid l ⊢
+    ltype_own (Owned m) (OfTy (enum_ty EL tyl)) (inl (PlaceIn y)) d g tid l.
   Proof.
     rewrite lty_rfn_sum. case_match eqn:Ha.
     - apply psum_proj_Some in Ha. simpl in Ha. subst y.
@@ -65,9 +65,9 @@ Section typing.
 
   (** * Places rooted at an owned location *)
 
-  Lemma tctx_fold_oplace_sum {𝔄l 𝔄} E L p n (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoUniq K} (tyl: typel 𝔄l) i :
-    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i)))]
-      +[p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl))] (λ post '-[x], post -[x]).
+  Lemma tctx_fold_oplace_sum {EL 𝔄l 𝔄} E L p n (K: pctx (enumₛ EL 𝔄l) 𝔄) `{!PctxNoUniq K} (tyl: typel 𝔄l) i :
+    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (SumLty EL tyl i (OfTy (tyl +!! i)))]
+      +[p ◁ₗown{n} pctx_plug K (OfTy (enum_ty EL tyl))] (λ post '-[x], post -[x]).
   Proof.
     apply (tctx_oplace_change_hole _ _ _ _ K); [done|done|].
     iIntros (y ζm q d g tid l) "H !>". by iApply sum_ofty_own_rfn.
@@ -76,13 +76,13 @@ Section typing.
   (** Reading the discriminant of the leaf at the hole of [K] (a sum, at any path): the
       leaf is unfolded into a sum place at the variant [i] of its value, and the program
       continues with branch [i]. *)
-  Lemma type_case_oplace {𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoUniq K}
+  Lemma type_case_oplace {EL 𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (enumₛ EL 𝔄l) 𝔄) `{!PctxNoUniq K}
       (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
     IntoPlistc el el' →
     ([∗ nat] i < length 𝔄l, typed_body E L I C
-      (p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
-    typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)) +:: T)
-      (case: (GetDiscr (syn_mty (Σ! 𝔄l)) (pctx_expr K p)) of el)
+      (p ◁ₗown{n} pctx_plug K (SumLty EL tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
+    typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfTy (enum_ty EL tyl)) +:: T)
+      (case: (GetDiscr (syn_mty (enumₛ EL 𝔄l)) (pctx_expr K p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -101,28 +101,28 @@ Section typing.
     { by rewrite -(semi_iso' to_xsum of_xsum (pctx_get K x₀)) Hj. }
     try rewrite -Hy.
     set lr := l.
-    set lK := pctx_loc K (lty_size (OfTy (Σ! tyl))) x₀ lr.
+    set lK := pctx_loc K (lty_size (OfTy (enum_ty EL tyl))) x₀ lr.
     (* The address of the hole. *)
     wp_bind (pctx_expr K p).
     iApply (wp_wand with "[Rest]").
-    { iApply (wp_pctx_expr K (lty_size (OfTy (Σ! tyl))) 1 x₀ ζm [] d g tid lr p True True
+    { iApply (wp_pctx_expr K (lty_size (OfTy (enum_ty EL tyl))) 1 x₀ ζm [] d g tid lr p True True
         with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         iFrame; by iPureIntro. }
     iIntros (w) "(-> & _ & _ & Rest)".
-    (* Read the discriminant ([GetDiscr] reads the tag). *)
-    iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Tag & Pay & Pad)".
-    iDestruct "Tag" as (bt) "[Bt %Hbt]".
+    (* Read the discriminant ([GetDiscr] reads the rest of the bytes). *)
+    iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(ERest & Pay)".
+    iDestruct "ERest" as (b1 b2) "(B1 & B2 & %Hr)".
     wp_bind (GetDiscr _ _).
-    iApply (wp_get_discr_sum with "Bt"); [exact Hbt|apply fin_to_nat_lt|]. iIntros "Bt".
+    iApply (wp_get_discr_enum with "B1 B2"); [exact Hr|]. iIntros "B1 B2".
     wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
     iDestruct (big_sepN_lookup _ _ j with "el") as "el".
     iApply ("el" $! _ (((l, x₀), ζm) -:: xl)
       with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
     { iApply proph_obs_impl; [|done]=>/= ?. by rewrite -?Hy to_xsum_pinj. }
     iFrame "T". iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g. iFrame "⧖".
-    rewrite (lty_nrc_plug_eq K (OfTy (Σ! tyl)) (SumLty tyl j (OfTy (tyl +!! j)))) //
-      (lty_size_plug_eq K _ (OfTy (Σ! tyl))) //.
+    rewrite (lty_nrc_plug_eq K (OfTy (enum_ty EL tyl)) (SumLty EL tyl j (OfTy (tyl +!! j)))) //
+      (lty_size_plug_eq K _ (OfTy (enum_ty EL tyl))) //.
     iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug -Hy lty_rfn_sum_in ltype_own_plug.
     iFrame "Rest".

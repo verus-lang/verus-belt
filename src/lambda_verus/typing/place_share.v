@@ -66,7 +66,7 @@ Section pctx_share.
       lty 𝔅 → type 𝔅 → Prop :=
     match K in pctx 𝔅 𝔄 return lty 𝔅 → type 𝔅 → Prop with
     | PHole => λ lt ty, lty_sleaf E L α false lt ty lt
-    | PField _ _ K _ | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_vsleaf E L K α
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ _ K | PUniq _ K => pctx_vsleaf E L K α
     | PShr _ _ => λ lt ty, ty = lty_fold lt
     | PResUniq _ _ => λ _ _, False
     end.
@@ -78,7 +78,7 @@ Section pctx_share.
       lty 𝔅 → type 𝔅 → lty 𝔅 → Prop :=
     match K in pctx 𝔅 𝔄 return lty 𝔅 → type 𝔅 → lty 𝔅 → Prop with
     | PHole => lty_sleaf E L α true
-    | PField _ _ K _ | POwn _ K | PSum _ _ _ K => pctx_sleaf E L K α
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ _ K => pctx_sleaf E L K α
     | PUniq _ K => match K in pctx _ _ return lty _ → type _ → lty _ → Prop with
         | PHole => λ _ _ _, False | _ => pctx_sleaf E L K α end
     | PShr _ _ => λ lt ty lt', ty = lty_fold lt ∧ lt' = lt
@@ -128,7 +128,7 @@ Section pctx_share.
   Fixpoint pctx_vslft {𝔅 𝔄} (K: pctx 𝔅 𝔄) (κ: lft) : lty 𝔅 → lft :=
     match K with
     | PHole => λ lt, lty_vslft κ lt
-    | PField _ _ K _ | POwn _ K | PSum _ _ _ K => pctx_vslft K κ
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ _ K => pctx_vslft K κ
     | PUniq κ' K | PResUniq κ' K => pctx_vslft K (κ ⊓ κ')
     | PShr κ' K => λ _, pctx_slft K κ'
     end.

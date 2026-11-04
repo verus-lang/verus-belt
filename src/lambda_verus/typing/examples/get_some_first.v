@@ -8,7 +8,7 @@ Set Default Proof Using "Type".
 The body of [get_some_first] of the deleted legacy example [place_sum.v], on bytes: the argument is
 a MiniRust pointer value of type [&uniq{α} Option<S>], for the [repr(C)] struct [S] of two
 [i32] (a root value, [◁ᵥ]);
-the [match] reads the tag with a typed [Load] of the tag [IntType] ([type_case_vplace_deep]);
+the [match] reads the discriminant ([GetDiscr], [type_case_vplace_deep]);
 the result [Option<&mut i32>] is a MiniRust variant value built with [MkVariant]
 ([type_mk_variant_val_instr]). *)
 
@@ -20,10 +20,14 @@ Section get_some_first.
   Notation SL := (c_layout [MInt i32; MInt i32]).
   Notation Sₛ := (structₛ SL Sl).
   Notation St := (struct_ty SL +[i32t; i32t]).
-  Notation opt_pair := (Σ! +[(); St])%T.
-  Notation opt_pairₛ := (Σ! [unitₛ; Sₛ])%ST.
-  Notation opt_ref α := (Σ! +[(); &uniq{α} i32t])%T.
-  Notation opt_refₛ := (Σ! [unitₛ; uniq_borₛ (intₛ i32)])%ST.
+  (* [Option<S>] and [Option<&mut i32>], at the tagged layouts. *)
+  Notation Ol := [unitₛ; Sₛ].
+  Notation OL := (tagged_layout [zst_mty; syn_mty Sₛ]).
+  Notation opt_pair := (enum_ty OL +[(); St])%T.
+  Notation opt_pairₛ := (enumₛ OL Ol)%ST.
+  Notation RL := (tagged_layout [zst_mty; MPtr]).
+  Notation opt_ref α := (enum_ty RL +[(); &uniq{α} i32t])%T.
+  Notation opt_refₛ := (enumₛ RL [unitₛ; uniq_borₛ (intₛ i32)])%ST.
 
   (*
   ```
@@ -34,15 +38,15 @@ Section get_some_first.
   *)
   Definition get_some_first : expr := (
     Skip;;                                          (* b as a place *)
-    case: (GetDiscr (syn_mty (Σ! [unitₛ; Sₛ])%ST) "b") of
+    case: (GetDiscr (syn_mty opt_pairₛ) "b") of
     [ ReBor;;                                       (* None: fold back *)
       Skip;;                                        (* resolve b *)
       let: "u" := MkTuple [] in
       let: "r" := MkVariant 0 "u" in
       jump: "return" ["r"];
       ReBor;;                                       (* Some(p): unfold p *)
-      let: "r0" := &ᵘ ("b" +ₗ #1 +ₗ #(struct_off SL Sl 0)) in    (* &mut p.0 *)
-      let: "r1" := &ᵘ ("b" +ₗ #1 +ₗ #(struct_off SL Sl 1)) in    (* &mut p.1, to drop b *)
+      let: "r0" := &ᵘ ("b" +ₗ #(enum_off OL Ol 1) +ₗ #(struct_off SL Sl 0)) in  (* &mut p.0 *)
+      let: "r1" := &ᵘ ("b" +ₗ #(enum_off OL Ol 1) +ₗ #(struct_off SL Sl 1)) in  (* &mut p.1 *)
       Skip;;                                        (* resolve r1 *)
       let: "r" := MkVariant 1 "r0" in
       jump: "return" ["r"]])%E.
@@ -79,7 +83,7 @@ Section get_some_first.
       iSplitL; [|iSplitL; [|done]].
       - (* None: fold back, resolve b *)
         iApply type_seq.
-        { apply (type_fold_vplace_sum_deep_instr _ _ _ vb (PUniq α PHole) +[(); St]%T 0%fin).
+        { apply (type_fold_vplace_sum_deep_instr (EL:=OL) _ _ _ vb (PUniq α PHole) +[(); St]%T 0%fin).
           simpl. solve_typing. }
         { solve_typing. } { simpl. reflexivity. }
         iApply typed_body_tctx_incl.
@@ -92,7 +96,7 @@ Section get_some_first.
         { solve_typing. } { reflexivity. }
         iIntros (vu). simpl_subst.
         iApply (type_let with "[]").
-        { apply (type_mk_variant_val_instr +[(); &uniq{α} i32t]%T 0%fin). done. }
+        { apply (type_mk_variant_val_instr (EL:=RL) +[(); &uniq{α} i32t]%T 0%fin). done. }
         { solve_typing. } { reflexivity. }
         iIntros (vr). simpl_subst.
         iApply type_jump.
@@ -103,19 +107,19 @@ Section get_some_first.
       - (* Some(p): unfold the payload *)
         iApply type_seq.
         { apply (type_unfold_vplace_struct_instr _ _ _ vb SL
-            (PUniq α (PSum +[(); St]%T 1%fin -[0%Z; 0%Z] PHole)) +[i32t; i32t]). simpl. solve_typing. }
+            (PUniq α (PSum OL +[(); St]%T 1%fin -[0%Z; 0%Z] PHole)) +[i32t; i32t]). simpl. solve_typing. }
         { solve_typing. } { simpl. reflexivity. }
         (* &mut p.0, at α *)
         iApply (type_let with "[]").
         { apply (type_borrow_place_instr _ _ _ vb
-            (PUniq α (PSum +[(); St]%T 1%fin -[0%Z; 0%Z] (PField SL +[] PHole +[OfTy i32t]))) α i32t);
+            (PUniq α (PSum OL +[(); St]%T 1%fin -[0%Z; 0%Z] (PField SL +[] PHole +[OfTy i32t]))) α i32t);
             [solve_typing|simpl; solve_typing..]. }
         { solve_typing. } { reflexivity. }
         iIntros (vr0). simpl_subst.
         (* &mut p.1, at α *)
         iApply (type_let with "[]").
         { apply (type_borrow_place_instr _ _ _ vb
-            (PUniq α (PSum +[(); St]%T 1%fin -[0%Z; 0%Z] (PField SL +[Blocked i32t α] PHole +[])))
+            (PUniq α (PSum OL +[(); St]%T 1%fin -[0%Z; 0%Z] (PField SL +[Blocked i32t α] PHole +[])))
             α i32t); [solve_typing|simpl; solve_typing..]. }
         { solve_typing. } { reflexivity. }
         iIntros (vr1). simpl_subst.
@@ -129,7 +133,7 @@ Section get_some_first.
         { apply (tctx_incl_frame_r +[_] +[] +[_]). apply tctx_drop_vplace_uniq; [solve_typing|done|done]. }
         (* the result: Some(&mut p.0) *)
         iApply (type_let with "[]").
-        { apply (type_mk_variant_val_instr +[(); &uniq{α} i32t]%T 1%fin). done. }
+        { apply (type_mk_variant_val_instr (EL:=RL) +[(); &uniq{α} i32t]%T 1%fin). done. }
         { solve_typing. } { reflexivity. }
         iIntros (vr). simpl_subst.
         iApply type_jump.

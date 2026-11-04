@@ -12,8 +12,8 @@
     write access [wp_vplace_wacc] ([place_write.v]), used by the writes and the byte copies
     ([place_memcpy.v]).
   - [type_case_vplace_deep]: case analysis on a sum leaf, which reads its discriminant with
-    [GetDiscr] (a typed load of the tag); the leaf becomes the sum place
-    [SumLty tyl i (OfTy (tyl +!! i))] in branch [i]; [type_fold_vplace_sum_deep_instr]
+    [GetDiscr] (typed loads of the rest of its bytes); the leaf becomes the sum place
+    [SumLty EL tyl i (OfTy (tyl +!! i))] in branch [i]; [type_fold_vplace_sum_deep_instr]
     folds it back.
 
   Assigning a variant below unique borrows is a typed [Store] of a variant value
@@ -143,13 +143,13 @@ Section sum_deep.
       variant [i] of its value (in [Uniq] mode, the body of the innermost borrow is
       switched to the node of the sum place, [cpd_unfold_uniq]), and the program continues
       with branch [i]. The first step (the address) gives the credits. *)
-  Lemma type_case_vplace_deep {𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p (K: pctx (Σ! 𝔄l) 𝔄)
+  Lemma type_case_vplace_deep {EL 𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p (K: pctx (enumₛ EL 𝔄l) 𝔄)
       `{!PctxNoShr K} `{!PctxVRoot K} (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
-    IntoPlistc el el' → lctx_lft_alive E L (pctx_ulft K (OfTy (Σ! tyl))) →
+    IntoPlistc el el' → lctx_lft_alive E L (pctx_ulft K (OfTy (enum_ty EL tyl))) →
     ([∗ nat] i < length 𝔄l, typed_body E L I C
-      (p ◁ₗ pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
-    typed_body E L I C (p ◁ₗ pctx_plug K (OfTy (Σ! tyl)) +:: T)
-      (case: (GetDiscr (syn_mty (Σ! 𝔄l)) (pctx_vexpr K p)) of el)
+      (p ◁ₗ pctx_plug K (SumLty EL tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
+    typed_body E L I C (p ◁ₗ pctx_plug K (OfTy (enum_ty EL tyl)) +:: T)
+      (case: (GetDiscr (syn_mty (enumₛ EL 𝔄l)) (pctx_vexpr K p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -171,31 +171,31 @@ Section sum_deep.
     iIntros "£ #⧖S". iApply wp_fupd.
     iMod (llctx_interp_make_guarded with "L") as (γh) "[H1 [H2 [#Ghalf #Halfback]]]";
       [solve_ndisj|].
-    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (OfTy (Σ! tyl))])%I as "#Hu".
+    iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (OfTy (enum_ty EL tyl))])%I as "#Hu".
     { iApply (guards_transitive with "Ghalf Alv"). }
-    set lt' := SumLty tyl j (OfTy (tyl +!! j)).
-    set r' := (prfn_sum j (inl (PlaceIn a)) : prfn (xsumₛ 𝔄l)).
+    set lt' := SumLty EL tyl j (OfTy (tyl +!! j)).
+    set r' := (prfn_sum j (inl (PlaceIn a)) : prfn (enumₛ EL 𝔄l)).
     iDestruct (lc_weaken (pctx_vacc_cred K D + 1) with "£") as "[£a £1]";
       [have := pctx_vacc_cred_le K D; rewrite /advance_credits; nia|].
-    iMod (vroot_acc K (OfTy (Σ! tyl)) with "LFT PROPH UNIQ Hu H1 £a Own")
+    iMod (vroot_acc K (OfTy (enum_ty EL tyl)) with "LFT PROPH UNIQ Hu H1 £a Own")
       as (G' dh gh) "(% & G' & #G'G & -> & %Hdh & H & P & Cl)"; [solve_ndisj|].
     destruct Hdh as (Hdh & Hgh & Hin).
-    set lK := pctx_vloc K (lty_size (OfTy (Σ! tyl))) x₀.
-    iAssert (G' &&{↑NllftG}&&> @[pctx_ulft K (OfTy (Σ! tyl))])%I as "#G'u".
+    set lK := pctx_vloc K (lty_size (OfTy (enum_ty EL tyl))) x₀.
+    iAssert (G' &&{↑NllftG}&&> @[pctx_ulft K (OfTy (enum_ty EL tyl))])%I as "#G'u".
     { iApply (guards_transitive with "G'G Hu"). }
     (* The address of the hole. *)
     wp_bind (pctx_vexpr K p).
     iApply (wp_wand with "[P G']").
-    { iApply (wp_pctx_vptrs _ K (lty_size (OfTy (Σ! tyl))) G' x₀ p True%I with "[G'] P").
+    { iApply (wp_pctx_vptrs _ K (lty_size (OfTy (enum_ty EL tyl))) G' x₀ p True%I with "[G'] P").
       iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->". by iFrame. }
     iIntros (w) "(-> & _ & G' & P)".
-    have Hf: lty_fold lt' = lty_fold (OfTy (Σ! tyl)) by apply lty_fold_sum_ofty.
-    have Hsz: lty_size lt' = lty_size (OfTy (Σ! tyl)) by apply lty_size_sum_ofty.
-    have Hr': ∀ ζl, prfn_rsv (lty_rfn (OfTy (Σ! tyl)) (pctx_get K x₀) ζm (pctx_vpath K)) ζl →
+    have Hf: lty_fold lt' = lty_fold (OfTy (enum_ty EL tyl)) by apply lty_fold_sum_ofty.
+    have Hsz: lty_size lt' = lty_size (OfTy (enum_ty EL tyl)) by apply lty_size_sum_ofty.
+    have Hr': ∀ ζl, prfn_rsv (lty_rfn (OfTy (enum_ty EL tyl)) (pctx_get K x₀) ζm (pctx_vpath K)) ζl →
       prfn_rsv r' (ζl ++ []).
     { intros ζl _. rewrite /r' prfn_rsv_sum. apply prfn_rsv_in. }
     destruct (pctx_uend K) as [κ|] eqn:Hu.
-    - (* The whole referent of the innermost borrow: read the tag in its body, then switch
+    - (* The whole referent of the innermost borrow: read the discriminant in its body, then switch
          the body to the sum place. *)
       iEval (rewrite (pctx_kind_uniq K κ) //) in "H".
       iEval (rewrite /pctx_vcloser (pctx_kind_uniq K κ) //) in "Cl".
@@ -206,16 +206,16 @@ Section sum_deep.
       { iApply (guards_transitive with "G'u"). by iApply pctx_ulft_uend. }
       iAssert (fractional.half γ2 &&{↑NllftG}&&> @[κ])%I as "#Aκ".
       { iApply (guards_transitive with "Gh2 G'κ"). }
-      iAssert (fractional.half γ2 &&{↑NllftG}&&> @[ty_lft (Σ! tyl)%T])%I as "#Aty".
+      iAssert (fractional.half γ2 &&{↑NllftG}&&> @[ty_lft (enum_ty EL tyl)])%I as "#Aty".
       { iApply (guards_transitive with "Gh2"). iApply (guards_transitive with "G'u").
-        iApply (pctx_ulft_fold K (OfTy (Σ! tyl))). by eapply pctx_uend_ulfts_ne. }
+        iApply (pctx_ulft_fold K (OfTy (enum_ty EL tyl))). by eapply pctx_uend_ulfts_ne. }
       iMod (uniq_body_acc with "LFT UNIQ Aκ Body A") as "(Pl & ⧗1 & CloseB)"; [solve_ndisj|].
       iMod (lc_fupd_elim_later with "£1 Pl") as "Pl".
       iMod (uniq_payload_run with "Aty B Pl") as "(B & #⧖' & Gho1 & Pt1)"; [solve_ndisj|].
-      iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Tag & Pay & Pad)".
-      iDestruct "Tag" as (bt) "[Bt %Hbt]".
-      iApply (wp_get_discr_sum with "Bt"); [exact Hbt|apply fin_to_nat_lt|]. iIntros "Bt".
-      iSpecialize ("CloseB" $! (pinj j a) dh gh with "[Bt Pay Pad Gho1] ⧗1").
+      iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(ERest & Pay)".
+      iDestruct "ERest" as (b1 b2) "(B1 & B2 & %Hr)".
+      iApply (wp_get_discr_enum with "B1 B2"); [exact Hr|]. iIntros "B1 B2".
+      iSpecialize ("CloseB" $! (pinj j a) dh gh with "[B1 B2 Pay Gho1] ⧗1").
       { iNext. iFrame "⧖' Gho1". rewrite (cbytes_sum _ j (tyl +!! j)). by iFrame. }
       iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [solve_ndisj|].
       iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [solve_ndisj|].
@@ -242,18 +242,18 @@ Section sum_deep.
       { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?Hy to_xsum_pinj. }
       iFrame "T". iExists _. iSplit; [done|].
       iApply (vplace_own_close with "⧖ [⧗p]");
-        [by rewrite (lty_vnrc_plug_eq K lt' (OfTy (Σ! tyl)))|].
+        [by rewrite (lty_vnrc_plug_eq K lt' (OfTy (enum_ty EL tyl)))|].
       rewrite ?Hy lty_rfn_sum_in. iExact "Own".
     - (* [Owned] mode. *)
       iEval (rewrite (pctx_kind_owned K) //) in "H".
       iEval (rewrite /pctx_vcloser (pctx_kind_owned K) //) in "Cl".
       set mh := pctx_hmode K 0.
       iDestruct "H" as (? ->) "[Pt1 Gho1]". rewrite ?Hy.
-      iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Tag & Pay & Pad)".
-      iDestruct "Tag" as (bt) "[Bt %Hbt]".
-      iApply (wp_get_discr_sum with "Bt"); [exact Hbt|apply fin_to_nat_lt|]. iIntros "Bt".
+      iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(ERest & Pay)".
+      iDestruct "ERest" as (b1 b2) "(B1 & B2 & %Hr)".
+      iApply (wp_get_discr_enum with "B1 B2"); [exact Hr|]. iIntros "B1 B2".
       iMod ("Cl" $! lt' r' dh gh D [] 1%Qp True%I
-        with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Bt Pay Pad Gho1]") as "(Own & H1 & _)".
+        with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [B1 B2 Pay Gho1]") as "(Own & H1 & _)".
       { exact Hr'. }
       { lia. }
       { iRight. by iApply big_sepL_pat_ok_nil. }
@@ -269,17 +269,17 @@ Section sum_deep.
       { iApply proph_obs_impl; [|done]=>/= ?. by rewrite ?Hy to_xsum_pinj. }
       iFrame "T". iExists _. iSplit; [done|].
       iApply (vplace_own_close with "⧖ [⧗p]");
-        [by rewrite (lty_vnrc_plug_eq K lt' (OfTy (Σ! tyl)))|].
+        [by rewrite (lty_vnrc_plug_eq K lt' (OfTy (enum_ty EL tyl)))|].
       rewrite ?Hy lty_rfn_sum_in. iExact "Own".
   Qed.
 
-  Lemma type_case_oplace_deep {𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (Σ! 𝔄l) 𝔄)
+  Lemma type_case_oplace_deep {EL 𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (enumₛ EL 𝔄l) 𝔄)
       `{!PctxNoShr K} (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
-    IntoPlistc el el' → lctx_lft_alive E L (pctx_ulft K (OfTy (Σ! tyl))) →
+    IntoPlistc el el' → lctx_lft_alive E L (pctx_ulft K (OfTy (enum_ty EL tyl))) →
     ([∗ nat] i < length 𝔄l, typed_body E L I C
-      (p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
-    typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl)) +:: T)
-      (case: (GetDiscr (syn_mty (Σ! 𝔄l)) (pctx_expr K p)) of el)
+      (p ◁ₗown{n} pctx_plug K (SumLty EL tyl i (OfTy (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
+    typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfTy (enum_ty EL tyl)) +:: T)
+      (case: (GetDiscr (syn_mty (enumₛ EL 𝔄l)) (pctx_expr K p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -287,8 +287,8 @@ Section sum_deep.
     iApply (type_case_vplace_deep E L I C p (POwn n K) tyl T el el' trl with "el"); done.
   Qed.
   (** Folding back a sum place whose payload is the leaf of its variant (both modes). *)
-  Lemma vplace_conv_sum_fold {𝔄l 𝔄} (K: pctx (Σ! 𝔄l) 𝔄) (tyl: typel 𝔄l) i :
-    vplace_conv K (SumLty tyl i (OfTy (tyl +!! i))) (OfTy (Σ! tyl)) (=).
+  Lemma vplace_conv_sum_fold {EL 𝔄l 𝔄} (K: pctx (enumₛ EL 𝔄l) 𝔄) (tyl: typel 𝔄l) i :
+    vplace_conv K (SumLty EL tyl i (OfTy (tyl +!! i))) (OfTy (enum_ty EL tyl)) (=).
   Proof.
     iIntros (x ζm dh gh D tid lh G E ? HE ??) "#LFT #PROPH #UNIQ _ #Gk G _ £ _ H".
     iDestruct (lc_weaken 1 with "£") as "£"; [lia|].
@@ -297,7 +297,7 @@ Section sum_deep.
     iSplitR; [done|]. iIntros "_".
     destruct (pctx_uend K) as [κ|] eqn:Hu.
     - rewrite (pctx_kind_uniq K κ) //. rewrite -(lty_fold_sum_ofty tyl i).
-      iApply (cpd_fold_uniq (SumLty tyl i (OfTy (tyl +!! i))) with "LFT PROPH UNIQ [] [] G £ H");
+      iApply (cpd_fold_uniq (SumLty EL tyl i (OfTy (tyl +!! i))) with "LFT PROPH UNIQ [] [] G £ H");
         [done| |set_solver| |].
       + iIntros (d' g') "N". iDestruct (sum_ofty_own_rfn 0 with "N") as "N".
         rewrite lty_fold_sum_ofty /ltype_own /= /ofty_owned. iDestruct "N" as (? ->) "[$ $]".
@@ -309,11 +309,11 @@ Section sum_deep.
     - rewrite (pctx_kind_owned K) //. iModIntro. iFrame "G". by iApply sum_ofty_own_rfn.
   Qed.
 
-  Lemma type_fold_vplace_sum_deep_instr {𝔄l 𝔄} E L I p (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoShr K} `{!PctxVRoot K}
+  Lemma type_fold_vplace_sum_deep_instr {EL 𝔄l 𝔄} E L I p (K: pctx (enumₛ EL 𝔄l) 𝔄) `{!PctxNoShr K} `{!PctxVRoot K}
       (tyl: typel 𝔄l) i :
-    lctx_lft_alive E L (pctx_ulft K (SumLty tyl i (OfTy (tyl +!! i))) ⊓ ty_lft (Σ! tyl)%T) →
-    typed_instr E L I +[p ◁ₗ pctx_plug K (SumLty tyl i (OfTy (tyl +!! i)))] (Seq Skip Skip)
-      (const +[p ◁ₗ pctx_plug K (OfTy (Σ! tyl))])
+    lctx_lft_alive E L (pctx_ulft K (SumLty EL tyl i (OfTy (tyl +!! i))) ⊓ ty_lft (enum_ty EL tyl)) →
+    typed_instr E L I +[p ◁ₗ pctx_plug K (SumLty EL tyl i (OfTy (tyl +!! i)))] (Seq Skip Skip)
+      (const +[p ◁ₗ pctx_plug K (OfTy (enum_ty EL tyl))])
       (λ post '-[x], post -[x]).
   Proof.
     intros Alv. eapply typed_instr_tr_impl; [|apply (type_change_vplace_instr _ _ _ _ K _ _ (=));
@@ -323,11 +323,11 @@ Section sum_deep.
     simpl in *. subst. by rewrite pctx_set_get.
   Qed.
 
-  Lemma type_fold_oplace_sum_deep_instr {𝔄l 𝔄} E L I p n (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoShr K}
+  Lemma type_fold_oplace_sum_deep_instr {EL 𝔄l 𝔄} E L I p n (K: pctx (enumₛ EL 𝔄l) 𝔄) `{!PctxNoShr K}
       (tyl: typel 𝔄l) i :
-    lctx_lft_alive E L (pctx_ulft K (SumLty tyl i (OfTy (tyl +!! i))) ⊓ ty_lft (Σ! tyl)%T) →
-    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfTy (tyl +!! i)))] (Seq Skip Skip)
-      (const +[p ◁ₗown{n} pctx_plug K (OfTy (Σ! tyl))])
+    lctx_lft_alive E L (pctx_ulft K (SumLty EL tyl i (OfTy (tyl +!! i))) ⊓ ty_lft (enum_ty EL tyl)) →
+    typed_instr E L I +[p ◁ₗown{n} pctx_plug K (SumLty EL tyl i (OfTy (tyl +!! i)))] (Seq Skip Skip)
+      (const +[p ◁ₗown{n} pctx_plug K (OfTy (enum_ty EL tyl))])
       (λ post '-[x], post -[x]).
   Proof. intros. by apply (type_fold_vplace_sum_deep_instr _ _ _ _ (POwn n K)). Qed.
 End sum_deep.
