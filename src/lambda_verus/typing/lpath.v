@@ -9,7 +9,7 @@
     type [𝔅]. It is given from the root: [PField L lb K la] is a struct of layout [L]
     whose field [length lb] is the context [K], the fields before it having the place
     types [lb] and those after it [la];
-    [POwn n K] is an owned pointer whose pointee is the context [K]; [PSum tyl i w K] is
+    [POwn n K] is an owned pointer whose pointee is the context [K]; [PSum EL tyl i w K] is
     a sum of variant [i] whose payload is the context [K] (at offset 1, after the tag;
     [w] is a default payload value, only used by [pctx_get] for values of other
     variants, which are not owned: see [pctx_in]); [PUniq κ K] is a unique borrow at [κ]
@@ -135,7 +135,7 @@ Section lty_rfn.
     (* A sum at variant [i]: the refinement of the payload (below the path
        [false :: q]) and the padding. (If the value is of another variant, the place is
        not owned, see [sum_node]; the refinement is a constant.) *)
-    | SumLty _ i lt => λ x ζm q,
+    | SumLty _ _ i lt => λ x ζm q,
         match psum_proj i x with
         | Some y => prfn_sum i (lty_rfn lt y ζm (false :: q))
         | None => prfn_dummy x
@@ -190,8 +190,8 @@ Section lty_rfn.
     destruct x as [x0 x]. simpl. by rewrite IH Nat.add_succ_r.
   Qed.
 
-  Lemma lty_rfn_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) x ζm q :
-    lty_rfn (SumLty tyl i lt) x ζm q =
+  Lemma lty_rfn_sum {EL 𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) x ζm q :
+    lty_rfn (SumLty EL tyl i lt) x ζm q =
       match psum_proj i x with
       | Some y => prfn_sum i (lty_rfn lt y ζm (false :: q))
       | None => prfn_dummy x
@@ -206,7 +206,7 @@ Section lty_rfn.
     have Hsh : ∀ (s q: lpath), (∀ r, blk_lookup ζm (r ++ q) = blk_lookup ζm' (r ++ q)) →
       ∀ r, blk_lookup ζm (r ++ s ++ q) = blk_lookup ζm' (r ++ s ++ q).
     { intros s0 q0 Heq r. rewrite app_assoc. apply Heq. }
-    revert x q. induction 𝔄, lt as [| |𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH| |𝔄l tyl i lt IH| | |𝔄 lt κ IH|]
+    revert x q. induction 𝔄, lt as [| |𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH| |𝔄l EL tyl i lt IH| | |𝔄 lt κ IH|]
       using lty_ind'; intros x q Heq; simpl; [done| | | | |done| |done|done| |done].
     - by rewrite (Heq []).
     - by rewrite (IH _ (false :: q)); [|apply (Hsh [false])].
@@ -242,7 +242,7 @@ Section lty_rfn.
   Fixpoint lty_nblk {𝔄} (lt: lty 𝔄) {struct lt} : nat :=
     match lt with
     | Blocked _ _ => 1
-    | UniqLty lt _ | OwnPtrLty _ lt | SumLty _ _ lt | ShrLty lt _ | ResUniqLty lt _ => lty_nblk lt
+    | UniqLty lt _ | OwnPtrLty _ lt | SumLty _ _ _ lt | ShrLty lt _ | ResUniqLty lt _ => lty_nblk lt
     | StructLty _ lts => hsum (λ _ lt, lty_nblk lt) lts
     | _ => 0
     end.
@@ -264,7 +264,7 @@ Section lty_rfn.
     | ShrBlocked _ _ => match e with O => 0 | S _ => 1 end
     | UniqLty lt _ | ResUniqLty lt _ => lty_nrc lt (e + mm + 1) 0
     | OwnPtrLty _ lt => lty_nrc lt e (S mm)
-    | SumLty _ _ lt => lty_nrc lt e mm
+    | SumLty _ _ _ lt => lty_nrc lt e mm
     | ShrLty lt _ => lty_nrc lt e (S mm)
     | StructLty _ lts => hsum (λ _ lt, lty_nrc lt e mm) lts
     | _ => 0
@@ -285,7 +285,7 @@ Section lty_rfn.
   Fixpoint lty_blk_all {𝔄} (lt: lty 𝔄) : Prop :=
     match lt with
     | Blocked _ _ => True
-    | UniqLty lt _ | OwnPtrLty _ lt | SumLty _ _ lt => lty_blk_all lt
+    | UniqLty lt _ | OwnPtrLty _ lt | SumLty _ _ _ lt => lty_blk_all lt
     | StructLty _ lts => foldr and True (hcmap (λ _ lt, lty_blk_all lt) lts)
     | _ => False
     end.
@@ -304,7 +304,7 @@ Section lty_rfn.
   Lemma lty_blk_all_dep {𝔄} (lt: lty 𝔄) x ζm q ζl :
     lty_blk_all lt → prfn_rsv (lty_rfn lt x ζm q) ζl → prfn_den (lty_rfn lt x ζm q) ./ ζl.
   Proof.
-    revert x q. induction 𝔄, lt as [| |𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH| |𝔄l tyl i lt IH| | | |]
+    revert x q. induction 𝔄, lt as [| |𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH| |𝔄l EL tyl i lt IH| | | |]
       using lty_ind'; intros x q Hb Hr; try done.
     - simpl in *. rewrite prfn_den_inl. by rewrite prfn_rsv_inl in Hr.
     - destruct Hr as [Hr Hξ]. apply (proph_dep_weaken _ (ζl ++ ζl)); [set_solver|].
@@ -377,8 +377,8 @@ Section pctx.
   | POwn {𝔅 𝔄'} (n: nat) (K: pctx 𝔅 𝔄') : pctx 𝔅 (at_locₛ 𝔄')
   (* The payload of a sum at variant [i]; [w] is a default value of the payload,
      used (by [pctx_get]) only for values of other variants. *)
-  | PSum {𝔅 𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (w: ~~ (𝔄l !!ₗ i))
-      (K: pctx 𝔅 (𝔄l !!ₗ i)) : pctx 𝔅 (Σ! 𝔄l)
+  | PSum {𝔅 𝔄l} (EL: enum_layout) (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (w: ~~ (𝔄l !!ₗ i))
+      (K: pctx 𝔅 (𝔄l !!ₗ i)) : pctx 𝔅 (enumₛ EL 𝔄l)
   (* The referent of a unique borrow at [κ] (a nested place, see [UniqLty]). *)
   | PUniq {𝔅 𝔄'} (κ: lft) (K: pctx 𝔅 𝔄') : pctx 𝔅 (uniq_borₛ 𝔄')
   (* The referent of a shared reference at [κ] (a read-only view, see [ShrLty]). *)
@@ -397,7 +397,7 @@ Section pctx.
     | PHole => λ lt, lt
     | PField L lb K la => λ lt, StructLty L (lb h++ pctx_plug K lt +:: la)
     | POwn n K => λ lt, OwnPtrLty n (pctx_plug K lt)
-    | PSum tyl i _ K => λ lt, SumLty tyl i (pctx_plug K lt)
+    | PSum EL tyl i _ K => λ lt, SumLty EL tyl i (pctx_plug K lt)
     | PUniq κ K => λ lt, UniqLty (pctx_plug K lt) κ
     | PShr κ K => λ lt, ShrLty (pctx_plug K lt) κ
     | PResUniq κ K => λ lt, ResUniqLty (pctx_plug K lt) κ
@@ -408,7 +408,7 @@ Section pctx.
     | PHole => λ x, x
     | PField _ _ K _ => λ x, pctx_get K (phd (psepr x))
     | POwn _ K => λ x, pctx_get K x.2
-    | PSum _ i w K => λ x, pctx_get K (psum_proj_or i x w)
+    | PSum _ _ i w K => λ x, pctx_get K (psum_proj_or i x w)
     | PUniq _ K => λ x, pctx_get K (uniq_bor_current x)
     | PShr _ K => λ x, pctx_get K x.2
     | PResUniq _ K => λ x, pctx_get K (uniq_bor_current x)
@@ -420,7 +420,7 @@ Section pctx.
     | @PField _ 𝔄lb 𝔄 𝔄la _ _ K _ => λ x y,
         papp (Xl:=𝔄lb) (Yl:=𝔄 :: 𝔄la) (psepl x) (pctx_set K (phd (psepr x)) y -:: ptl (psepr x))
     | POwn _ K => λ x y, (x.1, pctx_set K x.2 y)
-    | PSum _ i w K => λ x y, (pinj i (pctx_set K (psum_proj_or i x w) y))
+    | PSum _ _ i w K => λ x y, (pinj i (pctx_set K (psum_proj_or i x w) y))
     | PUniq _ K => λ x y, uniq_bor_set_current x (pctx_set K (uniq_bor_current x) y)
     | PShr _ K => λ x y, (x.1, pctx_set K x.2 y)
     | PResUniq _ K => λ x y, uniq_bor_set_current x (pctx_set K (uniq_bor_current x) y)
@@ -432,7 +432,7 @@ Section pctx.
     | PHole => q
     | @PField _ 𝔄lb _ _ _ _ K _ => pctx_path K (fcode (length 𝔄lb) ++ q)
     | POwn _ K => pctx_path K (false :: q)
-    | PSum _ _ _ K => pctx_path K (false :: q)
+    | PSum _ _ _ _ K => pctx_path K (false :: q)
     | PUniq _ K | PShr _ K | PResUniq _ K => pctx_path K (false :: q)
     end.
 
@@ -442,7 +442,7 @@ Section pctx.
     | PHole => n
     | @PField _ 𝔄lb 𝔄 𝔄la L _ _ _ => struct_size L (𝔄lb ++ 𝔄 :: 𝔄la)
     | POwn _ _ => PTR_SIZE
-    | @PSum _ 𝔄l _ _ _ _ => tag_size 𝔄l + sum_max 𝔄l
+    | @PSum _ 𝔄l EL _ _ _ _ => enum_size EL 𝔄l
     | PUniq _ _ | PShr _ _ | PResUniq _ _ => PTR_SIZE
     end.
 
@@ -450,7 +450,7 @@ Section pctx.
   Fixpoint pctx_noderef {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
     match K with
     | PHole => True
-    | PField _ _ K _ | PSum _ _ _ K => pctx_noderef K
+    | PField _ _ K _ | PSum _ _ _ _ K => pctx_noderef K
     | POwn _ _ | PUniq _ _ | PShr _ _ | PResUniq _ _ => False
     end.
 
@@ -459,7 +459,7 @@ Section pctx.
     match K with
     | PHole => True
     | PField _ _ K _ | POwn _ K | PUniq _ K | PShr _ K | PResUniq _ K => pctx_nosum K
-    | PSum _ _ _ _ => False
+    | PSum _ _ _ _ _ => False
     end.
 
   (** The hole is a field of (nested) structs. *)
@@ -467,7 +467,7 @@ Section pctx.
     match K with
     | PHole => True
     | PField _ _ K _ => pctx_fields K
-    | POwn _ _ | PSum _ _ _ _ | PUniq _ _ | PShr _ _ | PResUniq _ _ => False
+    | POwn _ _ | PSum _ _ _ _ _ | PUniq _ _ | PShr _ _ | PResUniq _ _ => False
     end.
 
   (** The hole is below no unique borrow and no shared reference (a context of the place
@@ -475,7 +475,7 @@ Section pctx.
   Fixpoint pctx_nouniq {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
     match K with
     | PHole => True
-    | PField _ _ K _ | POwn _ K | PSum _ _ _ K => pctx_nouniq K
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ _ K => pctx_nouniq K
     | PUniq _ _ | PShr _ _ | PResUniq _ _ => False
     end.
 
@@ -488,7 +488,7 @@ Section pctx.
     match K with
     | PHole | PShr _ _ => True
     | PField _ lb K la => ltys_simple lb ∧ pctx_simple K ∧ ltys_simple la
-    | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_simple K
+    | POwn _ K | PSum _ _ _ _ K | PUniq _ K => pctx_simple K
     | PResUniq _ _ => False
     end.
 
@@ -498,7 +498,7 @@ Section pctx.
   Fixpoint pctx_noshr {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop :=
     match K with
     | PHole => True
-    | PField _ _ K _ | POwn _ K | PSum _ _ _ K => pctx_noshr K
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ _ K => pctx_noshr K
     | PUniq _ K => pctx_simple K ∧ pctx_noshr K
     | PShr _ _ | PResUniq _ _ => False
     end.
@@ -509,7 +509,7 @@ Section pctx.
     | PHole => λ _, True
     | PField _ _ K _ => λ x, pctx_in K (phd (psepr x))
     | POwn _ K | PShr _ K => λ x, pctx_in K x.2
-    | PSum _ i _ K => λ x, match psum_proj i x with Some y => pctx_in K y | None => False end
+    | PSum _ _ i _ K => λ x, match psum_proj i x with Some y => pctx_in K y | None => False end
     | PUniq _ K | PResUniq _ K => λ x, pctx_in K (uniq_bor_current x)
     end.
 
@@ -519,7 +519,7 @@ Section pctx.
     | PHole => 0
     | @PField _ 𝔄lb 𝔄 𝔄la L _ K _ => struct_off L (𝔄lb ++ 𝔄 :: 𝔄la) (length 𝔄lb) + pctx_off K
     | POwn _ _ => 0
-    | @PSum _ 𝔄l _ _ _ K => tag_size 𝔄l + pctx_off K
+    | @PSum _ 𝔄l EL _ i _ K => enum_off EL 𝔄l i + pctx_off K
     | PUniq _ _ | PShr _ _ | PResUniq _ _ => 0
     end.
 
@@ -530,9 +530,8 @@ Section pctx.
     | @PField _ 𝔄lb 𝔄 𝔄la L _ K _ => λ x l,
         pctx_loc K n (phd (psepr x)) (l +ₗ struct_off L (𝔄lb ++ 𝔄 :: 𝔄la) (length 𝔄lb))
     | POwn _ K => λ x _, pctx_loc K n x.2 x.1
-    | @PSum _ 𝔄l _ i w K => λ x l,
-        pctx_loc K n (psum_proj_or i x w)
-          (l +ₗ tag_size 𝔄l)
+    | @PSum _ 𝔄l EL _ i w K => λ x l,
+        pctx_loc K n (psum_proj_or i x w) (l +ₗ enum_off EL 𝔄l i)
     | PUniq _ K => λ x _, pctx_loc K n (uniq_bor_current x) (uniq_bor_loc x)
     | PShr _ K => λ x _, pctx_loc K n x.2 x.1
     | PResUniq _ K => λ x _, pctx_loc K n (uniq_bor_current x) (uniq_bor_loc x)
@@ -543,7 +542,7 @@ Section pctx.
   Fixpoint pctx_mode {𝔅 𝔄} (K: pctx 𝔅 𝔄) (m: nat) : nat :=
     match K with
     | PHole => m
-    | PField _ _ K _ | PSum _ _ _ K => pctx_mode K m
+    | PField _ _ K _ | PSum _ _ _ _ K => pctx_mode K m
     | POwn _ K | PUniq _ K | PShr _ K | PResUniq _ K => pctx_mode K (m + 1)
     end.
 
@@ -551,7 +550,7 @@ Section pctx.
   Fixpoint pctx_depth {𝔅 𝔄} (K: pctx 𝔅 𝔄) (d: nat) : nat :=
     match K with
     | PHole => d
-    | PField _ _ K _ | PSum _ _ _ K => pctx_depth K d
+    | PField _ _ K _ | PSum _ _ _ _ K => pctx_depth K d
     | POwn _ K | PUniq _ K | PShr _ K | PResUniq _ K => pctx_depth K (pred d)
     end.
 
@@ -562,7 +561,7 @@ Section pctx.
     | PField _ lb K la =>
         PatStruct (hcmap (λ _ lt, lty_pat lt) lb ++ pctx_pat K p :: hcmap (λ _ lt, lty_pat lt) la)
     | POwn _ K => PatOwn (pctx_pat K p)
-    | PSum _ _ _ K => PatSum (pctx_pat K p)
+    | PSum _ _ _ _ K => PatSum (pctx_pat K p)
     | PUniq _ K | PResUniq _ K => PatUniq (pctx_pat K p)
     | PShr _ _ => PatLeaf
     end.
@@ -577,7 +576,7 @@ Section pctx.
           (pctx_rfn K (phd (psepr x)) ζm (fcode (length 𝔄lb) ++ q) r -::
            fields_rfn ζm q la (S (length 𝔄lb)) (ptl (psepr x))))
     | POwn _ K => λ x ζm q r, inr (x.1, pctx_rfn K x.2 ζm (false :: q) r)
-    | PSum _ i _ K => λ x ζm q r,
+    | PSum _ _ i _ K => λ x ζm q r,
         match psum_proj i x with
         | Some y => prfn_sum i (pctx_rfn K y ζm (false :: q) r)
         | None => prfn_dummy x
@@ -595,7 +594,7 @@ Section pctx.
     | PHole => 0
     | PField _ lb K la =>
         hsum (λ _ lt, lty_nblk lt) lb + pctx_nblk K + hsum (λ _ lt, lty_nblk lt) la
-    | POwn _ K | PSum _ _ _ K | PUniq _ K | PShr _ K | PResUniq _ K => pctx_nblk K
+    | POwn _ K | PSum _ _ _ _ K | PUniq _ K | PShr _ K | PResUniq _ K => pctx_nblk K
     end.
 
   (** The receipts of the blocked leaves outside the hole ([lty_nrc]), and the values of
@@ -606,7 +605,7 @@ Section pctx.
     | PField _ lb K la =>
         hsum (λ _ lt, lty_nrc lt e mm) lb + pctx_nrc K e mm + hsum (λ _ lt, lty_nrc lt e mm) la
     | POwn _ K => pctx_nrc K e (S mm)
-    | PSum _ _ _ K => pctx_nrc K e mm
+    | PSum _ _ _ _ K => pctx_nrc K e mm
     | PShr _ K => pctx_nrc K e (S mm)
     | PUniq _ K | PResUniq _ K => pctx_nrc K (e + mm + 1) 0
     end.
@@ -614,7 +613,7 @@ Section pctx.
   Fixpoint pctx_ne {𝔅 𝔄} (K: pctx 𝔅 𝔄) (e mm: nat) : nat :=
     match K with
     | PHole => e
-    | PField _ _ K _ | PSum _ _ _ K => pctx_ne K e mm
+    | PField _ _ K _ | PSum _ _ _ _ K => pctx_ne K e mm
     | POwn _ K | PShr _ K => pctx_ne K e (S mm)
     | PUniq _ K | PResUniq _ K => pctx_ne K (e + mm + 1) 0
     end.
@@ -622,7 +621,7 @@ Section pctx.
   Fixpoint pctx_nmm {𝔅 𝔄} (K: pctx 𝔅 𝔄) (e mm: nat) : nat :=
     match K with
     | PHole => mm
-    | PField _ _ K _ | PSum _ _ _ K => pctx_nmm K e mm
+    | PField _ _ K _ | PSum _ _ _ _ K => pctx_nmm K e mm
     | POwn _ K | PShr _ K => pctx_nmm K e (S mm)
     | PUniq _ K | PResUniq _ K => pctx_nmm K (e + mm + 1) 0
     end.
@@ -634,7 +633,7 @@ Section pctx.
     | PField L lb K la =>
         PField L (hmap (λ _ lt, lty_core lt) lb) (pctx_core K) (hmap (λ _ lt, lty_core lt) la)
     | POwn n K => POwn n (pctx_core K)
-    | PSum tyl i w K => PSum tyl i w (pctx_core K)
+    | PSum EL tyl i w K => PSum EL tyl i w (pctx_core K)
     | PUniq κ K => PUniq κ (pctx_core K)
     | PShr κ K => PShr κ (pctx_core K)
     | PResUniq κ K => PResUniq κ (pctx_core K)
@@ -653,8 +652,8 @@ Section pctx.
   Global Instance pctx_no_shr_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') :
     PctxNoShr K → PctxNoShr (POwn n K).
   Proof. done. Qed.
-  Global Instance pctx_no_shr_sum {𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) :
-    PctxNoShr K → PctxNoShr (PSum tyl i w K).
+  Global Instance pctx_no_shr_sum {EL 𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) :
+    PctxNoShr K → PctxNoShr (PSum EL tyl i w K).
   Proof. done. Qed.
   (** Simple place types and contexts, as type classes (solved by the structure). *)
   Class LtySimple {𝔄} (lt: lty 𝔄) : Prop := lty_simple_c : lty_simple lt.
@@ -676,8 +675,8 @@ Section pctx.
   Global Instance lty_simple_struct_c {𝔄l} L (lts: hlist lty 𝔄l) :
     TCHForall (λ _ lt, LtySimple lt) lts → LtySimple (StructLty L lts).
   Proof. intros H. apply lty_simple_struct. by apply ltys_simple_tc. Qed.
-  Global Instance lty_simple_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
-    LtySimple lt → LtySimple (SumLty tyl i lt).
+  Global Instance lty_simple_sum {EL 𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
+    LtySimple lt → LtySimple (SumLty EL tyl i lt).
   Proof. done. Qed.
 
   Class PctxSimple {𝔅 𝔄} (K: pctx 𝔅 𝔄) : Prop := pctx_simple_c : pctx_simple K.
@@ -691,8 +690,8 @@ Section pctx.
   Global Instance pctx_simple_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') :
     PctxSimple K → PctxSimple (POwn n K).
   Proof. done. Qed.
-  Global Instance pctx_simple_sum {𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) :
-    PctxSimple K → PctxSimple (PSum tyl i w K).
+  Global Instance pctx_simple_sum {EL 𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) :
+    PctxSimple K → PctxSimple (PSum EL tyl i w K).
   Proof. done. Qed.
   Global Instance pctx_simple_uniq {𝔅 𝔄'} κ (K: pctx 𝔅 𝔄') :
     PctxSimple K → PctxSimple (PUniq κ K).
@@ -786,7 +785,7 @@ Section pctx.
 
   Lemma lty_size_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt : lty_size (pctx_plug K lt) = pctx_size K (lty_size lt).
   Proof.
-    induction K in lt |- *; simpl; try done. by rewrite /lty_size syn_bsize_sum.
+    induction K in lt |- *; simpl; done.
   Qed.
 
   Lemma lty_pat_plug {𝔅 𝔄} (K: pctx 𝔅 𝔄) lt : lty_pat (pctx_plug K lt) = pctx_pat K (lty_pat lt).
@@ -876,7 +875,7 @@ Section pctx.
          apply pforall_impl=> ??; by apply prfn_rsv_weaken].
     - intros H H'. by eapply IHK.
     - destruct (psum_proj i x); [|intros; rewrite /prfn_dummy /=; by intros ???].
-      rewrite !(prfn_rsv_sum' _ _). intros H H'. by eapply IHK.
+      rewrite !(prfn_rsv_sum' (EL:=EL) _ _). intros H H'. by eapply IHK.
     - intros [H1 H2] H'. split; [by eapply IHK|].
       eapply uniq_prvar_dep_irrel, proph_dep_weaken; [|exact H2]. done.
     - intros _ _. exact (prfn_rsv_in (𝔄:=at_locₛ 𝔄') x ζl').
@@ -898,7 +897,7 @@ Section pctx.
          apply pforall_impl=> ??; by apply prfn_rsv_weaken].
     - intros H H'. by eapply IHK.
     - destruct (psum_proj i x); [|intros; rewrite /prfn_dummy /=; by intros ???].
-      rewrite !(prfn_rsv_sum' _ _). intros H H'. by eapply IHK.
+      rewrite !(prfn_rsv_sum' (EL:=EL) _ _). intros H H'. by eapply IHK.
     - intros H [H1 H2]. split; [by eapply IHK|].
       eapply uniq_prvar_dep_irrel, proph_dep_weaken; [|exact H2]. done.
     - intros _ _. exact (prfn_rsv_in (𝔄:=at_locₛ 𝔄') x ζl').
@@ -932,8 +931,8 @@ Section pctx.
   Global Instance pctx_no_uniq_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') :
     PctxNoUniq K → PctxNoUniq (POwn n K).
   Proof. done. Qed.
-  Global Instance pctx_no_uniq_sum {𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) :
-    PctxNoUniq K → PctxNoUniq (PSum tyl i w K).
+  Global Instance pctx_no_uniq_sum {EL 𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) :
+    PctxNoUniq K → PctxNoUniq (PSum EL tyl i w K).
   Proof. done. Qed.
   Global Instance pctx_no_uniq_core {𝔅 𝔄} (K: pctx 𝔅 𝔄) :
     PctxNoUniq K → PctxNoUniq (pctx_core K).
@@ -1015,14 +1014,11 @@ Section pctx.
     | POwn n' K => λ x ζm q d g tid l,
         ptr_cell l x.1 ∗ ⌜d ≠ 0%nat⌝ ∗ ▷^m (freeable_sz n' (pctx_size K n) x.1) ∗
         pctx_own K n (m + 1) x.2 ζm (false :: q) (pred d) g tid x.1
-    | @PSum _ 𝔄l tyl i _ K => λ x ζm q d g tid l,
+    | @PSum _ 𝔄l EL tyl i _ K => λ x ζm q d g tid l,
         match psum_proj i x with
         | Some y =>
-            tag_cell 𝔄l l i ∗
-            pctx_own K n m y ζm (false :: q) d g tid
-              (l +ₗ tag_size 𝔄l) ∗
-            pad_cell ((l +ₗ tag_size 𝔄l) +ₗ pctx_size K n)
-              (sum_max 𝔄l - pctx_size K n)
+            enum_rest EL 𝔄l i l ∗
+            pctx_own K n m y ζm (false :: q) d g tid (l +ₗ enum_off EL 𝔄l i)
         | None => False
         end
     (* Below a unique borrow, the ownership does not split (see [pctx_acc.v]); below a
@@ -1050,9 +1046,9 @@ Section pctx.
       + iIntros "($ & $ & $ & $ & $)".
       + iIntros "($ & $ & $ & $ & $)".
     - rewrite /psum_proj_or. destruct (psum_proj i x) as [y|].
-      + rewrite sum_node_sum lty_size_plug IHK //. iSplit.
-        * iIntros "($ & [$ $] & $)".
-        * iIntros "[$ ($ & $ & $)]".
+      + rewrite sum_node_sum IHK //. iSplit.
+        * iIntros "($ & [$ $])".
+        * iIntros "[$ ($ & $)]".
       + rewrite /sum_node. iSplit; [by iIntros "[]"|by iIntros "[_ []]"].
   Qed.
 
@@ -1065,7 +1061,7 @@ Section pctx.
       [by iIntros| | | |by iIntros "[]"|by iIntros "[]"|by iIntros "[]"].
     - iIntros "(_ & A & _)". by iApply IHK.
     - iIntros "(_ & _ & _ & A)". by iApply IHK.
-    - destruct (psum_proj i x); [|by iIntros "[]"]. iIntros "(_ & A & _)". by iApply IHK.
+    - destruct (psum_proj i x); [|by iIntros "[]"]. iIntros "(_ & A)". by iApply IHK.
   Qed.
 
   Lemma pctx_own_set {𝔅 𝔄} (K: pctx 𝔅 𝔄) n m x y ζm q d g tid l :
@@ -1115,7 +1111,7 @@ Section pctx.
       iSplitL "B"; [by iApply IHK|]. by iApply (fields_own_depth_mono with "C").
     - iIntros "($ & % & $ & A)". iSplit; [iPureIntro; lia|]. iApply (IHK with "A"); lia.
     - destruct (psum_proj i x); [|by iIntros "[]"].
-      iIntros "($ & A & $)". by iApply IHK.
+      iIntros "($ & A)". by iApply IHK.
   Qed.
 
   (** The depth of the place is at least the number of owned pointers above the hole. *)
@@ -1127,7 +1123,7 @@ Section pctx.
     - iIntros "(_ & A & _)". by iApply IHK.
     - iIntros "(_ & %Hd & _ & A)". iDestruct (IHK with "A") as %?.
       rewrite pctx_mode_add. iPureIntro. lia.
-    - destruct (psum_proj i x); [|by iIntros "[]"]. iIntros "(_ & A & _)". by iApply IHK.
+    - destruct (psum_proj i x); [|by iIntros "[]"]. iIntros "(_ & A)". by iApply IHK.
   Qed.
 
   (** ** The address of the hole
@@ -1140,7 +1136,7 @@ Section pctx.
     | @PField _ 𝔄lb 𝔄 𝔄la L _ K _ =>
         pctx_expr K (e +ₗ #(struct_off L (𝔄lb ++ 𝔄 :: 𝔄la) (length 𝔄lb)))%E
     | POwn _ K => pctx_expr K (Load Na1Ord MPtr e)%E
-    | @PSum _ 𝔄l _ _ _ K => pctx_expr K (e +ₗ #(tag_size 𝔄l))%E
+    | @PSum _ 𝔄l EL _ i _ K => pctx_expr K (e +ₗ #(enum_off EL 𝔄l i))%E
     | PUniq _ K | PShr _ K | PResUniq _ K => pctx_expr K (Load Na1Ord MPtr e)%E
     end.
 
@@ -1169,8 +1165,8 @@ Section pctx.
         iIntros "!> Hbs". iSplit; [done|]. by iFrame. }
       iIntros (v) "($ & [$ $] & $ & $)". by iFrame.
     - destruct (psum_proj i x) as [y|] eqn:Hy; [|by iIntros "_ []"].
-      iIntros "WP (Tag & Own & Pad)". iApply (wp_wand with "[- Tag Pad]").
-      { iApply (IHK m y (false :: q) d (l +ₗ tag_size 𝔄l) _ R
+      iIntros "WP (Rest & Own)". iApply (wp_wand with "[- Rest]").
+      { iApply (IHK m y (false :: q) d (l +ₗ enum_off EL 𝔄l i) _ R
           with "[WP] Own").
         wp_bind e. iApply (wp_wand with "WP"). iIntros (v) "(-> & R & G)". wp_op.
         iFrame. done. }
@@ -1234,7 +1230,7 @@ Section pctx.
     ⊢ ty_lft (lty_fold (pctx_plug K lt)) ⊑ ty_lft (lty_fold lt).
   Proof.
     induction K in lt |- *; simpl; [iApply guards_refl| |iApply IHK|
-      iApply llftl_incl_trans; [iApply (lty_lft_sum _ _ (pctx_plug K lt))|iApply IHK]|
+      iApply llftl_incl_trans; [iApply (lty_lft_sum (EL:=EL) _ _ (pctx_plug K lt))|iApply IHK]|
       iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply IHK]|
       iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply IHK]|
       iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply IHK]].
@@ -1306,7 +1302,7 @@ Section pctx.
     | POwn _ K => at_locₛ (pctx_root K 𝔅')
     (* Not supported: changing the type of the payload of a sum (the layer is
        dropped, see [pctx_nosum]). *)
-    | PSum _ _ _ K => pctx_root K 𝔅'
+    | PSum _ _ _ _ K => pctx_root K 𝔅'
     | PUniq _ K => uniq_borₛ (pctx_root K 𝔅')
     | PShr _ K => at_locₛ (pctx_root K 𝔅')
     | PResUniq _ K => uniq_borₛ (pctx_root K 𝔅')
@@ -1317,7 +1313,7 @@ Section pctx.
     | PHole => PHole
     | PField L lb K la => PField L lb (pctx_retype K 𝔅') la
     | POwn n K => POwn n (pctx_retype K 𝔅')
-    | PSum _ _ _ K => pctx_retype K 𝔅'
+    | PSum _ _ _ _ K => pctx_retype K 𝔅'
     | PUniq κ K => PUniq κ (pctx_retype K 𝔅')
     | PShr κ K => PShr κ (pctx_retype K 𝔅')
     | PResUniq κ K => PResUniq κ (pctx_retype K 𝔅')
@@ -1329,7 +1325,7 @@ Section pctx.
     | @PField _ 𝔄lb _ 𝔄la _ _ K _ => λ x y,
         papp (Xl:=𝔄lb) (Yl:=_ :: 𝔄la) (psepl x) (pctx_reset K (phd (psepr x)) y -:: ptl (psepr x))
     | POwn _ K => λ x y, (x.1, pctx_reset K x.2 y)
-    | PSum _ i w K => λ x y, pctx_reset K (psum_proj_or i x w) y
+    | PSum _ _ i w K => λ x y, pctx_reset K (psum_proj_or i x w) y
     | PUniq _ K => λ x y, uniq_bor_retype x (pctx_reset K (uniq_bor_current x) y)
     | PShr _ K => λ x y, (x.1, pctx_reset K x.2 y)
     | PResUniq _ K => λ x y, uniq_bor_retype x (pctx_reset K (uniq_bor_current x) y)
@@ -1620,7 +1616,7 @@ Section pctx.
     | PHole => λ K2, K2
     | PField L lb K la => λ K2, PField L lb (pctx_app K K2) la
     | POwn n K => λ K2, POwn n (pctx_app K K2)
-    | PSum tyl i w K => λ K2, PSum tyl i w (pctx_app K K2)
+    | PSum EL tyl i w K => λ K2, PSum EL tyl i w (pctx_app K K2)
     | PUniq κ K => λ K2, PUniq κ (pctx_app K K2)
     | PShr κ K => λ K2, PShr κ (pctx_app K K2)
     | PResUniq κ K => λ K2, PResUniq κ (pctx_app K K2)
