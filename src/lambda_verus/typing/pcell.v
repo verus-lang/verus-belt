@@ -328,6 +328,7 @@ Section pcell_rules.
   (** The struct of a cell and its permission. *)
   Definition pcell_pair_layout (m: wf_mty) : struct_layout :=
     SL [0; mty_size (`m)]%nat (mty_size (`m)) (mty_align (`m)).
+  Global Arguments pcell_pair_layout : simpl never.
   Definition pcell_pair_ty {𝔄} (ty: type 𝔄) :
       type (structₛ (pcell_pair_layout (ty_wmty ty))
         [pcellₛ (ty_wmty ty); trackedₛ (pcellₛ (syn_wmty 𝔄) * 𝔄)]) :=
