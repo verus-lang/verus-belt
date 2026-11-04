@@ -14,6 +14,11 @@ Section bfn_examples.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
+  (* [P]: a [repr(C)] struct of two [i32]. *)
+  Notation Pl := [intₛ i32; intₛ i32].
+  Notation PL := (c_layout [MInt i32; MInt i32]).
+  Notation Pₛ := (structₛ PL Pl).
+  Notation Pt := (struct_ty PL +[i32t; i32t]).
 
   (*
   ```
@@ -22,21 +27,21 @@ Section bfn_examples.
   *)
   Definition get_snd_f : val :=
     fn: ["x"] :=
-      let: "v" := !ᶜ{MInt i32} ((Load Na1Ord MPtr "x") +ₗ #4) in
+      let: "v" := !ᶜ{MInt i32} ((Load Na1Ord MPtr "x") +ₗ #(struct_off PL Pl 1)) in
       return: ["v"].
 
   Definition get_snd_f_spec :
-      fn_spec [at_locₛ (at_locₛ (intₛ i32 * intₛ i32))] (intₛ i32) () :=
-    λ _ post '-[(_, (_, (_, z2)))], λ mask π, post z2 mask π.
+      fn_spec [at_locₛ (at_locₛ Pₛ)] (intₛ i32) () :=
+    λ _ post '-[(_, (_, z))], λ mask π, post (phd (ptl z)) mask π.
 
   Lemma get_snd_f_type :
     typed_val get_snd_f
-      ((fn<(α, β)>(∅; &shr{α} (&shr{β} (i32t * i32t))) → i32t) get_snd_f_spec)
+      ((fn<(α, β)>(∅; &shr{α} (&shr{β} Pt)) → i32t) get_snd_f_spec)
       (get_snd_f, ()).
   Proof.
     unfold get_snd_f. unlock.
-    opose proof (@type_fn _ _ _ [at_locₛ (at_locₛ (intₛ i32 * intₛ i32))] (intₛ i32) () ()
-      (λ '(α, β), FP ∅ +[&shr{α} (&shr{β} (i32t * i32t))]%T i32t%T AtomicClosed)
+    opose proof (@type_fn _ _ _ [at_locₛ (at_locₛ Pₛ)] (intₛ i32) () ()
+      (λ '(α, β), FP ∅ +[&shr{α} (&shr{β} Pt)]%T i32t%T AtomicClosed)
       get_snd_f_spec _ [BNamed "x"] _ _ _) as H.
     unlock in H. apply H. clear H.
     intros [α β] ϝ k wl. destruct wl as [vx []]. simpl_subst.
@@ -44,11 +49,11 @@ Section bfn_examples.
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_ty_to_vplace|].
         eapply tctx_incl_trans; [apply tctx_vplace_unfold_shr|].
-        apply (tctx_change_vplace_shr _ _ vx α PHole (OfTy (&shr{β} (i32t * i32t)))
-          (ShrLty (ProdLty (OfTy i32t) (OfTy i32t)) β)); [done|done|by intros]. }
+        apply (tctx_change_vplace_shr _ _ vx α PHole (OfTy (&shr{β} Pt))
+          (ShrLty (StructLty PL +[OfTy i32t; OfTy i32t]) β)); [done|done|by intros]. }
       (* ( **x).1 *)
       iApply (type_let with "[]").
-      { apply (type_read_place_instr _ _ _ vx (PShr α (PShr β (PSnd (OfTy i32t) PHole)))
+      { apply (type_read_place_instr _ _ _ vx (PShr α (PShr β (PField PL +[OfTy i32t] PHole +[])))
           (OfTy i32t) i32t static); [by split|apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
@@ -59,7 +64,7 @@ Section bfn_examples.
       { solve_typing. }
       { reflexivity. }
     }
-    intros post [[l1 [l2 [z1 z2]]] []] mask π. simpl.
+    intros post [[l1 [l2 [z1 [z2 []]]]] []] mask π. simpl.
     rewrite /trans_upper /trans_tail /tr_ret /=. auto.
   Qed.
 
@@ -73,59 +78,59 @@ Section bfn_examples.
       Skip;;                                                     (* x as a place *)
       ReBor;;                                                    (* unfold **x *)
       ReBor;;                                                    (* view ***x as a pair *)
-      let: "r" := &ˢ (Load Na1Ord MPtr "x") in (* &( **x).0 *)
+      let: "r" := &ˢ ((Load Na1Ord MPtr "x") +ₗ #(struct_off PL Pl 0)) in (* &( **x).0 *)
       ReBor;; ReBor;;                                            (* fold back *)
       Skip;;                                                     (* resolve x *)
       return: ["r"].
 
   Definition first_ref_f_spec :
-      fn_spec [uniq_borₛ (at_locₛ (intₛ i32 * intₛ i32))] (at_locₛ (intₛ i32)) () :=
+      fn_spec [uniq_borₛ (at_locₛ Pₛ)] (at_locₛ (intₛ i32)) () :=
     λ _ post '-[m], λ mask π, ∀ r: ~~ (at_locₛ (intₛ i32)),
-      r.2 = (uniq_bor_current (𝔄:=at_locₛ (intₛ i32 * intₛ i32)) m).2.1 →
-      uniq_bor_future (𝔄:=at_locₛ (intₛ i32 * intₛ i32)) m π =
-        vπ (uniq_bor_current (𝔄:=at_locₛ (intₛ i32 * intₛ i32)) m) π →
+      r.2 = phd (uniq_bor_current (𝔄:=at_locₛ Pₛ) m).2 →
+      uniq_bor_future (𝔄:=at_locₛ Pₛ) m π =
+        vπ (uniq_bor_current (𝔄:=at_locₛ Pₛ) m) π →
       post r mask π.
 
   Lemma first_ref_f_type :
     typed_val first_ref_f
-      ((fn<(α, β)>(∅; &uniq{α} (&shr{β} (i32t * i32t))) → &shr{β} i32t) first_ref_f_spec)
+      ((fn<(α, β)>(∅; &uniq{α} (&shr{β} Pt)) → &shr{β} i32t) first_ref_f_spec)
       (first_ref_f, ()).
   Proof.
     unfold first_ref_f. unlock.
-    opose proof (@type_fn _ _ _ [uniq_borₛ (at_locₛ (intₛ i32 * intₛ i32))]
+    opose proof (@type_fn _ _ _ [uniq_borₛ (at_locₛ Pₛ)]
       (at_locₛ (intₛ i32)) () ()
-      (λ '(α, β), FP ∅ +[&uniq{α} (&shr{β} (i32t * i32t))]%T (&shr{β} i32t)%T AtomicClosed)
+      (λ '(α, β), FP ∅ +[&uniq{α} (&shr{β} Pt)]%T (&shr{β} i32t)%T AtomicClosed)
       first_ref_f_spec _ [BNamed "x"] _ _ _) as H.
     unlock in H. apply H. clear H.
     intros [α β] ϝ k wl. destruct wl as [vx []]. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
-      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vx α (&shr{β} (i32t * i32t))). }
+      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vx α (&shr{β} Pt)). }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { apply (type_unfold_vplace_shr_instr _ _ _ vx (PUniq α PHole) β (i32t * i32t)).
+      { apply (type_unfold_vplace_shr_instr _ _ _ vx (PUniq α PHole) β Pt).
         solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
       { apply (type_change_vplace_shr_instr _ _ _ vx (PUniq α PHole) β PHole
-          (OfTy (i32t * i32t)) (ProdLty (OfTy i32t) (OfTy i32t))); [solve_typing|done|done|by intros]. }
+          (OfTy Pt) (StructLty PL +[OfTy i32t; OfTy i32t])); [solve_typing|done|done|by intros]. }
       { solve_typing. } { reflexivity. }
       iApply (type_let with "[]").
-      { eapply (type_share_place_instr _ _ _ vx (PUniq α (PShr β (PFst PHole (OfTy i32t))))
+      { eapply (type_share_place_instr _ _ _ vx (PUniq α (PShr β (PField PL +[] PHole +[OfTy i32t])))
           β (OfTy i32t) i32t); [by split|simpl; solve_typing..]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       iApply type_seq.
       { apply (type_change_vplace_shr_instr _ _ _ vx (PUniq α PHole) β PHole
-          (ProdLty (OfTy i32t) (OfTy i32t)) (OfTy (i32t * i32t))); [solve_typing|done|done|by intros]. }
+          (StructLty PL +[OfTy i32t; OfTy i32t]) (OfTy Pt)); [solve_typing|done|done|by intros]. }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { apply (type_fold_vplace_shr_instr _ _ _ vx (PUniq α PHole) β (i32t * i32t)).
+      { apply (type_fold_vplace_shr_instr _ _ _ vx (PUniq α PHole) β Pt).
         solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
       iApply type_seq.
-      { apply (type_resolve_val_instr vx (&uniq{α} (&shr{β} (i32t * i32t)))).
+      { apply (type_resolve_val_instr vx (&uniq{α} (&shr{β} Pt))).
         apply uniq_bor.uniq_resolve. solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply type_jump.
@@ -135,7 +140,7 @@ Section bfn_examples.
       { reflexivity. }
     }
     intros post [m []] mask π. simpl.
-    destruct m as [[[[[l [l' [z1 z2]]] ξi] d] g] idx]. simpl.
+    destruct m as [[[[[l [l' [z1 [z2 []]]]] ξi] d] g] idx]. simpl.
     intros Hspec. rewrite /trans_upper /trans_tail /tr_ret /=.
     intros d' g' idx' Hres. apply Hspec; [done|]. by rewrite uniq_bor_future_eq.
   Qed.
@@ -153,15 +158,15 @@ Section bfn_examples.
   Lemma call_get_snd_type ϝ α β (k vf vx: val) :
     ⊢ typed_body [ϝ ⊑ₑ α; α ⊑ₑ β] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
-        +[vf ◁ᶠ (fn<(α', β')>(∅; &shr{α'} (&shr{β'} (i32t * i32t))) → i32t) get_snd_f_spec;
-          vx ◁ᵥ &shr{α} (&shr{β} (i32t * i32t))]
+        +[vf ◁ᶠ (fn<(α', β')>(∅; &shr{α'} (&shr{β'} Pt)) → i32t) get_snd_f_spec;
+          vx ◁ᵥ &shr{α} (&shr{β} Pt)]
         (subst "return" k (subst "f" vf (subst "x" vx call_get_snd)))
-        (λ post '-[_; (_, (_, (_, z2)))], λ mask π, post z2 mask π).
+        (λ post '-[_; (_, (_, z))], λ mask π, post (phd (ptl z)) mask π).
   Proof.
     rewrite /call_get_snd. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
       iApply (type_letcall (α, β) (λ '(α', β'),
-        FP ∅ +[&shr{α'} (&shr{β'} (i32t * i32t))]%T i32t%T AtomicClosed)).
+        FP ∅ +[&shr{α'} (&shr{β'} Pt)]%T i32t%T AtomicClosed)).
       { solve_typing. } { apply lctx_ictx_alive_nil. solve_typing. }
       { solve_typing. } { solve_typing. }
       iIntros (vr). simpl_subst.
@@ -171,7 +176,7 @@ Section bfn_examples.
       { solve_typing. }
       { reflexivity. }
     }
-    intros post [[vf' []] [[l1 [l2 [z1 z2]]] []]] mask π. simpl.
+    intros post [[vf' []] [[l1 [l2 [z1 [z2 []]]]] []]] mask π. simpl.
     rewrite /trans_upper /trans_tail /ret_z /get_snd_f_spec /=. auto.
   Qed.
 End bfn_examples.

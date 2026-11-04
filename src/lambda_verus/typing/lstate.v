@@ -132,6 +132,8 @@ Fixpoint prfn_struct (𝔄: syn_type) : Type :=
   | prodₛ 𝔅 ℭ => (place_rfn 𝔅 + prfn_struct 𝔅) * (place_rfn ℭ + prfn_struct ℭ)
   (* A sum at a fixed variant: the refinement of the payload. *)
   | xsumₛ 𝔅l => psum (λ 𝔅, place_rfn 𝔅 + prfn_struct 𝔅) 𝔅l
+  (* A struct: the refinements of the fields. *)
+  | structₛ _ 𝔅l => plist (λ 𝔅, place_rfn 𝔅 + prfn_struct 𝔅) 𝔅l
   | _ => Empty_set
   end%type.
 
@@ -169,6 +171,10 @@ Fixpoint prfn_wit {𝔄} : prfn 𝔄 → ~~𝔄 :=
       | inl lr => place_rfn_wit lr
       | inr s => psum_map1 (λ _ r', prfn_wit r') s
       end
+  | structₛ _ 𝔅l => λ r, match r with
+      | inl lr => place_rfn_wit lr
+      | inr rs => pmap (λ _ r', prfn_wit r') rs
+      end
   | _ => λ r, match r with inl lr => place_rfn_wit lr | inr e => match e with end end
   end.
 
@@ -190,6 +196,10 @@ Fixpoint prfn_den {𝔄} : prfn 𝔄 → proph 𝔄 :=
   | xsumₛ 𝔅l => λ r, match r with
       | inl lr => place_rfn_den lr
       | inr s => λ π, psum_map1 (λ _ r', prfn_den r' π) s
+      end
+  | structₛ _ 𝔅l => λ r, match r with
+      | inl lr => place_rfn_den lr
+      | inr rs => λ π, pmap (λ _ r', prfn_den r' π) rs
       end
   | _ => λ r, match r with inl lr => place_rfn_den lr | inr e => match e with end end
   end.
@@ -245,6 +255,15 @@ Fixpoint prfn_rsv {𝔄} : prfn 𝔄 → list proph_var → Prop :=
       | inl lr => place_rfn_rsv lr ζl
       | inr s => psum_all (λ _ r', prfn_rsv r' ζl) s
       end
+  | structₛ _ 𝔅l => λ r ζl, match r with
+      | inl lr => place_rfn_rsv lr ζl
+      | inr rs =>
+          (fix go (𝔅l: list syn_type) : plist (λ 𝔅, prfn 𝔅) 𝔅l → Prop :=
+             match 𝔅l return plist (λ 𝔅, prfn 𝔅) 𝔅l → Prop with
+             | [] => λ _, True
+             | 𝔅 :: 𝔅l' => λ rs, prfn_rsv (phd rs) ζl ∧ go 𝔅l' (ptl rs)
+             end) 𝔅l rs
+      end
   | _ => λ r ζl, match r with inl lr => place_rfn_rsv lr ζl | inr e => match e with end end
   end.
 
@@ -272,6 +291,8 @@ Proof.
   - destruct r as [l' r']. apply FIX.
   - destruct r as [[l' r'] ξi]. move=> [??]. split; [by apply FIX|].
     by eapply proph_dep_weaken.
+  - move: r. elim: l=> [|𝔅 𝔅l IH] rs /=; [done|].
+    destruct rs as [r' rs']. move=> [??]. split; [by apply FIX|by apply IH].
 Qed.
 
 Lemma prfn_rsv_app_l {𝔄} (r: prfn 𝔄) ζl ζl' : prfn_rsv r ζl → prfn_rsv r (ζl ++ ζl').
@@ -293,6 +314,37 @@ Proof. rewrite /prfn_sum /=. fun_ext=> π. by rewrite psum_map1_pinj. Qed.
 Lemma prfn_wit_sum {𝔄l} i (r: prfn (𝔄l !!ₗ i)) :
   prfn_wit (prfn_sum i r) = pinj i (prfn_wit r).
 Proof. by rewrite /prfn_sum /= psum_map1_pinj. Qed.
+
+(** The refinement of an unfolded struct whose fields are the values [xs]. *)
+Definition prfn_fields_in {𝔄l} (L: struct_layout) (xs: plist (~~) 𝔄l) : prfn (structₛ L 𝔄l) :=
+  inr (pmap (G:=λ 𝔅, (place_rfn 𝔅 + prfn_struct 𝔅)%type) (λ _ x, inl (PlaceIn x)) xs).
+
+Lemma prfn_den_fields_in {𝔄l} L (xs: plist (~~) 𝔄l) :
+  prfn_den (prfn_fields_in L xs) = vπ (𝔄:=structₛ L 𝔄l) xs.
+Proof.
+  fun_ext=> π. rewrite /prfn_fields_in /=. induction 𝔄l as [|𝔄 𝔄l IH]; [done|].
+  destruct xs as [x xs]. by rewrite /= prfn_den_in IH.
+Qed.
+
+Lemma prfn_wit_fields_in {𝔄l} L (xs: plist (~~) 𝔄l) :
+  prfn_wit (prfn_fields_in L xs) = xs.
+Proof.
+  rewrite /prfn_fields_in /=. induction 𝔄l as [|𝔄 𝔄l IH]; [by destruct xs|].
+  destruct xs as [x xs]. by rewrite /= prfn_wit_in IH.
+Qed.
+
+Lemma prfn_rsv_struct {𝔄l} L (rs: plist (λ 𝔅, prfn 𝔅) 𝔄l) ζl :
+  prfn_rsv (𝔄:=structₛ L 𝔄l) (inr rs) ζl ↔ pforall (λ _ r, prfn_rsv r ζl) rs.
+Proof.
+  induction 𝔄l as [|𝔄 𝔄l IH]; [done|]. destruct rs as [r rs]. simpl.
+  split; intros [? Hr]; split; try done; by apply IH.
+Qed.
+
+Lemma prfn_rsv_fields_in {𝔄l} L (xs: plist (~~) 𝔄l) ζl : prfn_rsv (prfn_fields_in L xs) ζl.
+Proof.
+  rewrite /prfn_fields_in /=. induction 𝔄l as [|𝔄 𝔄l IH]; [done|].
+  destruct xs as [x xs]. split; [apply prfn_rsv_in|apply IH].
+Qed.
 
 Lemma prfn_rsv_sum {𝔄l} i (r: prfn (𝔄l !!ₗ i)) ζl :
   prfn_rsv (prfn_sum i r) ζl = prfn_rsv r ζl.
@@ -324,6 +376,8 @@ Inductive lpat :=
 | PatUniq (p: lpat)
 | PatOwn (p: lpat)
 | PatProd (p1 p2: lpat)
+(* A struct, with the patterns of its fields, see [StructLty] in [typing/ltype.v]. *)
+| PatStruct (ps: list lpat)
 (* A shared-blocked leaf: shared at [α] (its value does not change), see
    [ShrBlocked] in [typing/ltype.v]. *)
 | PatShrBlocked (α: lft)
@@ -337,6 +391,9 @@ Definition pat_own (p: lpat) : lpat := match p with PatOwn p' => p' | _ => PatLe
 Definition pat_l (p: lpat) : lpat := match p with PatProd p1 _ => p1 | _ => PatLeaf end.
 Definition pat_r (p: lpat) : lpat := match p with PatProd _ p2 => p2 | _ => PatLeaf end.
 Definition pat_sum (p: lpat) : lpat := match p with PatSum p' => p' | _ => PatLeaf end.
+(** The patterns of the fields of a struct (missing ones are [PatLeaf]). *)
+Definition pat_struct (p: lpat) : list lpat :=
+  match p with PatStruct ps => ps | _ => [] end.
 
 (** The blocked lifetimes of a pattern. Blocked places behind a nested unique
     borrow are included: this is the _nested membership condition_ (the pinned body
@@ -351,9 +408,13 @@ Fixpoint pat_blk_lfts (p: lpat) : list lft :=
   | PatBlocked α => [α]
   | PatOwn p' => pat_blk_lfts p'
   | PatProd p1 p2 => pat_blk_lfts p1 ++ pat_blk_lfts p2
+  | PatStruct ps => (fix go ps := match ps with [] => [] | p :: ps => pat_blk_lfts p ++ go ps end) ps
   | PatSum p' => pat_blk_lfts p'
   | PatShrBlocked α => [α]
   end.
+
+Lemma pat_blk_lfts_struct ps : pat_blk_lfts (PatStruct ps) = concat (pat_blk_lfts <$> ps).
+Proof. induction ps as [|p ps IH]; [done|]. simpl. f_equal. exact IH. Qed.
 
 (** The pattern of a leaf at a state: a structured refinement (of an unfolded
     compound place) is seen by a leaf as blocked at [κ]. *)

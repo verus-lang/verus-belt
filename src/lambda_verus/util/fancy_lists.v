@@ -55,6 +55,13 @@ Fixpoint hrepeat {X} (x: F X) n : hlist F (repeat X n) :=
 Fixpoint max_hlist_with {Xl} (f: ∀X, F X → nat) (xl: hlist F Xl) : nat :=
   match xl with +[] => 0 | x +:: xl' => f _ x `max` max_hlist_with f xl' end.
 
+Fixpoint hsum (f: ∀X, F X → nat) {Xl} (xl: hlist F Xl) : nat :=
+  match xl with +[] => 0 | x +:: xl' => f _ x + hsum f xl' end.
+
+Lemma hsum_app {Xl Yl} (f: ∀X, F X → nat) (xl: hlist F Xl) (yl: hlist F Yl) :
+  hsum f (happ xl yl) = hsum f xl + hsum f yl.
+Proof. induction xl as [|?? x xl IH]; [done|]. rewrite /= IH. lia. Qed.
+
 Lemma max_hlist_with_ge {Xl} (f: ∀X, F X → _) (xl: hlist F Xl) i :
   f _ (hlookup xl i) ≤ max_hlist_with f xl.
 Proof.
@@ -66,6 +73,26 @@ Fixpoint happly {Y Xl} (fl: hlist (λ X, Y → F X) Xl) (x: Y)
   : hlist F Xl :=
   match fl with +[] => +[] | f +:: fl' => f x +:: happly fl' x end.
 End hlist.
+
+Lemma hmap_hmap {A} {F G H: A → Type} (f: ∀X, G X → H X) (g: ∀X, F X → G X) {Xl} (xl: hlist F Xl) :
+  hmap f (hmap g xl) = hmap (λ X x, f X (g X x)) xl.
+Proof. induction xl; [done|]. by rewrite /= IHxl. Qed.
+
+Lemma hcmap_hmap {A} {F G: A → Type} {Y} (f: ∀X, G X → Y) (g: ∀X, F X → G X) {Xl} (xl: hlist F Xl) :
+  hcmap f (hmap g xl) = hcmap (λ X x, f X (g X x)) xl.
+Proof. induction xl; [done|]. by rewrite /= IHxl. Qed.
+
+Lemma hmap_app {A} {F G: A → Type} (f: ∀X, F X → G X) {Xl Yl} (xl: hlist F Xl) (yl: hlist F Yl) :
+  hmap f (happ xl yl) = happ (hmap f xl) (hmap f yl).
+Proof. induction xl; [done|]. by rewrite /= IHxl. Qed.
+
+Lemma hcmap_app {A} {F: A → Type} {Y} (f: ∀X, F X → Y) {Xl Yl} (xl: hlist F Xl) (yl: hlist F Yl) :
+  hcmap f (happ xl yl) = hcmap f xl ++ hcmap f yl.
+Proof. induction xl; [done|]. by rewrite /= IHxl. Qed.
+
+Lemma length_hcmap {A} {F: A → Type} {Y} (f: ∀X, F X → Y) {Xl} (xl: hlist F Xl) :
+  length (hcmap f xl) = length Xl.
+Proof. induction xl; [done|]. by rewrite /= IHxl. Qed.
 
 Ltac inv_hlist xl := let A := type of xl in
   match eval hnf in A with hlist _ ?Xl =>
@@ -517,6 +544,37 @@ Lemma TCHForall_impl {Xl} (Φ Ψ: ∀X, F X → Prop) (xl: hlist F Xl) :
   (∀X x, Φ X x → Ψ _ x) → TCHForall Φ xl → TCHForall Ψ xl.
 Proof. move=> Imp. elim; constructor; by [apply Imp|]. Qed.
 
+Lemma HForall_impl {Xl} (Φ Ψ: ∀X, F X → Prop) (xl: hlist F Xl) :
+  (∀X x, Φ X x → Ψ _ x) → HForall Φ xl → HForall Ψ xl.
+Proof. move=> Imp. elim; constructor; by [apply Imp|]. Qed.
+
+Lemma hmap_ext_HForall {Xl} (f g: ∀X, F X → G X) (xl: hlist F Xl) :
+  HForall (λ X x, f X x = g X x) xl → hmap f xl = hmap g xl.
+Proof. induction 1; [done|]. by rewrite /= H IHHForall. Qed.
+
+Lemma hcmap_ext_HForall {Y Xl} (f g: ∀X, F X → Y) (xl: hlist F Xl) :
+  HForall (λ X x, f X x = g X x) xl → hcmap f xl = hcmap g xl.
+Proof. induction 1; [done|]. by rewrite /= H IHHForall. Qed.
+
+Lemma HForall_cons_inv {X Xl} (Φ: ∀X, F X → Prop) (x: F X) (xl: hlist F Xl) :
+  HForall Φ (x +:: xl) → Φ _ x ∧ HForall Φ xl.
+Proof.
+  intros H. refine (match H in @HForall _ Yl yl return
+    match yl with +[] => True | y +:: yl' => Φ _ y ∧ HForall Φ yl' end with
+    | HForall_nil _ => I | HForall_cons _ _ _ Hx Hl => conj Hx Hl end).
+Qed.
+
+Lemma HForall_app {Xl Yl} (Φ: ∀X, F X → Prop) (xl: hlist F Xl) (yl: hlist F Yl) :
+  HForall Φ (happ xl yl) ↔ HForall Φ xl ∧ HForall Φ yl.
+Proof.
+  induction xl as [|X Xl x xl IH]; simpl.
+  - split; [by split; [constructor|]|by intros [_ ?]].
+  - split.
+    + intros [Hx Hr]%HForall_cons_inv. apply IH in Hr as [??].
+      split; [by constructor|done].
+    + intros [[Hx Hc]%HForall_cons_inv ?]. constructor; [done|]. by apply IH.
+Qed.
+
 Lemma HForallTwo_impl {Xl} (Φ Ψ: ∀X, F X → G X → Prop) (xl: hlist F Xl) yl :
   (∀X x y, Φ X x y → Ψ X x y) → HForallTwo Φ xl yl → HForallTwo Ψ xl yl.
 Proof. move=> Imp. elim; constructor; by [apply Imp|]. Qed.
@@ -550,6 +608,32 @@ Proof.
   auto.
 Qed.
 End Forall.
+
+Lemma pforall_app {A} {F: A → Type} {Xl Yl} (Φ: ∀X, F X → Prop) (xl: plist F Xl) (yl: plist F Yl) :
+  pforall Φ (papp xl yl) ↔ pforall Φ xl ∧ pforall Φ yl.
+Proof.
+  induction Xl as [|X Xl IH]; simpl; [tauto|]. destruct xl as [x xl]. simpl. rewrite IH. tauto.
+Qed.
+
+Lemma pforall_impl {A} {F: A → Type} {Xl} (Φ Ψ: ∀X, F X → Prop) (xl: plist F Xl) :
+  (∀X x, Φ X x → Ψ X x) → pforall Φ xl → pforall Ψ xl.
+Proof.
+  intros Imp. induction Xl as [|X Xl IH]; simpl; [done|]. destruct xl as [x xl].
+  intros [??]. split; [by apply Imp|by apply IH].
+Qed.
+
+Lemma HForall_forall {A} {F: A → Type} {Xl} (Φ: ∀X, F X → Prop) (xl: hlist F Xl) :
+  (∀X x, Φ X x) → HForall Φ xl.
+Proof. intros H. induction xl; constructor; [apply H|done]. Qed.
+
+
+Lemma HForall_hmap {A} {F G: A → Type} {Xl} (Φ: ∀X, G X → Prop) (f: ∀X, F X → G X) (xl: hlist F Xl) :
+  HForall Φ (hmap f xl) ↔ HForall (λ X x, Φ X (f X x)) xl.
+Proof.
+  induction xl as [|X Xl x xl IH]; simpl; [split; constructor|].
+  split; intros [??]%HForall_cons_inv; constructor; try done; by apply IH.
+Qed.
+
 
 Section HForallTwo.
 Context {A} {F: A → Type} {Xl: list A} (R: ∀X, F X → F X → Prop).

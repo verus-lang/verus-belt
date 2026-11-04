@@ -6,7 +6,8 @@ Set Default Proof Using "Type".
 (** * [get_some_first] on bytes
 
 The body of [get_some_first] of the deleted legacy example [place_sum.v], on bytes: the argument is
-a MiniRust pointer value of type [&uniq{α} Option<(i32, i32)>] (a root value, [◁ᵥ]);
+a MiniRust pointer value of type [&uniq{α} Option<S>], for the [repr(C)] struct [S] of two
+[i32] (a root value, [◁ᵥ]);
 the [match] reads the tag with a typed [Load] of the tag [IntType] ([type_case_vplace_deep]);
 the result [Option<&mut i32>] is a MiniRust variant value built with [MkVariant]
 ([type_mk_variant_val_instr]). *)
@@ -15,29 +16,33 @@ Section get_some_first.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
-  Notation opt_pair := (Σ! +[(); i32t * i32t])%T.
-  Notation opt_pairₛ := (Σ! [unitₛ; (intₛ i32 * intₛ i32)%ST])%ST.
+  Notation Sl := [intₛ i32; intₛ i32].
+  Notation SL := (c_layout [MInt i32; MInt i32]).
+  Notation Sₛ := (structₛ SL Sl).
+  Notation St := (struct_ty SL +[i32t; i32t]).
+  Notation opt_pair := (Σ! +[(); St])%T.
+  Notation opt_pairₛ := (Σ! [unitₛ; Sₛ])%ST.
   Notation opt_ref α := (Σ! +[(); &uniq{α} i32t])%T.
   Notation opt_refₛ := (Σ! [unitₛ; uniq_borₛ (intₛ i32)])%ST.
 
   (*
   ```
-  fn get_some_first<'a>(x: &'a mut Option<(i32, i32)>) -> Option<&'a mut i32> {
+  fn get_some_first<'a>(x: &'a mut Option<S>) -> Option<&'a mut i32> {
       match x { Some(p) => Some(&mut p.0), None => None }
   }
   ```
   *)
   Definition get_some_first : expr := (
     Skip;;                                          (* b as a place *)
-    case: (GetDiscr (syn_mty (Σ! [unitₛ; (intₛ i32 * intₛ i32)])%ST) "b") of
+    case: (GetDiscr (syn_mty (Σ! [unitₛ; Sₛ])%ST) "b") of
     [ ReBor;;                                       (* None: fold back *)
       Skip;;                                        (* resolve b *)
       let: "u" := MkTuple [] in
       let: "r" := MkVariant 0 "u" in
       jump: "return" ["r"];
       ReBor;;                                       (* Some(p): unfold p *)
-      let: "r0" := &ᵘ ("b" +ₗ #1) in                    (* &mut p.0 *)
-      let: "r1" := &ᵘ ("b" +ₗ #1 +ₗ #4) in              (* &mut p.1, to drop b *)
+      let: "r0" := &ᵘ ("b" +ₗ #1 +ₗ #(struct_off SL Sl 0)) in    (* &mut p.0 *)
+      let: "r1" := &ᵘ ("b" +ₗ #1 +ₗ #(struct_off SL Sl 1)) in    (* &mut p.1, to drop b *)
       Skip;;                                        (* resolve r1 *)
       let: "r" := MkVariant 1 "r0" in
       jump: "return" ["r"]])%E.
@@ -46,15 +51,15 @@ Section get_some_first.
 
   Definition get_some_first_spec : predl_trans' [uniq_borₛ opt_pairₛ] opt_refₛ :=
     λ post '-[m], λ mask π,
-      (uniq_bor_current (𝔄:=opt_pairₛ) m = pinj (Xl:=[unitₛ; (intₛ i32 * intₛ i32)%ST]) 0%fin () →
+      (uniq_bor_current (𝔄:=opt_pairₛ) m = pinj (Xl:=[unitₛ; Sₛ]) 0%fin () →
         uniq_bor_future (𝔄:=opt_pairₛ) m π = vπ (uniq_bor_current (𝔄:=opt_pairₛ) m) π →
         post (pinj (Xl:=[unitₛ; uniq_borₛ (intₛ i32)]) 0%fin ()) mask π) ∧
-      (∀ (a: Z * Z),
-        uniq_bor_current (𝔄:=opt_pairₛ) m = pinj (Xl:=[unitₛ; (intₛ i32 * intₛ i32)%ST]) 1%fin a →
+      (∀ (a: ~~ Sₛ),
+        uniq_bor_current (𝔄:=opt_pairₛ) m = pinj (Xl:=[unitₛ; Sₛ]) 1%fin a →
         ∀ (r: ~~ (uniq_borₛ (intₛ i32))),
-          uniq_bor_current r = a.1 →
+          uniq_bor_current r = phd a →
           uniq_bor_future (𝔄:=opt_pairₛ) m π =
-            pinj (Xl:=[unitₛ; (intₛ i32 * intₛ i32)%ST]) 1%fin (uniq_bor_future r π, a.2) →
+            pinj (Xl:=[unitₛ; Sₛ]) 1%fin -[uniq_bor_future r π; phd (ptl a)] →
           post (pinj (Xl:=[unitₛ; uniq_borₛ (intₛ i32)]) 1%fin r) mask π).
 
   Lemma get_some_first_type ϝ α (k vb: val) :
@@ -69,12 +74,12 @@ Section get_some_first.
       (* b as a place rooted at its value; match *)
       iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vb α opt_pair). }
       { solve_typing. } { reflexivity. }
-      iApply (type_case_vplace_deep _ _ _ _ vb (PUniq α PHole) +[(); i32t * i32t]%T _ _ _ -[_; _]);
+      iApply (type_case_vplace_deep _ _ _ _ vb (PUniq α PHole) +[(); St]%T _ _ _ -[_; _]);
         [simpl; solve_typing|].
       iSplitL; [|iSplitL; [|done]].
       - (* None: fold back, resolve b *)
         iApply type_seq.
-        { apply (type_fold_vplace_sum_deep_instr _ _ _ vb (PUniq α PHole) +[(); i32t * i32t]%T 0%fin).
+        { apply (type_fold_vplace_sum_deep_instr _ _ _ vb (PUniq α PHole) +[(); St]%T 0%fin).
           simpl. solve_typing. }
         { solve_typing. } { simpl. reflexivity. }
         iApply typed_body_tctx_incl.
@@ -97,20 +102,20 @@ Section get_some_first.
         { reflexivity. }
       - (* Some(p): unfold the payload *)
         iApply type_seq.
-        { apply (type_unfold_vplace_prod_instr _ _ _ vb
-            (PUniq α (PSum +[(); i32t * i32t]%T 1%fin (0, 0)%Z PHole)) i32t i32t). simpl. solve_typing. }
+        { apply (type_unfold_vplace_struct_instr _ _ _ vb SL
+            (PUniq α (PSum +[(); St]%T 1%fin -[0%Z; 0%Z] PHole)) +[i32t; i32t]). simpl. solve_typing. }
         { solve_typing. } { simpl. reflexivity. }
         (* &mut p.0, at α *)
         iApply (type_let with "[]").
         { apply (type_borrow_place_instr _ _ _ vb
-            (PUniq α (PSum +[(); i32t * i32t]%T 1%fin (0, 0)%Z (PFst PHole (OfTy i32t)))) α i32t);
+            (PUniq α (PSum +[(); St]%T 1%fin -[0%Z; 0%Z] (PField SL +[] PHole +[OfTy i32t]))) α i32t);
             [solve_typing|simpl; solve_typing..]. }
         { solve_typing. } { reflexivity. }
         iIntros (vr0). simpl_subst.
         (* &mut p.1, at α *)
         iApply (type_let with "[]").
         { apply (type_borrow_place_instr _ _ _ vb
-            (PUniq α (PSum +[(); i32t * i32t]%T 1%fin (0, 0)%Z (PSnd (Blocked i32t α) PHole)))
+            (PUniq α (PSum +[(); St]%T 1%fin -[0%Z; 0%Z] (PField SL +[Blocked i32t α] PHole +[])))
             α i32t); [solve_typing|simpl; solve_typing..]. }
         { solve_typing. } { reflexivity. }
         iIntros (vr1). simpl_subst.

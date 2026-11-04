@@ -17,6 +17,15 @@ Section place_pshr.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
+  (* [P]: a [repr(C)] struct of two [i32]. *)
+  Notation Pl := [intₛ i32; intₛ i32].
+  Notation PL := (c_layout [MInt i32; MInt i32]).
+  Notation Pₛ := (structₛ PL Pl).
+  Notation Pt := (struct_ty PL +[i32t; i32t]).
+  (* [B]: a [repr(C)] struct of an [i32] and a box of an [i32]. *)
+  Notation Bl := [intₛ i32; at_locₛ (intₛ i32)].
+  Notation BL := (c_layout [MInt i32; MPtr]).
+  Notation Bt := (struct_ty BL +[i32t; own_bytes 4 i32t]).
 
   Definition ret_z : predl_trans' [intₛ i32] (intₛ i32) := λ post '-[z], post z.
 
@@ -30,26 +39,26 @@ Section place_pshr.
   reference, a field offset, and a guarded typed load of [i32].
   *)
   Definition get_snd_pb : expr := (
-    let: "v" := !ᶜ{MInt i32} ((Load Na1Ord MPtr "x") +ₗ #4) in
+    let: "v" := !ᶜ{MInt i32} ((Load Na1Ord MPtr "x") +ₗ #(struct_off PL Pl 1)) in
     jump: "return" ["v"])%E.
 
   Lemma get_snd_pb_type ϝ α β (k vx: val) :
     ⊢ typed_body [ϝ ⊑ₑ α; α ⊑ₑ β] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
-        +[vx ◁ᵥ &shr{α} (&shr{β} (i32t * i32t))]
+        +[vx ◁ᵥ &shr{α} (&shr{β} Pt)]
         (subst "return" k (subst "x" vx get_snd_pb))
-        (λ post '-[(_, (_, (_, z2)))], λ mask π, post z2 mask π).
+        (λ post '-[(_, (_, z))], λ mask π, post (phd (ptl z)) mask π).
   Proof.
     rewrite /get_snd_pb. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_ty_to_vplace|].
         eapply tctx_incl_trans; [apply tctx_vplace_unfold_shr|].
-        apply (tctx_change_vplace_shr _ _ vx α PHole (OfTy (&shr{β} (i32t * i32t)))
-          (ShrLty (ProdLty (OfTy i32t) (OfTy i32t)) β)); [done|done|by intros]. }
+        apply (tctx_change_vplace_shr _ _ vx α PHole (OfTy (&shr{β} Pt))
+          (ShrLty (StructLty PL +[OfTy i32t; OfTy i32t]) β)); [done|done|by intros]. }
       (* ( **x).1 *)
       iApply (type_let with "[]").
-      { apply (type_read_place_instr _ _ _ vx (PShr α (PShr β (PSnd (OfTy i32t) PHole)))
+      { apply (type_read_place_instr _ _ _ vx (PShr α (PShr β (PField PL +[OfTy i32t] PHole +[])))
           (OfTy i32t) i32t static); [by split|apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
@@ -61,7 +70,7 @@ Section place_pshr.
       { solve_typing. }
       { reflexivity. }
     }
-    intros post [[l1 [l2 [z1 z2]]] []] mask π. simpl.
+    intros post [[l1 [l2 [z1 [z2 []]]]] []] mask π. simpl.
     rewrite /trans_upper /trans_tail /ret_z /=. auto.
   Qed.
 
@@ -79,42 +88,42 @@ Section place_pshr.
     ReBor;;                                                    (* unfold *b *)
     ReBor;;                                                    (* view **b as a pair *)
     let: "v" := !ᶜ{MInt i32}
-      (Load Na1Ord MPtr ((Load Na1Ord MPtr "b") +ₗ #4)) in  (* *( **b).1 *)
+      (Load Na1Ord MPtr ((Load Na1Ord MPtr "b") +ₗ #(struct_off BL Bl 1))) in  (* *( **b).1 *)
     (#☠;; delete [ #(Z.of_nat PTR_SIZE); "b"]);;         (* drop b *)
     jump: "return" ["v"])%E.
 
   Lemma get_boxed_pb_type ϝ α (k vb: val) :
     ⊢ typed_body [ϝ ⊑ₑ α] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed, λ v: vec val 1, +[vhd v ◁ᵥ i32t] } ret_z]
-        +[vb ◁ᵥ own_bytes PTR_SIZE (&shr{α} (i32t * own_bytes 4 i32t))]
+        +[vb ◁ᵥ own_bytes PTR_SIZE (&shr{α} Bt)]
         (subst "return" k (subst "b" vb get_boxed_pb))
-        (λ post '-[(_, (_, (_, (_, w))))], λ mask π, post w mask π).
+        (λ post '-[(_, (_, zs))], λ mask π, post (phd (ptl zs)).2 mask π).
   Proof.
     rewrite /get_boxed_pb. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
       iApply typed_body_tctx_incl; [apply tctx_own_to_oplace|].
       (* unfold *b *)
       iApply type_seq.
-      { apply (type_unfold_oplace_shr_instr _ _ _ vb PTR_SIZE PHole α (i32t * own_bytes 4 i32t)).
+      { apply (type_unfold_oplace_shr_instr _ _ _ vb PTR_SIZE PHole α Bt).
         solve_typing. }
       { solve_typing. } { reflexivity. }
       (* view **b as a pair with a box *)
       iApply type_seq.
       { apply (type_change_oplace_shr_instr _ _ _ vb PTR_SIZE PHole α PHole
-          (OfTy (i32t * own_bytes 4 i32t)) (ProdLty (OfTy i32t) (OwnPtrLty 4 (OfTy i32t))));
+          (OfTy Bt) (StructLty BL +[OfTy i32t; OwnPtrLty 4 (OfTy i32t)]));
           [solve_typing|done|done|by intros]. }
       { solve_typing. } { reflexivity. }
       (* *( **b).1 *)
       iApply (type_let with "[]").
       { apply (type_read_place_instr _ _ _ vb
-          (POwn PTR_SIZE (PShr α (PSnd (OfTy i32t) (POwn 4 PHole)))) (OfTy i32t) i32t static);
+          (POwn PTR_SIZE (PShr α (PField BL +[OfTy i32t] (POwn 4 PHole) +[]))) (OfTy i32t) i32t static);
           [by split|apply _|solve_typing]. }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       (* drop b *)
       iApply type_seq.
       { apply (type_drop_oplace_deep_instr _ _ _ vb PTR_SIZE (Z.of_nat PTR_SIZE)
-          (ShrLty (ProdLty (OfTy i32t) (OwnPtrLty 4 (OfTy i32t))) α)); [done|done|done|].
+          (ShrLty (StructLty BL +[OfTy i32t; OwnPtrLty 4 (OfTy i32t)]) α)); [done|done|done|].
         apply lty_rslv_shr. }
       { solve_typing. } { reflexivity. }
       iApply type_jump.
@@ -123,7 +132,7 @@ Section place_pshr.
       { solve_typing. }
       { reflexivity. }
     }
-    intros post [[lb [l1 [z [lb' w]]]] []] mask π. simpl.
+    intros post [[lb [l1 [z [[lb' w] []]]]] []] mask π. simpl.
     rewrite /trans_upper /trans_tail /ret_z /=. auto.
   Qed.
   (*
@@ -225,7 +234,7 @@ Section place_pshr.
     Skip;;                                                     (* x as a place *)
     ReBor;;                                                    (* unfold **x *)
     ReBor;;                                                    (* view ***x as a pair *)
-    let: "r" := &ˢ (Load Na1Ord MPtr "x") in (* &( **x).0 *)
+    let: "r" := &ˢ ((Load Na1Ord MPtr "x") +ₗ #(struct_off PL Pl 0)) in (* &( **x).0 *)
     ReBor;; ReBor;;                                            (* fold back *)
     Skip;;                                                     (* resolve x *)
     jump: "return" ["r"])%E.
@@ -234,55 +243,55 @@ Section place_pshr.
     λ post '-[r], post r.
 
   Definition first_ref_pb_spec :
-      predl_trans' [uniq_borₛ (at_locₛ (intₛ i32 * intₛ i32))] (at_locₛ (intₛ i32)) :=
+      predl_trans' [uniq_borₛ (at_locₛ Pₛ)] (at_locₛ (intₛ i32)) :=
     λ post '-[m], λ mask π, ∀ r: ~~ (at_locₛ (intₛ i32)),
-      r.2 = (uniq_bor_current (𝔄:=at_locₛ (intₛ i32 * intₛ i32)) m).2.1 →
-      uniq_bor_future (𝔄:=at_locₛ (intₛ i32 * intₛ i32)) m π =
-        vπ (uniq_bor_current (𝔄:=at_locₛ (intₛ i32 * intₛ i32)) m) π →
+      r.2 = phd (uniq_bor_current (𝔄:=at_locₛ Pₛ) m).2 →
+      uniq_bor_future (𝔄:=at_locₛ Pₛ) m π =
+        vπ (uniq_bor_current (𝔄:=at_locₛ Pₛ) m) π →
       post r mask π.
 
   Lemma first_ref_pb_type ϝ α β (k vx: val) :
     ⊢ typed_body [ϝ ⊑ₑ α; α ⊑ₑ β] [ϝ ⊑ₗ []] (InvCtx [] ϝ AtomicClosed)
         [k ◁cont{[ϝ ⊑ₗ []], InvCtx [] ϝ AtomicClosed,
           λ v: vec val 1, +[vhd v ◁ᵥ &shr{β} i32t] } ret_ref]
-        +[vx ◁ᵥ &uniq{α} (&shr{β} (i32t * i32t))]
+        +[vx ◁ᵥ &uniq{α} (&shr{β} Pt)]
         (subst "return" k (subst "x" vx first_ref_pb)) first_ref_pb_spec.
   Proof.
     rewrite /first_ref_pb. simpl_subst.
     iApply (typed_body_impl with "[]"); last first. {
       (* x as a place rooted at its value *)
-      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vx α (&shr{β} (i32t * i32t))). }
+      iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vx α (&shr{β} Pt)). }
       { solve_typing. } { reflexivity. }
       (* unfold **x *)
       iApply type_seq.
-      { apply (type_unfold_vplace_shr_instr _ _ _ vx (PUniq α PHole) β (i32t * i32t)).
+      { apply (type_unfold_vplace_shr_instr _ _ _ vx (PUniq α PHole) β Pt).
         solve_typing. }
       { solve_typing. } { reflexivity. }
       (* view ***x as a pair *)
       iApply type_seq.
       { apply (type_change_vplace_shr_instr _ _ _ vx (PUniq α PHole) β PHole
-          (OfTy (i32t * i32t)) (ProdLty (OfTy i32t) (OfTy i32t))); [solve_typing|done|done|by intros]. }
+          (OfTy Pt) (StructLty PL +[OfTy i32t; OfTy i32t])); [solve_typing|done|done|by intros]. }
       { solve_typing. } { reflexivity. }
       (* &( **x).0 *)
       iApply (type_let with "[]").
-      { eapply (type_share_place_instr _ _ _ vx (PUniq α (PShr β (PFst PHole (OfTy i32t))))
+      { eapply (type_share_place_instr _ _ _ vx (PUniq α (PShr β (PField PL +[] PHole +[OfTy i32t])))
           β (OfTy i32t) i32t); [by split|simpl; solve_typing..]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       (* fold back *)
       iApply type_seq.
       { apply (type_change_vplace_shr_instr _ _ _ vx (PUniq α PHole) β PHole
-          (ProdLty (OfTy i32t) (OfTy i32t)) (OfTy (i32t * i32t))); [solve_typing|done|done|by intros]. }
+          (StructLty PL +[OfTy i32t; OfTy i32t]) (OfTy Pt)); [solve_typing|done|done|by intros]. }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { apply (type_fold_vplace_shr_instr _ _ _ vx (PUniq α PHole) β (i32t * i32t)).
+      { apply (type_fold_vplace_shr_instr _ _ _ vx (PUniq α PHole) β Pt).
         solve_typing. }
       { solve_typing. } { reflexivity. }
       (* resolve x *)
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
       iApply type_seq.
-      { apply (type_resolve_val_instr vx (&uniq{α} (&shr{β} (i32t * i32t)))).
+      { apply (type_resolve_val_instr vx (&uniq{α} (&shr{β} Pt))).
         apply uniq_bor.uniq_resolve. solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply type_jump.
@@ -292,7 +301,7 @@ Section place_pshr.
       { reflexivity. }
     }
     intros post [m []] mask π. simpl.
-    destruct m as [[[[[l [l' [z1 z2]]] ξi] d] g] idx]. simpl.
+    destruct m as [[[[[l [l' [z1 [z2 []]]]] ξi] d] g] idx]. simpl.
     intros Hspec. rewrite /trans_upper /trans_tail /ret_ref /=.
     intros d' g' idx' Hres. apply Hspec; [done|]. by rewrite uniq_bor_future_eq.
   Qed.

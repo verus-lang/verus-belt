@@ -263,7 +263,7 @@ Section write_acc.
       iApply (wp_vplace_wacc_same with "LFT PROPH UNIQ Gu G £ ⧖ ⧗p Own"); [done..|].
       iIntros (l dh gh ?) "Pt Gho". iApply ("HΦ" with "[//] [$Pt $Gho]").
     - rename select (PctxVRoot K) into HR.
-      destruct K as [| | |? 𝔄'' n K| | | |]; try done; try (exfalso; exact Hnu).
+      destruct K as [| |? 𝔄'' n K| | | |]; try done; try (exfalso; exact Hnu).
       have ?: PctxNoUniq K by exact Hnu. intros _ _ Hp.
       iIntros "_ _ _ _ G £ ⧖ ⧗p Own HΦ".
       iApply (wp_vplace_wacc_own _ n K (OfTy ty) ty'' with "G ⧖ ⧗p Own");
@@ -276,14 +276,14 @@ Section write_acc.
       iMod (lc_fupd_elim_laterN with "£ Gho") as "Gho".
       iModIntro. iApply ("HΦ" with "[//] [$Pt $Gho] Cl").
     - rename select (PctxVRoot K) into HR.
-      destruct K as [| | |? 𝔄'' n K| | | |]; try done; try (exfalso; exact Hnu).
+      destruct K as [| |? 𝔄'' n K| | | |]; try done; try (exfalso; exact Hnu).
       have ?: PctxNoUniq K by exact Hnu. intros _ _ Hp.
       iIntros "_ _ _ _ G £ ⧖ ⧗p Own HΦ".
       iApply (wp_vplace_wacc_own _ n K (Moved ty) ty with "G ⧖ ⧗p Own");
         [by apply pctx_wown_same|by rewrite (lty_size_ty _ ty)|done|done|].
       iIntros (l dh gh ?) "L1 Cl !>". iApply ("HΦ" with "[//] L1 Cl").
     - rename select (PctxVRoot K) into HR.
-      destruct K as [| | |? 𝔄'' n K| | | |]; try done; try (exfalso; exact Hnu).
+      destruct K as [| |? 𝔄'' n K| | | |]; try done; try (exfalso; exact Hnu).
       have ?: PctxNoUniq K by exact Hnu. intros _ _ Hp.
       iIntros "_ _ _ _ G £ ⧖ ⧗p Own HΦ".
       iApply (wp_vplace_wacc_own _ n K (Moved ty) ty'' with "G ⧖ ⧗p Own");

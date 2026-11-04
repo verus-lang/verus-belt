@@ -66,7 +66,7 @@ Section pctx_share.
       lty 𝔅 → type 𝔅 → Prop :=
     match K in pctx 𝔅 𝔄 return lty 𝔅 → type 𝔅 → Prop with
     | PHole => λ lt ty, lty_sleaf E L α false lt ty lt
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_vsleaf E L K α
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K | PUniq _ K => pctx_vsleaf E L K α
     | PShr _ _ => λ lt ty, ty = lty_fold lt
     | PResUniq _ _ => λ _ _, False
     end.
@@ -78,7 +78,7 @@ Section pctx_share.
       lty 𝔅 → type 𝔅 → lty 𝔅 → Prop :=
     match K in pctx 𝔅 𝔄 return lty 𝔅 → type 𝔅 → lty 𝔅 → Prop with
     | PHole => lty_sleaf E L α true
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_sleaf E L K α
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K => pctx_sleaf E L K α
     | PUniq _ K => match K in pctx _ _ return lty _ → type _ → lty _ → Prop with
         | PHole => λ _ _ _, False | _ => pctx_sleaf E L K α end
     | PShr _ _ => λ lt ty lt', ty = lty_fold lt ∧ lt' = lt
@@ -94,7 +94,7 @@ Section pctx_share.
     pctx_noshr K → pctx_sleaf E L K α lt ty lt' →
     lty_sleaf E L α true lt ty lt' ∧ pctx_uend K = None.
   Proof.
-    induction K; simpl; [tauto|auto|auto|auto|auto| |done|done].
+    induction K; simpl; [tauto|auto|auto|auto| |done|done].
     intros [_ HK] H. destruct (pctx_sleaf_uniq E L κ K _ _ _ _ H) as [H' Hu].
     cbn [pctx_uend] in Hu. rewrite Hu. by apply IHK.
   Qed.
@@ -102,21 +102,21 @@ Section pctx_share.
   Lemma pctx_sleaf_app {ℭ 𝔅 𝔄} E L (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) α lt ty lt' :
     pctx_noshr K1 → pctx_sleaf E L (pctx_app K1 K2) α lt ty lt' → pctx_sleaf E L K2 α lt ty lt'.
   Proof.
-    induction K1 as [| | | | |? ? κ K1 IHK1| |] in K2 |- *; simpl;
-      [done|auto|auto|auto|auto| |done|done].
+    induction K1 as [| | | |? ? κ K1 IHK1| |] in K2 |- *; simpl;
+      [done|auto|auto|auto| |done|done].
     intros [_ HK] H. destruct (pctx_sleaf_uniq E L κ _ _ _ _ _ H) as [H' _]. by apply IHK1.
   Qed.
 
   Lemma pctx_vsleaf_noshr {𝔅 𝔄} E L (K: pctx 𝔅 𝔄) α lt ty :
     pctx_noshr K → pctx_vsleaf E L K α lt ty → lty_sleaf E L α false lt ty lt.
   Proof.
-    induction K; simpl; [done|auto|auto|auto|auto| |done|done]. intros [_ HK]. auto.
+    induction K; simpl; [done|auto|auto|auto| |done|done]. intros [_ HK]. auto.
   Qed.
 
   Lemma pctx_vsleaf_app {ℭ 𝔅 𝔄} E L (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) α lt ty :
     pctx_noshr K1 → pctx_vsleaf E L (pctx_app K1 K2) α lt ty → pctx_vsleaf E L K2 α lt ty.
   Proof.
-    induction K1 in K2 |- *; simpl; [done|auto|auto|auto|auto| |done|done]. intros [_ HK]. auto.
+    induction K1 in K2 |- *; simpl; [done|auto|auto|auto| |done|done]. intros [_ HK]. auto.
   Qed.
 
   (** The lifetime of the shared view of the hole of [K] in a view at [κ] (below a resolved
@@ -128,7 +128,7 @@ Section pctx_share.
   Fixpoint pctx_vslft {𝔅 𝔄} (K: pctx 𝔅 𝔄) (κ: lft) : lty 𝔅 → lft :=
     match K with
     | PHole => λ lt, lty_vslft κ lt
-    | PFst K _ | PSnd _ K | POwn _ K | PSum _ _ _ K => pctx_vslft K κ
+    | PField _ _ K _ | POwn _ K | PSum _ _ _ K => pctx_vslft K κ
     | PUniq κ' K | PResUniq κ' K => pctx_vslft K (κ ⊓ κ')
     | PShr κ' K => λ _, pctx_slft K κ'
     end.
@@ -136,13 +136,13 @@ Section pctx_share.
   Lemma pctx_vslft_noshr {𝔅 𝔄} (K: pctx 𝔅 𝔄) κ lt :
     pctx_noshr K → pctx_vslft K κ lt = lty_vslft (pctx_slft K κ) lt.
   Proof.
-    induction K in κ, lt |- *; simpl; [done|auto|auto|auto|auto| |done|done]. intros [_ HK]. auto.
+    induction K in κ, lt |- *; simpl; [done|auto|auto|auto| |done|done]. intros [_ HK]. auto.
   Qed.
 
   Lemma pctx_vslft_app {ℭ 𝔅 𝔄} (K1: pctx 𝔅 𝔄) (K2: pctx ℭ 𝔅) κ lt :
     pctx_noshr K1 → pctx_vslft (pctx_app K1 K2) κ lt = pctx_vslft K2 (pctx_slft K1 κ) lt.
   Proof.
-    induction K1 in K2, κ, lt |- *; simpl; [done|auto|auto|auto|auto| |done|done].
+    induction K1 in K2, κ, lt |- *; simpl; [done|auto|auto|auto| |done|done].
     intros [_ HK]. auto.
   Qed.
 
@@ -685,7 +685,7 @@ Section share_rule.
         by apply lctx_lft_alive_intersect.
       - by apply (type_share_vplace_noshr_shrblk _ _ _ _ K ty β α). }
     rename select (PctxVRoot K) into HR. rename select (PctxRead K) into HK.
-    destruct K as [| | |? ? n K| |? ? κ K|? ? κ K|? ? κ K]; try done;
+    destruct K as [| |? ? n K| |? ? κ K|? ? κ K|? ? κ K]; try done;
       rewrite /PctxRead /= in HK.
     - destruct (pctx_read_split K HK) as [HK'|[(𝔅' & κ & K1 & K2 & -> & HK1)|
         (𝔅' & κ & K1 & K2 & -> & HK1 & HKu & HK2)]].

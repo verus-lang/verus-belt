@@ -41,6 +41,75 @@ Section own_bytes.
   Global Instance pad_own_timeless l fs sz : Timeless (pad_own l fs sz).
   Proof. apply bi.exist_timeless=> bs. apply _. Qed.
 
+  (** The padding only depends on the offsets and sizes of the fields. *)
+  Lemma pad_own_sizes l offs ms ms' sz :
+    mty_size <$> ms = mty_size <$> ms' → pad_own l (zip offs ms) sz = pad_own l (zip offs ms') sz.
+  Proof.
+    intros Hs. have Hin : ∀ i, in_field (zip offs ms) i ↔ in_field (zip offs ms') i.
+    { intros i. rewrite /in_field. revert ms ms' Hs.
+      induction offs as [|o offs IH]; intros [|m ms] [|m' ms'] Hs; simplify_eq/=;
+        try (split; intros (? & Hf & _); by apply elem_of_nil in Hf).
+      split; intros (f & [->|Hf]%elem_of_cons & Hi); simpl in *.
+      - exists (o, m'). split; [by left|]. simpl. by rewrite -H.
+      - destruct (proj1 (IH ms ms' H0) (ex_intro _ f (conj Hf Hi))) as (f' & ? & ?).
+        exists f'. split; [by right|done].
+      - exists (o, m). split; [by left|]. simpl. by rewrite H.
+      - destruct (proj2 (IH ms ms' H0) (ex_intro _ f (conj Hf Hi))) as (f' & ? & ?).
+        exists f'. split; [by right|done]. }
+    rewrite /pad_own. f_equal. fun_ext=> bs. f_equal. f_equal. fun_ext=> i. fun_ext=> b.
+    destruct (decide (in_field (zip offs ms) i)), (decide (in_field (zip offs ms') i));
+      naive_solver.
+  Qed.
+
+  Lemma pad_own_struct_bsize l L 𝔄l 𝔅l :
+    syn_bsize <$> 𝔄l = syn_bsize <$> 𝔅l →
+    pad_own l (struct_fields L 𝔄l) (struct_size L 𝔄l) =
+      pad_own l (struct_fields L 𝔅l) (struct_size L 𝔅l).
+  Proof.
+    intros Hs. rewrite /struct_fields (struct_offs_bsize L 𝔄l 𝔅l) // (struct_size_bsize L 𝔄l 𝔅l) //.
+    apply pad_own_sizes. by rewrite -!list_fmap_compose.
+  Qed.
+
+  (** Byte chunks at the fields [fs] and the padding make the bytes of the tuple. *)
+  Lemma bytes_fields_pad l (fs: list (nat * mty)) (bss: list (list abyte)) sz :
+    fields_disjoint fs → Forall (λ f, f.1 + mty_size f.2 ≤ sz)%nat fs →
+    (∀ j f bs, fs !! j = Some f → bss !! j = Some bs → length bs = mty_size f.2) →
+    ([∗ list] f; bs ∈ fs; bss, (l +ₗ Z.of_nat f.1) ↦b bs) ∗ pad_own l fs sz ⊢
+    ∃ bs, l ↦b bs ∗ ⌜length bs = sz⌝.
+  Proof.
+    iIntros (Hdisj Hin Hlj) "[Fs (%bs0 & %Hl0 & Hp)]".
+    set ins := zip_with (λ (f: nat * mty) (bs: list abyte), (f.1, bs)) fs bss.
+    set bs := fill_fields ins bs0.
+    have Hlbs : length bs = sz by rewrite length_fill_fields.
+    have Hins : ∀ j f bsj, fs !! j = Some f → bss !! j = Some bsj → ins !! j = Some (f.1, bsj).
+    { intros j f bsj Hf Hb. by rewrite /ins lookup_zip_with Hf /= Hb. }
+    have Hslice : ∀ j f bsj, fs !! j = Some f → bss !! j = Some bsj →
+      list_slice f.1 (mty_size f.2) bs = bsj.
+    { intros j f bsj Hf Hb. rewrite -(Hlj j f bsj Hf Hb).
+      apply (list_slice_fill_fields ins _ j); [by apply Hins| |].
+      - intros j' o' e' Hj' (f' & bsj' & [= -> ->] & Hf' & Hb')%lookup_zip_with_Some.
+        rewrite (Hlj j' f' bsj' Hf' Hb') (Hlj j f bsj Hf Hb).
+        destruct f as [o fm], f' as [o2 fm2]; simpl in *.
+        destruct (Hdisj j' j o2 fm2 o fm) as [?|?]; [done|done|done|lia|lia].
+      - rewrite (Hlj j f bsj Hf Hb) Hl0. exact (Forall_lookup_1 _ _ _ _ Hin Hf). }
+    have Hpadbs : ∀ i, ¬ in_field fs i → bs !! i = bs0 !! i.
+    { intros i Hi. rewrite lookup_fill_fields_out //.
+      intros j o e (f & bsj & [= -> ->] & Hf & Hb)%lookup_zip_with_Some.
+      rewrite (Hlj j f bsj Hf Hb).
+      destruct (decide (f.1 ≤ i < f.1 + mty_size f.2)%nat); [|lia].
+      exfalso. apply Hi. exists f. split; [by eapply elem_of_list_lookup_2|done]. }
+    iExists bs. iSplit; [|done].
+    rewrite heap_mapsto_bytes_pos (big_sepL_fields _ bs fs) //; last first.
+    { rewrite Hlbs. eapply Forall_impl; [exact Hin|]. simpl. lia. }
+    iSplitL "Fs".
+    - iApply (big_sepL2_to_sepL_l with "Fs"). intros j f bsj Hf Hb.
+      rewrite (Hslice j f bsj Hf Hb) heap_mapsto_bytes_pos.
+      apply big_sepL_mono=> ?? _. by rewrite shift_loc_assoc_nat.
+    - iApply (big_sepL_same_length with "Hp"); [by rewrite Hlbs|].
+      intros i b b' Hb Hb'. case_decide as Hi; [done|].
+      rewrite Hpadbs // Hb' in Hb. by injection Hb as <-.
+  Qed.
+
   (** Separate contents at offsets of [l] have a common registry. *)
   Lemma gconts_union l (ps : list ((nat * mty) * FValue)) :
     ([∗ list] p ∈ ps, gcont (l +ₗ Z.of_nat p.1.1) p.1.2 p.2) ⊢
@@ -319,7 +388,7 @@ Section own_bytes.
   Qed.
 
   (** The bytes of the fields of a struct, at the offsets [offs]. *)
-  Fixpoint fields_bytes_own {𝔄l} (l: loc) (offs: list nat) (tyl: typel 𝔄l) :
+  Fixpoint fields_bytes_own {𝔄l} (l: loc) (offs: list nat) (tyl: typel 𝔄l) {struct tyl} :
       plist (~~) 𝔄l → iProp Σ :=
     match tyl in hlist _ 𝔄l return plist (~~) 𝔄l → iProp Σ with
     | +[] => λ _, True
@@ -329,6 +398,17 @@ Section own_bytes.
         | o :: offs' => bytes_own ty (l +ₗ o) (phd xs) ∗ fields_bytes_own l offs' tyl' (ptl xs)
         end
     end%I.
+
+  Lemma fields_bytes_own_app {𝔄lb 𝔄la} l offs (tb: typel 𝔄lb) (ta: typel 𝔄la) xs :
+    fields_bytes_own l offs (tb h++ ta) xs ⊣⊢
+      fields_bytes_own l (take (length 𝔄lb) offs) tb (psepl xs) ∗
+      fields_bytes_own l (drop (length 𝔄lb) offs) ta (psepr xs).
+  Proof.
+    revert offs. induction tb as [|𝔄 𝔄lb ty tb IH] in xs |- *; intros offs; simpl;
+      [by rewrite left_id|].
+    destruct offs as [|o offs]; simpl; [iSplit; [by iIntros "[]"|by iIntros "[[] _]"]|].
+    destruct xs as [x xs]. by rewrite /= IH assoc.
+  Qed.
 
   Lemma fields_bytes_own_gcont {𝔄l} l offs (tyl: typel 𝔄l) (xs: plist (~~) 𝔄l) :
     length offs = length 𝔄l →

@@ -17,7 +17,11 @@ Section pcell_move.
 
   Notation i32t := (int_ty i32).
   Notation cellt := (pcell_ty (wfm (MInt i32))).
-  Notation pairₛ := (intₛ i32 * pcellₛ (wfm (MInt i32)))%ST.
+  (* The struct of an [i32] and a [PCell<i32>], laid out as the split of [↯ 8]
+     ([uninit_pair_layout]). *)
+  Notation UL := (uninit_pair_layout 4 4).
+  Notation pairₛ := (structₛ UL [intₛ i32; pcellₛ (wfm (MInt i32))]).
+  Notation pairt := (struct_ty UL +[i32t; cellt]).
 
   (*
   ```
@@ -41,18 +45,19 @@ Section pcell_move.
     let: "perm" := PCellNew ["c"] in                            (* c: a cell *)
     let: "q" := (Alloc #8) in
     let: "five" := MLit (VInt 5) in
-    "q" <-{MInt i32} "five";;                             (* q.0 = 5 *)
+    ("q" +ₗ #(struct_off UL [uninitₛ 4; uninitₛ 4] 0)) <-{MInt i32} "five";;  (* q.0 = 5 *)
     let: "v" := !ᵐ{MInt i32} "c" in                     (* move *c out *)
-    "q" +ₗ #4 <-{MInt i32} "v";;                          (* q.1 = v *)
+    ("q" +ₗ #(struct_off UL [intₛ i32; uninitₛ 4] 1)) <-{MInt i32} "v";;  (* q.1 = v *)
     (#☠;; delete [ #4; "c"]);;                            (* drop c (moved out) *)
     let: "r" := (Alloc #8) in
     let: "pair" := !ᵐ{syn_mty pairₛ} "q" in             (* move *q out *)
     "r" <-{syn_mty pairₛ} "pair";;                        (* *r = pair *)
     (#☠;; delete [ #8; "q"]);;                            (* drop q (moved out) *)
     let: "s" := (Alloc #4) in
-    let: "w" := !ᵐ{MInt i32} ("r" +ₗ #4) in               (* move r.1 out *)
+    let: "w" := !ᵐ{MInt i32} ("r" +ₗ #(struct_off UL [intₛ i32; pcellₛ (wfm (MInt i32))] 1)) in
+                                                          (* move r.1 out *)
     "s" <-{MInt i32} "w";;                                (* *s = w *)
-    ((#☠;; #☠);; delete [ #8; "r"]);;                      (* drop r *)
+    ((#☠;; (#☠;; #☠));; delete [ #8; "r"]);;               (* drop r *)
     let: "b" := PCellIntoInner ["s"; "perm"] in                 (* s.into_inner(perm) *)
     let: "x" := Load Na1Ord (MInt i32) "b" in           (* *b *)
     (#☠;; delete [ #4; "b"]);;                            (* drop b *)
@@ -89,19 +94,20 @@ Section pcell_move.
       (* q: a box of a pair, uninitialized *)
       iApply (type_new_bytes 8); [lia|]. iIntros (vq). simpl_subst.
       iApply typed_body_tctx_incl.
-      { apply (tctx_subtype_own_bytes 8 (↯ (4 + 4)) (↯ 4 * ↯ 4) uninit_splitₛ).
-        apply uninit_plus_prod_1. }
+      { apply (tctx_subtype_own_bytes 8 (↯ (4 + 4)) (struct_ty UL +[↯ 4; ↯ 4]%T)
+          uninit_split_structₛ).
+        apply uninit_plus_struct_1. }
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_r +[_] +[_]).
         eapply tctx_incl_trans; [apply tctx_own_to_oplace|].
-        apply (tctx_unfold_oplace_prod _ _ _ _ PHole (↯ 4) (↯ 4)). }
+        apply (tctx_unfold_oplace_struct _ _ _ _ UL PHole +[↯ 4; ↯ 4]%T). }
       (* q.0 = 5 *)
       iApply (type_let with "[]").
       { apply (type_val_int_instr i32). apply (bool_decide_unpack _); by vm_compute. }
       { solve_typing. } { reflexivity. }
       iIntros (v5). simpl_subst.
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vq v5 (POwn 8 (PFst PHole (OfTy (↯ 4)))) (OfTy (↯ 4)) i32t);
+      { eapply (type_write_place_instr _ _ _ vq v5 (POwn 8 (PField UL +[] PHole +[OfTy (↯ 4)])) (OfTy (↯ 4)) i32t);
           [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* move *c out: the cell is in transit *)
@@ -114,7 +120,7 @@ Section pcell_move.
       iIntros (vv). simpl_subst.
       (* q.1 = v *)
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vq vv (POwn 8 (PSnd (OfTy i32t) PHole)) (OfTy (↯ 4)) cellt);
+      { eapply (type_write_place_instr _ _ _ vq vv (POwn 8 (PField UL +[OfTy i32t] PHole +[])) (OfTy (↯ 4)) cellt);
           [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* drop c *)
@@ -126,9 +132,9 @@ Section pcell_move.
       iApply (type_new_bytes 8); [lia|]. iIntros (vr). simpl_subst.
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_l _ _ +[_]). eapply (tctx_incl_frame_r +[_] +[_]).
-        apply (tctx_fold_oplace_prod _ _ _ _ PHole i32t cellt). }
+        apply (tctx_fold_oplace_struct _ _ _ _ UL PHole +[i32t; cellt]). }
       iApply (type_let with "[]").
-      { apply (type_move_place_instr _ _ _ vq (POwn 8 PHole) (i32t * cellt)). }
+      { apply (type_move_place_instr _ _ _ vq (POwn 8 PHole) pairt). }
       { solve_typing. } { reflexivity. }
       iIntros (vpair). simpl_subst.
       (* *r = pair *)
@@ -136,21 +142,21 @@ Section pcell_move.
       { eapply (tctx_incl_frame_l _ _ +[_; _]). eapply (tctx_incl_frame_r +[_] +[_]).
         apply tctx_own_to_oplace. }
       iApply type_seq.
-      { eapply (type_write_place_instr _ _ _ vr vpair (POwn 8 PHole) (OfTy (↯ 8)) (i32t * cellt));
+      { eapply (type_write_place_instr _ _ _ vr vpair (POwn 8 PHole) (OfTy (↯ 8)) pairt);
           [by apply pctx_wty_strong|apply uninit_resolve|solve_typing]. }
       { solve_typing. } { reflexivity. }
       (* drop q *)
       iApply type_seq.
-      { apply (type_drop_oplace_instr _ _ _ vq 8 8 (Moved (i32t * cellt)) (const (const True)));
+      { apply (type_drop_oplace_instr _ _ _ vq 8 8 (Moved pairt) (const (const True)));
           [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
       (* s: a box, uninitialized; move r.1 into it *)
       iApply (type_new_bytes 4); [lia|]. iIntros (vs). simpl_subst.
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_l _ _ +[_]). eapply (tctx_incl_frame_r +[_] +[_]).
-        apply (tctx_unfold_oplace_prod _ _ _ _ PHole i32t cellt). }
+        apply (tctx_unfold_oplace_struct _ _ _ _ UL PHole +[i32t; cellt]). }
       iApply (type_let with "[]").
-      { apply (type_move_place_instr _ _ _ vr (POwn 8 (PSnd (OfTy i32t) PHole)) cellt). }
+      { apply (type_move_place_instr _ _ _ vr (POwn 8 (PField UL +[OfTy i32t] PHole +[])) cellt). }
       { solve_typing. } { reflexivity. }
       iIntros (vw). simpl_subst.
       (* *s = w *)
@@ -163,7 +169,7 @@ Section pcell_move.
       { solve_typing. } { reflexivity. }
       (* drop r *)
       iApply type_seq.
-      { apply (type_drop_oplace_instr _ _ _ vr 8 8 (ProdLty (OfTy i32t) (Moved cellt))
+      { apply (type_drop_oplace_instr _ _ _ vr 8 8 (StructLty UL +[OfTy i32t; Moved cellt])
           (const (const True))); [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
       (* s.into_inner(perm) *)

@@ -1,5 +1,5 @@
 From lrust.typing Require Export type own value_ctx shr_bor uniq_bor gmb_cells.
-From lrust.typing Require Import programs freeable_util uninit uniq_util bool product gmb_uniq.
+From lrust.typing Require Import programs freeable_util uninit uniq_util bool product gmb_uniq struct bytes_layout.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full guarded_bor.
 Set Default Proof Using "Type".
@@ -325,21 +325,56 @@ Section pcell_rules.
       iDestruct (ty_gho_own_depth_mono _ d (S d) (S d) (S d) with "Gho") as "[$ _]"; lia.
   Qed.
 
+  (** The struct of a cell and its permission. *)
+  Definition pcell_pair_layout (m: wf_mty) : struct_layout :=
+    SL [0; mty_size (`m)]%nat (mty_size (`m)) (mty_align (`m)).
+  Global Arguments pcell_pair_layout : simpl never.
+  Definition pcell_pair_ty {𝔄} (ty: type 𝔄) :
+      type (structₛ (pcell_pair_layout (ty_wmty ty))
+        [pcellₛ (ty_wmty ty); trackedₛ (pcellₛ (syn_wmty 𝔄) * 𝔄)]) :=
+    struct_ty (pcell_pair_layout (ty_wmty ty)) +[pcell_ty (ty_wmty ty); cell_points_to_ty ty].
+
   (** The form of [PCell::new] where the box holds the cell and the (zero-sized)
-      permission, as a pair. *)
+      permission, as a struct ([pcell_pair_ty]: the cell at offset [0], the permission after
+      it, no padding). *)
   Definition PCellFromOwn : val := (λ: ["p"], "p")%V.
 
-  Lemma pcell_pair_bsize {𝔄} (ty: type 𝔄) :
-    ty_bsize (pcell_ty (ty_wmty ty) * cell_points_to_ty ty)%T = ty_bsize ty.
+  Lemma pcell_pair_lay {𝔄} (ty: type 𝔄) :
+    struct_lay (pcell_pair_layout (ty_wmty ty))
+      (syn_mty <$> [pcellₛ (ty_wmty ty); trackedₛ (pcellₛ (syn_wmty 𝔄) * 𝔄)]) =
+    pcell_pair_layout (ty_wmty ty).
   Proof.
-    rewrite /ty_bsize /=.
-    rewrite /seq_size /=. lia.
+    apply struct_lay_wf_eq. split; [done|]. rewrite /sl_mty /pcell_pair_layout /=.
+    constructor.
+    - intros i j o1 m1 o2 m2 Hij H1 H2.
+      destruct i as [|[|i]], j as [|[|j]]; simplify_eq/=; lia.
+    - repeat constructor; simpl; lia.
+    - repeat constructor; simpl; [apply ty_mty_wf|]. by repeat constructor.
+  Qed.
+
+  Lemma pcell_pair_bsize {𝔄} (ty: type 𝔄) : ty_bsize (pcell_pair_ty ty) = ty_bsize ty.
+  Proof.
+    rewrite ty_bsize_eq syn_bsize_struct /struct_size pcell_pair_lay /=. done.
+  Qed.
+
+  Lemma bytes_own_pcell_pair {𝔄} (ty: type 𝔄) l g y :
+    bytes_own (pcell_pair_ty ty) l -[g; y] ⊣⊢ bytes_own (pcell_ty (ty_wmty ty)) l g.
+  Proof.
+    rewrite (bytes_own_struct _ _ +[pcell_ty (ty_wmty ty); cell_points_to_ty ty])
+      /struct_offs /struct_fields /struct_size pcell_pair_lay /= shift_loc_0.
+    rewrite (bytes_own_zst_true (cell_points_to_ty ty)); [|apply cell_points_to_bsize|done].
+    iSplit; [by iIntros "[[$ _] _]"|]. iIntros "$". iSplit; [done|].
+    iExists (replicate (mty_size (ty_mty ty)) inhabitant). rewrite length_replicate.
+    iSplit; [done|]. rewrite /struct_offs pcell_pair_lay /=.
+    iApply big_sepL_intro. iIntros "!>" (i b Hi).
+    apply lookup_replicate in Hi as [_ Hi]. rewrite decide_True //.
+    exists (0%nat, ty_mty ty). split; [by left|]. simpl. lia.
   Qed.
 
   Lemma type_pcell_from_own_instr {𝔄} n (ty: type 𝔄) p E L I :
     typed_instr E L I +[p ◁ᵥ own_bytes n ty] (PCellFromOwn [p])
-      (λ v, +[v ◁ᵥ own_bytes n (pcell_ty (ty_wmty ty) * cell_points_to_ty ty)%T])
-      (λ post '-[(l, x)], λ mask π, ∀ g, post -[(l, (g, (g, x)))] mask π).
+      (λ v, +[v ◁ᵥ own_bytes n (pcell_pair_ty ty)])
+      (λ post '-[(l, x)], λ mask π, ∀ g, post -[(l, -[g; (g, x)])] mask π).
   Proof.
     iIntros (tid post mask iκs [[l x] []]) "_ #TIME _ _ _ $ I [p _] Obs".
     iDestruct (invctx_interp_gcells with "I") as "[#GC $]".
@@ -352,14 +387,14 @@ Section pcell_rules.
     rewrite (bytes_own_gcont _ _ _ fv) //.
     iMod (gcell_create with "GC Bytes") as (g γ) "(%Hbm & #Hreg & #GI & B & C)"; [solve_ndisj|].
     wp_rec.
-    iExists -[(l, (g, (g, x)))]. iSplitR "Obs"; last first.
+    iExists -[(l, -[g; (g, x)])]. iSplitR "Obs"; last first.
     { iApply (proph_obs_impl with "Obs"). intros π Hpost. apply Hpost. }
     iSplit; [|done]. rewrite tctx_val_val. iExists (S d). iSplit; [done|]. iFrame "⧖".
     iSplitL "C"; [|iSplitL "Free"].
-    - rewrite (bytes_own_pair _ (pcell_ty (ty_wmty ty)) (cell_points_to_ty ty)).
-      iSplitL; [by rewrite bytes_own_pcell_ty|iApply cell_points_to_bytes_own].
+    - rewrite bytes_own_pcell_pair. by rewrite bytes_own_pcell_ty.
     - by rewrite pcell_pair_bsize.
-    - iNext. iSplitR; [rewrite pcell_ty_own //; iExists γ; by iFrame "Hreg GI"|].
+    - iNext. simpl.
+      iSplitR; [iExists γ; by iFrame "Hreg GI"|]. iSplitL; [|done].
       iSplitL "B"; [iExists γ, fv; by iFrame "Hreg GI B"|]. done.
   Qed.
 

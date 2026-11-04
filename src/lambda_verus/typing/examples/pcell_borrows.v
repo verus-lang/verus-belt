@@ -17,10 +17,21 @@ Section pcell_borrows.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
-  Notation pairt := (i32t * i32t)%T.
-  Notation pm := (syn_mty (intₛ i32 * intₛ i32)).
-  Notation cellt := (pcell_ty (ty_wmty pairt)).
+  (* [P]: a [repr(C)] struct of two [i32]. *)
+  Notation Pl := [intₛ i32; intₛ i32].
+  Notation PL := (c_layout [MInt i32; MInt i32]).
+  Notation Pₛ := (structₛ PL Pl).
+  Notation pairt := (struct_ty PL +[i32t; i32t]).
+  Notation pm := (syn_mty Pₛ).
+  (* (Definitions rather than notations, so that [simpl] does not unfold them in the
+     program and the context: the kernel check of the proof is much slower otherwise.) *)
+  Local Definition cm : wf_mty := ty_wmty pairt.
+  Notation cellt := (pcell_ty cm).
   Notation permt := (cell_points_to_ty pairt).
+  (* The struct of the cell and its permission ([pcell_pair_ty]). *)
+  Local Definition CL := pcell_pair_layout cm.
+  Local Definition Cl : syn_typel := [pcellₛ cm; trackedₛ (pcellₛ (syn_wmty Pₛ) * Pₛ)%ST].
+  Notation ct := (pcell_pair_ty pairt).
 
   (*
   ```
@@ -41,13 +52,13 @@ Section pcell_borrows.
     let: "c" := PCellFromOwn ["b"] in                       (* c: (PCell, PointsTo) *)
     Newlft;;                                                (* α *)
     Newlft;;                                                (* κ ⊑ α *)
-    let: "r" := &ˢ "c" in                           (* &c.0, at α *)
-    let: "q" := &ᵘ ("c" +ₗ #8) in                     (* &mut c.1, at κ *)
+    let: "r" := &ˢ ("c" +ₗ #(struct_off CL Cl 0)) in     (* &c.0, at α *)
+    let: "q" := &ᵘ ("c" +ₗ #(struct_off CL Cl 1)) in     (* &mut c.1, at κ *)
     let: "m" := PCellBorrowMut ["r"; "q"] in                (* m: &'κ mut (i32, i32) *)
     Skip;;                                                  (* m as a place *)
     ReBor;;                                                 (* unfold *m *)
     Newlft;;                                                (* β ⊑ κ *)
-    let: "m0" := &ᵘ "m" in                          (* &mut ( *m).0, at β *)
+    let: "m0" := &ᵘ ("m" +ₗ #(struct_off PL Pl 0)) in   (* &mut ( *m).0, at β *)
     let: "seven" := MLit (VInt 7) in
     Skip;;                                                  (* m0 as a place *)
     "m0" <-{MInt i32} "seven";;                       (* *m0 = 7 *)
@@ -59,16 +70,16 @@ Section pcell_borrows.
     Endlft;;                                                (* end α: unblock c.0 *)
     Newlft;;                                                (* γ *)
     let: "rc" := &ˢ "c" in                          (* &c *)
-    let: "r2" := "rc" in                      (* &c.0 *)
-    let: "q2" := ("rc" +ₗ #8) in                (* &c.1 *)
+    let: "r2" := ("rc" +ₗ #(struct_off CL Cl 0)) in      (* &c.0 *)
+    let: "q2" := ("rc" +ₗ #(struct_off CL Cl 1)) in      (* &c.1 *)
     let: "s" := PCellBorrow ["r2"; "q2"] in                 (* s: &'γ (i32, i32) *)
-    let: "x" := !ᶜ{MInt i32} "s" in                 (* ( *s).0 *)
+    let: "x" := !ᶜ{MInt i32} ("s" +ₗ #(struct_off PL Pl 0)) in  (* ( *s).0 *)
     Endlft;;                                                (* end γ: unblock c *)
     let: "d" := (Alloc #8) in                         (* d: Box<PCell<(i32, i32)>> *)
-    let: "v" := !ᵐ{pm} "c" in                       (* move c.0 out *)
+    let: "v" := !ᵐ{pm} ("c" +ₗ #(struct_off CL Cl 0)) in  (* move c.0 out *)
     "d" <-{pm} "v";;                                  (* *d = v *)
-    let: "pt" := !ᵐ{zst_mty} ("c" +ₗ #8) in           (* move c.1 out *)
-    ((#☠;; #☠);; delete [ #8; "c"]);;                 (* drop c (moved out) *)
+    let: "pt" := !ᵐ{zst_mty} ("c" +ₗ #(struct_off CL Cl 1)) in  (* move c.1 out *)
+    ((#☠;; (#☠;; #☠));; delete [ #8; "c"]);;          (* drop c (moved out) *)
     let: "e" := PCellIntoInner ["d"; "pt"] in               (* d.into_inner(pt) *)
     (#☠;; delete [ #8; "e"]);;                        (* drop e *)
     jump: "return" ["x"])%E.
@@ -94,16 +105,16 @@ Section pcell_borrows.
       (* c as an owned place, unfolded *)
       iApply typed_body_tctx_incl.
       { eapply tctx_incl_trans; [apply tctx_own_to_oplace|].
-        apply (tctx_unfold_oplace_prod _ _ _ _ PHole cellt permt). }
+        apply (tctx_unfold_oplace_struct _ _ _ _ CL PHole +[cellt; permt]). }
       (* &c.0 at α *)
       iApply (type_let with "[]").
-      { eapply (type_share_place_instr _ _ _ vc (POwn 8 (PFst PHole (OfTy permt))) α
+      { eapply (type_share_place_instr _ _ _ vc (POwn 8 (PField CL +[] PHole +[OfTy permt])) α
           (OfTy cellt) cellt); [apply lty_sleaf_ofty; solve_typing|simpl; solve_typing..]. }
       { solve_typing. } { reflexivity. }
       iIntros (vr). simpl_subst.
       (* &mut c.1 at κ *)
       iApply (type_let with "[]").
-      { eapply (type_borrow_place_instr _ _ _ vc (POwn 8 (PSnd (ShrBlocked cellt α) PHole)) κ permt);
+      { eapply (type_borrow_place_instr _ _ _ vc (POwn 8 (PField CL +[ShrBlocked cellt α] PHole +[])) κ permt);
           solve_typing. }
       { solve_typing. } { simpl. reflexivity. }
       iIntros (vq). simpl_subst.
@@ -120,12 +131,12 @@ Section pcell_borrows.
       iApply type_seq. { apply (type_uniq_to_vplace_instr _ _ _ vm κ pairt). }
       { solve_typing. } { reflexivity. }
       iApply type_seq.
-      { apply (type_unfold_vplace_prod_instr _ _ _ vm (PUniq κ PHole) i32t i32t). simpl. solve_typing. }
+      { apply (type_unfold_vplace_struct_instr _ _ _ vm PL (PUniq κ PHole) +[i32t; i32t]). simpl. solve_typing. }
       { solve_typing. } { reflexivity. }
       (* the reborrow &mut ( *m).0 at β *)
       iApply (type_newlft [κ]). iIntros (β).
       iApply (type_let with "[]").
-      { apply (type_borrow_place_instr _ _ _ vm (PUniq κ (PFst PHole (OfTy i32t))) β i32t);
+      { apply (type_borrow_place_instr _ _ _ vm (PUniq κ (PField PL +[] PHole +[OfTy i32t])) β i32t);
           [solve_typing|simpl; solve_typing..]. }
       { solve_typing. } { simpl. reflexivity. }
       iIntros (vm0). simpl_subst.
@@ -150,12 +161,12 @@ Section pcell_borrows.
       { solve_typing. }
       { (* (the unblock relation, computed: it does not mention the local lifetime) *)
         simpl. eapply unblock_tctx_impl; last first.
-        { apply (unblock_tctx_vplace_deep _ _ (PUniq κ (PFst PHole (OfTy i32t))) i32t);
+        { apply (unblock_tctx_vplace_deep _ _ (PUniq κ (PField PL +[] PHole +[OfTy i32t])) i32t);
             [done|solve_typing|]. apply unblock_tctx_cons_just, unblock_tctx_nil. }
         intros π xl xl' H. unfold vplace_blk_fin in H. cbn [pctx_get pctx_set pctx_vpath] in H. exact H. }
       (* fold *m; m back as a unique borrow, resolved *)
       iApply type_seq.
-      { apply (type_fold_vplace_prod_instr _ _ _ vm (PUniq κ PHole) i32t i32t). simpl. solve_typing. }
+      { apply (type_fold_vplace_struct_instr _ _ _ vm PL (PUniq κ PHole) +[i32t; i32t]). simpl. solve_typing. }
       { solve_typing. } { reflexivity. }
       iApply typed_body_tctx_incl. { eapply (tctx_incl_frame_r +[_] +[_]). apply tctx_vplace_to_uniq. }
       iApply type_seq.
@@ -165,29 +176,29 @@ Section pcell_borrows.
       iApply (type_endlft _ _ _ _ κ).
       { solve_typing. }
       { eapply unblock_tctx_impl; last first.
-        { apply (unblock_tctx_oplace _ _ _ (PSnd (ShrBlocked cellt α) PHole) permt); [solve_typing|].
+        { apply (unblock_tctx_oplace _ _ _ (PField CL +[ShrBlocked cellt α] PHole +[]) permt); [solve_typing|].
           apply unblock_tctx_nil. }
         intros π xl xl' H. unfold oplace_blk_fin in H. cbn [pctx_get pctx_set pctx_path] in H. exact H. }
       iApply (type_endlft _ _ _ _ α).
       { solve_typing. }
-      { apply (unblock_tctx_oplace_shr _ _ _ (PFst PHole (OfTy permt)) cellt).
+      { apply (unblock_tctx_oplace_shr _ _ _ (PField CL +[] PHole +[OfTy permt]) cellt).
         apply unblock_tctx_nil. }
       (* &c, at γ, and its fields *)
       iApply (type_newlft []). iIntros (γ).
-      iApply typed_body_tctx_incl. { apply (tctx_fold_oplace_prod _ _ _ _ PHole cellt permt). }
+      iApply typed_body_tctx_incl. { apply (tctx_fold_oplace_struct _ _ _ _ CL PHole +[cellt; permt]). }
       iApply (type_let with "[]").
-      { eapply (type_share_place_instr _ _ _ vc (POwn 8 PHole) γ (OfTy (cellt * permt))
-          (cellt * permt)); [apply lty_sleaf_ofty; solve_typing|simpl; solve_typing..]. }
+      { eapply (type_share_place_instr _ _ _ vc (POwn 8 PHole) γ (OfTy ct)
+          ct); [apply lty_sleaf_ofty; solve_typing|simpl; solve_typing..]. }
       { solve_typing. } { reflexivity. }
       iIntros (vrc). simpl_subst.
       iApply typed_body_tctx_incl.
-      { apply (copy_val_tctx_incl _ _ _ _ _ (Copy0:=shr_bytes_copy γ (cellt * permt))). }
+      { apply (copy_val_tctx_incl _ _ _ _ _ (Copy0:=shr_bytes_copy γ ct)). }
       iApply (type_let with "[]").
-      { apply (type_shr_bytes_fst_instr γ cellt permt). }
+      { apply (type_shr_bytes_field_instr γ CL +[] cellt +[permt]). }
       { solve_typing. } { reflexivity. }
       iIntros (vr2). simpl_subst.
       iApply (type_let with "[]").
-      { apply (type_shr_bytes_snd_instr γ cellt permt). }
+      { apply (type_shr_bytes_field_instr γ CL +[cellt] permt +[]). }
       { solve_typing. } { reflexivity. }
       iIntros (vq2). simpl_subst.
       (* PCell::borrow *)
@@ -201,9 +212,9 @@ Section pcell_borrows.
         eapply tctx_incl_trans; [apply tctx_ty_to_vplace|].
         eapply tctx_incl_trans; [apply tctx_vplace_unfold_shr|].
         apply (tctx_change_vplace_shr _ _ vs γ PHole (OfTy pairt)
-          (ProdLty (OfTy i32t) (OfTy i32t))); [done|done|by intros]. }
+          (StructLty PL +[OfTy i32t; OfTy i32t])); [done|done|by intros]. }
       iApply (type_let with "[]").
-      { apply (type_read_place_instr _ _ _ vs (PShr γ (PFst PHole (OfTy i32t)))
+      { apply (type_read_place_instr _ _ _ vs (PShr γ (PField PL +[] PHole +[OfTy i32t]))
           (OfTy i32t) i32t static); [by split|apply _|solve_typing]. }
       { solve_typing. } { simpl. reflexivity. }
       iIntros (vx). simpl_subst.
@@ -214,14 +225,14 @@ Section pcell_borrows.
       iApply (type_endlft _ _ _ _ γ).
       { solve_typing. }
       { apply unblock_tctx_cons_just.
-        apply (unblock_tctx_oplace_shr _ _ _ PHole (cellt * permt)). apply unblock_tctx_nil. }
+        apply (unblock_tctx_oplace_shr _ _ _ PHole ct). apply unblock_tctx_nil. }
       (* d: a box; move c.0 into it *)
       iApply (type_new_bytes 8); [lia|]. iIntros (vd). simpl_subst.
       iApply typed_body_tctx_incl.
       { eapply (tctx_incl_frame_l _ _ +[_; _]).
-        apply (tctx_unfold_oplace_prod _ _ _ _ PHole cellt permt). }
+        apply (tctx_unfold_oplace_struct _ _ _ _ CL PHole +[cellt; permt]). }
       iApply (type_let with "[]").
-      { apply (type_move_place_instr _ _ _ vc (POwn 8 (PFst PHole (OfTy permt))) cellt). }
+      { apply (type_move_place_instr _ _ _ vc (POwn 8 (PField CL +[] PHole +[OfTy permt])) cellt). }
       { solve_typing. } { reflexivity. }
       iIntros (vv). simpl_subst.
       iApply typed_body_tctx_incl.
@@ -234,11 +245,11 @@ Section pcell_borrows.
       (* move c.1 out; drop c *)
       iApply (type_let with "[]").
       { apply (type_move_place_instr _ _ _ vc
-          (POwn 8 (PSnd (Moved cellt) PHole)) permt). }
+          (POwn 8 (PField CL +[Moved cellt] PHole +[])) permt). }
       { solve_typing. } { reflexivity. }
       iIntros (vpt). simpl_subst.
       iApply type_seq.
-      { apply (type_drop_oplace_instr _ _ _ vc 8 8 (ProdLty (Moved cellt) (Moved permt))
+      { apply (type_drop_oplace_instr _ _ _ vc 8 8 (StructLty CL +[Moved cellt; Moved permt])
           (const (const True))); [done|done|done|apply lty_resolve_just]. }
       { solve_typing. } { reflexivity. }
       (* d.into_inner(pt) *)
@@ -262,28 +273,28 @@ Section pcell_borrows.
       { solve_typing. }
       { reflexivity. }
     }
-    intros post [[lb [a b]] []] mask π Hspec. rewrite /trans_upper /trans_tail /ret_z /=.
+    intros post [[lb [a [b []]]] []] mask π Hspec. rewrite /trans_upper /trans_tail /ret_z /=.
     intros g m1 Hm1.
-    destruct m1 as [[[[[l1 [g1 [a1 b1]]] ξ1] d1] gg1] idx1]. simpl in Hm1. injection Hm1 as <- <- <-.
+    destruct m1 as [[[[[l1 [g1 [a1 [b1 []]]]] ξ1] d1] gg1] idx1]. simpl in Hm1. injection Hm1 as <- <- <-.
     rewrite /trans_lower /=. split; [done|].
-    intros [[[[[l2 [a2 b2]] ξ2] d2] gg2] idx2] Hc2 Hf2 Hg2 Hl2. simpl in Hc2, Hl2. injection Hc2 as <- <-. subst l2.
+    intros [[[[[l2 [a2 [b2 []]]] ξ2] d2] gg2] idx2] Hc2 Hf2 Hg2 Hl2. simpl in Hc2, Hl2. injection Hc2 as <- <-. subst l2.
     intros [[[[[l3 c3] ξ3] d3] gg3] idx3] Hc3 _ d4 g4 idx4 Hres3. simpl in Hc3, Hres3. subst c3.
     intros [x5 [x6 []]] (Hx5 & Hb5 & Hv5 & Hx6 & _). simpl in Hx5, Hb5, Hv5, Hx6. subst x6.
-    destruct x5 as [[[[[[l5 [a5 b5]] ξ5] d5] gg5] idx5] bm5]. simpl in Hx5, Hb5, Hv5. injection Hx5 as -> <- -> -> -> ->.
+    destruct x5 as [[[[[[l5 [a5 [b5 []]]] ξ5] d5] gg5] idx5] bm5]. simpl in Hx5, Hb5, Hv5. injection Hx5 as -> <- -> -> -> ->.
     intros d6 g6 idx6 Hres5. simpl in Hres5.
     intros [x7 []] (Hx7a & Hx7b & Hx7c & Hx7d & _). simpl in Hx7a, Hx7b, Hx7c, Hx7d.
     intros [x8 []] [-> _]. simpl.
     (* the final value of the permission *)
     have H7 : a5 = 7%Z.
     { rewrite Hv5 (uniq_util.uniq_prvar_app_irrel (𝔄:=intₛ i32) a2 7%Z ξ3 π). exact Hres3. }
-    have Hp : (π (uniq_prvar (𝔄:=trackedₛ (pcellₛ (syn_wmty (intₛ i32 * intₛ i32)) * (intₛ i32 * intₛ i32))) (g1, (a2, b5)) ξ1)).1
-      = (g1, (7%Z, b5)).
+    have Hp : (π (uniq_prvar (𝔄:=trackedₛ (pcellₛ (syn_wmty Pₛ) * Pₛ)) (g1, -[a2; b5]) ξ1)).1
+      = (g1, -[7%Z; b5]).
     { rewrite !uniq_bor_future_eq in Hf2 Hg2.
-      assert (∀ p : positive * (Z * Z), p.1 = g1 → p.2 = (7%Z, b5) → p = (g1, (7%Z, b5))) as Hpair.
+      assert (∀ p : positive * ~~ Pₛ, p.1 = g1 → p.2 = -[7%Z; b5] → p = (g1, -[7%Z; b5])) as Hpair.
       { intros [??] ??. simpl in *. congruence. }
       apply Hpair; [exact Hg2|]. rewrite -Hf2 -H7 -Hres5.
-      exact (uniq_util.uniq_prvar_app_irrel (𝔄:=intₛ i32 * intₛ i32) (a2, b5) (a5, b5) ξ2 π). }
-    destruct x7 as [[l7 [g7 [g7' [a7 b7]]]] bm7]. simpl in Hx7a, Hx7b, Hx7c, Hx7d.
+      exact (uniq_util.uniq_prvar_app_irrel (𝔄:=Pₛ) -[a2; b5] -[a5; b5] ξ2 π). }
+    destruct x7 as [[l7 [g7 [[g7' [a7 [b7 []]]] []]]] bm7]. simpl in Hx7a, Hx7b, Hx7c, Hx7d.
     injection Hx7b as ->. rewrite Hp in Hx7d. injection Hx7d as -> -> ->.
     split; [done|].
     intros [y [x9 []]] [Hy [-> _]] _ _. simpl in Hy. subst y.

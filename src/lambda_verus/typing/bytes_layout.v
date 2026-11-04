@@ -693,6 +693,11 @@ Definition struct_size (L: struct_layout) (𝔄l: syn_typel) : nat :=
 Definition struct_fields (L: struct_layout) (𝔄l: syn_typel) : list (nat * mty) :=
   zip (struct_offs L 𝔄l) (syn_mty <$> 𝔄l).
 
+(** The offset of field [j]. *)
+Definition struct_off (L: struct_layout) (𝔄l: syn_typel) (j: nat) : nat :=
+  default 0%nat (struct_offs L 𝔄l !! j).
+Global Arguments struct_off : simpl never.
+
 Lemma syn_mty_struct L 𝔄l :
   syn_mty (structₛ L 𝔄l) =
     MTuple (struct_fields L 𝔄l) (struct_size L 𝔄l) (struct_lay L (syn_mty <$> 𝔄l)).(sl_align).
@@ -703,6 +708,13 @@ Proof. done. Qed.
 
 Lemma length_struct_offs L 𝔄l : length (struct_offs L 𝔄l) = length 𝔄l.
 Proof. rewrite /struct_offs length_struct_lay ?length_fmap //. apply syn_mty_wf_list. Qed.
+
+Lemma struct_off_lookup L 𝔄l j :
+  (j < length 𝔄l)%nat → struct_offs L 𝔄l !! j = Some (struct_off L 𝔄l j).
+Proof.
+  intros Hj. rewrite /struct_off. destruct (struct_offs L 𝔄l !! j) eqn:Hl; [done|].
+  apply lookup_ge_None in Hl. rewrite length_struct_offs in Hl. lia.
+Qed.
 
 Lemma struct_fields_bounds L 𝔄l :
   Forall (λ f, f.1 + mty_size f.2 ≤ struct_size L 𝔄l)%nat (struct_fields L 𝔄l).
@@ -729,6 +741,18 @@ Proof.
   intros Hs. apply struct_lay_sizes; [apply syn_mty_wf_list|apply syn_mty_wf_list|].
   by rewrite -!list_fmap_compose.
 Qed.
+
+Lemma struct_offs_bsize L 𝔄l 𝔅l :
+  syn_bsize <$> 𝔄l = syn_bsize <$> 𝔅l → struct_offs L 𝔄l = struct_offs L 𝔅l.
+Proof. intros. by rewrite /struct_offs (struct_lay_bsize L 𝔄l 𝔅l). Qed.
+
+Lemma struct_size_bsize L 𝔄l 𝔅l :
+  syn_bsize <$> 𝔄l = syn_bsize <$> 𝔅l → struct_size L 𝔄l = struct_size L 𝔅l.
+Proof. intros. by rewrite /struct_size (struct_lay_bsize L 𝔄l 𝔅l). Qed.
+
+Lemma struct_off_bsize L 𝔄l 𝔅l j :
+  syn_bsize <$> 𝔄l = syn_bsize <$> 𝔅l → struct_off L 𝔄l j = struct_off L 𝔅l j.
+Proof. intros. by rewrite /struct_off (struct_offs_bsize L 𝔄l 𝔅l). Qed.
 
 (** The fancy bytes of the fields of a struct at the offsets [offs]. *)
 Fixpoint fields_fbytes (R: gmap positive (mty * list positive)) (𝔄l: syn_typel) :
