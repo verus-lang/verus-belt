@@ -14,6 +14,11 @@ Section place_moved.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
+  (* [P]: a [repr(C)] struct of two [i32]. *)
+  Notation Pl := [intₛ i32; intₛ i32].
+  Notation PL := (c_layout [MInt i32; MInt i32]).
+  Notation Pₛ := (structₛ PL Pl).
+  Notation Pt := (struct_ty PL +[i32t; i32t]).
   Notation boxt := (own_bytes 4 i32t).
   Notation optt := (Σ! +[(); boxt])%T.
   Notation optₛ := (Σ! [()%ST; at_locₛ (intₛ i32)])%ST.
@@ -106,12 +111,12 @@ Section place_moved.
 
   (** A box whose contents have been moved out, field by field, is uninitialized again. *)
   Lemma uninit_moved_pair L I p :
-    typed_instr E L I +[p ◁ₗown{8} ProdLty (Moved i32t) (Moved i32t)]
-      (drop_boxes (ProdLty (Moved i32t) (Moved i32t)) p;; Skip)%E
+    typed_instr E L I +[p ◁ₗown{8} StructLty PL +[Moved i32t; Moved i32t]]
+      (drop_boxes (StructLty PL +[Moved i32t; Moved i32t]) p;; Skip)%E
       (λ _, +[p ◁ₗown{8} OfTy (↯ 8)])
       (λ post '-[x], λ mask π, True → post -[((x.1.1, ()), [])] mask π).
   Proof.
-    apply (type_uninit_oplace_instr _ _ _ p 8 (ProdLty (Moved i32t) (Moved i32t)) (λ _ _, True));
+    apply (type_uninit_oplace_instr _ _ _ p 8 (StructLty PL +[Moved i32t; Moved i32t]) (λ _ _, True));
       [done|done|apply lty_resolve_just].
   Qed.
 End place_moved.
