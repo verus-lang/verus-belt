@@ -1673,6 +1673,16 @@ Section pctx.
 End pctx.
 
 (** A context with a [PUniq] step is not [PctxNoUniq]. *)
+(** The type index of [PField] is a concatenation, which instance search does not unify with
+    the index of an enclosing context (e.g. the payload [𝔄l !!ₗ i] of a sum): the instances
+    for [PField] are applied with full unification. *)
+Global Hint Extern 0 (PctxNoShr (PField ?L ?lb ?K ?la)) =>
+  refine (pctx_no_shr_field L lb K la _) : typeclass_instances.
+Global Hint Extern 0 (PctxNoUniq (PField ?L ?lb ?K ?la)) =>
+  refine (pctx_no_uniq_field L lb K la _) : typeclass_instances.
+Global Hint Extern 0 (PctxSimple (PField ?L ?lb ?K ?la)) =>
+  refine (pctx_simple_field L lb K la _ _ _) : typeclass_instances.
+
 Ltac pctx_no_uniq_contra :=
   match goal with
   | H : PctxNoUniq (PUniq _ _) |- _ => exfalso; exact H
