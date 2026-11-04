@@ -951,3 +951,49 @@ Definition enum_mty EL ms := if decide (el_wf EL ms) then el_mty EL ms else el_m
   `struct_subtype`/`struct_eqtype` (along `struct_mapₛ`), non-expansiveness and
   contractiveness, outlives.
 - `prod`/`xprod` are untouched in L2a; L2b replaces them.
+
+## Outcome: L2b (struct places; branch `proto/layout-l2b`)
+
+- **Place types** (`typing/ltype.v`): `StructLty {𝔄l} (L: struct_layout) (lts: hlist lty 𝔄l) :
+  lty (structₛ L 𝔄l)` replaces `ProdLty` (a nested inductive through `hlist`; induction
+  principle `lty_ind'` with an `HForall` hypothesis). Refinements `prfn_struct (structₛ L 𝔄l) =
+  plist prfn 𝔄l` (`prfn_fields_in`), patterns `PatStruct (list lpat)`. The node of a struct
+  (`struct_node`, `fields_node`): the fields at the offsets of the effective layout
+  (`struct_offs`) and the padding (`pad_own`); its view (`view_struct`) guards the padding.
+  Folded type `struct_ty L (hmap lty_fold lts)`.
+- **Unfolding**: `struct_ofty_unfold_own`/`_core` (`ltype_eq` of `OfTy (struct_ty L tyl)` and
+  `StructLty L (hmap OfTy tyl)`), `struct_ofty_unfold_uniq`/`struct_ofty_fold_uniq` (behind a
+  unique borrow, switching the body of the borrow). Rules: `tctx_unfold_oplace_struct`,
+  `tctx_fold_oplace_struct` (`place_own.v`), `type_unfold_vplace_struct_instr`,
+  `type_fold_vplace_struct_instr` and the `oplace` variants (`place_puniq.v`),
+  `tctx_unfold_oplace_res_struct` (`place_res.v`).
+- **Contexts** (`typing/lpath.v`): a zipper step `PField {𝔅 𝔄lb 𝔄 𝔄la} L (lb: hlist lty 𝔄lb)
+  (K: pctx 𝔅 𝔄) (la: hlist lty 𝔄la) : pctx 𝔅 (structₛ L (𝔄lb ++ 𝔄 :: 𝔄la))`, whose hole is
+  field `length 𝔄lb` at offset `struct_off L (𝔄lb ++ 𝔄 :: 𝔄la) (length 𝔄lb)`; the siblings
+  `lb`, `la` are kept literally, so `pctx_own` of a field is the ownership of the siblings
+  (`fields_own`), of the hole's context and of the padding (`ltype_own_struct_field`). This
+  deviates from the `hlist_set`/`fin` form proposed in §7.4: the zipper needs no lookups and
+  examples write e.g. `PField L +[OfTy i32t] PHole +[]` for the second of two fields.
+  Paths stay `list bool`: field `j` has the selector `fcode j = false :: replicate j true`;
+  the selectors are suffix-free (`fcode_suffix_ne`), so the blocking maps of different fields
+  are independent. Retyping the hole (strong writes) keeps the layout if the size does not
+  change (`pctx_root_bsize`, the layout of a struct depends only on the sizes of its fields).
+- The struct versions of the generic place machinery: implicit unblocking, folding back of
+  simple places (`ltype_owned_bytes_unblock`), access (`pctx_acc_field`), shared views
+  (`shr_pctx_view`, `type_shr_bytes_field_instr`), resolution (`lty_resolve_struct`,
+  `lty_rslv_struct`, `lty_res_struct` with `fields_res`), memory of places and
+  `drop_boxes` (`fields_omem`, `fields_drop`, at index-based offsets; `mem_bytes_struct`,
+  `bytes_fields_pad`), views of resolved borrows (`share_view_struct`).
+- `typing/place_xprod.v` is deleted. `PCellFromOwn` gives a struct of the cell and its
+  permission (`pcell_pair_ty`, at `pcell_pair_layout`), and `↯ (m + n)` splits into a struct
+  (`uninit_plus_struct`).
+- **Examples** ported to structs at explicit `c_layout`s (`get_first`, `get_some_first`,
+  `place_deep`, `new`, `function`, `place_pshr`, `place_res`, `place_rules`, `place_own`,
+  `place_moved`, `pcell_parts`, `pcell_borrows`, `pcell_move`, `place_struct`). Programs
+  address fields with `+ₗ #(struct_off L 𝔄l j)` (also field `0`); layouts are written as
+  `c_layout [MInt i32; …]` (with literal `mty`s: a layout computed with `syn_mty <$> _`
+  leaves a type class evar during `apply`, whose unification hangs). Layouts with pointers
+  are symbolic (`PTR_ALIGN` is sealed), so box sizes are written `struct_size L 𝔄l`.
+- Known cost: the proof of `pcell_borrows` takes ~11 minutes to check (the kernel check of
+  `Qed`; `pcell_example` already took ~1.5 minutes before L2b).
+- `prod_ty`, `xprod_ty` and the product isomorphisms are still there (deleted in L2c).
