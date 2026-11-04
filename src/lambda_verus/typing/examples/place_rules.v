@@ -22,6 +22,11 @@ Section place_rules.
   Context `{!typeG Σ}.
 
   Notation i32t := (int_ty i32).
+  (* [P]: a [repr(C)] struct of two [i32]. *)
+  Notation Pl := [intₛ i32; intₛ i32].
+  Notation PL := (c_layout [MInt i32; MInt i32]).
+  Notation Pₛ := (structₛ PL Pl).
+  Notation Pt := (struct_ty PL +[i32t; i32t]).
 
   Local Notation E := ([]: elctx).
   Local Notation L α β κ := ([κ ⊑ₗ [β]; β ⊑ₗ [α]; α ⊑ₗ []]: llctx).
@@ -49,10 +54,10 @@ Section place_rules.
       [by split|apply _|solve_typing].
   Qed.
 
-  (** [&( **x).0] for [x: Box<&'α mut (i32, i32)>] whose unique borrow is resolved: shared
+  (** [&( **x).0] for [x: Box<&'α mut P>] whose unique borrow is resolved: shared
       at [α], the lifetime of the view. *)
   Lemma share_res_own α β κ I p :
-    let K := POwn PTR_SIZE (PResUniq α (PFst (PHole (𝔅:=intₛ i32)) (OfTy i32t))) in
+    let K := POwn PTR_SIZE (PResUniq α (PField PL +[] (PHole (𝔅:=intₛ i32)) +[OfTy i32t])) in
     typed_instr E (L α β κ) I +[p ◁ₗ pctx_plug K (OfTy i32t)] (&ˢ (pctx_vexpr K p))
       (λ v, +[v ◁ᵥ &shr{α} i32t; p ◁ₗ pctx_plug K (OfTy i32t)])
       (λ post '-[x], post -[(pctx_vloc K (lty_size (OfTy i32t)) x.1, pctx_get K x.1); x]).
@@ -73,10 +78,10 @@ Section place_rules.
       [constructor; solve_typing|simpl; solve_typing..].
   Qed.
 
-  (** [&( *x).0] again, for [x: &'α mut (i32, i32)] (a place rooted at its value) whose
+  (** [&( *x).0] again, for [x: &'α mut P] (a place rooted at its value) whose
       field is shared-blocked at [β]. *)
   Lemma reshare_uniq α β κ I p :
-    let K := PUniq α (PFst (PHole (𝔅:=intₛ i32)) (OfTy i32t)) in
+    let K := PUniq α (PField PL +[] (PHole (𝔅:=intₛ i32)) +[OfTy i32t]) in
     typed_instr E (L α β κ) I +[p ◁ₗ pctx_plug K (ShrBlocked i32t β)] (&ˢ (pctx_vexpr K p))
       (λ v, +[v ◁ᵥ &shr{κ} i32t; p ◁ₗ pctx_plug K (ShrBlocked i32t β)])
       (λ post '-[x], post -[(pctx_vloc K (lty_size (ShrBlocked i32t β)) x.1,
@@ -86,10 +91,10 @@ Section place_rules.
       [constructor; solve_typing|simpl; solve_typing..].
   Qed.
 
-  (** [&( **x).0], for [x: Box<&'α mut (i32, i32)>] whose unique borrow is resolved while
+  (** [&( **x).0], for [x: Box<&'α mut P>] whose unique borrow is resolved while
       the field was shared-blocked at [β]: shared at [κ ⊑ α, β]. *)
   Lemma reshare_res α β κ I p :
-    let K := POwn PTR_SIZE (PResUniq α (PFst (PHole (𝔅:=intₛ i32)) (OfTy i32t))) in
+    let K := POwn PTR_SIZE (PResUniq α (PField PL +[] (PHole (𝔅:=intₛ i32)) +[OfTy i32t])) in
     typed_instr E (L α β κ) I +[p ◁ₗ pctx_plug K (ShrBlocked i32t β)] (&ˢ (pctx_vexpr K p))
       (λ v, +[v ◁ᵥ &shr{κ} i32t; p ◁ₗ pctx_plug K (ShrBlocked i32t β)])
       (λ post '-[x], post -[(pctx_vloc K (lty_size (ShrBlocked i32t β)) x.1,
@@ -99,16 +104,16 @@ Section place_rules.
       [split; [constructor; solve_typing|done]|simpl; solve_typing..].
   Qed.
 
-  (** Resolving [x: &'α mut (i32, i32)] at its root, its referent unfolded as a pair
+  (** Resolving [x: &'α mut P] at its root, its referent unfolded as a pair
       ([vroot_res_uniq_cpd]): [fin(x)] is the current value of the pair. *)
   Lemma resolve_root_cpd α β κ I p :
-    let lt := ProdLty (OfTy i32t) (OfTy i32t) in
+    let lt := StructLty PL +[OfTy i32t; OfTy i32t] in
     typed_instr E (L α β κ) I +[p ◁ₗ pctx_plug PHole (UniqLty lt α)] (Skip;; #☠)
       (const +[p ◁ₗ pctx_plug PHole (ResUniqLty lt α)])
       (λ post '-[x], λ mask π,
-        (π (uniq_prvar (uniq_bor_current (𝔄:=intₛ i32 * intₛ i32) x.1)
-          (uniq_bor_ξi (𝔄:=intₛ i32 * intₛ i32) x.1))).1 =
-          prfn_den (lty_rfn lt (uniq_bor_current (𝔄:=intₛ i32 * intₛ i32) x.1) x.2 []) π →
+        (π (uniq_prvar (uniq_bor_current (𝔄:=Pₛ) x.1)
+          (uniq_bor_ξi (𝔄:=Pₛ) x.1))).1 =
+          prfn_den (lty_rfn lt (uniq_bor_current (𝔄:=Pₛ) x.1) x.2 []) π →
         post -[x] mask π).
   Proof.
     intros lt. eapply typed_instr_tr_impl; last first.
