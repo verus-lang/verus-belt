@@ -83,8 +83,6 @@ Section pctx_read.
       (la: hlist lty 𝔄la) :
     PctxRead K → PctxRead (PField Lay lb K la).
   Proof. done. Qed.
-  Global Hint Extern 0 (PctxRead (PField ?L ?lb ?K ?la)) =>
-    refine (pctx_read_field L lb K la _) : typeclass_instances.
   Global Instance pctx_read_own {𝔅 𝔄'} n (K: pctx 𝔅 𝔄') : PctxRead K → PctxRead (POwn n K).
   Proof. done. Qed.
   Global Instance pctx_read_sum {𝔅 𝔄l} (tyl: typel 𝔄l) i w (K: pctx 𝔅 (𝔄l !!ₗ i)) :
@@ -218,6 +216,9 @@ Section pctx_read.
       pctx_vrfn K1 x ζm (inl (PlaceIn (pctx_get K1 x))).
   Proof. by apply pctx_vrfn_app_leaf. Qed.
 End pctx_read.
+
+Global Hint Extern 0 (PctxRead (PField ?L ?lb ?K ?la)) =>
+  refine (pctx_read_field L lb K la _) : typeclass_instances.
 
 Notation pctx_rleaf K := (pctx_rleafb K true).
 
