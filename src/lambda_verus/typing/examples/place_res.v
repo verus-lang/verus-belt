@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_res place_res_rslv place_res_ops place_read place_write.
+From lrust.typing Require Export type programs cont int unit value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_res place_res_rslv place_res_ops place_read place_write.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -41,12 +41,12 @@ Section place_res.
   with the specification `ensures result == ( *x.0, ( *x.1).0)` and the observation
   `fin(x.1) == cur(x.1)`, learnt when [x] is resolved. The argument is a box of bytes, an
   owned place, unfolded as a pair; it is resolved ([type_resolve_place_instr],
-  [lty_res_prod] of two [lty_res_ofty], two program steps) to
-  [ProdLty (OfRes (own_bytes 4 i32)) (OfRes (&uniq{'a} (i32 * i32)))], which stays
+  [lty_res_struct] of two [lty_res_ofty], two program steps) to
+  [StructLty XL +[OfRes (own_bytes 4 i32); OfRes (&uniq{'a} P)]], which stays
   readable:
     * [OfRes (own_bytes 4 i32)] is converted back to [OfTy (own_bytes 4 i32)]
       ([tctx_oplace_res_to_ofty]), unfolded and read ([type_read_place_instr]);
-    * [OfRes (&uniq{'a} (i32 * i32))] is re-read as a shared reference to its referent
+    * [OfRes (&uniq{'a} P)] is re-read as a shared reference to its referent
       at ['a] ([type_oplace_res_uniq_to_shr_instr], one step), viewed as a pair and read
       below it ([type_read_place_instr], a guarded typed load);
     * the slot is dropped ([type_drop_oplace_res_instr]), freeing the inner box.

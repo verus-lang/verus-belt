@@ -8,7 +8,7 @@
   - [lty_res_ofty]: a leaf [OfTy ty] becomes [OfRes ty], with [Φ] from [resolve_keep]
     (for any type, with nothing learnt, by [resolve_keep_just]);
   - [lty_res_copy]: a [Copy] leaf is kept as it is, with [Φ] from [resolve];
-  - [lty_res_prod], [lty_res_own], [lty_res_sum]: structural;
+  - [lty_res_struct], [lty_res_own], [lty_res_sum]: structural;
   - [lty_res_uniq_leaf], [lty_res_uniq_cpd]: an unfolded unique borrow [UniqLty lt κ]
     becomes [ResUniqLty lt κ]: its prophecy variable is resolved to the denotation of its
     referent (the final values of the reborrows at the blocked leaves, through the
@@ -26,7 +26,7 @@ From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.util Require Import update.
 From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bor.
-From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own bytes_layout value_ctx product freeable_util sum place_shr place_resolve place_puniq place_sum place_pshr place_res place_res_view.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own bytes_layout value_ctx unit freeable_util sum place_shr place_resolve place_puniq place_sum place_pshr place_res place_res_view.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full guarded_bor.
 From guarding Require Import guard tactics.
@@ -93,7 +93,7 @@ End resolve_share_rsv.
 (** * The resolution judgement *)
 
 (* A record (not a conjunction), so that unification never unfolds it: e.g. applying
-   [lty_res_prod] (of [k1 + k2] steps) to a goal of [2] steps fails at once. *)
+   [lty_res_struct] (of [k1 + k2] steps) to a goal of [2] steps fails at once. *)
 Record lty_res `{!typeG Σ} {𝔄} (E: elctx) (L: llctx) (lt lt': lty 𝔄) (k: nat)
     (Φ: ~~𝔄 → blk_map → lpath → proph_asn → Prop) : Prop := LtyRes {
   lty_res_size : lty_size lt' = lty_size lt;

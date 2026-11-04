@@ -333,7 +333,7 @@ Section gcells_defs.
     iApply (gmb_a_excl with "Ha1 Ha2").
   Qed.
 
-  (** ** Contents of products and sums *)
+  (** ** Contents of tuples and enums *)
 
   (** The representation depends only on the registry entries of the cells of the value. *)
   Lemma frepr_restrict R R' m fbs fv :

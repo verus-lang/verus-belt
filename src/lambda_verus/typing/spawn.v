@@ -1,7 +1,7 @@
 From iris.proofmode Require Import proofmode.
 From lrust.prophecy Require Import syn_type.
 From lrust.lang Require Import spawn.
-From lrust.typing Require Export type function product.
+From lrust.typing Require Export type function unit.
 From lrust.typing Require Import type_context programs value_ctx.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.

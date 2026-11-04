@@ -7,9 +7,9 @@ Set Default Proof Using "Type".
 has a MiniRust value, and [bs] decode to it at [syn_mty 𝔄]. A type's [ty_bytes] is the
 [syn_bytes] of its syntactic type ([ty_bytes_syn]), since [ty_mty] and [ty_val] are
 determined by the syntactic type. The lemmas below split the bytes of a value along its
-layout: the two halves of a pair ([syn_bytes_pair]), the tag, the payload and the
-padding of a variant of a sum ([syn_bytes_sum]); and they characterize the bytes of a
-pointer ([syn_bytes_ptr]) and of an integer ([syn_bytes_int]). *)
+layout: the tag, the payload and the padding of a variant of a sum ([syn_bytes_sum]),
+the fields of a struct; and they characterize the bytes of a pointer ([syn_bytes_ptr])
+and of an integer ([syn_bytes_int]). *)
 
 Implicit Type 𝔄 𝔅: syn_type.
 
@@ -21,34 +21,6 @@ Proof. by rewrite /ty_bytes /syn_bytes -ty_mty_eq -ty_val_eq. Qed.
 
 Lemma syn_bytes_length {𝔄} (x: ~~𝔄) bs : syn_bytes x bs → length bs = syn_bsize 𝔄.
 Proof. intros (v & _ & Hd). by eapply decode_value_length. Qed.
-
-(** ** Pairs: the bytes of the first component, then those of the second one. *)
-Lemma syn_bytes_pair {𝔄 𝔅} (x: ~~𝔄) (y: ~~𝔅) bs :
-  syn_bytes (𝔄:=𝔄 * 𝔅) (x, y) bs ↔
-  ∃ bs1 bs2, bs = bs1 ++ bs2 ∧ syn_bytes x bs1 ∧ syn_bytes y bs2.
-Proof.
-  rewrite /syn_bytes. change (syn_mty (𝔄 * 𝔅)) with (seq_tuple [syn_mty 𝔄; syn_mty 𝔅]).
-  change (syn_val (𝔄:=𝔄 * 𝔅) (x, y)) with
-    (v₀ ← syn_val x; v₁ ← syn_val y; Some (VTuple [v₀; v₁])).
-  split.
-  - intros (v & Hv & Hd).
-    destruct (syn_val x) as [v1|] eqn:H1; [|done]. destruct (syn_val y) as [v2|] eqn:H2; [|done].
-    simpl in Hv. simplify_eq.
-    move: Hd. rewrite decode_seq_tuple seq_size_cons seq_size_cons seq_size_nil.
-    case_decide as Hlen; [|done]. rewrite /decode_seq.
-    destruct (decode_value (syn_mty 𝔄) _) as [w1|] eqn:Hd1; [|done]. simpl.
-    destruct (decode_value (syn_mty 𝔅) _) as [w2|] eqn:Hd2; [|done]. simpl.
-    intros [= <- <-]. exists (take (mty_size (syn_mty 𝔄)) bs), (drop (mty_size (syn_mty 𝔄)) bs).
-    split; [by rewrite take_drop|]. split; [by exists w1|]. exists w2. split; [done|].
-    rewrite take_ge in Hd2; [done|]. rewrite length_drop. lia.
-  - intros (bs1 & bs2 & -> & (v1 & H1 & Hd1) & (v2 & H2 & Hd2)).
-    exists (VTuple [v1; v2]). rewrite H1 H2. split; [done|].
-    have Hl1 := decode_value_length _ _ _ Hd1. have Hl2 := decode_value_length _ _ _ Hd2.
-    rewrite decode_seq_tuple seq_size_cons seq_size_cons seq_size_nil decide_True;
-      [|rewrite length_app; lia].
-    rewrite /decode_seq -Hl1 take_app_length drop_app_length Hd1 /= take_ge; [|lia].
-    by rewrite Hd2.
-Qed.
 
 (** ** Pointers *)
 Lemma syn_bytes_at_loc {𝔄} (x: ~~ (at_locₛ 𝔄)) bs :
@@ -179,10 +151,10 @@ represent the fancy value of [x] ([syn_fval x], where a cell [pcellₛ m] is its
 [syn_mty 𝔄] ([frepr]). For a value with a MiniRust value ([syn_val x = Some v]), and so
 for every value of a type without cells ([syn_nocell 𝔄]), these are the plain bytes of
 [syn_bytes] ([syn_fbytes_val], [syn_fbytes_nocell]). The lemmas below split fancy bytes
-along the layout, as those above do for plain bytes: pairs ([syn_fbytes_pair]) and sums
-([syn_fbytes_sum]; the tag and the padding are plain). *)
+along the layout, as those above do for plain bytes: structs ([syn_fbytes_struct]) and
+sums ([syn_fbytes_sum]; the tag and the padding are plain). *)
 
-(** ** Representations at the MiniRust types of products and sums *)
+(** ** Representations at the MiniRust types of tuples and enums *)
 Section frepr_layout.
   Implicit Types (fbs : list (positive + AbstractByte)) (R : gmap positive (mty * list positive)).
 
@@ -344,20 +316,6 @@ Proof.
   move: 𝔄 x v. fix FIX 1. move=> 𝔄 x v. destruct 𝔄; simpl;
     try (clear FIX; intros H; first [by rewrite H|destruct x; by simplify_eq/=
       |case_decide; by simplify_eq/=|by simplify_eq/=]).
-  - destruct x as [x₀ x₁].
-    destruct (syn_val x₀) as [v₀|] eqn:H₀; [|done]. destruct (syn_val x₁) as [v₁|] eqn:H₁; [|done].
-    simpl. intros [= <-]. by rewrite (FIX _ _ _ H₀) (FIX _ _ _ H₁).
-  - intros (vs & Hvs & ->)%fmap_Some_1.
-    assert (∀ vs, mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) x)) = Some vs →
-      mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) x)) = Some (map fv_lift vs)) as Hall.
-    { clear Hvs vs. induction l as [|𝔄 l IH]; intros vs.
-      { simpl. by intros [= <-]. }
-      destruct x as [x xl]. simpl.
-      destruct (syn_val x) as [w|] eqn:Hw; [|done]. simpl.
-      destruct (mapM id (plist_to_list (pmap (λ _ x0, syn_val x0) xl))) as [ws|] eqn:Hws;
-        [|done].
-      simpl. intros [= <-]. by rewrite (FIX _ _ _ Hw) (IH xl ws Hws). }
-    clear FIX. by rewrite (Hall vs Hvs).
   - assert (∀ (i: fin (length l)) (x0 : ~~ (l !!ₗ i)) w,
       syn_val x0 = Some w → syn_fval x0 = Some (fv_lift w)) as Hall.
     { clear x. induction l as [|𝔄0 l IH]; intros i; [inv_fin i|].
@@ -422,31 +380,6 @@ Proof.
   - intros (bs & _ & (v & Hv' & _)). congruence.
 Qed.
 
-(** *** Pairs *)
-Lemma syn_fbytes_pair {𝔄 𝔅} R (x: ~~𝔄) (y: ~~𝔅) fbs :
-  syn_fbytes (𝔄:=𝔄 * 𝔅) R (x, y) fbs ↔
-  ∃ fbs1 fbs2, fbs = fbs1 ++ fbs2 ∧ syn_fbytes R x fbs1 ∧ syn_fbytes R y fbs2.
-Proof.
-  rewrite /syn_fbytes /syn_bsize. change (syn_mty (𝔄 * 𝔅)) with (seq_tuple [syn_mty 𝔄; syn_mty 𝔅]).
-  change (syn_fval (𝔄:=𝔄 * 𝔅) (x, y)) with
-    (fv₀ ← syn_fval x; fv₁ ← syn_fval y; Some (FVTuple [fv₀; fv₁])).
-  rewrite mty_size_seq_tuple !seq_size_cons seq_size_nil.
-  split.
-  - intros (Hlen & fv & Hfv & Hrep).
-    destruct (syn_fval x) as [fv₀|] eqn:H₀; [|done]. destruct (syn_fval y) as [fv₁|] eqn:H₁; [|done].
-    simpl in Hfv. injection Hfv as <-.
-    apply frepr_seq_tuple_cons in Hrep as (fbs1 & fbs' & -> & Hl1 & Hr1 & Hrep).
-    apply frepr_seq_tuple_cons in Hrep as (fbs2 & fbs3 & -> & Hl2 & Hr2 & Hrep).
-    apply frepr_seq_tuple_nil in Hrep as [-> _].
-    exists fbs1, fbs2. rewrite app_nil_r. split; [done|].
-    split; split; [done| |done|]; eauto.
-  - intros (fbs1 & fbs2 & -> & (Hl1 & fv₀ & H₀ & Hr1) & (Hl2 & fv₁ & H₁ & Hr2)).
-    split; [rewrite length_app; lia|]. rewrite H₀ H₁ /=. eexists. split; [done|].
-    apply frepr_seq_tuple_cons. exists fbs1, fbs2. split_and!; [done|done|done|].
-    apply frepr_seq_tuple_cons. exists fbs2, []. rewrite app_nil_r. split_and!; [done|done|done|].
-    by apply frepr_seq_tuple_nil.
-Qed.
-
 (** *** Sums: the tag and the padding are plain bytes. *)
 Lemma syn_fbytes_sum {𝔄l} R (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) fbs :
   syn_fbytes (𝔄:=Σ! 𝔄l) R (pinj i y) fbs ↔
@@ -495,7 +428,7 @@ Proof.
       rewrite list_lookup_fmap in Hj. destruct (bq !! _); simplify_eq/=. by eexists.
 Qed.
 
-(** *** Zero-sized values, uninitialized bytes, tuples *)
+(** *** Zero-sized values, uninitialized bytes *)
 Lemma syn_fbytes_zst {𝔄} R (x: ~~𝔄) fbs :
   syn_mty 𝔄 = zst_mty → syn_fval x = Some (FVTuple []) → syn_fbytes R x fbs ↔ fbs = [].
 Proof.
@@ -521,81 +454,7 @@ Proof.
       destruct (bs !! i); simplify_eq/=. by eexists.
 Qed.
 
-Lemma syn_bsize_prod 𝔄 𝔅 : syn_bsize (𝔄 * 𝔅) = (syn_bsize 𝔄 + syn_bsize 𝔅)%nat.
-Proof.
-  rewrite /syn_bsize. change (syn_mty (𝔄 * 𝔅)) with (seq_tuple [syn_mty 𝔄; syn_mty 𝔅]).
-  rewrite mty_size_seq_tuple !seq_size_cons seq_size_nil. lia.
-Qed.
-
-Lemma syn_bsize_xprod_cons 𝔄 𝔄l :
-  syn_bsize (Π! (𝔄 :: 𝔄l)) = (syn_bsize 𝔄 + syn_bsize (Π! 𝔄l))%nat.
-Proof.
-  rewrite /syn_bsize.
-  change (syn_mty (Π! (𝔄 :: 𝔄l))) with (seq_tuple (syn_mty 𝔄 :: (syn_mty <$> 𝔄l))).
-  change (syn_mty (Π! 𝔄l)) with (seq_tuple (syn_mty <$> 𝔄l)).
-  by rewrite !mty_size_seq_tuple seq_size_cons.
-Qed.
-
-Lemma syn_fbytes_xprod_nil R (x: ~~(Π! [])) fbs : syn_fbytes R x fbs ↔ fbs = [].
-Proof. by apply syn_fbytes_zst. Qed.
-
-Lemma syn_fbytes_xprod_cons {𝔄 𝔄l} R (x: ~~𝔄) (xl: ~~(Π! 𝔄l)) fbs :
-  syn_fbytes (𝔄:=Π! (𝔄 :: 𝔄l)) R (x -:: xl) fbs ↔
-  ∃ fbs1 fbs2, fbs = fbs1 ++ fbs2 ∧ syn_fbytes R x fbs1 ∧ syn_fbytes R xl fbs2.
-Proof.
-  rewrite /syn_fbytes syn_bsize_xprod_cons.
-  change (syn_mty (Π! (𝔄 :: 𝔄l))) with (seq_tuple (syn_mty 𝔄 :: (syn_mty <$> 𝔄l))).
-  change (syn_mty (Π! 𝔄l)) with (seq_tuple (syn_mty <$> 𝔄l)).
-  change (syn_fval (𝔄:=Π! (𝔄 :: 𝔄l)) (x -:: xl)) with
-    (FVTuple <$> mapM id (syn_fval x :: plist_to_list (pmap (λ _ x0, syn_fval x0) xl))).
-  change (syn_fval (𝔄:=Π! 𝔄l) xl) with
-    (FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) xl))).
-  generalize (plist_to_list (pmap (λ _ x0, syn_fval x0) xl)) => ol.
-  rewrite /= /syn_bsize. split.
-  - intros (Hlen & fv & Hfv & Hrep).
-    destruct (syn_fval x) as [fv₀|] eqn:H₀; [|done]. simpl in Hfv.
-    destruct (mapM id ol) as [fvs|] eqn:H₁; [|done]. simpl in Hfv. injection Hfv as <-.
-    apply frepr_seq_tuple_cons in Hrep as (fbs1 & fbs2 & -> & Hl1 & Hr1 & Hr2).
-    exists fbs1, fbs2. split; [done|]. rewrite length_app in Hlen.
-    split; [split; [done|eauto]|]. split; [lia|]. eexists. split; [done|]. done.
-  - intros (fbs1 & fbs2 & -> & (Hl1 & fv₀ & H₀ & Hr1) & (Hl2 & fv₁ & H₁ & Hr2)).
-    destruct (mapM id ol) as [fvs|] eqn:H₁'; [|done]. simpl in H₁. injection H₁ as <-.
-    split; [rewrite length_app; lia|]. exists (FVTuple (fv₀ :: fvs)). split.
-    { apply fmap_Some. exists (fv₀ :: fvs). split; [|done]. by rewrite H₀. }
-    apply frepr_seq_tuple_cons. by exists fbs1, fbs2.
-Qed.
-
 (** ** The cells of syntactic values ([mcells], [typing/gcont.v]) *)
-
-Lemma mcells_pair {𝔄 𝔅} (x: ~~𝔄) (y: ~~𝔅) fv :
-  syn_fval (𝔄:=𝔄 * 𝔅) (x, y) = Some fv → ∃ fv₀ fv₁, syn_fval x = Some fv₀ ∧ syn_fval y = Some fv₁ ∧
-  mcells (syn_mty (𝔄 * 𝔅)) fv = mcells (syn_mty 𝔄) fv₀ ++ mshift (syn_bsize 𝔄) (mcells (syn_mty 𝔅) fv₁).
-Proof.
-  change (syn_fval (𝔄:=𝔄 * 𝔅) (x, y)) with
-    (fv₀ ← syn_fval x; fv₁ ← syn_fval y; Some (FVTuple [fv₀; fv₁])).
-  destruct (syn_fval x) as [fv₀|]; [|done]. destruct (syn_fval y) as [fv₁|]; [|done].
-  simpl. intros [= <-]. exists fv₀, fv₁. split_and!; [done|done|].
-  change (syn_mty (𝔄 * 𝔅)) with (seq_tuple [syn_mty 𝔄; syn_mty 𝔅]).
-  rewrite !mcells_seq_tuple_cons mcells_seq_tuple_nil /mshift /= app_nil_r. done.
-Qed.
-
-Lemma mcells_xprod_cons {𝔄 𝔄l} (x: ~~𝔄) (xl: ~~(Π! 𝔄l)) fv :
-  syn_fval (𝔄:=Π! (𝔄 :: 𝔄l)) (x -:: xl) = Some fv → ∃ fv₀ fv₁, syn_fval x = Some fv₀ ∧
-  syn_fval xl = Some fv₁ ∧
-  mcells (syn_mty (Π! (𝔄 :: 𝔄l))) fv =
-    mcells (syn_mty 𝔄) fv₀ ++ mshift (syn_bsize 𝔄) (mcells (syn_mty (Π! 𝔄l)) fv₁).
-Proof.
-  change (syn_mty (Π! (𝔄 :: 𝔄l))) with (seq_tuple (syn_mty 𝔄 :: (syn_mty <$> 𝔄l))).
-  change (syn_mty (Π! 𝔄l)) with (seq_tuple (syn_mty <$> 𝔄l)).
-  change (syn_fval (𝔄:=Π! (𝔄 :: 𝔄l)) (x -:: xl)) with
-    (FVTuple <$> mapM id (syn_fval x :: plist_to_list (pmap (λ _ x0, syn_fval x0) xl))).
-  change (syn_fval (𝔄:=Π! 𝔄l) xl) with
-    (FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) xl))).
-  generalize (plist_to_list (pmap (λ _ x0, syn_fval x0) xl)) => ol.
-  destruct (syn_fval x) as [fv₀|]; [|done]. simpl.
-  destruct (mapM id ol) as [fvs|]; [|done]. simpl. intros [= <-].
-  exists fv₀, (FVTuple fvs). split_and!; [done|done|]. by rewrite mcells_seq_tuple_cons.
-Qed.
 
 Lemma mcells_sum {𝔄l} (i: fin (length 𝔄l)) (y: ~~(𝔄l !!ₗ i)) fv :
   syn_fval (𝔄:=Σ! 𝔄l) (pinj i y) = Some fv → ∃ fv', syn_fval y = Some fv' ∧
@@ -613,74 +472,6 @@ Qed.
 
 Lemma syn_bincl_at_loc_map {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : syn_bincl (at_loc_mapₛ f).
 Proof. apply syn_bincl_same; [done|]. by intros [??]. Qed.
-
-Lemma syn_bincl_prod_map {𝔄 𝔅 𝔄' 𝔅'} (f: 𝔄 →ₛ 𝔄') (g: 𝔅 →ₛ 𝔅') :
-  syn_bincl f → syn_bincl g → syn_bincl (prod_mapₛ f g).
-Proof.
-  intros [Hs [Hf Hcf]] [Hs' [Hg Hcg]]. split; [rewrite !syn_bsize_prod; lia|]. split.
-  - intros [x y] R fbs. rewrite /= !syn_fbytes_pair.
-    setoid_rewrite (Hf x). by setoid_rewrite (Hg y).
-  - intros [x y] R fbs fv fv' Hb Hx Hx'.
-    apply syn_fbytes_pair in Hb as (fbs1 & fbs2 & _ & Hb1 & Hb2).
-    destruct (mcells_pair x y fv Hx) as (fx & fy & Hfx & Hfy & ->).
-    destruct (mcells_pair (f ~~$ₛ x) (g ~~$ₛ y) fv' Hx') as (fx' & fy' & Hfx' & Hfy' & ->).
-    rewrite (Hcf x R fbs1 fx fx') // (Hcg y R fbs2 fy fy') // Hs. done.
-Qed.
-
-Lemma syn_bincl_to_cons_prod {𝔄 𝔅l} : syn_bincl (to_cons_prodₛ (𝔄:=𝔄) (𝔅l:=𝔅l)).
-Proof.
-  split; [by rewrite syn_bsize_prod syn_bsize_xprod_cons|]. split.
-  - intros [x xl] R fbs. by rewrite syn_fbytes_pair /= syn_fbytes_xprod_cons.
-  - intros [x xl] R fbs fv fv' _ Hx Hx'.
-    destruct (mcells_pair x xl fv Hx) as (fx & fy & Hfx & Hfy & ->).
-    destruct (mcells_xprod_cons x xl fv' Hx') as (fx' & fy' & Hfx' & Hfy' & ->).
-    rewrite Hfx in Hfx'. rewrite Hfy in Hfy'. by simplify_eq.
-Qed.
-
-Global Instance isoₛ_cons_prod {𝔄 𝔅l} :
-  @Isoₛ (𝔄 * Π! 𝔅l) (Π! (𝔄 :: 𝔅l)) to_cons_prodₛ of_cons_prodₛ.
-Proof.
-  split; [apply _|apply _|apply syn_bytes_pres_to_cons_prod|apply syn_bincl_to_cons_prod].
-Qed.
-
-Lemma syn_bincl_of_cons_prod {𝔄 𝔅l} : syn_bincl (of_cons_prodₛ (𝔄:=𝔄) (𝔅l:=𝔅l)).
-Proof. apply (syn_bincl_iso to_cons_prodₛ), _. Qed.
-
-Lemma syn_bincl_prod_left_id {𝔄} : syn_bincl (prod_left_idₛ (𝔄:=𝔄)).
-Proof.
-  split; [by rewrite syn_bsize_prod|]. split; last first.
-  { intros [[] x] R fbs fv fv' _ Hx Hx'.
-    destruct (mcells_pair (𝔄:=()) (𝔅:=𝔄) () x fv Hx) as (fu & fx & Hfu & Hfx & ->).
-    simpl in Hx'. rewrite Hfx in Hx'. injection Hx' as <-. simpl in Hfu. injection Hfu as <-.
-    rewrite /= mshift_0. done. }
-  intros [[] x] R fbs. rewrite /= syn_fbytes_pair.
-  split.
-  - intros (f1 & f2 & -> & H1 & H2). by apply syn_fbytes_zst in H1 as ->.
-  - intros H. exists [], fbs. split; [done|]. split; [by apply syn_fbytes_zst|done].
-Qed.
-
-Lemma syn_bincl_prod_right_id {𝔄} : syn_bincl (prod_right_idₛ (𝔄:=𝔄)).
-Proof.
-  split; [rewrite syn_bsize_prod; change (syn_bsize ()) with 0%nat; lia|]. split; last first.
-  { intros [x []] R fbs fv fv' _ Hx Hx'.
-    destruct (mcells_pair (𝔄:=𝔄) (𝔅:=()) x () fv Hx) as (fx & fu & Hfx & Hfu & ->).
-    simpl in Hx'. rewrite Hfx in Hx'. injection Hx' as <-. simpl in Hfu. injection Hfu as <-.
-    by rewrite /= app_nil_r. }
-  intros [x []] R fbs. rewrite /= syn_fbytes_pair.
-  split.
-  - intros (f1 & f2 & -> & H1 & H2). apply syn_fbytes_zst in H2 as ->; [|done..].
-    by rewrite app_nil_r.
-  - intros H. exists fbs, []. rewrite app_nil_r. split; [done|].
-    split; [done|by apply syn_fbytes_zst].
-Qed.
-
-Global Instance Isoₛ_prod_left_id {𝔄} : @Isoₛ (() * 𝔄) 𝔄 prod_left_idₛ prod_left_id'ₛ.
-Proof. split; [apply _|apply _|apply syn_bytes_pres_prod_left_id|apply syn_bincl_prod_left_id]. Qed.
-
-Global Instance Isoₛ_prod_right_id {𝔄} : @Isoₛ (𝔄 * ()) 𝔄 prod_right_idₛ prod_right_id'ₛ.
-Proof.
-  split; [apply _|apply _|apply syn_bytes_pres_prod_right_id|apply syn_bincl_prod_right_id].
-Qed.
 
 
 (** * Structs: the layout of [structₛ L 𝔄l] is [struct_lay L (syn_mty <$> 𝔄l)] *)
@@ -901,3 +692,6 @@ Proof.
     rewrite !syn_mty_struct /struct_fields -Hoffs -Hsz -Hlay.
     by eapply fields_mcells_map.
 Qed.
+
+Lemma syn_bincl_struct_relay {𝔄l} L L' : L = L' → syn_bincl (struct_relayₛ (𝔄l:=𝔄l) L L').
+Proof. intros <-. apply syn_bincl_same; [done|]. by intros ?. Qed.

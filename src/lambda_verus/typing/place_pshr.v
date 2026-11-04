@@ -24,7 +24,7 @@
   - Phase 2 (the shared part [K2]): the _shared view_ ([shr_view]: a guard of the bytes,
     the sharing predicate and the persistent predicate, i.e. the ownership of [&shrb]
     without its laters) is pushed through [K2] ([shr_pctx_view]): fields split the guard of
-    the bytes ([cbytes_pair]), a sum at its variant gives the guard of its payload
+    the bytes ([bytes_own_struct]), a sum at its variant gives the guard of its payload
     ([cbytes_sum]), an owned pointer steps into its pointee, a unique borrow at [κ']
     continues at [κ ⊓ κ'] and a shared reference at [κ'] at [κ'] ([pctx_slft]). The
     pointers on the path are loaded with guarded typed loads of [MPtr]
@@ -57,7 +57,7 @@ From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bor.
-From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own bytes_layout value_ctx product freeable_util sum place_shr place_resolve place_puniq place_sum place_deep.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own bytes_layout value_ctx unit freeable_util sum place_shr place_resolve place_puniq place_sum place_deep.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.

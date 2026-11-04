@@ -1,4 +1,4 @@
-From lrust.typing Require Export type tracked product own shr_bor uniq_bor value_ctx.
+From lrust.typing Require Export type tracked unit own shr_bor uniq_bor value_ctx.
 From lrust.typing Require Import uniq_util type_context programs ghost.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.

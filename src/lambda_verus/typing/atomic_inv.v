@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import type_context programs programs_util_atomic ghost tracked value_ctx shr_bor product.
+From lrust.typing Require Import type_context programs programs_util_atomic ghost tracked value_ctx shr_bor unit.
 From lrust.util Require Import atomic_lock_counter.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full.

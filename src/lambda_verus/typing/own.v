@@ -20,7 +20,7 @@ contents of the cell. A value of a type without cells ([NoCell]), or with a Mini
 owns plain bytes [l ↦b bs] with [ty_bytes ty x bs] ([bytes_own_nocell],
 [bytes_own_to_bytes]); the fancy bytes of any value can be turned into plain bytes by
 dropping its cells ([bytes_own_forget], which needs the registry of the cells). The fancy
-bytes split along the layout of pairs ([bytes_own_pair]).
+bytes split along the layout of structs ([bytes_own_struct]).
 
 The pointee is read and written with the typed [Load] and [Store] of [ty_mty ty]:
 [wp_own_bytes_load], [wp_own_bytes_store], [wp_own_bytes_new] and
@@ -452,24 +452,6 @@ Section own_bytes.
     - iIntros "[(%fvs & %Hfvs & Cs) Pad]". iExists (FVTuple fvs). rewrite Hfvs.
       iSplit; [done|]. rewrite gcont_tuple //; [by iFrame|].
       rewrite Hlf. apply mapM_Some, Forall2_length in Hfvs. by rewrite -Hfvs length_plist_to_list.
-  Qed.
-
-  (** The fancy bytes of a pair: those of its components, one after the other. *)
-  Lemma bytes_own_pair {𝔄 𝔅} (ty: type (𝔄 * 𝔅)) (ty1: type 𝔄) (ty2: type 𝔅) l x1 x2 :
-    bytes_own ty l (x1, x2) ⊣⊢ bytes_own ty1 l x1 ∗ bytes_own ty2 (l +ₗ ty_bsize ty1) x2.
-  Proof.
-    rewrite bytes_own_unseal /bytes_own_def -!ty_fval_eq -!ty_mty_eq /ty_bsize -ty_mty_eq.
-    change (syn_mty (𝔄 * 𝔅)) with (seq_tuple [syn_mty 𝔄; syn_mty 𝔅]).
-    change (syn_fval (𝔄:=𝔄 * 𝔅) (x1, x2)) with
-      (fv₀ ← syn_fval x1; fv₁ ← syn_fval x2; Some (FVTuple [fv₀; fv₁])). iSplit.
-    - iIntros "(%fv & %Hfv & C)".
-      destruct (syn_fval x1) as [fv₀|]; [|done]. destruct (syn_fval x2) as [fv₁|]; [|done].
-      simpl in Hfv. injection Hfv as <-.
-      rewrite !gcont_seq_tuple_cons gcont_seq_tuple_nil right_id.
-      iDestruct "C" as "[C1 C2]". iSplitL "C1"; iExists _; by iFrame.
-    - iIntros "[(%fv₀ & %H₀ & C1) (%fv₁ & %H₁ & C2)]". rewrite H₀ H₁ /=.
-      iExists _. iSplit; [done|].
-      rewrite !gcont_seq_tuple_cons gcont_seq_tuple_nil right_id. iFrame.
   Qed.
 
   (** Zero-sized values: their fancy bytes are empty. *)

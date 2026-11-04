@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product uninit value_ctx own uniq_util uniq_bor place_own place_puniq place_resolve place_read place_write.
+From lrust.typing Require Export type programs cont int unit uninit value_ctx own uniq_util uniq_bor place_own place_puniq place_resolve place_read place_write.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -137,7 +137,7 @@ Section place_own.
   The body of [box_pair] of the deleted legacy example [place_own.v] (with [&mut *b.0] instead of
   [&mut b.0] and a double dereference), on bytes: the inner box is unfolded in place
   ([tctx_unfold_oplace_own]) and its pointee borrowed through it (the path
-  [PFst (POwn 4 PHole) _] loads the address of the inner box); the move out of [b.0] is
+  [PField BL +[] (POwn 4 PHole) +[_]] loads the address of the inner box); the move out of [b.0] is
   a typed [Load] of [MPtr] ([!ᵐ{MPtr}], [type_move_place_instr]), which leaves the moved-out leaf
   [Moved (own_bytes 4 i32t)]; the re-assignment a typed [Store], which re-initializes it
   ([pctx_wty_moved]). *)

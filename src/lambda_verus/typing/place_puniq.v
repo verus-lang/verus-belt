@@ -33,7 +33,7 @@ From iris.base_logic.lib Require Import ghost_var.
 From lrust.lang Require Import proofmode.
 From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own.
 From lrust.lang.lib Require Import new_delete.
-From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own shr_bor bytes_layout value_ctx product freeable_util place_shr place_resolve.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own shr_bor bytes_layout value_ctx unit freeable_util place_shr place_resolve.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
