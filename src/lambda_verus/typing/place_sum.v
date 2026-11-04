@@ -5,7 +5,7 @@
   variant [i] of its value and, in branch [i], unfolds the leaf into a _sum place_ at
   variant [i], [SumLty EL tyl i (OfTy (tyl +!! i))] (whose payload is the leaf of the
   variant; the specification of the branch knows the variant). The payload is reached
-  by the context step [PSum EL tyl i w K] (offset 1, [lpath.v]), so that the general rules
+  by the context step [PSum EL tyl i w K] (at [enum_off EL 𝔄l i], [lpath.v]), so that the general rules
   for unfolding, reborrowing, shared borrows, reading, writing and unblocking leaves,
   and for dropping a place while its leaves are blocked, apply to the payload and its
   subplaces. A sum place is folded back unconditionally ([tctx_fold_oplace_sum]). A leaf
@@ -110,11 +110,11 @@ Section typing.
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         iFrame; by iPureIntro. }
     iIntros (w) "(-> & _ & _ & Rest)".
-    (* Read the discriminant ([GetDiscr] reads the tag). *)
-    iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Rest & Pay)".
-    iDestruct "Tag" as (bt) "[Bt %Hbt]".
+    (* Read the discriminant ([GetDiscr] reads the rest of the bytes). *)
+    iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(ERest & Pay)".
+    iDestruct "ERest" as (b1 b2) "(B1 & B2 & %Hr)".
     wp_bind (GetDiscr _ _).
-    iApply (wp_get_discr_sum with "Bt"); [exact Hbt|apply fin_to_nat_lt|]. iIntros "Bt".
+    iApply (wp_get_discr_enum with "B1 B2"); [exact Hr|]. iIntros "B1 B2".
     wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
     iDestruct (big_sepN_lookup _ _ j with "el") as "el".
     iApply ("el" $! _ (((l, x₀), ζm) -:: xl)

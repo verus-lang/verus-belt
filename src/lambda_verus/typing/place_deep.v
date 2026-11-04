@@ -174,7 +174,7 @@ Section sum_deep.
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_ulft K (OfTy (enum_ty EL tyl))])%I as "#Hu".
     { iApply (guards_transitive with "Ghalf Alv"). }
     set lt' := SumLty EL tyl j (OfTy (tyl +!! j)).
-    set r' := (prfn_sum j (inl (PlaceIn a)) : prfn (xsumₛ 𝔄l)).
+    set r' := (prfn_sum j (inl (PlaceIn a)) : prfn (enumₛ EL 𝔄l)).
     iDestruct (lc_weaken (pctx_vacc_cred K D + 1) with "£") as "[£a £1]";
       [have := pctx_vacc_cred_le K D; rewrite /advance_credits; nia|].
     iMod (vroot_acc K (OfTy (enum_ty EL tyl)) with "LFT PROPH UNIQ Hu H1 £a Own")
@@ -212,10 +212,10 @@ Section sum_deep.
       iMod (uniq_body_acc with "LFT UNIQ Aκ Body A") as "(Pl & ⧗1 & CloseB)"; [solve_ndisj|].
       iMod (lc_fupd_elim_later with "£1 Pl") as "Pl".
       iMod (uniq_payload_run with "Aty B Pl") as "(B & #⧖' & Gho1 & Pt1)"; [solve_ndisj|].
-      iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Rest & Pay)".
-      iDestruct "Tag" as (bt) "[Bt %Hbt]".
-      iApply (wp_get_discr_sum with "Bt"); [exact Hbt|apply fin_to_nat_lt|]. iIntros "Bt".
-      iSpecialize ("CloseB" $! (pinj j a) dh gh with "[Bt Pay Pad Gho1] ⧗1").
+      iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(ERest & Pay)".
+      iDestruct "ERest" as (b1 b2) "(B1 & B2 & %Hr)".
+      iApply (wp_get_discr_enum with "B1 B2"); [exact Hr|]. iIntros "B1 B2".
+      iSpecialize ("CloseB" $! (pinj j a) dh gh with "[B1 B2 Pay Gho1] ⧗1").
       { iNext. iFrame "⧖' Gho1". rewrite (cbytes_sum _ j (tyl +!! j)). by iFrame. }
       iMod (fupd_mask_mono with "CloseB") as "[Body A]"; [solve_ndisj|].
       iMod (fupd_mask_mono with "(Back2 A B)") as "G'"; [solve_ndisj|].
@@ -249,11 +249,11 @@ Section sum_deep.
       iEval (rewrite /pctx_vcloser (pctx_kind_owned K) //) in "Cl".
       set mh := pctx_hmode K 0.
       iDestruct "H" as (? ->) "[Pt1 Gho1]". rewrite ?Hy.
-      iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Rest & Pay)".
-      iDestruct "Tag" as (bt) "[Bt %Hbt]".
-      iApply (wp_get_discr_sum with "Bt"); [exact Hbt|apply fin_to_nat_lt|]. iIntros "Bt".
+      iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(ERest & Pay)".
+      iDestruct "ERest" as (b1 b2) "(B1 & B2 & %Hr)".
+      iApply (wp_get_discr_enum with "B1 B2"); [exact Hr|]. iIntros "B1 B2".
       iMod ("Cl" $! lt' r' dh gh D [] 1%Qp True%I
-        with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [Bt Pay Pad Gho1]") as "(Own & H1 & _)".
+        with "[//] [//] [//] [%] [%] [] ⧖ G' P [] [B1 B2 Pay Gho1]") as "(Own & H1 & _)".
       { exact Hr'. }
       { lia. }
       { iRight. by iApply big_sepL_pat_ok_nil. }
