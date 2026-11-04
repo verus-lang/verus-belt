@@ -129,7 +129,6 @@ Fixpoint prfn_struct (𝔄: syn_type) : Type :=
   match 𝔄 with
   | uniq_borₛ 𝔅 => loc * (place_rfn 𝔅 + prfn_struct 𝔅) * positive
   | at_locₛ 𝔅 => loc * (place_rfn 𝔅 + prfn_struct 𝔅)
-  | prodₛ 𝔅 ℭ => (place_rfn 𝔅 + prfn_struct 𝔅) * (place_rfn ℭ + prfn_struct ℭ)
   (* A sum at a fixed variant: the refinement of the payload. *)
   | xsumₛ 𝔅l => psum (λ 𝔅, place_rfn 𝔅 + prfn_struct 𝔅) 𝔅l
   (* A struct: the refinements of the fields. *)
@@ -163,10 +162,6 @@ Fixpoint prfn_wit {𝔄} : prfn 𝔄 → ~~𝔄 :=
       | inl lr => place_rfn_wit lr
       | inr (l', r') => (l', prfn_wit r')
       end
-  | prodₛ 𝔅 ℭ => λ r, match r with
-      | inl lr => place_rfn_wit lr
-      | inr (r1, r2) => (prfn_wit r1, prfn_wit r2)
-      end
   | xsumₛ 𝔅l => λ r, match r with
       | inl lr => place_rfn_wit lr
       | inr s => psum_map1 (λ _ r', prfn_wit r') s
@@ -188,10 +183,6 @@ Fixpoint prfn_den {𝔄} : prfn 𝔄 → proph 𝔄 :=
   | at_locₛ 𝔅 => λ r, match r with
       | inl lr => place_rfn_den lr
       | inr (l', r') => λ π, (l', prfn_den r' π)
-      end
-  | prodₛ 𝔅 ℭ => λ r, match r with
-      | inl lr => place_rfn_den lr
-      | inr (r1, r2) => λ π, (prfn_den r1 π, prfn_den r2 π)
       end
   | xsumₛ 𝔅l => λ r, match r with
       | inl lr => place_rfn_den lr
@@ -247,10 +238,6 @@ Fixpoint prfn_rsv {𝔄} : prfn 𝔄 → list proph_var → Prop :=
       | inl lr => place_rfn_rsv lr ζl
       | inr (_, r') => prfn_rsv r' ζl
       end
-  | prodₛ 𝔅 ℭ => λ r ζl, match r with
-      | inl lr => place_rfn_rsv lr ζl
-      | inr (r1, r2) => prfn_rsv r1 ζl ∧ prfn_rsv r2 ζl
-      end
   | xsumₛ 𝔅l => λ r ζl, match r with
       | inl lr => place_rfn_rsv lr ζl
       | inr s => psum_all (λ _ r', prfn_rsv r' ζl) s
@@ -285,7 +272,6 @@ Proof.
   { move=> ? [?|??] /=; [done|]. by apply proph_dep_weaken. }
   move: 𝔄 r. fix FIX 1. move=> 𝔄 r.
   destruct 𝔄; destruct r as [lr|r]; simpl; try apply Hl; try (destruct r; fail).
-  - destruct r as [r1 r2]. move=> [??]. split; by apply FIX.
   - move: r. elim: l=> [|𝔅 𝔅l IH] s /=; [by destruct s|].
     destruct s as [r'|s']; [by apply FIX|by apply IH].
   - destruct r as [l' r']. apply FIX.
@@ -375,7 +361,6 @@ Inductive lpat :=
 | PatBlocked (α: lft)
 | PatUniq (p: lpat)
 | PatOwn (p: lpat)
-| PatProd (p1 p2: lpat)
 (* A struct, with the patterns of its fields, see [StructLty] in [typing/ltype.v]. *)
 | PatStruct (ps: list lpat)
 (* A shared-blocked leaf: shared at [α] (its value does not change), see
@@ -388,8 +373,6 @@ Global Instance lpat_inhabited : Inhabited lpat := populate PatLeaf.
 
 Definition pat_uniq (p: lpat) : lpat := match p with PatUniq p' => p' | _ => PatLeaf end.
 Definition pat_own (p: lpat) : lpat := match p with PatOwn p' => p' | _ => PatLeaf end.
-Definition pat_l (p: lpat) : lpat := match p with PatProd p1 _ => p1 | _ => PatLeaf end.
-Definition pat_r (p: lpat) : lpat := match p with PatProd _ p2 => p2 | _ => PatLeaf end.
 Definition pat_sum (p: lpat) : lpat := match p with PatSum p' => p' | _ => PatLeaf end.
 (** The patterns of the fields of a struct (missing ones are [PatLeaf]). *)
 Definition pat_struct (p: lpat) : list lpat :=
@@ -407,7 +390,6 @@ Fixpoint pat_blk_lfts (p: lpat) : list lft :=
   | PatUniq p' => pat_blk_lfts p'
   | PatBlocked α => [α]
   | PatOwn p' => pat_blk_lfts p'
-  | PatProd p1 p2 => pat_blk_lfts p1 ++ pat_blk_lfts p2
   | PatStruct ps => (fix go ps := match ps with [] => [] | p :: ps => pat_blk_lfts p ++ go ps end) ps
   | PatSum p' => pat_blk_lfts p'
   | PatShrBlocked α => [α]

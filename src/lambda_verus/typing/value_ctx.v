@@ -1,5 +1,5 @@
 From lrust.typing Require Export type type_context bytes_layout.
-From lrust.typing Require Import programs bool int own product struct sum gmb_cells.
+From lrust.typing Require Import programs bool int own unit struct sum gmb_cells.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -13,10 +13,9 @@ fancy value [ty_fval x], whose cells (GMB instances, [typing/gmb_cells.v]) are i
 with it ([val_cells]), and a [Store] of [w] puts them back at the new location. For a type
 without cells ([NoCell]), or a value with a MiniRust value, this
 is the plain form [ty_val x = Some w] ([val_own_nocell], [val_own_val], [tctx_val_elim],
-[val_own_intro_sep]). The cells in transit of a tuple or a variant built from parts
-([MkTuple], [MkVariant]) are those of the parts ([val_cells_seq_tuple_cons],
-[val_cells_enum]; the rules [type_mk_pair_val_instr], [type_mk_tuple_val_instr],
-[type_mk_variant_val_instr]). It is a semantic element ([TCtx_sem]), so the type context
+[val_own_intro_sep]). The cells in transit of a struct or a variant built from parts
+([MkTuple], [MkVariant]) are those of the parts ([val_cells_tuple], [val_cells_enum]; the
+rules [type_mk_struct_val_instr], [type_mk_variant_val_instr]). It is a semantic element ([TCtx_sem]), so the type context
 needs no new case. (The legacy word element [p ◁ ty] was deleted in
 stage 6.)
 
@@ -138,41 +137,11 @@ End value_plain.
 
 (** * Values with cells built from parts
 
-The cells in transit of a tuple (laid out in sequence, [seq_tuple]) or of a variant are
-those of its parts: bytes that decode to the whole value split along its layout, and the
-closer of each part puts its cells back at the offset of the part. *)
+The cells in transit of a tuple or of a variant are those of its parts: bytes that decode
+to the whole value split along its layout, and the closer of each part puts its cells back
+at the offset of the part. *)
 Section value_parts.
   Context `{!typeG Σ}.
-
-  Lemma val_cells_seq_tuple_nil : ⊢ val_cells (seq_tuple []) (FVTuple []) (VTuple []).
-  Proof. iApply (val_cells_intro _ (VTuple [])); [by apply seq_tuple_wf|by repeat constructor]. Qed.
-
-  Lemma val_cells_seq_tuple_cons m ms fv fvs w ws :
-    val_cells m fv w -∗ val_cells (seq_tuple ms) (FVTuple fvs) (VTuple ws) -∗
-    val_cells (seq_tuple (m :: ms)) (FVTuple (fv :: fvs)) (VTuple (w :: ws)).
-  Proof.
-    rewrite /val_cells /gtransit. iIntros "[[%Hw %Hl] Cl] [[%Hws %Hls] Cls]". iSplit.
-    - iPureIntro. split.
-      + inversion Hws as [| | |? ? ? ? Hall|]; simplify_eq. constructor.
-        apply (Forall2_layout_fields (λ m v, val_wf m v)). constructor; [done|].
-        by apply (Forall2_layout_fields (λ m v, val_wf m v)) in Hall.
-      + intros w0 Hw0. destruct (fv_lift_tuple_inv _ _ (eq_sym Hw0)) as (vs & -> & Hvs).
-        destruct vs as [|v0 vs]; [done|]. injection Hvs as -> Hvs.
-        have Hws' := Hls (VTuple vs) ltac:(by rewrite /= -Hvs). injection Hws' as ->.
-        by rewrite (Hl v0).
-    - iIntros (l' bs' Hd) "Hbs".
-      move: Hd. rewrite decode_seq_tuple. case_decide as Hlen; [|done].
-      intros (vs' & Hvs' & [= <-])%fmap_Some_1. simpl in Hvs'.
-      destruct (decode_value m (take (mty_size m) bs')) as [v1|] eqn:H1; [|done]. simpl in Hvs'.
-      destruct (decode_seq ms (drop (mty_size m) bs')) as [vs1|] eqn:H2; [|done].
-      simpl in Hvs'. injection Hvs' as -> ->. rewrite seq_size_cons in Hlen.
-      rewrite -{1}(take_drop (mty_size m) bs') heap_mapsto_bytes_app length_take Nat.min_l; [|lia].
-      iDestruct "Hbs" as "[H1 H2]".
-      iMod ("Cl" with "[//] H1") as "C1".
-      iMod ("Cls" with "[] H2") as "C2".
-      { iPureIntro. rewrite decode_seq_tuple length_drop decide_True; [|lia]. by rewrite H2. }
-      iModIntro. rewrite gcont_seq_tuple_cons. iFrame.
-  Qed.
 
   (** The cells in transit of a tuple (for any layout): those of its fields, which are put
       back at their offsets. *)
@@ -361,57 +330,6 @@ Section value_parts.
     - rewrite length_zip_with length_fmap. lia.
     - rewrite length_zip_with length_fmap. lia.
   Qed.
-
-  (** The value of a pair, from the values of its components. *)
-  Lemma val_own_pair {𝔄 𝔅} (ty1: type 𝔄) (ty2: type 𝔅) a b tid w1 w2 :
-    val_own ty1 a tid (MLitV w1) -∗ val_own ty2 b tid (MLitV w2) -∗
-    val_own (ty1 * ty2) (a, b) tid (MLitV (VTuple [w1; w2])).
-  Proof.
-    iIntros "(%w1' & %d1 & %fv1 & [%Hv1 %Hfv1] & Hc1 & ⧖1 & Gho1)
-      (%w2' & %d2 & %fv2 & [%Hv2 %Hfv2] & Hc2 & ⧖2 & Gho2)". injection Hv1 as <-. injection Hv2 as <-.
-    iExists _, (d1 `max` d2)%nat, (FVTuple [fv1; fv2]). iSplit.
-    { iPureIntro. split; [done|]. rewrite -!ty_fval_eq in Hfv1 Hfv2 |- *. by rewrite /= Hfv1 Hfv2. }
-    iCombine "⧖1 ⧖2" as "$". iSplitL "Hc1 Hc2".
-    - rewrite -!ty_mty_eq. change (syn_mty (𝔄 * 𝔅)) with (seq_tuple [syn_mty 𝔄; syn_mty 𝔅]).
-      iApply (val_cells_seq_tuple_cons with "Hc1").
-      iApply (val_cells_seq_tuple_cons with "Hc2"). iApply val_cells_seq_tuple_nil.
-    - iSplitL "Gho1".
-      + iDestruct (ty_gho_own_depth_mono _ d1 d1 (d1 `max` d2) (d1 `max` d2) with "Gho1") as "[$ _]"; lia.
-      + iDestruct (ty_gho_own_depth_mono _ d2 d2 (d1 `max` d2) (d1 `max` d2) with "Gho2") as "[$ _]"; lia.
-  Qed.
-
-  (** The value of a tuple [Π! (ty :: tyl)], from the value of its first component and the
-      tuple of the others. *)
-  Lemma val_own_xprod_nil tid : ⧖0 -∗ val_own (Π! +[]) -[] tid (MLitV (VTuple [])).
-  Proof.
-    iIntros "⧖". iExists (VTuple []), 0%nat, (FVTuple []). iSplit.
-    { iPureIntro. split; [done|]. by rewrite -ty_fval_eq. }
-    iFrame "⧖". rewrite -ty_mty_eq. iApply val_cells_seq_tuple_nil.
-  Qed.
-
-  Lemma val_own_xprod_cons {𝔄 𝔄l} (ty: type 𝔄) (tyl: typel 𝔄l) a al tid w ws :
-    val_own ty a tid (MLitV w) -∗ val_own (Π! tyl) al tid (MLitV (VTuple ws)) -∗
-    val_own (Π! (ty +:: tyl)) (a -:: al) tid (MLitV (VTuple (w :: ws))).
-  Proof.
-    iIntros "(%w1' & %d1 & %fv1 & [%Hv1 %Hfv1] & Hc1 & ⧖1 & Gho1)
-      (%w2' & %d2 & %fv2 & [%Hv2 %Hfv2] & Hc2 & ⧖2 & Gho2)". injection Hv1 as <-. injection Hv2 as <-.
-    rewrite -!ty_fval_eq in Hfv1 Hfv2. rewrite -!ty_mty_eq.
-    change (syn_mty (Π! 𝔄l)) with (seq_tuple (syn_mty <$> 𝔄l)) in *.
-    change (syn_fval (𝔄:=Π! 𝔄l) al) with
-      (FVTuple <$> mapM id (plist_to_list (pmap (λ _ x0, syn_fval x0) al))) in Hfv2.
-    destruct (mapM id _) as [fvs|] eqn:Hfvs; [|done]. injection Hfv2 as <-.
-    iExists _, (d1 `max` d2)%nat, (FVTuple (fv1 :: fvs)). iSplit.
-    { iPureIntro. split; [done|]. rewrite -ty_fval_eq.
-      change (syn_fval (𝔄:=Π! (𝔄 :: 𝔄l)) (a -:: al)) with
-        (FVTuple <$> mapM id (syn_fval a :: plist_to_list (pmap (λ _ x0, syn_fval x0) al))).
-      by rewrite /= Hfv1 Hfvs. }
-    iCombine "⧖1 ⧖2" as "$". iSplitL "Hc1 Hc2".
-    - change (syn_mty (Π! (𝔄 :: 𝔄l))) with (seq_tuple (syn_mty 𝔄 :: (syn_mty <$> 𝔄l))).
-      iApply (val_cells_seq_tuple_cons with "Hc1 Hc2").
-    - rewrite [ty_gho_own (Π! (ty +:: tyl))]/ty_gho_own /=. iSplitL "Gho1".
-      + iDestruct (ty_gho_own_depth_mono _ d1 d1 (d1 `max` d2) (d1 `max` d2) with "Gho1") as "[$ _]"; lia.
-      + iDestruct (ty_gho_own_depth_mono _ d2 d2 (d1 `max` d2) (d1 `max` d2) with "Gho2") as "[$ _]"; lia.
-  Qed.
 End value_parts.
 
 Section value_rules.
@@ -532,52 +450,6 @@ Section value_rules.
     move=> ->. iIntros (tid post mask iκs al) "_ _ _ _ _ $$ T Obs".
     iApply (wp_mk_struct_val _ _ [] with "T"). iIntros (ws) "Own".
     iMod (val_own_struct L with "Own") as "Own".
-    eapply (tac_wp_pure []); [apply (pure_mk_tuple ws)|done|tc_solve|simpl; iApply wp_value].
-    iExists -[al]. iFrame "Obs". iSplit; [|done]. iExists _. iSplit; [by rewrite eval_path_of_val|].
-    done.
-  Qed.
-
-  (** A pair value, from its components (which may contain cells). *)
-  Lemma type_mk_pair_val_instr {𝔄 𝔅} (ty1: type 𝔄) (ty2: type 𝔅) p1 p2 E L I :
-    typed_instr E L I +[p1 ◁ᵥ ty1; p2 ◁ᵥ ty2] (MkTuple [p1; p2]) (λ v, +[v ◁ᵥ ty1 * ty2])
-      (λ post '-[a; b], post -[(a, b)]).
-  Proof.
-    iIntros (tid post mask iκs [a [b []]]) "_ _ _ _ _ $$ (p1 & p2 & _) Obs".
-    wp_bind p1. iApply (wp_val_own with "p1"). iIntros (w1) "Own1".
-    wp_bind p2. iApply (wp_val_own with "p2"). iIntros (w2) "Own2".
-    eapply (tac_wp_pure []); [apply (pure_mk_tuple [w1; w2])|done|tc_solve|simpl; iApply wp_value].
-    iExists -[(a, b)]. iFrame "Obs". iSplit; [|done]. iExists _. iSplit; [by rewrite eval_path_of_val|].
-    iApply (val_own_pair with "Own1 Own2").
-  Qed.
-
-  Local Lemma wp_mk_tuple_val {𝔄l} (tyl: typel 𝔄l) (pl: plistc path 𝔄l) ws al tid E Φ :
-    tctx_interp tid (hzip_with (λ _ ty q, q ◁ᵥ ty) tyl pl) al -∗
-    (∀ ws', val_own (Π! tyl) al tid (MLitV (VTuple ws')) -∗
-      WP MkTuple (MLit <$> (ws ++ ws')) @ E {{ Φ }}) -∗
-    WP MkTuple ((MLit <$> ws) ++ pl) @ E {{ Φ }}.
-  Proof.
-    revert ws. induction tyl as [|𝔄 𝔄l ty tyl IH]; intros ws.
-    { iIntros "_ Wp". iMod persistent_time_receipt_0 as "⧖".
-      iSpecialize ("Wp" $! [] with "[⧖]"); [by iApply (val_own_xprod_nil tid)|]. by rewrite !app_nil_r. }
-    destruct pl as [p pl], al as [a al]. iIntros "[p pl] Wp".
-    have ->: MkTuple ((MLit <$> ws) ++ p :: pl) = fill_item (MkTupleCtx (MLitV <$> ws) pl) p.
-    { by rewrite /= -list_fmap_compose. }
-    iApply wp_bind. iApply (wp_val_own with "p"). iIntros (w) "Own".
-    have ->: fill_item (MkTupleCtx (MLitV <$> ws) pl) (MLitV w) =
-      MkTuple ((MLit <$> (ws ++ [w])) ++ pl).
-    { by rewrite /= -list_fmap_compose fmap_app -assoc. }
-    iApply (IH with "pl"). iIntros (ws') "Own'". rewrite -assoc /=.
-    iApply ("Wp" $! (w :: ws')). iApply (val_own_xprod_cons with "Own Own'").
-  Qed.
-
-  (** A tuple value, from its components (which may contain cells). *)
-  Lemma type_mk_tuple_val_instr {𝔄l} (tyl: typel 𝔄l) (pl: plistc path 𝔄l) el E L I :
-    IntoPlistc el pl →
-    typed_instr E L I (hzip_with (λ _ ty q, q ◁ᵥ ty) tyl pl) (MkTuple el)
-      (λ v, +[v ◁ᵥ Π! tyl]) (λ post al, post -[al]).
-  Proof.
-    move=> ->. iIntros (tid post mask iκs al) "_ _ _ _ _ $$ T Obs".
-    iApply (wp_mk_tuple_val _ _ [] with "T"). iIntros (ws) "Own".
     eapply (tac_wp_pure []); [apply (pure_mk_tuple ws)|done|tc_solve|simpl; iApply wp_value].
     iExists -[al]. iFrame "Obs". iSplit; [|done]. iExists _. iSplit; [by rewrite eval_path_of_val|].
     done.

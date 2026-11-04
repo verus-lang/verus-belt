@@ -25,7 +25,7 @@
     referent has place type [lt];
   - [OwnPtrLty n lt]: the place contains an owned pointer ([own_bytes n]) whose
     pointee has place type [lt];
-  - [ProdLty lt1 lt2]: a pair of places;
+  - [StructLty L lts]: a struct of layout [L] whose fields have the place types [lts];
   - [ShrBlocked ty κ]: the place is shared until [κ] ends (its value does not change
     and it can still be read), afterwards it contains a value of type [ty] again
     ([shr_blocked_owned]; RefinedRust's [ShrBlockedLtype]);
@@ -47,7 +47,7 @@
   otherwise), as
   RefinedRust's [lty_core]; [lty_fold] is the type of the place once folded
   ([OfTy]/[Blocked] leaves are their type, the constructors are [&uniq],
-  [own_bytes] and [prod_ty]).
+  [own_bytes] and [struct_ty]).
 
   ** Place refinements and states
 
@@ -56,7 +56,8 @@
   reborrow); compound places have structured refinements ([prfn_struct]): the
   refinement of [UniqLty lt κ] is [(l', r, ξi)] (the referent location, the
   referent's refinement and the borrow's prophecy variable id), [OwnPtrLty]
-  has [(l', r)], [ProdLty] has [(r1, r2)]. A place type [lt] is interpreted as
+  has [(l', r)], [StructLty] has the [plist] of the refinements of its fields
+  ([prfn_fields_in]). A place type [lt] is interpreted as
   its core (a [Σ]-dependent parameter) together with a [Σ]-independent
   _blocking pattern_ [lty_pat lt : lpat]; the pair of a pattern and a
   refinement is the _state_ of a place.
@@ -89,21 +90,21 @@
       node of its core instead. Its body ([cpd_gbody]) is the disjunction of the
       compound body and of the body of [&uniq] together with a token [cpd_tok]
       held by the owner of the compound place: once the place is folded back
-      ([prod_ofty_fold_uniq]), the token is given up, which allows the closing
+      ([struct_ofty_fold_uniq]), the token is given up, which allows the closing
       view shift of the folded borrow to convert the [&uniq] body back into the
       compound body.
 
   ** Unfolding
 
-  At [Owned m], [ProdLty (OfTy ty1) (OfTy ty2)] is [ltype_eq] to
-  [OfTy (prod_ty ty1 ty2)] ([prod_ofty_unfold]); [OwnPtrLty n (OfTy ty)] is
+  At [Owned m], [StructLty L (hmap (λ _ ty, OfTy ty) tyl)] is [ltype_eq] to
+  [OfTy (struct_ty L tyl)] ([struct_ofty_unfold]); [OwnPtrLty n (OfTy ty)] is
   [ltype_eq] to [OfTy (own_bytes n ty)] at [Owned 0] ([ownptr_ofty_unfold]);
   and [UniqLty (OfTy ty) κ] is equivalent to [OfTy (&uniq{κ} ty)] together with
-  two cumulative time receipts ([uniq_ofty_unfold_own], [uniq_ofty_fold_own]). At [Uniq] mode, a product is
-  unfolded _behind an existing unique borrow_ ([prod_ofty_unfold_uniq]): the body
+  two cumulative time receipts ([uniq_ofty_unfold_own], [uniq_ofty_fold_own]). At [Uniq] mode, a struct is
+  unfolded _behind an existing unique borrow_ ([struct_ofty_unfold_uniq]): the body
   of the borrow is switched (with a lifetime guard, without a new borrow and
-  without changing the prophecy variable) from the leaf [prod_ty ty1 ty2] to the
-  node [ProdLty (OfTy ty1) (OfTy ty2)], and back ([prod_ofty_fold_uniq]). The
+  without changing the prophecy variable) from the leaf [struct_ty L tyl] to the
+  node [StructLty L (hmap (λ _ ty, OfTy ty) tyl)], and back ([struct_ofty_fold_uniq]). The
   closing view shift of the unfolding converts the compound body back into the
   [&uniq] body at the same state: a leaf sees a state with a structured
   refinement as blocked at the pattern lifetime [κp] ([leaf_node]), whose
@@ -121,7 +122,7 @@
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
 From lrust.typing Require Export type struct.
-From lrust.typing Require Import uniq_util uniq_bor own shr_bor bytes_layout product freeable_util sum gmb_cells.
+From lrust.typing Require Import uniq_util uniq_bor own shr_bor bytes_layout unit freeable_util sum gmb_cells.
 From lrust.lifetime Require Import lifetime_full guarded_bor.
 From guarding Require Import guard tactics.
 Set Default Proof Using "Type".
@@ -1718,7 +1719,7 @@ Section cpd.
 
   Lemma pat_ok_struct κ p : pat_ok κ p -∗ [∗ list] p' ∈ pat_struct p, pat_ok κ p'.
   Proof.
-    iIntros "Ok". destruct p as [| | | | |ps| |]; simpl; try done.
+    iIntros "Ok". destruct p as [| | | |ps| |]; simpl; try done.
     rewrite /pat_ok /=. iInduction ps as [|p ps] "IH"; simpl; [done|].
     rewrite big_sepL_app. iDestruct "Ok" as "[$ Ok]". by iApply "IH".
   Qed.
@@ -1742,7 +1743,7 @@ Section cpd.
         ofty_owned m ty x d' g' tid l.
   Proof.
     iIntros (?) "#LFT #Gty #Ok #†κ G #⧖ L".
-    destruct p as [| | | | | |α|]; try by iApply (leaf_owned_unblock with "LFT Gty Ok †κ G ⧖ L").
+    destruct p as [| | | | |α|]; try by iApply (leaf_owned_unblock with "LFT Gty Ok †κ G ⧖ L").
     iMod (pat_ok_dead with "LFT Ok †κ") as "[†α _]"; [apply lazyE_NllftG|].
     iDestruct "L" as (x) "(Rel & _ & _ & _ & Inh)".
     iMod (fupd_mask_mono with "(Inh †α)") as "O"; [apply lazyB_lazyE|].
@@ -1765,7 +1766,7 @@ Section cpd.
     { iIntros (d0 g0) "#⧖0 O". rewrite ofty_split. iDestruct "O" as (fv) "[[B _] G]".
       iModIntro. iExists fv. iFrame "B". iApply guarded_upd_intro. iModIntro.
       iExists d0, g0. by iFrame "⧖0". }
-    destruct p as [|α| | | | |α|]; try by iApply ("Hub" with "⧖ L").
+    destruct p as [|α| | | |α|]; try by iApply ("Hub" with "⧖ L").
     - iMod (pat_ok_dead with "LFT Ok †κ") as "[†α _]"; [apply lazyB_NllftG|].
       by iMod ("L" with "†α").
     - iMod (pat_ok_dead with "LFT Ok †κ") as "[†α _]"; [apply lazyB_NllftG|].
@@ -2486,7 +2487,7 @@ Section cpd.
 
   (** Unfolding a unique borrow of [lty_fold lt] into the compound place [lt] (with
       no blocked leaves), given a conversion of the payload into the node of [lt]; as
-      [prod_ofty_unfold_uniq]. *)
+      [struct_ofty_unfold_uniq]. *)
   Lemma cpd_unfold_uniq {𝔄} (lt: lty 𝔄) κ ξi x (r: prfn 𝔄) d g tid l E G :
     lty_is_cpd lt → lty_simple lt → pat_blk_lfts (lty_pat lt) = [] →
     (∃ rs, r = inr rs) → prfn_rsv r [] → (∀ π, prfn_den r π = vπ x π) →
@@ -2524,7 +2525,7 @@ Section cpd.
   Qed.
 
   (** Folding back, given a conversion of the node into the payload; as
-      [prod_ofty_fold_uniq]. The contents are forced (with a guard for the lifetime of the
+      [struct_ofty_fold_uniq]. The contents are forced (with a guard for the lifetime of the
       folded type and a later credit). *)
   Lemma cpd_fold_uniq {𝔄} (lt: lty 𝔄) κ ξi x (r: prfn 𝔄) d g tid l E G :
     lty_is_cpd lt →

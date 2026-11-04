@@ -19,7 +19,7 @@ From lrust.lang Require Import proofmode.
 From lrust.lang.lib Require Import new_delete.
 From lrust.util Require Import update.
 From lrust.typing Require Export type ltype lpath pctx_acc vplace place_own shr_bor.
-From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own bytes_layout value_ctx product freeable_util sum place_shr place_resolve place_puniq place_sum place_pshr place_res place_res_view place_res_rslv.
+From lrust.typing Require Import type_context programs lft_contexts uniq_util uniq_bor own bytes_layout value_ctx unit freeable_util sum place_shr place_resolve place_puniq place_sum place_pshr place_res place_res_view place_res_rslv.
 From lrust.util Require Import proph_bor.
 From lrust.lifetime Require Import lifetime_full.
 From guarding Require Import guard tactics.

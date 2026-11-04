@@ -6,7 +6,7 @@ From lrust.lang Require Import races adequacy proofmode notation.
 From lrust.lifetime Require Import lifetime_full.
 From guarding.lib Require Import fractional cancellable.
 From guarding Require Import guard.
-From lrust.typing Require Import type product programs value_ctx function.
+From lrust.typing Require Import type unit programs value_ctx function.
 Set Default Proof Using "Type".
 
 Class typePreG Σ := PreTypeG {

@@ -1,5 +1,5 @@
 From lrust.typing Require Export type.
-From lrust.typing Require Import type_context programs ghost tracked value_ctx shr_bor product.
+From lrust.typing Require Import type_context programs ghost tracked value_ctx shr_bor unit.
 From guarding Require Import guard tactics.
 From guarding.lib Require Import cancellable.
 From lrust.lifetime Require Import lifetime_full.

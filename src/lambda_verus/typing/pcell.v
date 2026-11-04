@@ -1,5 +1,5 @@
 From lrust.typing Require Export type own value_ctx shr_bor uniq_bor gmb_cells.
-From lrust.typing Require Import programs freeable_util uninit uniq_util bool product gmb_uniq struct bytes_layout.
+From lrust.typing Require Import programs freeable_util uninit uniq_util bool unit gmb_uniq struct bytes_layout.
 From guarding Require Import guard tactics.
 From lrust.lifetime Require Import lifetime_full guarded_bor.
 Set Default Proof Using "Type".

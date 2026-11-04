@@ -561,22 +561,18 @@ Definition ty_fbytes `{!typeG Σ} {𝔄} (R: gmap positive (mty * list positive)
 
 (** The syntactic types without cells ([syn_nocell]), as a class: for a syntactic type
     whose head constructor is known, it is solved by computation (or by the instances for
-    products and sums). The byte rules that read a value of a generic type ([Load] and
+    structs and sums). The byte rules that read a value of a generic type ([Load] and
     [MemCopy] of the leaf of a place) need it: the bytes of a value with cells are not
     plain. *)
 Class NoCell (𝔄: syn_type) : Prop := no_cell : syn_nocell 𝔄.
 Global Hint Extern 1 (NoCell _) => exact I : typeclass_instances.
-Global Instance prod_nocell 𝔄 𝔅 : NoCell 𝔄 → NoCell 𝔅 → NoCell (𝔄 * 𝔅).
-Proof. rewrite /NoCell /=. intros. by apply andb_True. Qed.
 
-(** Lists of syntactic types without cells, for [Π!] and [Σ!] (of type variables). *)
+(** Lists of syntactic types without cells, for structs and [Σ!] (of type variables). *)
 Class NoCellL (𝔄l: list syn_type) : Prop := no_cell_l : forallb syn_nocell 𝔄l.
 Global Instance nil_nocell : NoCellL [].
 Proof. done. Qed.
 Global Instance cons_nocell 𝔄 𝔄l : NoCell 𝔄 → NoCellL 𝔄l → NoCellL (𝔄 :: 𝔄l).
 Proof. rewrite /NoCellL /NoCell /=. intros. by apply andb_True. Qed.
-Global Instance xprod_nocell 𝔄l : NoCellL 𝔄l → NoCell (Π! 𝔄l).
-Proof. done. Qed.
 Global Instance xsum_nocell 𝔄l : NoCellL 𝔄l → NoCell (Σ! 𝔄l).
 Proof. done. Qed.
 Global Instance struct_nocell L 𝔄l : NoCellL 𝔄l → NoCell (structₛ L 𝔄l).

@@ -1,7 +1,7 @@
 From iris.proofmode Require Import proofmode.
 From iris.algebra Require Import gmap.
 From lrust.typing Require Import lft_contexts.
-From lrust.typing Require Import type programs ghost tracked product value_ctx own shr_bor uniq_bor uniq_util.
+From lrust.typing Require Import type programs ghost tracked unit struct value_ctx own shr_bor uniq_bor uniq_util.
 From lrust.typing Require uniq_util.
 From guarding Require Import guard tactics guard_later_pers own_and.
 From lrust.typing Require Import ra proph_protocol.
@@ -629,8 +629,12 @@ Section StorageProtocol_bytes.
     - iApply (proph_obs_impl with "Obs"). by intros π' [_ ?].
   Qed.
 
+  (** A pair of ghost values: a struct of two zero-sized fields. *)
+  Definition ghost_pair_ty {𝔅 𝔇} (tyA: type 𝔅) (tyB: type 𝔇) :=
+    struct_ty (c_layout [zst_mty; zst_mty]) +[ghost_ty tyA; ghost_ty tyB].
+
   Local Lemma ghost_pair_val_intro {𝔅 𝔇} tid (tyA: type 𝔅) (tyB: type 𝔇) a b d :
-    ⧖d -∗ tctx_elt_interp tid (MLitV (VTuple [VTuple []; VTuple []]) ◁ᵥ (ghost_ty tyA * ghost_ty tyB)%T) (a, b).
+    ⧖d -∗ tctx_elt_interp tid (MLitV (VTuple [VTuple []; VTuple []]) ◁ᵥ ghost_pair_ty tyA tyB) -[a; b].
   Proof. iIntros "⧖". rewrite tctx_val_val. iExists d. by iFrame. Qed.
 
   Notation "SP_Validate: p1" := GhostOp2 (at level 102, p1 at level 1): expr_scope.
@@ -639,10 +643,10 @@ Section StorageProtocol_bytes.
   Lemma typed_sp_validate `{!Inhabited (~~ℭ)} κ (p1 : path) (tyA : type 𝔄) E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I +[p1 ◁ᵥ &shr{κ} srty] (SP_Validate: p1)
-      (λ v, +[v ◁ᵥ (ghost_ty tyA * ghost_ty tyC)%T])
+      (λ v, +[v ◁ᵥ ghost_pair_ty tyA tyC])
       (λ post '-[(_, (γ, p))], λ mask π, ∀ q t, vsp_rel (vsp_op p q) t π →
-        (∀ k s, t !! k = Some s → post -[(q, s)] mask π) ∧
-        (t = ∅ → post -[(q, inhabitant)] mask π)).
+        (∀ k s, t !! k = Some s → post -[-[q; s]] mask π) ∧
+        (t = ∅ → post -[-[q; inhabitant]] mask π)).
   Proof.
     iIntros (Alv tid post mask iκs [[l [γ p]] []]) "_ #TIME #PROPH _ #E L $ (p1 & _) #Obs".
     iDestruct (tctx_val_elim with "p1") as (vp1 Hp1 w1 d [-> Hw1]) "[#⧖ #Own]".
@@ -664,11 +668,11 @@ Section StorageProtocol_bytes.
     iMod (lc_fupd_elim_laterN with "£2 J") as ">(%q & %t & #Hobs & $ & _)".
     iModIntro. iCombine "Obs Hobs" as "Obs'".
     destruct (decide (t = ∅)) as [Hempty|Hnempty].
-    - iExists -[(q, inhabitant)]. iSplitL; [iSplit; [by iApply ghost_pair_val_intro|done]|].
+    - iExists -[-[q; inhabitant]]. iSplitL; [iSplit; [by iApply ghost_pair_val_intro|done]|].
       iApply (proph_obs_impl with "Obs'"). intros π [Hpost Hrel]. rewrite vsp_unit_op in Hrel.
       by apply (Hpost _ _ Hrel).
     - apply map_choose in Hnempty as (k & s & Hlookup).
-      iExists -[(q, s)]. iSplitL; [iSplit; [by iApply ghost_pair_val_intro|done]|].
+      iExists -[-[q; s]]. iSplitL; [iSplit; [by iApply ghost_pair_val_intro|done]|].
       iApply (proph_obs_impl with "Obs'"). intros π [Hpost Hrel]. rewrite vsp_unit_op in Hrel.
       by eapply (Hpost _ _ Hrel).
   Qed.
@@ -776,11 +780,11 @@ Section StorageProtocol_bytes.
   Lemma typed_sp_validate_with_shr `{!Inhabited (~~ℭ)} κ (p1 p2 : path) (tyA : type 𝔄) E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I +[p1 ◁ᵥ &uniq{κ} srty; p2 ◁ᵥ &shr{κ} srty]
-      (SP_ValidateWithShr: p1 p2) (λ v, +[v ◁ᵥ (ghost_ty tyA * ghost_ty tyC)%T])
+      (SP_ValidateWithShr: p1 p2) (λ v, +[v ◁ᵥ ghost_pair_ty tyA tyC])
       (λ post '-[(_, (γ1, x1), _, _, _, _); (_, (γ2, x2))], λ mask π, γ1 = γ2 ∧
         ∀ q t, vsp_rel (vsp_op (vsp_op x1 x2) q) t π →
-          (∀ k s, t !! k = Some s → post -[(q, s)] mask π) ∧
-          (t = ∅ → post -[(q, inhabitant)] mask π)).
+          (∀ k s, t !! k = Some s → post -[-[q; s]] mask π) ∧
+          (t = ∅ → post -[-[q; inhabitant]] mask π)).
   Proof.
     iIntros (Alv tid post mask iκs [[[[[[l1 [γ1 x1]] ξi] di] gi] idx] [[l2 [γ2 x2]] []]])
       "#LFT #TIME #PROPH #UNIQ #E L $ (p1 & p2 & _) #Obs".
@@ -833,11 +837,11 @@ Section StorageProtocol_bytes.
     iMod "Hclose" as "_".
     iModIntro. iCombine "Obs Hobs" as "Obs'".
     destruct (decide (t = ∅)) as [Hempty|Hnempty].
-    - iExists -[(q, inhabitant)]. iSplitL; [iSplit; [by iApply ghost_pair_val_intro|done]|].
+    - iExists -[-[q; inhabitant]]. iSplitL; [iSplit; [by iApply ghost_pair_val_intro|done]|].
       iApply (proph_obs_impl with "Obs'"). intros π' [[_ Hpost] Hrel].
       eapply Hpost in Hrel as [? Hpost_empty]. by apply Hpost_empty.
     - apply map_choose in Hnempty as (k & s & Hlookup).
-      iExists -[(q, s)]. iSplitL; [iSplit; [by iApply ghost_pair_val_intro|done]|].
+      iExists -[-[q; s]]. iSplitL; [iSplit; [by iApply ghost_pair_val_intro|done]|].
       iApply (proph_obs_impl with "Obs'"). intros π' [[_ Hpost] Hrel].
       eapply Hpost in Hrel as [Hpost_ne _]. by eapply Hpost_ne.
   Qed.

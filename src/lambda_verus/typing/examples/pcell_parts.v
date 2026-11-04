@@ -1,13 +1,13 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product sum uninit value_ctx own shr_bor uniq_util uniq_bor place_own place_shr place_share place_resolve place_write place_sum subtype pcell pcell_borrow.
+From lrust.typing Require Export type programs cont int unit sum uninit value_ctx own shr_bor uniq_util uniq_bor place_own place_shr place_share place_resolve place_write place_sum subtype pcell pcell_borrow.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
 (** * Values with cells built from parts
 
 A cell moved out of its box is a value of [PCell<i32>] whose cell is in transit
-([val_cells], [typing/gmb_cells.v]). It is a part of a pair built with [MkTuple]
-([type_mk_pair_val_instr]) and of a variant built with [MkVariant]
+([val_cells], [typing/gmb_cells.v]). It is a part of a struct built with [MkTuple]
+([type_mk_struct_val_instr]) and of a variant built with [MkVariant]
 ([type_mk_variant_val_instr]): the cells in transit of the whole value are those of its
 parts. The whole value is stored into a box, and the cell is used: moved out of the pair
 and destroyed ([PCell::into_inner]), or borrowed through the payload of the variant

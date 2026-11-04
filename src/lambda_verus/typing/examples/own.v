@@ -1,22 +1,22 @@
 (** Tests for stage 3 of the MiniRust memory model: typed [Load]s and [Store]s of the
-    pointee of a box that owns bytes ([own_bytes], see [typing/own.v]), for a pair
-    of integers and for [Option<i32>]. *)
-From lrust.typing Require Import int product sum own.
+    pointee of a box that owns bytes ([own_bytes], see [typing/own.v]), for a [repr(C)]
+    struct of two integers and for [Option<i32>]. *)
+From lrust.typing Require Import int unit struct sum own.
 Set Default Proof Using "Type".
 
 Section own_bytes_tests.
   Context `{!typeG Σ}.
 
-  (** ** [Box<(i32, i32)>] *)
-  Notation pair_ty := (int_ty i32 * int_ty i32)%T.
+  (** ** [Box<(i32, i32)>], as a [repr(C)] struct *)
+  Notation pair_ty := (struct_ty (c_layout [MInt i32; MInt i32]) +[int_ty i32; int_ty i32])%T.
 
-  (** The layout: two [i32] fields at offsets 0 and 4. *)
-  Lemma pair_ty_mty : pair_ty.(ty_mty) = MTuple [(0%nat, MInt i32); (4%nat, MInt i32)] 8 1.
-  Proof. by rewrite -ty_mty_eq. Qed.
+  (** The layout: two [i32] fields at offsets 0 and 4 (alignment 4). *)
+  Lemma pair_ty_mty : pair_ty.(ty_mty) = MTuple [(0%nat, MInt i32); (4%nat, MInt i32)] 8 4.
+  Proof. rewrite -ty_mty_eq /= /struct_mty struct_lay_c; [done|repeat constructor]. Qed.
 
   Lemma pair_ty_val a b :
     int_in_range i32 a → int_in_range i32 b →
-    pair_ty.(ty_val) (a, b) = Some (VTuple [VInt a; VInt b]).
+    pair_ty.(ty_val) -[a; b] = Some (VTuple [VInt a; VInt b]).
   Proof. intros. rewrite -ty_val_eq /=. by rewrite !decide_True. Qed.
 
   (** Load the pair, store the swapped pair, and load it again. *)
@@ -30,22 +30,22 @@ Section own_bytes_tests.
   (** Load the pair, store the swapped pair, and load it again. *)
   Lemma test_box_pair_swap n l a b d g tid E :
     ↑naN ⊆ E → int_in_range i32 a → int_in_range i32 b →
-    {{{ (own_bytes n pair_ty).(ty_gho_own) (l, (a, b)) (S d) g tid }}}
+    {{{ (own_bytes n pair_ty).(ty_gho_own) (l, -[a; b]) (S d) g tid }}}
       Load Na1Ord pair_ty.(ty_mty) #l ;;
       Store Na1Ord pair_ty.(ty_mty) #l (MLit (VTuple [VInt b; VInt a])) ;;
       Load Na1Ord pair_ty.(ty_mty) #l @ E
     {{{ RET MLitV (VTuple [VInt b; VInt a]);
-        (own_bytes n pair_ty).(ty_gho_own) (l, (b, a)) (S d) g tid }}}.
+        (own_bytes n pair_ty).(ty_gho_own) (l, -[b; a]) (S d) g tid }}}.
   Proof.
     iIntros (? Ha Hb Φ) "Own HΦ". rebuild d g tid.
     wp_bind (Load _ _ _).
-    iApply (wp_own_bytes_load n pair_ty l (a, b) _ (S d) g tid with "Own"); [by apply pair_ty_val|].
+    iApply (wp_own_bytes_load n pair_ty l -[a; b] _ (S d) g tid with "Own"); [by apply pair_ty_val|].
     iIntros "!> Own". wp_seq. rebuild d g tid.
     wp_bind (Store _ _ _ _).
-    iApply (wp_own_bytes_store n pair_ty l (a, b) (b, a) _ d g tid with "[$Own]");
+    iApply (wp_own_bytes_store n pair_ty l -[a; b] -[b; a] _ d g tid with "[$Own]");
       [done|by apply pair_ty_val|iNext; by iSplit|].
     iIntros "!> [Own _]". wp_seq. rebuild d g tid.
-    iApply (wp_own_bytes_load n pair_ty l (b, a) _ (S d) g tid with "Own"); [by apply pair_ty_val|].
+    iApply (wp_own_bytes_load n pair_ty l -[b; a] _ (S d) g tid with "Own"); [by apply pair_ty_val|].
     iIntros "!> Own". rebuild d g tid. by iApply "HΦ".
   Qed.
 

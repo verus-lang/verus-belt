@@ -292,7 +292,7 @@ src/lambda_verus/typing/type.v
 src/lambda_verus/typing/type_context.v
 src/lambda_verus/typing/cont_context.v
 src/lambda_verus/typing/cont.v
-src/lambda_verus/typing/product.v
+src/lambda_verus/typing/unit.v
 src/lambda_verus/typing/struct.v
 src/lambda_verus/typing/programs.v
 src/lambda_verus/typing/programs_util_atomic.v

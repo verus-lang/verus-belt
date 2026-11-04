@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs bool cont product value_ctx function.
+From lrust.typing Require Export type programs bool cont unit value_ctx function.
 From lrust.lang Require Import lang notation.
 Set Default Proof Using "Type".
 

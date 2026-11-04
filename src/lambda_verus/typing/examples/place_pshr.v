@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product sum value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_read place_share.
+From lrust.typing Require Export type programs cont int unit sum value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_pshr place_read place_share.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 
@@ -31,11 +31,12 @@ Section place_pshr.
 
   (*
   ```
-  fn get_snd<'a, 'b>(x: &'a &'b (i32, i32)) -> i32 { ( **x).1 }
+  fn get_snd<'a, 'b>(x: &'a &'b P) -> i32 { ( **x).1 }
   ```
   The argument is a shared reference value, the root of the place; the view of its
-  referent is changed to [ShrLty (ProdLty (OfTy i32) (OfTy i32)) 'b] (no program step),
-  and [( **x).1] is read with [K2 = PShr 'b (PSnd _ PHole)]: a guarded load of the inner
+  referent is changed to [ShrLty (StructLty PL +[OfTy i32; OfTy i32]) 'b] (no program
+  step), and [( **x).1] is read with [K2 = PShr 'b (PField PL +[_] PHole +[])]: a guarded
+  load of the inner
   reference, a field offset, and a guarded typed load of [i32].
   *)
   Definition get_snd_pb : expr := (
@@ -76,12 +77,12 @@ Section place_pshr.
 
   (*
   ```
-  fn get_boxed(b: Box<&'a (i32, Box<i32>)>) -> i32 { *( **b).1 }
+  fn get_boxed(b: Box<&'a B>) -> i32 { *( **b).1 }
   ```
   The argument is a box of bytes, the root of the place: the shared reference in it is
   unfolded ([K = PHole] of the own-rooted place), the view of its referent is changed to
-  [ProdLty (OfTy i32) (OwnPtrLty 4 (OfTy i32))], and the leaf is read below [PShr] through
-  the inner box ([K2 = PSnd _ (POwn 4 PHole)]). Dropping the slot frees the outer box (the
+  [StructLty BL +[OfTy i32; OwnPtrLty 4 (OfTy i32)]], and the leaf is read below [PShr]
+  through the inner box ([K2 = PField BL +[_] (POwn 4 PHole) +[]]). Dropping the slot frees the outer box (the
   inner one belongs to the referent of the shared reference).
   *)
   Definition get_boxed_pb : expr := (
@@ -221,12 +222,12 @@ Section place_pshr.
 
   (*
   ```
-  fn first_ref<'a, 'b>(x: &'a mut &'b (i32, i32)) -> &'b i32 { &( **x).0 }
+  fn first_ref<'a, 'b>(x: &'a mut &'b P) -> &'b i32 { &( **x).0 }
   ```
   The argument is a unique borrow value, the root of the place: `**x` (a shared reference,
   below [PUniq 'a], in [Uniq] mode) is unfolded and the view of `***x` is changed to a
-  pair; `&( **x).0` is a shared reference at ['b] ([type_share_place_instr],
-  [K = PUniq 'a (PShr 'b (PFst PHole _))]): the shared reference stored in `*x` is
+  struct; `&( **x).0` is a shared reference at ['b] ([type_share_place_instr],
+  [K = PUniq 'a (PShr 'b (PField PL +[] PHole +[_]))]): the shared reference stored in `*x` is
   loaded from the body of the unique borrow, so the result does not depend on ['a] (as in
   Rust); the place is folded back and `x` is resolved to its current value.
   *)

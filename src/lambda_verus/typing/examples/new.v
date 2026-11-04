@@ -1,5 +1,5 @@
 From iris.proofmode Require Import proofmode.
-From lrust.typing Require Export type programs cont int product uninit value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_deep place_write place_read place_memcpy subtype.
+From lrust.typing Require Export type programs cont int unit uninit value_ctx own shr_bor uniq_util uniq_bor place_own place_puniq place_resolve place_deep place_write place_read place_memcpy subtype.
 From lrust.lang Require Import lang notation new_delete.
 Set Default Proof Using "Type".
 

@@ -13,9 +13,9 @@ the explicit layout [L] (see [design_docs/minirust-layout.md], §7). Its value i
 [plist] of the values of the fields. The layout only determines the bytes (through
 [syn_mty (structₛ L 𝔄l)], [struct_mty]); the ghost parts are those of the fields:
 [struct_ty L tyl] is [struct_of L (fields_ty tyl)], where [fields_ty tyl : type (Π! 𝔄l)]
-is the list of the fields, at the logical type [Π! 𝔄l] (built from [fields_nil_ty] and
-[fields_cons_ty]), and [struct_of L] gives a type of fields the bytes of a struct of layout
-[L]. The place type of a struct ([StructLty] in [typing/ltype.v]) is likewise a list of
+is the list of the fields, at the logical (zero-sized) type [Π! 𝔄l] (built from
+[fields_nil_ty] and [fields_cons_ty]), and [struct_of L] gives a type of fields the bytes of
+a struct of layout [L]. The place type of a struct ([StructLty] in [typing/ltype.v]) is likewise a list of
 field places ([FieldsLty]) under the layout. *)
 
 Implicit Type 𝔄 𝔅 ℭ 𝔇: syn_type.
@@ -286,7 +286,7 @@ Section typing.
     Copy ty → Copy ty' → Copy (fields_cons_ty ty ty').
   Proof.
     move=> C1 C2. split.
-    - rewrite /NoCell /=. apply andb_True. split; [apply C1|apply C2].
+    - done.
     - intros. unfold ty_gho_own, fields_cons_ty. typeclasses eauto.
     - intros. iIntros "[S1 S2]".
       iDestruct (copy_shr with "S1") as "#G1". iDestruct (copy_shr with "S2") as "#G2".
@@ -428,10 +428,11 @@ Section typing.
   Qed.
 
   (** The struct instances, from those of the fields. *)
-  Global Instance struct_of_copy {𝔄l} L (ty: type (Π! 𝔄l)) : Copy ty → Copy (struct_of L ty).
+  Global Instance struct_of_copy {𝔄l} L (ty: type (Π! 𝔄l)) :
+    NoCellL 𝔄l → Copy ty → Copy (struct_of L ty).
   Proof.
-    intros Hcopy. inversion Hcopy. split.
-    - exact copy_nocell.
+    intros Hnc Hcopy. inversion Hcopy. split.
+    - exact Hnc.
     - intros. apply copy_persistent.
     - intros. apply copy_shr.
   Qed.
@@ -463,7 +464,7 @@ Section typing.
   Proof. done. Qed.
 
   Global Instance struct_copy {𝔄l} L (tyl: typel 𝔄l) : ListCopy tyl → Copy (struct_ty L tyl).
-  Proof. intros. apply _. Qed.
+  Proof. intros. apply struct_of_copy; [by apply (list_copy_nocell tyl)|apply _]. Qed.
   Global Instance struct_send {𝔄l} L (tyl: typel 𝔄l) : ListSend tyl → Send (struct_ty L tyl).
   Proof. intros. apply _. Qed.
   Global Instance struct_send_upd {𝔄l} L (tyl: typel 𝔄l) :
@@ -547,6 +548,15 @@ Section typing.
     eqtype E L' (struct_ty L tyl) (struct_ty L tyl') (struct_mapₛ L fl) (struct_mapₛ L gl).
   Proof. move=> /eqtypel_subtypel[??]. by split; apply struct_subtype. Qed.
 
+  (** A struct at another, equal, layout parameter (e.g. one computed from the sizes of
+      the fields). *)
+  Lemma struct_relay_eqtype {𝔄l} E L' Lay Lay' (tyl: typel 𝔄l) :
+    Lay = Lay' →
+    eqtype E L' (struct_ty Lay tyl) (struct_ty Lay' tyl) (struct_relayₛ Lay Lay') (struct_relayₛ Lay' Lay).
+  Proof.
+    intros <-. eapply eqtype_eq; [apply eqtype_refl|by apply extensₛ..].
+  Qed.
+
   Lemma struct_outlives_E_elctx_sat {𝔄l} E L' L (tyl: typel 𝔄l) κ:
     elctx_sat E L' (tyl_outlives_E tyl κ) → elctx_sat E L' (ty_outlives_E (struct_ty L tyl) κ).
   Proof.
@@ -556,5 +566,6 @@ Section typing.
 End typing.
 
 Global Hint Resolve struct_resolve | 5 : lrust_typing.
-Global Hint Resolve struct_resolve_just struct_subtype struct_eqtype
-  struct_outlives_E_elctx_sat : lrust_typing.
+(* After [struct_resolve], which learns the predicates of the fields. *)
+Global Hint Resolve struct_resolve_just | 10 : lrust_typing.
+Global Hint Resolve struct_subtype struct_eqtype struct_outlives_E_elctx_sat : lrust_typing.
