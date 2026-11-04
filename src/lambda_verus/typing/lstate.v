@@ -18,7 +18,7 @@ Implicit Type 𝔄 𝔅 ℭ: syn_type.
 (** * Utilities for sums
 
   Sum places ([SumLty] in [typing/ltype.v]) are refined by a sum of refinements
-  ([prfn_struct] of [xsumₛ]), whose payload is accessed with [psum_proj]; the folded
+  ([prfn_struct] of [enumₛ]), whose payload is accessed with [psum_proj]; the folded
   type of a sum place replaces the type of its variant ([hlist_set]). *)
 
 Section psum_proj.
@@ -130,7 +130,7 @@ Fixpoint prfn_struct (𝔄: syn_type) : Type :=
   | uniq_borₛ 𝔅 => loc * (place_rfn 𝔅 + prfn_struct 𝔅) * positive
   | at_locₛ 𝔅 => loc * (place_rfn 𝔅 + prfn_struct 𝔅)
   (* A sum at a fixed variant: the refinement of the payload. *)
-  | xsumₛ 𝔅l => psum (λ 𝔅, place_rfn 𝔅 + prfn_struct 𝔅) 𝔅l
+  | enumₛ _ 𝔅l => psum (λ 𝔅, place_rfn 𝔅 + prfn_struct 𝔅) 𝔅l
   (* A struct: the refinements of the fields. *)
   | structₛ _ 𝔅l => plist (λ 𝔅, place_rfn 𝔅 + prfn_struct 𝔅) 𝔅l
   | _ => Empty_set
@@ -162,7 +162,7 @@ Fixpoint prfn_wit {𝔄} : prfn 𝔄 → ~~𝔄 :=
       | inl lr => place_rfn_wit lr
       | inr (l', r') => (l', prfn_wit r')
       end
-  | xsumₛ 𝔅l => λ r, match r with
+  | enumₛ _ 𝔅l => λ r, match r with
       | inl lr => place_rfn_wit lr
       | inr s => psum_map1 (λ _ r', prfn_wit r') s
       end
@@ -184,7 +184,7 @@ Fixpoint prfn_den {𝔄} : prfn 𝔄 → proph 𝔄 :=
       | inl lr => place_rfn_den lr
       | inr (l', r') => λ π, (l', prfn_den r' π)
       end
-  | xsumₛ 𝔅l => λ r, match r with
+  | enumₛ _ 𝔅l => λ r, match r with
       | inl lr => place_rfn_den lr
       | inr s => λ π, psum_map1 (λ _ r', prfn_den r' π) s
       end
@@ -238,7 +238,7 @@ Fixpoint prfn_rsv {𝔄} : prfn 𝔄 → list proph_var → Prop :=
       | inl lr => place_rfn_rsv lr ζl
       | inr (_, r') => prfn_rsv r' ζl
       end
-  | xsumₛ 𝔅l => λ r ζl, match r with
+  | enumₛ _ 𝔅l => λ r ζl, match r with
       | inl lr => place_rfn_rsv lr ζl
       | inr s => psum_all (λ _ r', prfn_rsv r' ζl) s
       end
@@ -272,13 +272,13 @@ Proof.
   { move=> ? [?|??] /=; [done|]. by apply proph_dep_weaken. }
   move: 𝔄 r. fix FIX 1. move=> 𝔄 r.
   destruct 𝔄; destruct r as [lr|r]; simpl; try apply Hl; try (destruct r; fail).
-  - move: r. elim: l=> [|𝔅 𝔅l IH] s /=; [by destruct s|].
-    destruct s as [r'|s']; [by apply FIX|by apply IH].
   - destruct r as [l' r']. apply FIX.
   - destruct r as [[l' r'] ξi]. move=> [??]. split; [by apply FIX|].
     by eapply proph_dep_weaken.
   - move: r. elim: l=> [|𝔅 𝔅l IH] rs /=; [done|].
     destruct rs as [r' rs']. move=> [??]. split; [by apply FIX|by apply IH].
+  - move: r. elim: l=> [|𝔅 𝔅l IH] s /=; [by destruct s|].
+    destruct s as [r'|s']; [by apply FIX|by apply IH].
 Qed.
 
 Lemma prfn_rsv_app_l {𝔄} (r: prfn 𝔄) ζl ζl' : prfn_rsv r ζl → prfn_rsv r (ζl ++ ζl').
@@ -288,17 +288,17 @@ Lemma prfn_rsv_app_r {𝔄} (r: prfn 𝔄) ζl ζl' : prfn_rsv r ζl' → prfn_r
 Proof. apply prfn_rsv_weaken=> ??. set_solver. Qed.
 
 (** The refinement of a sum at variant [i], with payload refinement [r]. *)
-Definition prfn_sum {𝔄l} (i: fin (length 𝔄l)) (r: prfn (𝔄l !!ₗ i)) : prfn (Σ! 𝔄l) :=
+Definition prfn_sum {EL 𝔄l} (i: fin (length 𝔄l)) (r: prfn (𝔄l !!ₗ i)) : prfn (enumₛ EL 𝔄l) :=
   inr (pinj (F:=λ 𝔅, (place_rfn 𝔅 + prfn_struct 𝔅)%type) i r).
 
 Global Arguments prfn_sum : simpl never.
 
-Lemma prfn_den_sum {𝔄l} i (r: prfn (𝔄l !!ₗ i)) :
-  prfn_den (prfn_sum i r) = λ π, pinj i (prfn_den r π).
+Lemma prfn_den_sum {EL 𝔄l} i (r: prfn (𝔄l !!ₗ i)) :
+  prfn_den (prfn_sum (EL:=EL) i r) = λ π, pinj i (prfn_den r π).
 Proof. rewrite /prfn_sum /=. fun_ext=> π. by rewrite psum_map1_pinj. Qed.
 
-Lemma prfn_wit_sum {𝔄l} i (r: prfn (𝔄l !!ₗ i)) :
-  prfn_wit (prfn_sum i r) = pinj i (prfn_wit r).
+Lemma prfn_wit_sum {EL 𝔄l} i (r: prfn (𝔄l !!ₗ i)) :
+  prfn_wit (prfn_sum (EL:=EL) i r) = pinj i (prfn_wit r).
 Proof. by rewrite /prfn_sum /= psum_map1_pinj. Qed.
 
 (** The refinement of an unfolded struct whose fields are the values [xs]. *)
@@ -332,17 +332,17 @@ Proof.
   destruct xs as [x xs]. split; [apply prfn_rsv_in|apply IH].
 Qed.
 
-Lemma prfn_rsv_sum {𝔄l} i (r: prfn (𝔄l !!ₗ i)) ζl :
-  prfn_rsv (prfn_sum i r) ζl = prfn_rsv r ζl.
+Lemma prfn_rsv_sum {EL 𝔄l} i (r: prfn (𝔄l !!ₗ i)) ζl :
+  prfn_rsv (prfn_sum (EL:=EL) i r) ζl = prfn_rsv r ζl.
 Proof. rewrite /prfn_sum /=. apply (psum_all_pinj_eq (λ _ r', prfn_rsv r' ζl)). Qed.
 
 (** As [prfn_rsv_sum], [prfn_den_sum], after [simpl]. *)
-Lemma prfn_rsv_sum' {𝔄l} i (r: prfn (𝔄l !!ₗ i)) ζl :
-  match prfn_sum i r with
+Lemma prfn_rsv_sum' {EL 𝔄l} i (r: prfn (𝔄l !!ₗ i)) ζl :
+  match prfn_sum (EL:=EL) i r with
   | inl lr => place_rfn_rsv lr ζl
   | inr s => psum_all (λ _ r', prfn_rsv r' ζl) s
   end = prfn_rsv r ζl.
-Proof. exact (prfn_rsv_sum i r ζl). Qed.
+Proof. exact (prfn_rsv_sum (EL:=EL) i r ζl). Qed.
 
 (** The denotation of [PlaceGhost x₀ ζi] depends only on the prophecy variable. *)
 Lemma place_ghost_dep {𝔄} (x₀: ~~𝔄) ζi :

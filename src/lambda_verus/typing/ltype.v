@@ -29,11 +29,12 @@
   - [ShrBlocked ty κ]: the place is shared until [κ] ends (its value does not change
     and it can still be read), afterwards it contains a value of type [ty] again
     ([shr_blocked_owned]; RefinedRust's [ShrBlockedLtype]);
-  - [SumLty tyl i lt]: a sum of the variant [i], whose payload has the place type [lt]
-    ([sum_node]: the tag, the payload and the padding; RefinedRust's [EnumLtype]). Its
-    folded type is [Σ! tyl] with the type of variant [i] replaced by the folded type of
-    [lt] ([hlist_set]), so that folding needs no side condition; its refinement is the
-    refinement of the payload and the padding ([prfn_sum]);
+  - [SumLty EL tyl i lt]: an enum of layout [EL] at the variant [i], whose payload has
+    the place type [lt] ([sum_node]: the rest of the bytes, [enum_rest], and the payload at
+    [enum_off EL 𝔄l i]; RefinedRust's [EnumLtype]). Its folded type is [enum_ty EL tyl]
+    with the type of variant [i] replaced by the folded type of [lt] ([hlist_set]), so that
+    folding needs no side condition; its refinement is the refinement of the payload
+    ([prfn_sum]);
   - [ShrLty lt κ]: the place contains a shared reference [&shr{κ}] whose referent is
     viewed as the place type [lt] (a read-only view, the context step [PShr] of
     [typing/lpath.v]): it is the leaf of its folded type [&shr{κ} (lty_fold lt)], together
@@ -147,7 +148,8 @@ Section lty.
   | OwnPtrLty {𝔄} (n: nat) (lt: lty 𝔄) : lty (at_locₛ 𝔄)
   | StructLty {𝔄l} (L: struct_layout) (lts: hlist lty 𝔄l) : lty (structₛ L 𝔄l)
   | ShrBlocked {𝔄} (ty: type 𝔄) (κ: lft) : lty 𝔄
-  | SumLty {𝔄l} (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (lt: lty (𝔄l !!ₗ i)) : lty (Σ! 𝔄l)
+  | SumLty {𝔄l} (EL: enum_layout) (tyl: typel 𝔄l) (i: fin (length 𝔄l)) (lt: lty (𝔄l !!ₗ i))
+      : lty (enumₛ EL 𝔄l)
   | ShrLty {𝔄} (lt: lty 𝔄) (κ: lft) : lty (at_locₛ 𝔄)
   | OfRes {𝔄} (ty: type 𝔄) : lty 𝔄
   | ResUniqLty {𝔄} (lt: lty 𝔄) (κ: lft) : lty (uniq_borₛ 𝔄)
@@ -161,7 +163,7 @@ Section lty.
     | OwnPtrLty n lt => OwnPtrLty n (lty_core lt)
     | StructLty L lts => StructLty L (hmap (λ _ lt, lty_core lt) lts)
     | ShrBlocked ty _ => OfTy ty
-    | SumLty tyl i lt => SumLty tyl i (lty_core lt)
+    | SumLty EL tyl i lt => SumLty EL tyl i (lty_core lt)
     | ShrLty lt κ => ShrLty (lty_core lt) κ
     | OfRes ty => OfRes ty
     | ResUniqLty lt κ => ResUniqLty (lty_core lt) κ
@@ -176,7 +178,7 @@ Section lty.
     | OwnPtrLty _ lt => PatOwn (lty_pat lt)
     | StructLty _ lts => PatStruct (hcmap (λ _ lt, lty_pat lt) lts)
     | ShrBlocked _ κ => PatShrBlocked κ
-    | SumLty _ _ lt => PatSum (lty_pat lt)
+    | SumLty _ _ _ lt => PatSum (lty_pat lt)
     | ShrLty _ _ => PatLeaf
     | OfRes _ => PatLeaf
     | ResUniqLty lt _ => PatUniq (lty_pat lt)
@@ -192,7 +194,7 @@ Section lty.
     | OwnPtrLty n lt => own_bytes n (lty_fold lt)
     | StructLty L lts => struct_ty L (hmap (λ _ lt, lty_fold lt) lts)
     | ShrBlocked ty _ => ty
-    | SumLty tyl i lt => xsum_ty (hlist_set tyl i (lty_fold lt))
+    | SumLty EL tyl i lt => enum_ty EL (hlist_set tyl i (lty_fold lt))
     | ShrLty lt κ => shr_bytes κ (lty_fold lt)
     | OfRes ty => ty
     | ResUniqLty lt κ => uniq_bytes κ (lty_fold lt)
@@ -208,7 +210,7 @@ Section lty.
     | UniqLty lt κ | ResUniqLty lt κ => κ :: lty_lfts lt
     | OwnPtrLty _ lt => lty_lfts lt
     | StructLty _ lts => concat (hcmap (λ _ lt, lty_lfts lt) lts)
-    | SumLty tyl i lt => tyl_lfts (hlist_set tyl i (lty_fold lt))
+    | SumLty EL tyl i lt => tyl_lfts (hlist_set tyl i (lty_fold lt))
     | ShrLty lt κ => κ :: lty_lfts lt
     end.
 
@@ -228,7 +230,7 @@ Section lty.
     (∀ 𝔄 n (lt: lty 𝔄), P _ lt → P _ (OwnPtrLty n lt)) →
     (∀ 𝔄l L (lts: hlist lty 𝔄l), HForall P lts → P _ (StructLty L lts)) →
     (∀ 𝔄 (ty: type 𝔄) κ, P _ (ShrBlocked ty κ)) →
-    (∀ 𝔄l (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)), P _ lt → P _ (SumLty tyl i lt)) →
+    (∀ 𝔄l EL (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)), P _ lt → P _ (SumLty EL tyl i lt)) →
     (∀ 𝔄 (lt: lty 𝔄) κ, P _ lt → P _ (ShrLty lt κ)) →
     (∀ 𝔄 (ty: type 𝔄), P _ (OfRes ty)) →
     (∀ 𝔄 (lt: lty 𝔄) κ, P _ lt → P _ (ResUniqLty lt κ)) →
@@ -241,7 +243,7 @@ Section lty.
       | UniqLty lt κ => H3 _ lt κ (FIX _ lt) | OwnPtrLty n lt => H4 _ n lt (FIX _ lt)
       | StructLty L lts => H5 _ L lts ((fix go {𝔄l} (lts: hlist lty 𝔄l) : HForall P lts :=
           match lts with +[] => HForall_nil _ | lt +:: lts' => HForall_cons _ _ _ (FIX _ lt) (go lts') end) _ lts)
-      | ShrBlocked ty κ => H6 _ ty κ | SumLty tyl i lt => H7 _ tyl i lt (FIX _ lt)
+      | ShrBlocked ty κ => H6 _ ty κ | SumLty EL tyl i lt => H7 _ EL tyl i lt (FIX _ lt)
       | ShrLty lt κ => H8 _ lt κ (FIX _ lt) | OfRes ty => H9 _ ty
       | ResUniqLty lt κ => H10 _ lt κ (FIX _ lt) | Moved ty => H11 _ ty
       end).
@@ -282,12 +284,12 @@ Section lty.
   Qed.
 
   (** The folded type of a sum place whose payload is the leaf of its variant. *)
-  Lemma lty_fold_sum_ofty {𝔄l} (tyl: typel 𝔄l) i :
-    lty_fold (SumLty tyl i (OfTy (tyl +!! i))) = xsum_ty tyl.
+  Lemma lty_fold_sum_ofty {EL 𝔄l} (tyl: typel 𝔄l) i :
+    lty_fold (SumLty EL tyl i (OfTy (tyl +!! i))) = enum_ty EL tyl.
   Proof. by rewrite /= hlist_set_hlookup. Qed.
 
-  Lemma lty_size_sum_ofty {𝔄l} (tyl: typel 𝔄l) i :
-    lty_size (SumLty tyl i (OfTy (tyl +!! i))) = ty_bsize (xsum_ty tyl).
+  Lemma lty_size_sum_ofty {EL 𝔄l} (tyl: typel 𝔄l) i :
+    lty_size (SumLty EL tyl i (OfTy (tyl +!! i))) = ty_bsize (enum_ty EL tyl).
   Proof. by rewrite lty_size_fold lty_fold_sum_ofty. Qed.
 
   (** The value [x] is of the variants of the sums of [lt]. This is the information that
@@ -305,7 +307,7 @@ Section lty.
            | +[] => λ _, True
            | lt +:: lts' => λ xs, lty_vin lt (phd xs) ∧ go lts' (ptl xs)
            end) _ lts x
-    | SumLty _ i lt => λ x,
+    | SumLty _ _ i lt => λ x,
         match psum_proj i x with Some y => lty_vin lt y | None => False end
     | ShrLty lt _ => λ x, lty_vin lt (snd x)
     end.
@@ -397,10 +399,12 @@ Section ltype_own.
 
   (** ** Byte cells of nodes *)
 
-  (** The bytes of the tag [i] of a sum of [𝔅l], and padding bytes. *)
-  Definition tag_size (𝔅l: syn_typel) : nat := int_size (sum_tag 𝔅l).
-  Definition tag_cell (𝔅l: syn_typel) (l: loc) (i: nat) : iProp Σ :=
-    ∃ bs, l ↦b bs ∗ ⌜decode_value (MInt (sum_tag 𝔅l)) bs = Some (VInt (Z.of_nat i))⌝.
+  (** The rest of the bytes of an enum at variant [i] (its taggers and its padding: the
+      bytes before and after the payload, [enum_rest_ok]), and padding bytes. *)
+  Definition enum_rest (EL: enum_layout) (𝔅l: syn_typel) (i: fin (length 𝔅l)) (l: loc)
+      : iProp Σ :=
+    ∃ b1 b2, l ↦b b1 ∗ (l +ₗ (enum_off EL 𝔅l i + syn_bsize (𝔅l !!ₗ i))%nat) ↦b b2 ∗
+      ⌜enum_rest_ok EL 𝔅l i b1 b2⌝.
   Definition pad_cell (l: loc) (n: nat) : iProp Σ := ∃ bs, l ↦b bs ∗ ⌜length bs = n⌝.
 
   (** A MiniRust value of a value of [ty]. *)
@@ -457,21 +461,18 @@ Section ltype_own.
         pad_own l (struct_fields L 𝔅l) (struct_size L 𝔅l)
     end%I.
 
-  (** The node of a sum at variant [i] (with a payload of size [sz]): the tag, the
-      payload, and the padding (as in [split_pt_xsum_cells'']). The tag and the padding
-      have no ghost ownership, so the node does not depend on the mode. *)
-  Definition sum_node {𝔅l} (tyl: typel 𝔅l) (i: fin (length 𝔅l)) (sz: nat)
+  (** The node of an enum at variant [i]: the rest of the bytes ([enum_rest]) and the
+      payload at its offset. The rest has no ghost ownership, so the node does not depend
+      on the mode. *)
+  Definition sum_node (EL: enum_layout) {𝔅l} (tyl: typel 𝔅l) (i: fin (length 𝔅l))
       (child: prfn (𝔅l !!ₗ i) → nat → nat → thread_id → loc → iProp Σ)
-      (r: prfn (Σ! 𝔅l)) (d g: nat) (tid: thread_id) (l: loc) : iProp Σ :=
+      (r: prfn (enumₛ EL 𝔅l)) (d g: nat) (tid: thread_id) (l: loc) : iProp Σ :=
     match r with
     | inl _ => False
     | inr s =>
         match psum_proj i s with
         | None => False
-        | Some r' =>
-            tag_cell 𝔅l l i ∗
-            child r' d g tid (l +ₗ tag_size 𝔅l) ∗
-            pad_cell ((l +ₗ tag_size 𝔅l) +ₗ sz) (sum_max 𝔅l - sz)
+        | Some r' => enum_rest EL 𝔅l i l ∗ child r' d g tid (l +ₗ enum_off EL 𝔅l i)
         end
     end%I.
 
@@ -598,21 +599,19 @@ Section ltype_own.
         (@[κ] &&{↑NllftG; g+1}&&> pad_own l (struct_fields L 𝔅l) (struct_size L 𝔅l))
     end%I.
 
-  (** The view of a sum at variant [i]: guards of its tag and its padding, and the view of
-      its payload. *)
-  Definition view_sum {𝔅l} (κ: lft) (tyl: typel 𝔅l) (i: fin (length 𝔅l)) (sz: nat)
+  (** The view of an enum at variant [i]: a guard of the rest of its bytes, and the view
+      of its payload. *)
+  Definition view_sum (κ: lft) (EL: enum_layout) {𝔅l} (tyl: typel 𝔅l) (i: fin (length 𝔅l))
       (child: prfn (𝔅l !!ₗ i) → nat → nat → thread_id → loc → iProp Σ)
-      (r: prfn (Σ! 𝔅l)) (d g: nat) (tid: thread_id) (l: loc) : iProp Σ :=
+      (r: prfn (enumₛ EL 𝔅l)) (d g: nat) (tid: thread_id) (l: loc) : iProp Σ :=
     match r with
     | inl _ => False
     | inr s =>
         match psum_proj i s with
         | None => False
         | Some r' =>
-            (@[κ] &&{↑NllftG; g+1}&&> tag_cell 𝔅l l i) ∗
-            child r' d g tid (l +ₗ tag_size 𝔅l) ∗
-            (@[κ] &&{↑NllftG; g+1}&&>
-              pad_cell ((l +ₗ tag_size 𝔅l) +ₗ sz) (sum_max 𝔅l - sz))
+            (@[κ] &&{↑NllftG; g+1}&&> enum_rest EL 𝔅l i l) ∗
+            child r' d g tid (l +ₗ enum_off EL 𝔅l i)
         end
     end%I.
 
@@ -630,8 +629,8 @@ Section ltype_own.
         view_own κ (lty_size lt') (lty_view lt' κ (m + 1) (pat_own p))
     | StructLty L lts => λ m p,
         view_struct κ L (hmap (λ _ lt, lty_view lt κ m) lts) (pat_struct p)
-    | SumLty tyl i lt' => λ m p,
-        view_sum κ tyl i (lty_size lt') (lty_view lt' κ m (pat_sum p))
+    | SumLty EL tyl i lt' => λ m p,
+        view_sum κ EL tyl i (lty_view lt' κ m (pat_sum p))
     | ShrLty lt' κ' => λ m p r d g tid l,
         (view_leaf κ m (shr_bytes κ' (lty_fold lt')) p r d g tid l ∗
           ⌜prfn_vin (λ x: ~~ (at_locₛ _), lty_vin lt' x.2) r⌝)%I
@@ -785,11 +784,11 @@ Section ltype_own.
             (λ p', struct_node L (hmap (λ _ lt, ltype_own_cp false lt (Owned 0)) lts)
               (pat_struct p'))
         end
-    | SumLty tyl i lt' => λ k p,
+    | SumLty EL tyl i lt' => λ k p,
         match k with
-        | Owned m => sum_node tyl i (lty_size lt') (ltype_own_cp c lt' (Owned m) (pat_sum p))
-        | Uniq κ ξi => cpd_own κ ξi (xsum_ty (hlist_set tyl i (lty_fold lt'))) p
-            (λ p', sum_node tyl i (lty_size lt') (ltype_own_cp false lt' (Owned 0) (pat_sum p')))
+        | Owned m => sum_node EL tyl i (ltype_own_cp c lt' (Owned m) (pat_sum p))
+        | Uniq κ ξi => cpd_own κ ξi (enum_ty EL (hlist_set tyl i (lty_fold lt'))) p
+            (λ p', sum_node EL tyl i (ltype_own_cp false lt' (Owned 0) (pat_sum p')))
         end
     (* A shared reference whose referent is viewed as [lt']: the leaf of its folded type,
        and the variants of the referent (which does not change). *)
@@ -978,33 +977,31 @@ Section ltype_lemmas.
     iIntros "[A $]". by iApply fields_node_hmap_mono.
   Qed.
 
-  Lemma sum_node_mono {𝔅l} (tyl: typel 𝔅l) i sz
+  Lemma sum_node_mono EL {𝔅l} (tyl: typel 𝔅l) i
       (c1 c2: prfn (𝔅l !!ₗ i) → nat → nat → thread_id → loc → iProp Σ) r d g d' g' tid l :
     (∀ r' tid' l', c1 r' d g tid' l' ⊢ c2 r' d' g' tid' l') →
-    sum_node tyl i sz c1 r d g tid l ⊢ sum_node tyl i sz c2 r d' g' tid l.
+    sum_node EL tyl i c1 r d g tid l ⊢ sum_node EL tyl i c2 r d' g' tid l.
   Proof.
     intros Hc. destruct r as [?|s]; [done|]. rewrite /sum_node.
-    case_match; [|by iIntros "[]"]. iIntros "($ & C & $)". by iApply Hc.
+    case_match; [|by iIntros "[]"]. iIntros "($ & C)". by iApply Hc.
   Qed.
 
-  Lemma ltype_own_cp_sum_owned c {𝔅l} (tyl: typel 𝔅l) i (lt: lty (𝔅l !!ₗ i)) m p :
-    ltype_own_cp c (SumLty tyl i lt) (Owned m) p =
-      sum_node tyl i (lty_size lt) (ltype_own_cp c lt (Owned m) (pat_sum p)).
+  Lemma ltype_own_cp_sum_owned c {EL 𝔅l} (tyl: typel 𝔅l) i (lt: lty (𝔅l !!ₗ i)) m p :
+    ltype_own_cp c (SumLty EL tyl i lt) (Owned m) p =
+      sum_node EL tyl i (ltype_own_cp c lt (Owned m) (pat_sum p)).
   Proof. done. Qed.
 
   (** The node of a sum at the refinement of a payload. *)
-  Lemma sum_node_sum {𝔅l} (tyl: typel 𝔅l) i sz
+  Lemma sum_node_sum EL {𝔅l} (tyl: typel 𝔅l) i
       (c: prfn (𝔅l !!ₗ i) → nat → nat → thread_id → loc → iProp Σ) r d g tid l :
-    sum_node tyl i sz c (prfn_sum i r) d g tid l ⊣⊢
-      tag_cell 𝔅l l i ∗
-      c r d g tid (l +ₗ tag_size 𝔅l) ∗
-      pad_cell ((l +ₗ tag_size 𝔅l) +ₗ sz) (sum_max 𝔅l - sz).
+    sum_node EL tyl i c (prfn_sum (EL:=EL) i r) d g tid l ⊣⊢
+      enum_rest EL 𝔅l i l ∗ c r d g tid (l +ₗ enum_off EL 𝔅l i).
   Proof. rewrite /sum_node /prfn_sum. by rewrite psum_proj_pinj. Qed.
 
   (** A sum node at a structured refinement is at a payload refinement. *)
-  Lemma sum_node_inv {𝔅l} (tyl: typel 𝔅l) i sz
+  Lemma sum_node_inv EL {𝔅l} (tyl: typel 𝔅l) i
       (c: prfn (𝔅l !!ₗ i) → nat → nat → thread_id → loc → iProp Σ) r d g tid l :
-    sum_node tyl i sz c r d g tid l -∗ ∃ r', ⌜r = prfn_sum i r'⌝.
+    sum_node EL tyl i c r d g tid l -∗ ∃ r', ⌜r = prfn_sum (EL:=EL) i r'⌝.
   Proof.
     destruct r as [?|s]; [by iIntros "[]"|]. rewrite /sum_node.
     case_match eqn:Hs; [|by iIntros "[]"]. iIntros "_".
@@ -1020,21 +1017,21 @@ Section ltype_lemmas.
   (** Only the core of a place type matters for its view. *)
   Lemma lty_view_core {𝔄} (lt: lty 𝔄) : lty_view (lty_core lt) = lty_view lt.
   Proof.
-    induction 𝔄, lt as [| |𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH| |𝔄l tyl i lt IH|𝔄 lt κ IH| | |]
+    induction 𝔄, lt as [| |𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH| |𝔄l EL tyl i lt IH|𝔄 lt κ IH| | |]
       using lty_ind'; simpl; [done|done| | | |done| | |done|done|done].
     - by rewrite lty_fold_core lty_leafb_core IH.
     - by rewrite lty_size_core IH.
     - fun_ext=> κ. fun_ext=> m. rewrite hmap_hmap.
       rewrite (hmap_ext_HForall (λ X x, lty_view (lty_core x) κ m) (λ X x, lty_view x κ m)) //.
       eapply HForall_impl; [|exact IH]. simpl. by intros ?? ->.
-    - by rewrite lty_size_core IH.
+    - by rewrite IH.
     - by rewrite lty_fold_core lty_vin_core.
   Qed.
 
   (** Only the core of a place type matters for [ltype_own_cp]. *)
   Lemma ltype_own_cp_core c {𝔄} (lt: lty 𝔄) : ltype_own_cp c (lty_core lt) = ltype_own_cp c lt.
   Proof.
-    revert c. induction 𝔄, lt as [| |𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH| |𝔄l tyl i lt IH|𝔄 lt κ IH| |𝔄 lt κ IH|]
+    revert c. induction 𝔄, lt as [| |𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH| |𝔄l EL tyl i lt IH|𝔄 lt κ IH| |𝔄 lt κ IH|]
       using lty_ind'; intros c; simpl; [done|done| | | |done| | |done| |done].
     - by rewrite lty_fold_core !IH.
     - by rewrite lty_size_core lty_fold_core !IH.
@@ -1047,7 +1044,7 @@ Section ltype_lemmas.
       { intros c' m. rewrite hmap_hmap. apply hmap_ext_HForall.
         eapply HForall_impl; [|exact IH]. simpl. by intros ?? ->. }
       fun_ext=> k. destruct k; by rewrite ?Hf ?Hc.
-    - by rewrite lty_size_core lty_fold_core !IH.
+    - by rewrite lty_fold_core !IH.
     - by rewrite lty_fold_core lty_vin_core.
     - by rewrite lty_fold_core lty_view_core.
   Qed.
@@ -1058,7 +1055,7 @@ Section ltype_lemmas.
     ltype_own_cp true lt (Owned m) p r d g tid l ⊢ ltype_own_cp true lt (Owned m) p' r d g tid l.
   Proof.
     revert m p p' r d g tid l.
-    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt κ IH|𝔄 ty|𝔄 lt κ IH|𝔄 ty]
+    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH|𝔄 ty α|𝔄l EL tyl i lt IH|𝔄 lt κ IH|𝔄 ty|𝔄 lt κ IH|𝔄 ty]
       using lty_ind'; intros m p p' r d g tid l; simpl; [| | | | | | | | | |done].
     - destruct r as [lr|]; [|done]. by destruct p, p'.
     - destruct r as [lr|]; [|done]. by destruct p, p'.
@@ -1115,7 +1112,7 @@ Section ltype_lemmas.
     ltype_own_cp c lt (Owned m) p r d g tid l ⊢ ltype_own_cp c lt (Owned m) p r d' g' tid l.
   Proof.
     revert m p r d g d' g' tid l.
-    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt κ IH|𝔄 ty|𝔄 lt κ IH|𝔄 ty]
+    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH|𝔄 ty α|𝔄l EL tyl i lt IH|𝔄 lt κ IH|𝔄 ty|𝔄 lt κ IH|𝔄 ty]
       using lty_ind'; intros m p r d g d' g' tid l Hd Hg; simpl;
       first [by apply leaf_owned_depth_mono|by apply bi.sep_mono_l, leaf_owned_depth_mono|idtac];
       [| | | | | |done].
@@ -1284,24 +1281,24 @@ Section ltype_lemmas.
 
   (** The lifetime of (the folded type of) a sum place is included in the lifetime of
       its payload. *)
-  Lemma lty_lft_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
-    ⊢ ty_lft (lty_fold (SumLty tyl i lt)) ⊑ ty_lft (lty_fold lt).
+  Lemma lty_lft_sum {EL 𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
+    ⊢ ty_lft (lty_fold (SumLty EL tyl i lt)) ⊑ ty_lft (lty_fold lt).
   Proof.
     iPoseProof (lft_intersect_tyl_lfts_lookup_incl (hlist_set tyl i (lty_fold lt)) i) as "H".
     by rewrite hlookup_hlist_set.
   Qed.
 
-  Lemma sum_ltype_imp_unblockable κs {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
-    imp_unblockable κs lt -∗ imp_unblockable κs (SumLty tyl i lt).
+  Lemma sum_ltype_imp_unblockable κs {EL 𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
+    imp_unblockable κs lt -∗ imp_unblockable κs (SumLty EL tyl i lt).
   Proof.
     iIntros "#Ub !>" (k r d g tid l G ?) "#Gk G #Dead H".
     destruct k as [m|κ ξi];
       [|iModIntro; iFrame "G"; iExists d, g; by iApply ltype_own_uniq_core].
     rewrite /ltype_own /ltype_own_core /=.
     iDestruct (sum_node_inv with "H") as %(r' & ->).
-    rewrite sum_node_sum. iDestruct "H" as "(Tag & C & Pad)".
+    rewrite sum_node_sum. iDestruct "H" as "(Rest & C)".
     iAssert (G &&{↑NllftG}&&> @[ty_lft (lty_fold lt)])%I as "#Gk'".
-    { iApply (guards_transitive with "Gk"). iApply lty_lft_sum. }
+    { iApply (guards_transitive with "Gk"). iApply (lty_lft_sum (EL:=EL)). }
     iMod ("Ub" $! (Owned m) with "[//] Gk' G Dead C") as "[$ (%d1 & %g1 & C)]".
     iModIntro. iExists d1, g1. rewrite sum_node_sum. by iFrame.
   Qed.
@@ -1331,7 +1328,7 @@ Section ltype_lemmas.
   Lemma imp_unblockable_blocked_dead {𝔄} (lt: lty 𝔄) :
     ⊢ imp_unblockable (lty_blocked_lfts lt) lt.
   Proof.
-    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt κ IH|𝔄 ty|𝔄 lt κ IH|𝔄 ty]
+    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ IH|𝔄 n lt IH|𝔄l L lts IH|𝔄 ty α|𝔄l EL tyl i lt IH|𝔄 lt κ IH|𝔄 ty|𝔄 lt κ IH|𝔄 ty]
       using lty_ind'; rewrite /lty_blocked_lfts /=; [| | | | |iApply shr_blocked_imp_unblockable|
         iApply sum_ltype_imp_unblockable; iApply IH|iApply shr_lty_imp_unblockable|
         iApply ofres_imp_unblockable|iApply res_uniq_imp_unblockable|
@@ -1509,81 +1506,68 @@ Section unfold.
 
   (** ** Sums *)
 
-  Lemma xsum_gho_own_pinj {𝔄l} i (tyl: typel 𝔄l) x0 d g tid :
-    ty_gho_own (Σ! tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_own (tyl +!! i) x0 d g tid.
-  Proof. rewrite [ty_gho_own (Σ! tyl)]/ty_gho_own /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
+  Lemma xsum_gho_own_pinj {EL 𝔄l} i (tyl: typel 𝔄l) x0 d g tid :
+    ty_gho_own (enum_ty EL tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_own (tyl +!! i) x0 d g tid.
+  Proof. rewrite [ty_gho_own (enum_ty EL tyl)]/ty_gho_own /enum_ty /=. by rewrite to_xsum_pinj. Qed.
 
-  (** The bytes of a sum at variant [i]: the tag, the payload and the padding. *)
-  Lemma cbytes_sum {𝔄l} (ty: type (Σ! 𝔄l)) i (tyi: type (𝔄l !!ₗ i)) y l :
-    cbytes ty (pinj i y) l ⊣⊢
-      tag_cell 𝔄l l i ∗
-      cbytes tyi y (l +ₗ tag_size 𝔄l) ∗
-      pad_cell ((l +ₗ tag_size 𝔄l) +ₗ syn_bsize (𝔄l !!ₗ i))
-        (sum_max 𝔄l - syn_bsize (𝔄l !!ₗ i)).
+  (** The bytes of an enum at variant [i]: the rest of the bytes and the payload. *)
+  Lemma cbytes_sum {EL 𝔄l} (ty: type (enumₛ EL 𝔄l)) i (tyi: type (𝔄l !!ₗ i)) y l :
+    cbytes ty (pinj i y) l ⊣⊢ enum_rest EL 𝔄l i l ∗ cbytes tyi y (l +ₗ enum_off EL 𝔄l i).
   Proof.
-    rewrite /cbytes !bytes_own_fbytes /tag_cell /pad_cell /=. setoid_rewrite ty_fbytes_syn.
+    rewrite /cbytes !bytes_own_fbytes /enum_rest /=. setoid_rewrite ty_fbytes_syn.
     have Hcells : ∀ fv, ty.(ty_fval) (pinj i y) = Some fv →
       ∃ fv', tyi.(ty_fval) y = Some fv' ∧
-        ∀ l, gcells l ty.(ty_mty) fv ⊣⊢ gcells (l +ₗ tag_size 𝔄l) tyi.(ty_mty) fv'.
+        ∀ l, gcells l ty.(ty_mty) fv ⊣⊢ gcells (l +ₗ enum_off EL 𝔄l i) tyi.(ty_mty) fv'.
     { intros fv. rewrite -!ty_fval_eq -!ty_mty_eq syn_fval_pinj.
       destruct (syn_fval y) as [fv'|]; [|done]. intros [= <-]. exists fv'. split; [done|].
-      intros l0. change (syn_mty (Σ! 𝔄l)) with (seq_enum (syn_mty <$> 𝔄l)).
-      rewrite /seq_enum gcells_enum Nat2Z.id list_lookup_imap list_lookup_fmap llookup_lookup /= length_fmap.
-      done. }
+      intros l0. destruct (enum_vars_lookup EL 𝔄l i) as [tg Hv].
+      rewrite syn_mty_enum gcells_enum Nat2Z.id Hv. done. }
     iSplit.
-    - iIntros "(%R & %fbs & %fv & Hfbs & (%Hfb & %HR & %Hfv) & C)". apply syn_fbytes_sum in Hfb.
-      destruct Hfb as (bt & fp & bq & -> & Ht & Hp & Hq).
+    - iIntros "(%R & %fbs & %fv & Hfbs & (%Hfb & %HR & %Hfv) & C)". apply syn_fbytes_enum in Hfb.
+      destruct Hfb as (b1 & fp & b2 & -> & Hr & Hp).
       destruct (Hcells fv Hfv) as (fv' & Hfv' & Hc). rewrite Hc.
-      have Hlt : length bt = tag_size 𝔄l := decode_value_length (MInt (sum_tag 𝔄l)) bt _ Ht.
-      have Hlp := syn_fbytes_length _ _ _ Hp.
+      destruct Hr as (H1 & H2 & Hd). have Hlp := syn_fbytes_length _ _ _ Hp.
       rewrite !gfbytes_app !gfbytes_bytes !length_fmap.
-      iDestruct "Hfbs" as "(Bt & Bp & Bq)".
-      rewrite Hlt Hlp. iSplitL "Bt"; [iExists bt; by iFrame|].
-      iSplitL "Bp C"; [iExists R, fp, fv'; iFrame "Bp C"; by iPureIntro|].
-      iExists bq. by iFrame.
-    - iIntros "((%bt & Bt & %Ht) & (%R & %fp & %fv' & Bp & (%Hp & %HR & %Hfv') & C) & (%bq & Bq & %Hq))".
-      have Hlt : length bt = tag_size 𝔄l := decode_value_length (MInt (sum_tag 𝔄l)) bt _ Ht.
-      have Hlp := syn_fbytes_length _ _ _ Hp.
+      iDestruct "Hfbs" as "(B1 & Bp & B2)".
+      rewrite H1 Hlp shift_loc_assoc_nat.
+      iSplitL "B1 B2"; [iExists b1, b2; iFrame; by iPureIntro|].
+      iExists R, fp, fv'. iFrame "Bp C". by iPureIntro.
+    - iIntros "((%b1 & %b2 & B1 & B2 & %Hr) & (%R & %fp & %fv' & Bp & (%Hp & %HR & %Hfv') & C))".
+      have Hr' := Hr. destruct Hr' as (H1 & H2 & Hd). have Hlp := syn_fbytes_length _ _ _ Hp.
       have [fv Hfv] : is_Some (ty.(ty_fval) (pinj i y)).
       { rewrite -!ty_fval_eq syn_fval_pinj. rewrite -!ty_fval_eq in Hfv'. rewrite Hfv'. by eexists. }
       destruct (Hcells fv Hfv) as (fv'' & Hfv'' & Hc). rewrite Hfv' in Hfv''. injection Hfv'' as <-.
-      iExists R, ((inr <$> bt) ++ fp ++ (inr <$> bq)), fv.
-      rewrite !gfbytes_app !gfbytes_bytes !length_fmap Hlt Hlp Hc.
-      iFrame "Bt Bp Bq C". iPureIntro. split_and!; [|done|done]. apply syn_fbytes_sum. by exists bt, fp, bq.
+      iExists R, ((inr <$> b1) ++ fp ++ (inr <$> b2)), fv.
+      rewrite !gfbytes_app !gfbytes_bytes !length_fmap H1 Hlp shift_loc_assoc_nat Hc.
+      iFrame "B1 Bp B2 C". iPureIntro. split_and!; [|done|done]. apply syn_fbytes_enum.
+      by exists b1, fp, b2.
   Qed.
 
-  Lemma ofty_owned_xsum m {𝔄l} (tyl: typel 𝔄l) i x d g tid l :
-    ofty_owned m (xsum_ty tyl) (pinj i x) d g tid l ⊣⊢
-      tag_cell 𝔄l l i ∗
-      ofty_owned m (tyl +!! i) x d g tid
-        (l +ₗ tag_size 𝔄l) ∗
-      pad_cell ((l +ₗ tag_size 𝔄l) +ₗ syn_bsize (𝔄l !!ₗ i))
-        (sum_max 𝔄l - syn_bsize (𝔄l !!ₗ i)).
+  Lemma ofty_owned_xsum m {EL 𝔄l} (tyl: typel 𝔄l) i x d g tid l :
+    ofty_owned m (enum_ty EL tyl) (pinj i x) d g tid l ⊣⊢
+      enum_rest EL 𝔄l i l ∗ ofty_owned m (tyl +!! i) x d g tid (l +ₗ enum_off EL 𝔄l i).
   Proof.
     rewrite /ofty_owned (cbytes_sum _ i (tyl +!! i)) xsum_gho_own_pinj.
-    iSplit; [iIntros "(($ & $ & $) & $)"|iIntros "($ & ($ & $) & $)"].
+    iSplit; [iIntros "(($ & $) & $)"|iIntros "($ & $ & $)"].
   Qed.
 
-  Lemma ofty_owned_xsum_set m {𝔄l} (tyl: typel 𝔄l) i (ty: type (𝔄l !!ₗ i)) x d g tid l :
-    ofty_owned m (xsum_ty (hlist_set tyl i ty)) (pinj i x) d g tid l ⊣⊢
-      tag_cell 𝔄l l i ∗
-      ofty_owned m ty x d g tid (l +ₗ tag_size 𝔄l) ∗
-      pad_cell ((l +ₗ tag_size 𝔄l) +ₗ syn_bsize (𝔄l !!ₗ i))
-        (sum_max 𝔄l - syn_bsize (𝔄l !!ₗ i)).
+  Lemma ofty_owned_xsum_set m {EL 𝔄l} (tyl: typel 𝔄l) i (ty: type (𝔄l !!ₗ i)) x d g tid l :
+    ofty_owned m (enum_ty EL (hlist_set tyl i ty)) (pinj i x) d g tid l ⊣⊢
+      enum_rest EL 𝔄l i l ∗ ofty_owned m ty x d g tid (l +ₗ enum_off EL 𝔄l i).
   Proof. by rewrite ofty_owned_xsum hlookup_hlist_set. Qed.
 
   (** Unfolding a sum at a known variant [i] into a sum place whose payload is the
       leaf of the variant, and back. *)
-  Lemma sum_ofty_unfold_own m {𝔄l} (tyl: typel 𝔄l) i (y: ~~ (𝔄l !!ₗ i)) d g tid l :
-    ltype_own (Owned m) (OfTy (xsum_ty tyl)) (inl (PlaceIn (𝔄:=Σ! 𝔄l) (pinj i y))) d g tid l ⊣⊢
-    ltype_own (Owned m) (SumLty tyl i (OfTy (tyl +!! i))) (prfn_sum i (inl (PlaceIn y)))
+  Lemma sum_ofty_unfold_own m {EL 𝔄l} (tyl: typel 𝔄l) i (y: ~~ (𝔄l !!ₗ i)) d g tid l :
+    ltype_own (Owned m) (OfTy (enum_ty EL tyl)) (inl (PlaceIn (𝔄:=enumₛ EL 𝔄l) (pinj i y))) d g tid l ⊣⊢
+    ltype_own (Owned m) (SumLty EL tyl i (OfTy (tyl +!! i))) (prfn_sum (EL:=EL) i (inl (PlaceIn y)))
       d g tid l.
   Proof.
     rewrite /ltype_own /= psum_proj_pinj /=.
     iSplit.
     - iIntros "(%x & -> & O)". rewrite ofty_owned_xsum.
-      iDestruct "O" as "($ & O & $)". iExists y. by iFrame.
-    - iIntros "(Tag & (%x & -> & O) & Pad)". iExists _. iSplit; [done|].
+      iDestruct "O" as "($ & O)". iExists y. by iFrame.
+    - iIntros "(Rest & (%x & -> & O))". iExists _. iSplit; [done|].
       rewrite ofty_owned_xsum. by iFrame.
   Qed.
 
@@ -1979,7 +1963,7 @@ Section cpd.
     | OwnPtrLty _ lt => lty_simple lt
     | StructLty _ lts => (fix go {𝔅l} (lts: hlist lty 𝔅l) : Prop :=
         match lts with +[] => True | lt +:: lts' => lty_simple lt ∧ go lts' end) _ lts
-    | SumLty _ _ lt => lty_simple lt
+    | SumLty _ _ _ lt => lty_simple lt
     | UniqLty lt _ => lty_simple lt
     (* Resolved places are not folded back (they are only in the owned part of a place). *)
     | OfRes _ | ResUniqLty _ _ | Moved _ => False
@@ -2003,13 +1987,13 @@ Section cpd.
   Proof. iIntros "Ok". destruct p; simpl; try iApply pat_ok_leaf. done. Qed.
 
   (** The equalizer of a sum value, from the equalizer of its payload. *)
-  Lemma proph_eqz_sum {𝔄l} i (r: prfn (𝔄l !!ₗ i)) (x: ~~ (𝔄l !!ₗ i)) :
-    (prfn_den r :== vπ x) -∗ (prfn_den (prfn_sum i r) :== vπ (𝔄:=Σ! 𝔄l) (pinj i x)).
+  Lemma proph_eqz_sum {EL 𝔄l} i (r: prfn (𝔄l !!ₗ i)) (x: ~~ (𝔄l !!ₗ i)) :
+    (prfn_den r :== vπ x) -∗ (prfn_den (prfn_sum (EL:=EL) i r) :== vπ (𝔄:=enumₛ EL 𝔄l) (pinj i x)).
   Proof.
     iIntros "Eqz".
-    have ?: Inj (=) (=) (λ a: (𝔄l !!ₗ i), ((pinj i a) : (Σ! 𝔄l)%ST)).
+    have ?: Inj (=) (=) (λ a: (𝔄l !!ₗ i), ((pinj i a) : (enumₛ EL 𝔄l)%ST)).
     { intros ?? Heq. by apply pinj_Inj in Heq. }
-    iDestruct (proph_eqz_constr (λ a: (𝔄l !!ₗ i), ((pinj i a) : (Σ! 𝔄l)%ST)) with "Eqz")
+    iDestruct (proph_eqz_constr (λ a: (𝔄l !!ₗ i), ((pinj i a) : (enumₛ EL 𝔄l)%ST)) with "Eqz")
       as "Eqz".
     iApply (proph_eqz_eq with "Eqz").
     - by rewrite prfn_den_sum.
@@ -2017,7 +2001,7 @@ Section cpd.
   Qed.
 
   Definition lty_is_cpd {𝔄} (lt: lty 𝔄) : Prop :=
-    match lt with StructLty _ _ | OwnPtrLty _ _ | UniqLty _ _ | SumLty _ _ _ => True | _ => False end.
+    match lt with StructLty _ _ | OwnPtrLty _ _ | UniqLty _ _ | SumLty _ _ _ _ => True | _ => False end.
 
   (** In [Uniq] mode, a compound place is a compound place whose node is the
       [Owned 0] interpretation. *)
@@ -2154,7 +2138,7 @@ Section cpd.
     fields_fval xs = Some fvs → ty.(ty_fval) xs = Some (FVTuple fvs).
   Proof. rewrite -!ty_fval_eq /fields_fval /=. by intros ->. Qed.
 
-  Lemma ty_fval_pinj {𝔄l} (ty: type (Σ! 𝔄l)) i (tyi: type (𝔄l !!ₗ i)) y fv :
+  Lemma ty_fval_pinj {EL 𝔄l} (ty: type (enumₛ EL 𝔄l)) i (tyi: type (𝔄l !!ₗ i)) y fv :
     tyi.(ty_fval) y = Some fv →
     ty.(ty_fval) (pinj i y) = Some (FVVariant (Z.of_nat (fin_to_nat i)) fv).
   Proof. rewrite -!ty_fval_eq syn_fval_pinj. by intros ->. Qed.
@@ -2267,7 +2251,7 @@ Section cpd.
   Lemma ltype_owned_bytes_unblock {𝔄} (lt: lty 𝔄) κ tid :
     lty_simple lt → owned_bytes_unblock lt κ tid.
   Proof.
-    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l L lts IH|𝔄 ty α|𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty]
+    induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l L lts IH|𝔄 ty α|𝔄l EL tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty]
       using lty_ind'; intros Hs m p r d g l; try done; try (exfalso; exact Hs).
     8: { iIntros "#LFT #PROPH #UNIQ #Ok #†κ #⧖ [L _]"; destruct r as [lr|]; [|done];
       iMod (leaf_owned_s_bytes_unblock with "LFT Ok †κ ⧖ L") as (fv) "[B Upd]";
@@ -2278,14 +2262,14 @@ Section cpd.
     7: { iIntros "#LFT #PROPH #UNIQ #Ok #†κ #⧖ N".
       rewrite ltype_own_cp_sum_owned.
       iDestruct (sum_node_inv with "N") as %(r' & ->).
-      rewrite sum_node_sum. iDestruct "N" as "(Tag & N & Pad)".
+      rewrite sum_node_sum. iDestruct "N" as "(Rest & N)".
       iDestruct (pat_ok_sum with "Ok") as "Ok'".
       iMod (IH with "LFT PROPH UNIQ Ok' †κ ⧖ N") as (fv) "[B U]"; [done|].
-      iModIntro. iExists (FVVariant (Z.of_nat (fin_to_nat i)) fv). iSplitL "Tag B Pad".
+      iModIntro. iExists (FVVariant (Z.of_nat (fin_to_nat i)) fv). iSplitL "Rest B".
       { iDestruct "B" as (y Hy) "B". iExists (pinj i y).
         iSplit; [iPureIntro; by eapply ty_fval_pinj|].
         rewrite (cbytes_sum _ i (lty_fold lt)). iFrame. }
-      iDestruct (guarded_upd_weaken with "[] U") as "U"; [iApply lty_lft_sum|].
+      iDestruct (guarded_upd_weaken with "[] U") as "U"; [iApply (lty_lft_sum (EL:=EL))|].
       iApply (guarded_upd_mono with "[] U"). iIntros "(%y & %d' & %g' & %Hy & Eqz & ⧖1 & Gho) !>".
       iExists (pinj i y), d', g'. iSplit; [iPureIntro; by eapply ty_fval_pinj|].
       iFrame "⧖1". iSplitL "Eqz"; [iNext; by iApply proph_eqz_sum|].
