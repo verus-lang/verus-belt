@@ -997,3 +997,43 @@ Definition enum_mty EL ms := if decide (el_wf EL ms) then el_mty EL ms else el_m
 - Known cost: the proof of `pcell_borrows` takes ~11 minutes to check (the kernel check of
   `Qed`; `pcell_example` already took ~1.5 minutes before L2b).
 - `prod_ty`, `xprod_ty` and the product isomorphisms are still there (deleted in L2c).
+
+## Outcome: L2c (deleting the products; branch `proto/layout-l2c`)
+
+- `prodₛ` (`*`) and `xprodₛ` (`Π!`) are **logical**: their cases in `syn_mty`, `syn_val`,
+  `syn_fval` and `syn_nocell` are deleted, so they are zero-sized with `syn_val = VTuple []`
+  and no cells (their `NoCell` instances are gone; `exact I` solves them). They remain for
+  prophecy and ghost contents (`predlₛ`, `listₛ (𝔄 * locₛ)`) and as the logical type of the
+  fields of a struct (`fields_ty tyl : type (Π! 𝔄l)` in `struct.v`). `struct_of_copy` now
+  takes the `NoCellL` of the fields (the `NoCell` of `Π!` is trivial and says nothing).
+- **Deleted**: `typing/product.v` (`prod_ty`, `xprod_ty`, `unit0`, the mod-type `unit_ty`,
+  the product subtyping/resolution/isomorphism lemmas); in `syn_type.v` `prod_mapₛ`,
+  `fst_mapₛ`, `snd_mapₛ`, `prod_assoc(')ₛ`, `to/of_cons_prodₛ`, `empty_prod_to/of_unitₛ`,
+  `prod_left/right_id(')ₛ`, `decode_prod_*`, `decode_assoc_*`, `bind3`, `prod_assoc_bsize`,
+  `prod_assoc_bytes`, `decode_pad_pair`, `syn_bytes_pres_*`, `isoₛ_empty_prod_unit`; in
+  `bytes_layout.v` `syn_bytes_pair`, `syn_fbytes_pair`, `syn_bsize_prod`,
+  `syn_bsize/fbytes_xprod_*`, `mcells_pair`, `mcells_xprod_cons`, the `syn_bincl` and `Isoₛ`
+  of the products; `bytes_own_pair`, `cbytes_pair`, `val_own_pair`, `val_own_xprod_*`,
+  `type_mk_pair_val_instr`, `type_mk_tuple_val_instr` (`type_mk_struct_val_instr` replaces
+  them), `val_cells_seq_tuple_*`, `uninit_join/splitₛ` and `uninit_plus_prod` (replaced by
+  `uninit_plus_struct`, now the hinted rule), `PatProd`/`pat_l`/`pat_r`, and the `prodₛ`
+  cases of `prfn_struct`/`prfn_wit`/`prfn_den`/`prfn_rsv`.
+- `typing/unit.v`: `unit_ty : type unitₛ` (notation `()`), defined directly, with `Copy`,
+  `Send`, `Sync`, `ResOwn` and `unit_resolve`. `uninit_unit` relates `↯ 0` and `()` at
+  `unitₛ`.
+- `struct_relayₛ L L'` (the identity from `structₛ L 𝔄l` to `structₛ L' 𝔄l`) with
+  `struct_relay_eqtype` and `syn_bincl_struct_relay` (for `L = L'`): a struct whose layout
+  is computed from sizes is moved to an equal layout (used by `list_subtype`).
+- `struct_resolve_just` is now a hint of priority 10, after `struct_resolve`: it has no
+  premise, so before it shadowed `struct_resolve` and lost the predicates of the fields.
+- **Ports**: the ghost pairs of `typing/protocol.v` (`typed_sp_validate(_with_shr)`) are
+  `ghost_pair_ty tyA tyC`, a struct of two zero-sized fields at `c_layout [zst_mty;
+  zst_mty]`, with values `-[q; s]`; `examples/list.v`: a node is
+  `structₛ (list_node_layout (syn_bsize 𝔄)) [𝔄; rlistₛ 𝔄]` with
+  `list_node_layout n := SL [0; n] (n + mty_size MPtr) 1` (it depends only on the size of
+  the element, so that the nodes of lists of elements of the same size have equal layouts);
+  `examples/own.v` (a `c_layout` struct of two `i32`, alignment 4), `ref_send_sync_tests.v`
+  (structs at any layout `L`), `examples/place_res_root.v`. Stale comments about
+  `ProdLty`/`PFst`/`PSnd`/`prod_ty` updated.
+- Kept: `seq_tuple` and its cell lemmas (`gcont_seq_tuple_*`, `frepr_seq_tuple_*`), still
+  used as an auxiliary `mty` by `mem_cell_app` (`place_resolve.v`); `seq_enum` until L3.
