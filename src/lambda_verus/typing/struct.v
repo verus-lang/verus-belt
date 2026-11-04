@@ -198,7 +198,9 @@ End struct.
 
 (** The struct laid out by [repr(C)] ([c_layout]). *)
 Notation cstructₛ 𝔄l := (structₛ (c_layout (syn_mty <$> 𝔄l)) 𝔄l).
-Notation cstruct_ty tyl := (struct_ty (c_layout (syn_mty <$> _)) tyl).
+(** The index of a list of types. *)
+Definition typel_idx `{!typeG Σ} {𝔄l} (tyl: typel 𝔄l) : syn_typel := 𝔄l.
+Notation cstruct_ty tyl := (struct_ty (c_layout (syn_mty <$> typel_idx tyl)) tyl).
 
 Section typing.
   Context `{!typeG Σ}.

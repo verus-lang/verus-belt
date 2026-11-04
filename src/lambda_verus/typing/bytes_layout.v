@@ -696,6 +696,7 @@ Definition struct_fields (L: struct_layout) (𝔄l: syn_typel) : list (nat * mty
 (** The offset of field [j]. *)
 Definition struct_off (L: struct_layout) (𝔄l: syn_typel) (j: nat) : nat :=
   default 0%nat (struct_offs L 𝔄l !! j).
+Global Arguments struct_off : simpl never.
 
 Lemma syn_mty_struct L 𝔄l :
   syn_mty (structₛ L 𝔄l) =
