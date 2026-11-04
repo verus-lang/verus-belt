@@ -738,47 +738,25 @@ End typing.
 Section case.
   Context `{!typeG Σ}.
 
-  (** The bytes of the tag only guarded, by [G] (as [wp_load_na_guarded_gen]). *)
-  Lemma wp_get_discr_sum_guarded E 𝔄l (j: nat) l G P dg Φ :
-    ↑naN ⊆ E → (j < length 𝔄l)%nat →
-    (G &&{↑naN; dg}&&> P) -∗
-    □ (P -∗ ∃ bt, ⌜decode_value (MInt (sum_tag 𝔄l)) bt = Some (VInt (Z.of_nat j))⌝ ∗
-        l ↦b bt ∗ (l ↦b bt -∗ P)) -∗
-    G -∗ £(2 * dg) -∗ (G -∗ Φ (MLitV (VInt (Z.of_nat j)))) -∗
-    WP GetDiscr (syn_mty (enumₛ EL 𝔄l)) (MLit (VPtr l)) @ E {{ Φ }}.
-  Proof.
-    iIntros (? Hj) "#Guard #HP G £ HΦ".
-    iApply (wp_get_discr_guarded _ _ _ _ _ l G P
-      (λ cs, ∃ bt, cs = [(0%nat, bt)] ∧
-        decode_value (MInt (sum_tag 𝔄l)) bt = Some (VInt (Z.of_nat j)))
-      (λ off it, if decide (off = 0%nat ∧ it = sum_tag 𝔄l) then Some (Z.of_nat j) else None)
-      dg 1 with "Guard [] G [£] HΦ"); [done| | | | |by rewrite Nat.mul_1_r].
-    - rewrite length_fmap. apply seq_discr_eval; [done|]. by rewrite decide_True.
-    - by rewrite discr_depth_seq.
-    - intros cs off it z (bt & -> & Hbt) Hz. case_decide as Hc; [|done].
-      destruct Hc as [-> ->]. injection Hz as <-. by apply sum_tag_chunk.
-    - iIntros "!> HPx". iDestruct ("HP" with "HPx") as (bt Hbt) "[Hl Cl]".
-      iExists [(0%nat, bt)]. iSplit; [by eauto|].
-      rewrite /chunks_own /= shift_loc_0 right_id. iFrame "Hl". done.
-  Qed.
-
-  (** Reading the discriminant of a sum from its shared view (guarded loads of its tag). *)
+  (** Reading the discriminant of an enum from its shared view (guarded loads of the rest
+      of its bytes). The rest may be other bytes at each opening of the guard, so the
+      discriminator must read at most once ([enum_discr_depth1]). *)
   Lemma wp_get_discr_shr_view {EL 𝔄l} E κ (tyl: typel 𝔄l) j a dh D tid (l: loc)
       (G: iProp Σ) (Φ: val → iProp Σ) :
-    ↑NllftG ⊆ E →
+    ↑NllftG ⊆ E → (discr_depth (enum_discr EL 𝔄l) ≤ 1)%nat →
     (G &&{↑NllftG}&&> @[κ]) -∗ G -∗ £(2 * (D + 1)) -∗
     shr_view κ (enum_ty EL tyl) (pinj j a) dh D tid l -∗
     (G -∗ Φ (MLitV (VInt (Z.of_nat (fin_to_nat j))))) -∗
     WP GetDiscr (syn_mty (enumₛ EL 𝔄l)) #(l) @ E {{ Φ }}.
   Proof.
-    iIntros (?) "#Gκ G £ #(Pt & _ & _) HΦ".
+    iIntros (? Hd) "#Gκ G £ #(Pt & _ & _) HΦ".
     iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt".
     iDestruct (guards_weaken_rhs_sep_l with "Pt") as "Pt'".
-    iApply (wp_get_discr_sum_guarded _ _ _ _ G (tag_cell 𝔄l l j) (D + 1)
-      with "[] [] G £ HΦ"); [done|apply fin_to_nat_lt| |].
+    iApply (wp_get_discr_enum_guarded _ _ _ _ _ G (enum_rest EL 𝔄l j l) (D + 1)
+      with "[] [] G £ HΦ"); [solve_ndisj|done| |].
     { iApply (guards_transitive_right with "Gκ Pt'"). }
-    iIntros "!> (%bs & Hbs & %Hbs)". iExists bs. iFrame "Hbs".
-    iSplit; [done|]. iIntros "Hbs". iExists bs. by iFrame.
+    iIntros "!> (%b1 & %b2 & B1 & B2 & %Hr)". iExists b1, b2. iFrame "B1 B2".
+    iSplit; [done|]. iIntros "B1 B2". iExists b1, b2. by iFrame.
   Qed.
 
   (** At the root: case analysis on the sum at the hole of [K2], below the shared reference
@@ -787,6 +765,7 @@ Section case.
   Lemma type_case_vplace_pshr_root {EL 𝔄l 𝔅 𝔅l 𝔇} E L I (C: cctx 𝔇) p κ (K2: pctx (enumₛ EL 𝔄l) 𝔅)
       (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
     IntoPlistc el el' →
+    (discr_depth EL.(el_discr) ≤ 1)%nat →
     lctx_lft_alive E L (pctx_salv K2 κ) →
     ([∗ nat] i < length 𝔄l, typed_body E L I C
       (p ◁ₗ ShrLty (pctx_plug K2 (SumLty EL tyl i (OfTy (tyl +!! i)))) κ +:: T)
@@ -796,7 +775,7 @@ Section case.
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
-    move=> -> Alv. iIntros "el".
+    move=> -> Hdd Alv. iIntros "el".
     iIntros (tid [x xl] mask post iκs) "#LFT #TIME #PROPH #UNIQ #E L I C /=[Tp T] #Obs".
     destruct x as [x ζm].
     iDestruct "Tp" as (v Hp) "Tp". rewrite vplace_own_eq.
@@ -826,7 +805,7 @@ Section case.
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
     { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
     rewrite -Hz.
-    iApply (wp_get_discr_shr_view with "Hsl H1 £r V"); [solve_ndisj|].
+    iApply (wp_get_discr_shr_view with "Hsl H1 £r V"); [solve_ndisj|by apply enum_discr_depth1|].
     iIntros "H1".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro.
@@ -848,6 +827,7 @@ Section case.
       `{!PctxNoShr K} `{!PctxVRoot K} κ (K2: pctx (enumₛ EL 𝔄l) 𝔅) (tyl: typel 𝔄l) (T: tctx 𝔅l)
       el el' trl :
     IntoPlistc el el' →
+    (discr_depth EL.(el_discr) ≤ 1)%nat →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (enum_ty EL tyl))) κ)) →
     lctx_lft_alive E L (pctx_salv K2 κ) →
     ([∗ nat] i < length 𝔄l, typed_body E L I C
@@ -859,7 +839,7 @@ Section case.
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1).2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
-    move=> -> Alv1 Alv2. iIntros "el".
+    move=> -> Hdd Alv1 Alv2. iIntros "el".
     iIntros (tid [x xl] mask post iκs) "#LFT #TIME #PROPH #UNIQ #E L I C /=[Tp T] #Obs".
     destruct x as [x₀ ζm].
     iDestruct "Tp" as (v Hp) "Tp". iEval (rewrite vplace_own_open) in "Tp".
@@ -893,7 +873,7 @@ Section case.
     iAssert (fractional.half γh &&{↑NllftG}&&> @[pctx_slft K2 κ])%I as "#Hsl".
     { iApply (guards_transitive with "Hs"). iApply pctx_salv_slft. }
     rewrite -Hz.
-    iApply (wp_get_discr_shr_view with "Hsl H1 £r V"); [solve_ndisj|].
+    iApply (wp_get_discr_shr_view with "Hsl H1 £r V"); [solve_ndisj|by apply enum_discr_depth1|].
     iIntros "H1".
     iMod (fupd_mask_mono with "(Halfback H1 H2)") as "L"; [solve_ndisj|].
     iModIntro.
@@ -911,6 +891,7 @@ Section case.
   Lemma type_case_oplace_pshr {EL 𝔄l 𝔅 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (at_locₛ 𝔅) 𝔄)
       `{!PctxNoShr K} κ (K2: pctx (enumₛ EL 𝔄l) 𝔅) (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
     IntoPlistc el el' →
+    (discr_depth EL.(el_discr) ≤ 1)%nat →
     lctx_lft_alive E L (pctx_ulft K (ShrLty (pctx_plug K2 (OfTy (enum_ty EL tyl))) κ)) →
     lctx_lft_alive E L (pctx_salv K2 κ) →
     ([∗ nat] i < length 𝔄l, typed_body E L I C
@@ -922,7 +903,7 @@ Section case.
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K2 (pctx_get K x.1.2).2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
-    iIntros (???) "el".
+    iIntros (????) "el".
     iApply (type_case_vplace_pshr E L I C p (POwn n K) κ K2 tyl T el el' trl with "el"); done.
   Qed.
 End case.
