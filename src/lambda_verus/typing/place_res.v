@@ -260,19 +260,19 @@ End res_conv_uniq.
 Section res_sum.
   Context `{!typeG Σ}.
 
-  Lemma lty_size_sum_ofres {𝔄l} (tyl: typel 𝔄l) i :
-    lty_size (SumLty tyl i (OfRes (tyl +!! i))) = lty_size (OfRes (xsum_ty tyl)).
+  Lemma lty_size_sum_ofres {EL 𝔄l} (tyl: typel 𝔄l) i :
+    lty_size (SumLty EL tyl i (OfRes (tyl +!! i))) = lty_size (OfRes (enum_ty EL tyl)).
   Proof. done. Qed.
 
-  Lemma xsum_gho_res_pinj {𝔄l} i (tyl: typel 𝔄l) x0 d g tid :
-    ty_gho_res (Σ! tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_res (tyl +!! i) x0 d g tid.
-  Proof. rewrite [ty_gho_res (Σ! tyl)]/ty_gho_res /xsum_ty /=. by rewrite to_xsum_pinj. Qed.
+  Lemma xsum_gho_res_pinj {EL 𝔄l} i (tyl: typel 𝔄l) x0 d g tid :
+    ty_gho_res (enum_ty EL tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_res (tyl +!! i) x0 d g tid.
+  Proof. rewrite [ty_gho_res (enum_ty EL tyl)]/ty_gho_res /enum_ty /=. by rewrite to_xsum_pinj. Qed.
 
   (** A resolved sum at a known variant [i] is a sum place whose payload is the resolved
       leaf of the variant, and back. *)
-  Lemma sum_res_unfold_own m {𝔄l} (tyl: typel 𝔄l) i (y: ~~ (𝔄l !!ₗ i)) d g tid l :
-    ltype_own (Owned m) (OfRes (xsum_ty tyl)) (inl (PlaceIn (𝔄:=Σ! 𝔄l) (pinj i y))) d g tid l ⊣⊢
-    ltype_own (Owned m) (SumLty tyl i (OfRes (tyl +!! i))) (prfn_sum i (inl (PlaceIn y)))
+  Lemma sum_res_unfold_own m {EL 𝔄l} (tyl: typel 𝔄l) i (y: ~~ (𝔄l !!ₗ i)) d g tid l :
+    ltype_own (Owned m) (OfRes (enum_ty EL tyl)) (inl (PlaceIn (𝔄:=enumₛ EL 𝔄l) (pinj i y))) d g tid l ⊣⊢
+    ltype_own (Owned m) (SumLty EL tyl i (OfRes (tyl +!! i))) (prfn_sum i (inl (PlaceIn y)))
       d g tid l.
   Proof.
     rewrite /ltype_own /= psum_proj_pinj /= /res_leaf.
@@ -285,10 +285,10 @@ Section res_sum.
       rewrite (cbytes_sum _ i (tyl +!! i)). by iFrame.
   Qed.
 
-  Lemma sum_res_own_rfn m {𝔄l} (tyl: typel 𝔄l) i (y: ~~ (Σ! 𝔄l)) ζm q d g tid l :
-    ltype_own (Owned m) (SumLty tyl i (OfRes (tyl +!! i)))
-      (lty_rfn (SumLty tyl i (OfRes (tyl +!! i))) y ζm q) d g tid l ⊢
-    ltype_own (Owned m) (OfRes (Σ! tyl)) (inl (PlaceIn y)) d g tid l.
+  Lemma sum_res_own_rfn m {EL 𝔄l} (tyl: typel 𝔄l) i (y: ~~ (enumₛ EL 𝔄l)) ζm q d g tid l :
+    ltype_own (Owned m) (SumLty EL tyl i (OfRes (tyl +!! i)))
+      (lty_rfn (SumLty EL tyl i (OfRes (tyl +!! i))) y ζm q) d g tid l ⊢
+    ltype_own (Owned m) (OfRes (enum_ty EL tyl)) (inl (PlaceIn y)) d g tid l.
   Proof.
     rewrite lty_rfn_sum. case_match eqn:Ha.
     - apply psum_proj_Some in Ha. simpl in Ha. subst y.
@@ -297,10 +297,10 @@ Section res_sum.
   Qed.
 
   (** Folding back a resolved sum place whose payload is a resolved leaf. *)
-  Lemma tctx_fold_oplace_res_sum {𝔄l 𝔄} E L p n (K: pctx (Σ! 𝔄l) 𝔄) `{!PctxNoUniq K}
+  Lemma tctx_fold_oplace_res_sum {EL 𝔄l 𝔄} E L p n (K: pctx (enumₛ EL 𝔄l) 𝔄) `{!PctxNoUniq K}
       (tyl: typel 𝔄l) i :
-    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfRes (tyl +!! i)))]
-      +[p ◁ₗown{n} pctx_plug K (OfRes (Σ! tyl))] (λ post '-[x], post -[x]).
+    tctx_incl E L +[p ◁ₗown{n} pctx_plug K (SumLty EL tyl i (OfRes (tyl +!! i)))]
+      +[p ◁ₗown{n} pctx_plug K (OfRes (enum_ty EL tyl))] (λ post '-[x], post -[x]).
   Proof.
     apply (tctx_oplace_change_hole _ _ _ _ K); [done|done|].
     iIntros (y ζm q d g tid l) "H !>". by iApply sum_res_own_rfn.
@@ -310,13 +310,13 @@ Section res_sum.
       the discriminant is read from the bytes of the resolved leaf ([GetDiscr]), the leaf is
       unfolded into a sum place at the variant [i] of its value, with a resolved payload,
       and the program continues with branch [i]. *)
-  Lemma type_case_oplace_res {𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (Σ! 𝔄l) 𝔄)
+  Lemma type_case_oplace_res {EL 𝔄l 𝔄 𝔅l 𝔇} E L I (C: cctx 𝔇) p n (K: pctx (enumₛ EL 𝔄l) 𝔄)
       `{!PctxNoUniq K} (tyl: typel 𝔄l) (T: tctx 𝔅l) el el' trl :
     IntoPlistc el el' →
     ([∗ nat] i < length 𝔄l, typed_body E L I C
-      (p ◁ₗown{n} pctx_plug K (SumLty tyl i (OfRes (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
-    typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfRes (Σ! tyl)) +:: T)
-      (case: (GetDiscr (syn_mty (Σ! 𝔄l)) (pctx_expr K p)) of el)
+      (p ◁ₗown{n} pctx_plug K (SumLty EL tyl i (OfRes (tyl +!! i))) +:: T) (el' -!! i) (trl -!! i)) -∗
+    typed_body E L I C (p ◁ₗown{n} pctx_plug K (OfRes (enum_ty EL tyl)) +:: T)
+      (case: (GetDiscr (syn_mty (enumₛ EL 𝔄l)) (pctx_expr K p)) of el)
       (λ post '(x -:: cl), let 'xinj i _ := to_xsum (pctx_get K x.1.2) in
         (trl -!! i) post (x -:: cl))%type.
   Proof.
@@ -335,17 +335,17 @@ Section res_sum.
     { by rewrite -(semi_iso' to_xsum of_xsum (pctx_get K x₀)) Hj. }
     try rewrite -Hy.
     set lr := l.
-    set lK := pctx_loc K (lty_size (OfRes (Σ! tyl))) x₀ lr.
+    set lK := pctx_loc K (lty_size (OfRes (enum_ty EL tyl))) x₀ lr.
     (* The address of the hole. *)
     wp_bind (pctx_expr K p).
     iApply (wp_wand with "[Rest]").
-    { iApply (wp_pctx_expr K (lty_size (OfRes (Σ! tyl))) 1 x₀ ζm [] d g tid lr p True True
+    { iApply (wp_pctx_expr K (lty_size (OfRes (enum_ty EL tyl))) 1 x₀ ζm [] d g tid lr p True True
         with "[] Rest").
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         iFrame; by iPureIntro. }
     iIntros (w) "(-> & _ & _ & Rest)".
     (* Read the discriminant ([GetDiscr] reads the tag). *)
-    iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Tag & Pay & Pad)".
+    iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Rest & Pay)".
     iDestruct "Tag" as (bt) "[Bt %Hbt]".
     wp_bind (GetDiscr _ _).
     iApply (wp_get_discr_sum with "Bt"); [exact Hbt|apply fin_to_nat_lt|]. iIntros "Bt".
@@ -355,8 +355,8 @@ Section res_sum.
       with "LFT TIME PROPH UNIQ E L I C [-] []"); last first.
     { iApply proph_obs_impl; [|done]=>/= ?. by rewrite -?Hy to_xsum_pinj. }
     iFrame "T". iExists (MLitV (VPtr l)). iSplit; [done|]. iExists D, d, g. iFrame "⧖".
-    rewrite (lty_nrc_plug_eq K (OfRes (Σ! tyl)) (SumLty tyl j (OfRes (tyl +!! j)))) //
-      (lty_size_plug_eq K _ (OfRes (Σ! tyl))) //.
+    rewrite (lty_nrc_plug_eq K (OfRes (enum_ty EL tyl)) (SumLty EL tyl j (OfRes (tyl +!! j)))) //
+      (lty_size_plug_eq K _ (OfRes (enum_ty EL tyl))) //.
     iFrame "⧗p Fr". iSplit; [done|]. iSplit; [done|].
     rewrite /ltype_own lty_pat_plug lty_rfn_plug -Hy lty_rfn_sum_in ltype_own_plug.
     iFrame "Rest".

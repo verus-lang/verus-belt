@@ -1230,7 +1230,7 @@ Section pctx.
     ⊢ ty_lft (lty_fold (pctx_plug K lt)) ⊑ ty_lft (lty_fold lt).
   Proof.
     induction K in lt |- *; simpl; [iApply guards_refl| |iApply IHK|
-      iApply llftl_incl_trans; [iApply (lty_lft_sum (EL:=EL) _ _ (pctx_plug K lt))|iApply IHK]|
+      iApply llftl_incl_trans; [iApply (lty_lft_sum _ _ (pctx_plug K lt))|iApply IHK]|
       iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply IHK]|
       iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply IHK]|
       iApply llftl_incl_trans; [iApply llftl_intersect_incl_r|iApply IHK]].

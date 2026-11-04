@@ -1281,8 +1281,9 @@ Section ltype_lemmas.
 
   (** The lifetime of (the folded type of) a sum place is included in the lifetime of
       its payload. *)
-  Lemma lty_lft_sum {EL 𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
-    ⊢ ty_lft (lty_fold (SumLty EL tyl i lt)) ⊑ ty_lft (lty_fold lt).
+  (** (Stated without the layout, so that it applies to any [SumLty EL tyl i lt].) *)
+  Lemma lty_lft_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
+    ⊢ lft_intersect_list (tyl_lfts (hlist_set tyl i (lty_fold lt))) ⊑ ty_lft (lty_fold lt).
   Proof.
     iPoseProof (lft_intersect_tyl_lfts_lookup_incl (hlist_set tyl i (lty_fold lt)) i) as "H".
     by rewrite hlookup_hlist_set.
@@ -1298,7 +1299,7 @@ Section ltype_lemmas.
     iDestruct (sum_node_inv with "H") as %(r' & ->).
     rewrite sum_node_sum. iDestruct "H" as "(Rest & C)".
     iAssert (G &&{↑NllftG}&&> @[ty_lft (lty_fold lt)])%I as "#Gk'".
-    { iApply (guards_transitive with "Gk"). iApply (lty_lft_sum (EL:=EL)). }
+    { iApply (guards_transitive with "Gk"). iApply lty_lft_sum. }
     iMod ("Ub" $! (Owned m) with "[//] Gk' G Dead C") as "[$ (%d1 & %g1 & C)]".
     iModIntro. iExists d1, g1. rewrite sum_node_sum. by iFrame.
   Qed.
@@ -2269,7 +2270,7 @@ Section cpd.
       { iDestruct "B" as (y Hy) "B". iExists (pinj i y).
         iSplit; [iPureIntro; by eapply ty_fval_pinj|].
         rewrite (cbytes_sum _ i (lty_fold lt)). iFrame. }
-      iDestruct (guarded_upd_weaken with "[] U") as "U"; [iApply (lty_lft_sum (EL:=EL))|].
+      iDestruct (guarded_upd_weaken with "[] U") as "U"; [iApply lty_lft_sum|].
       iApply (guarded_upd_mono with "[] U"). iIntros "(%y & %d' & %g' & %Hy & Eqz & ⧖1 & Gho) !>".
       iExists (pinj i y), d', g'. iSplit; [iPureIntro; by eapply ty_fval_pinj|].
       iFrame "⧖1". iSplitL "Eqz"; [iNext; by iApply proph_eqz_sum|].

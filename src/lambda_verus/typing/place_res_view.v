@@ -50,7 +50,7 @@ Section view_laws.
   Proof.
     revert κ m p r d g d' g' tid l.
     induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l Lay lts IH|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind';
+      𝔄l EL tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind';
       intros κ m p r d g d' g' tid l Hd Hg; simpl; try by apply view_leaf_depth_mono.
     - destruct r as [?|[[l' r'] ξi]]; [done|]. rewrite /view_uniq.
       iIntros "(#G & $ & %d1 & %g1 & %Hle & C & I)". iSplitR.
@@ -149,7 +149,7 @@ Section view_laws.
   Fixpoint lty_sbl {𝔄} (lt: lty 𝔄) : lft :=
     match lt with
     | ShrBlocked _ α => α
-    | UniqLty lt' _ | OwnPtrLty _ lt' | SumLty _ _ lt' => lty_sbl lt'
+    | UniqLty lt' _ | OwnPtrLty _ lt' | SumLty _ _ _ lt' => lty_sbl lt'
     | StructLty _ lts => lft_intersect_list (hcmap (λ _ lt, lty_sbl lt) lts)
     | _ => static
     end.
@@ -218,7 +218,7 @@ Section view_laws.
   Proof.
     revert κ m x q d g tid l.
     induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l Lay lts IH|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind';
+      𝔄l EL tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind';
       intros κ m x q d g tid l; iIntros "#LFT #Incl V"; simpl.
     - iDestruct "V" as "#V".
       iDestruct (view_leaf_unblocked_tguards κ m ty x d g tid l with "LFT Incl V") as "#T".
@@ -431,10 +431,10 @@ Section lty_share_view.
     | OfTy _ | Blocked _ _ | ShrBlocked _ _ | ShrLty _ _ => True
     | UniqLty lt' _ =>
         (match lt' with
-         | OfTy _ | StructLty _ _ | OwnPtrLty _ _ | UniqLty _ _ | SumLty _ _ _ => True
+         | OfTy _ | StructLty _ _ | OwnPtrLty _ _ | UniqLty _ _ | SumLty _ _ _ _ => True
          | _ => False
          end) ∧ lty_vok lt'
-    | OwnPtrLty _ lt' | SumLty _ _ lt' => lty_vok lt'
+    | OwnPtrLty _ lt' | SumLty _ _ _ lt' => lty_vok lt'
     | StructLty _ lts => foldr and True (hcmap (λ _ lt, lty_vok lt) lts)
     | OfRes _ | ResUniqLty _ _ | Moved _ => False
     end.
@@ -595,8 +595,8 @@ Section lty_share_view2.
     rewrite /view_struct. iFrame "V". iApply (lguards_weaken_later with "Pad"). lia.
   Qed.
 
-  Lemma share_view_sum {𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
-    share_view_stmt lt → share_view_stmt (SumLty tyl i lt).
+  Lemma share_view_sum {EL 𝔄l} (tyl: typel 𝔄l) i (lt: lty (𝔄l !!ₗ i)) :
+    share_view_stmt lt → share_view_stmt (SumLty EL tyl i lt).
   Proof.
     iIntros (IH κ m x ζm q d g g' tid l G E ???) "#LFT #PROPH #UNIQ #Gκ #Incl G Bor".
     have ?: ↑Nllft ⊆ E by (trans lazyE; [rewrite /lazyE; solve_ndisj|done]).
@@ -774,7 +774,7 @@ Section lty_share_view4.
   Lemma lty_share_view {𝔄} (lt: lty 𝔄) : lty_vok lt → share_view_stmt lt.
   Proof.
     induction 𝔄, lt as [𝔄 ty|𝔄 ty α|𝔄 lt κ' IH|𝔄 n lt IH|𝔄l Lay lts IH|𝔄 ty α|
-      𝔄l tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind'; simpl; intros Hv;
+      𝔄l EL tyl i lt IH|𝔄 lt κ' IH|𝔄 ty|𝔄 lt κ' IH|𝔄 ty] using lty_ind'; simpl; intros Hv;
       try done.
     - apply share_view_ofty.
     - apply share_view_blocked.

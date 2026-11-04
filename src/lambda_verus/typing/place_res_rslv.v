@@ -239,9 +239,9 @@ Section lty_res.
     rewrite /own_node. by iFrame.
   Qed.
 
-  Lemma lty_res_sum {𝔄l} E L (tyl: typel 𝔄l) i (lt lt': lty (𝔄l !!ₗ i)) k Φ :
+  Lemma lty_res_sum {EL 𝔄l} E L (tyl: typel 𝔄l) i (lt lt': lty (𝔄l !!ₗ i)) k Φ :
     lty_res E L lt lt' k Φ →
-    lty_res E L (SumLty tyl i lt) (SumLty tyl i lt') k
+    lty_res E L (SumLty EL tyl i lt) (SumLty EL tyl i lt') k
       (λ x ζm q π, ∀ y, psum_proj i x = Some y → Φ y ζm (false :: q) π).
   Proof.
     intros [Hs Hn Rslv]. split; [done|done|].
@@ -249,7 +249,7 @@ Section lty_res.
     rewrite lty_rfn_sum. destruct (psum_proj i x) as [y|] eqn:Hy; last first.
     { by rewrite /ltype_own /= /prfn_dummy /sum_node /=. }
     rewrite /ltype_own ltype_own_cp_sum_owned sum_node_sum.
-    iDestruct "Own" as "(Tag & Own & Pad)".
+    iDestruct "Own" as "(Rest & Own)".
     iDestruct (Rslv G m y ζm (false :: q) d g D tid _ with
       "LFT PROPH UNIQ TIME E L G ⧖ Own") as "T"; [done..|].
     iApply (ctask_mono with "[Tag Pad] T"). iIntros "(Obs & $ & Own) !>".
