@@ -67,9 +67,8 @@ Section view_laws.
       iApply (fields_node_hmap_mono with "F"). eapply HForall_impl; [|exact IH].
       intros ?? H' p' r' tid' l'. by apply H'.
     - destruct r as [?|s]; [done|]. rewrite /view_sum.
-      case_match; [|done]. iIntros "(#G1 & C & #G2)".
-      iSplitR; [iApply (lguards_weaken_later with "G1"); lia|].
-      iSplitL; [iApply (IH with "C"); lia|]. iApply (lguards_weaken_later with "G2"); lia.
+      case_match; [|done]. iIntros "(#G1 & C)".
+      iSplitR; [iApply (lguards_weaken_later with "G1"); lia|]. iApply (IH with "C"); lia.
     - iIntros "[V $]". by iApply (view_leaf_depth_mono with "V").
     - done.
     - done.
@@ -261,14 +260,14 @@ Section view_laws.
     - destruct (psum_proj i x) as [y|] eqn:Hy; last first.
       { by rewrite /prfn_dummy /view_sum /=. }
       iEval (rewrite /view_sum /prfn_sum psum_proj_pinj) in "V".
-      iDestruct "V" as "(#G1 & V & #G2)".
+      iDestruct "V" as "(#G1 & V)".
       iAssert (κ ⊑ ty_lft (lty_fold lt))%I as "#Incl'".
       { iApply (llftl_incl_trans with "Incl"). iApply lty_lft_sum. }
       iDestruct (IH with "LFT Incl' V") as "[V (%ηl & %Hdep & #T)]".
-      iSplitL "V". { rewrite /view_sum /prfn_sum psum_proj_pinj. by iFrame "G1 V G2". }
+      iSplitL "V". { rewrite /view_sum /prfn_sum psum_proj_pinj. by iFrame "G1 V". }
       iExists ηl. iFrame "T". iPureIntro.
-      intros ζl. change (prfn_rsv (prfn_sum i (lty_rfn lt y ζm (false :: q))) ζl →
-        prfn_den (prfn_sum i (lty_rfn lt y ζm (false :: q))) ./ ζl ++ ηl).
+      intros ζl. change (prfn_rsv (prfn_sum (EL:=EL) i (lty_rfn lt y ζm (false :: q))) ζl →
+        prfn_den (prfn_sum (EL:=EL) i (lty_rfn lt y ζm (false :: q))) ./ ζl ++ ηl).
       rewrite prfn_rsv_sum prfn_den_sum. intros Hr.
       apply (proph_dep_constr (λ a, (pinj i a))). by apply Hdep.
     - iDestruct "V" as "[#V %Hv]".
@@ -604,19 +603,16 @@ Section lty_share_view2.
     { rewrite /= /prfn_dummy /sum_node /=.
       iMod (llftl_bor_acc_guarded with "LFT Bor Gκ G") as "[>[] _]"; done. }
     rewrite ltype_own_cp_sum_owned sum_node_sum /=.
-    iMod (llftl_sep_split with "LFT Bor") as "[Tag Bor]"; [done|].
-    iMod (llftl_sep_split with "LFT Bor") as "[Bor Pad]"; [done|].
-    iMod (llftl_bor_guard with "LFT Tag") as "#Tag"; [done|].
-    iMod (llftl_bor_guard with "LFT Pad") as "#Pad"; [done|].
+    iMod (llftl_sep_split with "LFT Bor") as "[ERest Bor]"; [done|].
+    iMod (llftl_bor_guard with "LFT ERest") as "#ERest"; [done|].
     iAssert (κ ⊑ ty_lft (lty_fold lt))%I as "#Incl'".
     { iApply (llftl_incl_trans with "Incl"). iApply lty_lft_sum. }
     iMod (IH κ m y ζm (false :: q) d g g' tid
-      (l +ₗ tag_size 𝔄l) G E
+      (l +ₗ enum_off EL 𝔄l i) G E
       with "LFT PROPH UNIQ Gκ Incl' G Bor") as "Upd"; [done..|].
     iModIntro. iApply (step_fupdN_wand with "Upd"). iIntros ">[$ V] !>".
-    rewrite /view_sum /prfn_sum psum_proj_pinj. iFrame "V". iSplit.
-    - iApply (lguards_weaken_later with "Tag"). lia.
-    - iApply (lguards_weaken_later with "Pad"). lia.
+    rewrite /view_sum /prfn_sum psum_proj_pinj. iFrame "V".
+    iApply (lguards_weaken_later with "ERest"). lia.
   Qed.
 End lty_share_view2.
 

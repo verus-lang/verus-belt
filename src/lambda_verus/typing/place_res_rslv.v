@@ -252,7 +252,7 @@ Section lty_res.
     iDestruct "Own" as "(Rest & Own)".
     iDestruct (Rslv G m y ζm (false :: q) d g D tid _ with
       "LFT PROPH UNIQ TIME E L G ⧖ Own") as "T"; [done..|].
-    iApply (ctask_mono with "[Tag Pad] T"). iIntros "(Obs & $ & Own) !>".
+    iApply (ctask_mono with "[Rest] T"). iIntros "(Obs & $ & Own) !>".
     rewrite lty_rfn_sum Hy ltype_own_cp_sum_owned sum_node_sum. iFrame.
     iApply (proph_obs_impl with "Obs")=> π ? y' [= <-]. done.
   Qed.

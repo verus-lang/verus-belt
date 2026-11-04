@@ -164,7 +164,7 @@ Section pctx_read.
     pctx_noshr K1 →
     ⊢ pctx_alv (pctx_app K1 K2) lt ⊑ pctx_ulft K1 (pctx_plug K2 lt) ⊓ pctx_alv K2 lt.
   Proof.
-    induction K1 as [|? ? ? ? ? ? K1 IH ?|? ? ? K1 IH|? ? ? ? ? K1 IH|𝔅' 𝔄' κ' K1 IH| |]
+    induction K1 as [|? ? ? ? ? ? K1 IH ?|? ? ? K1 IH|? ? ? ? ? ? K1 IH|𝔅' 𝔄' κ' K1 IH| |]
       in K2 |- *;
       intros HK; [|exact (IH K2 HK)..| |done|done].
     - iApply llftl_incl_glb; [iApply lft_incl_static|iApply guards_refl].

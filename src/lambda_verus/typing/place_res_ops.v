@@ -97,15 +97,14 @@ Section view_acc.
       iApply ("Cl" with "[//] [//] [//] [%] V'"). lia.
     - rewrite /psum_proj_or. destruct (psum_proj i x) as [y|] eqn:Hy; last first.
       { by rewrite /prfn_dummy /view_sum. }
-      rewrite /view_sum /prfn_sum psum_proj_pinj lty_size_plug.
-      iDestruct "V" as "(#Gt & V & #Gq)".
+      rewrite /view_sum /prfn_sum psum_proj_pinj.
+      iDestruct "V" as "(#Gt & V)".
       iDestruct (IH with "GR V") as (dh gh) "(% & Vh & Gs & Cl)"; [done|].
       iExists dh, gh. iFrame "Vh". iSplit; [done|]. iFrame "Gs".
       iIntros (lt' p' r' dh' gh' dn gn Hsz Hf Hb Hle) "V'".
-      rewrite /view_sum /prfn_sum psum_proj_pinj lty_size_plug Hsz.
+      rewrite /view_sum /prfn_sum psum_proj_pinj.
       iSplit; [iApply (lguards_weaken_later with "Gt"); lia|].
-      iSplitL; [iApply ("Cl" with "[//] [//] [//] [%] V'"); lia|].
-      iApply (lguards_weaken_later with "Gq"); lia.
+      iApply ("Cl" with "[//] [//] [//] [%] V'"); lia.
     - destruct HK as [_ HK]. rewrite /view_uniq.
       iDestruct "V" as "(#Gp & #Incl & %d' & %g' & %Hle & V & I)".
       iDestruct (IH with "GR V") as (dh gh) "(% & Vh & Gs & Cl)"; [done|].

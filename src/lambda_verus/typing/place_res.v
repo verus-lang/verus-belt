@@ -272,15 +272,15 @@ Section res_sum.
       leaf of the variant, and back. *)
   Lemma sum_res_unfold_own m {EL 𝔄l} (tyl: typel 𝔄l) i (y: ~~ (𝔄l !!ₗ i)) d g tid l :
     ltype_own (Owned m) (OfRes (enum_ty EL tyl)) (inl (PlaceIn (𝔄:=enumₛ EL 𝔄l) (pinj i y))) d g tid l ⊣⊢
-    ltype_own (Owned m) (SumLty EL tyl i (OfRes (tyl +!! i))) (prfn_sum i (inl (PlaceIn y)))
+    ltype_own (Owned m) (SumLty EL tyl i (OfRes (tyl +!! i))) (prfn_sum (EL:=EL) i (inl (PlaceIn y)))
       d g tid l.
   Proof.
     rewrite /ltype_own /= psum_proj_pinj /= /res_leaf.
     iSplit.
     - iIntros "(%x & -> & Pt & Gho)". rewrite (cbytes_sum _ i (tyl +!! i)).
       iEval (setoid_rewrite xsum_gho_res_pinj) in "Gho".
-      iDestruct "Pt" as "($ & Pt & $)". iExists y. by iFrame.
-    - iIntros "(Tag & (%x & -> & Pt & Gho) & Pad)". iExists _. iSplit; [done|].
+      iDestruct "Pt" as "($ & Pt)". iExists y. by iFrame.
+    - iIntros "(Rest & (%x & -> & Pt & Gho))". iExists _. iSplit; [done|].
       iEval (setoid_rewrite xsum_gho_res_pinj).
       rewrite (cbytes_sum _ i (tyl +!! i)). by iFrame.
   Qed.
@@ -344,11 +344,11 @@ Section res_sum.
       - wp_bind p. iApply wp_wand; [by iApply wp_eval_path|]. iIntros (?) "->".
         iFrame; by iPureIntro. }
     iIntros (w) "(-> & _ & _ & Rest)".
-    (* Read the discriminant ([GetDiscr] reads the tag). *)
-    iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(Rest & Pay)".
-    iDestruct "Tag" as (bt) "[Bt %Hbt]".
+    (* Read the discriminant ([GetDiscr] reads the rest of the bytes). *)
+    iEval (rewrite (cbytes_sum _ j (tyl +!! j))) in "Pt1". iDestruct "Pt1" as "(ERest & Pay)".
+    iDestruct "ERest" as (b1 b2) "(B1 & B2 & %Hr)".
     wp_bind (GetDiscr _ _).
-    iApply (wp_get_discr_sum with "Bt"); [exact Hbt|apply fin_to_nat_lt|]. iIntros "Bt".
+    iApply (wp_get_discr_enum with "B1 B2"); [exact Hr|]. iIntros "B1 B2".
     wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
     iDestruct (big_sepN_lookup _ _ j with "el") as "el".
     iApply ("el" $! _ (((l, x₀), ζm) -:: xl)
@@ -362,6 +362,6 @@ Section res_sum.
     iFrame "Rest".
     iApply sum_res_unfold_own. rewrite /ltype_own /= /res_leaf.
     iExists (pinj j a). iSplit; [done|]. rewrite (cbytes_sum _ j (tyl +!! j)).
-    iFrame "Gho1". iFrame "Pay Pad". iExists bt. by iFrame.
+    iFrame "Gho1 Pay". iExists b1, b2. by iFrame.
   Qed.
 End res_sum.
