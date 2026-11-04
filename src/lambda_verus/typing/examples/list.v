@@ -15,8 +15,8 @@ enum List<T> { Nil, Cons(T, Box<List<T>>) }
 ```
 
 For list, we (roughly speaking) need an isomorphism between
-`listₛ 𝔄` and `(() + Node 𝔄)`, where the node `Node 𝔄` is a struct of the element and
-the (boxed) tail. In practice it's a bit more complicated because of all the padding
+`listₛ 𝔄` and `(() + Node 𝔄)` (an enum), where the node `Node 𝔄` is a struct of the element
+and the (boxed) tail. In practice it's a bit more complicated because of all the padding
 and location information.
 
 In general, it should be possible to find an interpretation sort satisfying the recursive
@@ -44,7 +44,13 @@ Definition rlistₛ 𝔄 : syn_type := at_locₛ (listₛ (𝔄 * locₛ)).
 Definition list_node_layout (n: nat) : struct_layout := SL [0; n] (n + mty_size MPtr) 1.
 Notation list_nodeₛ 𝔄 := (structₛ (list_node_layout (syn_bsize 𝔄)) [𝔄; rlistₛ 𝔄])%ST.
 
-Program Definition list_to_sumₛ {𝔄} : rlistₛ 𝔄 →ₛ at_locₛ (Σ! [unitₛ ; list_nodeₛ 𝔄]) := {|
+(** The layout of [Option<Node<T>>] (a [Nil] or a node): the tagged layout ([tagged_layout]),
+    which also depends only on the size of the element. *)
+Definition list_enum_layout (n: nat) : enum_layout :=
+  tagged_layout [zst_mty; MTuple [] (n + mty_size MPtr) 1].
+Notation list_sumₛ 𝔄 := (enumₛ (list_enum_layout (syn_bsize 𝔄)) [unitₛ; list_nodeₛ 𝔄])%ST.
+
+Program Definition list_to_sumₛ {𝔄} : rlistₛ 𝔄 →ₛ at_locₛ (list_sumₛ 𝔄) := {|
   syn_type_morphism_fn := λ l, match l with
       | (loc0, []) => (loc0, inl ())
       | (loc0, (x, loc) :: xl) => (loc0, inr (inl -[x; (loc, xl)]))
@@ -60,7 +66,7 @@ Next Obligation. intros 𝔄 [loc0 l]. destruct l as [|[a c] xl]; first done.
   by rewrite !List.app_nil_r.
 Qed.
 
-Program Definition sum_to_listₛ {𝔄} : at_locₛ (Σ! [unitₛ ; list_nodeₛ 𝔄]) →ₛ rlistₛ 𝔄  := {|
+Program Definition sum_to_listₛ {𝔄} : at_locₛ (list_sumₛ 𝔄) →ₛ rlistₛ 𝔄  := {|
   syn_type_morphism_fn := λ s, match s with
       | (loc0, inl ()) => (loc0, [])
       | (loc0, inr (inl -[x; (loc, xl)])) => (loc0, (x, loc) :: xl)
@@ -83,7 +89,7 @@ Lemma syn_bincl_sum_to_list {𝔄} : syn_bincl (sum_to_listₛ (𝔄:=𝔄)).
 Proof. apply syn_bincl_same; [done|]. by intros [l [[]|[[x [[loc xl] []]]|[]]]]. Qed.
 
 Local Instance sum_list_isoₛ {𝔄} : @Isoₛ
-    (at_locₛ (Σ! [unitₛ ; list_nodeₛ 𝔄]))
+    (at_locₛ (list_sumₛ 𝔄))
     (rlistₛ 𝔄)
     sum_to_listₛ
     list_to_sumₛ.
@@ -132,7 +138,7 @@ Lemma syn_bincl_list_map {𝔄 𝔅} (f: 𝔄 →ₛ 𝔅) : syn_bincl (list_map
 Proof. apply syn_bincl_same; [done|]. by intros [??]. Qed.
 
 (** The box of a list node owns the bytes of the sum; its size is syntactic. *)
-Definition list_node_size 𝔄 : nat := syn_bsize (Σ! [unitₛ ; list_nodeₛ 𝔄]).
+Definition list_node_size 𝔄 : nat := syn_bsize (list_sumₛ 𝔄).
 
 Section list.
   Context `{!typeG Σ}.
@@ -140,7 +146,8 @@ Section list.
   Definition list_map {𝔄} (ty: type 𝔄) (ty': type (rlistₛ 𝔄)) : type (rlistₛ 𝔄) :=
     <{sum_to_listₛ ; list_to_sumₛ}>
       (own_bytes (list_node_size 𝔄)
-        (Σ! +[(); struct_ty (list_node_layout (syn_bsize 𝔄)) +[ty; ty']]))%T.
+        (enum_ty (list_enum_layout (syn_bsize 𝔄))
+          +[(); struct_ty (list_node_layout (syn_bsize 𝔄)) +[ty; ty']]))%T.
 End list.
 
 (* In Rust:
@@ -158,7 +165,8 @@ Section typing.
   Lemma list_unfold_fold {𝔄} (ty: type 𝔄) E L :
     eqtype E L (list_ty ty)
       (own_bytes (list_node_size 𝔄)
-        (Σ! +[(); struct_ty (list_node_layout (syn_bsize 𝔄)) +[ty; list_ty ty]]))%T
+        (enum_ty (list_enum_layout (syn_bsize 𝔄))
+          +[(); struct_ty (list_node_layout (syn_bsize 𝔄)) +[ty; list_ty ty]]))%T
         list_to_sumₛ sum_to_listₛ.
   Proof.
     eapply eqtype_eq.
@@ -186,7 +194,7 @@ Section typing.
   (** The size and the layout of a node depend on the element type, so the subtyping of
       the nodes needs [syn_bsize 𝔄 = syn_bsize 𝔅]; it is part of the subtyping of the
       elements ([subtype_bincl_elim]). The nodes are then structs of the same layout
-      ([struct_relay_eqtype]). The fixpoint map [list_mapₛ f] preserves the bytes for any
+      ([struct_relay_eqtype], [enum_relay_eqtype]). The fixpoint map [list_mapₛ f] preserves the bytes for any
       [f] ([syn_bincl_list_map]). *)
   Lemma list_subtype {𝔄 𝔅} E L (f: 𝔄 →ₛ 𝔅) ty ty' :
     subtype E L ty ty' f → subtype E L (list_ty ty) (list_ty ty') (list_mapₛ f).
@@ -198,9 +206,14 @@ Section typing.
       (list_node_layout (syn_bsize 𝔄)) (list_node_layout (syn_bsize 𝔅)) ∘ₛ
       struct_mapₛ (𝔄l:=[𝔄; rlistₛ 𝔄]) (𝔅l:=[𝔅; rlistₛ 𝔅])
         (list_node_layout (syn_bsize 𝔄)) -[f; list_mapₛ f]).
-    have [Hsz _]: syn_bincl (psum_mapₛ (𝔄l:=[unitₛ; list_nodeₛ 𝔄])
-      (𝔅l:=[unitₛ; list_nodeₛ 𝔅]) -[idₛ; g]).
-    { apply syn_bincl_psum_map. intros i. inv_fin i; [done|]. intros i. inv_fin i.
+    have HEL : list_enum_layout (syn_bsize 𝔄) = list_enum_layout (syn_bsize 𝔅).
+    { by rewrite (proj1 Hb). }
+    have [Hsz _]: syn_bincl (enum_relayₛ (𝔄l:=[unitₛ; list_nodeₛ 𝔅])
+        (list_enum_layout (syn_bsize 𝔄)) (list_enum_layout (syn_bsize 𝔅)) ∘ₛ
+      enum_mapₛ (𝔄l:=[unitₛ; list_nodeₛ 𝔄]) (𝔅l:=[unitₛ; list_nodeₛ 𝔅])
+        (list_enum_layout (syn_bsize 𝔄)) -[idₛ; g]).
+    { apply syn_bincl_compose; [|by apply syn_bincl_enum_relay].
+      apply syn_bincl_enum_map. intros i. inv_fin i; [done|]. intros i. inv_fin i.
       - apply syn_bincl_compose; [|by apply syn_bincl_struct_relay].
         apply syn_bincl_struct_map. intros i. inv_fin i; [done|]. intros i. inv_fin i.
         + apply syn_bincl_list_map.
@@ -210,7 +223,11 @@ Section typing.
     - apply syn_bincl_list_map.
     - intros. rewrite <- syn_type_morphism_ξl. trivial.
     - intros ty0 ty0' Sub'. rewrite /list_map /list_node_size Hsz. eapply subtype_eq.
-      { apply mod_ty_subtype, own_bytes_subtype, xsum_subtype.
+      { apply mod_ty_subtype, own_bytes_subtype.
+        eapply (subtype_trans _ (enum_ty (list_enum_layout (syn_bsize 𝔄))
+          +[(); struct_ty (list_node_layout (syn_bsize 𝔅)) +[ty'; ty0']]%T));
+          [|apply (proj1 (enum_relay_eqtype _ _ _ _ _ HEL))].
+        apply enum_subtype.
         apply subtypel_cons; [solve_typing|]. apply subtypel_cons; [|solve_typing].
         eapply (subtype_trans _ (struct_ty (list_node_layout (syn_bsize 𝔄)) +[ty'; ty0']));
           [apply struct_subtype; solve_typing|].
