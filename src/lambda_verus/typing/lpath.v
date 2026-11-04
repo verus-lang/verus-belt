@@ -10,7 +10,8 @@
     whose field [length lb] is the context [K], the fields before it having the place
     types [lb] and those after it [la];
     [POwn n K] is an owned pointer whose pointee is the context [K]; [PSum EL tyl i w K] is
-    a sum of variant [i] whose payload is the context [K] (at offset 1, after the tag;
+    an enum of layout [EL] at variant [i] whose payload is the context [K] (at
+    [enum_off EL 𝔄l i];
     [w] is a default payload value, only used by [pctx_get] for values of other
     variants, which are not owned: see [pctx_in]); [PUniq κ K] is a unique borrow at [κ]
     whose referent is the context [K] (a nested place, [UniqLty]); [PShr κ K] is a shared

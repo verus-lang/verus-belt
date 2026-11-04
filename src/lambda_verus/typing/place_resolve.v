@@ -809,7 +809,7 @@ Section oplace.
       [type_drop_oplace_instr] (the unblocked leaves are resolved, e.g. moved-out leaves
       [Moved ty] and uninitialized leaves [OfTy (↯ n)] with nothing, [lty_resolve_just];
       the pointees of the unfolded owned pointers are freed), but the memory of the place
-      itself is kept, as the bytes of [↯ n] (the tags of the sums of the place are
+      itself is kept, as the bytes of [↯ n] (the taggers of the enums of the place are
       forgotten). E.g. a box all of whose fields have been moved out becomes a box of
       [↯ n] again, which can be re-used or freed ([type_drop_oplace_instr]). *)
   Lemma type_uninit_oplace_instr {𝔄} E L I p n (lt: lty 𝔄) Φ :

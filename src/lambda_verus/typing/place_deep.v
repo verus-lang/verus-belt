@@ -12,7 +12,7 @@
     write access [wp_vplace_wacc] ([place_write.v]), used by the writes and the byte copies
     ([place_memcpy.v]).
   - [type_case_vplace_deep]: case analysis on a sum leaf, which reads its discriminant with
-    [GetDiscr] (a typed load of the tag); the leaf becomes the sum place
+    [GetDiscr] (typed loads of the rest of its bytes); the leaf becomes the sum place
     [SumLty EL tyl i (OfTy (tyl +!! i))] in branch [i]; [type_fold_vplace_sum_deep_instr]
     folds it back.
 
@@ -195,7 +195,7 @@ Section sum_deep.
       prfn_rsv r' (ζl ++ []).
     { intros ζl _. rewrite /r' prfn_rsv_sum. apply prfn_rsv_in. }
     destruct (pctx_uend K) as [κ|] eqn:Hu.
-    - (* The whole referent of the innermost borrow: read the tag in its body, then switch
+    - (* The whole referent of the innermost borrow: read the discriminant in its body, then switch
          the body to the sum place. *)
       iEval (rewrite (pctx_kind_uniq K κ) //) in "H".
       iEval (rewrite /pctx_vcloser (pctx_kind_uniq K κ) //) in "Cl".

@@ -1507,7 +1507,7 @@ Section unfold.
 
   (** ** Sums *)
 
-  Lemma xsum_gho_own_pinj {EL 𝔄l} i (tyl: typel 𝔄l) x0 d g tid :
+  Lemma enum_gho_own_pinj {EL 𝔄l} i (tyl: typel 𝔄l) x0 d g tid :
     ty_gho_own (enum_ty EL tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_own (tyl +!! i) x0 d g tid.
   Proof. rewrite [ty_gho_own (enum_ty EL tyl)]/ty_gho_own /enum_ty /=. by rewrite to_xsum_pinj. Qed.
 
@@ -1544,18 +1544,18 @@ Section unfold.
       by exists b1, fp, b2.
   Qed.
 
-  Lemma ofty_owned_xsum m {EL 𝔄l} (tyl: typel 𝔄l) i x d g tid l :
+  Lemma ofty_owned_enum m {EL 𝔄l} (tyl: typel 𝔄l) i x d g tid l :
     ofty_owned m (enum_ty EL tyl) (pinj i x) d g tid l ⊣⊢
       enum_rest EL 𝔄l i l ∗ ofty_owned m (tyl +!! i) x d g tid (l +ₗ enum_off EL 𝔄l i).
   Proof.
-    rewrite /ofty_owned (cbytes_sum _ i (tyl +!! i)) xsum_gho_own_pinj.
+    rewrite /ofty_owned (cbytes_sum _ i (tyl +!! i)) enum_gho_own_pinj.
     iSplit; [iIntros "(($ & $) & $)"|iIntros "($ & $ & $)"].
   Qed.
 
-  Lemma ofty_owned_xsum_set m {EL 𝔄l} (tyl: typel 𝔄l) i (ty: type (𝔄l !!ₗ i)) x d g tid l :
+  Lemma ofty_owned_enum_set m {EL 𝔄l} (tyl: typel 𝔄l) i (ty: type (𝔄l !!ₗ i)) x d g tid l :
     ofty_owned m (enum_ty EL (hlist_set tyl i ty)) (pinj i x) d g tid l ⊣⊢
       enum_rest EL 𝔄l i l ∗ ofty_owned m ty x d g tid (l +ₗ enum_off EL 𝔄l i).
-  Proof. by rewrite ofty_owned_xsum hlookup_hlist_set. Qed.
+  Proof. by rewrite ofty_owned_enum hlookup_hlist_set. Qed.
 
   (** Unfolding a sum at a known variant [i] into a sum place whose payload is the
       leaf of the variant, and back. *)
@@ -1566,10 +1566,10 @@ Section unfold.
   Proof.
     rewrite /ltype_own /= psum_proj_pinj /=.
     iSplit.
-    - iIntros "(%x & -> & O)". rewrite ofty_owned_xsum.
+    - iIntros "(%x & -> & O)". rewrite ofty_owned_enum.
       iDestruct "O" as "($ & O)". iExists y. by iFrame.
     - iIntros "(Rest & (%x & -> & O))". iExists _. iSplit; [done|].
-      rewrite ofty_owned_xsum. by iFrame.
+      rewrite ofty_owned_enum. by iFrame.
   Qed.
 
   (** ** Owned pointers *)
@@ -2274,7 +2274,7 @@ Section cpd.
       iApply (guarded_upd_mono with "[] U"). iIntros "(%y & %d' & %g' & %Hy & Eqz & ⧖1 & Gho) !>".
       iExists (pinj i y), d', g'. iSplit; [iPureIntro; by eapply ty_fval_pinj|].
       iFrame "⧖1". iSplitL "Eqz"; [iNext; by iApply proph_eqz_sum|].
-      by rewrite /= xsum_gho_own_pinj hlookup_hlist_set. }
+      by rewrite /= enum_gho_own_pinj hlookup_hlist_set. }
     1,2,6: iIntros "#LFT #PROPH #UNIQ #Ok #†κ #⧖ L"; destruct r as [lr|]; [|done];
       iMod (leaf_owned_s_bytes_unblock with "LFT Ok †κ ⧖ L") as (fv) "[B Upd]";
       iModIntro; iExists fv; iFrame "B";

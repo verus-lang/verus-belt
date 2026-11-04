@@ -23,7 +23,7 @@
     [κ'] are views at [κ ⊓ κ'] (they are not resolved: their lenders keep them).
 
   This file: (a) the conversions of resolved leaves; (b) case analysis on resolved sums
-  (a typed [Load] of the tag) and folding them back. *)
+  ([GetDiscr] of the rest of their bytes) and folding them back. *)
 
 From iris.proofmode Require Import proofmode.
 From iris.base_logic.lib Require Import ghost_var.
@@ -264,7 +264,7 @@ Section res_sum.
     lty_size (SumLty EL tyl i (OfRes (tyl +!! i))) = lty_size (OfRes (enum_ty EL tyl)).
   Proof. done. Qed.
 
-  Lemma xsum_gho_res_pinj {EL 𝔄l} i (tyl: typel 𝔄l) x0 d g tid :
+  Lemma enum_gho_res_pinj {EL 𝔄l} i (tyl: typel 𝔄l) x0 d g tid :
     ty_gho_res (enum_ty EL tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_res (tyl +!! i) x0 d g tid.
   Proof. rewrite [ty_gho_res (enum_ty EL tyl)]/ty_gho_res /enum_ty /=. by rewrite to_xsum_pinj. Qed.
 
@@ -278,10 +278,10 @@ Section res_sum.
     rewrite /ltype_own /= psum_proj_pinj /= /res_leaf.
     iSplit.
     - iIntros "(%x & -> & Pt & Gho)". rewrite (cbytes_sum _ i (tyl +!! i)).
-      iEval (setoid_rewrite xsum_gho_res_pinj) in "Gho".
+      iEval (setoid_rewrite enum_gho_res_pinj) in "Gho".
       iDestruct "Pt" as "($ & Pt)". iExists y. by iFrame.
     - iIntros "(Rest & (%x & -> & Pt & Gho))". iExists _. iSplit; [done|].
-      iEval (setoid_rewrite xsum_gho_res_pinj).
+      iEval (setoid_rewrite enum_gho_res_pinj).
       rewrite (cbytes_sum _ i (tyl +!! i)). by iFrame.
   Qed.
 

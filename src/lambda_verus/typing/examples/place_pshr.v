@@ -142,7 +142,7 @@ Section place_pshr.
       match **b { Some(v) => v, None => 0 }
   }
   ```
-  The tag of `**b` is read through the shared reference with a guarded typed load
+  The discriminant of `**b` is read through the shared reference with a guarded typed load
   ([type_case_oplace_pshr], [K = PHole], [K2 = PHole]); in the branch of `Some`, the view
   of the referent is the enum place [SumLty OL _ 1 (OfTy i32)] and its payload is read
   ([K2 = PSum OL _ 1 _ PHole], at the offset [enum_off OL Ol 1] of the payload). The

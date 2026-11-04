@@ -110,11 +110,11 @@ Section shr_view.
     shr_view κ ty y d g tid l -∗ (&shr{κ} ty).(ty_gho_own) (l, y) (S d) g tid.
   Proof. iIntros "#(Pt & Shr & Pers)". iFrame "Pt Shr". by iNext. Qed.
 
-  Lemma xsum_shr_pinj {EL 𝔄l} (tyl: typel 𝔄l) i κ x0 d g tid :
+  Lemma enum_shr_pinj {EL 𝔄l} (tyl: typel 𝔄l) i κ x0 d g tid :
     ty_shr (enum_ty EL tyl) κ (pinj i x0) d g tid ⊣⊢ ty_shr (tyl +!! i) κ x0 d g tid.
   Proof. rewrite [ty_shr (enum_ty EL tyl)]/ty_shr /enum_ty /=. by rewrite to_xsum_pinj. Qed.
 
-  Lemma xsum_pers_pinj {EL 𝔄l} (tyl: typel 𝔄l) i x0 d g tid :
+  Lemma enum_pers_pinj {EL 𝔄l} (tyl: typel 𝔄l) i x0 d g tid :
     ty_gho_pers (enum_ty EL tyl) (pinj i x0) d g tid ⊣⊢ ty_gho_pers (tyl +!! i) x0 d g tid.
   Proof. rewrite [ty_gho_pers (enum_ty EL tyl)]/ty_gho_pers /enum_ty /=. by rewrite to_xsum_pinj. Qed.
 
@@ -285,7 +285,7 @@ Section pctx_shr.
     - destruct (pctx_in_sum_inv tyl i w K y Hin) as (z & Hy & Hin').
       simpl in Hy. subst y. rewrite psum_proj_or_pinj.
       iIntros "#Gs £ #(Pt & Shr & Pers)".
-      rewrite xsum_shr_pinj xsum_pers_pinj hlookup_hlist_set.
+      rewrite enum_shr_pinj enum_pers_pinj hlookup_hlist_set.
       iApply (IH with "Gs £"); [done|]. iFrame "Shr Pers".
       iEval (rewrite (cbytes_sum _ i (lty_fold (pctx_plug K lt)))) in "Pt".
       by iApply (guards_weaken_rhs_sep_r with "Pt").
@@ -433,7 +433,7 @@ Section pshr_addr.
 
   (** The root of the place is the shared reference (a value [v], the value of [e]). The
       view of the referent may be changed to [lt''], of the same folded type, if the
-      referent is of its variants (e.g. after reading the tag of a sum). *)
+      referent is of its variants (e.g. after reading the discriminant of a sum). *)
   Lemma wp_pshr_open_root {𝔅 𝔄'} E κ (K2: pctx 𝔅 𝔄') (lt: lty 𝔅) (lt'': lty 𝔄')
       (x: ~~ (at_locₛ 𝔄')) D tid
       (v: val) (e: expr) (G: iProp Σ) (Φ: val → iProp Σ) :
@@ -819,7 +819,8 @@ Section case.
   Qed.
 
   (** Case analysis on the sum at the hole of [K2], below the shared reference at the hole
-      of [K]: the tag is read through the view (a guarded typed load), and the branch of the
+      of [K]: the discriminant is read through the view (guarded typed loads, for a
+      discriminator that reads once), and the branch of the
       variant [i] gets the place with the view [SumLty EL tyl i (OfTy (tyl +!! i))] at the
       hole (the referent does not change, so the variant is recorded in the place type,
       [lty_vin]). *)
