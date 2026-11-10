@@ -314,6 +314,13 @@ Proof.
           rewrite elem_of_cons. right. trivial.
 Qed.
 
+(** The prophecy invariant lives inside [NllftG]. *)
+Lemma prophN_sub_NllftG : ↑prophN ⊆ (↑NllftG : coPset).
+Proof. rewrite /prophN /NllftG. solve_ndisj. Qed.
+
+Lemma prophN_sub_Nllft : ↑prophN ⊆ (↑Nllft : coPset).
+Proof. rewrite /prophN /Nllft. solve_ndisj. Qed.
+
 Local Lemma proph_eqz_to_obs_with_guard {A} (uπ vπ: proph A) E n (ξl: list proph_var) G :
     ↑NllftG ∪ ↑prophN ⊆ E →
     vπ ./ ξl →
@@ -324,11 +331,10 @@ Local Lemma proph_eqz_to_obs_with_guard {A} (uπ vπ: proph A) E n (ξl: list pr
 Proof.
     iIntros (Hmask Indep) "£ Guard' G eqz".
     iDestruct (combine_guard_proph_vars with "Guard'") as "#Guard".
-    leaf_open_laters "Guard" with "G" as "Opened"; first by solve_ndisj.
-    iMod (lc_fupd_elim_laterN with "£ Opened") as ">[tok back]".
-    iMod ("eqz" with "[] tok") as "[Obs tok]".
-      - iSplit; first solve_ndisj. iPureIntro. apply indep_remove_dupes. trivial.
-      - iMod ("back" with "tok") as "G". iModIntro. iFrame.
+    iApply (proph_eqz_use_guarded with "Guard £ eqz G").
+    - apply prophN_sub_NllftG.
+    - set_solver.
+    - by apply indep_remove_dupes.
 Qed.
 
 Lemma uniq_resolve_guarded ξ ζl x x' vπ' E G n : ↑NllftG ∪ ↑prophN ∪ ↑uniqN ⊆ E → vπ' ./ ζl →
@@ -339,12 +345,13 @@ Lemma uniq_resolve_guarded ξ ζl x x' vπ' E G n : ↑NllftG ∪ ↑prophN ∪ 
 Proof.
   iIntros (Hmask Indep) "Guard' UNIQ PROPH Vo Pc G".
   iDestruct (combine_guard_proph_vars with "Guard'") as "#Guard".
-  leaf_open_laters "Guard" with "G" as "Opened"; first by solve_ndisj. iModIntro. iNext.
-  iMod "Opened" as "[tok back]".
-  iMod (uniq_resolve with "UNIQ PROPH Vo Pc tok") as "(Obs & Pc & Tok)"; first by solve_ndisj.
-   { apply (indep_remove_dupes _ _ Indep). }
-  iMod ("back" with "Tok") as "G".
-  iModIntro. iFrame.
+  iDestruct (vo_pc with "Vo Pc") as (<-) "[Vo2 ξ]".
+  iMod (proph_resolve_guarded_later E (↑NllftG) n G ξ vπ' with "PROPH Guard ξ G") as "J".
+  { apply prophN_sub_NllftG. } { set_solver. } { by apply indep_remove_dupes. }
+  iModIntro. iNext. iMod "J" as "[#Obs G]".
+  iMod (vo2_vo2_done with "UNIQ Vo2") as "Vo2"; first solve_ndisj.
+  iModIntro. iFrame "G". iSplitR; [done|]. iRight. iSplitL; [by iExists x|].
+  by iApply proph_eqz_obs.
 Qed.
 
 Lemma proph_ctrl_eqz ξ x vπ : proph_ctx -∗ .PC[ξ] x vπ -∗ (.$ ξ) :== vπ.

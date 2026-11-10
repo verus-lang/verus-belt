@@ -1,10 +1,11 @@
 From iris.proofmode Require Import proofmode.
 From lrust.typing Require Import lft_contexts.
 From lrust.typing Require Import type programs ghost own product tracked shr_bor.
-From guarding Require Import guard tactics guard_later_pers own_and.
+From guarding Require Import guard tactics guard_later_pers own_and own_and_own_sep factoring_props.
 From guarding.internal Require Import auth_frag_util.
 From iris.algebra Require Import auth.
 From lrust.lifetime Require Import lifetime_full.
+From Coq.Logic Require Import Classical_Prop.
 Set Default Proof Using "Type".
 
 Implicit Type 𝔄 𝔅: syn_type.
@@ -44,17 +45,20 @@ Section VerusRADefs.
 
   (** Since validity is prophetic, it cannot be used to justify combining shared
       resources, so unlike in Verus, there is no validity premise here. *)
-  Definition vra_conjunct_shared (a b c : A) :=
-    ∀ p, vra_incl a p → vra_incl b p → vra_incl c p.
+  Definition vra_conjunct_shared (a b c : A) (π : proph_asn) :=
+    ∀ p, vra_valid P p π → vra_incl a p → vra_incl b p → vra_incl c p.
 
   (** A frame-preserving update with respect to a given prophecy assignment. *)
   Definition vra_frame_preserving_update (a b : A) (π : proph_asn) :=
     ∀ c, vra_valid P (vra_op P a c) π → vra_valid P (vra_op P b c) π.
 
-  (** For nondeterministic updates, the new value is chosen at the time of the update,
-      so it can depend on the frame [c] but not on the prophecy assignment. *)
-  Definition vra_frame_preserving_update_nondeterministic (a : A) (bs : A → Prop) :=
-    ∀ c, ∃ b, bs b ∧ ∀ π, vra_valid P (vra_op P a c) π → vra_valid P (vra_op P b c) π.
+  (** For nondeterministic updates, the new value [f c] is chosen by a given function [f]
+      of the frame [c]. Since [f] is fixed, the choice cannot depend on the prophecy
+      assignment. This corresponds to [frame_preserving_update_nondeterministic] in
+      vstd/resource/trusted/ra.rs. *)
+  Definition vra_frame_preserving_update_nondeterministic
+      (a : A) (bs : A → Prop) (f : A → A) (π : proph_asn) :=
+    ∀ c, vra_valid P (vra_op P a c) π → bs (f c) ∧ vra_valid P (vra_op P (f c) c) π.
 End VerusRADefs.
 
 (** The Ucmra underlying a [VerusRA]. Its validity is trivial; the (prophetic) validity
@@ -146,8 +150,11 @@ Section VerusRACmra.
     intros r (a' & b' & -> & c & y & ? & ? & -> & ->). eauto 10.
   Qed.
 
+
+  (** Combining shared fragments without any validity premise (used for storage
+      protocols, whose monoid has trivial validity). *)
   Lemma vra_auth_frag_conjunct_shared (x1 x2 y : A) :
-    vra_conjunct_shared P x1 x2 y →
+    (∀ p, vra_incl P x1 p → vra_incl P x2 p → vra_incl P y p) →
     ∀ w : authUR vra_carUR, ✓ w →
       ◯ VraCar P x1 ≼ w → ◯ VraCar P x2 ≼ w → ◯ VraCar P y ≼ w.
   Proof.
@@ -158,7 +165,9 @@ Section VerusRACmra.
   Qed.
 End VerusRACmra.
 
-Definition raN : namespace := nroot .@ "verus_ra".
+(** The RA invariants live inside the lifetime logic's guarding namespace, so that guards
+    at mask [↑NllftG] (shared borrows) can consult them. *)
+Definition raN : namespace := nroot .@ "leaf_lifetime_logic" .@ "guarding" .@ "verus_ra".
 
 Section Ra.
 
@@ -169,11 +178,24 @@ Section Ra.
   Hypothesis (𝔄_const  : ∀ (x : ~~𝔄) π1 π2 , @vπ 𝔄 x π1 = @vπ 𝔄 x π2).
 
   (** The invariant holds the authoritative element, together with an observation
-      that it is valid. *)
-  Definition ra_inv (γ : gname) : iProp Σ :=
-    inv raN (∃ t, own γ (● VraCar VRA t) ∗ ⟨π, vra_valid VRA t π⟩).
+      that it is valid. It is a Leaf guard, so that it can be combined with other guards. *)
+  Definition ra_body (γ : gname) : iProp Σ :=
+    ∃ t, own γ (● VraCar VRA t) ∗ ⟨π, vra_valid VRA t π⟩.
+
+  Definition ra_inv (γ : gname) : iProp Σ := True &&{↑raN}&&> ▷ ra_body γ.
 
   Global Instance ra_inv_persistent γ : Persistent (ra_inv γ) := _.
+
+  Global Instance ra_body_timeless γ : Timeless (ra_body γ) := _.
+
+  Lemma raN_sub_NllftG : ↑raN ⊆ (↑NllftG : coPset).
+  Proof. rewrite /raN /NllftG. solve_ndisj. Qed.
+
+  Local Lemma ra_inv_inv γ : ra_inv γ ⊢ inv raN (ra_body γ).
+  Proof. apply inv_from_guards. Qed.
+
+  Local Lemma keep_pure (P: iProp Σ) (φ: Prop) : (P ⊢ ⌜φ⌝) → P ⊢ ⌜φ⌝ ∗ P.
+  Proof. intros H. apply (bi.pure_elim φ); [done|]. intros. iIntros "$". done. Qed.
 
   Set Printing Coercions.
   Program Definition ra_ty  : type (ghostₛ (positiveₛ * 𝔄)) :=
@@ -218,8 +240,7 @@ Section Ra.
     iIntros "#Obs".
     iMod (own_alloc (● VraCar VRA x ⋅ ◯ VraCar VRA x)) as (γ) "[Hauth Hfrag]".
     { by apply auth_both_valid_discrete. }
-    iMod (inv_alloc raN _ (∃ t, own γ (● VraCar VRA t) ∗ ⟨π, vra_valid VRA t π⟩)
-      with "[Hauth]") as "#Hinv".
+    iMod (guards_alloc _ raN (ra_body γ) with "[Hauth]") as "#Hinv".
     { iNext. iExists x. iFrame "∗#". }
     iModIntro. iExists γ. iFrame "∗#".
   Qed.
@@ -229,7 +250,7 @@ Section Ra.
     ra_inv γ -∗ own γ (◯ VraCar VRA x) ={E}=∗
       own γ (◯ VraCar VRA x) ∗ ⟨π, vra_valid VRA x π⟩.
   Proof.
-    iIntros (?) "#Hinv Hfrag".
+    iIntros (?) "#Hinv' Hfrag". iDestruct (ra_inv_inv with "Hinv'") as "#Hinv".
     iInv "Hinv" as ">(%t & Hauth & #Hobs)".
     iDestruct (own_valid_2 with "Hauth Hfrag") as %[Hincl _]%auth_both_valid_discrete.
     apply vra_car_included in Hincl as [c <-].
@@ -247,9 +268,9 @@ Section Ra.
     (∀ c, ∃ y, R c y) →
     ra_inv γ -∗ own γ (◯ VraCar VRA x) -∗
     ⟨π, ∀ c y, R c y → vra_valid VRA (vra_op VRA x c) π → vra_valid VRA (vra_op VRA y c) π⟩
-    ={E}=∗ ∃ c y, ⌜R c y⌝ ∗ own γ (◯ VraCar VRA y).
+    ={E}=∗ ∃ c y, ⌜R c y⌝ ∗ ⟨π, vra_valid VRA (vra_op VRA x c) π⟩ ∗ own γ (◯ VraCar VRA y).
   Proof.
-    iIntros (? HR) "#Hinv Hfrag #Hupd".
+    iIntros (? HR) "#Hinv' Hfrag #Hupd". iDestruct (ra_inv_inv with "Hinv'") as "#Hinv".
     iInv "Hinv" as ">(%t & Hauth & #Hobs)".
     iCombine "Hauth Hfrag" as "Hown".
     assert (● VraCar VRA t ⋅ ◯ VraCar VRA x ~~>: λ r, ∃ c y,
@@ -266,7 +287,7 @@ Section Ra.
       iDestruct (proph_obs_and with "Hobs Hupd") as "Hobs'".
       iApply (proph_obs_impl with "Hobs'").
       intros π [Hv Hu]. by apply Hu. }
-    iModIntro. iExists c, y. by iFrame.
+    iModIntro. iExists c, y. by iFrame "∗#".
   Qed.
 
   Lemma ra_update E γ x y :
@@ -275,26 +296,121 @@ Section Ra.
     ⟨π, vra_frame_preserving_update VRA x y π⟩ ={E}=∗ own γ (◯ VraCar VRA y).
   Proof.
     iIntros (?) "#Hinv Hfrag #Hupd".
-    iMod (ra_updateP E γ x (λ _ y', y' = y) with "Hinv Hfrag [Hupd]") as (c y') "[-> $]".
+    iMod (ra_updateP E γ x (λ _ y', y' = y) with "Hinv Hfrag [Hupd]") as (c y') "(-> & _ & $)".
     - done.
     - eauto.
     - iApply (proph_obs_impl with "Hupd"). intros π Hupd c y' ->. apply Hupd.
     - done.
   Qed.
 
-  Lemma ra_update_nondeterministic E γ x (bs : ~~𝔄 → Prop) :
+  (** The membership [bs y] of the new value is only known under the prophecy observation,
+      since the update law only guarantees it for frames that are valid. *)
+  Lemma ra_update_nondeterministic E γ x (bs : ~~𝔄 → Prop) (f : ~~𝔄 → ~~𝔄) :
     ↑raN ⊆ E →
-    vra_frame_preserving_update_nondeterministic VRA x bs →
-    ra_inv γ -∗ own γ (◯ VraCar VRA x) ={E}=∗ ∃ y, ⌜bs y⌝ ∗ own γ (◯ VraCar VRA y).
+    ra_inv γ -∗ own γ (◯ VraCar VRA x) -∗
+    ⟨π, vra_frame_preserving_update_nondeterministic VRA x bs f π⟩ ={E}=∗
+    ∃ y, ⟨π, bs y⟩ ∗ own γ (◯ VraCar VRA y).
   Proof.
-    iIntros (? Hupd) "#Hinv Hfrag".
-    iMod (ra_updateP E γ x
-      (λ c y, bs y ∧ ∀ π, vra_valid VRA (vra_op VRA x c) π → vra_valid VRA (vra_op VRA y c) π)
-      with "Hinv Hfrag []") as (c y) "[[%Hy _] Hfrag]".
+    iIntros (?) "#Hinv Hfrag #Hupd".
+    iMod (ra_updateP E γ x (λ c y, y = f c) with "Hinv Hfrag [Hupd]")
+      as (c y) "(-> & #Hv & Hfrag)".
     - done.
-    - done.
-    - iApply proph_obs_true. intros π c y [_ Hu]. apply Hu.
-    - iModIntro. iExists y. by iFrame.
+    - eauto.
+    - iApply (proph_obs_impl with "Hupd"). intros π Hupd c y -> Hv. apply (Hupd c Hv).
+    - iModIntro. iExists (f c). iFrame.
+      iDestruct (proph_obs_and with "Hupd Hv") as "Hb".
+      iApply (proph_obs_impl with "Hb"). intros π [Hu Hv']. apply (Hu c Hv').
+  Qed.
+
+  (** Open the RA invariant together with a guard for a fragment. *)
+  Local Lemma ra_open_with_guard E F n G γ y :
+    ↑raN ⊆ F → F ⊆ E →
+    ra_inv γ -∗ (G &&{F; n}&&> own γ (◯ VraCar VRA y)) -∗ £ n -∗ G ={E, E∖F}=∗
+      ∃ T t, own γ (● VraCar VRA t) ∗
+        (own γ (◯ VraCar VRA y) ∧ (⟨π, vra_valid VRA t π⟩ ∗ (▷ ra_body γ -∗ T))) ∗
+        (T ={E∖F, E}=∗ G).
+  Proof.
+    iIntros (HrF HFE) "#Hinv #Gy £ G".
+    iAssert (G &&{F; n}&&> ▷ ra_body γ)%I as "#Gb".
+    { iApply (lguards_weaken_later _ _ _ 0 n); first lia.
+      iApply (guards_weaken_mask (↑raN)); first done.
+      iApply (guards_transitive with "[] Hinv"). iApply guards_true. }
+    iMod (lguards_open_two_simultaneously G (▷ ra_body γ) (own γ (◯ VraCar VRA y)) E F n HFE
+      with "Gb Gy G") as (T) "(T & Tinv & Ttok & Back)".
+    iAssert (▷^n ((◇ own γ (◯ VraCar VRA y)) ∧ (◇ (ra_body γ ∗ (▷ ra_body γ -∗ T)))))%I
+      with "[T Tinv Ttok]" as "X".
+    { iSplit.
+      - iDestruct ("Ttok" with "T") as "H". iNext. iMod "H" as "[$ _]".
+      - iDestruct ("Tinv" with "T") as "H". iNext. iMod "H" as "[>Inv B]". iModIntro.
+        iFrame. }
+    iMod (lc_fupd_elim_laterN with "£ X") as "X".
+    rewrite -bi.except_0_and. iMod "X" as "X".
+    rewrite /ra_body bi.sep_exist_r bi.and_exist_l. iDestruct "X" as (t) "X".
+    iAssert (own γ (◯ VraCar VRA y) ∧ (own γ (● VraCar VRA t) ∗
+      (⟨π, vra_valid VRA t π⟩ ∗ (▷ (∃ t, own γ (● VraCar VRA t) ∗ ⟨π, vra_valid VRA t π⟩) -∗ T))))%I
+      with "[X]" as "X".
+    { iSplit; [iDestruct "X" as "[$ _]"|iDestruct "X" as "[_ [[$ $] $]]"]. }
+    iDestruct (andsep_to_sepand_ucmra with "X") as "[Hauth X]"; first apply auth_frag_disjointness.
+    iModIntro. iExists T, t. rewrite /ra_body. iFrame.
+  Qed.
+
+  Lemma ra_validate_guarded E F n G γ y :
+    ↑raN ⊆ F → F ⊆ E →
+    ra_inv γ -∗ (G &&{F; n}&&> own γ (◯ VraCar VRA y)) -∗ £ n -∗ G ={E}=∗
+      ⟨π, vra_valid VRA y π⟩ ∗ G.
+  Proof.
+    iIntros (HrF HFE) "#Hinv #Gy £ G".
+    iMod (ra_open_with_guard with "Hinv Gy £ G") as (T t) "(Hauth & X & Back)"; [done..|].
+    iCombine "Hauth X" as "HX".
+    iDestruct (keep_pure _ (vra_incl VRA y t) with "HX") as "[%Hincl [Hauth X]]".
+    { iIntros "[Hauth [Hy _]]".
+      iDestruct (own_valid_2 with "Hauth Hy") as %[Hi _]%auth_both_valid_discrete.
+      iPureIntro. by apply vra_car_included. }
+    iDestruct "X" as "[_ [#Hobs Tback]]".
+    iDestruct ("Tback" with "[Hauth]") as "T". { iNext. iExists t. iFrame "Hauth Hobs". }
+    iMod ("Back" with "T") as "G". iModIntro. iFrame "G".
+    iApply (proph_obs_impl with "Hobs"). destruct Hincl as [c <-]. intros π.
+    apply vra_closed_under_incl.
+  Qed.
+
+  (** Update an owned fragment [x] to [w], using a fragment [y] that is only available
+      through a guard (and is unchanged). *)
+  Lemma ra_updateP_guarded E F n G γ x y (R : ~~𝔄 → ~~𝔄 → Prop) :
+    ↑raN ⊆ F → F ⊆ E → (∀ c, ∃ w, R c w) →
+    ra_inv γ -∗ (G &&{F; n}&&> own γ (◯ VraCar VRA y)) -∗ £ n -∗ own γ (◯ VraCar VRA x) -∗
+    ⟨π, ∀ c w, R c w → vra_valid VRA (vra_op VRA (vra_op VRA x y) c) π →
+        vra_valid VRA (vra_op VRA (vra_op VRA w y) c) π⟩ -∗
+    G ={E}=∗ ∃ c w, ⌜R c w⌝ ∗ ⟨π, vra_valid VRA (vra_op VRA (vra_op VRA x y) c) π⟩ ∗
+      own γ (◯ VraCar VRA w) ∗ G.
+  Proof.
+    iIntros (HrF HFE HR) "#Hinv #Gy £ Hx #Hupd G".
+    iMod (ra_open_with_guard with "Hinv Gy £ G") as (T t) "(Hauth & X & Back)"; [done..|].
+    iDestruct (own_separates_out γ (◯ VraCar VRA y)
+      (own γ (◯ VraCar VRA y) ∧ (⟨π, vra_valid VRA t π⟩ ∗ (▷ ra_body γ -∗ T)))%I
+      with "[X]") as "[Hy Hyback]".
+    { iSplitR "X"; [iIntros "[$ _]"|iFrame "X"]. }
+    iAssert (own γ (◯ VraCar VRA (vra_op VRA x y))) with "[Hx Hy]" as "Hxy".
+    { rewrite -vra_car_op_eq auth_frag_op own_op. iFrame. }
+    iCombine "Hauth Hxy" as "Hown".
+    set R' := λ (c w': vra_car VRA), ∃ w, R (vra_val c) w ∧ w' = VraCar VRA (vra_op VRA w y).
+    assert (● VraCar VRA t ⋅ ◯ VraCar VRA (vra_op VRA x y) ~~>: λ r, ∃ c w',
+      VraCar VRA t = VraCar VRA (vra_op VRA x y) ⋅ c ∧ R' c w' ∧ r = ● (w' ⋅ c) ⋅ ◯ w')
+      as Hupd'.
+    { apply vra_auth_frame_updateP. intros [c] _. destruct (HR c) as [w Hw].
+      exists (VraCar VRA (vra_op VRA w y)), w. done. }
+    iMod (own_updateP _ _ _ Hupd' with "Hown") as (r) "[%Hr Hown]".
+    destruct Hr as ([c] & w' & Ht & (w & Hw & ->) & ->).
+    rewrite vra_car_op_eq in Ht. injection Ht as ->.
+    rewrite own_op. iDestruct "Hown" as "[Hauth Hwy]".
+    iAssert (own γ (◯ VraCar VRA w) ∗ own γ (◯ VraCar VRA y))%I with "[Hwy]" as "[Hw Hy]".
+    { by rewrite -own_op -auth_frag_op vra_car_op_eq. }
+    iDestruct ("Hyback" with "Hy") as "X".
+    iDestruct "X" as "[_ [#Hobs Tback]]".
+    iDestruct ("Tback" with "[Hauth]") as "T".
+    { iNext. iExists (vra_op VRA (vra_op VRA w y) c). rewrite vra_car_op_eq. iFrame "Hauth".
+      iDestruct (proph_obs_and with "Hobs Hupd") as "O".
+      iApply (proph_obs_impl with "O"). intros π [Hv Hu]. by apply (Hu c w). }
+    iMod ("Back" with "T") as "G". iModIntro. iExists c, w. iFrame "Hw G Hobs". done.
   Qed.
 
 End Ra.
@@ -307,6 +423,9 @@ Notation "RA_Update: self p" := (new [ #0])%E (at level 102, self, p at level 1)
 Notation "RA_Validate: self" := (new [ #0])%E (at level 102, self at level 1): expr_scope.
 
 Section RA_type.
+
+  Local Lemma keep_pers {PROP: bi} (P Q: PROP) `{!Persistent Q} : (P ⊢ Q) → P ⊢ Q ∗ P.
+  Proof. intros H. by apply bi.persistent_entails_l. Qed.
 
   Context `{!typeG Σ}.
   Context {𝔄 : syn_type} (VRA : VerusRA (~~𝔄)).
@@ -472,30 +591,34 @@ Section RA_type.
       apply H0.
   Qed.
 
-  Lemma typed_ra_update_nondeterministic (self p : path) (n : nat) (ty : type (vecₛ 𝔄 n)) E L I :
+  Notation "RA_UpdateNonDet: self bs f" := (new [ #0])%E (at level 102, self, bs, f at level 1): expr_scope.
+
+  Lemma typed_ra_update_nondeterministic (self pbs pf : path)
+      (tybs : type (funₛ 𝔄 Propₛ)) (tyf : type (funₛ 𝔄 𝔄)) E L I :
     typed_instr E L I
-    +[self ◁ own_ptr 0 (ra_ty VRA 𝔄_const); p ◁ own_ptr 0 (ghost_ty ty)]
-    (RA_Update: self p)
+    +[self ◁ own_ptr 0 (ra_ty VRA 𝔄_const); pbs ◁ own_ptr 0 (ghost_ty tybs);
+      pf ◁ own_ptr 0 (ghost_ty tyf)]
+    (RA_UpdateNonDet: self pbs pf)
     (λ v, +[v ◁ own_ptr 0 (ra_ty VRA 𝔄_const)])
-    (λ post '-[(_, (γ, x)); (_, ys)], λ mask π,
-        vra_frame_preserving_update_nondeterministic VRA x (λ y, y ∈ vec_to_list ys) ∧
-        ∀ l, Forall (λ y, post -[(l, (γ, y))] mask π) (vec_to_list ys)).
+    (λ post '-[(_, (γ, x)); (_, bs); (_, f)], λ mask π,
+        vra_frame_preserving_update_nondeterministic VRA x bs f π ∧
+        ∀ l y, bs y → post -[(l, (γ, y))] mask π).
   Proof.
     move => tid postπ mask iκs vπl.
     fold indep_interp_of_syn_type.
     iIntros "LFT TIME #PROPH UNIQ E L $ TY #Obs" => /=.
-    destruct vπl as [[pl [γ x]] [[plys ys] []]].
-    simpl in ys.
-    iDestruct "TY" as "(H & _ & _)".
+    destruct vπl as [[pl [γ x]] [[plbs bs] [[plf f] []]]].
+    simpl in bs, f.
+    iDestruct "TY" as "(H & _ & _ & _)".
     iDestruct "H" as "(%pl' & %d & % & #Hd & Hown & %Hphys)".
     destruct d => //.
-    iMod (proph_obs_sat with "PROPH Obs") as "(%π & %Hupd & _)" => //=.
     iDestruct "Hown" as "(? & ? & Hown & #Hinv)".
     iApply wp_fupd.
     iApply wp_new=>//.
     iIntros "!>" (l) "(† & ↦)".
-    iMod (ra_update_nondeterministic VRA ⊤ γ x _ ltac:(done) Hupd with "Hinv Hown")
-      as (y) "[%Hin Hown]".
+    iMod (ra_update_nondeterministic VRA ⊤ γ x bs f ltac:(done) with "Hinv Hown [Obs]")
+      as (y) "[#Hin Hown]".
+    { iApply (proph_obs_impl with "Obs"). by intros π [? _]. }
     iExists -[(l, (γ, y))].
     iFrame "L".
     rewrite /ra_ty/tctx_elt_interp/ty_own/=.
@@ -504,10 +627,9 @@ Section RA_type.
     - iExists _; iSplitR => //=.
       repeat rewrite heap_mapsto_fancy_vec_nil.
       by iFrame "∗#".
-    - iApply (proph_obs_impl with "Obs").
-      intros π' [_ Hpost].
-      specialize (Hpost l).
-      rewrite Forall_forall in Hpost.
+    - iDestruct (proph_obs_and with "Obs Hin") as "Obs'".
+      iApply (proph_obs_impl with "Obs'").
+      intros π' [[_ Hpost] Hy].
       by apply Hpost.
   Qed.
 
@@ -542,13 +664,16 @@ Section RA_type.
     iIntros "H£' #Hd''".
     wp_if.
     iIntros "!>".
-    leaf_open_laters "G1" with "L" as "Hown". { solve_ndisj. }
+    iMod (guards_extract_persistent_later _ _ (ra_inv VRA γ) ⊤ (↑NllftG) _
+      ltac:(apply _) ltac:(set_solver) with "G1 L []") as "H".
+    { iIntros "[_ $]". }
     rewrite Nat.add_1_r -bi.later_laterN.
-    iMod (lc_fupd_add_laterN _ _ _ (S (S d)) with "[H£'] Hown") as "[Hown Hclose]".
+    iMod (lc_fupd_add_laterN _ _ _ (S (S d)) with "[H£] H") as "(L & #Hinv)".
+    { iApply (lc_weaken with "H£"). rewrite /advance_credits. nia. }
+    iPoseProof (guards_weaken_rhs_sep_l with "G1") as "G1'".
+    iMod (ra_validate_guarded VRA ⊤ (↑NllftG) _ _ γ x with "Hinv G1' [H£'] L") as "[#Hvalid L]".
+    { apply raN_sub_NllftG. } { set_solver. }
     { iApply (lc_weaken with "H£'"). rewrite /advance_credits. nia. }
-    iDestruct "Hown" as "[Hown #Hinv]".
-    iMod (ra_validate with "Hinv Hown") as "[Hown #Hvalid]"; first solve_ndisj.
-    iMod ("Hclose" with "[$Hown $Hinv]") as "L".
     iFrame "L".
     iModIntro.
     iExists -[].
@@ -611,7 +736,7 @@ Section RA_type.
     +[p1 ◁ shr_bor κ (ra_ty VRA 𝔄_const); p2 ◁ shr_bor κ (ra_ty VRA 𝔄_const); p ◁ own_ptr 0 (ghost_ty ty)]
     (RA_JoinSharedDet: p1 p2 p)
     (λ v, +[v ◁ shr_bor κ (ra_ty VRA 𝔄_const)])
-    (λ post '-[(l1, (γ1, x1)); (l2, (γ2, x2)); (_, y)], λ mask π, γ1 = γ2 ∧ vra_conjunct_shared VRA x1 x2 y ∧ ∀ l, post -[(l, (γ1, y))] mask π).
+    (λ post '-[(l1, (γ1, x1)); (l2, (γ2, x2)); (_, y)], λ mask π, γ1 = γ2 ∧ vra_conjunct_shared VRA x1 x2 y π ∧ ∀ l, post -[(l, (γ1, y))] mask π).
   Proof.
     move => Alv tid postπ mask iκs vπl.
     fold indep_interp_of_syn_type.
@@ -629,13 +754,53 @@ Section RA_type.
     iDestruct "Hown1" as "(_ & #Hshr1 & _)".
     iDestruct "Hown2" as "(_ & #Hshr2 & _)".
     iDestruct (Alv with "L E") as "#Alv".
-    iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hy & _)" => //.
+    iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
+    iAssert ⟨π, vra_conjunct_shared VRA x1 x2 y π⟩%I as "#Hcs".
+    { iApply (proph_obs_impl with "Obs"). by intros π (_ & ? & _). }
+    (* The fragments, together with the authoritative element, imply [◯ y], unless the
+       prophecy observations are contradictory. *)
     have Hand : ∀ Q1 Q2 : iProp Σ,
-      (own γ1 (◯ VraCar VRA x1) ∗ Q1) ∧ (own γ1 (◯ VraCar VRA x2) ∗ Q2) ⊢ own γ1 (◯ VraCar VRA y).
-    { iIntros (Q1 Q2) "H".
-      iApply (and_own_discrete_ucmra_specific with "[H]").
-      { by apply vra_auth_frag_conjunct_shared. }
-      iSplit; [iDestruct "H" as "[[$ _] _]"|iDestruct "H" as "[_ [$ _]]"]. }
+      (own γ1 (◯ VraCar VRA x1) ∗ Q1) ∧ (own γ1 (◯ VraCar VRA x2) ∗ Q2) ∧
+        (ra_body VRA γ1 ∗ ⟨π, vra_conjunct_shared VRA x1 x2 y π⟩)
+      ⊢ own γ1 (◯ VraCar VRA y) ∨ ⟨π, False⟩.
+    { intros Q1 Q2. rewrite /ra_body bi.sep_exist_r !bi.and_exist_l.
+      iIntros "H". iDestruct "H" as (t) "H".
+      iDestruct (keep_pers _ ⟨π, vra_conjunct_shared VRA x1 x2 y π⟩ with "H") as "[#Hcs' H]".
+      { iIntros "[_ [_ [_ $]]]". }
+      iDestruct (keep_pers _ ⟨π, vra_valid VRA t π⟩ with "H") as "[#Hv H]".
+      { iIntros "[_ [_ [[_ $] _]]]". }
+      iAssert (∃ z, own γ1 z ∗ ⌜◯ VraCar VRA x1 ≼ z ∧ ◯ VraCar VRA x2 ≼ z ∧
+        ● VraCar VRA t ≼ z⌝)%I with "[H]" as (z) "[Hz %Hinc]".
+      { iAssert (own γ1 (◯ VraCar VRA x1) ∧
+          (own γ1 (◯ VraCar VRA x2) ∧ own γ1 (● VraCar VRA t)))%I with "[H]" as "H".
+        { iSplit; [iDestruct "H" as "[[$ _] _]"|].
+          iSplit; [iDestruct "H" as "[_ [[$ _] _]]"|iDestruct "H" as "[_ [_ [[$ _] _]]]"]. }
+        iAssert (own γ1 (◯ VraCar VRA x1) ∧ ∃ z2, own γ1 z2 ∗
+          ⌜◯ VraCar VRA x2 ≼ z2 ∧ ● VraCar VRA t ≼ z2⌝)%I with "[H]" as "H".
+        { iSplit; [iDestruct "H" as "[$ _]"|].
+          iDestruct "H" as "[_ H]". by iApply and_own_discrete_ucmra. }
+        rewrite bi.and_exist_l. iDestruct "H" as (z2) "H".
+        iDestruct (keep_pers _ ⌜◯ VraCar VRA x2 ≼ z2 ∧ ● VraCar VRA t ≼ z2⌝ with "H")
+          as "[%Hz2 H]".
+        { iIntros "[_ [_ $]]". }
+        iAssert (own γ1 (◯ VraCar VRA x1) ∧ own γ1 z2)%I with "[H]" as "H".
+        { iSplit; [iDestruct "H" as "[$ _]"|iDestruct "H" as "[_ [$ _]]"]. }
+        iDestruct (and_own_discrete_ucmra with "H") as (z) "[Hz %Hz]".
+        iExists z. iFrame "Hz". iPureIntro. destruct Hz2, Hz.
+        split; [done|]. split; by etrans. }
+      iDestruct (own_valid with "Hz") as %Hval.
+      destruct (view_frag_included_frag z) as ([b] & Hf & Hle).
+      destruct Hinc as (H1 & H2 & Ht).
+      have Hbt : VraCar VRA b ≼ VraCar VRA t by apply (auth_frag_incl _ _ _ Ht Hle Hval).
+      destruct (classic (vra_incl VRA y b)) as [Hyb|Hnyb].
+      - iLeft. iApply (own_mono with "Hz"). etrans; last exact Hle.
+        apply auth_frag_mono, vra_car_included, Hyb.
+      - iRight. iDestruct (proph_obs_and with "Hcs' Hv") as "O".
+        iApply (proph_obs_impl with "O"). intros π [Hcs Hv'].
+        apply Hnyb, Hcs.
+        + apply vra_car_included in Hbt as [c <-]. by eapply vra_closed_under_incl.
+        + apply vra_car_included, Hf, H1.
+        + apply vra_car_included, Hf, H2. }
     (* Extract the (persistent) invariant from the shared borrow. *)
     iApply wp_fupd.
     wp_lam.
@@ -656,10 +821,21 @@ Section RA_type.
     iMod (lc_fupd_add_laterN _ _ _ (S (S d1)) with "[H£'] H") as "(L & #Hinv)".
     { iApply (lc_weaken with "H£'"). rewrite /advance_credits. nia. }
     iModIntro.
+    have ? := raN_sub_NllftG. have ? := prophN_sub_NllftG.
+    iAssert (@[κ] &&{↑NllftG}&&> (ra_body VRA γ1 ∗ ⟨π, vra_conjunct_shared VRA x1 x2 y π⟩))%I
+      as "#Gb".
+    { iDestruct (guards_weaken_mask _ (↑NllftG) with "Hinv") as "Hinv'"; first done.
+      iDestruct (guards_transitive with "[] Hinv'") as "Gb0"; first iApply guards_true.
+      iDestruct (guards_remove_later_rhs with "Gb0") as "Gb1".
+      by iApply (guards_include_pers with "Hcs Gb1"). }
+    iDestruct (proph_obs_false_guard (λ _, False) (λ _ H, H) with "PROPH") as "Gf0".
+    iDestruct (guards_weaken_mask _ (↑NllftG) with "Gf0") as "#Gf"; first done.
     destruct (decide (d1 ≤ d2)) as [Hle | Hgt].
     - iPoseProof (lguards_weaken_later _ _ _ _ (S (d2 + 1)) with "Hshr1") as "Hshr1'"; first lia.
-      iPoseProof (@guards_and_own _ _ _ _ _ _ (authUR (vra_carUR VRA)) _ γ1 (◯ VraCar VRA y)
-        with "Hshr1' Hshr2") as "Hshr3"; first apply Hand.
+      iPoseProof (lguards_weaken_later _ _ _ 0 (S (d2 + 1)) with "Gb") as "Gb'"; first lia.
+      iDestruct (guards_and3_point_or_false _ _ _ _ (own γ1 (◯ VraCar VRA y)) ⟨π, False⟩
+        (↑NllftG) _ 0 with "Hshr1' Hshr2 Gb' Gf") as "Hshr3"; [apply point_prop_own|apply Hand|].
+      rewrite Nat.add_0_r.
       iPoseProof (guards_include_pers (ra_inv VRA γ1) with "Hinv Hshr3") as "Hshr4".
       iExists -[(((42%positive, 1337%Z), []), (γ1, y))].
       iFrame "L Hd2".
@@ -675,8 +851,10 @@ Section RA_type.
         apply Hpost.
     - iPoseProof (lguards_weaken_later _ _ _ _ (S (d1 + 1)) with "Hshr1") as "Hshr1'"; first lia.
       iPoseProof (lguards_weaken_later _ _ _ _ (S (d1 + 1)) with "Hshr2") as "Hshr2'"; first lia.
-      iPoseProof (@guards_and_own _ _ _ _ _ _ (authUR (vra_carUR VRA)) _ γ1 (◯ VraCar VRA y)
-        with "Hshr1' Hshr2'") as "Hshr3"; first apply Hand.
+      iPoseProof (lguards_weaken_later _ _ _ 0 (S (d1 + 1)) with "Gb") as "Gb'"; first lia.
+      iDestruct (guards_and3_point_or_false _ _ _ _ (own γ1 (◯ VraCar VRA y)) ⟨π, False⟩
+        (↑NllftG) _ 0 with "Hshr1' Hshr2' Gb' Gf") as "Hshr3"; [apply point_prop_own|apply Hand|].
+      rewrite Nat.add_0_r.
       iPoseProof (guards_include_pers (ra_inv VRA γ1) with "Hinv Hshr3") as "Hshr4".
       iExists -[(((42%positive, 1337%Z), []), (γ1, y))].
       iFrame "L Hd1".
@@ -793,19 +971,18 @@ Section RA_type.
     iIntros "H£' #Hd2''".
     wp_if.
     iIntros "!>".
-    leaf_open_laters "G1" with "L" as "Hown". { solve_ndisj. }
+    iMod (guards_extract_persistent_later _ _ (ra_inv VRA γ1) ⊤ (↑NllftG) _
+      ltac:(apply _) ltac:(set_solver) with "G1 L []") as "H".
+    { iIntros "[_ $]". }
     rewrite Nat.add_1_r -bi.later_laterN.
-    iMod (lc_fupd_add_laterN _ _ _ (S (S d2)) with "[H£'] Hown") as "[Hown Hclose]".
+    iMod (lc_fupd_add_laterN _ _ _ (S (S d2)) with "[H£] H") as "(L & #Hinv)".
+    { iApply (lc_weaken with "H£"). rewrite /advance_credits. nia. }
+    iPoseProof (guards_weaken_rhs_sep_l with "G1") as "G1'".
+    iMod (ra_updateP_guarded VRA ⊤ (↑NllftG) _ _ γ1 x y (λ _ w, w = z)
+      with "Hinv G1' [H£'] Hx [Obs] L") as (c w) "(-> & _ & Hx & L)".
+    { apply raN_sub_NllftG. } { set_solver. } { eauto. }
     { iApply (lc_weaken with "H£'"). rewrite /advance_credits. nia. }
-    iDestruct "Hown" as "[Hown #Hinv]".
-    iAssert (own γ1 (◯ VraCar VRA (vra_op VRA x y))) with "[Hx Hown]" as "Hxy".
-    { rewrite -vra_car_op_eq auth_frag_op own_op. iFrame. }
-    iMod (ra_update VRA _ γ1 (vra_op VRA x y) (vra_op VRA z y) with "Hinv Hxy [Obs]") as "Hxy";
-      first solve_ndisj.
-    { iApply (proph_obs_impl with "Obs"). by intros π [_ [? _]]. }
-    rewrite -vra_car_op_eq auth_frag_op own_op.
-    iDestruct "Hxy" as "[Hx Hown]".
-    iMod ("Hclose" with "[$Hown $Hinv]") as "L".
+    { iApply (proph_obs_impl with "Obs"). intros π (_ & Hfpu & _) c w ->. apply Hfpu. }
     iFrame "L".
     iModIntro.
     rewrite /tctx_elt_interp/ty_own/=.
@@ -821,25 +998,27 @@ Section RA_type.
       by apply Hpost.
   Qed.
 
-  Notation "RA_UpdateWithShrNonDet: self other new_values" := (new [ #0])%E (at level 102, self,other,new_values at level 1): expr_scope.
+  Notation "RA_UpdateWithShrNonDet: self other new_values f" := (new [ #0])%E (at level 102, self,other,new_values,f at level 1): expr_scope.
 
-  Lemma typed_ra_update_with_shr_non_det κ n (self other new_values : path) (ty : type (vecₛ 𝔄 n)) E L I :
+  Lemma typed_ra_update_with_shr_non_det κ (self other new_values pf : path)
+      (tyzs : type (funₛ 𝔄 Propₛ)) (tyf : type (funₛ 𝔄 𝔄)) E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I
-    +[self ◁ own_ptr 0 (ra_ty VRA 𝔄_const); other ◁ shr_bor κ (ra_ty VRA 𝔄_const); new_values ◁ own_ptr 0 (ghost_ty ty)]
-    (RA_UpdateWithShrNonDet: self other new_values)
+    +[self ◁ own_ptr 0 (ra_ty VRA 𝔄_const); other ◁ shr_bor κ (ra_ty VRA 𝔄_const);
+      new_values ◁ own_ptr 0 (ghost_ty tyzs); pf ◁ own_ptr 0 (ghost_ty tyf)]
+    (RA_UpdateWithShrNonDet: self other new_values pf)
     (λ out, +[out ◁ own_ptr 0 (ra_ty VRA 𝔄_const)])
-    (λ post '-[(l1, (γ1, x)); (l2, (γ2, y)); (_, zs)], λ mask π, γ1 = γ2 ∧
+    (λ post '-[(l1, (γ1, x)); (l2, (γ2, y)); (_, zs); (_, f)], λ mask π, γ1 = γ2 ∧
         vra_frame_preserving_update_nondeterministic VRA (vra_op VRA x y)
-          (λ w, ∃ z, z ∈ vec_to_list zs ∧ w = vra_op VRA z y) ∧
-        ∀ l, Forall (λ z, post -[(l, (γ1, z))] mask π) (vec_to_list zs)).
+          (λ w, ∃ z, zs z ∧ w = vra_op VRA z y) f π ∧
+        ∀ l z, zs z → post -[(l, (γ1, z))] mask π).
   Proof.
     move => Alv tid postπ mask iκs vπl.
     iIntros "LFT #TIME #PROPH UNIQ E L $ TY #Obs" => /=.
     fold indep_interp_of_syn_type.
-    destruct vπl as [[pl1 [γ1 x]] [[pl2 [γ2 y]] [[plzs zs] []]]].
-    simpl in zs.
-    iDestruct "TY" as "(H1 & H2 & _ & _)".
+    destruct vπl as [[pl1 [γ1 x]] [[pl2 [γ2 y]] [[plzs zs] [[plf f] []]]]].
+    simpl in zs, f.
+    iDestruct "TY" as "(H1 & H2 & _ & _ & _)".
     iDestruct "H1" as "(%pl1' & %d1 & % & #Hd1 & Hown1 & %Hphys1)".
     iDestruct "H2" as "(%pl2' & %d2 & % & #Hd2 & Hown2 & %Hphys2)".
     simpl in Hphys1, Hphys2.
@@ -850,7 +1029,7 @@ Section RA_type.
     iDestruct "Hown1" as "(_ & _ & Hx & _)".
     iDestruct "Hown2" as "(_ & #Hy & _)".
     iDestruct (Alv with "L E") as "#Alv".
-    iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & %Hupd & _)" => //.
+    iMod (proph_obs_sat with "PROPH Obs") as "(% & <- & _)" => //.
     iDestruct (guards_transitive_right with "Alv Hy") as "G1".
     iApply wp_fupd.
     wp_lam.
@@ -863,19 +1042,31 @@ Section RA_type.
     iIntros "H£' #Hd2''".
     wp_if.
     iIntros "!>".
-    leaf_open_laters "G1" with "L" as "Hown". { solve_ndisj. }
+    iMod (guards_extract_persistent_later _ _ (ra_inv VRA γ1) ⊤ (↑NllftG) _
+      ltac:(apply _) ltac:(set_solver) with "G1 L []") as "H".
+    { iIntros "[_ $]". }
     rewrite Nat.add_1_r -bi.later_laterN.
-    iMod (lc_fupd_add_laterN _ _ _ (S (S d2)) with "[H£'] Hown") as "[Hown Hclose]".
+    iMod (lc_fupd_add_laterN _ _ _ (S (S d2)) with "[H£] H") as "(L & #Hinv)".
+    { iApply (lc_weaken with "H£"). rewrite /advance_credits. nia. }
+    iPoseProof (guards_weaken_rhs_sep_l with "G1") as "G1'".
+    (* The new value [f c] is known to be of the form [z ⋅ y] only under the prophecy
+       observation. So we choose [z] classically, and only learn [zs z] under the
+       observation. *)
+    set R := λ c z, (∃ z', zs z' ∧ f c = vra_op VRA z' y) → zs z ∧ f c = vra_op VRA z y.
+    iMod (ra_updateP_guarded VRA ⊤ (↑NllftG) _ _ γ1 x y R
+      with "Hinv G1' [H£'] Hx [Obs] L") as (c z) "(%Hz & #Hv & Hx & L)".
+    { apply raN_sub_NllftG. } { set_solver. }
+    { intros c. destruct (classic (∃ z', zs z' ∧ f c = vra_op VRA z' y)) as [[z Hz]|Hn].
+      - exists z. by intros _.
+      - exists (vra_unit VRA). intros Hex. by destruct Hn. }
     { iApply (lc_weaken with "H£'"). rewrite /advance_credits. nia. }
-    iDestruct "Hown" as "[Hown #Hinv]".
-    iAssert (own γ1 (◯ VraCar VRA (vra_op VRA x y))) with "[Hx Hown]" as "Hxy".
-    { rewrite -vra_car_op_eq auth_frag_op own_op. iFrame. }
-    iMod (ra_update_nondeterministic VRA (⊤ ∖ ↑NllftG) γ1 _ _ ltac:(solve_ndisj) Hupd with "Hinv Hxy")
-      as (w) "[%Hin Hxy]".
-    destruct Hin as (z & Hz & ->).
-    rewrite -vra_car_op_eq auth_frag_op own_op.
-    iDestruct "Hxy" as "[Hx Hown]".
-    iMod ("Hclose" with "[$Hown $Hinv]") as "L".
+    { iApply (proph_obs_impl with "Obs"). intros π (_ & Hupd & _) c' w' Hz Hv.
+      destruct (Hupd c' Hv) as [Hb Hv']. destruct (Hz Hb) as [_ Heq].
+      by rewrite -Heq. }
+    iAssert ⟨π, zs z⟩%I as "#Hzs".
+    { iDestruct (proph_obs_and with "Obs Hv") as "O".
+      iApply (proph_obs_impl with "O"). intros π [(_ & Hupd & _) Hv'].
+      destruct (Hupd c Hv') as [Hb _]. by destruct (Hz Hb). }
     iFrame "L".
     iModIntro.
     rewrite /tctx_elt_interp/ty_own/=.
@@ -886,10 +1077,9 @@ Section RA_type.
       iSplit => //.
       rewrite heap_mapsto_fancy_vec_nil.
       by iFrame "∗#".
-    + iApply (proph_obs_impl with "Obs").
-      intros π' [_ [_ Hpost]].
-      specialize (Hpost (42%positive, 1337%Z)).
-      rewrite Forall_forall in Hpost.
+    + iDestruct (proph_obs_and with "Obs Hzs") as "O".
+      iApply (proph_obs_impl with "O").
+      intros π' [(_ & _ & Hpost) Hz'].
       by apply Hpost.
   Qed.
 

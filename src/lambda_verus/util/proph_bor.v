@@ -337,15 +337,11 @@ Proof.
     iMod ("Back" with "Q1 Q2") as "P". iModIntro. iNext. iExists (f a b). iFrame "P".
     iDestruct (proph_ctrl_eqz with "PROPH Pc1") as "Eqz1".
     iDestruct (proph_ctrl_eqz with "PROPH Pc2") as "Eqz2".
-    iIntros (E' ζl' q') "[% %Dep] ζl".
-    have [Dep1 Dep2]: vπ a ./ ζl' ∧ vπ b ./ ζl'.
-    { apply Hrefl.
+    iApply (proph_eqz_combine2 with "Eqz1 Eqz2").
+    - intros ζl' Dep. apply Hrefl.
       have Heq: vπ (f a b) = λ π, fπ (vπ a π) (vπ b π) by fun_ext=> π; apply Hcomm.
-      by rewrite -Heq. }
-    iMod ("Eqz1" with "[%//] ζl") as "[Obs1 ζl]".
-    iMod ("Eqz2" with "[%//] ζl") as "[Obs2 $]". iModIntro.
-    iCombine "Obs1 Obs2" as "Obs'".
-    iApply (proph_obs_impl with "Obs'")=> π /= [-> ->]. by rewrite Hcomm. }
+      by rewrite -Heq.
+    - move=> π /= -> ->. by rewrite Hcomm. }
   { iNext. iSplitL "Pc1 Q1"; [iExists y1|iExists y2]; iFrame. }
   iMod "Upd" as "_".
   iMod (llftl_sep_split with "LFT Bor") as "[Bor1 Bor2]"; [solve_ndisj|].
@@ -516,13 +512,11 @@ Proof.
     iModIntro. iNext. iSplitR "ωPc Q"; last first.
     { iExists y3. iFrame. }
     iExists y3. iFrame "ωVo Sy3". iApply "ToξPc".
-    iIntros (E' ζl' q') "[% %Dep] ζl".
-    have Dep': vπ y3 ./ ζl'.
-    { apply Hrefl.
+    iApply (proph_eqz_combine1 with "Eqz").
+    - intros ζl' Dep. apply Hrefl.
       have Heq: vπ (h y3) = λ π, Hπ (vπ y3 π) (π ω) by fun_ext=> π; apply Hcomm.
-      by rewrite -Heq. }
-    iMod ("Eqz" with "[%//] ζl") as "[Obs' $]". iModIntro.
-    iApply (proph_obs_impl with "Obs'")=> π /= ->. by rewrite Hcomm. }
+      by rewrite -Heq.
+    - move=> π /= ->. by rewrite Hcomm. }
   iMod "Upd" as "_".
   iDestruct (llftl_bor_idx with "Bor") as (idx') "[IBor' Tok']".
   iModIntro. iFrame "Obs G". iExists idx'. iFrame.

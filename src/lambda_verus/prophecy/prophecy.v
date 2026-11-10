@@ -4,9 +4,11 @@ From iris.algebra Require Import auth cmra functions gmap csum frac agree excl.
 From iris.bi Require Import fractional.
 From iris.proofmode Require Import proofmode.
 From iris.base_logic Require Import invariants.
-From lrust.util Require Import basic vector discrete_fun fancy_lists.
+From iris.base_logic.lib Require Import fancy_updates.
+From lrust.util Require Import basic vector discrete_fun fancy_lists update.
 From lrust.prophecy Require Export syn_type.
-From guarding Require Import factoring_props own_and guard.
+From guarding Require Import factoring_props own_and guard own_and_own_sep.
+From guarding.internal Require Import auth_frag_util.
 
 (** * Basic Notions *)
 
@@ -310,7 +312,23 @@ Class prophG Σ := ProphG { #[global] proph_inG :: prophPreG Σ; proph_name: gna
 Global Instance subG_prophPreG Σ : subG prophΣ Σ → prophPreG Σ.
 Proof. solve_inG. Qed.
 
-Definition prophN: namespace := nroot .@ "proph".
+(** The prophecy invariant lives inside the lifetime logic's guarding namespace
+    ([NllftG = nroot .@ "leaf_lifetime_logic" .@ "guarding"]), so that guards at mask
+    [↑NllftG] (e.g., shared borrows) can consult it. *)
+Definition prophN: namespace := nroot .@ "leaf_lifetime_logic" .@ "guarding" .@ "proph".
+
+Lemma prophN_sub_llft : ↑prophN ⊆ (↑(nroot .@ "leaf_lifetime_logic") : coPset).
+Proof. solve_ndisj. Qed.
+Lemma prophN_sub_llftG :
+  ↑prophN ⊆ (↑(nroot .@ "leaf_lifetime_logic" .@ "guarding") : coPset).
+Proof. solve_ndisj. Qed.
+(** Since [prophN] is nested three levels deep, the default search depth of
+    [solve_ndisj] no longer suffices for some goals. *)
+Ltac solve_ndisj_deep :=
+  repeat match goal with
+  | H : _ ∪ _ ⊆ _ |- _ => apply union_subseteq in H as [??]
+  end;
+  solve [eauto 16 with ndisj].
 
 (** ** Camera Facts *)
 
@@ -457,9 +475,10 @@ Section defs.
 Context `{!invGS Σ, !prophG Σ}.
 
 (** Prophecy Context *)
-Local Definition proph_inv: iProp Σ :=
+Definition proph_inv: iProp Σ :=
   ∃S, ⌜∃L, .✓ L ∧ S :~ L⌝ ∗ own proph_name (● S).
-Definition proph_ctx: iProp Σ := inv prophN proph_inv.
+(** The prophecy context is a Leaf guard, so that it can be combined with other guards. *)
+Definition proph_ctx: iProp Σ := True &&{↑prophN}&&> ▷ proph_inv.
 
 (** Prophecy Token *)
 Definition proph_tok (ξ: proph_var) (q: Qp) : iProp Σ :=
@@ -550,6 +569,12 @@ Proof.
   iSplitL "ξl ξl'"; iApply fractional_split; iFrame.
 Qed. 
 
+Local Lemma proph_ctx_inv : proph_ctx ⊢ inv prophN proph_inv.
+Proof. apply inv_from_guards. Qed.
+
+Global Instance proph_inv_timeless : Timeless proph_inv.
+Proof. apply _. Qed.
+
 (** Initialization *)
 
 Lemma proph_init `{!prophPreG Σ} E :
@@ -557,7 +582,7 @@ Lemma proph_init `{!prophPreG Σ} E :
 Proof.
   move=> ?. iMod (own_alloc (● ε)) as (γ) "●ε"; [by apply auth_auth_valid|].
   set IProphG := ProphG Σ _ γ. iExists IProphG.
-  iMod (inv_alloc _ _ proph_inv with "[●ε]") as "?"; [|done]. iModIntro.
+  iMod (guards_alloc _ prophN proph_inv with "[●ε]") as "?"; [|done]. iModIntro.
   iExists ε. iFrame "●ε". iPureIntro. exists []. split; [done|].
   split=> ??; rewrite lookup_empty; (split; [by inversion 1|]).
   - by move=> /elem_of_nil.
@@ -569,7 +594,8 @@ Qed.
 Lemma proph_intro 𝔄i (I: gset positive) E :
   ↑prophN ⊆ E → proph_ctx ={E}=∗ ∃i, ⌜i ∉ I⌝ ∗ 1:[PrVar 𝔄i i].
 Proof.
-  iIntros (?) "?". iInv prophN as (S) ">[(%L &%& %Sim) ●S]".
+  iIntros (?) "#PC". iDestruct (proph_ctx_inv with "PC") as "#?".
+  iInv prophN as (S) ">[(%L &%& %Sim) ●S]".
   case (exist_fresh (I ∪ dom (S 𝔄i)))
     => [i /not_elem_of_union [? /not_elem_of_dom EqNone]].
   set ξ := PrVar 𝔄i i. set S' := add_line ξ (fitem 1) S.
@@ -614,7 +640,8 @@ Lemma proph_resolve P E ξ vπ ζl : ↑prophN ⊆ E → vπ ./ ζl →
   (∀ ζ, ⌜ζ ∈ ζl⌝ → P -∗ ∃ q, q:[ζ]) -∗
   proph_ctx -∗ 1:[ξ] -∗ P ={E}=∗ ⟨π, π ξ = vπ π⟩ ∗ P.
 Proof.
-  iIntros (? Dep) "P→ ? ξ P". iInv prophN as (S) ">[(%L & % & %Sim) ●S]".
+  iIntros (? Dep) "P→ #PC ξ P". iDestruct (proph_ctx_inv with "PC") as "#?".
+  iInv prophN as (S) ">[(%L & % & %Sim) ●S]".
   iDestruct (proph_tok_out with "●S ξ") as %Outξ; [done|].
   iAssert ⌜∀ζ, ζ ∈ ζl → ζ ∉ ξ :: res L⌝%I as %Outζl.
   { iIntros (??). iDestruct ("P→" with "[//] P") as (?) "ζ".
@@ -640,6 +667,104 @@ Lemma proph_resolve_toks E ξ vπ ζl q : ↑prophN ⊆ E → vπ ./ ζl →
 Proof.
   iIntros (??). iApply proph_resolve=>//. iIntros (??) "ζl". iExists _. 
   by iApply (big_sepL_elem_of with "ζl").
+Qed.
+
+(** Keep a pure consequence of a hypothesis without consuming it. *)
+Local Lemma keep_pure (P: iProp Σ) (φ: Prop) : (P ⊢ ⌜φ⌝) → P ⊢ ⌜φ⌝ ∗ P.
+Proof. intros H. apply (bi.pure_elim φ); [done|]. intros. iIntros "$". done. Qed.
+
+(** ** Resolution with the prophecy invariant opened alongside a token guard
+
+    Leaf lets us open the prophecy guard together with a guard for tokens, giving their
+    conjunction. [proph_open_split] turns this into separate ownership of the prophecy
+    invariant together with a conjunction "view" of the tokens, in which any number of
+    resolutions can be performed ([proph_resolve_open]). *)
+
+Local Lemma proph_toks_own q ζl : ζl ≠ [] →
+  q:+[ζl] ⊣⊢ own proph_name (◯ ([^op list] ζ ∈ ζl, line ζ (fitem q))).
+Proof.
+  intros ?. rewrite -(big_opL_own _ (λ _ ζ, ◯ line ζ (fitem q))) //.
+  f_equiv. by rewrite (big_opL_commute auth_frag).
+Qed.
+
+Lemma proph_open_split q ζl (B: iProp Σ) :
+  (q:+[ζl] ∧ (proph_inv ∗ B)) ⊢ proph_inv ∗ (q:+[ζl] ∧ B).
+Proof.
+  destruct (decide (ζl = [])) as [->|Hne].
+  { iIntros "[_ [$ B]]". by iSplit. }
+  rewrite proph_toks_own // /proph_inv bi.sep_exist_r bi.and_exist_l.
+  iIntros "H". iDestruct "H" as (S) "H".
+  iDestruct (keep_pure _ (∃L, .✓ L ∧ S :~ L) with "H") as "[%HL H]".
+  { iIntros "[_ [[% _] _]]". done. }
+  iAssert (own proph_name (◯ ([^op list] ζ ∈ ζl, line ζ (fitem q)))
+    ∧ (own proph_name (● S) ∗ B))%I with "[H]" as "H".
+  { iSplit; [iDestruct "H" as "[$ _]"|iDestruct "H" as "[_ [[_ $] $]]"]. }
+  iDestruct (andsep_to_sepand_ucmra with "H") as "[●S H]"; first apply auth_frag_disjointness.
+  iSplitL "●S"; [by iExists S; iFrame|done].
+Qed.
+
+Lemma proph_resolve_open ξ vπ ζl q (B: iProp Σ) : vπ ./ ζl →
+  proph_inv -∗ (q:+[ζl] ∧ B) -∗ 1:[ξ] ==∗
+    ⟨π, π ξ = vπ π⟩ ∗ proph_inv ∗ (q:+[ζl] ∧ B).
+Proof.
+  iIntros (Dep) "Inv X ξ". iDestruct "Inv" as (S) "[(%L & %Ok & %Sim) ●S]".
+  iCombine "●S ξ X" as "H".
+  iDestruct (keep_pure _ (∀ζ, ζ ∈ ζl → ζ ∉ ξ :: res L) with "H") as "[%Outζl (●S & ξ & X)]".
+  { iIntros "(●S & ξ & X)" (ζ Hin). iDestruct "X" as "[X _]".
+    iDestruct (big_sepL_elem_of with "X") as "ζ"; first done.
+    iDestruct (proph_tok_ne with "ξ ζ") as %?.
+    iDestruct (proph_tok_out with "●S ζ") as %?; first done.
+    iPureIntro. rewrite not_elem_of_cons. split; [by apply not_eq_sym|done]. }
+  iDestruct (proph_tok_out with "●S ξ") as %Outξ; [done|].
+  set S' := add_line ξ (aitem vπ) S.
+  iMod (own_update_2 _ _ _ (● S' ⋅ ◯ line ξ (aitem vπ)) with "●S ξ") as "[●S' #Hξ]".
+  { apply auth_update, discrete_fun_singleton_local_update_any,
+      singleton_local_update_any => ? _. by apply exclusive_local_update. }
+  iModIntro. iFrame "X". iSplitR.
+  { iExists [.{ξ := vπ}]. rewrite big_sepL_singleton.
+    iSplitR; [|done]. iPureIntro=> ? Sat. by inversion Sat. }
+  iExists S'. iFrame "●S'". iPureIntro.
+  exists ((.{ξ := vπ}, None) :: L). split.
+  { split; [done| split; [|done]] => ?? Eqv. apply Dep => ? /Outζl ?. by apply Eqv. }
+  by apply (proph_sim_cons S L ξ vπ None).
+Qed.
+
+(** Prophecy resolution where the tokens for the dependencies are only available
+    through a guard [G &&{F; n}&&> q:+[ζl]]. The guard may itself use the prophecy
+    invariant; this is handled by opening both together. *)
+Lemma proph_resolve_guarded_later E F n G ξ vπ ζl q :
+  ↑prophN ⊆ F → F ⊆ E → vπ ./ ζl →
+  proph_ctx -∗ (G &&{F; n}&&> q:+[ζl]) -∗ 1:[ξ] -∗ G ={E, E∖F}=∗
+    ▷^n |={E∖F, E}=> ⟨π, π ξ = vπ π⟩ ∗ G.
+Proof.
+  iIntros (HpF HFE Dep) "#PC #Gt ξ G".
+  iAssert (G &&{F; n}&&> ▷ proph_inv)%I as "#Gp".
+  { iApply (lguards_weaken_later _ _ _ 0 n); first lia.
+    iApply (guards_weaken_mask (↑prophN)); first done.
+    iApply (guards_transitive with "[] PC"). iApply guards_true. }
+  iMod (lguards_open_two_simultaneously G (▷ proph_inv) (q:+[ζl]) E F n HFE
+    with "Gp Gt G") as (T) "(T & Tinv & Ttok & Back)".
+  iAssert (▷^n ((◇ q:+[ζl]) ∧ (◇ (proph_inv ∗ (▷ proph_inv -∗ T)))))%I
+    with "[T Tinv Ttok]" as "X".
+  { iSplit.
+    - iDestruct ("Ttok" with "T") as "H". iNext. iMod "H" as "[$ _]".
+    - iDestruct ("Tinv" with "T") as "H". iNext. iMod "H" as "[>Inv B]". iModIntro.
+      iFrame. }
+  iModIntro. iNext.
+  rewrite -bi.except_0_and. iMod "X" as "X".
+  iDestruct (proph_open_split with "X") as "[Inv X]".
+  iMod (proph_resolve_open with "Inv X ξ") as "($ & Inv & X)"; first done.
+  iDestruct "X" as "[_ Tback]". iDestruct ("Tback" with "[Inv]") as "T"; first by iNext.
+  by iApply ("Back" with "T").
+Qed.
+
+Lemma proph_resolve_guarded E F n G ξ vπ ζl q :
+  ↑prophN ⊆ F → F ⊆ E → vπ ./ ζl →
+  proph_ctx -∗ (G &&{F; n}&&> q:+[ζl]) -∗ £ n -∗ 1:[ξ] -∗ G ={E}=∗ ⟨π, π ξ = vπ π⟩ ∗ G.
+Proof.
+  iIntros (???) "#PC #Gt £ ξ G".
+  iMod (proph_resolve_guarded_later with "PC Gt ξ G") as "J"; [done..|].
+  by iApply (lc_fupd_add_laterN with "£ J").
 Qed.
 
 (** Resolution Reservations *)
@@ -688,7 +813,8 @@ Qed.
 Lemma proph_reserve E ξ ζl q : ↑prophN ⊆ E →
   proph_ctx -∗ 1:[ξ] -∗ q:+[ζl] ={E}=∗ proph_reserved ξ ζl ∗ q:+[ζl].
 Proof.
-  iIntros (?) "? ξ ζl". iInv prophN as (S) ">[(%L & % & %Sim) ●S]".
+  iIntros (?) "#PC ξ ζl". iDestruct (proph_ctx_inv with "PC") as "#?".
+  iInv prophN as (S) ">[(%L & % & %Sim) ●S]".
   iDestruct (proph_tok_out with "●S ξ") as %Outξ; [done|].
   iAssert ⌜∀ζ, ζ ∈ ζl → ζ ∉ ξ :: res L⌝%I as %Outζl.
   { iIntros (ζ ?). iDestruct (big_sepL_elem_of with "ζl") as "ζ"; [done|].
@@ -710,7 +836,8 @@ Qed.
 Lemma proph_unreserve E ξ ζl : ↑prophN ⊆ E →
   proph_ctx -∗ proph_reserved ξ ζl ={E}=∗ 1:[ξ].
 Proof.
-  iIntros (?) "? ξ". iInv prophN as (S) ">[(%L & %Ok & %Sim) ●S]".
+  iIntros (?) "#PC ξ". iDestruct (proph_ctx_inv with "PC") as "#?".
+  iInv prophN as (S) ">[(%L & %Ok & %Sim) ●S]".
   iDestruct (proph_reserved_lookup with "●S ξ") as %Eqv.
   have [vπ In] := proj1 (proj2 Sim ξ ζl) Eqv.
   destruct (elem_of_list_split _ _ In) as [L1 [L2 Eq]].
@@ -730,7 +857,8 @@ Lemma proph_reserve_extend E ξ ζl ζl' q : ↑prophN ⊆ E →
   proph_ctx -∗ proph_reserved ξ ζl -∗ q:+[ζl'] ={E}=∗
     proph_reserved ξ (ζl ++ ζl') ∗ q:+[ζl'].
 Proof.
-  iIntros (?) "? ξ ζl'". iInv prophN as (S) ">[(%L & %Ok & %Sim) ●S]".
+  iIntros (?) "#PC ξ ζl'". iDestruct (proph_ctx_inv with "PC") as "#?".
+  iInv prophN as (S) ">[(%L & %Ok & %Sim) ●S]".
   iDestruct (proph_reserved_lookup with "●S ξ") as %Eqv.
   have [vπ In] := proj1 (proj2 Sim ξ ζl) Eqv.
   destruct (elem_of_list_split _ _ In) as [L1 [L2 Eq]].
@@ -757,7 +885,8 @@ Lemma proph_resolve_reserved_gen P E ξ vπ ζl ηl : ↑prophN ⊆ E → vπ ./
   (∀ η, ⌜η ∈ ηl⌝ → P -∗ ∃ q, q:[η]) -∗
   proph_ctx -∗ proph_reserved ξ ζl -∗ P ={E}=∗ ⟨π, π ξ = vπ π⟩ ∗ P.
 Proof.
-  iIntros (? Dep) "P→ ? ξ P". iInv prophN as (S) ">[(%L & %Ok & %Sim) ●S]".
+  iIntros (? Dep) "P→ #PC ξ P". iDestruct (proph_ctx_inv with "PC") as "#?".
+  iInv prophN as (S) ">[(%L & %Ok & %Sim) ●S]".
   iDestruct (proph_reserved_lookup with "●S ξ") as %Eqv.
   have [wπ In] := proj1 (proj2 Sim ξ ζl) Eqv.
   destruct (elem_of_list_split _ _ In) as [L1 [L2 Eq]].
@@ -816,7 +945,8 @@ Proof. rewrite /CombineSepAs. iIntros "#[??]". by iApply proph_obs_and. Qed.
 Lemma proph_obs_sat E φπ :
   ↑prophN ⊆ E → proph_ctx -∗ .⟨φπ⟩ ={E}=∗ ⌜∃π₀, φπ π₀⌝.
 Proof.
-  iIntros "% ? (%L' & %Toφπ & #L')". iInv prophN as (S) ">[(%L & %Ok & %Sim) ●S]".
+  iIntros "% #PC (%L' & %Toφπ & #L')". iDestruct (proph_ctx_inv with "PC") as "#?".
+  iInv prophN as (S) ">[(%L & %Ok & %Sim) ●S]".
   move: (Ok)=> /proph_ok_sat [π /Forall_forall Sat]. iModIntro.
   iAssert ⌜π ◁ L'⌝%I as %?; last first.
   { iSplitL; last first. { iPureIntro. exists π. by apply Toφπ. }
@@ -838,6 +968,44 @@ Lemma proph_obs_false E φπ :
 Proof.
   iIntros (? Neg) "PROPH Obs".
   iMod (proph_obs_sat with "PROPH Obs") as %[? Ex]; [done|]. by apply Neg in Ex.
+Qed.
+
+(** Satisfiability of an observation, given the (opened) prophecy invariant. *)
+Lemma proph_inv_obs_sat φπ : proph_inv -∗ .⟨φπ⟩ -∗ ⌜∃π₀, φπ π₀⌝.
+Proof.
+  iIntros "Inv (%L' & %Toφπ & #L')". iDestruct "Inv" as (S) "[(%L & %Ok & %Sim) ●S]".
+  move: (Ok)=> /proph_ok_sat [π /Forall_forall Sat].
+  iAssert ⌜π ◁ L'⌝%I as %?; last first. { iPureIntro. exists π. by apply Toφπ. }
+  rewrite /proph_sat Forall_forall. iIntros ([[𝔄i i] vπ] In)=>/=.
+  set ξ := PrVar 𝔄i i. iAssert (proph_atom .{ξ := vπ}) with "[L']" as "ξvπ".
+  { iApply big_sepL_elem_of; by [apply In|]. }
+  iDestruct (own_valid_2 with "●S ξvπ") as %ValBoth. iPureIntro.
+  move: ValBoth=> /auth_both_valid_discrete [Inc Val]. apply (Sat .{ξ := vπ}).
+  apply (elem_of_list_fmap_1 fst L (.{ξ := vπ}, None)), (proj1 Sim ξ vπ).
+  move/(discrete_fun_included_spec_1 _ _ 𝔄i) in Inc.
+  rewrite /line discrete_fun_lookup_singleton in Inc.
+  move: Inc=> /singleton_included_l [it [Eqv Inc]]. rewrite Eqv. f_equiv.
+  apply aitem_included; [|done]. by apply (lookup_valid_Some (S 𝔄i) i it); [apply Val|].
+Qed.
+
+Lemma proph_ctx_guard : proph_ctx ⊢ True &&{↑prophN}&&> ▷ proph_inv.
+Proof. done. Qed.
+
+(** An unsatisfiable observation guards [False]. This lets guards (which cannot perform
+    fancy updates) use prophecy observations. *)
+Lemma proph_obs_false_guard φπ :
+  (∀π, ¬ φπ π) → proph_ctx ⊢ (.⟨φπ⟩ &&{↑prophN}&&> False).
+Proof.
+  iIntros (Neg) "#PC".
+  iDestruct (guards_true (↑prophN) .⟨φπ⟩ 0) as "G1".
+  iDestruct (guards_transitive with "G1 PC") as "G2".
+  iDestruct (guards_pers_lhs_to_rhs (↑prophN) 0 .⟨φπ⟩ (▷ proph_inv) .⟨φπ⟩ _
+    (reflexivity _) with "G2") as "G3".
+  iApply (guards_transitive with "G3").
+  iApply lguards_equiv_except0. iSplit.
+  - iIntros "!> [>Inv Obs]". iDestruct (proph_inv_obs_sat with "Inv Obs") as %[? Ex].
+    by apply Neg in Ex.
+  - iIntros "!> []".
 Qed.
 
 Lemma proph_tok_point_prop q ξ : factoring_props.point_prop q:[ξ].
@@ -957,8 +1125,22 @@ Global Opaque proph_ctx proph_tok proph_obs proph_reserved.
 
 (** * Prophecy Equalizer *)
 
+(** A prophecy equalizer [uπ :== vπ] says that [uπ = vπ] can be established once the
+    dependencies of [vπ] are known to be unresolved. It is either an observation, or the
+    prophecy context together with a _resolution procedure_ [proph_eqz_res].
+
+    The resolution procedure is parameterized by a reusable resolver acting on an abstract
+    resource [R]. This abstracts over how the dependency tokens are available: they can be
+    owned ([proph_eqz_use_toks]), or only reachable through a guard, in which case the
+    guard and the prophecy invariant are opened once and [R] is the opened state
+    ([proph_eqz_use_guarded]). *)
+Definition proph_eqz_res `{!invGS Σ, !prophG Σ} {A} (uπ vπ: proph A) : iProp Σ :=
+  ∀E ξl (R: iProp Σ), ⌜vπ ./ ξl⌝ -∗
+    □ (∀ξ wπ, ⌜wπ ./ ξl⌝ -∗ 1:[ξ] -∗ R ={E}=∗ ⟨π, π ξ = wπ π⟩ ∗ R) -∗
+    R ={E}=∗ ⟨π, uπ π = vπ π⟩ ∗ R.
+
 Definition proph_eqz `{!invGS Σ, !prophG Σ} {A} (uπ vπ: proph A) : iProp Σ :=
-  ∀E ξl q, ⌜↑prophN ⊆ E ∧ vπ ./ ξl⌝ -∗ q:+[ξl] ={E}=∗ ⟨π, uπ π = vπ π⟩ ∗ q:+[ξl].
+  ⟨π, uπ π = vπ π⟩ ∨ (proph_ctx ∗ proph_eqz_res uπ vπ).
 
 Notation "uπ :== vπ" := (proph_eqz uπ vπ) (at level 70, format "uπ  :==  vπ") : bi_scope.
 
@@ -968,58 +1150,131 @@ Context `{!invGS Σ, !prophG Σ}.
 Global Instance proph_eqz_proper {A} :
   Proper (pointwise_relation _ (=) ==> pointwise_relation _ (=) ==> (⊣⊢)) (@proph_eqz _ _ _ A).
 Proof.
-  move=> ?? E1 ?? E2.
-  unfold ":==".
-  iSplit.
-    - iIntros "A" (E ξl q) "%B C". iDestruct ("A" $! E ξl q) as "A".
-      iMod ("A" with "[] C") as "[A X]".
-      { iPureIntro. destruct B as [B C]. split; trivial.
-        unfold "./". intros. unfold "./" in C.  rewrite E2. apply C. trivial. }
-      iModIntro. iFrame "X". iApply (proph_obs_impl with "A"). intros π Ha.
-      rewrite <- E1. rewrite <- E2. trivial.
-    - iIntros "A" (E ξl q) "%B C". iDestruct ("A" $! E ξl q) as "A".
-      iMod ("A" with "[] C") as "[A X]".
-      { iPureIntro. destruct B as [B C]. split; trivial.
-        unfold "./". intros. unfold "./" in C.  rewrite <- E2. apply C. trivial. }
-      iModIntro. iFrame "X". iApply (proph_obs_impl with "A"). intros π Ha.
-      rewrite E1. rewrite E2. trivial.
+  move=> u u' Eu v v' Ev.
+  have ->: u = u' by apply functional_extensionality.
+  have ->: v = v' by apply functional_extensionality.
+  done.
+Qed.
+
+Local Lemma proph_eqz_res_obs {A} (uπ vπ: proph A) :
+  ⟨π, uπ π = vπ π⟩ -∗ proph_eqz_res uπ vπ.
+Proof. iIntros "#O" (E ξl R ?) "_ R". by iFrame "O R". Qed.
+
+(** Bring two equalizers into a common form. *)
+Local Lemma proph_eqz_join {A B} (uπ vπ: proph A) (uπ' vπ': proph B) :
+  uπ :== vπ -∗ uπ' :== vπ' -∗
+    (⟨π, uπ π = vπ π⟩ ∗ ⟨π, uπ' π = vπ' π⟩) ∨
+    (proph_ctx ∗ proph_eqz_res uπ vπ ∗ proph_eqz_res uπ' vπ').
+Proof.
+  iIntros "[O1|[#PC R1]] [O2|[#PC' R2]]".
+  - iLeft. iFrame.
+  - iRight. iFrame "PC' R2". by iApply proph_eqz_res_obs.
+  - iRight. iFrame "PC R1". by iApply proph_eqz_res_obs.
+  - iRight. iFrame "PC R1 R2".
+Qed.
+
+(** ** Using Prophecy Equalizers *)
+
+Lemma proph_eqz_use_toks {A} (uπ vπ: proph A) E ξl q :
+  ↑prophN ⊆ E → vπ ./ ξl →
+  uπ :== vπ -∗ q:+[ξl] ={E}=∗ ⟨π, uπ π = vπ π⟩ ∗ q:+[ξl].
+Proof.
+  iIntros (??) "[O|[#PC Res]] ξl"; [by iFrame|].
+  iApply ("Res" with "[//] [] ξl"). iIntros "!>" (ξ wπ ?) "ξ ξl".
+  by iApply (proph_resolve_toks with "PC ξ ξl").
+Qed.
+
+Lemma proph_eqz_use_guarded {A} (uπ vπ: proph A) E F n G ξl q :
+  ↑prophN ⊆ F → F ⊆ E → vπ ./ ξl →
+  (G &&{F; n}&&> q:+[ξl]) -∗ £ n -∗ uπ :== vπ -∗ G ={E}=∗ ⟨π, uπ π = vπ π⟩ ∗ G.
+Proof.
+  iIntros (HpF HFE Dep) "#Gt £ [O|[#PC Res]] G"; [by iFrame|].
+  iAssert (G &&{F; n}&&> ▷ proph_inv)%I as "#Gp".
+  { iApply (lguards_weaken_later _ _ _ 0 n); first lia.
+    iApply (guards_weaken_mask (↑prophN)); first done.
+    iApply (guards_transitive with "[] PC"). iApply guards_true. }
+  iMod (lguards_open_two_simultaneously G (▷ proph_inv) (q:+[ξl]) E F n HFE
+    with "Gp Gt G") as (T) "(T & Tinv & Ttok & Back)".
+  iAssert (▷^n ((◇ q:+[ξl]) ∧ (◇ (proph_inv ∗ (▷ proph_inv -∗ T)))))%I
+    with "[T Tinv Ttok]" as "X".
+  { iSplit.
+    - iDestruct ("Ttok" with "T") as "H". iNext. iMod "H" as "[$ _]".
+    - iDestruct ("Tinv" with "T") as "H". iNext. iMod "H" as "[>Inv B]". iModIntro.
+      iFrame. }
+  iMod (lc_fupd_elim_laterN with "£ X") as "X".
+  rewrite -bi.except_0_and. iMod "X" as "X".
+  iDestruct (proph_open_split with "X") as "[Inv X]".
+  iMod ("Res" $! (E∖F) ξl (proph_inv ∗ (q:+[ξl] ∧ (▷ proph_inv -∗ T)))%I
+    with "[//] [] [$Inv $X]") as "[$ [Inv X]]".
+  { iIntros "!>" (ξ wπ ?) "ξ [Inv X]".
+    by iMod (proph_resolve_open with "Inv X ξ") as "($ & $ & $)". }
+  iDestruct "X" as "[_ Tback]". iDestruct ("Tback" with "[Inv]") as "T"; first by iNext.
+  by iApply ("Back" with "T").
 Qed.
 
 (** ** Constructing Prophecy Equalizers *)
 
 Lemma proph_eqz_token ξ vπ : proph_ctx -∗ 1:[ξ] -∗ (.$ ξ) :== vπ.
 Proof.
-  iIntros "PROPH ξ" (???[??]) "ξl". by iMod (proph_resolve_toks with "PROPH ξ ξl").
+  iIntros "#PC ξ". iRight. iFrame "PC".
+  iIntros (E ξl R ?) "#Res R". by iApply ("Res" with "[//] ξ R").
 Qed.
 
 Lemma proph_eqz_obs {A} (uπ vπ: proph A) : ⟨π, uπ π = vπ π⟩ -∗ uπ :== vπ.
-Proof. iIntros "?" (???[??]) "? !>". iFrame. Qed.
+Proof. iIntros "O". by iLeft. Qed.
 
 Lemma proph_eqz_refl {A} (vπ: proph A) : ⊢ vπ :== vπ.
 Proof. iApply proph_eqz_obs. by iApply proph_obs_true. Qed.
 
+(** General ways to derive an equalizer from one or two others. *)
+Lemma proph_eqz_combine1 {A B} (uπ₁ vπ₁: proph A) (uπ vπ: proph B) :
+  (∀ξl, vπ ./ ξl → vπ₁ ./ ξl) → (∀π, uπ₁ π = vπ₁ π → uπ π = vπ π) →
+  uπ₁ :== vπ₁ -∗ uπ :== vπ.
+Proof.
+  intros Hd Hi. iIntros "[O|[#PC Res]]".
+  - iLeft. iApply (proph_obs_impl with "O"). apply Hi.
+  - iRight. iFrame "PC". iIntros (E ξl R Dep) "#Rv R".
+    iMod ("Res" with "[%] Rv R") as "[O $]"; [by apply Hd|].
+    iModIntro. iApply (proph_obs_impl with "O"). apply Hi.
+Qed.
+
+Lemma proph_eqz_combine2 {A B C} (uπ₁ vπ₁: proph A) (uπ₂ vπ₂: proph B) (uπ vπ: proph C) :
+  (∀ξl, vπ ./ ξl → vπ₁ ./ ξl ∧ vπ₂ ./ ξl) →
+  (∀π, uπ₁ π = vπ₁ π → uπ₂ π = vπ₂ π → uπ π = vπ π) →
+  uπ₁ :== vπ₁ -∗ uπ₂ :== vπ₂ -∗ uπ :== vπ.
+Proof.
+  intros Hd Hi. iIntros "E1 E2".
+  iDestruct (proph_eqz_join with "E1 E2") as "[[O1 O2]|(#PC & R1 & R2)]".
+  - iLeft. iCombine "O1 O2" as "O". iApply (proph_obs_impl with "O"). intros π [??].
+    by apply Hi.
+  - iRight. iFrame "PC". iIntros (E ξl R Dep) "#Rv R". destruct (Hd _ Dep).
+    iMod ("R1" with "[//] Rv R") as "[O1 R]". iMod ("R2" with "[//] Rv R") as "[O2 $]".
+    iModIntro. iCombine "O1 O2" as "O". iApply (proph_obs_impl with "O"). intros π [??].
+    by apply Hi.
+Qed.
+
 Lemma proph_eqz_modify {A} (uπ uπ' vπ: proph A) :
   ⟨π, uπ' π = uπ π⟩ -∗ uπ :== vπ -∗ uπ' :== vπ.
 Proof.
-  iIntros "Obs Eqz" (???[??]) "ξl". iMod ("Eqz" with "[%//] ξl") as "[Obs' $]".
-  iModIntro. iCombine "Obs Obs'" as "?". by iApply proph_obs_impl; [|done]=> ?[->].
+  iIntros "#O [O'|[#PC Res]]".
+  - iLeft. iDestruct (proph_obs_and with "O O'") as "O''".
+    iApply (proph_obs_impl with "O''"). intros π [H1 H2]. by rewrite H1.
+  - iRight. iFrame "PC". iIntros (E ξl R Dep) "#Rv R".
+    iMod ("Res" with "[//] Rv R") as "[O' $]".
+    iModIntro. iDestruct (proph_obs_and with "O O'") as "O''".
+    iApply (proph_obs_impl with "O''"). intros π [H1 H2]. by rewrite H1.
 Qed.
 
 Lemma proph_eqz_constr {A B} f `{!@Inj A B (=) (=) f} uπ vπ :
   uπ :== vπ -∗ f ∘ uπ :== f ∘ vπ.
 Proof.
-  iIntros "Eqz" (???[? Dep]) "ξl". move/proph_dep_destr in Dep.
-  iMod ("Eqz" with "[%//] ξl") as "[Obs $]". iModIntro.
-  iApply proph_obs_impl; [|by iApply "Obs"]=> ??/=. by f_equal.
+  apply proph_eqz_combine1; [by move=> ? /proph_dep_destr|]=> ?/=. by intros ->.
 Qed.
 
 Lemma proph_eqz_constr2 {A B C} f `{!@Inj2 A B C (=) (=) (=) f} uπ uπ' vπ vπ' :
   uπ :== vπ -∗ uπ' :== vπ' -∗ f ∘ uπ ⊛ uπ' :== f ∘ vπ ⊛ vπ'.
 Proof.
-  iIntros "Eqz Eqz'" (???[? Dep]) "ξl". move: Dep=> /proph_dep_destr2[??].
-  iMod ("Eqz" with "[%//] ξl") as "[Obs ξl]".
-  iMod ("Eqz'" with "[%//] ξl") as "[Obs' $]". iModIntro.
-  iCombine "Obs Obs'" as "?". by iApply proph_obs_impl; [|done]=>/= ?[->->].
+  apply proph_eqz_combine2; [by move=> ? /proph_dep_destr2|]=> ?/=. by intros -> ->.
 Qed.
 
 Lemma proph_eqz_constr3 {A B C D} f `{!@Inj3 A B C D (=) (=) (=) (=) f}
@@ -1027,11 +1282,14 @@ Lemma proph_eqz_constr3 {A B C D} f `{!@Inj3 A B C D (=) (=) (=) (=) f}
   uπ₀ :== vπ₀ -∗ uπ₁ :== vπ₁ -∗ uπ₂ :== vπ₂ -∗
   f ∘ uπ₀ ⊛ uπ₁ ⊛ uπ₂ :== f ∘ vπ₀ ⊛ vπ₁ ⊛ vπ₂.
 Proof.
-  iIntros "Eqz₀ Eqz₁ Eqz₂" (???[? Dep]) "ξl". move: Dep=> /proph_dep_destr3[?[??]].
-  iMod ("Eqz₀" with "[%//] ξl") as "[Obs ξl]".
-  iMod ("Eqz₁" with "[%//] ξl") as "[Obs' ξl]". iCombine "Obs Obs'" as "Obs".
-  iMod ("Eqz₂" with "[%//] ξl") as "[Obs' $]". iCombine "Obs Obs'" as "?".
-  by iApply proph_obs_impl; [|done]=>/= ?[[->->]->].
+  iIntros "E0 E1 E2".
+  iDestruct (proph_eqz_combine2 uπ₀ vπ₀ uπ₁ vπ₁ (pair ∘ uπ₀ ⊛ uπ₁) (pair ∘ vπ₀ ⊛ vπ₁)
+    with "E0 E1") as "E01".
+  { by move=> ? /proph_dep_destr2. } { move=> ?/=. by intros -> ->. }
+  iApply (proph_eqz_combine2 with "E01 E2").
+  - move=> ξl /proph_dep_destr3 [D0 [D1 D2]]. split; [|done].
+    move=> π π' Eqv /=. by rewrite (D0 π π' Eqv) (D1 π π' Eqv).
+  - move=> π /= [=->->] ->. done.
 Qed.
 
 Lemma proph_eqz_eq {A} (uπ uπ' vπ vπ': proph A) :
@@ -1049,21 +1307,16 @@ Qed.
     dependencies of the mapped right-hand side cover those of the original. *)
 Lemma proph_eqz_constr_refl {A B} (f: A → B) (uπ vπ: proph A) :
   (∀ ξl, f ∘ vπ ./ ξl → vπ ./ ξl) → uπ :== vπ -∗ f ∘ uπ :== f ∘ vπ.
-Proof.
-  intros Hrefl. iIntros "Eqz" (E ξl q [? Dep]) "Hξl". apply Hrefl in Dep.
-  iMod ("Eqz" with "[%//] Hξl") as "[Obs $]". iModIntro.
-  iApply proph_obs_impl; [|by iApply "Obs"]=> ??/=. by f_equal.
-Qed.
+Proof. intros Hrefl. apply proph_eqz_combine1; [done|]=> ?/=. by intros ->. Qed.
 
 (** Project out the first component of an equalizer whose right-hand side
     has a constant second component. *)
 Lemma proph_eqz_fst_const {A B} (uπ: proph (A * B)) (wπ: proph A) (k: B) :
   uπ :== (λ π, (wπ π, k)) -∗ fst ∘ uπ :== wπ.
 Proof.
-  iIntros "Eqz" (???[? Dep]) "ξl".
-  iMod ("Eqz" with "[%] ξl") as "[Obs $]".
-  { split; [done|]. by apply (proph_dep_constr (λ a, (a, k))). }
-  iModIntro. iApply proph_obs_impl; [|by iApply "Obs"]=> ? /= ->. done.
+  apply proph_eqz_combine1.
+  - intros ξl Dep. by apply (proph_dep_constr (λ a, (a, k))).
+  - intros π. rewrite /= => ->. done.
 Qed.
 
 Lemma proph_eqz_vinsert {A n} xπ yπ (zπl: vec (proph A) n) i :
@@ -1074,3 +1327,5 @@ Proof.
 Qed.
 
 End proph_eqz.
+
+Global Opaque proph_eqz proph_eqz_res.

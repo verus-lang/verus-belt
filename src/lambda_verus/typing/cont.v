@@ -34,12 +34,12 @@ Section typing.
       exact Hpre. }
     iApply typed_body_tctx_incl; [done|]. iIntros (? bcπl ?).
     move: (papp_ex bcπl)=> [?[?->]]. iIntros (post ?) "#LFT #TIME #PROPH #UNIQ E L I C /=[T' Tx] Obs".
-    iDestruct (Rslv _ (⊤ ∖ ↑advN) with "LFT PROPH UNIQ TIME E [] L Tx") as "Rslv". { solve_ndisj. }
+    iDestruct (Rslv _ (⊤ ∖ ↑advN) with "LFT PROPH UNIQ TIME E [] L Tx") as "Rslv". { solve_ndisj_deep. }
     { iApply guards_refl. }
-    iMod (fupd_mask_mono with "Rslv") as (?) "[⧖ ToObs]". { solve_ndisj. }
+    iMod (fupd_mask_mono with "Rslv") as (?) "[⧖ ToObs]". { solve_ndisj_deep. }
     wp_bind Skip.
     iApply (wp_fupd).
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj_deep|].
     iIntros "£ ⧖S".
     iMod (lc_step_fupdN_elim_later with "[£] ToObs") as "ToObs". {
       iApply (lc_weaken with "£"). unfold advance_credits; lia.

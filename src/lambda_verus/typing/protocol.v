@@ -10,11 +10,10 @@ Set Default Proof Using "Type".
 Implicit Type 𝔄 𝔅: syn_type.
 
 Local Lemma proph_sub_diff (γ : gname) :
-  {[ γ ]} ⊆ (↑NllftG : coPset) → ↑prophN ⊆ (⊤ ∖ {[ γ ]} : coPset).
-Proof. intros. assert (↑prophN ## (↑NllftG : coPset)) by solve_ndisj. set_solver. Qed.
+  {[ γ ]} ⊆ (↑NllftG ∖ ↑prophN : coPset) → ↑prophN ⊆ (⊤ ∖ {[ γ ]} : coPset).
+Proof. set_solver. Qed.
 
-Local Lemma proph_sub_diff_NllftG : ↑prophN ⊆ (⊤ ∖ ↑NllftG : coPset).
-Proof. solve_ndisj. Qed.
+
 
 Section StorageProtocol.
 
@@ -151,7 +150,7 @@ Section StorageProtocol.
     ty_of_gt ({|
           gt_gho v tid :=
             let '(γ, p) := v in
-            ⌜ @subseteq coPset _ {[ γ ]} (↑NllftG) ⌝ ∗
+            ⌜ @subseteq coPset _ {[ γ ]} (↑NllftG ∖ ↑prophN) ⌝ ∗
             sp_sto γ (λ _ c, tyC.(gt_gho) c tid) ∗ sp_own γ p;
         |}%I : ghost_type (ghostₛ (positiveₛ * 𝔄))).
       Next Obligation.
@@ -207,7 +206,7 @@ Section StorageProtocol.
     iApply wp_fupd.
     iApply wp_new=>//.
     iIntros "!>" (l) "(† & ↦) ".
-    iMod (sp_alloc_ns ⊤ NllftG a {[ k := c ]} (λ _ c, tyC.(gt_gho) c tid)
+    iMod (sp_alloc_ns ⊤ NllftUsr2 a {[ k := c ]} (λ _ c, tyC.(gt_gho) c tid)
       with "PROPH [] [HghoC]") as "(%γ & % & Hsto & Htok)"; first solve_ndisj.
     { iApply (proph_obs_impl with "Obs"). by intros π [? _]. }
     { by rewrite big_sepM_singleton. }
@@ -217,7 +216,8 @@ Section StorageProtocol.
     - iExists _; iSplitR => //=.
       iFrame. iModIntro; iSplit => //. simpl.
       repeat rewrite heap_mapsto_fancy_vec_nil.
-      iPureIntro; set_solver.
+      iPureIntro. assert (↑NllftUsr2 ⊆ (↑NllftG ∖ ↑prophN : coPset)) by solve_ndisj_deep.
+      set_solver.
     - iApply (proph_obs_impl with "Obs").
       intros π' (? & Hpost).
       apply Hpost.
@@ -458,15 +458,19 @@ Section StorageProtocol.
 
   Notation "SP_ExchangeNonDet: p1 p2 p3" := (new [ #0])%E (at level 102, p1,p2,p3 at level 1): expr_scope.
 
-  Lemma typed_sp_exchange_nondeterministic (k : K) (p1 p2 p3 : path) (n : nat) (ty : type (vecₛ (𝔄 * ℭ) n)) E L I :
+  (** The choice function [fsel] is a parameter of the rule rather than a ghost input,
+      because its domain includes stored maps [gmap K (~~ℭ)], which have no [syn_type]. *)
+  Lemma typed_sp_exchange_nondeterministic (k : K)
+      (fsel : ~~𝔄 → gmap K (~~ℭ) → ~~𝔄 * gmap K (~~ℭ) * gmap K (~~ℭ))
+      (p1 p2 p3 : path) (ty : type (funₛ (𝔄 * ℭ) Propₛ)) E L I :
     typed_instr E L I
     +[p1 ◁ own_ptr 0 storage_resource_ty; p2 ◁ own_ptr 0 (tracked_ty tyC); p3 ◁  own_ptr 0 (ghost_ty ty)]
     (SP_ExchangeNonDet: p1 p2 p3)
     (λ v, +[v ◁ own_ptr 0 (prod_ty storage_resource_ty (tracked_ty tyC))])
     (λ post '-[(_, (γ, p)); (_, s); (_, new_pss)], λ mask π,
       vsp_exchanges_nondeterministic p {[ k := s ]}
-        (λ new_p new_b, ∃ new_s, new_b = {[ k := new_s ]} ∧ (new_p, new_s) ∈ vec_to_list new_pss) ∧
-      ∀ l, Forall (λ '(new_p, new_s), post -[(l, ((γ, new_p), new_s))] mask π) (vec_to_list new_pss)).
+        (λ new_p new_b, ∃ new_s, new_b = {[ k := new_s ]} ∧ new_pss (new_p, new_s)) fsel π ∧
+      ∀ l new_p new_s, new_pss (new_p, new_s) → post -[(l, ((γ, new_p), new_s))] mask π).
   Proof.
     move => tid postπ mask iκs vπl.
     iIntros "LFT TIME #PROPH UNIQ E L $ TY #Obs" => /=.
@@ -480,13 +484,15 @@ Section StorageProtocol.
     destruct d,d' => //.
     iDestruct "Hown" as "(?&?&Hγ&#Hsto&Hown)".
     iDestruct "Hown'" as "(?&?&HghoC)".
-    iMod (proph_obs_sat with "PROPH Obs") as "(%π & %exchng & _)" => //.
     iApply wp_fupd; iApply wp_new=>//.
     iIntros "!>" (l) "(† & ↦)".
     iDestruct "Hγ" as %Hγ.
-    iMod (sp_exchange_nondeterministic p {[ k := s ]} _ γ _ ⊤ exchng ltac:(set_solver)
-      (proph_sub_diff γ Hγ) with "PROPH Hsto Hown [HghoC]")
+    iMod (sp_exchange_nondeterministic p {[ k := s ]}
+      (λ new_p new_b, ∃ new_s, new_b = {[ k := new_s ]} ∧ new_pss (new_p, new_s))
+      fsel γ _ ⊤ ltac:(set_solver)
+      (proph_sub_diff γ Hγ) with "PROPH Hsto [] Hown [HghoC]")
       as "(%new_p & %new_b & %Hin & Hown & HghoC)".
+    { iApply (proph_obs_impl with "Obs"). intros π [Hex _]. exact Hex. }
     { iNext. by rewrite big_sepM_singleton. }
     destruct Hin as (new_s & -> & Hin).
     iModIntro.
@@ -501,9 +507,7 @@ Section StorageProtocol.
       rewrite big_sepM_singleton. iFrame. by iPureIntro.
     - iApply (proph_obs_impl with "Obs").
       intros π' (_ & Hpost).
-      specialize (Hpost l).
-      rewrite Forall_forall in Hpost.
-      by apply (Hpost (new_p, new_s)).
+      by apply Hpost.
   Qed.
 
   Notation "SP_Guard: p1 p2" := (new [ #0])%E (at level 102, p1,p2 at level 1): expr_scope.
@@ -514,7 +518,7 @@ Section StorageProtocol.
     +[p1 ◁ shr_bor κ storage_resource_ty; p2 ◁ own_ptr 0 (ghost_ty tyC)]
     (SP_Guard: p1 p2)
     (λ v, +[v ◁ shr_bor κ (tracked_ty tyC)])
-    (λ post '-[(l, (γ, p)); (_, s)], λ mask π, vsp_guards p {[ k := s ]} ∧ ∀ l, post -[(l, s)] mask π).
+    (λ post '-[(l, (γ, p)); (_, s)], λ mask π, vsp_guards p {[ k := s ]} π ∧ ∀ l, post -[(l, s)] mask π).
   Proof.
     move => Alv tid mask iκs postπ [[pl [γ p]] [[pls s] []]].
     fold indep_interp_of_syn_type in *.
@@ -524,7 +528,6 @@ Section StorageProtocol.
     injection Hphys => ? /=; subst v.
     destruct d => //.
     iDestruct "Hshr" as "(_&#Hshr&_)".
-    iMod (proph_obs_sat with "PROPH Obs") as "(%π & %guard & _)" => //.
     iDestruct (Alv with "L E") as "#Alv".
     iApply wp_fupd.
     wp_lam.
@@ -548,8 +551,11 @@ Section StorageProtocol.
     rewrite Nat.add_1_r -bi.later_laterN.
     iMod (lc_fupd_add_laterN _ _ _ (S (S d)) with "[H£'] Hγ_Hshr") as "(L & % & #Hsto)".
     { iApply (lc_weaken with "H£'"). rewrite /advance_credits. nia. }
-    iPoseProof (sp_guard _ _ _ {[ γ ]} with "Hsto") as "Hguard'" => //; first set_solver.
+    iPoseProof (sp_guard _ _ _ ({[ γ ]} ∪ ↑prophN) with "PROPH Hsto [Obs]") as "Hguard'";
+      [set_solver|set_solver| |].
+    { iApply (proph_obs_impl with "Obs"). intros π [Hg _]. exact Hg. }
     iPoseProof (guards_later_absorb_1 with "Hguard'") as "#Hguard''" => /=.
+    have ? := prophN_sub_NllftG.
     iPoseProof (guards_weaken_mask _ (↑NllftG) with "Hguard''") as "Hguard"; first set_solver.
     (* iPoseProof (lguards_weaken_later _ _ _ _ (S (S d)) with "Hguard'''") as "#Hguard"; first lia. *)
     iPoseProof (guards_weaken_rhs_sep_r with "Hshr") as "#Hshr'".
@@ -660,7 +666,7 @@ Section StorageProtocol.
       iPoseProof (guards_and_point _ _ _ (sp_own γ1 y) with "Hshr1'' Hshr2'") as "Hshr3".
       { apply point_prop_p_own. }
       { by iApply sp_own_and_specific. }
-      iPoseProof (guards_include_pers (⌜ {[γ1]} ⊆ ↑NllftG ⌝ ∗ (sp_sto _ _)) with "[] Hshr3") as "Hshr4".
+      iPoseProof (guards_include_pers (⌜ {[γ1]} ⊆ ↑NllftG ∖ ↑prophN ⌝ ∗ (sp_sto _ _)) with "[] Hshr3") as "Hshr4".
       { iSplit => //. }
 
       iIntros "!>".
@@ -707,7 +713,7 @@ Section StorageProtocol.
       iPoseProof (guards_and_point _ _ _ (sp_own γ1 y) with "Hshr1' Hshr2''") as "Hshr3".
       { apply point_prop_p_own. }
       { by iApply sp_own_and_specific. }
-      iPoseProof (guards_include_pers (⌜ {[γ1]} ⊆ ↑NllftG ⌝ ∗ (sp_sto _ _)) with "[] Hshr3") as "Hshr4".
+      iPoseProof (guards_include_pers (⌜ {[γ1]} ⊆ ↑NllftG ∖ ↑prophN ⌝ ∗ (sp_sto _ _)) with "[] Hshr3") as "Hshr4".
       { iSplit => //. }
 
       iIntros "!>".
@@ -785,7 +791,7 @@ Section StorageProtocol.
       rewrite -!bi.later_laterN.
       iSplitL => //.
       iClear "Hshr".
-      iPoseProof (guards_include_pers (⌜{[γ]} ⊆ ↑NllftG⌝ ∗ sp_sto γ (λ _ c, gt_gho tyC c tid))%I with "[] Hsp_own2") as "Hshr".
+      iPoseProof (guards_include_pers (⌜{[γ]} ⊆ ↑NllftG ∖ ↑prophN⌝ ∗ sp_sto γ (λ _ c, gt_gho tyC c tid))%I with "[] Hsp_own2") as "Hshr".
       { by iSplit. }
       rewrite (bi.sep_comm (sp_own _ _) (⌜ _ ⌝ ∗ _))%I.
       rewrite bi.sep_assoc.
@@ -843,7 +849,7 @@ Section StorageProtocol.
     iDestruct (guards_transitive_right with "Alv Hshr3") as "Hshr4".
     iDestruct (sp_own_unit with "Hsto") as "#Hunit".
     iMod (sp_validate_with_extra_guard_with_later vsp_unit p γ _ _ ⊤ (↑NllftG) _
-      ltac:(set_solver) ltac:(set_solver) proph_sub_diff_NllftG
+      ltac:(set_solver) ltac:(set_solver) ltac:(set_solver) ltac:(set_solver)
       with "PROPH Hsto Hshr4 L Hunit") as "J".
     iMod (lc_fupd_add_laterN _ _ _ (S (S d)) with "[H£] J") as (q t) "(#Hobs & L & _)".
     { iApply (lc_weaken with "H£"). rewrite /advance_credits. nia. }
@@ -907,7 +913,7 @@ Section StorageProtocol.
     iPoseProof (guards_weaken_rhs_sep_r with "Hshr1") as "#Hshr2".
     iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & _)" => //.
     iMod (sp_exchange_with_extra_guard_with_later p new_p p' {[ k := s ]} {[ k := new_s ]} γ _ _ ⊤ (↑NllftG) _
-      ltac:(set_solver) ltac:(set_solver) proph_sub_diff_NllftG
+      ltac:(set_solver) ltac:(set_solver) ltac:(set_solver) ltac:(set_solver)
       with "PROPH Hsto Hshr2 [] L Hown [HghoC]") as "Hguard".
     { iApply (proph_obs_impl with "Obs"). by intros π' (_ & ? & _). }
     { iNext. by rewrite big_sepM_singleton. }
@@ -995,7 +1001,7 @@ Section StorageProtocol.
     iPoseProof (guards_weaken_rhs_sep_r with "Hshr2") as "Hshr3".
     iPoseProof (lguards_weaken_later _ _ _ _ (S (S d2)) with "Hshr3") as "Hshr4"; first lia.
     iMod (sp_validate_with_extra_guard_with_later x1 x2 γ1 _ _ ⊤ (↑NllftG) _
-      ltac:(set_solver) ltac:(set_solver) proph_sub_diff_NllftG
+      ltac:(set_solver) ltac:(set_solver) ltac:(set_solver) ltac:(set_solver)
       with "PROPH Hsto1 Hshr4 A2 Hown1") as "J".
     replace (advance_credits (S (S d2))) with (S (S d2) + (advance_credits (S (S d2)) - S (S d2))).
     2: { rewrite /advance_credits. nia. }
@@ -1065,7 +1071,11 @@ Section StorageProtocol.
 
   Notation "SP_ExchangeWithShrNonDet: p1 p2 p3 p4" := (new [ #0])%E (at level 102, p1,p2,p3,p4 at level 1): expr_scope.
 
-  Lemma typed_sp_exchange_with_shr_nondeterministic (k : K) κ (p1 p2 p3 p4 : path) n (ty : type (vecₛ (𝔄 * ℭ) n))  E L I :
+  (** As in [typed_sp_exchange_nondeterministic], [fsel] is a parameter of the rule. It
+      chooses the new combined element [new_p ⋅ p']. *)
+  Lemma typed_sp_exchange_with_shr_nondeterministic (k : K)
+      (fsel : ~~𝔄 → gmap K (~~ℭ) → ~~𝔄 * gmap K (~~ℭ) * gmap K (~~ℭ))
+      κ (p1 p2 p3 p4 : path) (ty : type (funₛ (𝔄 * ℭ) Propₛ)) E L I :
     lctx_lft_alive E L κ →
     typed_instr E L I
     +[p1 ◁ own_ptr 0 storage_resource_ty; p2 ◁ shr_bor κ storage_resource_ty; p3 ◁ own_ptr 0 (tracked_ty tyC); p4 ◁  own_ptr 0 (ghost_ty ty)]
@@ -1074,8 +1084,8 @@ Section StorageProtocol.
     (λ post '-[(_, (γ, p)); (_, (γ', p')); (_, s); (_, new_pss)], λ mask π, γ = γ' ∧
       vsp_exchanges_nondeterministic (vsp_op p p') {[ k := s ]}
         (λ new_p_big new_b, ∃ new_p new_s, new_p_big = vsp_op new_p p' ∧ new_b = {[ k := new_s ]}
-          ∧ (new_p, new_s) ∈ vec_to_list new_pss) ∧
-      ∀ l, Forall (λ '(new_p, new_s), post -[(l, ((γ, new_p), new_s))] mask π) (vec_to_list new_pss)).
+          ∧ new_pss (new_p, new_s)) fsel π ∧
+      ∀ l new_p new_s, new_pss (new_p, new_s) → post -[(l, ((γ, new_p), new_s))] mask π).
   Proof.
     move => Alv tid mask postπ iκs vπl.
     iIntros "LFT #TIME #PROPH UNIQ E L $ TY #Obs" => /=.
@@ -1105,19 +1115,15 @@ Section StorageProtocol.
     iDestruct (guards_transitive_right with "Alv Hshr") as "Hshr1".
     rewrite bi.sep_assoc.
     iPoseProof (guards_weaken_rhs_sep_r with "Hshr1") as "#Hshr2".
-    iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & %exchng & _)" => //.
-    assert (vsp_exchanges_nondeterministic (vsp_op p p') {[ k := s ]}
-      (λ p2_q b2, ∃ p2, p2_q = vsp_op p2 p' ∧
-        (λ new_p new_b, ∃ new_s, new_b = {[ k := new_s ]} ∧ (new_p, new_s) ∈ vec_to_list new_pss)
-        p2 b2)) as exchng'.
-    { intros q t1 Hsat.
-      destruct (exchng q t1 Hsat) as (p2q & b2 & (new_p & new_s & -> & -> & Hin) & Himp).
-      exists (vsp_op new_p p'), {[ k := new_s ]}. split; last done.
-      exists new_p. split; first done. eauto. }
-    iMod (sp_exchange_with_extra_guard_nondeterministic_with_later p p' {[ k := s ]} _
-      γ _ _ ⊤ (↑NllftG) _ exchng'
-      ltac:(set_solver) ltac:(set_solver) proph_sub_diff_NllftG
-      with "PROPH Hsto Hshr2 L Hown [HghoC]") as "Hguard".
+    iMod (proph_obs_sat with "PROPH Obs") as "(%π & <- & _)" => //.
+    iMod (sp_exchange_with_extra_guard_nondeterministic_with_later p p' {[ k := s ]}
+      (λ new_p new_b, ∃ new_s, new_b = {[ k := new_s ]} ∧ new_pss (new_p, new_s)) fsel
+      γ _ _ ⊤ (↑NllftG) _
+      ltac:(set_solver) ltac:(set_solver) ltac:(set_solver) ltac:(set_solver)
+      with "PROPH Hsto Hshr2 [] L Hown [HghoC]") as "Hguard".
+    { iApply (proph_obs_impl with "Obs"). intros π' (_ & Hex & _) q t1 Hrel.
+      destruct (Hex q t1 Hrel) as ((new_p & new_s & Hbig & Hb & Hin) & Hrest).
+      split; last done. exists new_p. split; first done. eauto. }
     { iNext. by rewrite big_sepM_singleton. }
 
     rewrite Nat.add_1_r.
@@ -1141,8 +1147,6 @@ Section StorageProtocol.
       by rewrite big_sepM_singleton.
     - iApply (proph_obs_impl with "Obs").
       intros π' (? & ? & Hpost).
-      specialize (Hpost (42%positive, 1337%Z)).
-      rewrite Forall_forall in Hpost.
-      by apply (Hpost (new_p, new_s)).
+      by apply Hpost.
   Qed.
 End StorageProtocol.

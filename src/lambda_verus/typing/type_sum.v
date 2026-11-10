@@ -163,7 +163,7 @@ Section type_sum.
   Proof.
     split. { move=>/= ?? Hyp [[[??][??]]?]. do 5 f_equiv. apply forall_iff. intros p0. apply Hyp. }
     iIntros (G tid [[l [x pad]] xl] mask post TimelessG) "#LFT #PROPH #UNIQ #E #GguardsL G /=[T Tl] #Obs".
-    iMod (proph_obs_sat with "PROPH Obs") as (π) "%X". { solve_ndisj. }
+    iMod (proph_obs_sat with "PROPH Obs") as (π) "%X". { solve_ndisj_deep. }
     destruct X as [x0 [Heqx _]]. subst x.
     iDestruct "T" as (v d) "(%path & #⧖ & [gho %phys])". inversion phys. subst v.
     destruct d as [|d']; first by done.
@@ -335,7 +335,7 @@ Section type_sum.
     iApply (wp_persistent_time_receipt with "TIME ⧖"). { set_solver. } iIntros "H£ ⧖'".
     iDestruct (lc_weaken (_)%nat with "H£") as "£1"; last first.
     {
-    iApply (wp_read_na_guarded_cells_singleton with "[L £1]"); first by solve_ndisj.
+    iApply (wp_read_na_guarded_cells_singleton with "[L £1]"); first by solve_ndisj_deep.
     { iFrame "Gdiscriminant". iFrame. }
     iNext. iIntros "L".
     wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
@@ -416,10 +416,10 @@ Section type_sum.
       apply forall_proper=> ?. setoid_rewrite Eq. trivial. }
     iIntros (G tid [x xl] mask post TimelessG) "#LFT #PROPH #UNIQ #E #L G /=[p T] #Obs".
     
-    iMod (lctx_lft_alive_get_guards _ _ _ _ _ Alv with "L E G") as "[G #GuardsK]". { solve_ndisj. }
+    iMod (lctx_lft_alive_get_guards _ _ _ _ _ Alv with "L E G") as "[G #GuardsK]". { solve_ndisj_deep. }
     
     iDestruct "p" as (val d Ev) "[#⧖ [Own %Phys]]".
-    iMod (proph_obs_sat with "PROPH Obs") as (πSat) "%X". { solve_ndisj. }
+    iMod (proph_obs_sat with "PROPH Obs") as (πSat) "%X". { solve_ndisj_deep. }
     destruct x as [[[[[l [x0 pad]] ξi] d'] g'] idx].
           
     destruct X as [x1 [PinjEq X]]. simpl in PinjEq. subst x0.
@@ -437,7 +437,7 @@ Section type_sum.
     iDestruct "UniqBody" as "(ξBor & £2)".
     have ?: Inhabited (𝔄l !!ₗ i) := populate (vπ x1 inhabitant).
     iMod (proph_loan_intro (uniq_cell_tyi x1) ⊤ (uniq_cell x1 d' g') with "PROPH UNIQ")
-      as (ζi) "Loan"; [solve_ndisj|].
+      as (ζi) "Loan"; [solve_ndisj_deep|].
     set ξ := uniq_prvar (𝔄:=Σ! 𝔄l) (pinj i x1, pad) ξi.
     set ζ := uniq_prvar x1 ζi.
     set f := λ (c: ~~ (uniq_cellₛ (𝔄l !!ₗ i))),
@@ -455,7 +455,7 @@ Section type_sum.
     iMod (proph_ibor_map ⊤ κ ξ (uniq_cell (𝔄:=Σ! 𝔄l) (pinj i x1, pad) d' g') idx
       (uniq_payload (Σ! tyl) tid (l, cells)) ζ (uniq_cell x1 d' g')
       (uniq_payload (tyl +!! i) tid (cloc_take (cloc_skip (l, cells) 1) (ty_size (tyl +!! i))))
-      f fπ G ltac:(apply _) ltac:(solve_ndisj) Hcomm Hrefl
+      f fπ G ltac:(apply _) ltac:(solve_ndisj_deep) Hcomm Hrefl
       with "LFT PROPH UNIQ HalfGuardsK [] G Loan ξBor") as "(#Obs' & Bor & G)".
     { iIntros "Payload". rewrite uniq_payload_cell.
       iDestruct "Payload" as "(>#⧖1 & Gho1 & >Pt1)".
@@ -540,7 +540,7 @@ Section type_sum.
     iApply (wp_persistent_time_receipt with "TIME ⧖"). { set_solver. } iIntros "H£ ⧖'".
     iDestruct (lc_weaken (_)%nat with "H£") as "£1"; last first.
     {
-    iApply (wp_read_na_guarded_cells_singleton with "[L uniq £1]"); first by solve_ndisj.
+    iApply (wp_read_na_guarded_cells_singleton with "[L uniq £1]"); first by solve_ndisj_deep.
     { iFrame "Gdiscriminant". iFrame. }
     iNext. iIntros "[uniq L]".
     wp_case. { split; [lia|]. by rewrite Nat2Z.id -vlookup_lookup plistc_to_vec_lookup. }
@@ -622,7 +622,7 @@ Section type_sum.
   Proof.
     iIntros ([Eq Wrt] Rslv ???? (x & y &[]))
       "#LFT #TIME PROPH #UNIQ #E L I (p & q & _) Obs".
-    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
+    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj_deep. }
     iDestruct (closed_hasty with "p") as %C1. iDestruct (closed_hasty with "q") as %C2.
     wp_apply (wp_hasty with "p"). iIntros (v d Heq) "#⧖ ty".
     
@@ -634,7 +634,7 @@ Section type_sum.
     destruct l as [l cells]. destruct cells as [|cells0 cells]. { done. }
     
     wp_bind (LitV (l, cells0 :: cells).1 <- #i)%E.
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj_deep|].
     iIntros "H£ #⧖S".
     iDestruct (lc_weaken (_)%nat with "H£") as "£1"; first last.
     {
@@ -645,7 +645,7 @@ Section type_sum.
     iMod (mapsto_vec_untether_singleton _ _ _ ∅ with "↦1") as (v₀ l₀ c₀) "[%Hl [↦1 Retether]]".
     inversion Hl. subst l₀ c₀.
     
-    iApply (wp_write_na_guarded with "[H ↦1 £1]"). { solve_ndisj. }
+    iApply (wp_write_na_guarded with "[H ↦1 £1]"). { solve_ndisj_deep. }
       { rewrite heap_mapsto_cloc_emp_cons.
         iDestruct (guards_weaken_rhs_sep_l with "Hguards") as "Hguards2". iFrame "Hguards2".
         iFrame "H". iFrame "↦1". iFrame "£1". }
@@ -659,7 +659,7 @@ Section type_sum.
     
     iApply wp_fupd.
     iCombine "⧖ ⧖'" as "⧖max".
-    iApply (wp_persistent_time_receipt with "TIME ⧖max"); [solve_ndisj|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖max"); [solve_ndisj_deep|].
     iIntros "H£ #⧖S2".
     iDestruct (lc_weaken (_ + _ + _ + _)%nat with "H£") as "[[[£1 £2] £3] £4]"; first last.
     {
@@ -679,10 +679,10 @@ Section type_sum.
     destruct cells as [|cells2 cells]. { done. }
     
     iMod (lc_fupd_elim_later with "£1 ToObs") as "ToObs".
-    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj_deep. }
     iDestruct (lc_step_fupdN_elim_later with "£2 ToObs") as "ToObs".
-    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj. }
-    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj_deep. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj_deep. }
     iDestruct "ToObs" as "[Obs' H1]".
     
     rewrite heap_mapsto_cloc_fancy_vec_cons.
@@ -691,7 +691,7 @@ Section type_sum.
     iMod (mapsto_vec_untether_singleton _ _ _ ∅ with "↦2") as (v₁ l₁ c₁) "[%Hl₁ [↦2 Retether₁]]".
     inversion Hl₁. subst l₁ c₁.
        
-    iApply (wp_write_na_guarded with "[H ↦2 £3]"). { solve_ndisj. }
+    iApply (wp_write_na_guarded with "[H ↦2 £3]"). { solve_ndisj_deep. }
       { rewrite heap_mapsto_cloc_emp_cons. rewrite heap_mapsto_cloc_emp_cons.
         iDestruct (guards_weaken_rhs_sep_r with "Hguards") as "Hguards2".
         iDestruct (guards_weaken_rhs_sep_l with "Hguards2") as "Hguards3".
@@ -720,7 +720,7 @@ Section type_sum.
          have Hge := max_hlist_with_ge (λ _, ty_size) tyl i.
          assert (∀ x y, x ≤ y → S x ≤ S y) as Hlia by lia. apply Hlia. apply Hge.
     }
-    iDestruct ("Halfback" with "H1 H2") as "L". iMod (fupd_mask_mono with "L") as "L". { solve_ndisj. }
+    iDestruct ("Halfback" with "H1 H2") as "L". iMod (fupd_mask_mono with "L") as "L". { solve_ndisj_deep. }
     
     iExists -[z]. iFrame "L I". iSplitR "Obs".
     - rewrite right_id tctx_hasty_val'; [|done]. iExists (S (S d' `max` db)). iFrame "#".
@@ -758,7 +758,7 @@ Section type_sum.
     iIntros ([Eq Wrt] Rslv Subtype ???? (x & []))
       "#LFT #TIME PROPH #UNIQ #E L I (p & _) Obs".
     iDestruct (Subtype with "L E") as "#(%Ssz & SIncl & Sgho & Sghopers & %Sphys)".
-    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
+    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj_deep. }
     iDestruct (closed_hasty with "p") as %C1.
     wp_apply (wp_hasty with "p"). iIntros (v d Heq) "#⧖ ty".
     
@@ -771,7 +771,7 @@ Section type_sum.
     
     iApply wp_fupd.
     wp_bind (LitV (l, cells0 :: cells).1 <- #i)%E.
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj_deep|].
     iIntros "H£ #⧖S".
     iDestruct (lc_weaken (_ + _ + _ + _)%nat with "H£") as "[[[£1 £2] £3] £4]"; first last.
     {
@@ -782,7 +782,7 @@ Section type_sum.
     iMod (mapsto_vec_untether_singleton _ _ _ ∅ with "↦1") as (v₀ l₀ c₀) "[%Hl [↦1 Retether]]".
     inversion Hl. subst l₀ c₀.
     
-    iApply (wp_write_na_guarded with "[H ↦1 £1]"). { solve_ndisj. }
+    iApply (wp_write_na_guarded with "[H ↦1 £1]"). { solve_ndisj_deep. }
       { rewrite heap_mapsto_cloc_emp_cons.
         iDestruct (guards_weaken_rhs_sep_l with "Hguards") as "Hguards2". iFrame "Hguards2".
         iFrame "H". iFrame "↦1". iFrame "£1". }
@@ -796,10 +796,10 @@ Section type_sum.
     }
     
     iMod (lc_fupd_elim_later with "£2 ToObs") as "ToObs".
-    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj_deep. }
     iDestruct (lc_step_fupdN_elim_later with "£3 ToObs") as "ToObs".
-    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj. }
-    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj_deep. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj_deep. }
     iDestruct "ToObs" as "[Obs' H1]".
     
     iMod (mapsto_vec_untether _ _ _ ∅ with "↦2") as (vlconcrete) "[↦2 [%Hlen2 Retether2]]".
@@ -823,7 +823,7 @@ Section type_sum.
          have Hge := max_hlist_with_ge (λ _, ty_size) tyl i.
          assert (∀ x y, x ≤ y → S x ≤ S y) as Hlia by lia. apply Hlia. apply Hge.
     }
-    iDestruct ("Halfback" with "H1 H2") as "L". iMod (fupd_mask_mono with "L") as "L". { solve_ndisj. }
+    iDestruct ("Halfback" with "H1 H2") as "L". iMod (fupd_mask_mono with "L") as "L". { solve_ndisj_deep. }
     
     iModIntro. iModIntro.
     iExists -[z]. iFrame "L I". iSplitR "Obs".
@@ -865,8 +865,8 @@ Section type_sum.
   Proof.
     iIntros ([Eq Wrt] Rslv Rd ???? (x & y &[]))
       "#LFT #TIME PROPH #UNIQ #E L I (p & q & _) Obs".
-    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj. }
-    iMod (fractional.frac_split_guard_in_half with "H2 Ghalf") as (γ2) "[H2 [H3 [#Ghalf2 #Halfback2]]]". { solve_ndisj. }
+    iMod (llctx_interp_make_guarded with "L") as (γ) "[H1 [H2 [#Ghalf #Halfback]]]". { solve_ndisj_deep. }
+    iMod (fractional.frac_split_guard_in_half with "H2 Ghalf") as (γ2) "[H2 [H3 [#Ghalf2 #Halfback2]]]". { solve_ndisj_deep. }
     
     iDestruct (closed_hasty with "p") as %C1. iDestruct (closed_hasty with "q") as %C2.
     wp_apply (wp_hasty with "p"). iIntros (v d Heq) "#⧖ ty".
@@ -879,7 +879,7 @@ Section type_sum.
     destruct l as [l cells]. destruct cells as [|cells0 cells]. { done. }
     
     wp_bind (LitV (l, cells0 :: cells).1 <- #i)%E.
-    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖"); [solve_ndisj_deep|].
     iIntros "H£ #⧖S".
     iDestruct (lc_weaken (_ + _)%nat with "H£") as "£1"; first last.
     {
@@ -890,7 +890,7 @@ Section type_sum.
     iMod (mapsto_vec_untether_singleton _ _ _ ∅ with "↦1") as (v₀ l₀ c₀) "[%Hl [↦1 _Retether]]".
     inversion Hl. subst l₀ c₀.
     
-    iApply (wp_write_na_guarded with "[Hw ↦1 £1]"). { solve_ndisj. }
+    iApply (wp_write_na_guarded with "[Hw ↦1 £1]"). { solve_ndisj_deep. }
       { rewrite heap_mapsto_cloc_emp_cons.
         iDestruct (guards_weaken_rhs_sep_l with "Hwpt") as "Hguards2". iFrame "Hguards2".
         iFrame "Hw". iFrame "↦1". iFrame "£1". }
@@ -904,7 +904,7 @@ Section type_sum.
     
     iApply wp_fupd.
     iCombine "⧖ ⧖'" as "⧖max".
-    iApply (wp_persistent_time_receipt with "TIME ⧖max"); [solve_ndisj|].
+    iApply (wp_persistent_time_receipt with "TIME ⧖max"); [solve_ndisj_deep|].
     iIntros "H£ #⧖S2".
     iDestruct (lc_weaken (_ + _ + _ + _ + _ + _ + _)%nat with "H£")
         as "[[[[[[£1 £2] £3] £4] £5] £6] £7]"; first last.
@@ -925,10 +925,10 @@ Section type_sum.
     iDestruct (Rslv _ (⊤ ∖ (⊤ ∖ ↑Nllft ∖ ↑prophN ∖ ↑timeN ∖ ↑uniqN)) with "LFT PROPH UNIQ TIME E Ghalf2 H3 tyb_ghos") as "ToObs"; [set_solver|].
     
     iMod (lc_fupd_elim_later with "£2 ToObs") as "ToObs".
-    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj_deep. }
     iDestruct (lc_step_fupdN_elim_later with "£3 ToObs") as "ToObs".
-    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj. }
-    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj_deep. }
+    iMod (fupd_mask_mono with "ToObs") as "ToObs". { solve_ndisj_deep. }
     iDestruct "ToObs" as "[Obs' H1]".
     
     replace ((l +ₗ 1, cells) #↦!∗ vl)%I with ((l +ₗ 1, cells) #↦!∗ (take (length vlb) vl ++ List.skipn (length vlb) vl))%I. 2: {  f_equal. apply take_drop. }
@@ -937,7 +937,7 @@ Section type_sum.
     iMod (mapsto_vec_untether _ _ _ ∅ with "↦2") as (vl2_concrete) "[↦2 [%Hvlen2 _]]".
     iMod (mapsto_vec_untether _ _ _ ∅ with "↦3") as (vl3_concrete) "[↦3 [%Hvlen3 _]]".
     
-    iApply (wp_memcpy_guarded _ (cloc_take (l +ₗ 1, cells) (length (take (length vlb) vl))) l0 vl2_concrete vlb_concrete Hw Hr _ (S (S d' `max` db)) with "TIME [$↦2 Hwpt Hr Hw £4]"). { solve_ndisj. }
+    iApply (wp_memcpy_guarded _ (cloc_take (l +ₗ 1, cells) (length (take (length vlb) vl))) l0 vl2_concrete vlb_concrete Hw Hr _ (S (S d' `max` db)) with "TIME [$↦2 Hwpt Hr Hw £4]"). { solve_ndisj_deep. }
     { rewrite <- Sz'. rewrite Hvlen2. rewrite length_take. lia. }
     { congruence. } { replace (S (d' + 1)) with (S d' + 1) by lia.
       iSplit. { leaf_goal laters to (S d' + 1); first by lia. 
@@ -964,7 +964,7 @@ Section type_sum.
     iDestruct ("Retether" with "[prefix2 ↦2]") as "↦2". { unfold cloc_take. iFrame.
         rewrite length_take. eassert (_ `min` _ = _) as ->; last by iApply "prefix2". lia.
     }
-    iMod (fupd_mask_mono with "↦2") as "[prefix2 ↦2]". { solve_ndisj. }
+    iMod (fupd_mask_mono with "↦2") as "[prefix2 ↦2]". { solve_ndisj_deep. }
     iMod ("back" with "[prefix1 prefix2 prefix3]") as "Hw". { iFrame.
         rewrite length_take. eassert (_ `min` _ = _) as ->; last by iApply "prefix2". lia.
     }
@@ -989,9 +989,9 @@ Section type_sum.
           apply (Hlia _ _ _ HlenLe Sz).
     }
     iDestruct ("Totyr'" with "Hr") as "Totyr'".
-    iMod (fupd_mask_mono with "Totyr'") as (zr) "(%Hzr & H3 & tyr')". { solve_ndisj. }
-    iDestruct ("Halfback2" with "H3 H1") as "L". iMod (fupd_mask_mono with "L") as "L". { solve_ndisj. }
-    iDestruct ("Halfback" with "H1' L") as "L". iMod (fupd_mask_mono with "L") as "L". { solve_ndisj. }
+    iMod (fupd_mask_mono with "Totyr'") as (zr) "(%Hzr & H3 & tyr')". { solve_ndisj_deep. }
+    iDestruct ("Halfback2" with "H3 H1") as "L". iMod (fupd_mask_mono with "L") as "L". { solve_ndisj_deep. }
+    iDestruct ("Halfback" with "H1' L") as "L". iMod (fupd_mask_mono with "L") as "L". { solve_ndisj_deep. }
     iModIntro.
     iExists -[z; zr]. iFrame "L I". iSplitR "Obs".
     - rewrite right_id.

@@ -202,6 +202,121 @@ Proof.
   iFrame "p".
 Qed.
 
+(** A variant of [lfguards_and] where the conjunction only implies [S ∨ F], for a
+    persistent [F] that itself guards [False]. The [F] case is refuted inside the guard. *)
+Local Lemma lfguards_and_or_false (P Q R S F : iProp Σ) E (n m: nat)
+    (point: point_prop S)
+    (pers: Persistent F)
+    (qrx: (Q ∧ R ⊢ S ∨ F))
+    : (
+      (P &&{E ; n}&&$> Q) ∗ (P &&{E ; n}&&$> R) ∗ (F &&{E ; m}&&$> False)
+      ⊢
+      (P &&{E ; n + m}&&$> S)
+    ).
+Proof.
+  iIntros "[[pq kf] [[pr _] [pf _]]]".
+  unfold lfguards, lguards_with.
+  iFrame "kf".
+  iIntros (T).
+  iDestruct ("pq" $! T) as "pq".
+  iDestruct ("pr" $! T) as "pr".
+  iDestruct ("pf" $! T) as "pf".
+  iIntros "k".
+  iAssert (P ∗ (P -∗ storage_bulk_inv E ∗ T) -∗ ▷^(n + m) ◇ S)%I with "[pq pr pf]" as "X".
+  {
+    iIntros "l".
+    iAssert (▷^n ◇ ((S ∨ F) ∧ (P ∗ (P -∗ storage_bulk_inv E ∗ T))))%I
+      with "[pq pr l]" as "J".
+    { rewrite bi.except_0_and. iSplit.
+      - iAssert (▷^n ◇ (Q ∧ R))%I with "[pq pr l]" as "J".
+        { rewrite bi.except_0_and. iSplit.
+          { iDestruct ("pq" with "l") as "[q j]". iFrame "q". }
+          { iDestruct ("pr" with "l") as "[r j]". iFrame "r". } }
+        iNext. iMod "J" as "J". iModIntro. by iApply qrx.
+      - iNext. iModIntro. iFrame "l". }
+    rewrite bi.laterN_add. iNext.
+    iAssert (◇ ▷^m ◇ S)%I with "[J pf]" as "G".
+    { iMod "J" as "J". iModIntro.
+      iDestruct (bi.and_or_r with "J") as "[[s _]|[#f l]]".
+      - iNext. by iModIntro.
+      - iDestruct "l" as "[p w]". iDestruct ("w" with "p") as "xt".
+        iDestruct ("pf" with "[xt]") as "j".
+        { iFrame "f". iIntros "_". iFrame "xt". }
+        iNext. iMod "j" as "[[] _]". }
+    iDestruct (bi.except_0_laterN with "G") as "G". iNext.
+    iMod "G" as ">G". by iModIntro.
+  }
+  iDestruct (own_separates_out_except0_point_later _ S (n + m) with "[X k]") as "J".
+  { trivial. }
+  { iFrame "X". iFrame "k". }
+  iDestruct "J" as "[J T]".
+  iNext. iMod "J" as "J".
+  iModIntro.
+  iFrame "J".
+  iIntros "o".
+  iDestruct ("T" with "o") as "[p m]".
+  iApply "m".
+  iFrame "p".
+Qed.
+
+Local Lemma lfguards_and3_or_false (P Q R B S F : iProp Σ) E (n m: nat)
+    (point: point_prop S)
+    (pers: Persistent F)
+    (qrx: (Q ∧ R ∧ B ⊢ S ∨ F))
+    : (
+      (P &&{E ; n}&&$> Q) ∗ (P &&{E ; n}&&$> R) ∗ (P &&{E ; n}&&$> B) ∗
+      (F &&{E ; m}&&$> False)
+      ⊢
+      (P &&{E ; n + m}&&$> S)
+    ).
+Proof.
+  iIntros "[[pq kf] [[pr _] [[pb _] [pf _]]]]".
+  unfold lfguards, lguards_with.
+  iFrame "kf".
+  iIntros (T).
+  iDestruct ("pq" $! T) as "pq".
+  iDestruct ("pr" $! T) as "pr".
+  iDestruct ("pb" $! T) as "pb".
+  iDestruct ("pf" $! T) as "pf".
+  iIntros "k".
+  iAssert (P ∗ (P -∗ storage_bulk_inv E ∗ T) -∗ ▷^(n + m) ◇ S)%I with "[pq pr pb pf]" as "X".
+  {
+    iIntros "l".
+    iAssert (▷^n ◇ ((S ∨ F) ∧ (P ∗ (P -∗ storage_bulk_inv E ∗ T))))%I
+      with "[pq pr pb l]" as "J".
+    { rewrite bi.except_0_and. iSplit.
+      - iAssert (▷^n ◇ (Q ∧ R ∧ B))%I with "[pq pr pb l]" as "J".
+        { rewrite !bi.except_0_and. iSplit; [|iSplit].
+          { iDestruct ("pq" with "l") as "[q j]". iFrame "q". }
+          { iDestruct ("pr" with "l") as "[r j]". iFrame "r". }
+          { iDestruct ("pb" with "l") as "[b j]". iFrame "b". } }
+        iNext. iMod "J" as "J". iModIntro. by iApply qrx.
+      - iNext. iModIntro. iFrame "l". }
+    rewrite bi.laterN_add. iNext.
+    iAssert (◇ ▷^m ◇ S)%I with "[J pf]" as "G".
+    { iMod "J" as "J". iModIntro.
+      iDestruct (bi.and_or_r with "J") as "[[s _]|[#f l]]".
+      - iNext. by iModIntro.
+      - iDestruct "l" as "[p w]". iDestruct ("w" with "p") as "xt".
+        iDestruct ("pf" with "[xt]") as "j".
+        { iFrame "f". iIntros "_". iFrame "xt". }
+        iNext. iMod "j" as "[[] _]". }
+    iDestruct (bi.except_0_laterN with "G") as "G". iNext.
+    iMod "G" as ">G". by iModIntro.
+  }
+  iDestruct (own_separates_out_except0_point_later _ S (n + m) with "[X k]") as "J".
+  { trivial. }
+  { iFrame "X". iFrame "k". }
+  iDestruct "J" as "[J T]".
+  iNext. iMod "J" as "J".
+  iModIntro.
+  iFrame "J".
+  iIntros "o".
+  iDestruct ("T" with "o") as "[p m]".
+  iApply "m".
+  iFrame "p".
+Qed.
+
 Local Lemma lfguards_exists_strengthen X (P Q : iProp Σ) (S R : X -> iProp Σ) F n
     (pr_impl_s: (∀ x, Q ∧ R x ⊢ S x))
     (pers: ∀ x, Persistent (S x))
@@ -1214,6 +1329,73 @@ Proof.
   { iFrame "q". iFrame "r". }
   iApply (lfguards_and P Q R S (m1 ∪ m2)); trivial.
   iFrame "#".
+Qed.
+
+(** Like [guards_and_point], but the conjunction need only imply [S ∨ F], where [F] is a
+    persistent proposition that guards [False] (e.g., an unsatisfiable prophecy
+    observation). *)
+Lemma guards_and_point_or_false (P Q R S F : iProp Σ) E n m
+    (point: point_prop S)
+    (pers: Persistent F)
+    (qrx: (Q ∧ R ⊢ S ∨ F))
+    :
+      (P &&{E; n}&&> Q) -∗
+      (P &&{E; n}&&> R) -∗
+      (F &&{E; m}&&> False) -∗
+      (P &&{E; n + m}&&> S).
+Proof.
+  rewrite guards_unseal. unfold guards_def.
+  iIntros "#q #r #f".
+  iDestruct "q" as (m1) "[%cond1 q]".
+  iDestruct "r" as (m2) "[%cond2 r]".
+  iDestruct "f" as (m3) "[%cond3 f]".
+  iExists (m1 ∪ m2 ∪ m3).
+  iModIntro. iSplit.
+  { iPureIntro. set_solver. }
+  iDestruct (lfguards_weaken_mask_2 P Q P R m1 m2 with "[q r]") as "[q1 r1]".
+  { iFrame "q". iFrame "r". }
+  iDestruct (lfguards_weaken_mask_2 P Q F False (m1 ∪ m2) m3 with "[q1 f]") as "[q2 f2]".
+  { iFrame "q1". iFrame "f". }
+  iDestruct (lfguards_weaken_mask_2 P R F False (m1 ∪ m2) m3 with "[r1 f]") as "[r2 _]".
+  { iFrame "r1". iFrame "f". }
+  iApply (lfguards_and_or_false P Q R S F (m1 ∪ m2 ∪ m3)); trivial.
+  iFrame "q2 r2 f2".
+Qed.
+
+Lemma guards_and3_point_or_false (P Q R B S F : iProp Σ) E n m
+    (point: point_prop S)
+    (pers: Persistent F)
+    (qrx: (Q ∧ R ∧ B ⊢ S ∨ F))
+    :
+      (P &&{E; n}&&> Q) -∗
+      (P &&{E; n}&&> R) -∗
+      (P &&{E; n}&&> B) -∗
+      (F &&{E; m}&&> False) -∗
+      (P &&{E; n + m}&&> S).
+Proof.
+  rewrite guards_unseal. unfold guards_def.
+  iIntros "#q #r #b #f".
+  iDestruct "q" as (m1) "[%cond1 q]".
+  iDestruct "r" as (m2) "[%cond2 r]".
+  iDestruct "b" as (m3) "[%cond3 b]".
+  iDestruct "f" as (m4) "[%cond4 f]".
+  iExists (m1 ∪ m2 ∪ m3 ∪ m4).
+  iModIntro. iSplit.
+  { iPureIntro. set_solver. }
+  iDestruct (lfguards_weaken_mask_2 P Q P R m1 m2 with "[q r]") as "[q1 r1]".
+  { iFrame "q". iFrame "r". }
+  iDestruct (lfguards_weaken_mask_2 P Q P B (m1 ∪ m2) m3 with "[q1 b]") as "[q2 b2]".
+  { iFrame "q1". iFrame "b". }
+  iDestruct (lfguards_weaken_mask_2 P R P B (m1 ∪ m2) m3 with "[r1 b]") as "[r2 _]".
+  { iFrame "r1". iFrame "b". }
+  iDestruct (lfguards_weaken_mask_2 P Q F False (m1 ∪ m2 ∪ m3) m4 with "[q2 f]") as "[q3 f3]".
+  { iFrame "q2". iFrame "f". }
+  iDestruct (lfguards_weaken_mask_2 P R F False (m1 ∪ m2 ∪ m3) m4 with "[r2 f]") as "[r3 _]".
+  { iFrame "r2". iFrame "f". }
+  iDestruct (lfguards_weaken_mask_2 P B F False (m1 ∪ m2 ∪ m3) m4 with "[b2 f]") as "[b3 _]".
+  { iFrame "b2". iFrame "f". }
+  iApply (lfguards_and3_or_false P Q R B S F (m1 ∪ m2 ∪ m3 ∪ m4)); trivial.
+  iFrame "q3 r3 b3 f3".
 Qed.
 
 (* Guard-And *)
